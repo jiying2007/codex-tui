@@ -428,8 +428,14 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 if let Some(turn_id) = active_turn_id {
                     return vec![Effect::InterruptTurn { thread_id, turn_id }];
                 }
+                if state.input_mode == InputMode::UserInput {
+                    clear_user_input_editor(state);
+                } else {
+                    state.input_mode = InputMode::Normal;
+                }
+                state.view = View::Registry;
+                return vec![Effect::StopWatchingConversation(thread_id)];
             }
-            state.view = View::Registry;
         }
         Action::Back => {
             let thread_id = state.current_thread_id().cloned();
@@ -839,6 +845,19 @@ mod tests {
         );
         assert_eq!(app.selected, selected);
         assert_eq!(app.view, View::Registry);
+    }
+
+    #[test]
+    fn idle_interrupt_exits_thread_and_releases_watch() {
+        let mut app = app();
+        reduce(&mut app, Action::OpenSelected);
+        let thread_id = app.current_thread_id().expect("thread").clone();
+        let effects = reduce(&mut app, Action::InterruptCurrent);
+        assert_eq!(app.view, View::Registry);
+        assert_eq!(
+            effects,
+            vec![Effect::StopWatchingConversation(thread_id)]
+        );
     }
 
     #[test]
