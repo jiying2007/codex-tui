@@ -678,15 +678,14 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                         state.view = View::Registry;
                     }
                 }
-                SourceKind::ScratchWork => {
+                SourceKind::ScratchWork
                     if state
                         .planning_snapshot
                         .scratch
                         .iter()
-                        .any(|scratch| scratch.id == target.value)
-                    {
-                        state.view = View::Scratch(target.value);
-                    }
+                        .any(|scratch| scratch.id == target.value) =>
+                {
+                    state.view = View::Scratch(target.value);
                 }
                 _ => {}
             }
