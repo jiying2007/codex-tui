@@ -239,6 +239,7 @@ pub struct AppState {
     pub planning_snapshot: PlanningSnapshot,
     pub work_cards: Vec<WorkCardProjection>,
     pub goals: BTreeMap<String, GoalObservation>,
+    pub goal_checked: BTreeSet<String>,
     pub goal_actions_open: bool,
     pub planning_store_error: Option<String>,
     pub review_return_view: Option<View>,
@@ -285,6 +286,7 @@ impl AppState {
             planning_snapshot: PlanningSnapshot::default(),
             work_cards: vec![],
             goals: BTreeMap::new(),
+            goal_checked: BTreeSet::new(),
             goal_actions_open: false,
             planning_store_error: None,
             review_return_view: None,
@@ -683,16 +685,21 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.planning_store_error = error;
         }
         Action::GoalObserved(goal) => {
+            state.goal_checked.insert(goal.thread_id.0.clone());
             state.goals.insert(goal.thread_id.0.clone(), goal);
         }
         Action::GoalCleared(thread_id) => {
+            state.goal_checked.insert(thread_id.0.clone());
             state.goals.remove(&thread_id.0);
             state.goal_actions_open = false;
         }
         Action::OpenGoalActions => {
+            if state.current_pending_request().is_some() {
+                return vec![];
+            }
             if let Some(thread_id) = state.current_thread_id().cloned() {
                 state.goal_actions_open = true;
-                if !state.goals.contains_key(&thread_id.0) {
+                if !state.goal_checked.contains(&thread_id.0) {
                     return vec![Effect::RefreshGoal(thread_id)];
                 }
             }
@@ -704,6 +711,17 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             let Some(thread_id) = state.current_thread_id().cloned() else {
                 return vec![];
             };
+            if state
+                .backend_status
+                .optional_capabilities_missing
+                .iter()
+                .any(|capability| capability == "thread/goal/get")
+            {
+                return vec![];
+            }
+            if !state.goal_checked.contains(&thread_id.0) {
+                return vec![Effect::RefreshGoal(thread_id)];
+            }
             state.input_buffer = state
                 .goals
                 .get(&thread_id.0)
