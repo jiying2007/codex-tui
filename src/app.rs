@@ -416,7 +416,7 @@ fn matches_filter(thread: &ThreadSummary, query: &str) -> bool {
         return true;
     }
 
-    let haystack = [
+    let fields = [
         thread.id.0.as_str(),
         thread.display_title(),
         thread.title.as_str(),
@@ -427,12 +427,11 @@ fn matches_filter(thread: &ThreadSummary, query: &str) -> bool {
         thread.metadata.model.as_deref().unwrap_or_default(),
         thread.metadata.project_id.as_deref().unwrap_or_default(),
     ]
-    .join(" ")
-    .to_lowercase();
+    .map(str::to_lowercase);
 
     query
         .split_whitespace()
-        .all(|token| fuzzy_subsequence(token, &haystack))
+        .all(|token| fields.iter().any(|field| fuzzy_subsequence(token, field)))
 }
 
 fn fuzzy_subsequence(needle: &str, haystack: &str) -> bool {
@@ -537,14 +536,16 @@ mod tests {
         }
         assert!(app.visible_indices().is_empty());
         assert!(app.selected_thread().is_none());
+        let original_pin = app.threads[0].pinned;
         let effects = reduce(&mut app, Action::TogglePin);
         assert!(effects.is_empty());
-        assert!(!app.threads[0].pinned);
+        assert_eq!(app.threads[0].pinned, original_pin);
     }
 
     #[test]
     fn pin_alias_and_ack_round_trip_through_local_state() {
         let mut app = app();
+        app.selected = 1;
         reduce(&mut app, Action::TogglePin);
         reduce(&mut app, Action::BeginAlias);
         for character in "primary".chars() {
@@ -556,8 +557,8 @@ mod tests {
 
         let mut restored = AppState::new(FakeBackend::seeded().snapshot().threads);
         restored.apply_local_state(&local);
-        assert!(restored.threads[0].pinned);
-        assert_eq!(restored.threads[0].alias.as_deref(), Some("primary"));
-        assert!(restored.acknowledged_attention.contains("thread-impl"));
+        assert!(restored.threads[1].pinned);
+        assert_eq!(restored.threads[1].alias.as_deref(), Some("primary"));
+        assert!(restored.acknowledged_attention.contains("thread-kws"));
     }
 }
