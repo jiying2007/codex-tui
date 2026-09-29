@@ -204,7 +204,12 @@ impl AppState {
                     | AttentionReason::SystemError
             )
         });
+        let interactive = self
+            .pending_requests
+            .iter()
+            .any(|request| request.thread_id == thread.id);
         actionable
+            || interactive
             || (!thread.attention.is_empty() && !self.acknowledged_attention.contains(&thread.id.0))
     }
 
@@ -330,6 +335,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             return vec![Effect::PersistOperatorState];
         }
         Action::InteractiveRequested(request) => {
+            state.acknowledged_attention.remove(&request.thread_id.0);
             state
                 .pending_requests
                 .retain(|pending| pending.request_id != request.request_id);
