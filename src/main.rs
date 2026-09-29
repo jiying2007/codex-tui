@@ -138,7 +138,9 @@ async fn run_app(fake_mode: bool) -> Result<()> {
             match event::read()? {
                 Event::Key(key) => {
                     let effects = handle_key(&mut app, key);
-                    if !effects.is_empty() || matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
+                    if !effects.is_empty()
+                        || matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat)
+                    {
                         needs_render = true;
                     }
                     for effect in effects {
