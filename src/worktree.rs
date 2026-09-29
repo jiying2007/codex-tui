@@ -630,7 +630,8 @@ fn parse_worktree_porcelain(value: &str) -> Vec<WorktreeEntry> {
     let mut path: Option<String> = None;
     let mut branch: Option<String> = None;
 
-    for line in value.lines().chain(std::iter::once("")) {
+    for raw_line in value.lines().chain(std::iter::once("")) {
+        let line = raw_line.trim();
         if line.is_empty() {
             if let Some(path) = path.take() {
                 entries.push(WorktreeEntry {
@@ -835,6 +836,16 @@ mod tests {
         let other = repo_lock(&locks, &repo_b).await;
         assert!(Arc::ptr_eq(&first, &same));
         assert!(!Arc::ptr_eq(&first, &other));
+    }
+
+    #[test]
+    fn porcelain_parser_tolerates_crlf_and_incidental_whitespace() {
+        let parsed = parse_worktree_porcelain(
+            "worktree C:/repo\r\nHEAD deadbeef\r\nbranch refs/heads/main\r\n\r\n  worktree C:/repo-feature  \r\nHEAD cafe\r\n  branch refs/heads/feature\r\n\r\n",
+        );
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[1].path, "C:/repo-feature");
+        assert_eq!(parsed[1].branch.as_deref(), Some("feature"));
     }
 
     #[test]
