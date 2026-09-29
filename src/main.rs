@@ -542,7 +542,7 @@ fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
         Command::QuitOrInterrupt => match app.view_kind() {
             ViewKind::Registry => Action::Quit,
             ViewKind::Thread => Action::InterruptCurrent,
-            ViewKind::Review => Action::Back,
+            ViewKind::Review | ViewKind::Workspace => Action::Back,
         },
         Command::Back => Action::Back,
         Command::Help => Action::ToggleHelp,
@@ -573,6 +573,7 @@ fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
         Command::CancelPending => Action::ResolvePending(InteractiveResolution::Cancel),
         Command::AnswerPending => Action::BeginUserInput,
         Command::Review => Action::OpenReview,
+        Command::Workspace => Action::OpenWorkspace,
         Command::PageUp => {
             if app.view_kind() == ViewKind::Review {
                 Action::ScrollReviewBy(-10)
@@ -592,7 +593,6 @@ fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
         Command::CommandPalette
         | Command::ContextActions
         | Command::Board
-        | Command::Workspace
         | Command::Snooze
         | Command::New
         | Command::Goal
