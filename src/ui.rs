@@ -103,9 +103,7 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState) {
         InputMode::WorktreeCreateBranch
         | InputMode::WorktreeCreatePath
         | InputMode::WorktreeCreateStartPoint
-        | InputMode::WorktreeDeleteBranch => {
-            Line::from("managed-worktree input active")
-        }
+        | InputMode::WorktreeDeleteBranch => Line::from("managed-worktree input active"),
         InputMode::Normal => {
             if let Some(error) = &app.backend_status.error {
                 Line::from(format!(
@@ -888,7 +886,9 @@ fn render_managed_worktrees(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
     lines.push(Line::from(""));
 
     if worktrees.is_empty() {
-        lines.push(Line::from("No managed/adopted worktrees for this repository."));
+        lines.push(Line::from(
+            "No managed/adopted worktrees for this repository.",
+        ));
     } else {
         for (index, record) in worktrees.iter().enumerate() {
             let selected = index == app.managed_selected;
@@ -911,7 +911,9 @@ fn render_managed_worktrees(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
 
     if let Some(plan) = &app.pending_operation {
         lines.push(Line::from(""));
-        lines.push(Line::from("CONFIRM REQUIRED — no mutation has executed yet."));
+        lines.push(Line::from(
+            "CONFIRM REQUIRED — no mutation has executed yet.",
+        ));
         lines.push(Line::from(format!("Operation: {}", plan.kind.label())));
         lines.push(Line::from(format!("Cwd: {}", plan.cwd)));
         let command = if plan.argv.is_empty() {
@@ -1193,7 +1195,9 @@ fn render_help(frame: &mut Frame<'_>) {
                 "Thread: a composer · y/n/c approval · i answer · Ctrl+C interrupt · r review",
             ),
             Line::from("Review: j/k file · w word-diff · e editor · PageUp/PageDown · Esc"),
-            Line::from("Workspace: Git identity/status only · r review · m managed worktrees · Esc"),
+            Line::from(
+                "Workspace: Git identity/status only · r review · m managed worktrees · Esc",
+            ),
             Line::from(
                 "Managed Worktrees: n create · a adopt · d remove · x delete branch · y confirm",
             ),
