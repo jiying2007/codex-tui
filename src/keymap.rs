@@ -20,6 +20,13 @@ pub enum Command {
     CycleSavedView,
     Review,
     Workspace,
+    ManagedWorktrees,
+    CreateWorktree,
+    AdoptWorktree,
+    RemoveWorktree,
+    DeleteBranch,
+    ConfirmOperation,
+    CancelOperation,
     Snooze,
     MarkUnread,
     TogglePin,
@@ -84,6 +91,7 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
         (ViewKind::Thread, KeyCode::Char('i')) => Some(Command::AnswerPending),
         (ViewKind::Thread, KeyCode::Char('r')) => Some(Command::Review),
         (ViewKind::Thread, KeyCode::Char('w')) => Some(Command::Workspace),
+        (ViewKind::Thread, KeyCode::Char('m')) => Some(Command::ManagedWorktrees),
         (ViewKind::Thread, KeyCode::Char('g')) => Some(Command::Goal),
         (ViewKind::Thread, KeyCode::PageUp) => Some(Command::PageUp),
         (ViewKind::Thread, KeyCode::PageDown) => Some(Command::PageDown),
@@ -94,6 +102,15 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
         (ViewKind::Review, KeyCode::Char('w')) => Some(Command::ToggleWordDiff),
         (ViewKind::Review, KeyCode::Char('e')) => Some(Command::ExternalEditor),
         (ViewKind::Workspace, KeyCode::Char('r')) => Some(Command::Review),
+        (ViewKind::Workspace, KeyCode::Char('m')) => Some(Command::ManagedWorktrees),
+        (ViewKind::ManagedWorktrees, KeyCode::Char('j') | KeyCode::Down) => Some(Command::Next),
+        (ViewKind::ManagedWorktrees, KeyCode::Char('k') | KeyCode::Up) => Some(Command::Previous),
+        (ViewKind::ManagedWorktrees, KeyCode::Char('n')) => Some(Command::CreateWorktree),
+        (ViewKind::ManagedWorktrees, KeyCode::Char('a')) => Some(Command::AdoptWorktree),
+        (ViewKind::ManagedWorktrees, KeyCode::Char('d')) => Some(Command::RemoveWorktree),
+        (ViewKind::ManagedWorktrees, KeyCode::Char('x')) => Some(Command::DeleteBranch),
+        (ViewKind::ManagedWorktrees, KeyCode::Char('y')) => Some(Command::ConfirmOperation),
+        (ViewKind::ManagedWorktrees, KeyCode::Char('c')) => Some(Command::CancelOperation),
         (ViewKind::Board, KeyCode::Char('h') | KeyCode::Left) => Some(Command::BoardLeft),
         (ViewKind::Board, KeyCode::Char('l') | KeyCode::Right) => Some(Command::BoardRight),
         (ViewKind::Board, KeyCode::Char('j') | KeyCode::Down) => Some(Command::Next),
@@ -120,6 +137,26 @@ mod tests {
 
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn managed_worktree_bindings_are_confirmation_oriented() {
+        assert_eq!(
+            command_for_key(key(KeyCode::Char('m')), ViewKind::Workspace),
+            Some(Command::ManagedWorktrees)
+        );
+        assert_eq!(
+            command_for_key(key(KeyCode::Char('n')), ViewKind::ManagedWorktrees),
+            Some(Command::CreateWorktree)
+        );
+        assert_eq!(
+            command_for_key(key(KeyCode::Char('y')), ViewKind::ManagedWorktrees),
+            Some(Command::ConfirmOperation)
+        );
+        assert_eq!(
+            command_for_key(key(KeyCode::Char('d')), ViewKind::ManagedWorktrees),
+            Some(Command::RemoveWorktree)
+        );
     }
 
     #[test]
