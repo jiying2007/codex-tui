@@ -2,9 +2,7 @@ use crate::app::{AppState, InputMode, View};
 use crate::conversation::{InteractiveRequest, InteractiveRequestKind};
 use crate::domain::ThreadSummary;
 use crate::git::presentation_diff_lines;
-use crate::planning::{
-    SavedViewLayout, WorkflowStage, apply_saved_view, saved_view_group_key,
-};
+use crate::planning::{SavedViewLayout, WorkflowStage, apply_saved_view, saved_view_group_key};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -534,7 +532,10 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState) {
     }
 
     let input = if app.input_mode == InputMode::ScratchTitle {
-        format!("new scratch> {} · Enter create · Esc cancel", app.input_buffer)
+        format!(
+            "new scratch> {} · Enter create · Esc cancel",
+            app.input_buffer
+        )
     } else if let Some(error) = &app.planning_store_error {
         format!("LOCAL STORE DEGRADED · {}", truncate(error, 80))
     } else {
@@ -547,10 +548,7 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState) {
     frame.render_widget(Paragraph::new(input), outer[1]);
 }
 
-fn planning_card_line(
-    card: &crate::planning::WorkCardProjection,
-    selected: bool,
-) -> Line<'static> {
+fn planning_card_line(card: &crate::planning::WorkCardProjection, selected: bool) -> Line<'static> {
     let attention = if card.needs_you() {
         card.attention
             .iter()
