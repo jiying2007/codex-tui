@@ -1727,6 +1727,11 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 if path.is_empty() {
                     return vec![];
                 }
+                if !std::path::Path::new(&path).is_absolute() {
+                    state.mutation_notice =
+                        Some("worktree path must be absolute before a plan can be created".into());
+                    return vec![];
+                }
                 state.create_worktree_path = Some(path);
                 state.input_buffer = "HEAD".into();
                 state.input_mode = InputMode::WorktreeCreateStartPoint;
