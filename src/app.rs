@@ -131,7 +131,9 @@ impl AppState {
         let actionable = thread.attention.iter().any(|reason| {
             matches!(
                 reason,
-                AttentionReason::ApprovalRequired | AttentionReason::UserInputRequired
+                AttentionReason::ApprovalRequired
+                    | AttentionReason::UserInputRequired
+                    | AttentionReason::SystemError
             )
         });
         actionable
