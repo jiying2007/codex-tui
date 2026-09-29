@@ -1,10 +1,10 @@
 use crate::backend::{BackendSnapshot, BackendStatus};
 use crate::codex_protocol::{
-    apply_status, normalize_thread, parse_loaded_list, parse_thread_list, ThreadWire,
+    ThreadWire, apply_status, normalize_thread, parse_loaded_list, parse_thread_list,
 };
 use crate::domain::ThreadSummary;
-use anyhow::{anyhow, Context, Result};
-use serde_json::{json, Value};
+use anyhow::{Context, Result, anyhow};
+use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::OsString;
 use std::process::Stdio;
@@ -331,7 +331,10 @@ impl RpcSession {
             .stderr(Stdio::piped())
             .kill_on_drop(true);
         let mut child = command.spawn().context("spawn codex app-server")?;
-        let stdin = child.stdin.take().context("codex app-server stdin unavailable")?;
+        let stdin = child
+            .stdin
+            .take()
+            .context("codex app-server stdin unavailable")?;
         let stdout = child
             .stdout
             .take()
@@ -393,7 +396,12 @@ impl RpcSession {
 
     async fn read_message(&mut self) -> Result<Option<Value>> {
         loop {
-            let Some(line) = self.reader.next_line().await.context("read app-server stdout")? else {
+            let Some(line) = self
+                .reader
+                .next_line()
+                .await
+                .context("read app-server stdout")?
+            else {
                 return Ok(None);
             };
             if line.trim().is_empty() {
