@@ -1,7 +1,7 @@
 use anyhow::Result;
 use codex_tui::{
     app::{Action, AppState, Effect, InputMode, ViewKind, reduce},
-    app_server::{self, RegistryHandle},
+    app_server::{self, ConversationEvent, RegistryHandle},
     backend::{BackendStatus, CodexBackend, FakeBackend},
     keymap::{Command, command_for_key},
     store::{FileStore, LocalStore},
@@ -159,11 +159,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                     {
                         needs_render = true;
                     }
-                    for effect in effects {
-                        if effect == Effect::PersistOperatorState {
-                            store.save_state(&app.to_local_state())?;
-                        }
-                    }
+                    apply_effects(&mut app, registry.as_ref(), &store, effects)?;
                 }
                 Event::Resize(_, _) => needs_render = true,
                 _ => {}
@@ -204,7 +200,53 @@ fn drain_registry(app: &mut AppState, registry: Option<&mut RegistryHandle>) -> 
         reduce(app, Action::BackendStatus(snapshot.status));
         changed = true;
     }
+    while let Some(event) = registry.try_recv_conversation() {
+        match event {
+            ConversationEvent::Loaded(page) => {
+                reduce(app, Action::ConversationLoaded(page));
+            }
+            ConversationEvent::Failed { thread_id, error } => {
+                reduce(app, Action::ConversationFailed { thread_id, error });
+            }
+        }
+        changed = true;
+    }
     changed
+}
+
+fn apply_effects(
+    app: &mut AppState,
+    registry: Option<&RegistryHandle>,
+    store: &FileStore,
+    effects: Vec<Effect>,
+) -> Result<()> {
+    for effect in effects {
+        match effect {
+            Effect::PersistOperatorState => store.save_state(&app.to_local_state())?,
+            Effect::LoadConversation(thread_id) => {
+                if let Some(registry) = registry {
+                    if let Err(error) = registry.load_conversation(thread_id.clone()) {
+                        reduce(
+                            app,
+                            Action::ConversationFailed {
+                                thread_id,
+                                error: error.to_string(),
+                            },
+                        );
+                    }
+                } else {
+                    reduce(
+                        app,
+                        Action::ConversationFailed {
+                            thread_id,
+                            error: "conversation backend unavailable".into(),
+                        },
+                    );
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
