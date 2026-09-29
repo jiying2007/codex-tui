@@ -1,7 +1,7 @@
 use crate::domain::{LocalRepoIdentity, ThreadId, WorktreeIdentity};
 use anyhow::{Context, Result, anyhow};
 use similar::{ChangeTag, TextDiff};
-use std::ffi::{OsStr, OsString};
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
