@@ -777,8 +777,8 @@ mod tests {
         let plain = presentation_diff_lines(&review, false);
         assert_eq!(plain[1], "-hello old world");
         let word = presentation_diff_lines(&review, true);
-        assert!(word.iter().any(|line| line.contains("[-old -]")));
-        assert!(word.iter().any(|line| line.contains("{+new +}")));
+        assert!(word.iter().any(|line| line.contains("[-old-]")));
+        assert!(word.iter().any(|line| line.contains("{+new+}")));
     }
 
     #[tokio::test]
