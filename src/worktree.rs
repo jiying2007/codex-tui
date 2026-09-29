@@ -277,6 +277,10 @@ async fn check_preconditions(
                 .as_deref()
                 .context("create plan missing target worktree")?;
             anyhow::ensure!(
+                Path::new(target).is_absolute(),
+                "target worktree path must be absolute: {target}"
+            );
+            anyhow::ensure!(
                 !Path::new(target).exists(),
                 "target worktree path already exists: {target}"
             );
@@ -339,6 +343,10 @@ async fn check_preconditions(
                 .target_worktree
                 .as_deref()
                 .context("adopt plan missing target worktree")?;
+            anyhow::ensure!(
+                Path::new(target).is_absolute(),
+                "adopted worktree path must be absolute: {target}"
+            );
             let inventory = list_worktrees(&plan.cwd).await?;
             anyhow::ensure!(
                 inventory
@@ -801,6 +809,26 @@ mod tests {
             git_common_dir: canonical_path(&common),
             primary_root: canonical_path(root.to_string_lossy().as_ref()),
         }
+    }
+
+    #[tokio::test]
+    async fn same_repo_reuses_one_mutation_lock_while_other_repo_does_not() {
+        let locks: RepoLocks = Arc::new(Mutex::new(BTreeMap::new()));
+        let repo_a = LocalRepoIdentity {
+            git_common_dir: "/repo-a/.git".into(),
+            primary_root: "/repo-a".into(),
+        };
+        let repo_a_alias = repo_a.clone();
+        let repo_b = LocalRepoIdentity {
+            git_common_dir: "/repo-b/.git".into(),
+            primary_root: "/repo-b".into(),
+        };
+
+        let first = repo_lock(&locks, &repo_a).await;
+        let same = repo_lock(&locks, &repo_a_alias).await;
+        let other = repo_lock(&locks, &repo_b).await;
+        assert!(Arc::ptr_eq(&first, &same));
+        assert!(!Arc::ptr_eq(&first, &other));
     }
 
     #[test]
