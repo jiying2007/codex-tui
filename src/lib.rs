@@ -2,6 +2,7 @@ pub mod app;
 pub mod app_server;
 pub mod backend;
 pub mod codex_protocol;
+pub mod conversation;
 pub mod domain;
 pub mod keymap;
 pub mod store;
