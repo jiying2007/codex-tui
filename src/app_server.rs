@@ -29,6 +29,11 @@ pub struct StartedRegistry {
 #[derive(Clone, Debug)]
 pub enum BackendCommand {
     LoadConversation(ThreadId),
+    LoadOlderConversation {
+        thread_id: ThreadId,
+        turn_cursor: Option<String>,
+        item_cursor: Option<String>,
+    },
     SubmitPrompt {
         thread_id: ThreadId,
         text: String,
@@ -43,6 +48,7 @@ pub enum BackendCommand {
 #[derive(Clone, Debug)]
 pub enum ConversationEvent {
     Loaded(ConversationPage),
+    OlderLoaded(ConversationPage),
     PromptSubmitted {
         thread_id: ThreadId,
         turn_id: String,
@@ -71,6 +77,19 @@ impl RegistryHandle {
 
     pub fn load_conversation(&self, thread_id: ThreadId) -> Result<()> {
         self.send_command(BackendCommand::LoadConversation(thread_id))
+    }
+
+    pub fn load_older_conversation(
+        &self,
+        thread_id: ThreadId,
+        turn_cursor: Option<String>,
+        item_cursor: Option<String>,
+    ) -> Result<()> {
+        self.send_command(BackendCommand::LoadOlderConversation {
+            thread_id,
+            turn_cursor,
+            item_cursor,
+        })
     }
 
     pub fn submit_prompt(
@@ -175,6 +194,30 @@ async fn run_registry_actor(
                 match command {
                     BackendCommand::LoadConversation(thread_id) => {
                         emit_conversation_load(&mut rpc, thread_id, &conversation_tx).await;
+                    }
+                    BackendCommand::LoadOlderConversation {
+                        thread_id,
+                        turn_cursor,
+                        item_cursor,
+                    } => {
+                        match load_older_conversation(
+                            &mut rpc,
+                            thread_id.clone(),
+                            turn_cursor,
+                            item_cursor,
+                        )
+                        .await
+                        {
+                            Ok(page) => {
+                                let _ = conversation_tx.send(ConversationEvent::OlderLoaded(page));
+                            }
+                            Err(error) => {
+                                let _ = conversation_tx.send(ConversationEvent::Failed {
+                                    thread_id,
+                                    error: error.to_string(),
+                                });
+                            }
+                        }
                     }
                     BackendCommand::SubmitPrompt {
                         thread_id,
@@ -539,6 +582,63 @@ async fn interrupt_turn(rpc: &mut RpcSession, thread_id: &ThreadId, turn_id: &st
     .await
     .context("interrupt active turn")?;
     Ok(())
+}
+
+async fn load_older_conversation(
+    rpc: &mut RpcSession,
+    thread_id: ThreadId,
+    turn_cursor: Option<String>,
+    item_cursor: Option<String>,
+) -> Result<ConversationPage> {
+    let (turns, next_turn_cursor) = if let Some(cursor) = turn_cursor {
+        let result = rpc
+            .request(
+                "thread/turns/list",
+                json!({
+                    "threadId": thread_id.0,
+                    "cursor": cursor,
+                    "limit": 20,
+                    "sortDirection": "desc",
+                    "itemsView": "notLoaded"
+                }),
+            )
+            .await
+            .context("list older turns")?;
+        let (mut turns, next_cursor) = parse_turns_page(result)?;
+        turns.reverse();
+        (turns, next_cursor)
+    } else {
+        (vec![], None)
+    };
+
+    let (items, next_item_cursor) = if let Some(cursor) = item_cursor {
+        let result = rpc
+            .request(
+                "thread/items/list",
+                json!({
+                    "threadId": thread_id.0,
+                    "cursor": cursor,
+                    "limit": 100,
+                    "sortDirection": "desc"
+                }),
+            )
+            .await
+            .context("list older items")?;
+        let (mut items, next_cursor) = parse_items_page(result)?;
+        items.reverse();
+        (items, next_cursor)
+    } else {
+        (vec![], None)
+    };
+
+    Ok(merge_history(
+        thread_id,
+        None,
+        turns,
+        items,
+        next_turn_cursor,
+        next_item_cursor,
+    ))
 }
 
 async fn load_conversation(rpc: &mut RpcSession, thread_id: ThreadId) -> Result<ConversationPage> {
