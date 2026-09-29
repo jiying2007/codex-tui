@@ -888,8 +888,14 @@ async fn resolve_interactive(
                 .await?;
             }
             InteractiveResolution::Decline | InteractiveResolution::Cancel => {
-                rpc.reject_request(request_id.to_value(), "permission request declined by user")
-                    .await?;
+                rpc.respond_result(
+                    request_id.to_value(),
+                    json!({
+                        "permissions": {},
+                        "scope": "turn"
+                    }),
+                )
+                .await?;
             }
             InteractiveResolution::UserInput(_) => {
                 anyhow::bail!("user-input answer cannot resolve a permission request")
