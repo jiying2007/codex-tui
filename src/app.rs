@@ -21,6 +21,7 @@ pub enum InputMode {
     Normal,
     Search,
     Alias,
+    Composer,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -29,11 +30,13 @@ pub enum Action {
     BackendStatus(BackendStatus),
     ConversationLoaded(ConversationPage),
     ConversationFailed { thread_id: ThreadId, error: String },
+    PromptSubmitted { thread_id: ThreadId },
     MoveSelection(i32),
     OpenSelected,
     Back,
     NextAttention,
     QuickPrompt,
+    InterruptCurrent,
     ToggleHelp,
     SetDraft(String),
     ScrollBy(i16),
@@ -54,6 +57,15 @@ pub enum Action {
 pub enum Effect {
     PersistOperatorState,
     LoadConversation(ThreadId),
+    SubmitPrompt {
+        thread_id: ThreadId,
+        text: String,
+        active_turn_id: Option<String>,
+    },
+    InterruptTurn {
+        thread_id: ThreadId,
+        turn_id: String,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -258,8 +270,14 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             conversation.loading = false;
             conversation.error = Some(error);
         }
+        Action::PromptSubmitted { thread_id } => {
+            if let Some(ui) = state.thread_ui.get_mut(&thread_id.0) {
+                ui.draft.clear();
+            }
+            return vec![Effect::PersistOperatorState];
+        }
         Action::MoveSelection(delta) => move_selection(state, delta),
-        Action::OpenSelected | Action::QuickPrompt => {
+        Action::OpenSelected => {
             if let Some(id) = state.selected_thread_id() {
                 state.previous_target = state.current_thread_id().cloned();
                 state.thread_ui.entry(id.0.clone()).or_default();
@@ -271,6 +289,43 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 state.view = View::Thread(id.clone());
                 return vec![Effect::LoadConversation(id)];
             }
+        }
+        Action::QuickPrompt => {
+            let id = match state.current_thread_id().cloned() {
+                Some(id) => id,
+                None => {
+                    let Some(id) = state.selected_thread_id() else {
+                        return vec![];
+                    };
+                    state.previous_target = None;
+                    state
+                        .conversations
+                        .entry(id.0.clone())
+                        .or_insert_with(|| ConversationState::loading(id.clone()))
+                        .loading = true;
+                    state.view = View::Thread(id.clone());
+                    id
+                }
+            };
+            state.thread_ui.entry(id.0.clone()).or_default();
+            state.input_mode = InputMode::Composer;
+            return vec![Effect::LoadConversation(id)];
+        }
+        Action::InterruptCurrent => {
+            if let Some(thread_id) = state.current_thread_id().cloned() {
+                let active_turn_id = state
+                    .conversations
+                    .get(&thread_id.0)
+                    .and_then(ConversationState::active_turn_id)
+                    .map(ToOwned::to_owned);
+                if let Some(turn_id) = active_turn_id {
+                    return vec![Effect::InterruptTurn {
+                        thread_id,
+                        turn_id,
+                    }];
+                }
+            }
+            state.view = View::Registry;
         }
         Action::Back => state.view = View::Registry,
         Action::NextAttention => select_next_attention(state),
@@ -346,25 +401,66 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
         }
         Action::InputChar(character) => {
-            if state.input_mode != InputMode::Normal {
-                state.input_buffer.push(character);
-                if state.input_mode == InputMode::Search {
-                    state.filter.clone_from(&state.input_buffer);
-                    ensure_selection_visible(state);
+            match state.input_mode {
+                InputMode::Normal => {}
+                InputMode::Composer => {
+                    if let Some(id) = state.current_thread_id().cloned() {
+                        state.thread_ui.entry(id.0).or_default().draft.push(character);
+                        return vec![Effect::PersistOperatorState];
+                    }
+                }
+                InputMode::Search | InputMode::Alias => {
+                    state.input_buffer.push(character);
+                    if state.input_mode == InputMode::Search {
+                        state.filter.clone_from(&state.input_buffer);
+                        ensure_selection_visible(state);
+                    }
                 }
             }
         }
         Action::InputBackspace => {
-            if state.input_mode != InputMode::Normal {
-                state.input_buffer.pop();
-                if state.input_mode == InputMode::Search {
-                    state.filter.clone_from(&state.input_buffer);
-                    ensure_selection_visible(state);
+            match state.input_mode {
+                InputMode::Normal => {}
+                InputMode::Composer => {
+                    if let Some(id) = state.current_thread_id().cloned() {
+                        state.thread_ui.entry(id.0).or_default().draft.pop();
+                        return vec![Effect::PersistOperatorState];
+                    }
+                }
+                InputMode::Search | InputMode::Alias => {
+                    state.input_buffer.pop();
+                    if state.input_mode == InputMode::Search {
+                        state.filter.clone_from(&state.input_buffer);
+                        ensure_selection_visible(state);
+                    }
                 }
             }
         }
         Action::CommitInput => {
             let mode = state.input_mode;
+            if mode == InputMode::Composer {
+                if let Some(thread_id) = state.current_thread_id().cloned() {
+                    let text = state
+                        .thread_ui
+                        .get(&thread_id.0)
+                        .map(|ui| ui.draft.trim().to_string())
+                        .unwrap_or_default();
+                    state.input_mode = InputMode::Normal;
+                    if !text.is_empty() {
+                        let active_turn_id = state
+                            .conversations
+                            .get(&thread_id.0)
+                            .and_then(ConversationState::active_turn_id)
+                            .map(ToOwned::to_owned);
+                        return vec![Effect::SubmitPrompt {
+                            thread_id,
+                            text,
+                            active_turn_id,
+                        }];
+                    }
+                }
+                return vec![];
+            }
             if mode == InputMode::Alias {
                 let alias = state.input_buffer.trim().to_string();
                 if let Some(thread) = state.threads.get_mut(state.selected) {
