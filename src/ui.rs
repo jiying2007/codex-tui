@@ -457,7 +457,10 @@ fn render_workspace(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
         Some(context) => {
             if let Some(repo) = &context.repo {
                 lines.push(Line::from(format!("Repo root: {}", repo.primary_root)));
-                lines.push(Line::from(format!("Git common dir: {}", repo.git_common_dir)));
+                lines.push(Line::from(format!(
+                    "Git common dir: {}",
+                    repo.git_common_dir
+                )));
             }
             if let Some(worktree) = &context.worktree {
                 lines.push(Line::from(format!("Worktree: {}", worktree.canonical_path)));
@@ -507,10 +510,7 @@ fn render_workspace(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
             .wrap(Wrap { trim: false }),
         chunks[0],
     );
-    frame.render_widget(
-        Paragraph::new("r review · Esc back"),
-        chunks[1],
-    );
+    frame.render_widget(Paragraph::new("r review · Esc back"), chunks[1]);
 }
 
 fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
