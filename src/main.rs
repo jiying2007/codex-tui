@@ -382,7 +382,7 @@ fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
 
     if let Some(request) = app.current_pending_request() {
         let action = match (&request.kind, key.code) {
-            (InteractiveRequestKind::UserInput { .. }, KeyCode::Enter | KeyCode::Char('a')) => {
+            (InteractiveRequestKind::UserInput { .. }, KeyCode::Enter | KeyCode::Char('i')) => {
                 Some(Action::BeginUserInput)
             }
             (InteractiveRequestKind::UserInput { .. }, KeyCode::Char('n')) => {
