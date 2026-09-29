@@ -766,7 +766,13 @@ fn canonical_path(value: &str) -> String {
 }
 
 fn same_path(left: &str, right: &str) -> bool {
-    canonical_path(left).eq_ignore_ascii_case(&canonical_path(right))
+    let left = canonical_path(left);
+    let right = canonical_path(right);
+    if cfg!(windows) {
+        left.eq_ignore_ascii_case(&right)
+    } else {
+        left == right
+    }
 }
 
 #[cfg(test)]
