@@ -222,15 +222,15 @@ fn drain_registry(
             ConversationEvent::PromptSubmitted { thread_id, .. } => {
                 let effects = reduce(app, Action::PromptSubmitted { thread_id });
                 for effect in effects {
-                    if effect == Effect::PersistOperatorState {
-                        if let Err(error) = store.save_state(&app.to_local_state()) {
-                            reduce(
-                                app,
-                                Action::BackendStatus(backend_error_status(format!(
-                                    "persist draft state failed: {error}"
-                                ))),
-                            );
-                        }
+                    if effect == Effect::PersistOperatorState
+                        && let Err(error) = store.save_state(&app.to_local_state())
+                    {
+                        reduce(
+                            app,
+                            Action::BackendStatus(backend_error_status(format!(
+                                "persist draft state failed: {error}"
+                            ))),
+                        );
                     }
                 }
             }
