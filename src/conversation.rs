@@ -273,6 +273,7 @@ pub struct ConversationState {
     pub next_turn_cursor: Option<String>,
     pub next_item_cursor: Option<String>,
     pub loading: bool,
+    pub loading_older: bool,
     pub error: Option<String>,
 }
 
@@ -286,6 +287,7 @@ impl ConversationState {
             next_turn_cursor: None,
             next_item_cursor: None,
             loading: true,
+            loading_older: false,
             error: None,
         }
     }
@@ -305,6 +307,7 @@ impl ConversationState {
         self.next_turn_cursor = page.next_turn_cursor;
         self.next_item_cursor = page.next_item_cursor;
         self.loading = false;
+        self.loading_older = false;
         self.error = None;
     }
 
@@ -325,12 +328,14 @@ impl ConversationState {
         let existing_items = self
             .items
             .iter()
-            .map(|item| item.item_id.as_str())
+            .map(|item| (item.turn_id.as_str(), item.item_id.as_str()))
             .collect::<std::collections::BTreeSet<_>>();
         let mut items = page
             .items
             .into_iter()
-            .filter(|item| !existing_items.contains(item.item_id.as_str()))
+            .filter(|item| {
+                !existing_items.contains(&(item.turn_id.as_str(), item.item_id.as_str()))
+            })
             .collect::<Vec<_>>();
         items.append(&mut self.items);
         self.items = items;
@@ -338,6 +343,7 @@ impl ConversationState {
         self.next_turn_cursor = page.next_turn_cursor;
         self.next_item_cursor = page.next_item_cursor;
         self.loading = false;
+        self.loading_older = false;
         self.error = None;
     }
 }
