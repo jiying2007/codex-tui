@@ -4,6 +4,7 @@ use codex_tui::{
     app_server::{self, ConversationEvent, RegistryHandle},
     backend::{BackendStatus, CodexBackend, FakeBackend},
     conversation::{InteractiveRequestKind, InteractiveResolution},
+    git::{GitEvent, GitHandle},
     keymap::{Command, command_for_key},
     store::{FileStore, LocalStore},
     terminal::TerminalSession,
@@ -97,6 +98,16 @@ async fn run_app(fake_mode: bool) -> Result<()> {
     };
     app.apply_local_state(&local);
 
+    let mut git = GitHandle::start();
+    let initial_git_effects = reduce(&mut app, Action::RefreshGitProjections);
+    apply_effects(
+        &mut app,
+        registry.as_ref(),
+        &git,
+        &store,
+        initial_git_effects,
+    )?;
+
     let mut terminal = TerminalSession::enter(config.ui.mouse)?;
     let mut last_fake_tick = Instant::now();
     let mut needs_render = true;
@@ -113,6 +124,8 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                     reduce(&mut app, Action::BackendStatus(started.initial.status));
                     app.apply_local_state(&local);
                     registry = Some(started.handle);
+                    let effects = reduce(&mut app, Action::RefreshGitProjections);
+                    apply_effects(&mut app, registry.as_ref(), &git, &store, effects)?;
                 }
                 Ok(Err(error)) => {
                     reduce(
@@ -132,7 +145,13 @@ async fn run_app(fake_mode: bool) -> Result<()> {
             needs_render = true;
         }
 
-        needs_render |= drain_registry(&mut app, registry.as_mut(), &store);
+        let registry_changed = drain_registry(&mut app, registry.as_mut(), &store);
+        needs_render |= registry_changed;
+        if registry_changed {
+            let effects = reduce(&mut app, Action::RefreshGitProjections);
+            apply_effects(&mut app, registry.as_ref(), &git, &store, effects)?;
+        }
+        needs_render |= drain_git(&mut app, &mut git);
 
         if let Some(fake) = fake_backend.as_mut()
             && last_fake_tick.elapsed() >= Duration::from_millis(900)
@@ -140,6 +159,8 @@ async fn run_app(fake_mode: bool) -> Result<()> {
             let snapshot = fake.tick();
             reduce(&mut app, Action::ReplaceThreads(snapshot.threads));
             reduce(&mut app, Action::BackendStatus(snapshot.status));
+            let effects = reduce(&mut app, Action::RefreshGitProjections);
+            apply_effects(&mut app, registry.as_ref(), &git, &store, effects)?;
             last_fake_tick = Instant::now();
             needs_render = true;
         }
@@ -160,7 +181,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                     {
                         needs_render = true;
                     }
-                    apply_effects(&mut app, registry.as_ref(), &store, effects)?;
+                    apply_effects(&mut app, registry.as_ref(), &git, &store, effects)?;
                 }
                 Event::Resize(_, _) => needs_render = true,
                 _ => {}
@@ -243,15 +264,36 @@ fn drain_registry(
     changed
 }
 
+fn drain_git(app: &mut AppState, git: &mut GitHandle) -> bool {
+    let mut changed = false;
+    while let Some(event) = git.try_recv() {
+        match event {
+            GitEvent::Context(context) => {
+                reduce(app, Action::GitContextLoaded(context));
+            }
+        }
+        changed = true;
+    }
+    changed
+}
+
 fn apply_effects(
     app: &mut AppState,
     registry: Option<&RegistryHandle>,
+    git: &GitHandle,
     store: &FileStore,
     effects: Vec<Effect>,
 ) -> Result<()> {
     for effect in effects {
         match effect {
             Effect::PersistOperatorState => store.save_state(&app.to_local_state())?,
+            Effect::ProbeGit { thread_id, cwd } => {
+                if let Err(error) = git.probe(thread_id.clone(), cwd.clone()) {
+                    let mut context = codex_tui::git::GitContext::pending(thread_id, cwd);
+                    context.error = Some(error.to_string());
+                    reduce(app, Action::GitContextLoaded(context));
+                }
+            }
             Effect::LoadConversation(thread_id) => {
                 if let Some(registry) = registry {
                     if let Err(error) = registry.load_conversation(thread_id.clone()) {
