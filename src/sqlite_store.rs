@@ -1,6 +1,4 @@
-use crate::operation::{
-    ManagedWorktreeRecord, OperationPlan, OperationReceipt, OperationState,
-};
+use crate::operation::{ManagedWorktreeRecord, OperationPlan, OperationReceipt, OperationState};
 use crate::planning::{
     Bookmark, HotSlot, LocalNote, PlanningSnapshot, SavedView, ScratchState, ScratchWork,
     SourceKind, SourceRef, WorkCardLink, WorkCardOverlay, WorkCardRecord,
@@ -491,19 +489,14 @@ impl SqliteStore {
         repo_common_dir: &str,
         canonical_path: &str,
     ) -> Result<Option<ManagedWorktreeRecord>> {
-        Ok(self
-            .load_managed_worktrees()?
-            .into_iter()
-            .find(|record| {
-                record.repo.git_common_dir == repo_common_dir
-                    && record.canonical_path == canonical_path
-            }))
+        Ok(self.load_managed_worktrees()?.into_iter().find(|record| {
+            record.repo.git_common_dir == repo_common_dir && record.canonical_path == canonical_path
+        }))
     }
 
     pub fn save_operation_receipt(&self, receipt: &OperationReceipt) -> Result<()> {
         let conn = self.open_ready()?;
-        let plan_json =
-            serde_json::to_string(&receipt.plan).context("serialize operation plan")?;
+        let plan_json = serde_json::to_string(&receipt.plan).context("serialize operation plan")?;
         conn.execute(
             "INSERT INTO operation_receipts (
                 operation_id, plan_json, state, started_at_unix_ms, completed_at_unix_ms,
@@ -800,18 +793,10 @@ fn decode_operation_receipt(row: &rusqlite::Row<'_>) -> rusqlite::Result<Operati
     let failure: Option<String> = row.get(7)?;
 
     let plan: OperationPlan = serde_json::from_str(&plan_json).map_err(|error| {
-        rusqlite::Error::FromSqlConversionFailure(
-            1,
-            rusqlite::types::Type::Text,
-            Box::new(error),
-        )
+        rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(error))
     })?;
     let state: OperationState = enum_from_text(&state_text).map_err(|error| {
-        rusqlite::Error::FromSqlConversionFailure(
-            2,
-            rusqlite::types::Type::Text,
-            error.into(),
-        )
+        rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, error.into())
     })?;
 
     Ok(OperationReceipt {
