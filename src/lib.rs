@@ -6,6 +6,8 @@ pub mod conversation;
 pub mod domain;
 pub mod git;
 pub mod keymap;
+pub mod planning;
 pub mod store;
+pub mod sqlite_store;
 pub mod terminal;
 pub mod ui;
