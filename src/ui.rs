@@ -98,6 +98,7 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState) {
             "view name> {}  · Enter save · Esc cancel",
             truncate(&app.input_buffer, 60)
         )),
+        InputMode::GoalObjective => Line::from("Goal objective editor active in Thread view"),
         InputMode::Normal => {
             if let Some(error) = &app.backend_status.error {
                 Line::from(format!(
@@ -261,6 +262,22 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
                     .and_then(|card| card.overlay.note.as_deref())
                     .unwrap_or("<none>")
             )),
+            Line::from(format!(
+                "Planning stage: {}",
+                app.work_card_for_thread(&thread.id)
+                    .map(|card| card.stage.label())
+                    .unwrap_or("<unprojected>")
+            )),
+            Line::from(format!(
+                "Stage reason: {}",
+                app.work_card_for_thread(&thread.id)
+                    .map(|card| card.stage_reason.as_str())
+                    .unwrap_or("<unprojected>")
+            )),
+            Line::from(format!(
+                "Goal: {}",
+                goal_summary(app, &thread.id.0)
+            )),
         ]
     } else {
         vec![Line::from("No thread selected")]
@@ -323,12 +340,45 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
         .wrap(Wrap { trim: false })
 }
 
+fn goal_summary(app: &AppState, thread_id: &str) -> String {
+    if let Some(goal) = app.goals.get(thread_id) {
+        let budget = goal
+            .token_budget
+            .map(|budget| format!("{}/{budget}", goal.tokens_used))
+            .unwrap_or_else(|| goal.tokens_used.to_string());
+        return format!(
+            "{} · {} · tokens={} · {}s",
+            goal.status.label(),
+            truncate(&goal.objective, 42),
+            budget,
+            goal.time_used_seconds
+        );
+    }
+    if app
+        .backend_status
+        .optional_capabilities_missing
+        .iter()
+        .any(|capability| capability == "thread/goal/get")
+    {
+        return "unavailable on this App Server".into();
+    }
+    if app
+        .backend_status
+        .capabilities
+        .iter()
+        .any(|capability| capability == "thread/goal/get")
+    {
+        return "none".into();
+    }
+    "probing…".into()
+}
+
 fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
     let area = frame.area();
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),
+            Constraint::Length(5),
             Constraint::Min(4),
             Constraint::Length(4),
             Constraint::Length(1),
@@ -340,7 +390,11 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
         .map(ThreadSummary::display_title)
         .unwrap_or("Unknown thread");
     frame.render_widget(
-        Paragraph::new(format!("{title}\n{thread_id}")).block(Block::bordered().title(" Thread ")),
+        Paragraph::new(format!(
+            "{title}\n{thread_id}\nGoal: {}",
+            goal_summary(app, thread_id)
+        ))
+        .block(Block::bordered().title(" Thread ")),
         chunks[0],
     );
 
@@ -408,7 +462,32 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
         chunks[1],
     );
 
-    let (composer_title, composer_text) = if app.input_mode == InputMode::UserInput {
+    let (composer_title, composer_text) = if app.input_mode == InputMode::GoalObjective {
+        (
+            " Goal objective · Enter set · Esc cancel ",
+            format!("objective> {}", app.input_buffer),
+        )
+    } else if app.goal_actions_open {
+        let text = app.current_goal().map_or_else(
+            || "No Goal observed. e/Enter creates one with ACTIVE status.".into(),
+            |goal| {
+                format!(
+                    "{}\nstatus={} · tokens={}{} · elapsed={}s",
+                    goal.objective,
+                    goal.status.label(),
+                    goal.tokens_used,
+                    goal.token_budget
+                        .map(|budget| format!("/{budget}"))
+                        .unwrap_or_default(),
+                    goal.time_used_seconds
+                )
+            },
+        );
+        (
+            " Goal actions · e objective · p pause · r resume · c clear · Esc close ",
+            text,
+        )
+    } else if app.input_mode == InputMode::UserInput {
         let question = app.current_user_input_question();
         let displayed_answer = if question.is_some_and(|question| question.is_secret) {
             "*".repeat(app.input_buffer.chars().count())
@@ -448,7 +527,7 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
     frame.render_widget(composer, chunks[2]);
     frame.render_widget(
         Paragraph::new(
-            "a composer · y accept · n decline · c cancel · i answer · Ctrl+C interrupt",
+            "a composer · g goal · y accept · n decline · c cancel · i answer · Ctrl+C interrupt",
         ),
         chunks[3],
     );
@@ -484,12 +563,18 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState) {
                             stage_index == app.board_stage_index && index == app.board_selected;
                         let attention = if card.needs_you() { "!" } else { " " };
                         let pin = if card.overlay.pinned { "*" } else { " " };
+                        let goal = card
+                            .goal
+                            .as_ref()
+                            .map(|goal| format!(" [{}]", goal.status.label()))
+                            .unwrap_or_default();
                         let text = format!(
-                            "{}{}{} {}",
+                            "{}{}{} {}{}",
                             if selected { ">" } else { " " },
                             pin,
                             attention,
-                            truncate(&card.title, 20)
+                            truncate(&card.title, 20),
+                            goal
                         );
                         let style = if selected {
                             Style::default().add_modifier(Modifier::REVERSED)
@@ -612,11 +697,17 @@ fn planning_card_line(card: &crate::planning::WorkCardProjection, selected: bool
         crate::planning::SourceKind::ForgeWorkItem => "forge",
         _ => "link",
     };
+    let goal = card
+        .goal
+        .as_ref()
+        .map(|goal| goal.status.label())
+        .unwrap_or("-");
     let text = format!(
-        "{} {:7} {:10} {:8} {}",
+        "{} {:7} {:10} {:12} {:8} {}",
         if selected { ">" } else { " " },
         card.stage.label(),
         truncate(&attention, 10),
+        truncate(goal, 12),
         source,
         card.title
     );
