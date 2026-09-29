@@ -26,6 +26,7 @@ use tokio::task::JoinHandle;
 
 const PAGE_SIZE: u32 = 200;
 const REFRESH_INTERVAL: Duration = Duration::from_secs(2);
+const GOAL_PROBE_INTERVAL: Duration = Duration::from_millis(250);
 const RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug)]
@@ -45,6 +46,43 @@ impl fmt::Display for RpcResponseError {
 }
 
 impl std::error::Error for RpcResponseError {}
+
+fn is_goal_unsupported(error: &anyhow::Error) -> bool {
+    let Some(source) = error.downcast_ref::<RpcResponseError>() else {
+        return false;
+    };
+    if source.code == Some(-32601) {
+        return true;
+    }
+    if !matches!(source.code, Some(-32600 | -32602)) {
+        return false;
+    }
+    source.message.to_ascii_lowercase().contains("goal")
+}
+
+fn mark_goal_supported(status: &mut BackendStatus) {
+    for capability in ["thread/goal/get", "thread/goal/set", "thread/goal/clear"] {
+        if !status.capabilities.iter().any(|value| value == capability) {
+            status.capabilities.push(capability.into());
+        }
+        status
+            .optional_capabilities_missing
+            .retain(|value| value != capability);
+    }
+}
+
+fn mark_goal_unsupported(status: &mut BackendStatus) {
+    for capability in ["thread/goal/get", "thread/goal/set", "thread/goal/clear"] {
+        if !status
+            .optional_capabilities_missing
+            .iter()
+            .any(|value| value == capability)
+        {
+            status.optional_capabilities_missing.push(capability.into());
+        }
+        status.capabilities.retain(|value| value != capability);
+    }
+}
 
 fn is_history_pagination_unsupported(error: &anyhow::Error) -> bool {
     let Some(source) = error.downcast_ref::<RpcResponseError>() else {
@@ -289,9 +327,22 @@ async fn run_registry_actor(
     let mut threads = by_id(initial_threads);
     let mut pending_requests: BTreeMap<RpcRequestId, PendingServerRequest> = BTreeMap::new();
     let mut watched_threads = BTreeSet::new();
+    let mut goal_supported: Option<bool> = None;
+    let mut goal_probed = BTreeSet::new();
+    let mut goal_queued = threads.keys().cloned().collect::<BTreeSet<_>>();
+    let mut goal_probe_queue = threads
+        .keys()
+        .cloned()
+        .map(ThreadId::new)
+        .collect::<VecDeque<_>>();
+
     let mut refresh = tokio::time::interval(REFRESH_INTERVAL);
     refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     refresh.tick().await;
+
+    let mut goal_probe = tokio::time::interval(GOAL_PROBE_INTERVAL);
+    goal_probe.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    goal_probe.tick().await;
 
     loop {
         tokio::select! {
