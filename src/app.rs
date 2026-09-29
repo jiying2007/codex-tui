@@ -45,6 +45,7 @@ pub enum InputMode {
     Snooze,
     Note,
     SavedViewName,
+    GoalObjective,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -87,6 +88,13 @@ pub enum Action {
     PlanningSnapshotLoaded(PlanningSnapshot),
     ReconcilePlanning { now_unix_ms: u64 },
     PlanningStoreDegraded(Option<String>),
+    GoalObserved(GoalObservation),
+    GoalCleared(ThreadId),
+    OpenGoalActions,
+    CloseGoalActions,
+    BeginGoalObjective,
+    SetGoalStatus(GoalStatus),
+    ClearGoal,
     OpenReview,
     OpenWorkspace,
     OpenBoard,
@@ -176,6 +184,13 @@ pub enum Effect {
         slot: u8,
         target: SourceRef,
     },
+    RefreshGoal(ThreadId),
+    SetGoal {
+        thread_id: ThreadId,
+        objective: Option<String>,
+        status: Option<GoalStatus>,
+    },
+    ClearGoal(ThreadId),
     ProbeGit {
         thread_id: ThreadId,
         cwd: String,
@@ -223,6 +238,8 @@ pub struct AppState {
     pub git_reviews: BTreeMap<String, GitReview>,
     pub planning_snapshot: PlanningSnapshot,
     pub work_cards: Vec<WorkCardProjection>,
+    pub goals: BTreeMap<String, GoalObservation>,
+    pub goal_actions_open: bool,
     pub planning_store_error: Option<String>,
     pub review_return_view: Option<View>,
     pub workspace_return_view: Option<View>,
@@ -267,6 +284,8 @@ impl AppState {
             git_reviews: BTreeMap::new(),
             planning_snapshot: PlanningSnapshot::default(),
             work_cards: vec![],
+            goals: BTreeMap::new(),
+            goal_actions_open: false,
             planning_store_error: None,
             review_return_view: None,
             workspace_return_view: None,
