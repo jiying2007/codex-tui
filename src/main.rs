@@ -3,6 +3,7 @@ use codex_tui::{
     app::{Action, AppState, Effect, InputMode, ViewKind, reduce},
     app_server::{self, ConversationEvent, RegistryHandle},
     backend::{BackendStatus, CodexBackend, FakeBackend},
+    conversation::InteractiveResolution,
     keymap::{Command, command_for_key},
     store::{FileStore, LocalStore},
     terminal::TerminalSession,
@@ -212,6 +213,12 @@ fn drain_registry(
             ConversationEvent::OlderLoaded(page) => {
                 reduce(app, Action::OlderConversationLoaded(page));
             }
+            ConversationEvent::InteractiveRequested(request) => {
+                reduce(app, Action::InteractiveRequested(request));
+            }
+            ConversationEvent::InteractiveResolved { request_id } => {
+                reduce(app, Action::InteractiveResolved { request_id });
+            }
             ConversationEvent::PromptSubmitted { thread_id, .. } => {
                 let effects = reduce(app, Action::PromptSubmitted { thread_id });
                 for effect in effects {
@@ -314,6 +321,22 @@ fn apply_effects(
                     );
                 }
             }
+            Effect::ResolveInteractive {
+                request_id,
+                resolution,
+            } => {
+                if let Some(registry) = registry
+                    && let Err(error) =
+                        registry.resolve_interactive(request_id.clone(), resolution)
+                {
+                    reduce(
+                        app,
+                        Action::BackendStatus(backend_error_status(format!(
+                            "resolve interactive request failed: {error}"
+                        ))),
+                    );
+                }
+            }
             Effect::InterruptTurn { thread_id, turn_id } => {
                 if let Some(registry) = registry
                     && let Err(error) = registry.interrupt_turn(thread_id.clone(), turn_id)
@@ -381,6 +404,10 @@ fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
         Command::TogglePin => Action::TogglePin,
         Command::EditAlias => Action::BeginAlias,
         Command::AcknowledgeAttention => Action::AcknowledgeAttention,
+        Command::ApprovePending => Action::ResolvePending(InteractiveResolution::Accept),
+        Command::DeclinePending => Action::ResolvePending(InteractiveResolution::Decline),
+        Command::CancelPending => Action::ResolvePending(InteractiveResolution::Cancel),
+        Command::AnswerPending => Action::BeginUserInput,
         Command::PageUp => Action::ScrollBy(-5),
         Command::PageDown => Action::ScrollBy(5),
         Command::CommandPalette
