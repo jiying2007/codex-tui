@@ -2065,8 +2065,7 @@ Deliver:
 - per-repo mutation lock;
 - OperationPlan/Receipt;
 - recovery/reconciliation;
-- notifications;
-- optional terminal drawer.
+- notifications.
 
 ## M6 — GitLab Self-Managed
 
@@ -2101,6 +2100,7 @@ Implement same ForgeProvider contract.
 
 ## M7 — Scale and polish
 
+- Terminal Drawer after GitLab integration;
 - optional FTS;
 - richer SavedView query language;
 - batch actions;
@@ -2142,6 +2142,34 @@ Any new feature must answer:
 If these answers are weak, defer the feature.
 
 ---
+
+# 44.1 Locked implementation choices
+
+The remaining implementation choices are frozen by ADR-011 and `docs/design/final-implementation-choices.md`.
+
+Current baseline:
+
+- config: TOML;
+- initial machine-written LocalStore state: versioned JSON;
+- default keymap: terminal-safe Vim-style navigation, Space for next attention, `a` for Quick Prompt, Ctrl+K for command palette;
+- syntax highlighting: two-face + syntect using the pure-Rust fancy-regex backend;
+- presentation/intra-line diff: similar; Git remains authoritative for repository diff semantics;
+- SQLite introduction: v0.4.0 / M4;
+- GitLab transport: glab/glab api until measured hard triggers justify native REST/GraphQL;
+- GitLab compatibility: runtime capability probing, not scattered compile-time version checks;
+- Terminal Drawer: v0.7.x / M7, after M6 GitLab integration;
+- interactive performance SLO: p95 <= 50 ms and p99 <= 100 ms, with separate render/startup/search budgets.
+
+Version mapping:
+
+- v0.1.x = M0 + M1;
+- v0.2.x = M2;
+- v0.3.x = M3;
+- v0.4.x = M4 + SQLite;
+- v0.5.x = M5;
+- v0.6.x = M6 GitLab;
+- v0.7.x = M7;
+- v1.0.0 after compatibility/performance hardening.
 
 # 45. Final success criteria
 
