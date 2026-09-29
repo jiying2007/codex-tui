@@ -200,6 +200,30 @@ impl OperationPlan {
         }
     }
 
+    pub fn adopt_worktree(
+        repo: LocalRepoIdentity,
+        cwd: String,
+        worktree_path: String,
+        planned_at_unix_ms: u64,
+    ) -> Self {
+        Self {
+            operation_id: new_operation_id(planned_at_unix_ms),
+            kind: OperationKind::AdoptWorktree,
+            repo,
+            cwd,
+            argv: vec![],
+            target_worktree: Some(worktree_path),
+            target_branch: None,
+            expected_side_effect: "existing worktree recorded as explicitly managed by codex-tui"
+                .into(),
+            preconditions: vec![OperationPrecondition {
+                key: "existing-git-worktree".into(),
+                expected: "true".into(),
+            }],
+            planned_at_unix_ms,
+        }
+    }
+
     pub fn delete_branch(
         repo: LocalRepoIdentity,
         cwd: String,
@@ -341,6 +365,26 @@ mod tests {
         let plan = OperationPlan::remove_worktree(repo, "/repo".into(), "/repo-wt".into(), 1);
         assert_eq!(plan.argv, vec!["worktree", "remove", "/repo-wt"]);
         assert!(plan.target_branch.is_none());
+    }
+
+    #[test]
+    fn adoption_plan_never_runs_a_git_mutation() {
+        let repo = LocalRepoIdentity {
+            git_common_dir: "/repo/.git".into(),
+            primary_root: "/repo".into(),
+        };
+        let plan = OperationPlan::adopt_worktree(
+            repo,
+            "/repo".into(),
+            "/repo-existing".into(),
+            1,
+        );
+        assert_eq!(plan.kind, OperationKind::AdoptWorktree);
+        assert!(plan.argv.is_empty());
+        assert_eq!(
+            plan.target_worktree.as_deref(),
+            Some("/repo-existing")
+        );
     }
 
     #[test]
