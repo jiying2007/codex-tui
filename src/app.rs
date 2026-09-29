@@ -13,6 +13,7 @@ pub enum View {
     Registry,
     Thread(ThreadId),
     Review(ThreadId),
+    Workspace(ThreadId),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -20,6 +21,7 @@ pub enum ViewKind {
     Registry,
     Thread,
     Review,
+    Workspace,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -40,6 +42,7 @@ pub enum Action {
     GitReviewLoaded(GitReview),
     ReviewError { thread_id: ThreadId, error: String },
     OpenReview,
+    OpenWorkspace,
     MoveReview(i32),
     ScrollReviewBy(i16),
     ToggleReviewWordDiff,
@@ -123,6 +126,7 @@ pub struct AppState {
     pub git_contexts: BTreeMap<String, GitContext>,
     pub git_reviews: BTreeMap<String, GitReview>,
     pub review_return_view: Option<View>,
+    pub workspace_return_view: Option<View>,
     pub review_selected: usize,
     pub review_scroll: u16,
     pub review_word_diff: bool,
@@ -152,6 +156,7 @@ impl AppState {
             git_contexts: BTreeMap::new(),
             git_reviews: BTreeMap::new(),
             review_return_view: None,
+            workspace_return_view: None,
             review_selected: 0,
             review_scroll: 0,
             review_word_diff: false,
@@ -175,6 +180,7 @@ impl AppState {
             View::Registry => ViewKind::Registry,
             View::Thread(_) => ViewKind::Thread,
             View::Review(_) => ViewKind::Review,
+            View::Workspace(_) => ViewKind::Workspace,
         }
     }
 
@@ -190,7 +196,7 @@ impl AppState {
     pub fn current_thread_id(&self) -> Option<&ThreadId> {
         match &self.view {
             View::Registry => None,
-            View::Thread(id) | View::Review(id) => Some(id),
+            View::Thread(id) | View::Review(id) | View::Workspace(id) => Some(id),
         }
     }
 
@@ -435,7 +441,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::OpenReview => {
             let thread_id = match &state.view {
                 View::Registry => state.selected_thread_id(),
-                View::Thread(id) | View::Review(id) => Some(id.clone()),
+                View::Thread(id) | View::Review(id) | View::Workspace(id) => Some(id.clone()),
             };
             let Some(thread_id) = thread_id else {
                 return vec![];
@@ -460,6 +466,40 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             );
             state.view = View::Review(thread_id.clone());
             return vec![Effect::LoadGitReview { thread_id, cwd }];
+        }
+        Action::OpenWorkspace => {
+            let thread_id = match &state.view {
+                View::Registry => state.selected_thread_id(),
+                View::Thread(id) | View::Review(id) | View::Workspace(id) => Some(id.clone()),
+            };
+            let Some(thread_id) = thread_id else {
+                return vec![];
+            };
+            if !matches!(state.view, View::Workspace(_)) {
+                state.workspace_return_view = Some(state.view.clone());
+            }
+            state.view = View::Workspace(thread_id.clone());
+
+            let Some(thread) = state.threads.iter().find(|thread| thread.id == thread_id) else {
+                return vec![];
+            };
+            if thread.metadata.cwd.trim().is_empty() {
+                return vec![];
+            }
+            let needs_probe = state
+                .git_contexts
+                .get(&thread_id.0)
+                .is_none_or(|context| context.cwd != thread.metadata.cwd);
+            if needs_probe {
+                state.git_contexts.insert(
+                    thread_id.0.clone(),
+                    GitContext::pending(thread_id.clone(), thread.metadata.cwd.clone()),
+                );
+                return vec![Effect::ProbeGit {
+                    thread_id,
+                    cwd: thread.metadata.cwd.clone(),
+                }];
+            }
         }
         Action::MoveReview(delta) => {
             let Some(review) = state.current_review() else {
@@ -633,6 +673,10 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             if matches!(state.view, View::Review(_)) {
                 state.view = state.review_return_view.take().unwrap_or(View::Registry);
                 state.review_scroll = 0;
+                return vec![];
+            }
+            if matches!(state.view, View::Workspace(_)) {
+                state.view = state.workspace_return_view.take().unwrap_or(View::Registry);
                 return vec![];
             }
             let thread_id = state.current_thread_id().cloned();
@@ -1254,6 +1298,23 @@ mod tests {
         );
         assert_eq!(reduce(&mut app, Action::ScrollBy(-5)).len(), 1);
         assert!(reduce(&mut app, Action::ScrollBy(-5)).is_empty());
+    }
+
+    #[test]
+    fn workspace_is_read_only_and_returns_to_originating_view() {
+        let mut app = app();
+        app.threads[0].metadata.cwd = "/repo".into();
+        let effects = reduce(&mut app, Action::OpenWorkspace);
+        assert!(matches!(app.view, View::Workspace(_)));
+        assert_eq!(
+            effects,
+            vec![Effect::ProbeGit {
+                thread_id: ThreadId::new("thread-impl"),
+                cwd: "/repo".into(),
+            }]
+        );
+        reduce(&mut app, Action::Back);
+        assert_eq!(app.view, View::Registry);
     }
 
     #[test]
