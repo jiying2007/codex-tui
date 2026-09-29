@@ -89,6 +89,32 @@ impl RuntimeStore {
     fn error(&self) -> Option<String> {
         self.error.clone()
     }
+
+    fn create_scratch(
+        &mut self,
+        title: String,
+        workspace: Option<String>,
+    ) -> Result<PlanningSnapshot, String> {
+        if !self.writable {
+            return Err(self
+                .error
+                .clone()
+                .unwrap_or_else(|| "SQLite planning store is read-only".into()));
+        }
+        let result = self
+            .sqlite
+            .create_scratch(&title, None, workspace.as_deref(), None)
+            .and_then(|_| self.sqlite.load_planning_snapshot());
+        match result {
+            Ok(snapshot) => Ok(snapshot),
+            Err(error) => {
+                let message = format!("SQLite ScratchWork write failed: {error:#}");
+                self.writable = false;
+                self.error = Some(message.clone());
+                Err(message)
+            }
+        }
+    }
 }
 
 #[tokio::main]
@@ -457,6 +483,23 @@ fn apply_effects(
                     reduce(app, Action::PlanningStoreDegraded(Some(error)));
                 }
             }
+            Effect::CreateScratch { title, workspace } => {
+                match store.create_scratch(title, workspace) {
+                    Ok(snapshot) => {
+                        reduce(app, Action::PlanningSnapshotLoaded(snapshot));
+                        reduce(
+                            app,
+                            Action::ReconcilePlanning {
+                                now_unix_ms: now_unix_ms(),
+                            },
+                        );
+                        reduce(app, Action::PlanningStoreDegraded(None));
+                    }
+                    Err(error) => {
+                        reduce(app, Action::PlanningStoreDegraded(Some(error)));
+                    }
+                }
+            }
             Effect::ProbeGit { thread_id, cwd } => {
                 if let Err(error) = git.probe(thread_id.clone(), cwd.clone()) {
                     let mut context = codex_tui::git::GitContext::pending(thread_id, cwd);
@@ -691,26 +734,31 @@ fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
         Command::QuitOrInterrupt => match app.view_kind() {
             ViewKind::Registry => Action::Quit,
             ViewKind::Thread => Action::InterruptCurrent,
-            ViewKind::Review | ViewKind::Workspace => Action::Back,
+            ViewKind::Review
+            | ViewKind::Workspace
+            | ViewKind::Board
+            | ViewKind::Scratch => Action::Back,
         },
         Command::Back => Action::Back,
         Command::Help => Action::ToggleHelp,
         Command::Search => Action::BeginSearch,
-        Command::Next => {
-            if app.view_kind() == ViewKind::Review {
-                Action::MoveReview(1)
+        Command::Next => match app.view_kind() {
+            ViewKind::Review => Action::MoveReview(1),
+            ViewKind::Board => Action::MovePlanningSelection(1),
+            _ => Action::MoveSelection(1),
+        },
+        Command::Previous => match app.view_kind() {
+            ViewKind::Review => Action::MoveReview(-1),
+            ViewKind::Board => Action::MovePlanningSelection(-1),
+            _ => Action::MoveSelection(-1),
+        }
+        Command::Open => {
+            if app.view_kind() == ViewKind::Board {
+                Action::OpenPlanningSelected
             } else {
-                Action::MoveSelection(1)
+                Action::OpenSelected
             }
         }
-        Command::Previous => {
-            if app.view_kind() == ViewKind::Review {
-                Action::MoveReview(-1)
-            } else {
-                Action::MoveSelection(-1)
-            }
-        }
-        Command::Open => Action::OpenSelected,
         Command::NextAttention => Action::NextAttention,
         Command::QuickPrompt => Action::QuickPrompt,
         Command::MarkUnread => Action::MarkUnread,
@@ -721,8 +769,13 @@ fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
         Command::DeclinePending => Action::ResolvePending(InteractiveResolution::Decline),
         Command::CancelPending => Action::ResolvePending(InteractiveResolution::Cancel),
         Command::AnswerPending => Action::BeginUserInput,
+        Command::Board => Action::OpenBoard,
+        Command::BoardLeft => Action::MoveBoardColumn(-1),
+        Command::BoardRight => Action::MoveBoardColumn(1),
+        Command::CycleSavedView => Action::CycleSavedView(1),
         Command::Review => Action::OpenReview,
         Command::Workspace => Action::OpenWorkspace,
+        Command::New => Action::BeginScratch,
         Command::PageUp => {
             if app.view_kind() == ViewKind::Review {
                 Action::ScrollReviewBy(-10)
@@ -741,7 +794,6 @@ fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
         Command::ExternalEditor => Action::OpenReviewExternalEditor,
         Command::CommandPalette
         | Command::ContextActions
-        | Command::Board
         | Command::Snooze
         | Command::New
         | Command::Goal
