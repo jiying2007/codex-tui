@@ -231,19 +231,56 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
         chunks[0],
     );
 
+    let ui = app.thread_ui.get(thread_id).cloned().unwrap_or_default();
+    let conversation_lines = match app.conversations.get(thread_id) {
+        Some(conversation) if conversation.loading => {
+            vec![Line::from("Loading recent Codex history…")]
+        }
+        Some(conversation) if conversation.error.is_some() => {
+            vec![Line::from(format!(
+                "Conversation unavailable: {}",
+                conversation.error.as_deref().unwrap_or("unknown error")
+            ))]
+        }
+        Some(conversation) if conversation.items.is_empty() => {
+            vec![Line::from("No visible items in the loaded history page.")]
+        }
+        Some(conversation) => conversation
+            .items
+            .iter()
+            .map(|item| {
+                let status = item
+                    .status
+                    .as_deref()
+                    .map(|value| format!(" [{value}]"))
+                    .unwrap_or_default();
+                Line::from(format!(
+                    "{:>5}{status} {}",
+                    item.kind.label(),
+                    item.text.replace('\n', " ")
+                ))
+            })
+            .collect(),
+        None => vec![Line::from("Conversation has not been loaded yet.")],
+    };
+    let page_hint = app
+        .conversations
+        .get(thread_id)
+        .is_some_and(|conversation| {
+            conversation.next_turn_cursor.is_some() || conversation.next_item_cursor.is_some()
+        });
     frame.render_widget(
-        Paragraph::new(vec![
-            Line::from("M1 registry mode intentionally does not hydrate full transcript history."),
-            Line::from(
-                "Exact Codex thread id remains canonical; conversation control arrives in M2.",
-            ),
-        ])
-        .block(Block::bordered().title(" Conversation "))
-        .wrap(Wrap { trim: false }),
+        Paragraph::new(conversation_lines)
+            .block(Block::bordered().title(if page_hint {
+                " Conversation · older history available "
+            } else {
+                " Conversation "
+            }))
+            .wrap(Wrap { trim: false })
+            .scroll((ui.scroll, 0)),
         chunks[1],
     );
 
-    let ui = app.thread_ui.get(thread_id).cloned().unwrap_or_default();
     let composer = Paragraph::new(format!(
         "draft: {}\nscroll={} follow={}",
         if ui.draft.is_empty() {
@@ -257,7 +294,7 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
     .block(Block::bordered().title(" Local thread UI state "));
     frame.render_widget(composer, chunks[2]);
     frame.render_widget(
-        Paragraph::new("Esc back · r review · w workspace · g goal"),
+        Paragraph::new("Esc back · PageUp/PageDown history · a composer (M2b) · Ctrl+C interrupt"),
         chunks[3],
     );
 }
