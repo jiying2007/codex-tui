@@ -5,10 +5,11 @@ use crate::conversation::{
 };
 use crate::domain::{AttentionReason, RuntimeStatus, ThreadId, ThreadSummary, ThreadUiState};
 use crate::git::{GitContext, GitReview};
+use crate::goal::{GoalObservation, GoalStatus};
 use crate::planning::{
     PlanningSnapshot, ReconcileInput, SavedView, SavedViewLayout, SourceKind, SourceRef,
     WorkCardProjection, WorkflowStage, apply_saved_view, builtin_saved_views,
-    reconcile_scratch_card_with_local, reconcile_thread_card,
+    reconcile_scratch_card_with_local, reconcile_thread_card_with_goal,
 };
 use crate::store::LocalStateV1;
 use std::collections::{BTreeMap, BTreeSet};
