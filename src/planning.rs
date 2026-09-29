@@ -107,7 +107,6 @@ pub struct WorkCardOverlay {
     pub snooze_until_unix_ms: Option<u64>,
 }
 
-
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkCardRecord {
     pub local_id: String,
