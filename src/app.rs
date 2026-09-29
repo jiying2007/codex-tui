@@ -6,6 +6,10 @@ use crate::conversation::{
 use crate::domain::{AttentionReason, RuntimeStatus, ThreadId, ThreadSummary, ThreadUiState};
 use crate::git::{GitContext, GitReview};
 use crate::goal::{GoalObservation, GoalStatus};
+use crate::operation::{
+    ManagedWorktreeRecord, MutationScope, OperationPlan, OperationReceipt, OperationState,
+    mutation_scope_for_thread, now_unix_ms,
+};
 use crate::planning::{
     PlanningSnapshot, ReconcileInput, SavedView, SavedViewLayout, SourceKind, SourceRef,
     WorkCardProjection, WorkflowStage, apply_saved_view, builtin_saved_views,
@@ -20,6 +24,7 @@ pub enum View {
     Thread(ThreadId),
     Review(ThreadId),
     Workspace(ThreadId),
+    ManagedWorktrees(ThreadId),
     Board,
     Scratch(String),
 }
@@ -30,6 +35,7 @@ pub enum ViewKind {
     Thread,
     Review,
     Workspace,
+    ManagedWorktrees,
     Board,
     Scratch,
 }
@@ -46,6 +52,10 @@ pub enum InputMode {
     Note,
     SavedViewName,
     GoalObjective,
+    WorktreeCreateBranch,
+    WorktreeCreatePath,
+    WorktreeCreateStartPoint,
+    WorktreeDeleteBranch,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -92,6 +102,17 @@ pub enum Action {
     GoalCleared(ThreadId),
     OpenGoalActions,
     CloseGoalActions,
+    OpenManagedWorktrees,
+    ManagedWorktreesLoaded(Vec<ManagedWorktreeRecord>),
+    MutationReceipt(Box<OperationReceipt>),
+    MutationNotice(String),
+    MoveManagedWorktree(i32),
+    BeginCreateWorktree,
+    BeginAdoptCurrentWorktree,
+    BeginRemoveManagedWorktree,
+    BeginDeleteBranch,
+    ConfirmPendingOperation,
+    CancelPendingOperation,
     BeginGoalObjective,
     SetGoalStatus(GoalStatus),
     ClearGoal,
@@ -191,6 +212,8 @@ pub enum Effect {
         status: Option<GoalStatus>,
     },
     ClearGoal(ThreadId),
+    RefreshManagedWorktrees,
+    ExecuteOperation(Box<OperationPlan>),
     ProbeGit {
         thread_id: ThreadId,
         cwd: String,
@@ -241,6 +264,14 @@ pub struct AppState {
     pub goals: BTreeMap<String, GoalObservation>,
     pub goal_checked: BTreeSet<String>,
     pub goal_actions_open: bool,
+    pub managed_worktrees: Vec<ManagedWorktreeRecord>,
+    pub managed_selected: usize,
+    pub managed_return_view: Option<View>,
+    pub pending_operation: Option<OperationPlan>,
+    pub recent_operations: Vec<OperationReceipt>,
+    pub mutation_notice: Option<String>,
+    pub create_worktree_branch: Option<String>,
+    pub create_worktree_path: Option<String>,
     pub planning_store_error: Option<String>,
     pub review_return_view: Option<View>,
     pub workspace_return_view: Option<View>,
@@ -288,6 +319,14 @@ impl AppState {
             goals: BTreeMap::new(),
             goal_checked: BTreeSet::new(),
             goal_actions_open: false,
+            managed_worktrees: vec![],
+            managed_selected: 0,
+            managed_return_view: None,
+            pending_operation: None,
+            recent_operations: vec![],
+            mutation_notice: None,
+            create_worktree_branch: None,
+            create_worktree_path: None,
             planning_store_error: None,
             review_return_view: None,
             workspace_return_view: None,
@@ -326,6 +365,7 @@ impl AppState {
             View::Thread(_) => ViewKind::Thread,
             View::Review(_) => ViewKind::Review,
             View::Workspace(_) => ViewKind::Workspace,
+            View::ManagedWorktrees(_) => ViewKind::ManagedWorktrees,
             View::Board => ViewKind::Board,
             View::Scratch(_) => ViewKind::Scratch,
         }
@@ -343,7 +383,10 @@ impl AppState {
     pub fn current_thread_id(&self) -> Option<&ThreadId> {
         match &self.view {
             View::Registry => None,
-            View::Thread(id) | View::Review(id) | View::Workspace(id) => Some(id),
+            View::Thread(id)
+            | View::Review(id)
+            | View::Workspace(id)
+            | View::ManagedWorktrees(id) => Some(id),
             View::Board | View::Scratch(_) => None,
         }
     }
@@ -365,6 +408,44 @@ impl AppState {
     pub fn current_goal(&self) -> Option<&GoalObservation> {
         let thread_id = self.current_thread_id()?;
         self.goals.get(&thread_id.0)
+    }
+
+    pub fn visible_managed_worktrees(&self) -> Vec<&ManagedWorktreeRecord> {
+        let repo = self
+            .current_thread_id()
+            .and_then(|thread_id| self.git_context(thread_id))
+            .and_then(|context| context.repo.as_ref());
+        self.managed_worktrees
+            .iter()
+            .filter(|record| repo.is_none_or(|repo| &record.repo == repo))
+            .collect()
+    }
+
+    pub fn selected_managed_worktree(&self) -> Option<&ManagedWorktreeRecord> {
+        self.visible_managed_worktrees()
+            .get(self.managed_selected)
+            .copied()
+    }
+
+    pub fn active_mutation_scopes(&self) -> Vec<MutationScope> {
+        self.threads
+            .iter()
+            .filter(|thread| {
+                matches!(
+                    thread.runtime,
+                    RuntimeStatus::Working | RuntimeStatus::WaitingHuman
+                ) || self.goals.get(&thread.id.0).is_some_and(|goal| {
+                    matches!(
+                        goal.status,
+                        GoalStatus::Active
+                            | GoalStatus::Blocked
+                            | GoalStatus::UsageLimited
+                            | GoalStatus::BudgetLimited
+                    )
+                })
+            })
+            .map(|thread| mutation_scope_for_thread(thread, self.git_context(&thread.id)))
+            .collect()
     }
 
     pub fn current_review(&self) -> Option<&GitReview> {
@@ -416,9 +497,10 @@ impl AppState {
             View::Board => self
                 .selected_planning_card()
                 .map(|card| card.anchor.clone()),
-            View::Thread(id) | View::Review(id) | View::Workspace(id) => {
-                Some(SourceRef::codex_thread(id))
-            }
+            View::Thread(id)
+            | View::Review(id)
+            | View::Workspace(id)
+            | View::ManagedWorktrees(id) => Some(SourceRef::codex_thread(id)),
             View::Scratch(id) => Some(SourceRef {
                 kind: SourceKind::ScratchWork,
                 value: id.clone(),
@@ -684,6 +766,162 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::PlanningStoreDegraded(error) => {
             state.planning_store_error = error;
         }
+        Action::OpenManagedWorktrees => {
+            let Some(thread_id) = state.current_thread_id().cloned() else {
+                return vec![];
+            };
+            if state
+                .git_context(&thread_id)
+                .and_then(|context| context.repo.as_ref())
+                .is_none()
+            {
+                state.mutation_notice = Some("current thread is not in a Git repository".into());
+                return vec![];
+            }
+            if !matches!(state.view, View::ManagedWorktrees(_)) {
+                state.managed_return_view = Some(state.view.clone());
+            }
+            state.view = View::ManagedWorktrees(thread_id);
+            state.managed_selected = 0;
+            state.pending_operation = None;
+            state.mutation_notice = None;
+            return vec![Effect::RefreshManagedWorktrees];
+        }
+        Action::ManagedWorktreesLoaded(records) => {
+            state.managed_worktrees = records;
+            state.managed_selected = state
+                .managed_selected
+                .min(state.visible_managed_worktrees().len().saturating_sub(1));
+        }
+        Action::MutationReceipt(receipt) => {
+            let receipt = *receipt;
+            if state
+                .pending_operation
+                .as_ref()
+                .is_some_and(|plan| plan.operation_id == receipt.operation_id)
+            {
+                state.pending_operation = None;
+            }
+            state.mutation_notice = Some(format!(
+                "{} · {}",
+                receipt.plan.kind.label(),
+                match receipt.state {
+                    OperationState::Planned => "planned",
+                    OperationState::Executing => "executing",
+                    OperationState::Succeeded => "succeeded",
+                    OperationState::Failed => "failed",
+                    OperationState::OutcomeUnknown => "outcome unknown",
+                }
+            ));
+            let repo = receipt.plan.repo.clone();
+            state
+                .git_contexts
+                .retain(|_, context| context.repo.as_ref() != Some(&repo));
+            state
+                .recent_operations
+                .retain(|item| item.operation_id != receipt.operation_id);
+            state.recent_operations.insert(0, receipt);
+            state.recent_operations.truncate(20);
+        }
+        Action::MutationNotice(notice) => {
+            state.mutation_notice = Some(notice);
+        }
+        Action::MoveManagedWorktree(delta) => {
+            let len = state.visible_managed_worktrees().len();
+            if len == 0 {
+                state.managed_selected = 0;
+            } else {
+                state.managed_selected =
+                    (state.managed_selected as i32 + delta).rem_euclid(len as i32) as usize;
+            }
+        }
+        Action::BeginCreateWorktree => {
+            let Some(thread_id) = state.current_thread_id().cloned() else {
+                return vec![];
+            };
+            let Some(context) = state.git_context(&thread_id) else {
+                state.mutation_notice = Some("Git context is unavailable".into());
+                return vec![];
+            };
+            if context.repo.is_none() {
+                state.mutation_notice = Some("current cwd is not a Git repository".into());
+                return vec![];
+            }
+            state.pending_operation = None;
+            state.create_worktree_branch = None;
+            state.create_worktree_path = None;
+            state.input_buffer.clear();
+            state.input_mode = InputMode::WorktreeCreateBranch;
+        }
+        Action::BeginAdoptCurrentWorktree => {
+            let Some(thread_id) = state.current_thread_id().cloned() else {
+                return vec![];
+            };
+            let Some(context) = state.git_context(&thread_id) else {
+                return vec![];
+            };
+            let (Some(repo), Some(worktree)) = (&context.repo, &context.worktree) else {
+                state.mutation_notice = Some("current cwd is not a Git worktree".into());
+                return vec![];
+            };
+            if state.managed_worktrees.iter().any(|record| {
+                record.repo == *repo && record.canonical_path == worktree.canonical_path
+            }) {
+                state.mutation_notice = Some("current worktree is already managed/adopted".into());
+                return vec![];
+            }
+            state.pending_operation = Some(OperationPlan::adopt_worktree(
+                repo.clone(),
+                repo.primary_root.clone(),
+                worktree.canonical_path.clone(),
+                now_unix_ms(),
+            ));
+            state.mutation_notice = None;
+        }
+        Action::BeginRemoveManagedWorktree => {
+            let Some(record) = state.selected_managed_worktree().cloned() else {
+                return vec![];
+            };
+            state.pending_operation = Some(OperationPlan::remove_worktree(
+                record.repo.clone(),
+                record.repo.primary_root.clone(),
+                record.canonical_path,
+                now_unix_ms(),
+            ));
+            state.mutation_notice = None;
+        }
+        Action::BeginDeleteBranch => {
+            let Some(thread_id) = state.current_thread_id().cloned() else {
+                return vec![];
+            };
+            let Some(context) = state.git_context(&thread_id) else {
+                return vec![];
+            };
+            if context.repo.is_none() {
+                return vec![];
+            }
+            state.input_buffer = state
+                .selected_managed_worktree()
+                .and_then(|record| record.branch.clone())
+                .or_else(|| context.branch.clone())
+                .unwrap_or_default();
+            state.input_mode = InputMode::WorktreeDeleteBranch;
+        }
+        Action::ConfirmPendingOperation => {
+            if state.planning_store_error.is_some() {
+                state.mutation_notice =
+                    Some("local store is degraded; mutation receipts cannot be persisted".into());
+                return vec![];
+            }
+            let Some(plan) = state.pending_operation.take() else {
+                return vec![];
+            };
+            return vec![Effect::ExecuteOperation(Box::new(plan))];
+        }
+        Action::CancelPendingOperation => {
+            state.pending_operation = None;
+            state.mutation_notice = Some("operation cancelled before execution".into());
+        }
         Action::GoalObserved(goal) => {
             state.goal_checked.insert(goal.thread_id.0.clone());
             state.goals.insert(goal.thread_id.0.clone(), goal);
@@ -822,7 +1060,10 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 View::Board => state
                     .selected_planning_card()
                     .and_then(|card| card.workspace.clone()),
-                View::Thread(id) | View::Review(id) | View::Workspace(id) => state
+                View::Thread(id)
+                | View::Review(id)
+                | View::Workspace(id)
+                | View::ManagedWorktrees(id) => state
                     .threads
                     .iter()
                     .find(|thread| thread.id == *id)
@@ -1003,7 +1244,10 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::OpenReview => {
             let thread_id = match &state.view {
                 View::Registry => state.selected_thread_id(),
-                View::Thread(id) | View::Review(id) | View::Workspace(id) => Some(id.clone()),
+                View::Thread(id)
+                | View::Review(id)
+                | View::Workspace(id)
+                | View::ManagedWorktrees(id) => Some(id.clone()),
                 View::Board => state.selected_planning_card().and_then(|card| {
                     (card.anchor.kind == SourceKind::CodexThread)
                         .then(|| ThreadId::new(card.anchor.value.clone()))
@@ -1037,7 +1281,10 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::OpenWorkspace => {
             let thread_id = match &state.view {
                 View::Registry => state.selected_thread_id(),
-                View::Thread(id) | View::Review(id) | View::Workspace(id) => Some(id.clone()),
+                View::Thread(id)
+                | View::Review(id)
+                | View::Workspace(id)
+                | View::ManagedWorktrees(id) => Some(id.clone()),
                 View::Board => state.selected_planning_card().and_then(|card| {
                     (card.anchor.kind == SourceKind::CodexThread)
                         .then(|| ThreadId::new(card.anchor.value.clone()))
@@ -1254,6 +1501,15 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
         }
         Action::Back => {
+            if state.pending_operation.is_some() {
+                state.pending_operation = None;
+                state.mutation_notice = Some("operation cancelled before execution".into());
+                return vec![];
+            }
+            if matches!(state.view, View::ManagedWorktrees(_)) {
+                state.view = state.managed_return_view.take().unwrap_or(View::Registry);
+                return vec![];
+            }
             if state.context_open {
                 state.context_open = false;
                 state.context_selected = 0;
@@ -1415,7 +1671,11 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::Snooze
             | InputMode::Note
             | InputMode::SavedViewName
-            | InputMode::GoalObjective => {
+            | InputMode::GoalObjective
+            | InputMode::WorktreeCreateBranch
+            | InputMode::WorktreeCreatePath
+            | InputMode::WorktreeCreateStartPoint
+            | InputMode::WorktreeDeleteBranch => {
                 state.input_buffer.push(character);
                 if state.input_mode == InputMode::Search {
                     state.filter.clone_from(&state.input_buffer);
@@ -1438,7 +1698,11 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::Snooze
             | InputMode::Note
             | InputMode::SavedViewName
-            | InputMode::GoalObjective => {
+            | InputMode::GoalObjective
+            | InputMode::WorktreeCreateBranch
+            | InputMode::WorktreeCreatePath
+            | InputMode::WorktreeCreateStartPoint
+            | InputMode::WorktreeDeleteBranch => {
                 state.input_buffer.pop();
                 if state.input_mode == InputMode::Search {
                     state.filter.clone_from(&state.input_buffer);
@@ -1448,6 +1712,87 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         },
         Action::CommitInput => {
             let mode = state.input_mode;
+            if mode == InputMode::WorktreeCreateBranch {
+                let branch = state.input_buffer.trim().to_string();
+                if branch.is_empty() {
+                    return vec![];
+                }
+                state.create_worktree_branch = Some(branch);
+                state.input_buffer.clear();
+                state.input_mode = InputMode::WorktreeCreatePath;
+                return vec![];
+            }
+            if mode == InputMode::WorktreeCreatePath {
+                let path = state.input_buffer.trim().to_string();
+                if path.is_empty() {
+                    return vec![];
+                }
+                if !std::path::Path::new(&path).is_absolute() {
+                    state.mutation_notice =
+                        Some("worktree path must be absolute before a plan can be created".into());
+                    return vec![];
+                }
+                state.create_worktree_path = Some(path);
+                state.input_buffer = "HEAD".into();
+                state.input_mode = InputMode::WorktreeCreateStartPoint;
+                return vec![];
+            }
+            if mode == InputMode::WorktreeCreateStartPoint {
+                let start_point = state.input_buffer.trim().to_string();
+                if start_point.is_empty() {
+                    return vec![];
+                }
+                let Some(thread_id) = state.current_thread_id().cloned() else {
+                    return vec![];
+                };
+                let Some(context) = state.git_context(&thread_id) else {
+                    return vec![];
+                };
+                let Some(repo) = context.repo.clone() else {
+                    return vec![];
+                };
+                let Some(branch) = state.create_worktree_branch.take() else {
+                    return vec![];
+                };
+                let Some(path) = state.create_worktree_path.take() else {
+                    return vec![];
+                };
+                state.pending_operation = Some(OperationPlan::create_worktree(
+                    repo.clone(),
+                    repo.primary_root,
+                    path,
+                    branch,
+                    start_point,
+                    now_unix_ms(),
+                ));
+                state.input_mode = InputMode::Normal;
+                state.input_buffer.clear();
+                return vec![];
+            }
+            if mode == InputMode::WorktreeDeleteBranch {
+                let branch = state.input_buffer.trim().to_string();
+                if branch.is_empty() {
+                    return vec![];
+                }
+                let Some(thread_id) = state.current_thread_id().cloned() else {
+                    return vec![];
+                };
+                let Some(repo) = state
+                    .git_context(&thread_id)
+                    .and_then(|context| context.repo.clone())
+                else {
+                    return vec![];
+                };
+                state.pending_operation = Some(OperationPlan::delete_branch(
+                    repo.clone(),
+                    repo.primary_root,
+                    branch,
+                    now_unix_ms(),
+                ));
+                state.input_mode = InputMode::Normal;
+                state.input_buffer.clear();
+                return vec![];
+            }
             if mode == InputMode::GoalObjective {
                 let Some(thread_id) = state.current_thread_id().cloned() else {
                     state.input_mode = InputMode::Normal;
@@ -1628,6 +1973,19 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.input_original.clear();
         }
         Action::CancelInput => {
+            if matches!(
+                state.input_mode,
+                InputMode::WorktreeCreateBranch
+                    | InputMode::WorktreeCreatePath
+                    | InputMode::WorktreeCreateStartPoint
+                    | InputMode::WorktreeDeleteBranch
+            ) {
+                state.create_worktree_branch = None;
+                state.create_worktree_path = None;
+                state.input_mode = InputMode::Normal;
+                state.input_buffer.clear();
+                return vec![];
+            }
             if state.input_mode == InputMode::GoalObjective {
                 state.input_mode = InputMode::Normal;
                 state.input_buffer.clear();
@@ -1981,6 +2339,106 @@ mod tests {
         reduce(&mut app, Action::ReplaceThreads(reordered));
 
         assert_eq!(app.selected_thread_id(), Some(selected));
+    }
+
+    #[test]
+    fn managed_worktree_plan_requires_explicit_confirmation_before_execution() {
+        let mut app = app();
+        app.threads[0].metadata.cwd = "/repo".into();
+        let repo = crate::domain::LocalRepoIdentity {
+            git_common_dir: "/repo/.git".into(),
+            primary_root: "/repo".into(),
+        };
+        app.git_contexts.insert(
+            "thread-impl".into(),
+            GitContext {
+                thread_id: ThreadId::new("thread-impl"),
+                cwd: "/repo".into(),
+                is_repository: true,
+                repo: Some(repo.clone()),
+                worktree: Some(crate::domain::WorktreeIdentity {
+                    repo,
+                    canonical_path: "/repo".into(),
+                    branch: Some("main".into()),
+                    managed_by_codex_tui: false,
+                }),
+                head: Some("deadbeef".into()),
+                branch: Some("main".into()),
+                upstream: None,
+                ahead: 0,
+                behind: 0,
+                dirty: false,
+                changes: vec![],
+                observed_at_unix_ms: 1,
+                error: None,
+            },
+        );
+        reduce(&mut app, Action::OpenSelected);
+        let effects = reduce(&mut app, Action::OpenManagedWorktrees);
+        assert_eq!(effects, vec![Effect::RefreshManagedWorktrees]);
+
+        reduce(&mut app, Action::BeginCreateWorktree);
+        for ch in "feature".chars() {
+            reduce(&mut app, Action::InputChar(ch));
+        }
+        assert!(reduce(&mut app, Action::CommitInput).is_empty());
+        let temp = tempfile::tempdir().expect("tempdir");
+        let target = temp
+            .path()
+            .join("feature-wt")
+            .to_string_lossy()
+            .into_owned();
+        for ch in target.chars() {
+            reduce(&mut app, Action::InputChar(ch));
+        }
+        assert!(reduce(&mut app, Action::CommitInput).is_empty());
+        reduce(&mut app, Action::InputBackspace);
+        reduce(&mut app, Action::InputBackspace);
+        reduce(&mut app, Action::InputBackspace);
+        reduce(&mut app, Action::InputBackspace);
+        for ch in "HEAD".chars() {
+            reduce(&mut app, Action::InputChar(ch));
+        }
+        assert!(reduce(&mut app, Action::CommitInput).is_empty());
+        assert!(app.pending_operation.is_some());
+
+        let effects = reduce(&mut app, Action::ConfirmPendingOperation);
+        assert!(matches!(effects.as_slice(), [Effect::ExecuteOperation(_)]));
+        assert!(app.pending_operation.is_none());
+    }
+
+    #[test]
+    fn worktree_remove_and_branch_delete_are_distinct_plans() {
+        let mut app = app();
+        app.view = View::ManagedWorktrees(ThreadId::new("thread-impl"));
+        let repo = crate::domain::LocalRepoIdentity {
+            git_common_dir: "/repo/.git".into(),
+            primary_root: "/repo".into(),
+        };
+        app.managed_worktrees.push(ManagedWorktreeRecord {
+            repo: repo.clone(),
+            canonical_path: "/repo-feature".into(),
+            branch: Some("feature".into()),
+            created_by_operation_id: "op-create".into(),
+            adopted: false,
+            created_at_unix_ms: 1,
+            last_verified_at_unix_ms: 1,
+        });
+        reduce(&mut app, Action::BeginRemoveManagedWorktree);
+        let remove = app.pending_operation.clone().expect("remove");
+        assert_eq!(remove.kind, crate::operation::OperationKind::RemoveWorktree);
+        assert!(remove.target_branch.is_none());
+
+        app.git_contexts.insert(
+            "thread-impl".into(),
+            GitContext::pending(ThreadId::new("thread-impl"), "/repo"),
+        );
+        if let Some(context) = app.git_contexts.get_mut("thread-impl") {
+            context.repo = Some(repo);
+            context.branch = Some("feature".into());
+        }
+        reduce(&mut app, Action::BeginDeleteBranch);
+        assert_eq!(app.input_mode, InputMode::WorktreeDeleteBranch);
     }
 
     #[test]

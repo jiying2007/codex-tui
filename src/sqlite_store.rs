@@ -1,3 +1,4 @@
+use crate::operation::{ManagedWorktreeRecord, OperationPlan, OperationReceipt, OperationState};
 use crate::planning::{
     Bookmark, HotSlot, LocalNote, PlanningSnapshot, SavedView, ScratchState, ScratchWork,
     SourceKind, SourceRef, WorkCardLink, WorkCardOverlay, WorkCardRecord,
@@ -12,7 +13,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const DB_SCHEMA_VERSION: i64 = 1;
+const DB_SCHEMA_VERSION: i64 = 2;
 const OPERATOR_STATE_KEY: &str = "operator-state-v1";
 const LEGACY_IMPORT_KEY: &str = "legacy-state-v1-imported";
 
@@ -393,6 +394,179 @@ impl SqliteStore {
         Ok(())
     }
 
+    pub fn upsert_managed_worktree(&self, record: &ManagedWorktreeRecord) -> Result<()> {
+        let conn = self.open_ready()?;
+        conn.execute(
+            "INSERT INTO managed_worktrees (
+                repo_common_dir, repo_primary_root, canonical_path, branch,
+                created_by_operation_id, adopted, created_at_unix_ms, last_verified_at_unix_ms
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(repo_common_dir, canonical_path) DO UPDATE SET
+                repo_primary_root=excluded.repo_primary_root,
+                branch=excluded.branch,
+                created_by_operation_id=excluded.created_by_operation_id,
+                adopted=excluded.adopted,
+                created_at_unix_ms=excluded.created_at_unix_ms,
+                last_verified_at_unix_ms=excluded.last_verified_at_unix_ms",
+            params![
+                record.repo.git_common_dir,
+                record.repo.primary_root,
+                record.canonical_path,
+                record.branch,
+                record.created_by_operation_id,
+                bool_i64(record.adopted),
+                u64_to_i64(record.created_at_unix_ms)?,
+                u64_to_i64(record.last_verified_at_unix_ms)?,
+            ],
+        )
+        .context("upsert managed worktree")?;
+        Ok(())
+    }
+
+    pub fn remove_managed_worktree(
+        &self,
+        repo_common_dir: &str,
+        canonical_path: &str,
+    ) -> Result<()> {
+        self.open_ready()?.execute(
+            "DELETE FROM managed_worktrees
+             WHERE repo_common_dir=?1 AND canonical_path=?2",
+            params![repo_common_dir, canonical_path],
+        )?;
+        Ok(())
+    }
+
+    pub fn load_managed_worktrees(&self) -> Result<Vec<ManagedWorktreeRecord>> {
+        let conn = self.open_ready()?;
+        let mut stmt = conn.prepare(
+            "SELECT repo_common_dir, repo_primary_root, canonical_path, branch,
+                    created_by_operation_id, adopted, created_at_unix_ms,
+                    last_verified_at_unix_ms
+             FROM managed_worktrees
+             ORDER BY repo_common_dir, canonical_path",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, Option<String>>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, i64>(5)?,
+                row.get::<_, i64>(6)?,
+                row.get::<_, i64>(7)?,
+            ))
+        })?;
+        rows.map(|row| {
+            let (
+                git_common_dir,
+                primary_root,
+                canonical_path,
+                branch,
+                created_by_operation_id,
+                adopted,
+                created_at,
+                last_verified_at,
+            ) = row?;
+            Ok(ManagedWorktreeRecord {
+                repo: crate::domain::LocalRepoIdentity {
+                    git_common_dir,
+                    primary_root,
+                },
+                canonical_path,
+                branch,
+                created_by_operation_id,
+                adopted: adopted != 0,
+                created_at_unix_ms: i64_to_u64(created_at)?,
+                last_verified_at_unix_ms: i64_to_u64(last_verified_at)?,
+            })
+        })
+        .collect()
+    }
+
+    pub fn managed_worktree(
+        &self,
+        repo_common_dir: &str,
+        canonical_path: &str,
+    ) -> Result<Option<ManagedWorktreeRecord>> {
+        Ok(self.load_managed_worktrees()?.into_iter().find(|record| {
+            record.repo.git_common_dir == repo_common_dir && record.canonical_path == canonical_path
+        }))
+    }
+
+    pub fn save_operation_receipt(&self, receipt: &OperationReceipt) -> Result<()> {
+        let conn = self.open_ready()?;
+        let plan_json = serde_json::to_string(&receipt.plan).context("serialize operation plan")?;
+        conn.execute(
+            "INSERT INTO operation_receipts (
+                operation_id, plan_json, state, started_at_unix_ms, completed_at_unix_ms,
+                result_ref, verification, failure, updated_at_unix_ms
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+             ON CONFLICT(operation_id) DO UPDATE SET
+                plan_json=excluded.plan_json,
+                state=excluded.state,
+                started_at_unix_ms=excluded.started_at_unix_ms,
+                completed_at_unix_ms=excluded.completed_at_unix_ms,
+                result_ref=excluded.result_ref,
+                verification=excluded.verification,
+                failure=excluded.failure,
+                updated_at_unix_ms=excluded.updated_at_unix_ms",
+            params![
+                receipt.operation_id,
+                plan_json,
+                enum_text(&receipt.state)?,
+                receipt.started_at_unix_ms.map(u64_to_i64).transpose()?,
+                receipt.completed_at_unix_ms.map(u64_to_i64).transpose()?,
+                receipt.result_ref,
+                receipt.verification,
+                receipt.failure,
+                u64_to_i64(now_unix_ms())?,
+            ],
+        )
+        .context("save operation receipt")?;
+        Ok(())
+    }
+
+    pub fn operation_receipt(&self, operation_id: &str) -> Result<Option<OperationReceipt>> {
+        let conn = self.open_ready()?;
+        conn.query_row(
+            "SELECT operation_id, plan_json, state, started_at_unix_ms,
+                    completed_at_unix_ms, result_ref, verification, failure
+             FROM operation_receipts WHERE operation_id=?1",
+            [operation_id],
+            decode_operation_receipt,
+        )
+        .optional()
+        .context("load operation receipt")
+    }
+
+    pub fn load_recent_operation_receipts(&self, limit: usize) -> Result<Vec<OperationReceipt>> {
+        let conn = self.open_ready()?;
+        let limit = i64::try_from(limit).context("receipt limit exceeds SQLite range")?;
+        let mut stmt = conn.prepare(
+            "SELECT operation_id, plan_json, state, started_at_unix_ms,
+                    completed_at_unix_ms, result_ref, verification, failure
+             FROM operation_receipts
+             ORDER BY updated_at_unix_ms DESC, operation_id DESC
+             LIMIT ?1",
+        )?;
+        let rows = stmt.query_map([limit], decode_operation_receipt)?;
+        rows.map(|row| row.map_err(Into::into)).collect()
+    }
+
+    pub fn load_recoverable_operation_receipts(&self) -> Result<Vec<OperationReceipt>> {
+        let conn = self.open_ready()?;
+        let mut stmt = conn.prepare(
+            "SELECT operation_id, plan_json, state, started_at_unix_ms,
+                    completed_at_unix_ms, result_ref, verification, failure
+             FROM operation_receipts
+             WHERE state IN ('planned', 'executing', 'outcome-unknown')
+             ORDER BY updated_at_unix_ms, operation_id",
+        )?;
+        let rows = stmt.query_map([], decode_operation_receipt)?;
+        rows.map(|row| row.map_err(Into::into)).collect()
+    }
+
     fn open_ready(&self) -> Result<Connection> {
         ensure_private_parent(&self.db_path)?;
         let mut conn = Connection::open(&self.db_path)
@@ -493,95 +667,161 @@ fn configure_connection(conn: &Connection) -> Result<()> {
 }
 
 fn ensure_schema(conn: &mut Connection) -> Result<()> {
-    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    let mut version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     anyhow::ensure!(
-        version == 0 || version == DB_SCHEMA_VERSION,
+        (0..=DB_SCHEMA_VERSION).contains(&version),
         "unsupported SQLite schema version {version}"
     );
-    if version == DB_SCHEMA_VERSION {
-        return Ok(());
+
+    if version == 0 {
+        let tx = conn
+            .transaction()
+            .context("begin SQLite schema v1 migration")?;
+        tx.execute_batch(
+            "CREATE TABLE metadata (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+             );
+             CREATE TABLE operator_state (
+                key TEXT PRIMARY KEY,
+                value_json TEXT NOT NULL,
+                updated_at_unix_ms INTEGER NOT NULL
+             );
+             CREATE TABLE work_cards (
+                local_id TEXT PRIMARY KEY,
+                anchor_kind TEXT NOT NULL,
+                anchor_ref TEXT NOT NULL,
+                title_override TEXT,
+                note TEXT,
+                pinned INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0,1)),
+                tags_json TEXT NOT NULL DEFAULT '[]',
+                priority INTEGER,
+                manual_ready INTEGER NOT NULL DEFAULT 0 CHECK (manual_ready IN (0,1)),
+                done_at_unix_ms INTEGER,
+                snooze_until_unix_ms INTEGER,
+                updated_at_unix_ms INTEGER NOT NULL,
+                UNIQUE(anchor_kind, anchor_ref)
+             );
+             CREATE TABLE work_card_links (
+                work_card_id TEXT NOT NULL REFERENCES work_cards(local_id) ON DELETE CASCADE,
+                role TEXT NOT NULL,
+                source_kind TEXT NOT NULL,
+                source_ref TEXT NOT NULL,
+                PRIMARY KEY(work_card_id, role, source_kind, source_ref)
+             );
+             CREATE TABLE scratch_work (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                title TEXT NOT NULL,
+                note TEXT,
+                workspace TEXT,
+                priority INTEGER,
+                state TEXT NOT NULL,
+                created_at_unix_ms INTEGER NOT NULL,
+                updated_at_unix_ms INTEGER NOT NULL
+             );
+             CREATE TABLE saved_views (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                source_scope TEXT NOT NULL,
+                filter TEXT NOT NULL DEFAULT '',
+                group_by TEXT,
+                order_by TEXT,
+                layout TEXT NOT NULL,
+                visible_fields_json TEXT NOT NULL DEFAULT '[]'
+             );
+             CREATE TABLE notes (
+                owner_kind TEXT NOT NULL,
+                owner_ref TEXT NOT NULL,
+                text TEXT NOT NULL,
+                updated_at_unix_ms INTEGER NOT NULL,
+                PRIMARY KEY(owner_kind, owner_ref)
+             );
+             CREATE TABLE bookmarks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_kind TEXT NOT NULL,
+                source_ref TEXT NOT NULL,
+                label TEXT,
+                note TEXT,
+                created_at_unix_ms INTEGER NOT NULL
+             );
+             CREATE TABLE hot_slots (
+                slot INTEGER PRIMARY KEY CHECK(slot BETWEEN 1 AND 9),
+                target_kind TEXT NOT NULL,
+                target_ref TEXT NOT NULL,
+                updated_at_unix_ms INTEGER NOT NULL
+             );
+             PRAGMA user_version = 1;",
+        )
+        .context("create SQLite schema v1")?;
+        tx.commit().context("commit SQLite schema v1")?;
+        version = 1;
     }
 
-    let tx = conn
-        .transaction()
-        .context("begin SQLite schema migration")?;
-    tx.execute_batch(
-        "CREATE TABLE metadata (
-            key TEXT PRIMARY KEY,
-            value TEXT NOT NULL
-         );
-         CREATE TABLE operator_state (
-            key TEXT PRIMARY KEY,
-            value_json TEXT NOT NULL,
-            updated_at_unix_ms INTEGER NOT NULL
-         );
-         CREATE TABLE work_cards (
-            local_id TEXT PRIMARY KEY,
-            anchor_kind TEXT NOT NULL,
-            anchor_ref TEXT NOT NULL,
-            title_override TEXT,
-            note TEXT,
-            pinned INTEGER NOT NULL DEFAULT 0 CHECK (pinned IN (0,1)),
-            tags_json TEXT NOT NULL DEFAULT '[]',
-            priority INTEGER,
-            manual_ready INTEGER NOT NULL DEFAULT 0 CHECK (manual_ready IN (0,1)),
-            done_at_unix_ms INTEGER,
-            snooze_until_unix_ms INTEGER,
-            updated_at_unix_ms INTEGER NOT NULL,
-            UNIQUE(anchor_kind, anchor_ref)
-         );
-         CREATE TABLE work_card_links (
-            work_card_id TEXT NOT NULL REFERENCES work_cards(local_id) ON DELETE CASCADE,
-            role TEXT NOT NULL,
-            source_kind TEXT NOT NULL,
-            source_ref TEXT NOT NULL,
-            PRIMARY KEY(work_card_id, role, source_kind, source_ref)
-         );
-         CREATE TABLE scratch_work (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            title TEXT NOT NULL,
-            note TEXT,
-            workspace TEXT,
-            priority INTEGER,
-            state TEXT NOT NULL,
-            created_at_unix_ms INTEGER NOT NULL,
-            updated_at_unix_ms INTEGER NOT NULL
-         );
-         CREATE TABLE saved_views (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL UNIQUE,
-            source_scope TEXT NOT NULL,
-            filter TEXT NOT NULL DEFAULT '',
-            group_by TEXT,
-            order_by TEXT,
-            layout TEXT NOT NULL,
-            visible_fields_json TEXT NOT NULL DEFAULT '[]'
-         );
-         CREATE TABLE notes (
-            owner_kind TEXT NOT NULL,
-            owner_ref TEXT NOT NULL,
-            text TEXT NOT NULL,
-            updated_at_unix_ms INTEGER NOT NULL,
-            PRIMARY KEY(owner_kind, owner_ref)
-         );
-         CREATE TABLE bookmarks (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            source_kind TEXT NOT NULL,
-            source_ref TEXT NOT NULL,
-            label TEXT,
-            note TEXT,
-            created_at_unix_ms INTEGER NOT NULL
-         );
-         CREATE TABLE hot_slots (
-            slot INTEGER PRIMARY KEY CHECK(slot BETWEEN 1 AND 9),
-            target_kind TEXT NOT NULL,
-            target_ref TEXT NOT NULL,
-            updated_at_unix_ms INTEGER NOT NULL
-         );
-         PRAGMA user_version = 1;",
-    )
-    .context("create SQLite schema")?;
-    tx.commit().context("commit SQLite schema")
+    if version == 1 {
+        let tx = conn
+            .transaction()
+            .context("begin SQLite schema v2 migration")?;
+        tx.execute_batch(
+            "CREATE TABLE managed_worktrees (
+                repo_common_dir TEXT NOT NULL,
+                repo_primary_root TEXT NOT NULL,
+                canonical_path TEXT NOT NULL,
+                branch TEXT,
+                created_by_operation_id TEXT NOT NULL,
+                adopted INTEGER NOT NULL DEFAULT 0 CHECK (adopted IN (0,1)),
+                created_at_unix_ms INTEGER NOT NULL,
+                last_verified_at_unix_ms INTEGER NOT NULL,
+                PRIMARY KEY(repo_common_dir, canonical_path)
+             );
+             CREATE TABLE operation_receipts (
+                operation_id TEXT PRIMARY KEY,
+                plan_json TEXT NOT NULL,
+                state TEXT NOT NULL,
+                started_at_unix_ms INTEGER,
+                completed_at_unix_ms INTEGER,
+                result_ref TEXT,
+                verification TEXT,
+                failure TEXT,
+                updated_at_unix_ms INTEGER NOT NULL
+             );
+             CREATE INDEX operation_receipts_state_idx
+                 ON operation_receipts(state, updated_at_unix_ms DESC);
+             PRAGMA user_version = 2;",
+        )
+        .context("upgrade SQLite schema v1 -> v2")?;
+        tx.commit().context("commit SQLite schema v2")?;
+    }
+
+    Ok(())
+}
+
+fn decode_operation_receipt(row: &rusqlite::Row<'_>) -> rusqlite::Result<OperationReceipt> {
+    let operation_id: String = row.get(0)?;
+    let plan_json: String = row.get(1)?;
+    let state_text: String = row.get(2)?;
+    let started: Option<i64> = row.get(3)?;
+    let completed: Option<i64> = row.get(4)?;
+    let result_ref: Option<String> = row.get(5)?;
+    let verification: Option<String> = row.get(6)?;
+    let failure: Option<String> = row.get(7)?;
+
+    let plan: OperationPlan = serde_json::from_str(&plan_json).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(error))
+    })?;
+    let state: OperationState = enum_from_text(&state_text).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, error.into())
+    })?;
+
+    Ok(OperationReceipt {
+        operation_id,
+        plan,
+        state,
+        started_at_unix_ms: started.and_then(|value| u64::try_from(value).ok()),
+        completed_at_unix_ms: completed.and_then(|value| u64::try_from(value).ok()),
+        result_ref,
+        verification,
+        failure,
+    })
 }
 
 fn save_operator_state_tx(tx: &Transaction<'_>, state: &LocalStateV1) -> Result<()> {
@@ -1145,6 +1385,152 @@ mod tests {
         assert!(snapshot.notes.is_empty());
         assert!(snapshot.bookmarks.is_empty());
         assert!(snapshot.hot_slots.is_empty());
+    }
+
+    #[test]
+    fn schema_v1_upgrades_to_v2_without_losing_m4_state() {
+        let root = tempdir().expect("tempdir");
+        let store = SqliteStore::at(root.path());
+
+        let mut state = LocalStateV1::default();
+        state.pins.insert("thread-1".into());
+        store.save_state(&state).expect("state");
+
+        let mut card = WorkCardRecord::implicit_thread(&crate::domain::ThreadId::new("thread-1"));
+        card.overlay.note = Some("keep me".into());
+        store.upsert_work_card(&card).expect("card");
+
+        {
+            let conn = Connection::open(store.db_path()).expect("open raw database");
+            conn.execute_batch(
+                "DROP TABLE managed_worktrees;
+                 DROP TABLE operation_receipts;
+                 PRAGMA user_version = 1;",
+            )
+            .expect("downgrade fixture to v1");
+        }
+
+        let health = store.health().expect("upgrade to v2");
+        assert_eq!(health.schema_version, 2);
+        assert_eq!(store.load_state().expect("state after upgrade"), state);
+        assert_eq!(
+            store.load_planning_snapshot().expect("planning").cards,
+            vec![card]
+        );
+    }
+
+    #[test]
+    fn managed_worktree_and_unknown_receipt_survive_restart() {
+        let root = tempdir().expect("tempdir");
+        let store = SqliteStore::at(root.path());
+        let repo = crate::domain::LocalRepoIdentity {
+            git_common_dir: "/repo/.git".into(),
+            primary_root: "/repo".into(),
+        };
+        let plan = OperationPlan::create_worktree(
+            repo.clone(),
+            "/repo".into(),
+            "/tmp/wt-feature".into(),
+            "feature".into(),
+            "HEAD".into(),
+            10,
+        );
+        let mut receipt = OperationReceipt::planned(plan.clone());
+        receipt.start(11);
+        receipt.outcome_unknown(12, "git process timed out".into());
+        store
+            .save_operation_receipt(&receipt)
+            .expect("save unknown receipt");
+
+        let managed = ManagedWorktreeRecord {
+            repo: repo.clone(),
+            canonical_path: "/tmp/wt-feature".into(),
+            branch: Some("feature".into()),
+            created_by_operation_id: plan.operation_id.clone(),
+            adopted: false,
+            created_at_unix_ms: 10,
+            last_verified_at_unix_ms: 13,
+        };
+        store
+            .upsert_managed_worktree(&managed)
+            .expect("save managed worktree");
+
+        let reopened = SqliteStore::at(root.path());
+        assert_eq!(
+            reopened
+                .operation_receipt(&plan.operation_id)
+                .expect("load receipt"),
+            Some(receipt)
+        );
+        assert_eq!(
+            reopened.load_managed_worktrees().expect("managed list"),
+            vec![managed]
+        );
+    }
+
+    #[test]
+    fn recoverable_receipts_only_return_planned_executing_and_unknown() {
+        let root = tempdir().expect("tempdir");
+        let store = SqliteStore::at(root.path());
+        let repo = crate::domain::LocalRepoIdentity {
+            git_common_dir: "/repo/.git".into(),
+            primary_root: "/repo".into(),
+        };
+
+        let mut planned = OperationReceipt::planned(OperationPlan::delete_branch(
+            repo.clone(),
+            "/repo".into(),
+            "planned".into(),
+            1,
+        ));
+        let mut executing = OperationReceipt::planned(OperationPlan::delete_branch(
+            repo.clone(),
+            "/repo".into(),
+            "executing".into(),
+            2,
+        ));
+        executing.start(3);
+        let mut unknown = OperationReceipt::planned(OperationPlan::delete_branch(
+            repo.clone(),
+            "/repo".into(),
+            "unknown".into(),
+            4,
+        ));
+        unknown.start(5);
+        unknown.outcome_unknown(6, "timeout".into());
+        let mut succeeded = OperationReceipt::planned(OperationPlan::delete_branch(
+            repo,
+            "/repo".into(),
+            "done".into(),
+            7,
+        ));
+        succeeded.start(8);
+        succeeded.succeed(9, "done".into(), "verified".into());
+
+        for receipt in [&planned, &executing, &unknown, &succeeded] {
+            store.save_operation_receipt(receipt).expect("save receipt");
+        }
+
+        let recoverable = store
+            .load_recoverable_operation_receipts()
+            .expect("recoverable");
+        assert_eq!(recoverable.len(), 3);
+        assert!(recoverable.iter().all(|receipt| matches!(
+            receipt.state,
+            OperationState::Planned | OperationState::Executing | OperationState::OutcomeUnknown
+        )));
+
+        planned.fail(10, "cancelled".into());
+        store
+            .save_operation_receipt(&planned)
+            .expect("update planned");
+        assert_eq!(
+            store
+                .load_recoverable_operation_receipts()
+                .expect("recoverable after update")
+                .len(),
+            2
+        );
     }
 
     #[test]

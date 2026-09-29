@@ -14,6 +14,7 @@ use codex_tui::{
     store::{AppConfig, LocalStateV1, LocalStore},
     terminal::TerminalSession,
     ui,
+    worktree::{MutationEvent, MutationRequest, WorktreeMutationHandle},
 };
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use std::path::Path;
@@ -91,6 +92,10 @@ impl RuntimeStore {
 
     fn error(&self) -> Option<String> {
         self.error.clone()
+    }
+
+    fn sqlite_clone(&self) -> SqliteStore {
+        self.sqlite.clone()
     }
 
     fn mutate_work_card<F>(
@@ -393,6 +398,24 @@ async fn doctor(scope: Option<&str>) -> Result<()> {
                     }
                     Err(error) => println!("planning: DEGRADED · {error:#}"),
                 }
+                match store.load_managed_worktrees() {
+                    Ok(worktrees) => println!("managed-worktrees: {}", worktrees.len()),
+                    Err(error) => println!("managed-worktrees: DEGRADED · {error:#}"),
+                }
+                match store.load_recent_operation_receipts(10) {
+                    Ok(receipts) => {
+                        println!("recent-operation-receipts: {}", receipts.len());
+                        for receipt in receipts {
+                            println!(
+                                "receipt: {} · {} · {:?}",
+                                receipt.operation_id,
+                                receipt.plan.kind.label(),
+                                receipt.state
+                            );
+                        }
+                    }
+                    Err(error) => println!("operation-receipts: DEGRADED · {error:#}"),
+                }
             }
             Err(error) => {
                 println!("store-backend: sqlite");
@@ -497,11 +520,19 @@ async fn run_app(fake_mode: bool) -> Result<()> {
     );
 
     let mut git = GitHandle::start();
+    let mut mutations = WorktreeMutationHandle::start(store.sqlite_clone());
+    if let Err(error) = mutations.recover() {
+        reduce(
+            &mut app,
+            Action::MutationNotice(format!("worktree recovery unavailable: {error}")),
+        );
+    }
     let initial_git_effects = reduce(&mut app, Action::RefreshGitProjections);
     apply_effects(
         &mut app,
         registry.as_ref(),
         &git,
+        &mut mutations,
         &mut store,
         initial_git_effects,
     )?;
@@ -523,7 +554,14 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                     app.apply_local_state(&local);
                     registry = Some(started.handle);
                     let effects = reduce(&mut app, Action::RefreshGitProjections);
-                    apply_effects(&mut app, registry.as_ref(), &git, &mut store, effects)?;
+                    apply_effects(
+                        &mut app,
+                        registry.as_ref(),
+                        &git,
+                        &mut mutations,
+                        &mut store,
+                        effects,
+                    )?;
                     reduce(
                         &mut app,
                         Action::ReconcilePlanning {
@@ -553,7 +591,14 @@ async fn run_app(fake_mode: bool) -> Result<()> {
         needs_render |= registry_changed;
         if registry_changed {
             let effects = reduce(&mut app, Action::RefreshGitProjections);
-            apply_effects(&mut app, registry.as_ref(), &git, &mut store, effects)?;
+            apply_effects(
+                &mut app,
+                registry.as_ref(),
+                &git,
+                &mut mutations,
+                &mut store,
+                effects,
+            )?;
             reduce(
                 &mut app,
                 Action::ReconcilePlanning {
@@ -572,6 +617,26 @@ async fn run_app(fake_mode: bool) -> Result<()> {
             );
         }
 
+        let mutation_changed = drain_mutations(&mut app, &mut mutations);
+        needs_render |= mutation_changed;
+        if mutation_changed {
+            let effects = reduce(&mut app, Action::RefreshGitProjections);
+            apply_effects(
+                &mut app,
+                registry.as_ref(),
+                &git,
+                &mut mutations,
+                &mut store,
+                effects,
+            )?;
+            reduce(
+                &mut app,
+                Action::ReconcilePlanning {
+                    now_unix_ms: now_unix_ms(),
+                },
+            );
+        }
+
         if let Some(fake) = fake_backend.as_mut()
             && last_fake_tick.elapsed() >= Duration::from_millis(900)
         {
@@ -579,7 +644,14 @@ async fn run_app(fake_mode: bool) -> Result<()> {
             reduce(&mut app, Action::ReplaceThreads(snapshot.threads));
             reduce(&mut app, Action::BackendStatus(snapshot.status));
             let effects = reduce(&mut app, Action::RefreshGitProjections);
-            apply_effects(&mut app, registry.as_ref(), &git, &mut store, effects)?;
+            apply_effects(
+                &mut app,
+                registry.as_ref(),
+                &git,
+                &mut mutations,
+                &mut store,
+                effects,
+            )?;
             reduce(
                 &mut app,
                 Action::ReconcilePlanning {
@@ -606,7 +678,14 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                     {
                         needs_render = true;
                     }
-                    apply_effects(&mut app, registry.as_ref(), &git, &mut store, effects)?;
+                    apply_effects(
+                        &mut app,
+                        registry.as_ref(),
+                        &git,
+                        &mut mutations,
+                        &mut store,
+                        effects,
+                    )?;
                 }
                 Event::Resize(_, _) => needs_render = true,
                 _ => {}
@@ -708,10 +787,30 @@ fn drain_git(app: &mut AppState, git: &mut GitHandle) -> bool {
     changed
 }
 
+fn drain_mutations(app: &mut AppState, mutations: &mut WorktreeMutationHandle) -> bool {
+    let mut changed = false;
+    while let Some(event) = mutations.try_recv() {
+        match event {
+            MutationEvent::Receipt(receipt) => {
+                reduce(app, Action::MutationReceipt(receipt));
+            }
+            MutationEvent::ManagedWorktrees(records) => {
+                reduce(app, Action::ManagedWorktreesLoaded(records));
+            }
+            MutationEvent::Notice(notice) => {
+                reduce(app, Action::MutationNotice(notice));
+            }
+        }
+        changed = true;
+    }
+    changed
+}
+
 fn apply_effects(
     app: &mut AppState,
     registry: Option<&RegistryHandle>,
     git: &GitHandle,
+    mutations: &mut WorktreeMutationHandle,
     store: &mut RuntimeStore,
     effects: Vec<Effect>,
 ) -> Result<()> {
@@ -830,6 +929,30 @@ fn apply_effects(
                         Action::BackendStatus(backend_error_status(format!(
                             "Goal clear command failed: {error}"
                         ))),
+                    );
+                }
+            }
+            Effect::RefreshManagedWorktrees => {
+                if let Err(error) = mutations.refresh_inventory() {
+                    reduce(
+                        app,
+                        Action::MutationNotice(format!(
+                            "managed-worktree inventory refresh failed: {error}"
+                        )),
+                    );
+                }
+            }
+            Effect::ExecuteOperation(plan) => {
+                let request = MutationRequest {
+                    plan: *plan,
+                    active_scopes: app.active_mutation_scopes(),
+                };
+                if let Err(error) = mutations.execute(request) {
+                    reduce(
+                        app,
+                        Action::MutationNotice(format!(
+                            "managed-worktree execution dispatch failed: {error}"
+                        )),
                     );
                 }
             }
@@ -1078,7 +1201,9 @@ fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
         return vec![];
     }
 
-    if let Some(request) = app.current_pending_request() {
+    if app.view_kind() == ViewKind::Thread
+        && let Some(request) = app.current_pending_request()
+    {
         let action = match (&request.kind, key.code) {
             (InteractiveRequestKind::UserInput { .. }, KeyCode::Enter | KeyCode::Char('i')) => {
                 Some(Action::BeginUserInput)
@@ -1110,20 +1235,24 @@ fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
         Command::QuitOrInterrupt => match app.view_kind() {
             ViewKind::Registry => Action::Quit,
             ViewKind::Thread => Action::InterruptCurrent,
-            ViewKind::Review | ViewKind::Workspace | ViewKind::Board | ViewKind::Scratch => {
-                Action::Back
-            }
+            ViewKind::Review
+            | ViewKind::Workspace
+            | ViewKind::ManagedWorktrees
+            | ViewKind::Board
+            | ViewKind::Scratch => Action::Back,
         },
         Command::Back => Action::Back,
         Command::Help => Action::ToggleHelp,
         Command::Search => Action::BeginSearch,
         Command::Next => match app.view_kind() {
             ViewKind::Review => Action::MoveReview(1),
+            ViewKind::ManagedWorktrees => Action::MoveManagedWorktree(1),
             ViewKind::Board => Action::MovePlanningSelection(1),
             _ => Action::MoveSelection(1),
         },
         Command::Previous => match app.view_kind() {
             ViewKind::Review => Action::MoveReview(-1),
+            ViewKind::ManagedWorktrees => Action::MoveManagedWorktree(-1),
             ViewKind::Board => Action::MovePlanningSelection(-1),
             _ => Action::MoveSelection(-1),
         },
@@ -1150,6 +1279,13 @@ fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
         Command::CycleSavedView => Action::CycleSavedView(1),
         Command::Review => Action::OpenReview,
         Command::Workspace => Action::OpenWorkspace,
+        Command::ManagedWorktrees => Action::OpenManagedWorktrees,
+        Command::CreateWorktree => Action::BeginCreateWorktree,
+        Command::AdoptWorktree => Action::BeginAdoptCurrentWorktree,
+        Command::RemoveWorktree => Action::BeginRemoveManagedWorktree,
+        Command::DeleteBranch => Action::BeginDeleteBranch,
+        Command::ConfirmOperation => Action::ConfirmPendingOperation,
+        Command::CancelOperation => Action::CancelPendingOperation,
         Command::New => Action::BeginScratch,
         Command::Snooze => Action::BeginSnooze,
         Command::BeginHotSlotBind => Action::BeginHotSlotBind,
