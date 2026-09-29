@@ -2,6 +2,9 @@ use crate::app::{AppState, InputMode, View};
 use crate::conversation::{InteractiveRequest, InteractiveRequestKind};
 use crate::domain::ThreadSummary;
 use crate::git::presentation_diff_lines;
+use crate::planning::{
+    SavedViewLayout, WorkflowStage, apply_saved_view, saved_view_group_key,
+};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -33,6 +36,8 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
         View::Thread(id) => render_thread(frame, app, id.0.as_str()),
         View::Review(id) => render_review(frame, app, id.0.as_str()),
         View::Workspace(id) => render_workspace(frame, app, id.0.as_str()),
+        View::Board => render_board(frame, app),
+        View::Scratch(id) => render_scratch(frame, app, id),
     }
     if app.show_help {
         render_help(frame);
@@ -70,6 +75,10 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState) {
         )),
         InputMode::Composer => Line::from("composer active in Thread view"),
         InputMode::UserInput => Line::from("user-input answer active in Thread view"),
+        InputMode::ScratchTitle => Line::from(format!(
+            "new scratch> {}  · Enter create · Esc cancel",
+            app.input_buffer
+        )),
         InputMode::Normal => {
             if let Some(error) = &app.backend_status.error {
                 Line::from(format!(
@@ -418,6 +427,210 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
     );
 }
 
+fn render_board(frame: &mut Frame<'_>, app: &AppState) {
+    let area = frame.area();
+    let outer = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(4), Constraint::Length(2)])
+        .split(area);
+    let view = app.active_saved_view();
+
+    match view.layout {
+        SavedViewLayout::Board if area.width >= 120 => {
+            let columns = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Ratio(1, 5); 5])
+                .split(outer[0]);
+            let filtered = apply_saved_view(&app.work_cards, &view);
+
+            for (stage_index, stage) in WorkflowStage::ALL.iter().enumerate() {
+                let stage_cards = filtered
+                    .iter()
+                    .copied()
+                    .filter(|card| card.stage == *stage)
+                    .collect::<Vec<_>>();
+                let lines = stage_cards
+                    .iter()
+                    .enumerate()
+                    .map(|(index, card)| {
+                        let selected =
+                            stage_index == app.board_stage_index && index == app.board_selected;
+                        let attention = if card.needs_you() { "!" } else { " " };
+                        let pin = if card.overlay.pinned { "*" } else { " " };
+                        let text = format!(
+                            "{}{}{} {}",
+                            if selected { ">" } else { " " },
+                            pin,
+                            attention,
+                            truncate(&card.title, 20)
+                        );
+                        let style = if selected {
+                            Style::default().add_modifier(Modifier::REVERSED)
+                        } else {
+                            Style::default()
+                        };
+                        Line::from(Span::styled(text, style))
+                    })
+                    .collect::<Vec<_>>();
+                frame.render_widget(
+                    Paragraph::new(lines)
+                        .block(Block::bordered().title(format!(
+                            " {} ({}) ",
+                            stage.label(),
+                            stage_cards.len()
+                        )))
+                        .wrap(Wrap { trim: false }),
+                    columns[stage_index],
+                );
+            }
+        }
+        SavedViewLayout::Board => {
+            let stage = WorkflowStage::ALL[app.board_stage_index % WorkflowStage::ALL.len()];
+            let lines = app
+                .visible_planning_cards()
+                .iter()
+                .enumerate()
+                .map(|(index, card)| planning_card_line(card, index == app.board_selected))
+                .collect::<Vec<_>>();
+            frame.render_widget(
+                Paragraph::new(lines)
+                    .block(Block::bordered().title(format!(
+                        " {} · {} · {}/{} ",
+                        view.name,
+                        stage.label(),
+                        app.board_stage_index + 1,
+                        WorkflowStage::ALL.len()
+                    )))
+                    .wrap(Wrap { trim: false }),
+                outer[0],
+            );
+        }
+        SavedViewLayout::List | SavedViewLayout::ReviewQueue => {
+            let cards = app.visible_planning_cards();
+            let mut lines = Vec::new();
+            let mut previous_group = String::new();
+            for (index, card) in cards.iter().enumerate() {
+                let group = saved_view_group_key(card, view.group_by.as_deref());
+                if !group.is_empty() && group != previous_group {
+                    lines.push(Line::from(format!("── {group} ──")));
+                    previous_group = group;
+                }
+                lines.push(planning_card_line(card, index == app.board_selected));
+            }
+            if lines.is_empty() {
+                lines.push(Line::from("No cards match this Saved View."));
+            }
+            frame.render_widget(
+                Paragraph::new(lines)
+                    .block(Block::bordered().title(format!(
+                        " {} · {} ",
+                        view.name,
+                        view.layout.label()
+                    )))
+                    .wrap(Wrap { trim: false }),
+                outer[0],
+            );
+        }
+    }
+
+    let input = if app.input_mode == InputMode::ScratchTitle {
+        format!("new scratch> {} · Enter create · Esc cancel", app.input_buffer)
+    } else if let Some(error) = &app.planning_store_error {
+        format!("LOCAL STORE DEGRADED · {}", truncate(error, 80))
+    } else {
+        format!(
+            "h/l stage · j/k item · Tab view · Enter open · a prompt · n scratch · view {}/{}",
+            app.planning_view_index + 1,
+            app.planning_views().len()
+        )
+    };
+    frame.render_widget(Paragraph::new(input), outer[1]);
+}
+
+fn planning_card_line(
+    card: &crate::planning::WorkCardProjection,
+    selected: bool,
+) -> Line<'static> {
+    let attention = if card.needs_you() {
+        card.attention
+            .iter()
+            .map(crate::planning::PlanningAttention::label)
+            .collect::<Vec<_>>()
+            .join(",")
+    } else if card.snoozed && !card.attention.is_empty() {
+        "snoozed".into()
+    } else {
+        "-".into()
+    };
+    let source = match card.anchor.kind {
+        crate::planning::SourceKind::ScratchWork => "scratch",
+        crate::planning::SourceKind::CodexThread => "thread",
+        crate::planning::SourceKind::ForgeWorkItem => "forge",
+        _ => "link",
+    };
+    let text = format!(
+        "{} {:7} {:10} {:8} {}",
+        if selected { ">" } else { " " },
+        card.stage.label(),
+        truncate(&attention, 10),
+        source,
+        card.title
+    );
+    let style = if selected {
+        Style::default().add_modifier(Modifier::REVERSED)
+    } else {
+        Style::default()
+    };
+    Line::from(Span::styled(text, style))
+}
+
+fn render_scratch(frame: &mut Frame<'_>, app: &AppState, scratch_id: &str) {
+    let area = frame.area();
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(4), Constraint::Length(1)])
+        .split(area);
+    let lines = if let Some(scratch) = app
+        .planning_snapshot
+        .scratch
+        .iter()
+        .find(|scratch| scratch.id == scratch_id)
+    {
+        vec![
+            Line::from(format!("Scratch: {}", scratch.id)),
+            Line::from(format!("Title: {}", scratch.title)),
+            Line::from(format!(
+                "State: {:?} · priority={}",
+                scratch.state,
+                scratch
+                    .priority
+                    .map_or_else(|| "none".into(), |value| value.to_string())
+            )),
+            Line::from(format!(
+                "Workspace: {}",
+                scratch.workspace.as_deref().unwrap_or("<none>")
+            )),
+            Line::from(format!(
+                "Note: {}",
+                scratch.note.as_deref().unwrap_or("<empty>")
+            )),
+            Line::from(""),
+            Line::from(
+                "Local ScratchWork only. It is not a Codex thread, Git work item, or forge issue.",
+            ),
+        ]
+    } else {
+        vec![Line::from("ScratchWork no longer exists.")]
+    };
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(Block::bordered().title(" ScratchWork "))
+            .wrap(Wrap { trim: false }),
+        chunks[0],
+    );
+    frame.render_widget(Paragraph::new("Esc back to Board"), chunks[1]);
+}
+
 fn render_workspace(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
     let area = frame.area();
     let chunks = Layout::default()
@@ -646,6 +859,8 @@ fn render_help(frame: &mut Frame<'_>) {
             ),
             Line::from("Review: j/k file · w word-diff · e editor · PageUp/PageDown · Esc"),
             Line::from("Workspace: Git identity/status only · r review · Esc"),
+            Line::from("Board: h/l stage · j/k item · Tab Saved View · Enter · n Scratch"),
+            Line::from("Scratch: local-only detail · Esc Board"),
             Line::from(
                 "Authority: Codex/Git/Forge stay canonical; codex-tui stores operator state only.",
             ),
