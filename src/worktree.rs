@@ -158,10 +158,16 @@ async fn execute_with_repo_lock(
     execute_request(store, request).await
 }
 
-async fn execute_request(store: &SqliteStore, request: MutationRequest) -> Result<OperationReceipt> {
+async fn execute_request(
+    store: &SqliteStore,
+    request: MutationRequest,
+) -> Result<OperationReceipt> {
     if let Some(existing) = store.operation_receipt(&request.plan.operation_id)? {
         anyhow::ensure!(
-            matches!(existing.state, OperationState::Planned | OperationState::OutcomeUnknown),
+            matches!(
+                existing.state,
+                OperationState::Planned | OperationState::OutcomeUnknown
+            ),
             "operation {} is not executable from state {:?}",
             existing.operation_id,
             existing.state
@@ -185,25 +191,25 @@ async fn execute_request(store: &SqliteStore, request: MutationRequest) -> Resul
 
     let command = run_git_mutation(&receipt.plan.cwd, &receipt.plan.argv).await;
     match command {
-        Ok(output) if output.success => {
-            match verify_success(store, &receipt.plan).await {
-                Ok((result_ref, verification)) => {
-                    receipt.succeed(now_unix_ms(), result_ref, verification);
-                }
-                Err(error) => {
-                    receipt.outcome_unknown(
-                        now_unix_ms(),
-                        format!("mutation exited successfully but verification failed: {error:#}"),
-                    );
-                }
+        Ok(output) if output.success => match verify_success(store, &receipt.plan).await {
+            Ok((result_ref, verification)) => {
+                receipt.succeed(now_unix_ms(), result_ref, verification);
             }
-        }
+            Err(error) => {
+                receipt.outcome_unknown(
+                    now_unix_ms(),
+                    format!("mutation exited successfully but verification failed: {error:#}"),
+                );
+            }
+        },
         Ok(output) => {
             receipt.fail(
                 now_unix_ms(),
                 format!(
                     "git mutation failed with exit status {}: {}",
-                    output.code.map_or_else(|| "unknown".into(), |code| code.to_string()),
+                    output
+                        .code
+                        .map_or_else(|| "unknown".into(), |code| code.to_string()),
                     output.stderr.trim()
                 ),
             );
@@ -268,7 +274,9 @@ async fn check_preconditions(
                 confidence: crate::operation::MutationScopeConfidence::ExactWorktree,
             };
             anyhow::ensure!(
-                !active_scopes.iter().any(|scope| scopes_overlap(&target_scope, scope)),
+                !active_scopes
+                    .iter()
+                    .any(|scope| scopes_overlap(&target_scope, scope)),
                 "refusing to remove worktree while an active mutation scope overlaps it"
             );
         }
@@ -296,7 +304,9 @@ async fn check_preconditions(
                 .context("adopt plan missing target worktree")?;
             let inventory = list_worktrees(&plan.cwd).await?;
             anyhow::ensure!(
-                inventory.iter().any(|worktree| same_path(&worktree.path, target)),
+                inventory
+                    .iter()
+                    .any(|worktree| same_path(&worktree.path, target)),
                 "cannot adopt a path that is not a Git worktree: {target}"
             );
         }
