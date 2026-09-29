@@ -84,6 +84,14 @@ impl ConversationState {
         }
     }
 
+    pub fn active_turn_id(&self) -> Option<&str> {
+        self.turns
+            .iter()
+            .rev()
+            .find(|turn| turn.status == "inProgress")
+            .map(|turn| turn.id.as_str())
+    }
+
     pub fn replace_page(&mut self, page: ConversationPage) {
         self.title = page.title;
         self.turns = page.turns;
