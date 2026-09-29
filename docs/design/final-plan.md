@@ -2,7 +2,7 @@
 
 Date: 2026-09-29
 Status: Final design baseline
-Audience: individual developers and small engineering teams
+Audience: individual developers first; small engineering teams through reuse and forge integration
 
 ## 1. Product definition
 
@@ -32,7 +32,7 @@ The mature product should answer, within a few keystrokes:
 6. What is ready for review?
 7. What is blocked?
 8. What is complete?
-9. Which issue/PR/worktree belongs to this work?
+9. Which work item/change request/worktree belongs to this work?
 10. Why is a session or environment not working?
 
 ## 2. Target users
@@ -57,22 +57,26 @@ Primary value:
 - safe parallel worktree awareness
 - fast review
 
-### Small engineering team
+### Small engineering team — reuse rather than shared-session platform
+
+The product remains personal-first. Team value is primarily reuse of repository-owned assets and projection of shared code-forge state.
 
 Typical environment:
 
 - shared Git repositories
-- GitHub Issues / Projects / PR / CI
-- shared AGENTS.md and project Codex config
+- GitLab Self-Managed today; GitHub may also be used
+- shared work items / merge or pull requests / CI
+- shared AGENTS.md, project Codex config and skills
+- shared repository scripts and CI conventions
 - each engineer has their own local Codex sessions
 
 Primary value:
 
+- reuse the same repository instructions, skills and engineering conventions
+- project shared work from GitLab/GitHub without copying it into codex-tui
 - consistent local operator experience
-- team work projected from GitHub / repo state
-- no new mandatory collaboration server
-- local state remains personal
-- shared work remains in existing team systems
+- no mandatory codex-tui collaboration server
+- drafts, attention, snooze, hot slots and personal views remain local
 
 ## 3. Product principles
 
@@ -99,12 +103,19 @@ Git owns:
 - diffs
 - commits
 
-GitHub owns:
+Code forge owns team planning/review/delivery state.
 
-- issues
-- pull requests
-- CI
-- team review/delivery state
+Current first-class internal forge: GitLab Self-Managed.
+
+Normalized forge concepts:
+
+- work items / issues
+- boards
+- change requests (GitLab Merge Request / GitHub Pull Request)
+- pipelines / checks
+- review / approval state
+
+GitHub is a provider, not the core domain model.
 
 Repository configuration owns:
 
@@ -128,7 +139,7 @@ No duplicate canonical transcript database.
 
 ### P2 — Derive before persisting
 
-If a value can be reliably derived from Codex/Git/GitHub, do not persist a second copy as authority.
+If a value can be reliably derived from Codex, Git, or the configured code forge, do not persist a second copy as authority.
 
 ### P3 — Local-first core
 
@@ -229,19 +240,29 @@ Capabilities:
 
 Planning is a view layer, not a second Jira.
 
-### Layer 4 — Team Integrations
+### Layer 4 — Reuse + Code Forge Integration
 
-Optional but expected for small-team use.
+Optional for the personal core, but expected for internal team use.
 
-Capabilities:
+Repository reuse:
 
-- GitHub Issue projection
-- GitHub Projects projection
-- PR state
-- CI state
-- review state
-- issue/thread/worktree/PR links
-- repository-shared launch/review presets only when Codex/Git cannot express them
+- AGENTS.md
+- .codex/config.toml
+- project skills/plugins
+- existing build/test/review scripts
+- CI conventions
+- optional tiny codex-tui-specific view/preset manifest only if a need cannot be expressed elsewhere
+
+Forge capabilities:
+
+- GitLab Self-Managed first
+- GitHub second behind the same provider contract
+- work-item projection
+- external board projection
+- change-request state
+- pipeline/check state
+- review/approval state
+- work-item/thread/worktree/change-request links
 
 No codex-tui team server is required.
 
@@ -318,7 +339,7 @@ Fields:
 - model/provider when known
 - goal summary when known
 - branch/worktree metadata derived from Git
-- PR/issue references when known
+- forge work-item/change-request references when known
 
 ### Attention
 
@@ -341,14 +362,20 @@ Attention examples:
 - completed but unseen
 - review required
 
-Attention projection:
+Attention presentation is orthogonal to workflow stage.
+
+Mission Control may group operational state as:
 
 - Needs You
 - Working
 - Ready
 - Inactive
 
+But Needs You is an attention overlay, not a planning workflow stage.
+
 ### Goal
+
+Goal-aware UX is part of the mature product, but native Goal remains capability-optional.
 
 Use Codex-native Goal when available.
 
@@ -369,27 +396,35 @@ Goal remains owned by Codex.
 
 Unified planning projection.
 
-A WorkCard can reference:
+A WorkCard has one stable local relationship id, one primary anchor, and zero or more links.
+
+Primary anchor is exactly one of:
+
+- local Scratch item
+- forge Work Item
+- Codex Thread
+
+Links can reference:
 
 - Codex Thread
 - Codex Goal
-- GitHub Issue
-- GitHub PR
-- worktree/branch
-- local Scratch item
+- forge Work Item
+- forge Change Request
+- Git worktree/branch
 
 Example:
 
 ~~~text
 WorkCard
-  title: Fix decoder boundary regression
-  issue: GH-213
+  local_id: wc_...
+  anchor: gitlab://gitlab.internal/group/repo/issues/213
   thread: 01...
   goal: validate single-variable decoder boundary strategy
   worktree: wt/decoder-boundary
   branch: research/decoder-boundary
-  pr: #392
+  change_request: gitlab://gitlab.internal/group/repo/merge_requests/392
   derived_stage: Review
+  attention: [NeedsYou]
 ~~~
 
 The WorkCard is not the canonical task record.
@@ -433,7 +468,7 @@ No:
 - dependency graph
 - team synchronization
 
-If it becomes team work, promote/link it to GitHub Issue/Project.
+If it becomes team work, promote/link it to a forge Work Item rather than expanding the local Scratch schema.
 
 ## 6. Primary product views
 
@@ -451,7 +486,7 @@ Content:
 - recency
 - goal summary
 - branch/worktree hint
-- PR/CI hint
+- change-request/pipeline hint
 - pins/snooze/unread
 
 Default ordering:
@@ -481,27 +516,35 @@ Question:
 
 What stage is each piece of work in?
 
-Default columns:
+Default workflow columns:
 
 - Inbox
 - Ready
 - Working
-- Needs You
 - Review
 - Done
 
-Derived-state examples:
+Needs You is rendered as a virtual attention lane/badge/filter across these columns, not as a canonical workflow column.
 
-- active thread -> Working
+Derived workflow examples:
+
+- selected but not started -> Ready
+- active thread/goal -> Working
+- Goal complete + code changes -> Review
+- open change request needing review -> Review
+- merged change request or explicit completion -> Done
+
+Attention is evaluated separately:
+
 - approval/input request -> Needs You
 - Goal blocked/usage-limited/budget-limited -> Needs You
-- Goal complete + code changes -> Review
-- open PR needing review -> Review
-- merged PR or explicit completion -> Done
+- unseen completion/review finding -> Needs You
+
+A card may therefore be Working + Needs You or Review + Needs You at the same time.
 
 Manual drag is allowed only when the target mutation has a clear authority.
 
-Never let drag silently contradict Codex/GitHub state.
+Never let drag silently contradict Codex or forge state.
 
 ### Thread
 
@@ -541,7 +584,7 @@ Content:
 - word-diff option for long-line files
 - Codex review findings
 - tests/checks summary
-- PR/CI state when available
+- change-request/pipeline state when available
 - open editor/browser
 - return to thread
 
@@ -575,7 +618,7 @@ Search dimensions:
 - thread
 - alias
 - goal objective
-- issue/PR
+- forge work item/change request
 - branch/worktree
 - status
 - stage
@@ -637,7 +680,7 @@ A full task authority would require:
 - team sync
 - conflict resolution
 
-That duplicates GitHub/Linear/Jira.
+That duplicates GitLab/GitHub/Linear/Jira.
 
 ### Saved Views
 
@@ -767,44 +810,68 @@ Safety rules:
 - recover partial creation/removal
 - never assume cwd equals repo root
 
-## 12. GitHub integration
+## 12. Code Forge integration — GitLab first
 
-For small teams, GitHub is the team source of truth.
+For team use, the configured code forge is the shared planning/review/delivery authority.
+
+### Provider boundary
+
+Core domain uses:
+
+- ForgeIdentity
+- ForgeWorkItem
+- ForgeBoard
+- ChangeRequest
+- PipelineSummary
+- ReviewState
+
+Provider-specific names are rendered only at the edge:
+
+- GitLab: Issue / Work Item / Issue Board / Merge Request / Pipeline
+- GitHub: Issue / Project / Pull Request / Checks
+
+### GitLab first-class support
+
+Current internal usage makes GitLab Self-Managed the first implementation target.
+
+Initial GitLab adapter should use glab/glab api so codex-tui can reuse existing authentication and multiple/self-managed host support without storing tokens.
+
+All glab calls must use JSON/NDJSON output, explicit repository/host context, timeout/cancellation, and doctor-visible version/auth/host diagnostics.
+
+A native REST/GraphQL transport can be added later behind the same ForgeProvider interface if performance or capability requires it.
 
 Read/projection capabilities:
 
-- Issues
-- Project items
-- PR
-- CI/checks
-- review state
+- Work Items / Issues
+- Issue Boards
+- Merge Requests
+- Pipelines
+- approval/review state where available
 - merge readiness
-- unresolved review threads
 
 Relationship:
 
 ~~~text
-Issue
+Forge Work Item
   -> WorkCard
       -> Codex Thread
       -> Worktree
-      -> PR
+      -> Change Request
 ~~~
 
-Mutating GitHub state should always be explicit and attributable.
-
-No silent state changes from purely visual operations.
+Forge mutations must always be explicit and attributable. Read-only projection comes first.
 
 ## 13. Team model
 
 Normal small-team topology:
 
 ~~~text
-Shared Git repository / GitHub Project
+Shared Git repository / Code Forge
       |
       +-- AGENTS.md
       +-- .codex/config.toml
-      +-- Issues / PR / CI
+      +-- shared skills/scripts
+      +-- Work Items / MR-or-PR / Pipeline
       |
 Developer A codex-tui
 Developer B codex-tui
@@ -821,7 +888,7 @@ Each developer keeps local:
 - scroll position
 - attention acknowledgement
 
-Shared state remains in repo/GitHub.
+Shared state remains in the repository and configured code forge.
 
 ## 14. Persistence strategy
 
@@ -846,7 +913,7 @@ Even with SQLite:
 
 - transcript remains Codex-owned
 - Git state remains Git-owned
-- team task state remains GitHub-owned
+- team task/review state remains forge-owned
 
 Database must support:
 
@@ -855,6 +922,10 @@ Database must support:
 - backup
 - integrity checks
 - recovery
+
+### LocalStore boundary
+
+Persistence shape must not leak into the domain. Define a LocalStore abstraction from the first implementation. The initial backend can be atomic JSON/TOML; SQLite may replace it later when Saved Views, ScratchWork, relationship mappings or optional full-text indexing justify it.
 
 ## 15. Technical stack
 
@@ -1282,8 +1353,8 @@ AGPL projects remain architectural references unless obligations are intentional
 
 ### Strong additions
 
-- GitHub Issue/Projects
-- PR/CI/review
+- GitLab Self-Managed Work Items / Issue Boards / MR / Pipeline
+- GitHub provider behind the same forge contract
 - Local ScratchWork
 - terminal drawer
 - batch actions
@@ -1311,7 +1382,7 @@ Even the mature product should not become:
 - its own agent loop
 - its own sandbox/policy engine
 - a replacement for Git
-- a replacement for GitHub/Linear/Jira
+- a replacement for GitLab/GitHub/Linear/Jira
 - an enterprise identity/RBAC server
 - a cloud transcript warehouse
 - a universal coding-agent terminal shim
@@ -1382,13 +1453,29 @@ Even the mature product should not become:
 - notifications
 - terminal drawer
 
-### M6 — Small-team integration
+### M6 — Forge integration and team reuse
 
-- GitHub Issue
-- GitHub Projects
-- PR/CI/review state
-- issue-thread-worktree-PR linking
-- repo-shared presets where justified
+#### M6a — GitLab Self-Managed read-only
+
+- remote/host detection
+- glab health/auth/version
+- Work Items / Issues
+- Issue Boards
+- Merge Requests
+- Pipeline/review summary
+- work-item/thread/worktree/change-request linking
+
+#### M6b — Explicit GitLab mutations
+
+- create/update work item where justified
+- create/comment/approve change request where justified
+- no silent mutation from visual drag
+
+#### M6c — GitHub provider
+
+- same normalized ForgeProvider contract
+
+Repository-shared presets are added only where AGENTS.md, .codex configuration, skills or existing scripts cannot express the need.
 
 ### M7 — Scale and polish
 
@@ -1426,7 +1513,7 @@ Plan
  -> Work in isolated workspace
  -> Attention when human input is needed
  -> Review code and findings
- -> PR / CI
+ -> Change Request / Pipeline
  -> Done
 ~~~
 
@@ -1434,12 +1521,14 @@ At every stage:
 
 - Codex remains the agent authority
 - Git remains the code authority
-- GitHub remains the team delivery authority
+- the configured code forge remains the team planning/review/delivery authority
 - codex-tui remains the operator workbench
 
 ## 32. Final positioning
 
-codex-tui is the terminal-native operating surface for Codex engineering work.
+codex-tui is a personal-first, local-first terminal operating surface for Codex engineering work.
+
+The product is optimized first for one developer managing many projects and threads. Team value comes primarily from repository asset reuse and code-forge projection, not from a shared codex-tui session platform.
 
 Its differentiator is not "more AI".
 
