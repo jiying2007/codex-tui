@@ -1481,6 +1481,30 @@ mod tests {
     }
 
     #[test]
+    fn goal_capability_degrades_only_for_unsupported_protocol_errors() {
+        let method_not_found = anyhow::Error::new(RpcResponseError {
+            method: "thread/goal/get".into(),
+            code: Some(-32601),
+            message: "method not found".into(),
+        });
+        assert!(is_goal_unsupported(&method_not_found));
+
+        let old_invalid_params = anyhow::Error::new(RpcResponseError {
+            method: "thread/goal/get".into(),
+            code: Some(-32602),
+            message: "unknown Goal request".into(),
+        });
+        assert!(is_goal_unsupported(&old_invalid_params));
+
+        let ordinary_failure = anyhow::Error::new(RpcResponseError {
+            method: "thread/goal/get".into(),
+            code: Some(-32000),
+            message: "database unavailable".into(),
+        });
+        assert!(!is_goal_unsupported(&ordinary_failure));
+    }
+
+    #[test]
     fn initialize_metadata_is_capability_oriented_not_version_gated() {
         let status = status_from_initialize(&json!({
             "userAgent": "codex-cli 0.157.1",
