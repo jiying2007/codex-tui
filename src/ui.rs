@@ -131,13 +131,20 @@ fn thread_list(app: &AppState) -> Paragraph<'static> {
         let selected = index == app.selected;
         let prefix = if selected { ">" } else { " " };
         let pin = if thread.pinned { "*" } else { " " };
+        let pending_interactive = app
+            .pending_requests
+            .iter()
+            .any(|request| request.thread_id == thread.id);
         let attention = if app.thread_needs_attention(index) {
-            thread
+            let mut reasons = thread
                 .attention
                 .iter()
                 .map(|reason| reason.label())
-                .collect::<Vec<_>>()
-                .join(",")
+                .collect::<Vec<_>>();
+            if pending_interactive {
+                reasons.push("interactive");
+            }
+            reasons.join(",")
         } else if thread.attention.is_empty() {
             "-".into()
         } else {
@@ -205,6 +212,13 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
             Line::from(format!(
                 "Local attention ack: {}",
                 app.acknowledged_attention.contains(&thread.id.0)
+            )),
+            Line::from(format!(
+                "Pending interactive: {}",
+                app.pending_requests
+                    .iter()
+                    .filter(|request| request.thread_id == thread.id)
+                    .count()
             )),
         ]
     } else {
@@ -287,7 +301,14 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
                 " Conversation "
             }))
             .wrap(Wrap { trim: false })
-            .scroll((ui.scroll, 0)),
+            .scroll((
+                if app.current_pending_request().is_some() {
+                    0
+                } else {
+                    ui.scroll
+                },
+                0,
+            )),
         chunks[1],
     );
 
