@@ -554,6 +554,19 @@ impl SqliteStore {
         rows.map(|row| row.map_err(Into::into)).collect()
     }
 
+    pub fn load_recoverable_operation_receipts(&self) -> Result<Vec<OperationReceipt>> {
+        let conn = self.open_ready()?;
+        let mut stmt = conn.prepare(
+            "SELECT operation_id, plan_json, state, started_at_unix_ms,
+                    completed_at_unix_ms, result_ref, verification, failure
+             FROM operation_receipts
+             WHERE state IN ('planned', 'executing', 'outcome-unknown')
+             ORDER BY updated_at_unix_ms, operation_id",
+        )?;
+        let rows = stmt.query_map([], decode_operation_receipt)?;
+        rows.map(|row| row.map_err(Into::into)).collect()
+    }
+
     fn open_ready(&self) -> Result<Connection> {
         ensure_private_parent(&self.db_path)?;
         let mut conn = Connection::open(&self.db_path)
@@ -1452,6 +1465,71 @@ mod tests {
         assert_eq!(
             reopened.load_managed_worktrees().expect("managed list"),
             vec![managed]
+        );
+    }
+
+    #[test]
+    fn recoverable_receipts_only_return_planned_executing_and_unknown() {
+        let root = tempdir().expect("tempdir");
+        let store = SqliteStore::at(root.path());
+        let repo = crate::domain::LocalRepoIdentity {
+            git_common_dir: "/repo/.git".into(),
+            primary_root: "/repo".into(),
+        };
+
+        let mut planned = OperationReceipt::planned(OperationPlan::delete_branch(
+            repo.clone(),
+            "/repo".into(),
+            "planned".into(),
+            1,
+        ));
+        let mut executing = OperationReceipt::planned(OperationPlan::delete_branch(
+            repo.clone(),
+            "/repo".into(),
+            "executing".into(),
+            2,
+        ));
+        executing.start(3);
+        let mut unknown = OperationReceipt::planned(OperationPlan::delete_branch(
+            repo.clone(),
+            "/repo".into(),
+            "unknown".into(),
+            4,
+        ));
+        unknown.start(5);
+        unknown.outcome_unknown(6, "timeout".into());
+        let mut succeeded = OperationReceipt::planned(OperationPlan::delete_branch(
+            repo,
+            "/repo".into(),
+            "done".into(),
+            7,
+        ));
+        succeeded.start(8);
+        succeeded.succeed(9, "done".into(), "verified".into());
+
+        for receipt in [&planned, &executing, &unknown, &succeeded] {
+            store.save_operation_receipt(receipt).expect("save receipt");
+        }
+
+        let recoverable = store
+            .load_recoverable_operation_receipts()
+            .expect("recoverable");
+        assert_eq!(recoverable.len(), 3);
+        assert!(recoverable.iter().all(|receipt| matches!(
+            receipt.state,
+            OperationState::Planned
+                | OperationState::Executing
+                | OperationState::OutcomeUnknown
+        )));
+
+        planned.fail(10, "cancelled".into());
+        store.save_operation_receipt(&planned).expect("update planned");
+        assert_eq!(
+            store
+                .load_recoverable_operation_receipts()
+                .expect("recoverable after update")
+                .len(),
+            2
         );
     }
 
