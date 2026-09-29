@@ -64,6 +64,7 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState) {
             "alias> {}  · Enter save · Esc cancel",
             app.input_buffer
         )),
+        InputMode::Composer => Line::from("composer active in Thread view"),
         InputMode::Normal => {
             if let Some(error) = &app.backend_status.error {
                 Line::from(format!(
@@ -281,8 +282,13 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
         chunks[1],
     );
 
+    let composer_title = if app.input_mode == InputMode::Composer {
+        " Composer · Enter send · Esc keep draft "
+    } else {
+        " Draft · a edit "
+    };
     let composer = Paragraph::new(format!(
-        "draft: {}\nscroll={} follow={}",
+        "{}\nscroll={} follow={}",
         if ui.draft.is_empty() {
             "<empty>"
         } else {
@@ -291,10 +297,10 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
         ui.scroll,
         ui.follow
     ))
-    .block(Block::bordered().title(" Local thread UI state "));
+    .block(Block::bordered().title(composer_title));
     frame.render_widget(composer, chunks[2]);
     frame.render_widget(
-        Paragraph::new("Esc back · PageUp/PageDown history · a composer (M2b) · Ctrl+C interrupt"),
+        Paragraph::new("Esc back · PageUp/PageDown history · a composer · Ctrl+C interrupt"),
         chunks[3],
     );
 }
@@ -308,7 +314,9 @@ fn render_help(frame: &mut Frame<'_>) {
             Line::from(
                 "Registry: j/k · Enter · Space attention · / search · p pin · e alias · x ack",
             ),
-            Line::from("Thread: PageUp/PageDown · r review · w workspace · g goal"),
+            Line::from(
+                "Thread: a composer · Enter send · Ctrl+C interrupt · PageUp/PageDown history",
+            ),
             Line::from(
                 "Authority: Codex/Git/Forge stay canonical; codex-tui stores operator state only.",
             ),
