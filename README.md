@@ -132,4 +132,5 @@ See:
 - `docs/design/core-user-flows.md`
 - `docs/design/kanban-and-feature-evaluation.md`
 - `docs/design/target-state.md`
+- `docs/design/final-plan.md`
 - `docs/roadmap-v1.md`
