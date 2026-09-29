@@ -127,10 +127,9 @@ fn thread_list(app: &AppState) -> Paragraph<'static> {
     }
 
     Paragraph::new(lines)
-        .block(Block::bordered().title(format!(
-            " Mission Control · {} ",
-            app.backend_status.source
-        )))
+        .block(
+            Block::bordered().title(format!(" Mission Control · {} ", app.backend_status.source)),
+        )
         .wrap(Wrap { trim: false })
 }
 
@@ -200,9 +199,7 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
 
     frame.render_widget(
         Paragraph::new(vec![
-            Line::from(
-                "M1 registry mode intentionally does not hydrate full transcript history.",
-            ),
+            Line::from("M1 registry mode intentionally does not hydrate full transcript history."),
             Line::from(
                 "Exact Codex thread id remains canonical; conversation control arrives in M2.",
             ),
