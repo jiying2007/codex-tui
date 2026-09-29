@@ -1577,6 +1577,17 @@ fn rebuild_planning(state: &mut AppState, now_unix_ms: u64) {
         )
     }));
 
+    for projection in &mut projections {
+        if let Some(note) = state
+            .planning_snapshot
+            .notes
+            .iter()
+            .find(|note| note.owner == projection.anchor)
+        {
+            projection.overlay.note = Some(note.text.clone());
+        }
+    }
+
     projections.sort_by(|left, right| {
         right
             .overlay
