@@ -682,6 +682,54 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::PlanningStoreDegraded(error) => {
             state.planning_store_error = error;
         }
+        Action::GoalObserved(goal) => {
+            state.goals.insert(goal.thread_id.0.clone(), goal);
+        }
+        Action::GoalCleared(thread_id) => {
+            state.goals.remove(&thread_id.0);
+            state.goal_actions_open = false;
+        }
+        Action::OpenGoalActions => {
+            if let Some(thread_id) = state.current_thread_id().cloned() {
+                state.goal_actions_open = true;
+                if !state.goals.contains_key(&thread_id.0) {
+                    return vec![Effect::RefreshGoal(thread_id)];
+                }
+            }
+        }
+        Action::CloseGoalActions => {
+            state.goal_actions_open = false;
+        }
+        Action::BeginGoalObjective => {
+            let Some(thread_id) = state.current_thread_id().cloned() else {
+                return vec![];
+            };
+            state.input_buffer = state
+                .goals
+                .get(&thread_id.0)
+                .map(|goal| goal.objective.clone())
+                .unwrap_or_default();
+            state.goal_actions_open = false;
+            state.input_mode = InputMode::GoalObjective;
+        }
+        Action::SetGoalStatus(status) => {
+            let Some(thread_id) = state.current_thread_id().cloned() else {
+                return vec![];
+            };
+            state.goal_actions_open = false;
+            return vec![Effect::SetGoal {
+                thread_id,
+                objective: None,
+                status: Some(status),
+            }];
+        }
+        Action::ClearGoal => {
+            let Some(thread_id) = state.current_thread_id().cloned() else {
+                return vec![];
+            };
+            state.goal_actions_open = false;
+            return vec![Effect::ClearGoal(thread_id)];
+        }
         Action::ReconcilePlanning { now_unix_ms } => {
             rebuild_planning(state, now_unix_ms);
         }
