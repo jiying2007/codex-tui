@@ -1,9 +1,9 @@
 use crate::planning::{
-    LinkRole, PlanningSnapshot, SavedView, SavedViewLayout, ScratchState, ScratchWork, SourceKind,
-    SourceRef, WorkCardLink, WorkCardOverlay, WorkCardRecord,
+    PlanningSnapshot, SavedView, ScratchState, ScratchWork, SourceKind, SourceRef, WorkCardLink,
+    WorkCardOverlay, WorkCardRecord,
 };
 use crate::store::{AppConfig, FileStore, LocalStateV1, LocalStore};
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -70,7 +70,7 @@ impl SqliteStore {
     }
 
     pub fn health(&self) -> Result<StoreHealth> {
-        let mut conn = self.open_ready()?;
+        let conn = self.open_ready()?;
         let integrity = quick_check(&conn)?;
         let legacy_import = metadata_get(&conn, LEGACY_IMPORT_KEY)?;
         Ok(StoreHealth {
@@ -793,6 +793,7 @@ fn ensure_private_file(_path: &Path) -> Result<()> {
 mod tests {
     use super::*;
     use crate::domain::ThreadUiState;
+    use crate::planning::{LinkRole, SavedViewLayout};
     use std::collections::{BTreeMap, BTreeSet};
     use tempfile::tempdir;
 
