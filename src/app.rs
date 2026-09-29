@@ -303,9 +303,12 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.input_mode = InputMode::Search;
         }
         Action::BeginAlias => {
-            if let Some(thread) = state.selected_thread() {
+            if let Some(alias) = state
+                .selected_thread()
+                .map(|thread| thread.alias.clone().unwrap_or_default())
+            {
                 state.input_original.clear();
-                state.input_buffer = thread.alias.clone().unwrap_or_default();
+                state.input_buffer = alias;
                 state.input_mode = InputMode::Alias;
             }
         }
