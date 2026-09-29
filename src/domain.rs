@@ -62,6 +62,7 @@ pub enum RuntimeStatus {
     Working,
     WaitingHuman,
     Ready,
+    SystemError,
     Inactive,
 }
 
@@ -71,6 +72,7 @@ impl RuntimeStatus {
             Self::Working => "WORKING",
             Self::WaitingHuman => "WAITING",
             Self::Ready => "READY",
+            Self::SystemError => "ERROR",
             Self::Inactive => "IDLE",
         }
     }
@@ -81,6 +83,7 @@ pub enum AttentionReason {
     ApprovalRequired,
     UserInputRequired,
     ReadyForReview,
+    SystemError,
     MarkedUnread,
 }
 
@@ -90,6 +93,7 @@ impl AttentionReason {
             Self::ApprovalRequired => "approval",
             Self::UserInputRequired => "input",
             Self::ReadyForReview => "review",
+            Self::SystemError => "error",
             Self::MarkedUnread => "unread",
         }
     }
