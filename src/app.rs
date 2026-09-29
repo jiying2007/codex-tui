@@ -2382,7 +2382,9 @@ mod tests {
             reduce(&mut app, Action::InputChar(ch));
         }
         assert!(reduce(&mut app, Action::CommitInput).is_empty());
-        for ch in "/tmp/feature-wt".chars() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let target = temp.path().join("feature-wt").to_string_lossy().into_owned();
+        for ch in target.chars() {
             reduce(&mut app, Action::InputChar(ch));
         }
         assert!(reduce(&mut app, Action::CommitInput).is_empty());
