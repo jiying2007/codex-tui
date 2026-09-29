@@ -812,6 +812,10 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     OperationState::OutcomeUnknown => "outcome unknown",
                 }
             ));
+            let repo = receipt.plan.repo.clone();
+            state.git_contexts.retain(|_, context| {
+                context.repo.as_ref() != Some(&repo)
+            });
             state.recent_operations.retain(|item| {
                 item.operation_id != receipt.operation_id
             });
