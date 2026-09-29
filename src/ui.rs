@@ -1,6 +1,7 @@
 use crate::app::{AppState, InputMode, View};
 use crate::conversation::{InteractiveRequest, InteractiveRequestKind};
 use crate::domain::ThreadSummary;
+use crate::git::presentation_diff_lines;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -30,6 +31,7 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
     match &app.view {
         View::Registry => render_registry(frame, app),
         View::Thread(id) => render_thread(frame, app, id.0.as_str()),
+        View::Review(id) => render_review(frame, app, id.0.as_str()),
     }
     if app.show_help {
         render_help(frame);
@@ -415,6 +417,122 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
     );
 }
 
+fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
+    let area = frame.area();
+    let outer = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(4), Constraint::Length(1)])
+        .split(area);
+
+    let Some(review) = app.git_reviews.get(thread_id) else {
+        frame.render_widget(
+            Paragraph::new("Review has not been loaded.")
+                .block(Block::bordered().title(" Review ")),
+            outer[0],
+        );
+        return;
+    };
+
+    if review.observed_at_unix_ms == 0 {
+        frame.render_widget(
+            Paragraph::new("Loading Git review…")
+                .block(Block::bordered().title(" Review ")),
+            outer[0],
+        );
+    } else if let Some(error) = &review.error {
+        frame.render_widget(
+            Paragraph::new(format!("Review unavailable: {error}"))
+                .block(Block::bordered().title(" Review ")),
+            outer[0],
+        );
+    } else {
+        let files = review
+            .changes
+            .iter()
+            .enumerate()
+            .map(|(index, change)| {
+                let selected = index == app.review_selected;
+                let prefix = if selected { ">" } else { " " };
+                let text = format!(
+                    "{prefix} {:2} {}",
+                    change.status_label(),
+                    change.path
+                );
+                let style = if selected {
+                    Style::default().add_modifier(Modifier::REVERSED)
+                } else {
+                    Style::default()
+                };
+                Line::from(Span::styled(text, style))
+            })
+            .collect::<Vec<_>>();
+
+        let mut diff_lines = presentation_diff_lines(review, app.review_word_diff)
+            .into_iter()
+            .map(Line::from)
+            .collect::<Vec<_>>();
+        if diff_lines.is_empty() {
+            diff_lines.push(Line::from(
+                "No staged/unstaged tracked diff. Untracked files remain listed at left/top.",
+            ));
+        }
+
+        if area.width >= 100 {
+            let columns = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(32), Constraint::Percentage(68)])
+                .split(outer[0]);
+            frame.render_widget(
+                Paragraph::new(files)
+                    .block(Block::bordered().title(format!(
+                        " Changed files ({}) ",
+                        review.changes.len()
+                    )))
+                    .wrap(Wrap { trim: false }),
+                columns[0],
+            );
+            frame.render_widget(
+                Paragraph::new(diff_lines)
+                    .block(Block::bordered().title(format!(
+                        " Git diff · word={}{} ",
+                        app.review_word_diff,
+                        if review.truncated { " · truncated" } else { "" }
+                    )))
+                    .wrap(Wrap { trim: false })
+                    .scroll((app.review_scroll, 0)),
+                columns[1],
+            );
+        } else {
+            let rows = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Length(6), Constraint::Min(4)])
+                .split(outer[0]);
+            frame.render_widget(
+                Paragraph::new(files)
+                    .block(Block::bordered().title(" Changed files "))
+                    .wrap(Wrap { trim: false }),
+                rows[0],
+            );
+            frame.render_widget(
+                Paragraph::new(diff_lines)
+                    .block(Block::bordered().title(format!(
+                        " Git diff · word={}{} ",
+                        app.review_word_diff,
+                        if review.truncated { " · truncated" } else { "" }
+                    )))
+                    .wrap(Wrap { trim: false })
+                    .scroll((app.review_scroll, 0)),
+                rows[1],
+            );
+        }
+    }
+
+    frame.render_widget(
+        Paragraph::new("j/k file · PageUp/PageDown diff · w word-diff · e editor · Esc back"),
+        outer[1],
+    );
+}
+
 fn render_help(frame: &mut Frame<'_>) {
     let area = centered_rect(70, 70, frame.area());
     frame.render_widget(Clear, area);
@@ -425,8 +543,9 @@ fn render_help(frame: &mut Frame<'_>) {
                 "Registry: j/k · Enter · Space attention · / search · p pin · e alias · x ack",
             ),
             Line::from(
-                "Thread: a composer · y/n/c approval · i answer · Ctrl+C interrupt · PageUp/PageDown",
+                "Thread: a composer · y/n/c approval · i answer · Ctrl+C interrupt · r review",
             ),
+            Line::from("Review: j/k file · w word-diff · e editor · PageUp/PageDown · Esc"),
             Line::from(
                 "Authority: Codex/Git/Forge stay canonical; codex-tui stores operator state only.",
             ),
