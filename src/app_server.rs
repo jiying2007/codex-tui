@@ -658,6 +658,57 @@ async fn load_all_loaded_ids(rpc: &mut RpcSession) -> Result<BTreeSet<String>> {
     Ok(loaded)
 }
 
+async fn load_goal(rpc: &mut RpcSession, thread_id: ThreadId) -> Result<Option<GoalObservation>> {
+    let result = rpc
+        .request(
+            "thread/goal/get",
+            json!({
+                "threadId": thread_id.0
+            }),
+        )
+        .await
+        .context("get thread Goal")?;
+    parse_goal_get(result, now_unix_ms())
+}
+
+async fn set_goal(
+    rpc: &mut RpcSession,
+    thread_id: ThreadId,
+    objective: Option<String>,
+    status: Option<GoalStatus>,
+) -> Result<GoalObservation> {
+    let mut params = serde_json::Map::new();
+    params.insert("threadId".into(), json!(thread_id.0));
+    if let Some(objective) = objective {
+        params.insert("objective".into(), json!(objective));
+    }
+    if let Some(status) = status {
+        params.insert("status".into(), json!(status.wire()));
+    }
+    let result = rpc
+        .request("thread/goal/set", Value::Object(params))
+        .await
+        .context("set thread Goal")?;
+    parse_goal_set(result, now_unix_ms())
+}
+
+async fn clear_goal(rpc: &mut RpcSession, thread_id: &ThreadId) -> Result<()> {
+    let result = rpc
+        .request(
+            "thread/goal/clear",
+            json!({
+                "threadId": thread_id.0
+            }),
+        )
+        .await
+        .context("clear thread Goal")?;
+    anyhow::ensure!(
+        result.get("cleared").and_then(Value::as_bool) == Some(true),
+        "thread/goal/clear did not confirm cleared=true"
+    );
+    Ok(())
+}
+
 async fn emit_conversation_load(
     rpc: &mut RpcSession,
     thread_id: ThreadId,
