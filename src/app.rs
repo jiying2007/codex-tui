@@ -1252,7 +1252,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     (card.anchor.kind == SourceKind::CodexThread)
                         .then(|| ThreadId::new(card.anchor.value.clone()))
                 }),
-                View::Scratch(_) | View::ManagedWorktrees(_) => None,
+                View::Scratch(_) => None,
             };
             let Some(thread_id) = thread_id else {
                 return vec![];
@@ -1289,7 +1289,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     (card.anchor.kind == SourceKind::CodexThread)
                         .then(|| ThreadId::new(card.anchor.value.clone()))
                 }),
-                View::Scratch(_) | View::ManagedWorktrees(_) => None,
+                View::Scratch(_) => None,
             };
             let Some(thread_id) = thread_id else {
                 return vec![];
