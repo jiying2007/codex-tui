@@ -1123,9 +1123,7 @@ mod tests {
         let bookmark = store
             .create_bookmark(thread.clone(), Some("review"), Some("line 42"))
             .expect("bookmark");
-        store
-            .set_hot_slot(3, thread.clone())
-            .expect("hot slot");
+        store.set_hot_slot(3, thread.clone()).expect("hot slot");
 
         let snapshot = store.load_planning_snapshot().expect("snapshot");
         assert_eq!(snapshot.notes.len(), 1);
@@ -1134,10 +1132,16 @@ mod tests {
         assert_eq!(snapshot.hot_slots[0].slot, 3);
         assert_eq!(snapshot.hot_slots[0].target, thread);
 
-        store.delete_bookmark(&bookmark.id).expect("delete bookmark");
+        store
+            .delete_bookmark(&bookmark.id)
+            .expect("delete bookmark");
         store.clear_hot_slot(3).expect("clear hot slot");
-        store.delete_note(&snapshot.notes[0].owner).expect("delete note");
-        let snapshot = store.load_planning_snapshot().expect("snapshot after delete");
+        store
+            .delete_note(&snapshot.notes[0].owner)
+            .expect("delete note");
+        let snapshot = store
+            .load_planning_snapshot()
+            .expect("snapshot after delete");
         assert!(snapshot.notes.is_empty());
         assert!(snapshot.bookmarks.is_empty());
         assert!(snapshot.hot_slots.is_empty());
