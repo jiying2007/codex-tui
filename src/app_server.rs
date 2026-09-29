@@ -1192,6 +1192,30 @@ mod tests {
     use super::*;
 
     #[test]
+    fn history_compatibility_matches_official_error_semantics() {
+        let method_not_found = anyhow::Error::new(RpcResponseError {
+            method: "thread/turns/list".into(),
+            code: Some(-32601),
+            message: "method not found".into(),
+        });
+        assert!(is_history_pagination_unsupported(&method_not_found));
+
+        let legacy_invalid_params = anyhow::Error::new(RpcResponseError {
+            method: "thread/resume".into(),
+            code: Some(-32602),
+            message: "unknown field excludeTurns".into(),
+        });
+        assert!(is_history_pagination_unsupported(&legacy_invalid_params));
+
+        let ordinary_failure = anyhow::Error::new(RpcResponseError {
+            method: "thread/items/list".into(),
+            code: Some(-32000),
+            message: "database unavailable".into(),
+        });
+        assert!(!is_history_pagination_unsupported(&ordinary_failure));
+    }
+
+    #[test]
     fn initialize_metadata_is_capability_oriented_not_version_gated() {
         let status = status_from_initialize(&json!({
             "userAgent": "codex-cli 0.157.1",
