@@ -273,6 +273,18 @@ fn apply_effects(
                     );
                 }
             }
+            Effect::StopWatchingConversation(thread_id) => {
+                if let Some(registry) = registry
+                    && let Err(error) = registry.stop_watching_conversation(thread_id)
+                {
+                    reduce(
+                        app,
+                        Action::BackendStatus(backend_error_status(format!(
+                            "stop conversation watch failed: {error}"
+                        ))),
+                    );
+                }
+            }
             Effect::LoadOlderConversation {
                 thread_id,
                 turn_cursor,
