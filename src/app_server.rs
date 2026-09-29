@@ -901,17 +901,23 @@ async fn resolve_interactive(
                 anyhow::bail!("user-input answer cannot resolve a permission request")
             }
         },
-        "item/tool/requestUserInput" => {
-            let InteractiveResolution::UserInput(answers) = resolution else {
-                anyhow::bail!("request_user_input requires explicit answers");
-            };
-            let answers = answers
-                .into_iter()
-                .map(|(question_id, answers)| (question_id, json!({"answers": answers})))
-                .collect::<serde_json::Map<_, _>>();
-            rpc.respond_result(request_id.to_value(), json!({"answers": answers}))
-                .await?;
-        }
+        "item/tool/requestUserInput" => match resolution {
+            InteractiveResolution::UserInput(answers) => {
+                let answers = answers
+                    .into_iter()
+                    .map(|(question_id, answers)| (question_id, json!({"answers": answers})))
+                    .collect::<serde_json::Map<_, _>>();
+                rpc.respond_result(request_id.to_value(), json!({"answers": answers}))
+                    .await?;
+            }
+            InteractiveResolution::Decline | InteractiveResolution::Cancel => {
+                rpc.reject_request(request_id.to_value(), "user input cancelled by user")
+                    .await?;
+            }
+            InteractiveResolution::Accept => {
+                anyhow::bail!("request_user_input requires explicit answers")
+            }
+        },
         other => anyhow::bail!("unsupported pending server request: {other}"),
     }
 
