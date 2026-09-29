@@ -555,13 +555,13 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                     registry = Some(started.handle);
                     let effects = reduce(&mut app, Action::RefreshGitProjections);
                     apply_effects(
-                &mut app,
-                registry.as_ref(),
-                &git,
-                &mut mutations,
-                &mut store,
-                effects,
-            )?;
+                        &mut app,
+                        registry.as_ref(),
+                        &git,
+                        &mut mutations,
+                        &mut store,
+                        effects,
+                    )?;
                     reduce(
                         &mut app,
                         Action::ReconcilePlanning {
