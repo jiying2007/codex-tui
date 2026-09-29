@@ -392,6 +392,12 @@ impl AppState {
         let Some(thread) = self.threads.get(index) else {
             return false;
         };
+        if self
+            .work_card_for_thread(&thread.id)
+            .is_some_and(|card| card.snoozed)
+        {
+            return false;
+        }
         let actionable = thread.attention.iter().any(|reason| {
             matches!(
                 reason,
@@ -1303,25 +1309,28 @@ fn select_next_planning_attention(state: &mut AppState) {
         .and_then(|local_id| cards.iter().position(|card| &card.local_id == local_id))
         .unwrap_or(0);
 
-    for offset in 1..=cards.len() {
+    let next = (1..=cards.len()).find_map(|offset| {
         let card = cards[(start + offset) % cards.len()];
-        if card.needs_you() {
-            state.planning_view_index = state
-                .planning_views()
-                .iter()
-                .position(|candidate| candidate.id == view.id)
-                .unwrap_or(state.planning_view_index);
-            state.board_stage_index = WorkflowStage::ALL
-                .iter()
-                .position(|stage| *stage == card.stage)
-                .unwrap_or(state.board_stage_index);
-            let visible = state.visible_planning_cards();
-            state.board_selected = visible
-                .iter()
-                .position(|candidate| candidate.local_id == card.local_id)
-                .unwrap_or(0);
-            return;
-        }
+        card.needs_you()
+            .then(|| (card.local_id.clone(), card.stage))
+    });
+    drop(cards);
+
+    if let Some((local_id, stage)) = next {
+        state.planning_view_index = state
+            .planning_views()
+            .iter()
+            .position(|candidate| candidate.id == view.id)
+            .unwrap_or(state.planning_view_index);
+        state.board_stage_index = WorkflowStage::ALL
+            .iter()
+            .position(|candidate| *candidate == stage)
+            .unwrap_or(state.board_stage_index);
+        let visible = state.visible_planning_cards();
+        state.board_selected = visible
+            .iter()
+            .position(|candidate| candidate.local_id == local_id)
+            .unwrap_or(0);
     }
 }
 
