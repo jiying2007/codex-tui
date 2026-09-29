@@ -40,6 +40,12 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
     if app.show_help {
         render_help(frame);
     }
+    if app.context_open {
+        render_context_actions(frame, app);
+    }
+    if matches!(app.input_mode, InputMode::Note | InputMode::Snooze) {
+        render_local_input_overlay(frame, app);
+    }
 }
 
 fn render_registry(frame: &mut Frame<'_>, app: &AppState) {
@@ -80,6 +86,10 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState) {
         InputMode::Snooze => Line::from(format!(
             "snooze> {}  · examples 15m / 1h / 1d · Enter apply · Esc cancel",
             app.input_buffer
+        )),
+        InputMode::Note => Line::from(format!(
+            "note> {}  · Enter save · Esc cancel",
+            truncate(&app.input_buffer, 60)
         )),
         InputMode::Normal => {
             if let Some(error) = &app.backend_status.error {
@@ -237,6 +247,12 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
                     .iter()
                     .filter(|request| request.thread_id == thread.id)
                     .count()
+            )),
+            Line::from(format!(
+                "Planning note: {}",
+                app.work_card_for_thread(&thread.id)
+                    .and_then(|card| card.overlay.note.as_deref())
+                    .unwrap_or("<none>")
             )),
         ]
     } else {
@@ -547,6 +563,8 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState) {
             "snooze> {} · 15m / 1h / 1d · Enter apply · Esc cancel",
             app.input_buffer
         )
+    } else if app.input_mode == InputMode::Note {
+        format!("note> {} · Enter save · Esc cancel", truncate(&app.input_buffer, 80))
     } else if app.hot_slot_bind_pending {
         "bind hot slot: press 1–9 · Esc cancels other input only".into()
     } else if let Some(error) = &app.planning_store_error {
@@ -856,12 +874,75 @@ fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
     );
 }
 
+fn render_context_actions(frame: &mut Frame<'_>, app: &AppState) {
+    let choices = app.context_choices();
+    let lines = choices
+        .iter()
+        .enumerate()
+        .map(|(index, choice)| {
+            let selected = index == app.context_selected;
+            let style = if selected {
+                Style::default().add_modifier(Modifier::REVERSED)
+            } else {
+                Style::default()
+            };
+            Line::from(Span::styled(
+                format!("{} {}", if selected { ">" } else { " " }, choice.label()),
+                style,
+            ))
+        })
+        .chain(std::iter::once(Line::from("j/k move · Enter execute · Esc close")))
+        .collect::<Vec<_>>();
+    let height = u16::try_from(lines.len().saturating_add(2))
+        .unwrap_or(12)
+        .clamp(6, 14);
+    let area = centered_fixed(58, height, frame.area());
+    frame.render_widget(Clear, area);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(Block::bordered().title(" Context Actions "))
+            .wrap(Wrap { trim: false }),
+        area,
+    );
+}
+
+fn render_local_input_overlay(frame: &mut Frame<'_>, app: &AppState) {
+    let (title, hint) = match app.input_mode {
+        InputMode::Note => (" Local note ", "Enter save · Esc cancel"),
+        InputMode::Snooze => (" Snooze ", "15m / 1h / 1d · Enter apply · Esc cancel"),
+        _ => return,
+    };
+    let area = centered_fixed(64, 7, frame.area());
+    frame.render_widget(Clear, area);
+    frame.render_widget(
+        Paragraph::new(vec![
+            Line::from(app.input_buffer.clone()),
+            Line::from(""),
+            Line::from(hint),
+        ])
+        .block(Block::bordered().title(title))
+        .wrap(Wrap { trim: false }),
+        area,
+    );
+}
+
+fn centered_fixed(width: u16, height: u16, area: Rect) -> Rect {
+    let width = width.min(area.width.saturating_sub(2)).max(1);
+    let height = height.min(area.height.saturating_sub(2)).max(1);
+    Rect {
+        x: area.x + area.width.saturating_sub(width) / 2,
+        y: area.y + area.height.saturating_sub(height) / 2,
+        width,
+        height,
+    }
+}
+
 fn render_help(frame: &mut Frame<'_>) {
     let area = centered_rect(70, 70, frame.area());
     frame.render_widget(Clear, area);
     frame.render_widget(
         Paragraph::new(vec![
-            Line::from("Global: ? help · Ctrl+K palette · / search · Esc back"),
+            Line::from("Global: ? help · Ctrl+K palette · / search · . context · Esc back"),
             Line::from(
                 "Registry: j/k · Enter · Space attention · / search · p pin · e alias · x ack",
             ),
