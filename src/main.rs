@@ -6,7 +6,9 @@ use codex_tui::{
     conversation::{InteractiveRequestKind, InteractiveResolution},
     git::{self, GitEvent, GitHandle},
     keymap::{Command, command_for_key},
-    planning::PlanningSnapshot,
+    planning::{
+        PlanningSnapshot, SourceKind, SourceRef, WorkCardRecord,
+    },
     sqlite_store::SqliteStore,
     store::{AppConfig, LocalStateV1, LocalStore},
     terminal::TerminalSession,
@@ -88,6 +90,92 @@ impl RuntimeStore {
 
     fn error(&self) -> Option<String> {
         self.error.clone()
+    }
+
+    fn mutate_work_card<F>(
+        &mut self,
+        anchor: SourceRef,
+        operation: F,
+    ) -> Result<PlanningSnapshot, String>
+    where
+        F: FnOnce(&mut WorkCardRecord),
+    {
+        if !self.writable {
+            return Err(self
+                .error
+                .clone()
+                .unwrap_or_else(|| "SQLite planning store is read-only".into()));
+        }
+
+        let result = (|| -> Result<PlanningSnapshot> {
+            let mut card = match self.sqlite.work_card_for_anchor(&anchor)? {
+                Some(card) => card,
+                None => match anchor.kind {
+                    SourceKind::CodexThread => {
+                        WorkCardRecord::implicit_thread(&codex_tui::domain::ThreadId::new(
+                            anchor.value.clone(),
+                        ))
+                    }
+                    SourceKind::ScratchWork => WorkCardRecord {
+                        local_id: anchor.value.clone(),
+                        anchor: anchor.clone(),
+                        links: vec![],
+                        overlay: Default::default(),
+                    },
+                    _ => anyhow::bail!("local overlay unsupported for {:?}", anchor.kind),
+                },
+            };
+            operation(&mut card);
+            self.sqlite.upsert_work_card(&card)?;
+            self.sqlite.load_planning_snapshot()
+        })();
+
+        match result {
+            Ok(snapshot) => Ok(snapshot),
+            Err(error) => {
+                let message = format!("SQLite WorkCard write failed: {error:#}");
+                self.writable = false;
+                self.error = Some(message.clone());
+                Err(message)
+            }
+        }
+    }
+
+    fn snooze_work_card(
+        &mut self,
+        anchor: SourceRef,
+        duration_ms: u64,
+    ) -> Result<PlanningSnapshot, String> {
+        let until = now_unix_ms().saturating_add(duration_ms);
+        self.mutate_work_card(anchor, |card| {
+            card.overlay.snooze_until_unix_ms = Some(until);
+        })
+    }
+
+    fn set_hot_slot(
+        &mut self,
+        slot: u8,
+        target: SourceRef,
+    ) -> Result<PlanningSnapshot, String> {
+        if !self.writable {
+            return Err(self
+                .error
+                .clone()
+                .unwrap_or_else(|| "SQLite planning store is read-only".into()));
+        }
+        let result = self
+            .sqlite
+            .set_hot_slot(slot, target)
+            .and_then(|_| self.sqlite.load_planning_snapshot());
+        match result {
+            Ok(snapshot) => Ok(snapshot),
+            Err(error) => {
+                let message = format!("SQLite hot-slot write failed: {error:#}");
+                self.writable = false;
+                self.error = Some(message.clone());
+                Err(message)
+            }
+        }
     }
 
     fn create_scratch(
@@ -500,6 +588,39 @@ fn apply_effects(
                     }
                 }
             }
+            Effect::SnoozeWorkCard {
+                anchor,
+                duration_ms,
+            } => match store.snooze_work_card(anchor, duration_ms) {
+                Ok(snapshot) => {
+                    reduce(app, Action::PlanningSnapshotLoaded(snapshot));
+                    reduce(
+                        app,
+                        Action::ReconcilePlanning {
+                            now_unix_ms: now_unix_ms(),
+                        },
+                    );
+                    reduce(app, Action::PlanningStoreDegraded(None));
+                }
+                Err(error) => {
+                    reduce(app, Action::PlanningStoreDegraded(Some(error)));
+                }
+            },
+            Effect::SetHotSlot { slot, target } => match store.set_hot_slot(slot, target) {
+                Ok(snapshot) => {
+                    reduce(app, Action::PlanningSnapshotLoaded(snapshot));
+                    reduce(
+                        app,
+                        Action::ReconcilePlanning {
+                            now_unix_ms: now_unix_ms(),
+                        },
+                    );
+                    reduce(app, Action::PlanningStoreDegraded(None));
+                }
+                Err(error) => {
+                    reduce(app, Action::PlanningStoreDegraded(Some(error)));
+                }
+            },
             Effect::ProbeGit { thread_id, cwd } => {
                 if let Err(error) = git.probe(thread_id.clone(), cwd.clone()) {
                     let mut context = codex_tui::git::GitContext::pending(thread_id, cwd);
@@ -775,6 +896,8 @@ fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
         Command::Review => Action::OpenReview,
         Command::Workspace => Action::OpenWorkspace,
         Command::New => Action::BeginScratch,
+        Command::Snooze => Action::BeginSnooze,
+        Command::BeginHotSlotBind => Action::BeginHotSlotBind,
         Command::PageUp => {
             if app.view_kind() == ViewKind::Review {
                 Action::ScrollReviewBy(-10)
@@ -791,13 +914,11 @@ fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
         }
         Command::ToggleWordDiff => Action::ToggleReviewWordDiff,
         Command::ExternalEditor => Action::OpenReviewExternalEditor,
+        Command::HotSlot(slot) => Action::UseHotSlot(slot),
         Command::CommandPalette
         | Command::ContextActions
-        | Command::Snooze
         | Command::Goal
-        | Command::OpenExternal
-        | Command::HotSlot(_)
-        | Command::BeginHotSlotBind => return vec![],
+        | Command::OpenExternal => return vec![],
     };
     reduce(app, action)
 }
