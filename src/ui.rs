@@ -564,7 +564,10 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState) {
             app.input_buffer
         )
     } else if app.input_mode == InputMode::Note {
-        format!("note> {} · Enter save · Esc cancel", truncate(&app.input_buffer, 80))
+        format!(
+            "note> {} · Enter save · Esc cancel",
+            truncate(&app.input_buffer, 80)
+        )
     } else if app.hot_slot_bind_pending {
         "bind hot slot: press 1–9 · Esc cancels other input only".into()
     } else if let Some(error) = &app.planning_store_error {
@@ -891,7 +894,9 @@ fn render_context_actions(frame: &mut Frame<'_>, app: &AppState) {
                 style,
             ))
         })
-        .chain(std::iter::once(Line::from("j/k move · Enter execute · Esc close")))
+        .chain(std::iter::once(Line::from(
+            "j/k move · Enter execute · Esc close",
+        )))
         .collect::<Vec<_>>();
     let height = u16::try_from(lines.len().saturating_add(2))
         .unwrap_or(12)
