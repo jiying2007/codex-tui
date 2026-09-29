@@ -304,10 +304,7 @@ async fn check_preconditions(
     Ok(())
 }
 
-async fn verify_success(
-    store: &SqliteStore,
-    plan: &OperationPlan,
-) -> Result<(String, String)> {
+async fn verify_success(store: &SqliteStore, plan: &OperationPlan) -> Result<(String, String)> {
     match plan.kind {
         OperationKind::CreateWorktree => {
             let target = plan
@@ -350,7 +347,9 @@ async fn verify_success(
                 .context("remove plan missing target worktree")?;
             let inventory = list_worktrees(&plan.cwd).await?;
             anyhow::ensure!(
-                !inventory.iter().any(|worktree| same_path(&worktree.path, target)),
+                !inventory
+                    .iter()
+                    .any(|worktree| same_path(&worktree.path, target)),
                 "removed worktree still appears in git worktree list"
             );
             store.remove_managed_worktree(&plan.repo.git_common_dir, target)?;
@@ -405,7 +404,10 @@ async fn reconcile_receipt(
 ) -> Result<OperationReceipt> {
     let now = now_unix_ms();
     match reconcile_outcome(store, &receipt.plan).await {
-        Ok(ReconciledOutcome::Succeeded { result_ref, verification }) => {
+        Ok(ReconciledOutcome::Succeeded {
+            result_ref,
+            verification,
+        }) => {
             receipt.succeed(now, result_ref, verification);
         }
         Ok(ReconciledOutcome::Failed(reason)) => {
@@ -452,7 +454,9 @@ async fn reconcile_outcome(store: &SqliteStore, plan: &OperationPlan) -> Result<
                         .await
                         .map(|(result_ref, verification)| ReconciledOutcome::Succeeded {
                             result_ref,
-                            verification: format!("reconciled after uncertain outcome: {verification}"),
+                            verification: format!(
+                                "reconciled after uncertain outcome: {verification}"
+                            ),
                         });
                 }
                 return Ok(ReconciledOutcome::Unknown(format!(
@@ -462,7 +466,8 @@ async fn reconcile_outcome(store: &SqliteStore, plan: &OperationPlan) -> Result<
             }
             if Path::new(target).exists() || branch_exists(&plan.cwd, branch).await? {
                 return Ok(ReconciledOutcome::Unknown(
-                    "partial create side effects exist but target worktree is not fully registered".into(),
+                    "partial create side effects exist but target worktree is not fully registered"
+                        .into(),
                 ));
             }
             Ok(ReconciledOutcome::Failed(
@@ -475,7 +480,10 @@ async fn reconcile_outcome(store: &SqliteStore, plan: &OperationPlan) -> Result<
                 .as_deref()
                 .context("remove plan missing target")?;
             let inventory = list_worktrees(&plan.cwd).await?;
-            if inventory.iter().any(|worktree| same_path(&worktree.path, target)) {
+            if inventory
+                .iter()
+                .any(|worktree| same_path(&worktree.path, target))
+            {
                 return Ok(ReconciledOutcome::Failed(
                     "reconciliation confirms worktree still exists".into(),
                 ));
@@ -504,12 +512,14 @@ async fn reconcile_outcome(store: &SqliteStore, plan: &OperationPlan) -> Result<
                     verification: format!("reconciled after uncertain outcome: {verification}"),
                 })
         }
-        OperationKind::AdoptWorktree => verify_success(store, plan)
-            .await
-            .map(|(result_ref, verification)| ReconciledOutcome::Succeeded {
-                result_ref,
-                verification,
-            }),
+        OperationKind::AdoptWorktree => {
+            verify_success(store, plan)
+                .await
+                .map(|(result_ref, verification)| ReconciledOutcome::Succeeded {
+                    result_ref,
+                    verification,
+                })
+        }
     }
 }
 
@@ -590,7 +600,12 @@ fn parse_worktree_porcelain(value: &str) -> Vec<WorktreeEntry> {
 async fn branch_exists(cwd: &str, branch: &str) -> Result<bool> {
     let output = run_git(
         cwd,
-        ["show-ref", "--verify", "--quiet", &format!("refs/heads/{branch}")],
+        [
+            "show-ref",
+            "--verify",
+            "--quiet",
+            &format!("refs/heads/{branch}"),
+        ],
     )
     .await?;
     match output.code {
@@ -634,11 +649,7 @@ where
     run_command(cwd, &argv, VERIFY_TIMEOUT).await
 }
 
-async fn run_command(
-    cwd: &str,
-    argv: &[String],
-    timeout: Duration,
-) -> Result<MutationOutput> {
+async fn run_command(cwd: &str, argv: &[String], timeout: Duration) -> Result<MutationOutput> {
     let mut command = Command::new("git");
     command
         .arg("-C")
@@ -793,9 +804,11 @@ branch refs/heads/feature
         .expect("create receipt");
         assert_eq!(receipt.state, OperationState::Succeeded);
         assert!(target.exists());
-        assert!(branch_exists(repo_root.to_string_lossy().as_ref(), "feature")
-            .await
-            .expect("branch"));
+        assert!(
+            branch_exists(repo_root.to_string_lossy().as_ref(), "feature")
+                .await
+                .expect("branch")
+        );
 
         let remove = OperationPlan::remove_worktree(
             repo.clone(),
@@ -814,9 +827,11 @@ branch refs/heads/feature
         .expect("remove receipt");
         assert_eq!(receipt.state, OperationState::Succeeded);
         assert!(!target.exists());
-        assert!(branch_exists(repo_root.to_string_lossy().as_ref(), "feature")
-            .await
-            .expect("branch preserved"));
+        assert!(
+            branch_exists(repo_root.to_string_lossy().as_ref(), "feature")
+                .await
+                .expect("branch preserved")
+        );
     }
 
     #[tokio::test]
@@ -941,14 +956,7 @@ branch refs/heads/feature
 
         git(
             &repo_root,
-            &[
-                "worktree",
-                "add",
-                "-b",
-                "recovered",
-                &target_text,
-                "HEAD",
-            ],
+            &["worktree", "add", "-b", "recovered", &target_text, "HEAD"],
         );
         let plan = OperationPlan::create_worktree(
             repo,
@@ -960,16 +968,14 @@ branch refs/heads/feature
         );
         let mut receipt = OperationReceipt::planned(plan);
         receipt.start(2);
-        store.save_operation_receipt(&receipt).expect("save executing");
+        store
+            .save_operation_receipt(&receipt)
+            .expect("save executing");
 
         let (tx, mut rx) = mpsc::unbounded_channel();
-        recover_incomplete(
-            &store,
-            &Arc::new(Mutex::new(BTreeMap::new())),
-            &tx,
-        )
-        .await
-        .expect("recover");
+        recover_incomplete(&store, &Arc::new(Mutex::new(BTreeMap::new())), &tx)
+            .await
+            .expect("recover");
         let recovered = match rx.recv().await.expect("event") {
             MutationEvent::Receipt(receipt) => receipt,
             other => panic!("unexpected event: {other:?}"),
