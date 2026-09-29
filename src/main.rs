@@ -326,8 +326,7 @@ fn apply_effects(
                 resolution,
             } => {
                 if let Some(registry) = registry
-                    && let Err(error) =
-                        registry.resolve_interactive(request_id.clone(), resolution)
+                    && let Err(error) = registry.resolve_interactive(request_id.clone(), resolution)
                 {
                     reduce(
                         app,
