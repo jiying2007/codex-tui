@@ -161,7 +161,7 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
     );
 
     frame.render_widget(
-        Paragraph::new([
+        Paragraph::new(vec![
             Line::from(
                 "M0 uses a fake backend; canonical transcript persistence is intentionally absent.",
             ),
@@ -195,7 +195,7 @@ fn render_help(frame: &mut Frame<'_>) {
     let area = centered_rect(70, 70, frame.area());
     frame.render_widget(Clear, area);
     frame.render_widget(
-        Paragraph::new([
+        Paragraph::new(vec![
             Line::from("Global: ? help · Ctrl+K palette · / search · Esc back"),
             Line::from("Registry: j/k · Enter · Space attention · a quick prompt"),
             Line::from("Thread: PageUp/PageDown · r review · w workspace · g goal"),

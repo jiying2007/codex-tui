@@ -8,7 +8,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use tempfile::NamedTempFile;
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UiConfig {
     #[serde(default = "default_true")]
     pub mouse: bool,
@@ -16,6 +16,12 @@ pub struct UiConfig {
 
 const fn default_true() -> bool {
     true
+}
+
+impl Default for UiConfig {
+    fn default() -> Self {
+        Self { mouse: true }
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
