@@ -3,7 +3,7 @@ use codex_tui::{
     app::{Action, AppState, Effect, InputMode, ViewKind, reduce},
     app_server::{self, ConversationEvent, RegistryHandle},
     backend::{BackendStatus, CodexBackend, FakeBackend},
-    conversation::InteractiveResolution,
+    conversation::{InteractiveRequestKind, InteractiveResolution},
     keymap::{Command, command_for_key},
     store::{FileStore, LocalStore},
     terminal::TerminalSession,
@@ -359,6 +359,10 @@ fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
         return vec![];
     }
 
+    if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('c') {
+        return handle_command(app, Command::QuitOrInterrupt);
+    }
+
     if app.input_mode != InputMode::Normal {
         let action = match key.code {
             KeyCode::Esc => Action::CancelInput,
@@ -374,6 +378,33 @@ fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
             _ => return vec![],
         };
         return reduce(app, action);
+    }
+
+    if let Some(request) = app.current_pending_request() {
+        let action = match (&request.kind, key.code) {
+            (InteractiveRequestKind::UserInput { .. }, KeyCode::Enter | KeyCode::Char('a')) => {
+                Some(Action::BeginUserInput)
+            }
+            (InteractiveRequestKind::UserInput { .. }, KeyCode::Char('n')) => {
+                Some(Action::ResolvePending(InteractiveResolution::Decline))
+            }
+            (InteractiveRequestKind::UserInput { .. }, KeyCode::Char('c')) => {
+                Some(Action::ResolvePending(InteractiveResolution::Cancel))
+            }
+            (_, KeyCode::Char('y')) => {
+                Some(Action::ResolvePending(InteractiveResolution::Accept))
+            }
+            (_, KeyCode::Char('n')) => {
+                Some(Action::ResolvePending(InteractiveResolution::Decline))
+            }
+            (_, KeyCode::Char('c')) => {
+                Some(Action::ResolvePending(InteractiveResolution::Cancel))
+            }
+            _ => None,
+        };
+        if let Some(action) = action {
+            return reduce(app, action);
+        }
     }
 
     let Some(command) = command_for_key(key, app.view_kind()) else {
