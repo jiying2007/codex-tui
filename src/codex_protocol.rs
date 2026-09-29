@@ -130,7 +130,10 @@ fn normalize_status(status: &Value) -> (RuntimeStatus, Vec<AttentionReason>) {
             (runtime, attention)
         }
         "idle" => (RuntimeStatus::Ready, vec![]),
-        "systemError" => (RuntimeStatus::Ready, vec![AttentionReason::ReadyForReview]),
+        "systemError" => (
+            RuntimeStatus::SystemError,
+            vec![AttentionReason::SystemError],
+        ),
         _ => (RuntimeStatus::Inactive, vec![]),
     }
 }
@@ -243,6 +246,13 @@ mod tests {
                 AttentionReason::UserInputRequired
             ]
         );
+    }
+
+    #[test]
+    fn system_error_remains_a_needs_you_state() {
+        let summary = normalize_thread(wire(json!({"type": "systemError"})), None);
+        assert_eq!(summary.runtime, RuntimeStatus::SystemError);
+        assert_eq!(summary.attention, vec![AttentionReason::SystemError]);
     }
 
     #[test]
