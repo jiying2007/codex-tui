@@ -42,6 +42,8 @@ pub struct LocalStateV1 {
     pub aliases: BTreeMap<String, String>,
     #[serde(default)]
     pub marked_unread: BTreeSet<String>,
+    #[serde(default)]
+    pub acknowledged_attention: BTreeSet<String>,
 }
 
 impl Default for LocalStateV1 {
@@ -52,6 +54,7 @@ impl Default for LocalStateV1 {
             pins: BTreeSet::new(),
             aliases: BTreeMap::new(),
             marked_unread: BTreeSet::new(),
+            acknowledged_attention: BTreeSet::new(),
         }
     }
 }
