@@ -3,7 +3,8 @@ use crate::codex_protocol::{
     ThreadWire, apply_status, normalize_thread, parse_loaded_list, parse_thread_list,
 };
 use crate::conversation::{
-    ConversationPage, merge_history, parse_items_page, parse_thread_title, parse_turns_page,
+    ConversationPage, InteractiveRequest, InteractiveResolution, RpcRequestId, merge_history,
+    parse_interactive_request, parse_items_page, parse_thread_title, parse_turns_page,
 };
 use crate::domain::{ThreadId, ThreadSummary};
 use anyhow::{Context, Result, anyhow};
@@ -43,6 +44,10 @@ pub enum BackendCommand {
         thread_id: ThreadId,
         turn_id: String,
     },
+    ResolveInteractive {
+        request_id: RpcRequestId,
+        resolution: InteractiveResolution,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -52,6 +57,10 @@ pub enum ConversationEvent {
     PromptSubmitted {
         thread_id: ThreadId,
         turn_id: String,
+    },
+    InteractiveRequested(InteractiveRequest),
+    InteractiveResolved {
+        request_id: RpcRequestId,
     },
     Failed {
         thread_id: ThreadId,
@@ -107,6 +116,17 @@ impl RegistryHandle {
 
     pub fn interrupt_turn(&self, thread_id: ThreadId, turn_id: String) -> Result<()> {
         self.send_command(BackendCommand::InterruptTurn { thread_id, turn_id })
+    }
+
+    pub fn resolve_interactive(
+        &self,
+        request_id: RpcRequestId,
+        resolution: InteractiveResolution,
+    ) -> Result<()> {
+        self.send_command(BackendCommand::ResolveInteractive {
+            request_id,
+            resolution,
+        })
     }
 
     fn send_command(&self, command: BackendCommand) -> Result<()> {
@@ -181,6 +201,7 @@ async fn run_registry_actor(
 ) {
     let mut generation = 0_u64;
     let mut threads = by_id(initial_threads);
+    let mut pending_requests: BTreeMap<RpcRequestId, PendingServerRequest> = BTreeMap::new();
     let mut refresh = tokio::time::interval(REFRESH_INTERVAL);
     refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     refresh.tick().await;
@@ -271,6 +292,28 @@ async fn run_registry_actor(
                             }
                         }
                     }
+                    BackendCommand::ResolveInteractive {
+                        request_id,
+                        resolution,
+                    } => {
+                        match resolve_interactive(
+                            &mut rpc,
+                            &mut pending_requests,
+                            &request_id,
+                            resolution,
+                        )
+                        .await
+                        {
+                            Ok(()) => {
+                                let _ = conversation_tx.send(
+                                    ConversationEvent::InteractiveResolved { request_id },
+                                );
+                            }
+                            Err(error) => {
+                                status.error = Some(error.to_string());
+                            }
+                        }
+                    }
                 }
             }
             _ = refresh.tick() => {
@@ -298,7 +341,15 @@ async fn run_registry_actor(
             message = rpc.read_message() => {
                 match message {
                     Ok(Some(message)) => {
-                        if let Err(error) = handle_unsolicited(&mut rpc, message, &mut threads).await {
+                        if let Err(error) = handle_unsolicited(
+                            &mut rpc,
+                            message,
+                            &mut threads,
+                            &mut pending_requests,
+                            &conversation_tx,
+                        )
+                        .await
+                        {
                             status.error = Some(error.to_string());
                         }
                         generation = generation.saturating_add(1);
@@ -695,25 +746,74 @@ async fn load_conversation(rpc: &mut RpcSession, thread_id: ThreadId) -> Result<
     ))
 }
 
+#[derive(Clone, Debug)]
+struct PendingServerRequest {
+    method: String,
+    params: Value,
+}
+
 async fn handle_unsolicited(
     rpc: &mut RpcSession,
     message: Value,
     threads: &mut BTreeMap<String, ThreadSummary>,
+    pending_requests: &mut BTreeMap<RpcRequestId, PendingServerRequest>,
+    conversation_tx: &mpsc::UnboundedSender<ConversationEvent>,
 ) -> Result<()> {
     if message.get("id").is_some() && message.get("method").is_some() {
-        rpc.reject_server_request(&message).await?;
-        return Ok(());
+        if let Some(request) = parse_interactive_request(&message)? {
+            let method = message
+                .get("method")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string();
+            let params = message
+                .get("params")
+                .cloned()
+                .unwrap_or(Value::Null);
+            pending_requests.insert(
+                request.request_id.clone(),
+                PendingServerRequest { method, params },
+            );
+            let _ = conversation_tx.send(ConversationEvent::InteractiveRequested(request));
+            return Ok(());
+        }
+
+        rpc.reject_request(
+            message.get("id").cloned().context("server request missing id")?,
+            "unsupported App Server request in codex-tui",
+        )
+        .await?;
+        anyhow::bail!(
+            "unsupported App Server request: {}",
+            message
+                .get("method")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown")
+        );
     }
 
     let Some(method) = message.get("method").and_then(Value::as_str) else {
         return Ok(());
     };
-    if method != "thread/status/changed" {
-        return Ok(());
-    }
     let Some(params) = message.get("params") else {
         return Ok(());
     };
+
+    if method == "serverRequest/resolved" {
+        if let Some(request_id) = params
+            .get("requestId")
+            .map(RpcRequestId::from_value)
+            .transpose()?
+        {
+            pending_requests.remove(&request_id);
+            let _ = conversation_tx.send(ConversationEvent::InteractiveResolved { request_id });
+        }
+        return Ok(());
+    }
+
+    if method != "thread/status/changed" {
+        return Ok(());
+    }
     let Some(thread_id) = params.get("threadId").and_then(Value::as_str) else {
         return Ok(());
     };
@@ -723,6 +823,83 @@ async fn handle_unsolicited(
     if let Some(thread) = threads.get_mut(thread_id) {
         apply_status(thread, status);
     }
+    Ok(())
+}
+
+async fn resolve_interactive(
+    rpc: &mut RpcSession,
+    pending_requests: &mut BTreeMap<RpcRequestId, PendingServerRequest>,
+    request_id: &RpcRequestId,
+    resolution: InteractiveResolution,
+) -> Result<()> {
+    let pending = pending_requests
+        .get(request_id)
+        .cloned()
+        .context("interactive request is no longer pending")?;
+
+    match pending.method.as_str() {
+        "item/commandExecution/requestApproval" | "item/fileChange/requestApproval" => {
+            let decision = match resolution {
+                InteractiveResolution::Accept => "accept",
+                InteractiveResolution::Decline => "decline",
+                InteractiveResolution::Cancel => "cancel",
+                InteractiveResolution::UserInput(_) => {
+                    anyhow::bail!("user-input answer cannot resolve an approval")
+                }
+            };
+            rpc.respond_result(
+                request_id.to_value(),
+                json!({"decision": decision}),
+            )
+            .await?;
+        }
+        "item/permissions/requestApproval" => match resolution {
+            InteractiveResolution::Accept => {
+                let permissions = pending
+                    .params
+                    .get("permissions")
+                    .cloned()
+                    .context("permission request missing permissions")?;
+                rpc.respond_result(
+                    request_id.to_value(),
+                    json!({
+                        "permissions": permissions,
+                        "scope": "turn"
+                    }),
+                )
+                .await?;
+            }
+            InteractiveResolution::Decline | InteractiveResolution::Cancel => {
+                rpc.reject_request(
+                    request_id.to_value(),
+                    "permission request declined by user",
+                )
+                .await?;
+            }
+            InteractiveResolution::UserInput(_) => {
+                anyhow::bail!("user-input answer cannot resolve a permission request")
+            }
+        },
+        "item/tool/requestUserInput" => {
+            let InteractiveResolution::UserInput(answers) = resolution else {
+                anyhow::bail!("request_user_input requires explicit answers");
+            };
+            let answers = answers
+                .into_iter()
+                .map(|(question_id, answers)| {
+                    (question_id, json!({"answers": answers}))
+                })
+                .collect::<serde_json::Map<_, _>>();
+            rpc.respond_result(
+                request_id.to_value(),
+                json!({"answers": answers}),
+            )
+            .await?;
+        }
+        other => anyhow::bail!("unsupported pending server request: {other}"),
+    }
+
+    pending_requests.remove(request_id);
     Ok(())
 }
 
@@ -816,9 +993,7 @@ impl RpcSession {
                     .cloned()
                     .ok_or_else(|| anyhow!("{method} response missing result"));
             }
-            if message.get("id").is_some() && message.get("method").is_some() {
-                self.reject_server_request(&message).await?;
-            } else if message.get("method").is_some() {
+            if message.get("method").is_some() {
                 self.queued_messages.push_back(message);
             }
         }
@@ -858,15 +1033,20 @@ impl RpcSession {
         }
     }
 
-    async fn reject_server_request(&mut self, request: &Value) -> Result<()> {
-        let Some(id) = request.get("id").cloned() else {
-            return Ok(());
-        };
+    async fn respond_result(&mut self, id: Value, result: Value) -> Result<()> {
+        self.write_message(&json!({
+            "id": id,
+            "result": result
+        }))
+        .await
+    }
+
+    async fn reject_request(&mut self, id: Value, message: &str) -> Result<()> {
         self.write_message(&json!({
             "id": id,
             "error": {
-                "code": -32601,
-                "message": "codex-tui M1 registry is read-only"
+                "code": -32000,
+                "message": message
             }
         }))
         .await
