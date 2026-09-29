@@ -373,18 +373,10 @@ mod tests {
             git_common_dir: "/repo/.git".into(),
             primary_root: "/repo".into(),
         };
-        let plan = OperationPlan::adopt_worktree(
-            repo,
-            "/repo".into(),
-            "/repo-existing".into(),
-            1,
-        );
+        let plan = OperationPlan::adopt_worktree(repo, "/repo".into(), "/repo-existing".into(), 1);
         assert_eq!(plan.kind, OperationKind::AdoptWorktree);
         assert!(plan.argv.is_empty());
-        assert_eq!(
-            plan.target_worktree.as_deref(),
-            Some("/repo-existing")
-        );
+        assert_eq!(plan.target_worktree.as_deref(), Some("/repo-existing"));
     }
 
     #[test]
