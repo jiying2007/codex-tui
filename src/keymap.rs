@@ -83,6 +83,13 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
         (ViewKind::Thread, KeyCode::Char('g')) => Some(Command::Goal),
         (ViewKind::Thread, KeyCode::PageUp) => Some(Command::PageUp),
         (ViewKind::Thread, KeyCode::PageDown) => Some(Command::PageDown),
+        (ViewKind::Review, KeyCode::Char('j') | KeyCode::Down) => Some(Command::Next),
+        (ViewKind::Review, KeyCode::Char('k') | KeyCode::Up) => Some(Command::Previous),
+        (ViewKind::Review, KeyCode::PageUp) => Some(Command::PageUp),
+        (ViewKind::Review, KeyCode::PageDown) => Some(Command::PageDown),
+        (ViewKind::Review, KeyCode::Char('w')) => Some(Command::ToggleWordDiff),
+        (ViewKind::Review, KeyCode::Char('e')) => Some(Command::ExternalEditor),
+        (ViewKind::Workspace, KeyCode::Char('r')) => Some(Command::Review),
         _ => None,
     }
 }

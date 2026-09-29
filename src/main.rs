@@ -4,12 +4,15 @@ use codex_tui::{
     app_server::{self, ConversationEvent, RegistryHandle},
     backend::{BackendStatus, CodexBackend, FakeBackend},
     conversation::{InteractiveRequestKind, InteractiveResolution},
+    git::{self, GitEvent, GitHandle},
     keymap::{Command, command_for_key},
     store::{FileStore, LocalStore},
     terminal::TerminalSession,
     ui,
 };
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use std::path::Path;
+use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 #[tokio::main]
@@ -34,7 +37,32 @@ async fn doctor(scope: Option<&str>) -> Result<()> {
     println!("mouse: {}", config.ui.mouse);
     println!("schemaVersion: {}", state.schema_version);
 
-    if scope == Some("codex") {
+    if scope == Some("git") {
+        let cwd = std::env::current_dir()?;
+        let context = git::probe_context(
+            codex_tui::domain::ThreadId::new("doctor"),
+            cwd.to_string_lossy().into_owned(),
+        )
+        .await?;
+        println!("git-repository: {}", context.is_repository);
+        println!("cwd: {}", context.cwd);
+        if let Some(repo) = context.repo {
+            println!("git-common-dir: {}", repo.git_common_dir);
+            println!("repo-root: {}", repo.primary_root);
+        }
+        if let Some(worktree) = context.worktree {
+            println!("worktree: {}", worktree.canonical_path);
+        }
+        println!(
+            "branch: {}",
+            context.branch.as_deref().unwrap_or("<detached/none>")
+        );
+        println!("dirty: {}", context.dirty);
+        println!("changed-files: {}", context.changes.len());
+        if let Some(error) = context.error {
+            println!("error: {error}");
+        }
+    } else if scope == Some("codex") {
         match app_server::probe(None).await {
             Ok(snapshot) => {
                 print_backend_status(&snapshot.status);
@@ -47,7 +75,7 @@ async fn doctor(scope: Option<&str>) -> Result<()> {
             }
         }
     } else {
-        println!("hint: run `codex-tui doctor codex` to probe the live App Server");
+        println!("hint: run `codex-tui doctor codex` or `codex-tui doctor git`");
     }
     Ok(())
 }
@@ -97,6 +125,16 @@ async fn run_app(fake_mode: bool) -> Result<()> {
     };
     app.apply_local_state(&local);
 
+    let mut git = GitHandle::start();
+    let initial_git_effects = reduce(&mut app, Action::RefreshGitProjections);
+    apply_effects(
+        &mut app,
+        registry.as_ref(),
+        &git,
+        &store,
+        initial_git_effects,
+    )?;
+
     let mut terminal = TerminalSession::enter(config.ui.mouse)?;
     let mut last_fake_tick = Instant::now();
     let mut needs_render = true;
@@ -113,6 +151,8 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                     reduce(&mut app, Action::BackendStatus(started.initial.status));
                     app.apply_local_state(&local);
                     registry = Some(started.handle);
+                    let effects = reduce(&mut app, Action::RefreshGitProjections);
+                    apply_effects(&mut app, registry.as_ref(), &git, &store, effects)?;
                 }
                 Ok(Err(error)) => {
                     reduce(
@@ -132,7 +172,13 @@ async fn run_app(fake_mode: bool) -> Result<()> {
             needs_render = true;
         }
 
-        needs_render |= drain_registry(&mut app, registry.as_mut(), &store);
+        let registry_changed = drain_registry(&mut app, registry.as_mut(), &store);
+        needs_render |= registry_changed;
+        if registry_changed {
+            let effects = reduce(&mut app, Action::RefreshGitProjections);
+            apply_effects(&mut app, registry.as_ref(), &git, &store, effects)?;
+        }
+        needs_render |= drain_git(&mut app, &mut git);
 
         if let Some(fake) = fake_backend.as_mut()
             && last_fake_tick.elapsed() >= Duration::from_millis(900)
@@ -140,6 +186,8 @@ async fn run_app(fake_mode: bool) -> Result<()> {
             let snapshot = fake.tick();
             reduce(&mut app, Action::ReplaceThreads(snapshot.threads));
             reduce(&mut app, Action::BackendStatus(snapshot.status));
+            let effects = reduce(&mut app, Action::RefreshGitProjections);
+            apply_effects(&mut app, registry.as_ref(), &git, &store, effects)?;
             last_fake_tick = Instant::now();
             needs_render = true;
         }
@@ -160,7 +208,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                     {
                         needs_render = true;
                     }
-                    apply_effects(&mut app, registry.as_ref(), &store, effects)?;
+                    apply_effects(&mut app, registry.as_ref(), &git, &store, effects)?;
                 }
                 Event::Resize(_, _) => needs_render = true,
                 _ => {}
@@ -243,15 +291,65 @@ fn drain_registry(
     changed
 }
 
+fn drain_git(app: &mut AppState, git: &mut GitHandle) -> bool {
+    let mut changed = false;
+    while let Some(event) = git.try_recv() {
+        match event {
+            GitEvent::Context(context) => {
+                reduce(app, Action::GitContextLoaded(context));
+            }
+            GitEvent::Review(review) => {
+                reduce(app, Action::GitReviewLoaded(review));
+            }
+        }
+        changed = true;
+    }
+    changed
+}
+
 fn apply_effects(
     app: &mut AppState,
     registry: Option<&RegistryHandle>,
+    git: &GitHandle,
     store: &FileStore,
     effects: Vec<Effect>,
 ) -> Result<()> {
     for effect in effects {
         match effect {
             Effect::PersistOperatorState => store.save_state(&app.to_local_state())?,
+            Effect::ProbeGit { thread_id, cwd } => {
+                if let Err(error) = git.probe(thread_id.clone(), cwd.clone()) {
+                    let mut context = codex_tui::git::GitContext::pending(thread_id, cwd);
+                    context.error = Some(error.to_string());
+                    reduce(app, Action::GitContextLoaded(context));
+                }
+            }
+            Effect::LoadGitReview { thread_id, cwd } => {
+                if let Err(error) = git.load_review(thread_id.clone(), cwd) {
+                    reduce(
+                        app,
+                        Action::ReviewError {
+                            thread_id,
+                            error: error.to_string(),
+                        },
+                    );
+                }
+            }
+            Effect::OpenExternalEditor {
+                thread_id,
+                cwd,
+                path,
+            } => {
+                if let Err(error) = open_external_editor(&cwd, &path) {
+                    reduce(
+                        app,
+                        Action::ReviewError {
+                            thread_id,
+                            error: error.to_string(),
+                        },
+                    );
+                }
+            }
             Effect::LoadConversation(thread_id) => {
                 if let Some(registry) = registry {
                     if let Err(error) = registry.load_conversation(thread_id.clone()) {
@@ -366,6 +464,26 @@ fn apply_effects(
     Ok(())
 }
 
+fn open_external_editor(cwd: &str, relative_path: &str) -> Result<()> {
+    let editor =
+        std::env::var_os("CODEX_TUI_EDITOR").unwrap_or_else(|| std::ffi::OsString::from("code"));
+    if editor.to_string_lossy().trim().is_empty() {
+        anyhow::bail!("CODEX_TUI_EDITOR is empty");
+    }
+    let path = Path::new(cwd).join(relative_path);
+    if !path.exists() {
+        anyhow::bail!("selected path does not exist: {}", path.display());
+    }
+    std::process::Command::new(editor)
+        .arg(path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map(|_| ())
+        .map_err(Into::into)
+}
+
 fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
     if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
         return vec![];
@@ -421,18 +539,28 @@ fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
 
 fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
     let action = match command {
-        Command::QuitOrInterrupt => {
-            if app.view_kind() == ViewKind::Registry {
-                Action::Quit
-            } else {
-                Action::InterruptCurrent
-            }
-        }
+        Command::QuitOrInterrupt => match app.view_kind() {
+            ViewKind::Registry => Action::Quit,
+            ViewKind::Thread => Action::InterruptCurrent,
+            ViewKind::Review | ViewKind::Workspace => Action::Back,
+        },
         Command::Back => Action::Back,
         Command::Help => Action::ToggleHelp,
         Command::Search => Action::BeginSearch,
-        Command::Next => Action::MoveSelection(1),
-        Command::Previous => Action::MoveSelection(-1),
+        Command::Next => {
+            if app.view_kind() == ViewKind::Review {
+                Action::MoveReview(1)
+            } else {
+                Action::MoveSelection(1)
+            }
+        }
+        Command::Previous => {
+            if app.view_kind() == ViewKind::Review {
+                Action::MoveReview(-1)
+            } else {
+                Action::MoveSelection(-1)
+            }
+        }
         Command::Open => Action::OpenSelected,
         Command::NextAttention => Action::NextAttention,
         Command::QuickPrompt => Action::QuickPrompt,
@@ -444,18 +572,30 @@ fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
         Command::DeclinePending => Action::ResolvePending(InteractiveResolution::Decline),
         Command::CancelPending => Action::ResolvePending(InteractiveResolution::Cancel),
         Command::AnswerPending => Action::BeginUserInput,
-        Command::PageUp => Action::ScrollBy(-5),
-        Command::PageDown => Action::ScrollBy(5),
+        Command::Review => Action::OpenReview,
+        Command::Workspace => Action::OpenWorkspace,
+        Command::PageUp => {
+            if app.view_kind() == ViewKind::Review {
+                Action::ScrollReviewBy(-10)
+            } else {
+                Action::ScrollBy(-5)
+            }
+        }
+        Command::PageDown => {
+            if app.view_kind() == ViewKind::Review {
+                Action::ScrollReviewBy(10)
+            } else {
+                Action::ScrollBy(5)
+            }
+        }
+        Command::ToggleWordDiff => Action::ToggleReviewWordDiff,
+        Command::ExternalEditor => Action::OpenReviewExternalEditor,
         Command::CommandPalette
         | Command::ContextActions
         | Command::Board
-        | Command::Review
-        | Command::Workspace
         | Command::Snooze
         | Command::New
         | Command::Goal
-        | Command::ToggleWordDiff
-        | Command::ExternalEditor
         | Command::OpenExternal
         | Command::HotSlot(_)
         | Command::BeginHotSlotBind => return vec![],

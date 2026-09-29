@@ -4,6 +4,7 @@ pub mod backend;
 pub mod codex_protocol;
 pub mod conversation;
 pub mod domain;
+pub mod git;
 pub mod keymap;
 pub mod store;
 pub mod terminal;

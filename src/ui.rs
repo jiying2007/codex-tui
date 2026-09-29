@@ -1,6 +1,7 @@
 use crate::app::{AppState, InputMode, View};
 use crate::conversation::{InteractiveRequest, InteractiveRequestKind};
 use crate::domain::ThreadSummary;
+use crate::git::presentation_diff_lines;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -30,6 +31,8 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
     match &app.view {
         View::Registry => render_registry(frame, app),
         View::Thread(id) => render_thread(frame, app, id.0.as_str()),
+        View::Review(id) => render_review(frame, app, id.0.as_str()),
+        View::Workspace(id) => render_workspace(frame, app, id.0.as_str()),
     }
     if app.show_help {
         render_help(frame);
@@ -95,6 +98,7 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState) {
             Span::raw("p pin  "),
             Span::raw("e alias  "),
             Span::raw("x ack  "),
+            Span::raw("! shared-worktree  "),
             Span::raw("? help"),
         ]),
         status_line,
@@ -150,8 +154,13 @@ fn thread_list(app: &AppState) -> Paragraph<'static> {
         } else {
             "ack".into()
         };
+        let collision = if app.worktree_collision_count(&thread.id) > 0 {
+            "!"
+        } else {
+            " "
+        };
         let text = format!(
-            "{prefix}{pin} {:7} {:18} {:10} {}",
+            "{prefix}{pin}{collision} {:7} {:18} {:10} {}",
             thread.runtime.label(),
             truncate(&thread.workspace, 18),
             attention,
@@ -173,7 +182,7 @@ fn thread_list(app: &AppState) -> Paragraph<'static> {
 }
 
 fn detail_panel(app: &AppState) -> Paragraph<'static> {
-    let lines = if let Some(thread) = app.selected_thread() {
+    let mut lines = if let Some(thread) = app.selected_thread() {
         vec![
             Line::from(format!("Thread: {}", thread.id)),
             Line::from(format!("Workspace: {}", thread.workspace)),
@@ -210,10 +219,6 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
             )),
             Line::from(format!("Pinned: {}", thread.pinned)),
             Line::from(format!(
-                "Local attention ack: {}",
-                app.acknowledged_attention.contains(&thread.id.0)
-            )),
-            Line::from(format!(
                 "Pending interactive: {}",
                 app.pending_requests
                     .iter()
@@ -224,7 +229,62 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
     } else {
         vec![Line::from("No thread selected")]
     };
-    Paragraph::new(lines).block(Block::bordered().title(" Context "))
+
+    if let Some(thread) = app.selected_thread() {
+        lines.push(Line::from(""));
+        match app.git_context(&thread.id) {
+            None => lines.push(Line::from("Git: not probed")),
+            Some(context) if context.observed_at_unix_ms == 0 => {
+                lines.push(Line::from("Git: probing…"));
+            }
+            Some(context) if context.error.is_some() => {
+                lines.push(Line::from(format!(
+                    "Git: degraded · {}",
+                    context.error.as_deref().unwrap_or("unknown error")
+                )));
+            }
+            Some(context) if !context.is_repository => {
+                lines.push(Line::from("Git: not a repository"));
+            }
+            Some(context) => {
+                let branch = context
+                    .branch
+                    .as_deref()
+                    .or(context.head.as_deref())
+                    .unwrap_or("unknown");
+                lines.push(Line::from(format!("Git: {branch}")));
+                lines.push(Line::from(format!(
+                    "Dirty: {} · files={} · +{} -{}",
+                    context.dirty,
+                    context.changes.len(),
+                    context.ahead,
+                    context.behind
+                )));
+                if let Some(worktree) = &context.worktree {
+                    lines.push(Line::from(format!(
+                        "Worktree: {}",
+                        truncate(&worktree.canonical_path, 42)
+                    )));
+                }
+                if let Some(repo) = &context.repo {
+                    lines.push(Line::from(format!(
+                        "Repo: {}",
+                        truncate(&repo.primary_root, 42)
+                    )));
+                }
+                let collisions = app.worktree_collision_count(&thread.id);
+                if collisions > 0 {
+                    lines.push(Line::from(format!(
+                        "WARNING: shared mutable checkout with {collisions} active thread(s)"
+                    )));
+                }
+            }
+        }
+    }
+
+    Paragraph::new(lines)
+        .block(Block::bordered().title(" Context "))
+        .wrap(Wrap { trim: false })
 }
 
 fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
@@ -358,6 +418,220 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
     );
 }
 
+fn render_workspace(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
+    let area = frame.area();
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(4), Constraint::Length(1)])
+        .split(area);
+
+    let thread = app.threads.iter().find(|thread| thread.id.0 == thread_id);
+    let Some(thread) = thread else {
+        frame.render_widget(
+            Paragraph::new("Thread no longer exists.")
+                .block(Block::bordered().title(" Workspace ")),
+            chunks[0],
+        );
+        return;
+    };
+
+    let mut lines = vec![
+        Line::from(format!("Thread: {}", thread.id)),
+        Line::from(format!("Cwd: {}", thread.metadata.cwd)),
+    ];
+
+    match app.git_context(&thread.id) {
+        None => lines.push(Line::from("Git: not probed")),
+        Some(context) if context.observed_at_unix_ms == 0 => {
+            lines.push(Line::from("Git: probing…"));
+        }
+        Some(context) if context.error.is_some() => {
+            lines.push(Line::from(format!(
+                "Git: degraded · {}",
+                context.error.as_deref().unwrap_or("unknown error")
+            )));
+        }
+        Some(context) if !context.is_repository => {
+            lines.push(Line::from("Git: not a repository"));
+        }
+        Some(context) => {
+            if let Some(repo) = &context.repo {
+                lines.push(Line::from(format!("Repo root: {}", repo.primary_root)));
+                lines.push(Line::from(format!(
+                    "Git common dir: {}",
+                    repo.git_common_dir
+                )));
+            }
+            if let Some(worktree) = &context.worktree {
+                lines.push(Line::from(format!("Worktree: {}", worktree.canonical_path)));
+            }
+            lines.push(Line::from(format!(
+                "Branch: {}",
+                context
+                    .branch
+                    .as_deref()
+                    .or(context.head.as_deref())
+                    .unwrap_or("<unknown>")
+            )));
+            lines.push(Line::from(format!(
+                "Upstream: {} · ahead={} behind={}",
+                context.upstream.as_deref().unwrap_or("<none>"),
+                context.ahead,
+                context.behind
+            )));
+            lines.push(Line::from(format!(
+                "Dirty: {} · changed files={}",
+                context.dirty,
+                context.changes.len()
+            )));
+            let collisions = app.worktree_collision_count(&thread.id);
+            if collisions > 0 {
+                lines.push(Line::from(format!(
+                    "WARNING: shared mutable checkout with {collisions} active thread(s)"
+                )));
+            }
+            lines.push(Line::from(""));
+            lines.push(Line::from("Changed files:"));
+            lines.extend(context.changes.iter().take(100).map(|change| {
+                Line::from(format!("  {:2} {}", change.status_label(), change.path))
+            }));
+            if context.changes.len() > 100 {
+                lines.push(Line::from(format!(
+                    "  … {} additional change(s)",
+                    context.changes.len() - 100
+                )));
+            }
+        }
+    }
+
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(Block::bordered().title(" Workspace · Git read-only "))
+            .wrap(Wrap { trim: false }),
+        chunks[0],
+    );
+    frame.render_widget(Paragraph::new("r review · Esc back"), chunks[1]);
+}
+
+fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
+    let area = frame.area();
+    let outer = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(4), Constraint::Length(1)])
+        .split(area);
+
+    let Some(review) = app.git_reviews.get(thread_id) else {
+        frame.render_widget(
+            Paragraph::new("Review has not been loaded.")
+                .block(Block::bordered().title(" Review ")),
+            outer[0],
+        );
+        return;
+    };
+
+    if review.observed_at_unix_ms == 0 {
+        frame.render_widget(
+            Paragraph::new("Loading Git review…").block(Block::bordered().title(" Review ")),
+            outer[0],
+        );
+    } else if let Some(error) = &review.error {
+        frame.render_widget(
+            Paragraph::new(format!("Review unavailable: {error}"))
+                .block(Block::bordered().title(" Review ")),
+            outer[0],
+        );
+    } else {
+        let files = review
+            .changes
+            .iter()
+            .enumerate()
+            .map(|(index, change)| {
+                let selected = index == app.review_selected;
+                let prefix = if selected { ">" } else { " " };
+                let text = format!("{prefix} {:2} {}", change.status_label(), change.path);
+                let style = if selected {
+                    Style::default().add_modifier(Modifier::REVERSED)
+                } else {
+                    Style::default()
+                };
+                Line::from(Span::styled(text, style))
+            })
+            .collect::<Vec<_>>();
+
+        let mut diff_lines = presentation_diff_lines(review, app.review_word_diff)
+            .into_iter()
+            .map(Line::from)
+            .collect::<Vec<_>>();
+        if diff_lines.is_empty() {
+            diff_lines.push(Line::from(
+                "No staged/unstaged tracked diff. Untracked files remain listed at left/top.",
+            ));
+        }
+
+        if area.width >= 100 {
+            let columns = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Percentage(32), Constraint::Percentage(68)])
+                .split(outer[0]);
+            frame.render_widget(
+                Paragraph::new(files)
+                    .block(
+                        Block::bordered()
+                            .title(format!(" Changed files ({}) ", review.changes.len())),
+                    )
+                    .wrap(Wrap { trim: false }),
+                columns[0],
+            );
+            frame.render_widget(
+                Paragraph::new(diff_lines)
+                    .block(Block::bordered().title(format!(
+                        " Git diff · word={}{} ",
+                        app.review_word_diff,
+                        if review.truncated {
+                            " · truncated"
+                        } else {
+                            ""
+                        }
+                    )))
+                    .wrap(Wrap { trim: false })
+                    .scroll((app.review_scroll, 0)),
+                columns[1],
+            );
+        } else {
+            let rows = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([Constraint::Length(6), Constraint::Min(4)])
+                .split(outer[0]);
+            frame.render_widget(
+                Paragraph::new(files)
+                    .block(Block::bordered().title(" Changed files "))
+                    .wrap(Wrap { trim: false }),
+                rows[0],
+            );
+            frame.render_widget(
+                Paragraph::new(diff_lines)
+                    .block(Block::bordered().title(format!(
+                        " Git diff · word={}{} ",
+                        app.review_word_diff,
+                        if review.truncated {
+                            " · truncated"
+                        } else {
+                            ""
+                        }
+                    )))
+                    .wrap(Wrap { trim: false })
+                    .scroll((app.review_scroll, 0)),
+                rows[1],
+            );
+        }
+    }
+
+    frame.render_widget(
+        Paragraph::new("j/k file · PageUp/PageDown diff · w word-diff · e editor · Esc back"),
+        outer[1],
+    );
+}
+
 fn render_help(frame: &mut Frame<'_>) {
     let area = centered_rect(70, 70, frame.area());
     frame.render_widget(Clear, area);
@@ -368,8 +642,10 @@ fn render_help(frame: &mut Frame<'_>) {
                 "Registry: j/k · Enter · Space attention · / search · p pin · e alias · x ack",
             ),
             Line::from(
-                "Thread: a composer · y/n/c approval · i answer · Ctrl+C interrupt · PageUp/PageDown",
+                "Thread: a composer · y/n/c approval · i answer · Ctrl+C interrupt · r review",
             ),
+            Line::from("Review: j/k file · w word-diff · e editor · PageUp/PageDown · Esc"),
+            Line::from("Workspace: Git identity/status only · r review · Esc"),
             Line::from(
                 "Authority: Codex/Git/Forge stay canonical; codex-tui stores operator state only.",
             ),
