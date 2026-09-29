@@ -734,10 +734,9 @@ fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
         Command::QuitOrInterrupt => match app.view_kind() {
             ViewKind::Registry => Action::Quit,
             ViewKind::Thread => Action::InterruptCurrent,
-            ViewKind::Review
-            | ViewKind::Workspace
-            | ViewKind::Board
-            | ViewKind::Scratch => Action::Back,
+            ViewKind::Review | ViewKind::Workspace | ViewKind::Board | ViewKind::Scratch => {
+                Action::Back
+            }
         },
         Command::Back => Action::Back,
         Command::Help => Action::ToggleHelp,
@@ -751,7 +750,7 @@ fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
             ViewKind::Review => Action::MoveReview(-1),
             ViewKind::Board => Action::MovePlanningSelection(-1),
             _ => Action::MoveSelection(-1),
-        }
+        },
         Command::Open => {
             if app.view_kind() == ViewKind::Board {
                 Action::OpenPlanningSelected
