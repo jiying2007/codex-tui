@@ -831,17 +831,10 @@ async fn handle_unsolicited(
         return Ok(());
     }
 
-    if matches!(
-        method,
-        "turn/started" | "turn/completed" | "item/completed"
-    ) && watched_threads.contains(thread_id)
+    if matches!(method, "turn/started" | "turn/completed" | "item/completed")
+        && watched_threads.contains(thread_id)
     {
-        emit_conversation_load(
-            rpc,
-            ThreadId::new(thread_id),
-            conversation_tx,
-        )
-        .await;
+        emit_conversation_load(rpc, ThreadId::new(thread_id), conversation_tx).await;
     }
 
     Ok(())
