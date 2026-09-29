@@ -5,6 +5,10 @@ use crate::conversation::{
 };
 use crate::domain::{AttentionReason, RuntimeStatus, ThreadId, ThreadSummary, ThreadUiState};
 use crate::git::{GitContext, GitReview};
+use crate::planning::{
+    PlanningSnapshot, SourceRef, WorkCardProjection, reconcile_scratch_card,
+    reconcile_thread_card, ReconcileInput,
+};
 use crate::store::LocalStateV1;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -41,6 +45,9 @@ pub enum Action {
     GitContextLoaded(GitContext),
     GitReviewLoaded(GitReview),
     ReviewError { thread_id: ThreadId, error: String },
+    PlanningSnapshotLoaded(PlanningSnapshot),
+    ReconcilePlanning { now_unix_ms: u64 },
+    PlanningStoreDegraded(Option<String>),
     OpenReview,
     OpenWorkspace,
     MoveReview(i32),
@@ -125,6 +132,9 @@ pub struct AppState {
     pub conversations: BTreeMap<String, ConversationState>,
     pub git_contexts: BTreeMap<String, GitContext>,
     pub git_reviews: BTreeMap<String, GitReview>,
+    pub planning_snapshot: PlanningSnapshot,
+    pub work_cards: Vec<WorkCardProjection>,
+    pub planning_store_error: Option<String>,
     pub review_return_view: Option<View>,
     pub workspace_return_view: Option<View>,
     pub review_selected: usize,
@@ -155,6 +165,9 @@ impl AppState {
             conversations: BTreeMap::new(),
             git_contexts: BTreeMap::new(),
             git_reviews: BTreeMap::new(),
+            planning_snapshot: PlanningSnapshot::default(),
+            work_cards: vec![],
+            planning_store_error: None,
             review_return_view: None,
             workspace_return_view: None,
             review_selected: 0,
@@ -223,6 +236,12 @@ impl AppState {
 
     pub fn selected_review_change(&self) -> Option<&crate::git::GitFileChange> {
         self.current_review()?.changes.get(self.review_selected)
+    }
+
+    pub fn work_card_for_thread(&self, thread_id: &ThreadId) -> Option<&WorkCardProjection> {
+        self.work_cards.iter().find(|card| {
+            card.anchor == SourceRef::codex_thread(thread_id)
+        })
     }
 
     pub fn worktree_collision_count(&self, thread_id: &ThreadId) -> usize {
@@ -430,6 +449,15 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             } else {
                 state.review_selected.min(len - 1)
             };
+        }
+        Action::PlanningSnapshotLoaded(snapshot) => {
+            state.planning_snapshot = snapshot;
+        }
+        Action::PlanningStoreDegraded(error) => {
+            state.planning_store_error = error;
+        }
+        Action::ReconcilePlanning { now_unix_ms } => {
+            rebuild_planning(state, now_unix_ms);
         }
         Action::ReviewError { thread_id, error } => {
             let review = state
@@ -944,6 +972,59 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
     vec![]
 }
 
+fn rebuild_planning(state: &mut AppState, now_unix_ms: u64) {
+    let local_by_anchor = state
+        .planning_snapshot
+        .cards
+        .iter()
+        .map(|card| (card.anchor.clone(), card))
+        .collect::<BTreeMap<_, _>>();
+
+    let mut projections = Vec::with_capacity(
+        state.threads.len() + state.planning_snapshot.scratch.len(),
+    );
+
+    for thread in &state.threads {
+        let anchor = SourceRef::codex_thread(&thread.id);
+        let projection = reconcile_thread_card(ReconcileInput {
+            thread,
+            git: state.git_context(&thread.id),
+            local: local_by_anchor.get(&anchor).copied(),
+            collision_count: state.worktree_collision_count(&thread.id),
+            backend_observed_at_unix_ms: state.backend_status.last_refresh_unix_ms,
+            backend_error: state.backend_status.error.as_deref(),
+            now_unix_ms,
+        });
+        projections.push(projection);
+    }
+
+    projections.extend(
+        state
+            .planning_snapshot
+            .scratch
+            .iter()
+            .map(reconcile_scratch_card),
+    );
+
+    projections.sort_by(|left, right| {
+        right
+            .overlay
+            .pinned
+            .cmp(&left.overlay.pinned)
+            .then_with(|| left.stage.cmp(&right.stage))
+            .then_with(|| {
+                left.overlay
+                    .priority
+                    .unwrap_or(i32::MAX)
+                    .cmp(&right.overlay.priority.unwrap_or(i32::MAX))
+            })
+            .then_with(|| left.title.cmp(&right.title))
+            .then_with(|| left.local_id.cmp(&right.local_id))
+    });
+
+    state.work_cards = projections;
+}
+
 fn clear_user_input_editor(state: &mut AppState) {
     state.user_input_request_id = None;
     state.user_input_question_index = 0;
@@ -1368,6 +1449,54 @@ mod tests {
         assert_eq!(app.selected_review_change().expect("change").path, "b.rs");
         reduce(&mut app, Action::Back);
         assert_eq!(app.view, View::Registry);
+    }
+
+    #[test]
+    fn planning_reconciliation_keeps_workflow_and_attention_orthogonal() {
+        let mut app = app();
+        app.threads[0].runtime = RuntimeStatus::Working;
+        app.threads[0].attention = vec![AttentionReason::ApprovalRequired];
+        reduce(
+            &mut app,
+            Action::ReconcilePlanning {
+                now_unix_ms: 100,
+            },
+        );
+        let card = app
+            .work_card_for_thread(&ThreadId::new("thread-impl"))
+            .expect("card");
+        assert_eq!(card.stage, crate::planning::WorkflowStage::Working);
+        assert!(card.needs_you());
+        assert!(
+            card.attention
+                .contains(&crate::planning::PlanningAttention::ApprovalRequired)
+        );
+    }
+
+    #[test]
+    fn scratch_items_join_the_same_planning_projection_without_becoming_threads() {
+        let mut app = app();
+        app.planning_snapshot.scratch.push(crate::planning::ScratchWork {
+            id: "scratch:1".into(),
+            title: "Investigate".into(),
+            note: None,
+            workspace: Some("kws".into()),
+            priority: Some(1),
+            state: crate::planning::ScratchState::Inbox,
+            created_at_unix_ms: 1,
+            updated_at_unix_ms: 1,
+        });
+        reduce(
+            &mut app,
+            Action::ReconcilePlanning {
+                now_unix_ms: 2,
+            },
+        );
+        assert!(app.work_cards.iter().any(|card| {
+            card.anchor.kind == crate::planning::SourceKind::ScratchWork
+                && card.title == "Investigate"
+        }));
+        assert_eq!(app.threads.len(), 4);
     }
 
     #[test]
