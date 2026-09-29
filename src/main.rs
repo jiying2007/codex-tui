@@ -205,6 +205,9 @@ fn drain_registry(app: &mut AppState, registry: Option<&mut RegistryHandle>) -> 
             ConversationEvent::Loaded(page) => {
                 reduce(app, Action::ConversationLoaded(page));
             }
+            ConversationEvent::PromptSubmitted { thread_id, .. } => {
+                reduce(app, Action::PromptSubmitted { thread_id });
+            }
             ConversationEvent::Failed { thread_id, error } => {
                 reduce(app, Action::ConversationFailed { thread_id, error });
             }
@@ -242,6 +245,46 @@ fn apply_effects(
                             error: "conversation backend unavailable".into(),
                         },
                     );
+                }
+            }
+            Effect::SubmitPrompt {
+                thread_id,
+                text,
+                active_turn_id,
+            } => {
+                if let Some(registry) = registry {
+                    if let Err(error) =
+                        registry.submit_prompt(thread_id.clone(), text, active_turn_id)
+                    {
+                        reduce(
+                            app,
+                            Action::ConversationFailed {
+                                thread_id,
+                                error: error.to_string(),
+                            },
+                        );
+                    }
+                } else {
+                    reduce(
+                        app,
+                        Action::ConversationFailed {
+                            thread_id,
+                            error: "conversation backend unavailable".into(),
+                        },
+                    );
+                }
+            }
+            Effect::InterruptTurn { thread_id, turn_id } => {
+                if let Some(registry) = registry {
+                    if let Err(error) = registry.interrupt_turn(thread_id.clone(), turn_id) {
+                        reduce(
+                            app,
+                            Action::ConversationFailed {
+                                thread_id,
+                                error: error.to_string(),
+                            },
+                        );
+                    }
                 }
             }
         }
@@ -283,7 +326,7 @@ fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
             if app.view_kind() == ViewKind::Registry {
                 Action::Quit
             } else {
-                Action::Back
+                Action::InterruptCurrent
             }
         }
         Command::Back => Action::Back,
