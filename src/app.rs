@@ -1373,6 +1373,9 @@ mod tests {
     #[test]
     fn git_projection_probe_is_emitted_once_until_cwd_changes() {
         let mut app = app();
+        for (index, thread) in app.threads.iter_mut().enumerate() {
+            thread.metadata.cwd = format!("/repo-{index}");
+        }
         let effects = reduce(&mut app, Action::RefreshGitProjections);
         assert_eq!(effects.len(), 4);
         assert!(reduce(&mut app, Action::RefreshGitProjections).is_empty());
