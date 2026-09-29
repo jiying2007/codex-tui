@@ -465,8 +465,8 @@ fn apply_effects(
 }
 
 fn open_external_editor(cwd: &str, relative_path: &str) -> Result<()> {
-    let editor = std::env::var_os("CODEX_TUI_EDITOR")
-        .unwrap_or_else(|| std::ffi::OsString::from("code"));
+    let editor =
+        std::env::var_os("CODEX_TUI_EDITOR").unwrap_or_else(|| std::ffi::OsString::from("code"));
     if editor.to_string_lossy().trim().is_empty() {
         anyhow::bail!("CODEX_TUI_EDITOR is empty");
     }
@@ -543,7 +543,7 @@ fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
             ViewKind::Registry => Action::Quit,
             ViewKind::Thread => Action::InterruptCurrent,
             ViewKind::Review => Action::Back,
-        }
+        },
         Command::Back => Action::Back,
         Command::Help => Action::ToggleHelp,
         Command::Search => Action::BeginSearch,
