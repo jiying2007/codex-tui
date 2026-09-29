@@ -6,7 +6,9 @@ use codex_tui::{
     conversation::{InteractiveRequestKind, InteractiveResolution},
     git::{self, GitEvent, GitHandle},
     keymap::{Command, command_for_key},
-    planning::{LocalNote, PlanningSnapshot, ScratchState, SourceKind, SourceRef, WorkCardRecord},
+    planning::{
+        LocalNote, PlanningSnapshot, SavedView, ScratchState, SourceKind, SourceRef, WorkCardRecord,
+    },
     sqlite_store::SqliteStore,
     store::{AppConfig, LocalStateV1, LocalStore},
     terminal::TerminalSession,
@@ -268,6 +270,34 @@ impl RuntimeStore {
                 Err(message)
             }
         }
+    }
+
+    fn save_view(&mut self, view: SavedView) -> Result<PlanningSnapshot, String> {
+        if !self.writable {
+            return Err(self
+                .error
+                .clone()
+                .unwrap_or_else(|| "SQLite planning store is read-only".into()));
+        }
+        let result = self
+            .sqlite
+            .save_view(&view)
+            .and_then(|_| self.sqlite.load_planning_snapshot());
+        self.finish_planning_write(result, "SavedView")
+    }
+
+    fn delete_view(&mut self, view_id: String) -> Result<PlanningSnapshot, String> {
+        if !self.writable {
+            return Err(self
+                .error
+                .clone()
+                .unwrap_or_else(|| "SQLite planning store is read-only".into()));
+        }
+        let result = self
+            .sqlite
+            .delete_view(&view_id)
+            .and_then(|_| self.sqlite.load_planning_snapshot());
+        self.finish_planning_write(result, "SavedView delete")
     }
 
     fn set_hot_slot(&mut self, slot: u8, target: SourceRef) -> Result<PlanningSnapshot, String> {
@@ -734,6 +764,12 @@ fn apply_effects(
             }
             Effect::DeleteScratch { scratch_id } => {
                 apply_planning_store_result(app, store.delete_scratch(scratch_id));
+            }
+            Effect::SaveSavedView { view } => {
+                apply_planning_store_result(app, store.save_view(view));
+            }
+            Effect::DeleteSavedView { view_id } => {
+                apply_planning_store_result(app, store.delete_view(view_id));
             }
             Effect::SetHotSlot { slot, target } => match store.set_hot_slot(slot, target) {
                 Ok(snapshot) => {
