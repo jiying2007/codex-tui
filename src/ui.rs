@@ -32,6 +32,7 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
         View::Registry => render_registry(frame, app),
         View::Thread(id) => render_thread(frame, app, id.0.as_str()),
         View::Review(id) => render_review(frame, app, id.0.as_str()),
+        View::Workspace(id) => render_workspace(frame, app, id.0.as_str()),
     }
     if app.show_help {
         render_help(frame);
@@ -417,6 +418,101 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
     );
 }
 
+fn render_workspace(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
+    let area = frame.area();
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(4), Constraint::Length(1)])
+        .split(area);
+
+    let thread = app.threads.iter().find(|thread| thread.id.0 == thread_id);
+    let Some(thread) = thread else {
+        frame.render_widget(
+            Paragraph::new("Thread no longer exists.")
+                .block(Block::bordered().title(" Workspace ")),
+            chunks[0],
+        );
+        return;
+    };
+
+    let mut lines = vec![
+        Line::from(format!("Thread: {}", thread.id)),
+        Line::from(format!("Cwd: {}", thread.metadata.cwd)),
+    ];
+
+    match app.git_context(&thread.id) {
+        None => lines.push(Line::from("Git: not probed")),
+        Some(context) if context.observed_at_unix_ms == 0 => {
+            lines.push(Line::from("Git: probing…"));
+        }
+        Some(context) if context.error.is_some() => {
+            lines.push(Line::from(format!(
+                "Git: degraded · {}",
+                context.error.as_deref().unwrap_or("unknown error")
+            )));
+        }
+        Some(context) if !context.is_repository => {
+            lines.push(Line::from("Git: not a repository"));
+        }
+        Some(context) => {
+            if let Some(repo) = &context.repo {
+                lines.push(Line::from(format!("Repo root: {}", repo.primary_root)));
+                lines.push(Line::from(format!("Git common dir: {}", repo.git_common_dir)));
+            }
+            if let Some(worktree) = &context.worktree {
+                lines.push(Line::from(format!("Worktree: {}", worktree.canonical_path)));
+            }
+            lines.push(Line::from(format!(
+                "Branch: {}",
+                context
+                    .branch
+                    .as_deref()
+                    .or(context.head.as_deref())
+                    .unwrap_or("<unknown>")
+            )));
+            lines.push(Line::from(format!(
+                "Upstream: {} · ahead={} behind={}",
+                context.upstream.as_deref().unwrap_or("<none>"),
+                context.ahead,
+                context.behind
+            )));
+            lines.push(Line::from(format!(
+                "Dirty: {} · changed files={}",
+                context.dirty,
+                context.changes.len()
+            )));
+            let collisions = app.worktree_collision_count(&thread.id);
+            if collisions > 0 {
+                lines.push(Line::from(format!(
+                    "WARNING: shared mutable checkout with {collisions} active thread(s)"
+                )));
+            }
+            lines.push(Line::from(""));
+            lines.push(Line::from("Changed files:"));
+            lines.extend(context.changes.iter().take(100).map(|change| {
+                Line::from(format!("  {:2} {}", change.status_label(), change.path))
+            }));
+            if context.changes.len() > 100 {
+                lines.push(Line::from(format!(
+                    "  … {} additional change(s)",
+                    context.changes.len() - 100
+                )));
+            }
+        }
+    }
+
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(Block::bordered().title(" Workspace · Git read-only "))
+            .wrap(Wrap { trim: false }),
+        chunks[0],
+    );
+    frame.render_widget(
+        Paragraph::new("r review · Esc back"),
+        chunks[1],
+    );
+}
+
 fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
     let area = frame.area();
     let outer = Layout::default()
@@ -549,6 +645,7 @@ fn render_help(frame: &mut Frame<'_>) {
                 "Thread: a composer · y/n/c approval · i answer · Ctrl+C interrupt · r review",
             ),
             Line::from("Review: j/k file · w word-diff · e editor · PageUp/PageDown · Esc"),
+            Line::from("Workspace: Git identity/status only · r review · Esc"),
             Line::from(
                 "Authority: Codex/Git/Forge stay canonical; codex-tui stores operator state only.",
             ),
