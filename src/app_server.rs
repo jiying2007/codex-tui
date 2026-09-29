@@ -1168,6 +1168,18 @@ async fn handle_unsolicited(
         return Ok(());
     }
 
+    if method == "thread/goal/updated" {
+        let goal = parse_goal_updated(params, now_unix_ms())?;
+        let _ = conversation_tx.send(ConversationEvent::GoalObserved(goal));
+        return Ok(());
+    }
+
+    if method == "thread/goal/cleared" {
+        let thread_id = parse_goal_cleared_thread(params)?;
+        let _ = conversation_tx.send(ConversationEvent::GoalCleared(thread_id));
+        return Ok(());
+    }
+
     let Some(thread_id) = params.get("threadId").and_then(Value::as_str) else {
         return Ok(());
     };
