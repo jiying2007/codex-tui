@@ -539,10 +539,7 @@ mod tests {
                 next_item_cursor: None,
             }),
         );
-        let conversation = app
-            .conversations
-            .get(&thread_id.0)
-            .expect("conversation");
+        let conversation = app.conversations.get(&thread_id.0).expect("conversation");
         assert!(!conversation.loading);
         assert_eq!(conversation.title.as_deref(), Some("title"));
     }
