@@ -13,7 +13,7 @@ Plan -> Start Codex work -> Observe -> Needs You -> Review -> Done
 
 The expensive anti-pattern is:
 
-Create a second task authority -> duplicate GitHub/Linear/Jira state -> synchronize forever
+Create a second task authority -> duplicate GitLab/GitHub/Linear/Jira state -> synchronize forever
 
 ## Why Kanban is valuable
 
@@ -44,9 +44,9 @@ A full task authority implies ownership of:
 - team presence
 - conflict resolution
 
-GitHub Projects, Linear and similar systems already provide these semantics.
+GitLab Issue Boards, GitHub Projects, Linear and similar systems already provide these semantics.
 
-GitHub Projects explicitly treats table, board and roadmap as different views over the same underlying project items. Linear similarly models views as alternate organizations of the same work rather than separate work records.
+The same architectural lesson applies across code-forge/project tools: views should organize existing work rather than create duplicate work records.
 
 codex-tui should follow the same principle.
 
@@ -58,8 +58,8 @@ Possible source references:
 
 - Codex Thread
 - Codex Thread Goal
-- GitHub Issue
-- GitHub Pull Request
+- forge Work Item
+- forge Change Request
 - Git worktree/branch
 - Local Scratch item
 
@@ -94,10 +94,6 @@ Work selected for execution but not currently running.
 
 A live Codex thread/goal is active.
 
-### Needs You
-
-Approval, user input, blocked goal, error, usage/budget limit or another explicit human decision.
-
 ### Review
 
 Execution completed but code/review/PR evidence still needs inspection.
@@ -115,11 +111,11 @@ Prefer deriving columns from source state.
 Examples:
 
 - Thread active + no blocking flag -> Working
-- Thread waiting approval/input -> Needs You
-- Goal blocked/usage-limited/budget-limited -> Needs You
+Attention is derived separately from workflow stage. Approval/input requests and blocked/usage-limited/budget-limited Goals produce a Needs You attention overlay while the card remains in its real workflow stage.
+
 - Goal complete + dirty changes/no accepted review -> Review
-- PR open with review needed -> Review
-- merged PR / explicitly completed scratch item -> Done
+- change request open with review needed -> Review
+- merged change request / explicitly completed scratch item -> Done
 
 Manual drag should only mutate a source when that mutation has a clear authority.
 
@@ -128,7 +124,7 @@ Examples:
 - Ready -> Working may create/start a Codex thread
 - Working -> Needs You is normally derived and not draggable
 - Review -> Done may acknowledge local completion or invoke an explicit GitHub transition
-- moving a GitHub issue status should require an explicit integration and confirmation
+- moving a forge work-item status should require an explicit provider integration and confirmation
 
 Never let a visual drag silently fabricate upstream state.
 
@@ -167,9 +163,9 @@ If a scratch item becomes team work, promote/link it to GitHub Issue/Project rat
 
 ## Team board
 
-For a small team, the preferred terminal-state board should be able to project GitHub Issues/Projects/PRs.
+For a small team, the preferred board projects the configured code forge. Current internal priority is GitLab Self-Managed; GitHub follows behind the same provider contract.
 
-The team source of truth remains GitHub.
+The team source of truth remains the configured forge.
 
 Potential views:
 
@@ -233,8 +229,8 @@ However, its transition is still instructive: remote kanban issues/comments/proj
 
 ### Tier B: strong mature-product additions
 
-- GitHub Issue/PR/CI projection
-- PR attachment/status
+- GitLab Work Item/Issue Board/MR/Pipeline projection first
+- GitHub Issue/Project/PR/Checks projection through the same forge boundary
 - local Scratch tasks
 - session/thread notes and bookmarks
 - thread hot slots / recent targets
@@ -262,7 +258,7 @@ However, its transition is still instructive: remote kanban issues/comments/proj
 A mature feature belongs in the core when it:
 
 1. directly improves planning, attention, interaction or review of Codex work;
-2. can use Codex/Git/GitHub as authority;
+2. can use Codex/Git/configured forge as authority;
 3. remains useful to a single local developer;
 4. does not require a new always-on service;
 5. has a bounded compatibility surface.
