@@ -794,7 +794,6 @@ fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
         Command::CommandPalette
         | Command::ContextActions
         | Command::Snooze
-        | Command::New
         | Command::Goal
         | Command::OpenExternal
         | Command::HotSlot(_)
