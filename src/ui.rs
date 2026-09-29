@@ -34,6 +34,7 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
         View::Thread(id) => render_thread(frame, app, id.0.as_str()),
         View::Review(id) => render_review(frame, app, id.0.as_str()),
         View::Workspace(id) => render_workspace(frame, app, id.0.as_str()),
+        View::ManagedWorktrees(id) => render_managed_worktrees(frame, app, id.0.as_str()),
         View::Board => render_board(frame, app),
         View::Scratch(id) => render_scratch(frame, app, id),
     }
@@ -99,6 +100,12 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState) {
             truncate(&app.input_buffer, 60)
         )),
         InputMode::GoalObjective => Line::from("Goal objective editor active in Thread view"),
+        InputMode::WorktreeCreateBranch
+        | InputMode::WorktreeCreatePath
+        | InputMode::WorktreeCreateStartPoint
+        | InputMode::WorktreeDeleteBranch => {
+            Line::from("managed-worktree input active")
+        }
         InputMode::Normal => {
             if let Some(error) = &app.backend_status.error {
                 Line::from(format!(
@@ -519,7 +526,7 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
     frame.render_widget(composer, chunks[2]);
     frame.render_widget(
         Paragraph::new(
-            "a composer · g goal · y accept · n decline · c cancel · i answer · Ctrl+C interrupt",
+            "a composer · g goal · m worktrees · y accept · n decline · c cancel · i answer · Ctrl+C interrupt",
         ),
         chunks[3],
     );
@@ -850,7 +857,142 @@ fn render_workspace(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
             .wrap(Wrap { trim: false }),
         chunks[0],
     );
-    frame.render_widget(Paragraph::new("r review · Esc back"), chunks[1]);
+    frame.render_widget(
+        Paragraph::new("r review · m managed worktrees · Esc back"),
+        chunks[1],
+    );
+}
+
+fn render_managed_worktrees(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
+    let area = frame.area();
+    let outer = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(5), Constraint::Length(2)])
+        .split(area);
+
+    let thread = app.threads.iter().find(|thread| thread.id.0 == thread_id);
+    let context = thread.and_then(|thread| app.git_context(&thread.id));
+    let repo = context.and_then(|context| context.repo.as_ref());
+    let worktrees = app.visible_managed_worktrees();
+
+    let mut lines = Vec::new();
+    lines.push(Line::from(format!(
+        "Repository: {}",
+        repo.map(|repo| repo.primary_root.as_str())
+            .unwrap_or("<unavailable>")
+    )));
+    lines.push(Line::from(format!(
+        "Managed/adopted worktrees: {}",
+        worktrees.len()
+    )));
+    lines.push(Line::from(""));
+
+    if worktrees.is_empty() {
+        lines.push(Line::from("No managed/adopted worktrees for this repository."));
+    } else {
+        for (index, record) in worktrees.iter().enumerate() {
+            let selected = index == app.managed_selected;
+            let prefix = if selected { ">" } else { " " };
+            let ownership = if record.adopted { "adopted" } else { "managed" };
+            let text = format!(
+                "{prefix} {:8} {:18} {}",
+                ownership,
+                record.branch.as_deref().unwrap_or("<detached>"),
+                record.canonical_path
+            );
+            let style = if selected {
+                Style::default().add_modifier(Modifier::REVERSED)
+            } else {
+                Style::default()
+            };
+            lines.push(Line::from(Span::styled(text, style)));
+        }
+    }
+
+    if let Some(plan) = &app.pending_operation {
+        lines.push(Line::from(""));
+        lines.push(Line::from("CONFIRM REQUIRED — no mutation has executed yet."));
+        lines.push(Line::from(format!("Operation: {}", plan.kind.label())));
+        lines.push(Line::from(format!("Cwd: {}", plan.cwd)));
+        let command = if plan.argv.is_empty() {
+            "metadata-only adoption (no Git mutation)".to_string()
+        } else {
+            format!("git -C {} {}", plan.cwd, plan.argv.join(" "))
+        };
+        lines.push(Line::from(format!("Exact operation: {command}")));
+        lines.push(Line::from(format!(
+            "Expected: {}",
+            plan.expected_side_effect
+        )));
+        if let Some(path) = &plan.target_worktree {
+            lines.push(Line::from(format!("Target worktree: {path}")));
+        }
+        if let Some(branch) = &plan.target_branch {
+            lines.push(Line::from(format!("Target branch: {branch}")));
+        }
+        lines.push(Line::from("Preconditions:"));
+        lines.extend(plan.preconditions.iter().map(|precondition| {
+            Line::from(format!(
+                "  {} = {}",
+                precondition.key, precondition.expected
+            ))
+        }));
+        lines.push(Line::from("Press y to execute; c or Esc cancels."));
+    }
+
+    if let Some(receipt) = app.recent_operations.first() {
+        lines.push(Line::from(""));
+        lines.push(Line::from(format!(
+            "Latest receipt: {} · {:?}",
+            receipt.plan.kind.label(),
+            receipt.state
+        )));
+        if let Some(verification) = &receipt.verification {
+            lines.push(Line::from(format!(
+                "Verified: {}",
+                truncate(verification, 90)
+            )));
+        }
+        if let Some(failure) = &receipt.failure {
+            lines.push(Line::from(format!("Failure: {}", truncate(failure, 90))));
+        }
+    }
+
+    if let Some(notice) = &app.mutation_notice {
+        lines.push(Line::from(""));
+        lines.push(Line::from(format!("Notice: {}", truncate(notice, 100))));
+    }
+
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(Block::bordered().title(" Managed Worktrees · Plan → Confirm → Verify "))
+            .wrap(Wrap { trim: false }),
+        outer[0],
+    );
+
+    let footer = match app.input_mode {
+        InputMode::WorktreeCreateBranch => format!(
+            "new branch> {} · Enter next · Esc cancel",
+            app.input_buffer
+        ),
+        InputMode::WorktreeCreatePath => format!(
+            "absolute worktree path> {} · Enter next · Esc cancel",
+            app.input_buffer
+        ),
+        InputMode::WorktreeCreateStartPoint => format!(
+            "start point> {} · Enter plan · Esc cancel",
+            app.input_buffer
+        ),
+        InputMode::WorktreeDeleteBranch => format!(
+            "branch to delete> {} · Enter plan · Esc cancel",
+            app.input_buffer
+        ),
+        _ if app.pending_operation.is_some() => {
+            "y CONFIRM execute · c cancel plan · Esc cancel plan".into()
+        }
+        _ => "j/k select · n create · a adopt current · d remove selected · x delete branch · Esc back".into(),
+    };
+    frame.render_widget(Paragraph::new(footer), outer[1]);
 }
 
 fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
@@ -1051,7 +1193,10 @@ fn render_help(frame: &mut Frame<'_>) {
                 "Thread: a composer · y/n/c approval · i answer · Ctrl+C interrupt · r review",
             ),
             Line::from("Review: j/k file · w word-diff · e editor · PageUp/PageDown · Esc"),
-            Line::from("Workspace: Git identity/status only · r review · Esc"),
+            Line::from("Workspace: Git identity/status only · r review · m managed worktrees · Esc"),
+            Line::from(
+                "Managed Worktrees: n create · a adopt · d remove · x delete branch · y confirm",
+            ),
             Line::from(
                 "Board: h/l stage · j/k item · Space attention · s snooze · = bind · 1–9 hot slot",
             ),
