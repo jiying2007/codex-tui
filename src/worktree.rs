@@ -162,23 +162,33 @@ async fn execute_request(
     store: &SqliteStore,
     request: MutationRequest,
 ) -> Result<OperationReceipt> {
-    if let Some(existing) = store.operation_receipt(&request.plan.operation_id)? {
-        anyhow::ensure!(
-            matches!(
-                existing.state,
-                OperationState::Planned | OperationState::OutcomeUnknown
-            ),
-            "operation {} is not executable from state {:?}",
-            existing.operation_id,
-            existing.state
-        );
-        if existing.state == OperationState::OutcomeUnknown {
-            return reconcile_receipt(store, existing).await;
+    let mut receipt = match store.operation_receipt(&request.plan.operation_id)? {
+        Some(existing) => {
+            anyhow::ensure!(
+                matches!(
+                    existing.state,
+                    OperationState::Planned | OperationState::OutcomeUnknown
+                ),
+                "operation {} is not executable from state {:?}",
+                existing.operation_id,
+                existing.state
+            );
+            if existing.state == OperationState::OutcomeUnknown {
+                return reconcile_receipt(store, existing).await;
+            }
+            anyhow::ensure!(
+                existing.plan == request.plan,
+                "operation {} plan does not match persisted receipt",
+                existing.operation_id
+            );
+            existing
         }
-    }
-
-    let mut receipt = OperationReceipt::planned(request.plan);
-    store.save_operation_receipt(&receipt)?;
+        None => {
+            let receipt = OperationReceipt::planned(request.plan);
+            store.save_operation_receipt(&receipt)?;
+            receipt
+        }
+    };
 
     if let Err(error) = check_preconditions(store, &receipt.plan, &request.active_scopes).await {
         receipt.fail(now_unix_ms(), error.to_string());
@@ -188,6 +198,19 @@ async fn execute_request(
 
     receipt.start(now_unix_ms());
     store.save_operation_receipt(&receipt)?;
+
+    if receipt.plan.kind == OperationKind::AdoptWorktree {
+        match verify_success(store, &receipt.plan).await {
+            Ok((result_ref, verification)) => {
+                receipt.succeed(now_unix_ms(), result_ref, verification);
+            }
+            Err(error) => {
+                receipt.fail(now_unix_ms(), format!("worktree adoption failed: {error:#}"));
+            }
+        }
+        store.save_operation_receipt(&receipt)?;
+        return Ok(receipt);
+    }
 
     let command = run_git_mutation(&receipt.plan.cwd, &receipt.plan.argv).await;
     match command {
@@ -951,6 +974,44 @@ branch refs/heads/feature
                 .as_deref()
                 .is_some_and(|failure| failure.contains("active mutation scope"))
         );
+    }
+
+    #[tokio::test]
+    async fn adopt_records_existing_worktree_without_running_git_mutation() {
+        let temp = tempdir().expect("tempdir");
+        let repo_root = temp.path().join("repo");
+        let repo = init_repo(&repo_root);
+        let store = SqliteStore::at(temp.path().join("store"));
+        let target = temp.path().join("existing-wt");
+        let target_text = target.to_string_lossy().into_owned();
+        git(&repo_root, &["worktree", "add", "-b", "existing", &target_text]);
+
+        let plan = OperationPlan::adopt_worktree(
+            repo.clone(),
+            repo_root.to_string_lossy().into_owned(),
+            canonical_path(&target_text),
+            1,
+        );
+        let receipt = execute_request(
+            &store,
+            MutationRequest {
+                plan,
+                active_scopes: vec![],
+            },
+        )
+        .await
+        .expect("adopt");
+        assert_eq!(receipt.state, OperationState::Succeeded);
+
+        let managed = store
+            .managed_worktree(
+                &repo.git_common_dir,
+                &canonical_path(&target_text),
+            )
+            .expect("lookup")
+            .expect("managed");
+        assert!(managed.adopted);
+        assert_eq!(managed.branch.as_deref(), Some("existing"));
     }
 
     #[tokio::test]
