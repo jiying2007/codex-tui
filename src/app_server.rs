@@ -43,8 +43,14 @@ pub enum BackendCommand {
 #[derive(Clone, Debug)]
 pub enum ConversationEvent {
     Loaded(ConversationPage),
-    PromptSubmitted { thread_id: ThreadId, turn_id: String },
-    Failed { thread_id: ThreadId, error: String },
+    PromptSubmitted {
+        thread_id: ThreadId,
+        turn_id: String,
+    },
+    Failed {
+        thread_id: ThreadId,
+        error: String,
+    },
 }
 
 pub struct RegistryHandle {
@@ -498,7 +504,9 @@ async fn ensure_thread_loaded(
         )
         .await
         .context("read thread before turn start")?;
-    let is_not_loaded = metadata.pointer("/thread/status/type").and_then(Value::as_str)
+    let is_not_loaded = metadata
+        .pointer("/thread/status/type")
+        .and_then(Value::as_str)
         == Some("notLoaded");
     if !is_not_loaded {
         return Ok(());
