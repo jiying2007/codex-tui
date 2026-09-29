@@ -167,9 +167,9 @@ fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
             KeyCode::Enter => Action::CommitInput,
             KeyCode::Backspace => Action::InputBackspace,
             KeyCode::Char(character)
-                if !key
-                    .modifiers
-                    .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER) =>
+                if !key.modifiers.intersects(
+                    KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER,
+                ) =>
             {
                 Action::InputChar(character)
             }
