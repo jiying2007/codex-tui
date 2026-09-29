@@ -398,6 +398,24 @@ async fn doctor(scope: Option<&str>) -> Result<()> {
                     }
                     Err(error) => println!("planning: DEGRADED · {error:#}"),
                 }
+                match store.load_managed_worktrees() {
+                    Ok(worktrees) => println!("managed-worktrees: {}", worktrees.len()),
+                    Err(error) => println!("managed-worktrees: DEGRADED · {error:#}"),
+                }
+                match store.load_recent_operation_receipts(10) {
+                    Ok(receipts) => {
+                        println!("recent-operation-receipts: {}", receipts.len());
+                        for receipt in receipts {
+                            println!(
+                                "receipt: {} · {} · {:?}",
+                                receipt.operation_id,
+                                receipt.plan.kind.label(),
+                                receipt.state
+                            );
+                        }
+                    }
+                    Err(error) => println!("operation-receipts: DEGRADED · {error:#}"),
+                }
             }
             Err(error) => {
                 println!("store-backend: sqlite");
