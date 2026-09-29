@@ -15,6 +15,9 @@ pub enum Command {
     NextAttention,
     QuickPrompt,
     Board,
+    BoardLeft,
+    BoardRight,
+    CycleSavedView,
     Review,
     Workspace,
     Snooze,
@@ -74,6 +77,7 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
             Some(Command::HotSlot(c.to_digit(10)? as u8))
         }
         (ViewKind::Thread, KeyCode::Char('a')) => Some(Command::QuickPrompt),
+        (ViewKind::Thread, KeyCode::Char('b')) => Some(Command::Board),
         (ViewKind::Thread, KeyCode::Char('y')) => Some(Command::ApprovePending),
         (ViewKind::Thread, KeyCode::Char('n')) => Some(Command::DeclinePending),
         (ViewKind::Thread, KeyCode::Char('c')) => Some(Command::CancelPending),
@@ -90,6 +94,17 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
         (ViewKind::Review, KeyCode::Char('w')) => Some(Command::ToggleWordDiff),
         (ViewKind::Review, KeyCode::Char('e')) => Some(Command::ExternalEditor),
         (ViewKind::Workspace, KeyCode::Char('r')) => Some(Command::Review),
+        (ViewKind::Board, KeyCode::Char('h') | KeyCode::Left) => Some(Command::BoardLeft),
+        (ViewKind::Board, KeyCode::Char('l') | KeyCode::Right) => Some(Command::BoardRight),
+        (ViewKind::Board, KeyCode::Char('j') | KeyCode::Down) => Some(Command::Next),
+        (ViewKind::Board, KeyCode::Char('k') | KeyCode::Up) => Some(Command::Previous),
+        (ViewKind::Board, KeyCode::Enter) => Some(Command::Open),
+        (ViewKind::Board, KeyCode::Char(' ')) => Some(Command::NextAttention),
+        (ViewKind::Board, KeyCode::Char('a')) => Some(Command::QuickPrompt),
+        (ViewKind::Board, KeyCode::Char('n')) => Some(Command::New),
+        (ViewKind::Board, KeyCode::Char('r')) => Some(Command::Review),
+        (ViewKind::Board, KeyCode::Char('w')) => Some(Command::Workspace),
+        (ViewKind::Board, KeyCode::Tab) => Some(Command::CycleSavedView),
         _ => None,
     }
 }
@@ -100,6 +115,26 @@ mod tests {
 
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn board_bindings_keep_horizontal_stage_and_vertical_item_navigation_distinct() {
+        assert_eq!(
+            command_for_key(key(KeyCode::Char('h')), ViewKind::Board),
+            Some(Command::BoardLeft)
+        );
+        assert_eq!(
+            command_for_key(key(KeyCode::Char('l')), ViewKind::Board),
+            Some(Command::BoardRight)
+        );
+        assert_eq!(
+            command_for_key(key(KeyCode::Char('j')), ViewKind::Board),
+            Some(Command::Next)
+        );
+        assert_eq!(
+            command_for_key(key(KeyCode::Tab), ViewKind::Board),
+            Some(Command::CycleSavedView)
+        );
     }
 
     #[test]
