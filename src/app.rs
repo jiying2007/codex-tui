@@ -497,9 +497,10 @@ impl AppState {
             View::Board => self
                 .selected_planning_card()
                 .map(|card| card.anchor.clone()),
-            View::Thread(id) | View::Review(id) | View::Workspace(id) | View::ManagedWorktrees(id) => {
-                Some(SourceRef::codex_thread(id))
-            }
+            View::Thread(id)
+            | View::Review(id)
+            | View::Workspace(id)
+            | View::ManagedWorktrees(id) => Some(SourceRef::codex_thread(id)),
             View::Scratch(id) => Some(SourceRef {
                 kind: SourceKind::ScratchWork,
                 value: id.clone(),
@@ -813,12 +814,12 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 }
             ));
             let repo = receipt.plan.repo.clone();
-            state.git_contexts.retain(|_, context| {
-                context.repo.as_ref() != Some(&repo)
-            });
-            state.recent_operations.retain(|item| {
-                item.operation_id != receipt.operation_id
-            });
+            state
+                .git_contexts
+                .retain(|_, context| context.repo.as_ref() != Some(&repo));
+            state
+                .recent_operations
+                .retain(|item| item.operation_id != receipt.operation_id);
             state.recent_operations.insert(0, receipt);
             state.recent_operations.truncate(20);
         }
@@ -1059,7 +1060,10 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 View::Board => state
                     .selected_planning_card()
                     .and_then(|card| card.workspace.clone()),
-                View::Thread(id) | View::Review(id) | View::Workspace(id) | View::ManagedWorktrees(id) => state
+                View::Thread(id)
+                | View::Review(id)
+                | View::Workspace(id)
+                | View::ManagedWorktrees(id) => state
                     .threads
                     .iter()
                     .find(|thread| thread.id == *id)
@@ -1240,7 +1244,10 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::OpenReview => {
             let thread_id = match &state.view {
                 View::Registry => state.selected_thread_id(),
-                View::Thread(id) | View::Review(id) | View::Workspace(id) | View::ManagedWorktrees(id) => Some(id.clone()),
+                View::Thread(id)
+                | View::Review(id)
+                | View::Workspace(id)
+                | View::ManagedWorktrees(id) => Some(id.clone()),
                 View::Board => state.selected_planning_card().and_then(|card| {
                     (card.anchor.kind == SourceKind::CodexThread)
                         .then(|| ThreadId::new(card.anchor.value.clone()))
@@ -1274,7 +1281,10 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::OpenWorkspace => {
             let thread_id = match &state.view {
                 View::Registry => state.selected_thread_id(),
-                View::Thread(id) | View::Review(id) | View::Workspace(id) | View::ManagedWorktrees(id) => Some(id.clone()),
+                View::Thread(id)
+                | View::Review(id)
+                | View::Workspace(id)
+                | View::ManagedWorktrees(id) => Some(id.clone()),
                 View::Board => state.selected_planning_card().and_then(|card| {
                     (card.anchor.kind == SourceKind::CodexThread)
                         .then(|| ThreadId::new(card.anchor.value.clone()))
