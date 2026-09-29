@@ -7,6 +7,7 @@ pub mod domain;
 pub mod git;
 pub mod goal;
 pub mod keymap;
+pub mod operation;
 pub mod planning;
 pub mod sqlite_store;
 pub mod store;
