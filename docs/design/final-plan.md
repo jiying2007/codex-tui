@@ -1,1535 +1,2063 @@
-# codex-tui 终版方案
+# codex-tui 最终完整方案 v2
 
 Date: 2026-09-29
-Status: Final design baseline
-Audience: individual developers first; small engineering teams through reuse and forge integration
+Status: Final architecture baseline
+Product priority: personal-first, local-first, Codex-native
+Team model: repository reuse + code-forge projection
+Forge priority: GitLab Self-Managed first, GitHub second
 
-## 1. Product definition
+---
 
-codex-tui is a local-first Codex engineering workbench.
+## 0. Executive summary
 
-It unifies:
+codex-tui is a personal-first, local-first Codex engineering workbench.
 
-- planning
-- multi-project / multi-thread visibility
-- human attention routing
-- exact thread navigation and control
-- Git/worktree context
-- review/diff
-- lightweight team integrations
+It is designed first for one developer who is simultaneously operating many repositories, many Codex threads, several long-running Goals, parallel Git worktrees, approvals, reviews and code-forge items.
 
-The product is not "a prettier Codex chat TUI".
+Its mature workflow is:
 
-The product goal is to reduce operator overhead when a developer has many projects, many Codex threads and several pieces of work moving at the same time.
+~~~text
+Plan
+  -> Start / Resume Codex work
+  -> Work in repository/worktree
+  -> Surface human attention
+  -> Review evidence and code
+  -> Change Request / Pipeline
+  -> Done
+~~~
 
-The mature product should answer, within a few keystrokes:
+The product must not become a second source of truth for Codex, Git or the team's code forge.
 
-1. What work exists?
-2. What is running?
-3. What needs me?
-4. Which exact Codex thread should I enter?
-5. What changed in the code?
-6. What is ready for review?
-7. What is blocked?
-8. What is complete?
-9. Which work item/change request/worktree belongs to this work?
-10. Why is a session or environment not working?
+Authority remains:
 
-## 2. Target users
+~~~text
+Codex App Server  -> thread / turn / item / goal / approval / runtime
+Git               -> repository / branch / worktree / diff / commit
+Code Forge        -> team work item / board / MR-or-PR / pipeline / review
+Repository files  -> AGENTS.md / .codex config / skills / scripts
+codex-tui         -> local operator projection and local UI metadata
+~~~
 
-### Individual developer
+The distinguishing value is lower operator overhead across many concurrent pieces of Codex engineering work.
 
-Typical environment:
+The mature product is not defined by "more AI" or by replacing Jira/GitLab/GitHub. It is defined by five outcomes:
 
-- several repositories
-- several active Codex threads
-- parallel experiments
-- Git worktrees
-- many terminal windows today
-- frequent resume / review / approval operations
+1. lower context-switching cost;
+2. faster human-attention routing;
+3. safer parallel development;
+4. higher review throughput;
+5. clearer operational state.
 
-Primary value:
+---
 
-- one place to see all active work
-- one-key attention routing
-- exact conversation resume
-- drafts/scroll preserved per thread
-- safe parallel worktree awareness
-- fast review
+# 1. Product priority
 
-### Small engineering team — reuse rather than shared-session platform
+## 1.1 Primary persona: individual developer
 
-The product remains personal-first. Team value is primarily reuse of repository-owned assets and projection of shared code-forge state.
+The primary optimization target is one developer with:
 
-Typical environment:
+- multiple active repositories;
+- multiple Codex threads per repository;
+- research/debug/feature/cleanup work running in parallel;
+- Git branches and worktrees;
+- approval and user-input requests;
+- completed work waiting for review;
+- many existing terminal windows and remembered thread IDs.
 
-- shared Git repositories
-- GitLab Self-Managed today; GitHub may also be used
-- shared work items / merge or pull requests / CI
-- shared AGENTS.md, project Codex config and skills
-- shared repository scripts and CI conventions
-- each engineer has their own local Codex sessions
+The application must make this workflow substantially easier before any team feature is considered successful.
 
-Primary value:
+## 1.2 Team value: reuse, not shared-session infrastructure
 
-- reuse the same repository instructions, skills and engineering conventions
-- project shared work from GitLab/GitHub without copying it into codex-tui
-- consistent local operator experience
-- no mandatory codex-tui collaboration server
-- drafts, attention, snooze, hot slots and personal views remain local
+For a small engineering team, the main value is reuse of shared engineering assets:
 
-## 3. Product principles
+- Git repository;
+- AGENTS.md;
+- .codex/config.toml;
+- project skills/plugins;
+- Makefile / justfile / package scripts;
+- test/build/review commands;
+- CI definitions;
+- GitLab/GitHub work-item and change-request conventions.
 
-### P1 — Existing systems remain authoritative
+Each developer still owns personal:
 
-Codex App Server owns:
+- drafts;
+- scroll position;
+- pins;
+- aliases;
+- snooze state;
+- attention acknowledgements;
+- saved personal views;
+- hot slots;
+- local Scratch work.
 
-- thread identity
-- thread history
-- turns/items
-- thread runtime status
-- model/provider
-- approvals
-- sandbox/permission state
-- goals
-- queue where supported
+Normal team adoption must not require:
 
-Git owns:
+- codex-tui account system;
+- shared session database;
+- RBAC;
+- presence;
+- team chat;
+- cloud synchronization;
+- central service.
 
-- repository identity
-- branches
-- worktrees
-- dirty state
-- diffs
-- commits
+Optional live collaboration can exist later as a separate layer, never as a prerequisite.
 
-Code forge owns team planning/review/delivery state.
+---
 
-Current first-class internal forge: GitLab Self-Managed.
+# 2. Product boundary against official Codex
+
+Official Codex is itself evolving multi-thread and Agent Center / Agents Overview functionality, including thread status groups, search, grouping and thread lifecycle actions.
+
+Therefore codex-tui must not define its long-term differentiation as merely "a multi-session list".
+
+Rule:
+
+> Reuse official Codex thread/project/status semantics and concentrate codex-tui differentiation above that layer.
+
+Long-term differentiation:
+
+- cross-repository personal planning;
+- Attention Inbox across all work;
+- WorkCard relationship projection;
+- Git/worktree safety;
+- code-forge integration, especially GitLab Self-Managed;
+- review/evidence workflow;
+- saved operator views;
+- local personal workflow state;
+- diagnostics across Codex + Git + forge + terminal.
+
+If official Codex gains a capability that makes a codex-tui compatibility layer redundant, prefer deleting the duplicate layer rather than competing with upstream.
+
+---
+
+# 3. Non-negotiable authority model
+
+## 3.1 Codex owns execution
+
+Codex App Server is authoritative for:
+
+- Thread identity;
+- Thread history;
+- Turns and items;
+- runtime status;
+- active flags;
+- approvals;
+- user-input requests;
+- model/provider;
+- sandbox/permission state;
+- Goal state;
+- Thread Queue where available;
+- resume/fork semantics;
+- upstream Project / Section state where available.
+
+codex-tui does not maintain a second canonical conversation database.
+
+## 3.2 Git owns code state
+
+Git is authoritative for:
+
+- repository identity;
+- branches;
+- worktrees;
+- index/working-tree state;
+- diffs;
+- commits;
+- merge relationships.
+
+codex-tui never treats a cached Git projection as authority.
+
+## 3.3 Code forge owns team planning/review/delivery
 
 Normalized forge concepts:
 
-- work items / issues
-- boards
-- change requests (GitLab Merge Request / GitHub Pull Request)
-- pipelines / checks
-- review / approval state
+- ForgeWorkItem;
+- ForgeBoard;
+- ChangeRequest;
+- PipelineSummary;
+- ReviewState.
 
-GitHub is a provider, not the core domain model.
+Providers:
 
-Repository configuration owns:
+- GitLab Self-Managed first;
+- GitHub second.
 
-- AGENTS.md
-- .codex/config.toml
-- project skills/plugins where appropriate
+Provider terminology stays at the edge:
 
-codex-tui owns:
+- GitLab -> Issue / Work Item / Issue Board / Merge Request / Pipeline;
+- GitHub -> Issue / Project / Pull Request / Checks.
 
-- presentation
-- local attention acknowledgement
-- local draft
-- local alias
-- local pin
-- local snooze
-- local saved views
-- local scratch work
-- local navigation state
+## 3.4 Repository files own reusable development convention
 
-No duplicate canonical transcript database.
+Use existing mechanisms first:
 
-### P2 — Derive before persisting
+- AGENTS.md;
+- .codex/config.toml;
+- skills;
+- plugins;
+- scripts;
+- CI.
 
-If a value can be reliably derived from Codex, Git, or the configured code forge, do not persist a second copy as authority.
+A future .codex-tui.toml is allowed only for truly codex-tui-specific shared presentation/preset data that cannot be represented elsewhere.
 
-### P3 — Local-first core
+## 3.5 codex-tui owns only operator state
 
-The core must work as a local terminal application without:
+Local state can include:
 
-- codex-tui cloud
-- mandatory web server
-- central team database
-- RBAC server
-- Postgres
-- mobile companion
+- draft;
+- scroll/follow state;
+- pin;
+- alias;
+- note;
+- bookmark;
+- hot slot;
+- snooze;
+- seen/unseen;
+- SavedView;
+- ScratchWork;
+- WorkCard relationship mapping;
+- managed-worktree metadata;
+- recent operation receipts.
 
-### P4 — Deep Codex integration before broad agent support
+---
 
-Codex is the first-class backend.
+# 4. Final product architecture
 
-Do not turn the core into a universal terminal-scraping agent manager.
+~~~text
+┌─────────────────────────────────────────────────────┐
+│ Layer 6: Optional Extensions                        │
+│ control protocol / declarative integrations/plugin │
+├─────────────────────────────────────────────────────┤
+│ Layer 5: Optional Remote / Collaboration            │
+│ remote target / web-mobile / presence / bridge     │
+├─────────────────────────────────────────────────────┤
+│ Layer 4: Repository Reuse + Code Forge              │
+│ GitLab first / GitHub second / repo conventions    │
+├─────────────────────────────────────────────────────┤
+│ Layer 3: Personal Planning                          │
+│ WorkCard / Board / List / Goal / Saved Views       │
+├─────────────────────────────────────────────────────┤
+│ Layer 2: Personal Engineering Workspace             │
+│ Git / Worktree / Diff / Review / Commands          │
+├─────────────────────────────────────────────────────┤
+│ Layer 1: Personal Codex Control                     │
+│ Threads / Attention / Conversation / Approval      │
+└─────────────────────────────────────────────────────┘
+                         │
+                   Codex App Server
+~~~
 
-### P5 — Capability over exact version
+Layers 1–3 form the mature product core.
 
-Codex version is evidence, not the main feature switch.
+Layer 4 is a high-value integration/reuse layer.
 
-Each feature declares:
+Layers 5–6 are optional and may never be required for many users.
 
-- preferred capability
-- fallback
-- degraded behavior
+---
 
-### P6 — Every compatibility promise has a maintenance budget
+# 5. Core identities
 
-Any stable config/API/integration must define:
+Identity mistakes create the most expensive long-term bugs. Keep these distinct.
 
-- support scope
-- migration path
-- fallback
-- tests
-- deprecation strategy
-- recurring CI cost
+## 5.1 CodexTarget
 
-## 4. Final product layers
+Infrastructure identity, not a project identity.
 
-### Layer 1 — Codex Control Core
+Represents:
 
-Always present.
+- local embedded/local daemon/explicit app-server target;
+- CODEX_HOME;
+- backend fingerprint;
+- platform;
+- capabilities.
 
-Capabilities:
+The UI may expose this in diagnostics or multi-profile settings later.
 
-- App Server connection
-- capability negotiation
-- project/workspace discovery
-- thread registry
-- thread status
-- Attention Inbox
-- conversation view
-- approvals
-- start/steer/interrupt
-- resume/fork
-- goals
-- model/sandbox/permission visibility
-- diagnostics
+## 5.2 Workspace
 
-### Layer 2 — Developer Workspace
+Technical local project grouping.
 
-Always present in the mature product.
+Resolution preference:
 
-Capabilities:
+1. stable upstream Codex Project id when available and trustworthy;
+2. local Git repository identity;
+3. normalized cwd;
+4. explicit local registration.
 
-- Git repository identity
-- worktree identity
-- branch/dirty state
-- worktree collision detection
-- managed worktree lifecycle
-- changed files
-- diff/review
-- external editor/browser
-- lightweight terminal drawer
-- command palette
-- global metadata search
-- notifications
+Workspace is not a task/project-management object.
 
-### Layer 3 — Planning
+## 5.3 LocalRepoIdentity
 
-Mature core.
+Must distinguish repository from worktree.
 
-Capabilities:
+Suggested local identity:
 
-- List view
-- Board/Kanban view
-- Saved Views
-- Codex Goal projection
-- local Scratch work
-- priorities
-- pins
-- snooze
-- mark unread
-- review queue
-- optional thread queue UI as upstream support stabilizes
+- canonical Git common-dir identity;
+- primary root;
+- current worktree path.
 
-Planning is a view layer, not a second Jira.
+Do not use cwd alone.
 
-### Layer 4 — Reuse + Code Forge Integration
-
-Optional for the personal core, but expected for internal team use.
-
-Repository reuse:
-
-- AGENTS.md
-- .codex/config.toml
-- project skills/plugins
-- existing build/test/review scripts
-- CI conventions
-- optional tiny codex-tui-specific view/preset manifest only if a need cannot be expressed elsewhere
-
-Forge capabilities:
-
-- GitLab Self-Managed first
-- GitHub second behind the same provider contract
-- work-item projection
-- external board projection
-- change-request state
-- pipeline/check state
-- review/approval state
-- work-item/thread/worktree/change-request links
-
-No codex-tui team server is required.
-
-### Layer 5 — Remote / Collaboration
-
-Optional separate layer.
-
-Possible capabilities:
-
-- explicit remote App Server target
-- SSH-aware open
-- browser/mobile companion
-- shared presence
-- shared live notes
-- external notification bridge
-
-The local core must never depend on this layer.
-
-### Layer 6 — Extensions
-
-Late optional layer.
-
-Preferred evolution:
-
-1. custom commands/actions
-2. stable local control protocol
-3. declarative integrations
-4. only then a versioned plugin runtime if real demand exists
-
-Internal Rust domain types are never the public plugin API.
-
-## 5. Core domain model
-
-The core model should stay small.
-
-### Workspace
-
-Purpose:
-
-Group related Codex threads by technical project identity.
-
-Identity resolution order:
-
-1. stable native Codex project id when available
-2. Git repository identity
-3. normalized cwd
-4. explicit local registration as fallback
+## 5.4 ForgeIdentity
 
 Fields:
 
-- id
-- display_name
-- roots
-- primary_root
-- repo_identity optional
-- upstream_project_id optional
-- recency
+- provider;
+- host;
+- stable project/repository id when available;
+- namespace/path for display and resolution;
+- current web URL.
 
-### ThreadRef
+For GitLab, numeric project ID is preferred as stable remote identity because project paths can change when renamed or transferred.
 
-Represents one Codex thread.
+Path remains metadata, not sole identity.
 
-Fields:
+## 5.5 ThreadIdentity
 
-- thread_id
-- workspace_id
-- name
-- preview
-- cwd
-- status
-- active_flags
-- archived
-- recency
-- model/provider when known
-- goal summary when known
-- branch/worktree metadata derived from Git
-- forge work-item/change-request references when known
+Canonical Codex thread_id.
 
-### Attention
+Never use:
 
-Separate from execution status.
+- display title;
+- rollout mtime;
+- cwd;
+- terminal process id
 
-Execution state examples:
+as a substitute for thread identity.
 
-- active
-- idle
-- not loaded
-- system error
+## 5.6 WorktreeIdentity
 
-Attention examples:
+At minimum:
 
-- approval required
-- input required
-- blocked goal
-- error
-- usage/budget limit
-- completed but unseen
-- review required
+- LocalRepoIdentity;
+- canonical worktree path;
+- branch;
+- managed_by_codex_tui flag.
 
-Attention presentation is orthogonal to workflow stage.
+## 5.7 WorkCardIdentity
 
-Mission Control may group operational state as:
+A WorkCard has:
 
-- Needs You
-- Working
-- Ready
-- Inactive
+- stable local_id;
+- exactly one primary anchor;
+- links[];
+- overlays;
+- derived workflow stage;
+- attention reasons.
 
-But Needs You is an attention overlay, not a planning workflow stage.
+Primary anchor is one of:
 
-### Goal
+- ScratchWork;
+- ForgeWorkItem;
+- CodexThread.
 
-Goal-aware UX is part of the mature product, but native Goal remains capability-optional.
+Goal, Worktree and ChangeRequest normally become links.
 
-Use Codex-native Goal when available.
+This prevents duplicate cards when a local idea becomes a GitLab Issue, then a Codex thread, then an MR.
 
-Relevant state:
+---
 
-- objective
-- active
-- paused
-- blocked
-- usage limited
-- budget limited
-- complete
-- token/time budget information
+# 6. WorkCard model
 
-Goal remains owned by Codex.
-
-### WorkCard
-
-Unified planning projection.
-
-A WorkCard has one stable local relationship id, one primary anchor, and zero or more links.
-
-Primary anchor is exactly one of:
-
-- local Scratch item
-- forge Work Item
-- Codex Thread
-
-Links can reference:
-
-- Codex Thread
-- Codex Goal
-- forge Work Item
-- forge Change Request
-- Git worktree/branch
-
-Example:
+Suggested normalized model:
 
 ~~~text
 WorkCard
-  local_id: wc_...
-  anchor: gitlab://gitlab.internal/group/repo/issues/213
-  thread: 01...
-  goal: validate single-variable decoder boundary strategy
-  worktree: wt/decoder-boundary
-  branch: research/decoder-boundary
-  change_request: gitlab://gitlab.internal/group/repo/merge_requests/392
-  derived_stage: Review
-  attention: [NeedsYou]
+  local_id
+
+  anchor
+    kind
+    source_ref
+
+  links[]
+    role
+    source_ref
+
+  presentation
+    local_title_override?
+    note?
+    pin?
+    tags?
+
+  planning
+    manual_ready?
+    priority?
+    snooze_until?
+
+  derived
+    workflow_stage
+    stage_reason
+    attention[]
+    freshness
 ~~~
 
-The WorkCard is not the canonical task record.
+Useful link roles:
 
-### ViewState
+- primary_thread;
+- experiment_thread;
+- review_thread;
+- goal;
+- worktree;
+- change_request;
+- related_work_item.
 
-Local-only metadata:
+Do not over-model link roles initially; add only those that improve UX.
 
-- selected workspace
-- selected thread/card
-- per-thread draft
-- per-thread scroll/follow
-- pins
-- aliases
-- snooze
-- seen/unseen state
-- last opened time
-- hot slots
-- saved view selection
+---
 
-### ScratchWork
+# 7. Workflow and Attention are separate state machines
 
-Tiny local planning item.
+This is a critical correction from earlier designs.
 
-Fields only:
+## 7.1 Workflow stage
 
-- id
-- title
-- note
-- workspace optional
-- priority optional
-- state: inbox / ready / done
-- linked thread optional
-- linked issue optional
+Canonical planning projection:
 
-No:
+~~~text
+Inbox -> Ready -> Working -> Review -> Done
+~~~
 
-- RBAC
-- assignee system
-- comments system
-- dependency graph
-- team synchronization
+### Inbox
 
-If it becomes team work, promote/link it to a forge Work Item rather than expanding the local Scratch schema.
+Unplanned or not-yet-selected work.
 
-## 6. Primary product views
+Typical anchors:
 
-### Mission Control
+- ScratchWork;
+- imported forge WorkItem;
+- a thread with no current active work that the user wants to triage.
 
-Question:
+### Ready
 
-What needs me now?
+Selected to do, not currently executing.
 
-Content:
+### Working
 
-- workspace grouping
-- threads
-- attention grouping
-- recency
-- goal summary
-- branch/worktree hint
-- change-request/pipeline hint
-- pins/snooze/unread
-
-Default ordering:
-
-1. Needs You
-2. Working
-3. Review
-4. Ready
-5. Inactive
-
-Primary keys/actions:
-
-- move
-- open thread
-- jump next attention
-- quick prompt
-- filter
-- pin
-- snooze
-- mark unread
-- create/fork
-- command palette
-
-### Board / Planning
-
-Question:
-
-What stage is each piece of work in?
-
-Default workflow columns:
-
-- Inbox
-- Ready
-- Working
-- Review
-- Done
-
-Needs You is rendered as a virtual attention lane/badge/filter across these columns, not as a canonical workflow column.
-
-Derived workflow examples:
-
-- selected but not started -> Ready
-- active thread/goal -> Working
-- Goal complete + code changes -> Review
-- open change request needing review -> Review
-- merged change request or explicit completion -> Done
-
-Attention is evaluated separately:
-
-- approval/input request -> Needs You
-- Goal blocked/usage-limited/budget-limited -> Needs You
-- unseen completion/review finding -> Needs You
-
-A card may therefore be Working + Needs You or Review + Needs You at the same time.
-
-Manual drag is allowed only when the target mutation has a clear authority.
-
-Never let drag silently contradict Codex or forge state.
-
-### Thread
-
-Question:
-
-What is this Codex thread doing, and what should I tell it next?
-
-Content:
-
-- paginated transcript
-- structured tool timeline
-- composer
-- approvals
-- Goal status
-- model
-- cwd
-- sandbox/permission
-- branch/worktree
-- token/context information
-- draft state
-- scroll state
-
-Important rule:
-
-Transcript viewport and composer are independent.
+Active execution or active Goal.
 
 ### Review
 
-Question:
+Implementation has produced evidence/code that needs human inspection or forge review.
 
-What changed, and is it ready?
+### Done
 
-Content:
+Explicitly delivered/acknowledged terminal state.
 
-- changed files
-- diff
-- word-diff option for long-line files
-- Codex review findings
-- tests/checks summary
-- change-request/pipeline state when available
-- open editor/browser
-- return to thread
+Do not infer Done merely because a thread is idle or unloaded.
 
-### Workspace
+## 7.2 Attention overlay
 
-Question:
+Attention can apply to any workflow stage.
 
-Where is this work happening?
+Types include:
 
-Content:
+- ApprovalRequired;
+- UserInputRequired;
+- GoalBlocked;
+- SystemError;
+- UsageLimited;
+- BudgetLimited;
+- CompletionUnseen;
+- ReviewUnseen;
+- ConflictRisk;
+- PipelineFailed;
+- ChangeRequested.
 
-- repo identity
-- worktrees
-- branch
-- dirty state
-- active threads by worktree
-- collision warning
-- managed worktree actions
-- dev terminal drawer
-- open editor
-
-### Search / Command Palette
-
-Question:
-
-How do I reach anything quickly?
-
-Search dimensions:
-
-- workspace
-- thread
-- alias
-- goal objective
-- forge work item/change request
-- branch/worktree
-- status
-- stage
-- tags/pins
-
-Command IDs, not raw key conditionals, drive actions.
-
-### Doctor
-
-Question:
-
-Why is this not working?
-
-Report:
-
-- codex-tui version
-- Codex path/version
-- App Server fingerprint
-- CODEX_HOME
-- platform
-- capabilities
-- terminal identity
-- tmux/Zellij/SSH/WSL detection
-- Git readiness
-- config validation
-- local state validation
-- recent adapter errors
-
-Secrets and prompt content are redacted by default.
-
-## 7. Kanban / Board design
-
-Kanban is part of the mature core, but as a derived view.
-
-### Why it is useful
-
-It connects:
-
-- planning
-- execution
-- human intervention
-- review
-- completion
-
-It is especially useful when work exists before a Codex thread exists.
-
-### Why it must not become a second task authority
-
-A full task authority would require:
-
-- task IDs
-- statuses
-- users
-- assignees
-- dependencies
-- comments
-- history
-- permissions
-- team sync
-- conflict resolution
-
-That duplicates GitLab/GitHub/Linear/Jira.
-
-### Saved Views
-
-Board and List are two layouts over the same WorkCards.
-
-SavedView fields:
-
-- name
-- source scope
-- filter
-- grouping
-- ordering
-- layout
-- visible fields
-
-Examples:
-
-- Attention
-- Today
-- KWS
-- Audio
-- Review
-- Ready to merge
-- Recently completed
-- Board
-
-## 8. Attention model
-
-Attention must remain separate from workflow state.
-
-Examples:
-
-- Thread state Working + approval -> Needs You attention
-- Thread state Ready + unseen completion -> attention
-- Review stage + unread finding -> attention
-- Working + snooze -> still Working, but temporarily omitted from attention rotation
-
-Snooze is not a fake status.
-
-Suggested attention fields:
-
-- kind
-- priority
-- created_at
-- seen_at
-- snooze_until
-- source revision
-
-## 9. Quick Prompt
-
-Allow sending a short message to the selected thread without entering full Thread view.
-
-Use case:
+A card can be:
 
 ~~~text
-Registry
-  -> quick prompt
-  "tests pass then prepare PR summary"
-  -> remain in Registry
+stage = Working
+attention = ApprovalRequired
 ~~~
 
-This is high-value for parallel session control.
+or:
 
-## 10. Notes, bookmarks and hot slots
+~~~text
+stage = Review
+attention = PipelineFailed
+~~~
 
-### Notes
+## 7.3 Needs You
 
-Small personal note per thread/work card.
+Needs You is:
 
-Use cases:
+- an Attention Inbox;
+- a filter;
+- a virtual swimlane;
+- an ordering rule.
 
-- why a path was rejected
-- hardware data pending
-- next manual action
-- important commit
+It is not a canonical workflow column.
 
-### Bookmarks
+## 7.4 Explainability
 
-Bookmark a specific thread event/turn/item for later return.
-
-### Hot slots
-
-Map 0-9 or another key scheme to frequently used threads.
+Every derived stage/attention state must provide a reason.
 
 Example:
 
-- 1 = KWS decoder
-- 2 = Audio i025
-- 3 = Engineering Platform
+~~~text
+Working
+because: Codex thread status is Active
 
-This is intentionally local UI state.
+Needs You
+because: WaitingOnApproval from thread 01...
 
-## 11. Worktree strategy
+Review
+because: Goal Complete + dirty worktree + no accepted review
+~~~
 
-### Awareness first
+The UI should make this reason inspectable.
 
-Always detect:
+---
 
-- repo
-- worktree
-- branch
-- dirty state
+# 8. Provenance and freshness
 
-### Collision warning
+codex-tui merges observations from different systems with different update semantics.
 
-If multiple active editing threads share one mutable checkout:
+Every externally derived projection should retain:
+
+- source;
+- observed_at;
+- source revision/identifier when available;
+- freshness state;
+- error/degraded reason.
+
+Suggested freshness:
+
+- Fresh;
+- Aging;
+- Stale;
+- Unavailable.
+
+Example:
+
+~~~text
+MR !392   Review   Pipeline Passed   4m ago
+~~~
+
+If GitLab becomes unavailable:
+
+~~~text
+MR !392   Review   Pipeline Passed   STALE · last checked 18m ago
+~~~
+
+Do not silently present stale forge data as current.
+
+## 8.1 Refresh policy
+
+Codex:
+- event-driven notifications;
+- lightweight reconciliation on reconnect.
+
+Git:
+- refresh selected/visible workspaces;
+- refresh after known mutations;
+- bounded periodic or filesystem-triggered refresh if needed.
+
+Forge:
+- on-demand;
+- visible/pinned item refresh;
+- bounded TTL;
+- no global aggressive polling.
+
+This protects rate limits and keeps startup fast.
+
+---
+
+# 9. Reconciliation engine
+
+Create a dedicated Projection/Reconciliation layer.
+
+Inputs:
+
+- Codex observations;
+- Git observations;
+- Forge observations;
+- LocalStore overlays.
+
+Output:
+
+- Workspace projection;
+- ThreadRef projection;
+- WorkCard projection;
+- Attention projection;
+- Review projection.
+
+The reconciler must be deterministic and pure where possible.
+
+Pseudo-flow:
+
+~~~text
+Observations
+  -> normalize identities
+  -> link known relationships
+  -> apply local overlays
+  -> derive workflow stage
+  -> derive attention
+  -> attach provenance/freshness
+  -> publish projection
+~~~
+
+This layer is more important than adding more UI panels.
+
+---
+
+# 10. Relationship discovery
+
+Relationships are not always explicit.
+
+Use ordered evidence.
+
+## Thread -> Workspace
+
+1. upstream Project;
+2. Git identity from cwd;
+3. cwd fallback.
+
+## Thread -> Worktree
+
+Resolve cwd against Git worktree inventory.
+
+## Worktree -> Forge repository
+
+1. explicit local mapping;
+2. current branch upstream remote;
+3. configured preferred remote;
+4. origin if uniquely valid;
+5. single recognized forge remote;
+6. otherwise ambiguous -> require user selection.
+
+Never silently choose between multiple eligible remotes.
+
+## Thread/WorkCard -> ChangeRequest
+
+Evidence order:
+
+1. explicit stored relationship;
+2. upstream Codex attachment if compatible;
+3. forge lookup by exact source branch/project;
+4. otherwise none.
+
+Avoid title-based guessing.
+
+---
+
+# 11. Planning / Kanban
+
+Kanban remains part of the mature core, but as a view.
+
+## 11.1 Board
+
+Default workflow columns:
+
+- Inbox;
+- Ready;
+- Working;
+- Review;
+- Done.
+
+Optional virtual lanes:
+
+- Needs You;
+- Blocked;
+- Pipeline Failed;
+- Recently Completed.
+
+## 11.2 Saved Views
+
+A SavedView defines:
+
+- source scope;
+- filter;
+- group;
+- order;
+- layout;
+- visible fields.
+
+Layouts:
+
+- list;
+- board;
+- review queue.
+
+Examples:
+
+- Attention;
+- Today;
+- KWS;
+- Audio;
+- Active Research;
+- Needs Review;
+- Pipeline Failed;
+- Ready to Merge;
+- Recently Completed.
+
+## 11.3 Local ScratchWork
+
+Keep intentionally small:
+
+- id;
+- title;
+- note;
+- workspace?;
+- priority?;
+- state = inbox/ready/done;
+- linked anchor/ref?.
+
+If it becomes team work, promote/link it to a forge WorkItem.
+
+Do not grow local Scratch into Jira.
+
+---
+
+# 12. Goal integration
+
+Goal-aware UX is a mature-core feature because Goals provide persistent thread-scoped completion contracts.
+
+However it remains capability-optional.
+
+When supported:
+
+- display objective;
+- lifecycle status;
+- token budget;
+- usage;
+- elapsed time;
+- pause/resume/clear/set actions where valid;
+- use Goal state in WorkCard derivation.
+
+When unsupported:
+
+- no local fake Goal engine;
+- Board remains functional using Thread/Git/Forge state.
+
+A Goal is not the same thing as a WorkCard:
+
+- WorkCard = operator planning projection;
+- Goal = Codex thread-scoped execution objective.
+
+---
+
+# 13. Thread Queue integration
+
+Thread Queue is useful for quick follow-up instructions and queued work, but upstream APIs may remain experimental.
+
+Policy:
+
+- integrate when capability exists;
+- do not make it a baseline dependency;
+- keep Quick Prompt usable without it;
+- queue UI must clearly distinguish queued input from active Goal/WorkCard.
+
+Do not turn Thread Queue into the global planning board.
+
+---
+
+# 14. Mission Control
+
+Default opening surface.
+
+Primary question:
+
+> What needs my attention now?
+
+Suggested row information:
+
+- attention marker;
+- workspace;
+- thread/card title;
+- workflow stage;
+- live thread state;
+- Goal summary;
+- worktree/branch;
+- change-request/pipeline hint;
+- recency;
+- stale/degraded badge.
+
+Primary interactions:
+
+- navigate;
+- open exact thread;
+- attention jump;
+- quick prompt;
+- search/filter;
+- pin;
+- snooze;
+- mark unread;
+- create/start/fork;
+- open Board;
+- open Review;
+- command palette.
+
+Manual selection is sticky.
+
+Background refresh must never steal the user's selection.
+
+---
+
+# 15. Thread view
+
+Primary question:
+
+> What is this Codex thread doing, and what should I tell it next?
+
+Components:
+
+- header;
+- Goal/status line;
+- virtualized transcript;
+- structured tool items;
+- approvals/user-input UI;
+- composer;
+- footer with cwd/model/permission/worktree.
+
+Per-thread local UI state:
+
+- draft;
+- scroll anchor;
+- follow-bottom;
+- expanded tool items;
+- selected detail tab;
+- last opened revision.
+
+Switching threads should feel like switching editor buffers.
+
+---
+
+# 16. Quick Prompt
+
+From Mission Control or Board, allow a short message without opening full Thread view.
+
+Example:
+
+~~~text
+"tests pass后整理MR描述"
+~~~
+
+After submit:
+
+- remain in current list/board;
+- show queued/sent state;
+- update attention/live status.
+
+This is a high-value personal workflow feature.
+
+---
+
+# 17. Review workspace
+
+Review is first-class.
+
+Primary question:
+
+> What changed and is it ready?
+
+Content:
+
+- changed-file list;
+- line diff;
+- word diff;
+- Codex review findings;
+- test/check evidence;
+- ChangeRequest;
+- Pipeline;
+- review/approval status;
+- unresolved discussions when provider capability supports it;
+- links back to Thread/Goal.
+
+Do not produce a hidden "ready/not ready" verdict unless it derives from explicit user/project criteria.
+
+Prefer showing evidence.
+
+---
+
+# 18. Git/worktree model
+
+## 18.1 Awareness is core
+
+Always support:
+
+- repository detection;
+- worktree detection;
+- branch;
+- dirty state;
+- changed-file count/summary.
+
+## 18.2 Collision detection
+
+If two active editing threads share one mutable checkout:
 
 ~~~text
 ! 2 active editing threads share /repo/main
 ~~~
 
-### Managed worktrees
+This is Attention/ConflictRisk.
 
-Mature core can:
+## 18.3 Managed worktrees
 
-- create
-- fork into worktree
-- launch thread
-- inspect
-- remove safely
+Mature core may create/fork/cleanup worktrees.
 
-Safety rules:
+Rules:
 
-- serialize Git mutations per repository
-- distinguish user-owned vs codex-tui-managed worktrees
-- refuse dirty destructive cleanup
-- recover partial creation/removal
-- never assume cwd equals repo root
+- Git mutations serialized per LocalRepoIdentity;
+- explicit argv/cwd;
+- dirty destructive cleanup refused by default;
+- distinguish user-owned and codex-tui-managed worktrees;
+- interrupted operations reconciled on restart;
+- branch deletion separate from worktree removal;
+- no force deletion hidden behind "cleanup".
 
-## 12. Code Forge integration — GitLab first
+Use Git CLI behind a GitService abstraction initially; avoid unnecessary libgit2 portability burden.
 
-For team use, the configured code forge is the shared planning/review/delivery authority.
+---
 
-### Provider boundary
+# 19. Code forge abstraction
 
-Core domain uses:
+## 19.1 ForgeProvider
 
-- ForgeIdentity
-- ForgeWorkItem
-- ForgeBoard
-- ChangeRequest
-- PipelineSummary
-- ReviewState
-
-Provider-specific names are rendered only at the edge:
-
-- GitLab: Issue / Work Item / Issue Board / Merge Request / Pipeline
-- GitHub: Issue / Project / Pull Request / Checks
-
-### GitLab first-class support
-
-Current internal usage makes GitLab Self-Managed the first implementation target.
-
-Initial GitLab adapter should use glab/glab api so codex-tui can reuse existing authentication and multiple/self-managed host support without storing tokens.
-
-All glab calls must use JSON/NDJSON output, explicit repository/host context, timeout/cancellation, and doctor-visible version/auth/host diagnostics.
-
-A native REST/GraphQL transport can be added later behind the same ForgeProvider interface if performance or capability requires it.
-
-Read/projection capabilities:
-
-- Work Items / Issues
-- Issue Boards
-- Merge Requests
-- Pipelines
-- approval/review state where available
-- merge readiness
-
-Relationship:
+Internal contract:
 
 ~~~text
-Forge Work Item
-  -> WorkCard
-      -> Codex Thread
-      -> Worktree
-      -> Change Request
+ForgeProvider
+  detect(remote)
+  health()
+  capabilities()
+  resolve_repository(remote)
+
+  list_work_items(...)
+  get_work_item(...)
+
+  list_boards(...)
+  get_board(...)
+
+  list_change_requests(...)
+  get_change_request(...)
+
+  get_pipeline_summary(...)
+  get_review_state(...)
+  list_discussions(...)
+
+  open_web(...)
 ~~~
 
-Forge mutations must always be explicit and attributable. Read-only projection comes first.
+Mutations are a separate capability surface.
 
-## 13. Team model
+## 19.2 GitLab Self-Managed first
 
-Normal small-team topology:
+Initial provider:
 
 ~~~text
-Shared Git repository / Code Forge
-      |
-      +-- AGENTS.md
-      +-- .codex/config.toml
-      +-- shared skills/scripts
-      +-- Work Items / MR-or-PR / Pipeline
-      |
-Developer A codex-tui
-Developer B codex-tui
-Developer C codex-tui
+GitLabForgeProvider
+  -> glab / glab api
+  -> internal GitLab
 ~~~
 
-Each developer keeps local:
+Why:
 
-- drafts
-- pins
-- saved personal views
-- snooze
-- hot slots
-- scroll position
-- attention acknowledgement
+- reuse existing auth;
+- support self-managed hosts;
+- support multiple hosts;
+- avoid codex-tui token storage;
+- structured JSON/NDJSON;
+- API escape hatch.
 
-Shared state remains in the repository and configured code forge.
+Doctor reports:
 
-## 14. Persistence strategy
+- glab path/version;
+- authenticated hosts;
+- selected host;
+- project identity;
+- discovered capabilities.
 
-### Early stages
+## 19.3 GitLab version/edition capability
 
-Use:
+Do not assume internal GitLab equals latest GitLab.com.
 
-- config.toml
-- versioned atomic local state file
+Capability examples:
 
-### Mature product
+- supports_issue_boards;
+- supports_work_items;
+- supports_mr_approval_state;
+- supports_mr_discussions;
+- supports_pipeline_details.
 
-Introduce SQLite only when justified by:
+Prefer stable APIs for baseline.
 
-- Saved Views
-- ScratchWork
-- optional transcript FTS
-- richer local relationships
-- concurrent local clients
+Experimental GitLab WorkItem GraphQL fields and experimental glab commands are enhancements, not required baseline.
 
-Even with SQLite:
+## 19.4 GitHub second
 
-- transcript remains Codex-owned
-- Git state remains Git-owned
-- team task/review state remains forge-owned
+GitHub implements the same normalized contract.
 
-Database must support:
+No core UI code checks provider == github or provider == gitlab.
 
-- schema version
-- migrations
-- backup
-- integrity checks
-- recovery
+---
 
-### LocalStore boundary
+# 20. Safe mutation model
 
-Persistence shape must not leak into the domain. Define a LocalStore abstraction from the first implementation. The initial backend can be atomic JSON/TOML; SQLite may replace it later when Saved Views, ScratchWork, relationship mappings or optional full-text indexing justify it.
-
-## 15. Technical stack
-
-Recommended:
-
-- Rust 2024
-- Tokio
-- Ratatui
-- Crossterm
-- Serde / serde_json
-- Clap
-- tracing
-- thiserror
-- color-eyre or equivalent
-- textwrap
-- unicode-width
-- unicode-segmentation
-- pulldown-cmark
-- syntect/two-face or equivalent
-- diffy or equivalent
-- insta
-- pretty_assertions
-
-Start as one Cargo crate.
-
-Split crates only after independent compile/API boundaries prove valuable.
-
-## 16. Application architecture
-
-Use:
-
-~~~text
-External Event
-   -> Action
-   -> Reducer
-   -> AppState
-      -> Render
-      -> Effect
-          -> async I/O
-          -> Action
-~~~
-
-Reducers perform no:
-
-- RPC
-- filesystem I/O
-- process spawn
-- Git mutation
-- terminal mutation
-
-Rendering performs no blocking work.
-
-## 17. Backend architecture
-
-### CodexBackend
-
-Internal trait/concept:
-
-- initialize
-- capabilities
-- list threads
-- read/resume/fork thread
-- list turns/items
-- start/steer/interrupt turn
-- approvals
-- Goal get/set
-- queue operations when supported
-- review
-- event stream
-
-Implementations:
-
-- AppServerBackend
-- FakeBackend
-- ReplayBackend
-
-UI never depends on raw wire types.
-
-### Compatibility adapter
-
-Layers:
-
-~~~text
-Wire JSON-RPC
-  -> raw/compat decode
-  -> normalized Codex domain
-  -> registry/app state
-~~~
-
-Unknown fields/events fail soft.
-
-## 18. Capability strategy
-
-Each feature declares:
-
-- stable baseline requirement
-- preferred capability
-- fallback
-- unavailable behavior
-
-Examples:
-
-### Workspace
-
-Preferred:
-- native project identity
-
-Fallback:
-- Git repo identity
-- cwd
-
-### Goal
-
-Preferred:
-- thread Goal APIs
-
-Fallback:
-- no Goal controls; use thread preview/attention only
-
-### Queue
-
-Preferred:
-- thread queue APIs
-
-Fallback:
-- local quick prompt only
-
-### Project search
-
-Preferred:
-- upstream search
-
-Fallback:
-- metadata fuzzy search
-
-Experimental upstream APIs never become hard startup dependencies.
-
-## 19. Terminal architecture
-
-Dedicated subsystem:
-
-- identity
-- capabilities
-- keyboard
-- screen
-- palette
-- mouse
-- clipboard
-- probes
-- quirks
-
-All external probes:
-
-- timeout
-- cancellation
-- tracing
-- fallback
-
-No probe may block the UI startup indefinitely.
-
-## 20. Keymap architecture
-
-Pipeline:
-
-~~~text
-Raw terminal event
-  -> normalized KeyChord
-  -> Command ID
-  -> Action
-~~~
-
-Command registry drives:
-
-- behavior
-- command palette
-- help
-- footer hints
-- user remapping
-
-No widget-local hard-coded key semantics for stable commands.
-
-## 21. Rendering and performance
-
-Event-driven rendering.
-
-Do not fixed-tick redraw the entire TUI continuously.
-
-Coalesce visual updates.
-
-Do not reorder semantic backend events.
-
-### Long transcript
-
-Use virtualized items.
-
-Cache layout height based on:
-
-- item id
-- item revision
-- terminal width
-- expanded state
-- theme revision
-
-Large tool output:
-
-- truncate preview
-- lazy expand
-- bounded memory
-- do not pre-render multi-MB text
-
-### Large registry
-
-Startup loads metadata only.
-
-Thread turns/items are lazy.
-
-Target scale:
-
-- 10k thread metadata rows remain navigable
-- multi-MB tool output does not block input
-- input-to-frame p95 target under roughly 50 ms under normal load
-- optional probes do not block usable UI
-
-## 22. Accessibility
-
-Required principles:
-
-- no state only by color
-- static alternative to animation
-- reduced-motion setting
-- no Nerd Font dependency
-- keyboard-first
-- CJK/emoji/combining tests
-
-Potential mature mode:
-
-- screen-reader-friendly presentation
-- simplified redraw behavior
-- no shimmer/spinner animation
-
-## 23. Security
-
-### Approvals
-
-Display:
-
-- operation
-- command/path/host
-- reason
-- cwd
-- network/filesystem escalation
-- decision scope
-
-### External commands
-
-- no shell-string concatenation
-- explicit argv
-- explicit cwd
-- timeout/cancellation where safe
-
-### Local control socket
-
-If added later:
-
-- local-user only
-- versioned
-- explicit methods
-- no credentials
-- no internal Action enum exposure
-
-### Logging
-
-Default logs exclude:
-
-- prompt plaintext
-- tool output
-- credentials
-- environment secrets
-
-## 24. Testing strategy
-
-### Pure tests
-
-- reducers
-- attention
-- WorkCard stage derivation
-- Saved Views
-- capability negotiation
-- project identity
-- worktree policy
-- keymap
-- migrations
-
-### Protocol fixtures
-
-Test supported Codex schema/payload generations.
-
-### Snapshot
-
-Widths:
-
-- 40
-- 80
-- 120
-- 160
-
-Content:
-
-- CJK
-- combining marks
-- emoji
-- long paths
-- Markdown
-- approvals
-- diff
-- board
-- large tool output
-
-### PTY E2E
-
-- startup/exit
-- Ctrl-C
-- panic cleanup
-- resize
-- paste
-- mouse
-- editor handoff
-- tmux
-- Zellij
-- WSL/Windows cases where CI permits
-
-### Real Codex compatibility
-
-Scheduled matrix:
-
-- minimum supported
-- previous stable
-- current stable
-- optional prerelease
-
-Avoid paid live inference for basic protocol certification.
-
-## 25. Diagnostics
-
-Commands:
-
-- codex-tui doctor
-- codex-tui doctor --json
-- codex-tui doctor codex
-- codex-tui doctor terminal
-- codex-tui doctor git
-- codex-tui config validate
-
-Doctor is part of the product, not post-launch support tooling.
-
-## 26. Release engineering
-
-Targets:
-
-- Linux x86_64 GNU
-- Linux x86_64 musl
-- macOS arm64
-- macOS x86_64
-- Windows x86_64
-- Linux arm64 when practical
-
-Release assets:
-
-- archives
-- checksums
-- installer scripts
-
-Later:
-
-- Homebrew
-- winget/scoop/etc based on demand
-
-Channels:
-
-- stable
-- preview
-
-Preview can validate upcoming Codex protocol changes.
-
-## 27. Dependency and supply-chain policy
-
-Early automation:
-
-- cargo-deny
-- cargo-audit / RustSec
-- Dependabot/Renovate
-- GitHub Actions minimal permissions
-- Actions static analysis
-
-Reference license registry:
-
-- source repository
-- license
-- concepts used
-- whether code reuse is allowed
-
-HachimoDock remains conceptual reference under its current custom license.
-
-AGPL projects remain architectural references unless obligations are intentionally accepted.
-
-## 28. Feature tiers
-
-### Mature Core
-
-- Mission Control
-- Attention Inbox
-- Thread conversation/control
-- Goal
-- Board/List Saved Views
-- Quick Prompt
-- Review/Diff
-- Git/worktree awareness
-- worktree lifecycle
-- Search/Palette
-- Pins/Aliases/Snooze/Unread
-- Notes/Bookmarks
-- Hot slots
-- lightweight notifications
-- Doctor
-
-### Strong additions
-
-- GitLab Self-Managed Work Items / Issue Boards / MR / Pipeline
-- GitHub provider behind the same forge contract
-- Local ScratchWork
-- terminal drawer
-- batch actions
-- launch presets
-- thread queue when stable
-- optional transcript FTS
-- token/Goal budget visibility
-
-### Optional layers
-
-- web/mobile
-- remote collaboration
-- multi-agent
-- agent-to-agent messaging
-- generic plugin runtime
-- job/workflow engine
-- organization analytics
-- cost/accounting platform
-
-## 29. Explicit non-goals, including target state
-
-Even the mature product should not become:
-
-- its own model runtime
-- its own agent loop
-- its own sandbox/policy engine
-- a replacement for Git
-- a replacement for GitLab/GitHub/Linear/Jira
-- an enterprise identity/RBAC server
-- a cloud transcript warehouse
-- a universal coding-agent terminal shim
-
-## 30. Delivery roadmap to target state
-
-### M0 — Static control-plane skeleton
-
-- Rust scaffold
-- Action/Reducer/Effect
-- FakeBackend
-- registry
-- thread view
-- attention
-- local state abstraction
-- terminal guard
-- snapshots
-- CI
-
-### M1 — Read-only real registry
-
-- App Server initialize
-- capability fingerprint
-- thread/list
-- status notifications
-- loaded threads
-- workspace grouping
-- filter/search
-- pin/alias
-- doctor
-
-### M2 — Daily thread interaction
-
-- read/resume
-- paginated turns/items
-- composer
-- start/steer/interrupt
-- approvals
-- per-thread draft/scroll
-
-### M3 — Git + review
-
-- repo/worktree
-- branch/dirty
-- collision warnings
-- changed files
-- diff/review
-- editor/browser
-
-### M4 — Planning foundation
-
-- Goal projection
-- WorkCard
-- Board/List
-- Saved Views
-- local ScratchWork
-- snooze/unread
-- quick prompt
-- notes/bookmarks
-- hot slots
-
-### M5 — Managed parallel development
-
-- worktree create/fork/cleanup
-- mutation serialization
-- recovery
-- richer review
-- notifications
-- terminal drawer
-
-### M6 — Forge integration and team reuse
-
-#### M6a — GitLab Self-Managed read-only
-
-- remote/host detection
-- glab health/auth/version
-- Work Items / Issues
-- Issue Boards
-- Merge Requests
-- Pipeline/review summary
-- work-item/thread/worktree/change-request linking
-
-#### M6b — Explicit GitLab mutations
-
-- create/update work item where justified
-- create/comment/approve change request where justified
-- no silent mutation from visual drag
-
-#### M6c — GitHub provider
-
-- same normalized ForgeProvider contract
-
-Repository-shared presets are added only where AGENTS.md, .codex configuration, skills or existing scripts cannot express the need.
-
-### M7 — Scale and polish
-
-- optional transcript FTS
-- batch actions
-- launch presets
-- performance hardening
-- accessibility hardening
-- compatibility matrix
-- stable/preview channels
-
-### Optional post-core tracks
-
-- remote App Server
-- web/mobile companion
-- collaboration service
-- plugin runtime
-- multi-agent adapters
-- jobs/workflows
-
-These tracks never become prerequisites for the local core.
-
-## 31. Success criteria
-
-The product is successful when an individual developer with many active repositories can replace a collection of terminal windows and remembered thread IDs with one reliable terminal workflow.
-
-A small team should be able to adopt it without introducing a new shared service.
-
-The mature interaction loop should be:
+All significant Git/Forge mutations use:
 
 ~~~text
 Plan
- -> Board / Goal
- -> Start or resume Codex thread
- -> Work in isolated workspace
- -> Attention when human input is needed
- -> Review code and findings
- -> Change Request / Pipeline
- -> Done
+  -> Confirm when user-impacting
+  -> Execute
+  -> Verify
+  -> Receipt
 ~~~
 
-At every stage:
+Examples:
 
-- Codex remains the agent authority
-- Git remains the code authority
-- the configured code forge remains the team planning/review/delivery authority
-- codex-tui remains the operator workbench
+- create worktree;
+- remove worktree;
+- create branch;
+- create/update forge WorkItem;
+- create ChangeRequest;
+- approve;
+- merge.
 
-## 32. Final positioning
+OperationPlan includes:
 
-codex-tui is a personal-first, local-first terminal operating surface for Codex engineering work.
+- provider/service;
+- target identity;
+- exact command/API operation;
+- expected side effect;
+- safety preconditions.
 
-The product is optimized first for one developer managing many projects and threads. Team value comes primarily from repository asset reuse and code-forge projection, not from a shared codex-tui session platform.
+OperationReceipt includes:
 
-Its differentiator is not "more AI".
+- timestamp;
+- operation;
+- target;
+- resulting ID/SHA/ref;
+- verification result;
+- failure details.
 
-Its differentiator is lower operator overhead across planning, many projects, many threads, parallel worktrees, human attention and review — while preserving clear system boundaries and low long-term maintenance cost.
+Recent receipts are useful for diagnostics and recovery.
+
+Read-only actions do not need confirmation.
+
+---
+
+# 21. LocalStore
+
+Do not let JSON/SQLite shape leak into domain code.
+
+Interface concepts:
+
+- load/save ViewState;
+- SavedView CRUD;
+- ScratchWork CRUD;
+- WorkCard relationship mapping;
+- managed-worktree metadata;
+- recent operation receipts.
+
+Initial backend:
+
+- atomic JSON/TOML;
+- file lock if needed.
+
+Mature backend:
+
+- SQLite when complexity justifies it.
+
+Migration requirements:
+
+- schema version;
+- transaction;
+- backup before destructive migration;
+- integrity check;
+- safe read-only/repair mode on failure.
+
+Still never own canonical Codex transcript.
+
+---
+
+# 22. Search
+
+## 22.1 Metadata search is core
+
+Search:
+
+- workspace;
+- thread title/preview;
+- alias;
+- Goal objective;
+- branch/worktree;
+- WorkCard title/note;
+- forge work item;
+- change request;
+- status/stage;
+- pin/tag.
+
+Query examples:
+
+~~~text
+status:needs-you
+stage:review
+project:kws
+branch:research
+forge:gitlab
+mr:open
+goal:decoder
+~~~
+
+## 22.2 Full transcript search is optional
+
+Add only when measured need justifies index complexity.
+
+If added:
+
+- local optional FTS index;
+- canonical transcript stays in Codex;
+- index is disposable/rebuildable.
+
+---
+
+# 23. Personal productivity features
+
+Mature core:
+
+## Notes
+
+Small local note attached to Thread/WorkCard.
+
+## Bookmarks
+
+Bookmark turn/item/review point.
+
+## Hot slots
+
+Fast mappings to frequently used threads/work cards.
+
+## Pin
+
+Persistent importance overlay.
+
+## Mark unread
+
+Local attention overlay.
+
+## Snooze
+
+Suppress attention rotation until deadline without changing real status.
+
+## Recent targets
+
+Fast switching history.
+
+These features are high personal value and low system-authority risk.
+
+---
+
+# 24. Responsive TUI design
+
+Do not assume a 120-column terminal.
+
+Suggested modes:
+
+## Compact: < 80 columns
+
+- one primary pane;
+- overlays/details on demand;
+- no persistent side panel.
+
+## Standard: 80–119
+
+- registry/thread with compact contextual footer;
+- review/file list switches rather than permanent columns.
+
+## Wide: >= 120
+
+- optional secondary context/review pane;
+- richer metadata.
+
+Layout is responsive by capability/width, not by platform name.
+
+---
+
+# 25. Terminal subsystem
+
+Dedicated ownership:
+
+~~~text
+terminal/
+  identity
+  capabilities
+  keyboard
+  palette
+  screen
+  mouse
+  clipboard
+  probes
+  quirks
+~~~
+
+All external probes are:
+
+- bounded;
+- cancellable;
+- traced;
+- non-critical.
+
+Baseline supports standard keyboard/input without Kitty/CSI-u requirements.
+
+Enhanced keyboard protocols are opportunistic.
+
+No Nerd Font required.
+
+---
+
+# 26. Command/keymap architecture
+
+~~~text
+Raw event
+ -> normalized KeyChord
+ -> Command ID
+ -> Action
+~~~
+
+Command ID examples:
+
+- registry.next_attention;
+- registry.open;
+- thread.quick_prompt;
+- thread.interrupt;
+- board.open;
+- review.open;
+- workspace.open;
+- forge.refresh;
+- app.command_palette.
+
+Command registry drives:
+
+- key binding;
+- help;
+- command palette;
+- footer hints;
+- remapping.
+
+Do not scatter raw key comparisons across widgets.
+
+---
+
+# 27. Application architecture
+
+Use Action / Reducer / Effect.
+
+~~~text
+External event
+  -> Action
+  -> domain Reducer
+  -> AppState
+      -> render
+      -> Effect
+          -> async IO
+          -> Action
+~~~
+
+Reducers are pure.
+
+Effects own:
+
+- App Server RPC;
+- Git;
+- glab/gh;
+- filesystem;
+- LocalStore;
+- notifications;
+- process spawning.
+
+Rendering never blocks.
+
+---
+
+# 28. Module shape
+
+Start as one Cargo crate.
+
+Target module structure:
+
+~~~text
+src/
+  app/
+    action
+    reducer
+    effect
+    navigation
+
+  domain/
+    workspace
+    thread
+    attention
+    workcard
+    observation
+    operation
+
+  codex/
+    client
+    protocol
+    compat
+    capability
+
+  projection/
+    reconcile
+    workflow
+    attention
+    relationships
+
+  planning/
+    saved_view
+    scratch
+
+  git/
+    service
+    repo
+    worktree
+    diff
+
+  forge/
+    provider
+    gitlab
+    github
+
+  review/
+
+  store/
+
+  terminal/
+
+  ui/
+    components
+    layout
+    keymap
+    theme
+    compositor
+
+  doctor/
+  cli/
+~~~
+
+Do not create empty modules merely to match the target tree. Extract as implementation pressure appears.
+
+Module-size ratchet:
+
+- target < ~500 LOC per implementation module;
+- at ~800 LOC, new feature work should usually extract a boundary.
+
+---
+
+# 29. Backend separation
+
+CodexBackend implementations:
+
+- AppServerBackend;
+- FakeBackend;
+- ReplayBackend.
+
+ForgeProvider implementations:
+
+- GitLabGlabProvider;
+- GitHub provider later;
+- fixture provider for tests.
+
+GitService:
+
+- command-backed initial implementation;
+- fake/fixture implementation for tests.
+
+LocalStore:
+
+- file backend initially;
+- SQLite backend later.
+
+UI only consumes normalized domain/projections.
+
+---
+
+# 30. Compatibility strategy
+
+## Codex
+
+- capability negotiation;
+- stable baseline without experimental API requirement;
+- per-feature fallback;
+- unknown event fail-soft;
+- fixture matrix;
+- backend fingerprint;
+- preview channel for future Codex changes.
+
+## GitLab
+
+- detect server version/capabilities when practical;
+- stable Issues/MR/Pipeline baseline;
+- experimental WorkItem GraphQL features gated;
+- experimental glab discussions gated;
+- handle Free/Premium/Ultimate feature differences;
+- handle custom host and custom CA through glab/system config.
+
+## GitHub
+
+- same ForgeProvider contract;
+- optional when not used.
+
+---
+
+# 31. Degraded mode
+
+A failure in one source must not collapse the whole product.
+
+Examples:
+
+## Codex unavailable
+
+Git/Forge planning/review may remain visible where cached/current data exists; conversation controls disabled.
+
+## Forge unavailable
+
+Codex/Git remain fully usable; forge fields show stale/unavailable.
+
+## Git unavailable/not a repo
+
+Conversation and planning still work; workspace shows no Git context.
+
+## LocalStore damaged
+
+Start in safe diagnostic/read-only mode when possible; never destroy Codex/Git state.
+
+Feature degradation is explicit, not hidden.
+
+---
+
+# 32. Performance model
+
+## Startup
+
+Critical path:
+
+1. terminal ready;
+2. load tiny LocalStore;
+3. initialize Codex;
+4. render thread metadata.
+
+Optional work:
+
+- forge refresh;
+- Git detail scan;
+- update check;
+- remote probes.
+
+Optional work must not delay first usable frame.
+
+## Registry
+
+Metadata first.
+
+No transcript hydration at startup.
+
+## Transcript
+
+Paginated and virtualized.
+
+## Tool output
+
+- bounded preview;
+- lazy expand;
+- virtualized;
+- never pre-render multi-MB output.
+
+## Forge
+
+Visible/pinned refresh only plus TTL.
+
+## Targets
+
+Refine after measurement, but initial engineering goals:
+
+- key-to-frame p95 around <50 ms under normal load;
+- 10k metadata rows remain navigable;
+- no unbounded async queues;
+- no external subprocess without timeout policy.
+
+---
+
+# 33. Backpressure
+
+Classify event channels.
+
+Lossless/bounded:
+
+- approvals;
+- user commands;
+- state transitions;
+- completion;
+- errors;
+- operation receipts.
+
+Coalescible:
+
+- render dirty;
+- spinner/animation ticks;
+- streaming visual refresh;
+- repeated same-source refresh requests.
+
+Never coalesce/reorder semantic Codex events merely for rendering convenience.
+
+---
+
+# 34. Accessibility
+
+Baseline:
+
+- no state conveyed only by color;
+- reduced motion;
+- static fallback for animation;
+- keyboard-first;
+- CJK;
+- combining marks;
+- representative emoji;
+- no Nerd Font requirement;
+- dark/light/no-color snapshots.
+
+Mature:
+
+- screen-reader/quiet presentation mode;
+- reduced redraw strategy;
+- no shimmer.
+
+---
+
+# 35. Security and privacy
+
+## Credentials
+
+codex-tui does not store Codex/GitLab/GitHub tokens.
+
+Reuse:
+
+- Codex auth;
+- glab auth;
+- gh auth;
+- Git credential mechanisms.
+
+## Logs
+
+Default logs exclude:
+
+- prompt plaintext;
+- tool output;
+- credentials;
+- secret environment values.
+
+## Approval UI
+
+Show exact relevant data:
+
+- operation;
+- command/path/host;
+- cwd;
+- reason;
+- escalation;
+- decision scope.
+
+## Forge mutations
+
+Explicit and attributable.
+
+## Local control protocol, if later
+
+- local-user only by default;
+- versioned;
+- explicit method allowlist;
+- no internal Action enum on wire.
+
+---
+
+# 36. CLI/headless companion
+
+The same binary should eventually expose useful read-only/headless commands.
+
+Examples:
+
+~~~text
+codex-tui status
+codex-tui status --json
+codex-tui thread list
+codex-tui attention list
+codex-tui board list
+codex-tui doctor
+codex-tui forge status
+codex-tui worktree list
+~~~
+
+Benefits:
+
+- scripting;
+- CI/debugging;
+- future Agent Skill integration;
+- easier tests;
+- no need for a plugin system merely to automate common workflows.
+
+Mutating headless commands follow the same OperationPlan/Receipt rules.
+
+A future Codex skill can teach the agent to use this CLI after semantics stabilize.
+
+---
+
+# 37. Notifications
+
+Keep lightweight.
+
+Sources:
+
+- approval required;
+- user input required;
+- Goal blocked;
+- completion;
+- pipeline failure;
+- review requested.
+
+Controls:
+
+- off;
+- terminal only;
+- OS notification;
+- optional external bridge later.
+
+Snooze affects routing, not source status.
+
+Do not build a notification platform.
+
+---
+
+# 38. Testing strategy
+
+## Pure unit tests
+
+- reducers;
+- identity normalization;
+- relationship linking;
+- stage derivation;
+- attention derivation;
+- freshness;
+- SavedView filtering;
+- capability negotiation;
+- keymap;
+- operation plans;
+- migration logic.
+
+## Protocol fixtures
+
+Codex payload generations.
+
+## Forge fixtures
+
+GitLab:
+
+- Issues;
+- Boards;
+- MR;
+- Pipeline;
+- approval states;
+- version/edition capability cases.
+
+GitHub later.
+
+## Contract tests
+
+Every ForgeProvider must satisfy a provider conformance suite.
+
+## Snapshot tests
+
+Widths:
+
+- 40;
+- 80;
+- 120;
+- 160.
+
+Content:
+
+- CJK;
+- long path;
+- long branch;
+- stale forge data;
+- Board;
+- Review;
+- Approval;
+- error/degraded states.
+
+## PTY E2E
+
+- startup/exit;
+- Ctrl-C;
+- panic cleanup;
+- resize;
+- paste;
+- editor handoff;
+- tmux;
+- Zellij;
+- Windows/WSL where possible.
+
+## Scheduled compatibility
+
+Codex:
+
+- minimum supported;
+- previous stable;
+- current;
+- optional prerelease.
+
+GitLab:
+
+- fixture compatibility first;
+- optional scheduled integration against representative Self-Managed version if infrastructure exists.
+
+Do not require paid live model inference for basic protocol compatibility.
+
+---
+
+# 39. Doctor
+
+Doctor is a core product surface.
+
+Commands:
+
+~~~text
+codex-tui doctor
+codex-tui doctor --json
+codex-tui doctor codex
+codex-tui doctor git
+codex-tui doctor forge
+codex-tui doctor terminal
+codex-tui doctor store
+~~~
+
+Report:
+
+- codex-tui version;
+- Codex path/version;
+- App Server target/fingerprint;
+- CODEX_HOME;
+- capability table;
+- Git version/repo;
+- remotes and forge resolution;
+- glab path/version/authenticated hosts;
+- GitLab project id/path/server capability;
+- terminal environment;
+- state-store schema/integrity;
+- recent source errors;
+- recent operation receipts.
+
+Redact secrets and personal prompt/tool content.
+
+---
+
+# 40. Release and maintenance
+
+Targets:
+
+- Linux x86_64 GNU;
+- Linux x86_64 musl;
+- macOS arm64;
+- macOS x86_64;
+- Windows x86_64;
+- Linux arm64 when useful.
+
+Channels:
+
+- stable;
+- preview.
+
+Preview is especially useful for Codex protocol changes.
+
+Dependency governance:
+
+- cargo-deny;
+- RustSec/cargo-audit;
+- dependency updater;
+- minimal GitHub Actions permissions;
+- license registry;
+- Actions static analysis.
+
+Reference projects with restrictive licenses remain conceptual references only.
+
+---
+
+# 41. Feature tiers
+
+## Tier A — Mature personal core
+
+- Mission Control;
+- Attention Inbox;
+- exact Thread control;
+- Goal-aware UI;
+- Quick Prompt;
+- Board/List Saved Views;
+- WorkCard projection;
+- Git/worktree awareness;
+- Review/Diff;
+- Search/Command Palette;
+- pin/alias/snooze/unread;
+- notes/bookmarks;
+- hot slots;
+- lightweight notifications;
+- Doctor;
+- read-only/headless CLI.
+
+## Tier B — Personal engineering maturity
+
+- managed worktree lifecycle;
+- richer review evidence;
+- local ScratchWork;
+- terminal drawer;
+- batch local actions;
+- launch presets;
+- optional Thread Queue;
+- optional transcript FTS.
+
+## Tier C — Team reuse / forge
+
+- GitLab Self-Managed;
+- Work Items/Issues;
+- Issue Boards;
+- Merge Requests;
+- Pipelines;
+- approval/review state;
+- explicit mutations;
+- GitHub provider.
+
+## Tier D — Optional external layers
+
+- remote App Server;
+- web/mobile companion;
+- shared presence/collaboration;
+- multi-agent providers;
+- agent-to-agent messaging;
+- plugin runtime;
+- job/workflow engine;
+- organization analytics;
+- cost platform.
+
+---
+
+# 42. Explicit non-goals
+
+Even in target state, codex-tui does not become:
+
+- model runtime;
+- independent agent loop;
+- custom sandbox/policy engine;
+- Git replacement;
+- GitLab/GitHub replacement;
+- Jira/Linear replacement;
+- enterprise IAM/RBAC server;
+- cloud transcript warehouse;
+- universal terminal shim for every AI tool;
+- mandatory team collaboration service.
+
+---
+
+# 43. Delivery roadmap
+
+## M0 — Architecture skeleton
+
+Goal:
+prove the local application architecture.
+
+Deliver:
+
+- Rust/Ratatui/Tokio/Crossterm;
+- Action/Reducer/Effect;
+- FakeBackend;
+- domain identities;
+- LocalStore interface + file backend;
+- static Mission Control;
+- Thread view;
+- Attention projection;
+- terminal guard;
+- snapshot harness;
+- cross-platform CI.
+
+## M1 — Real read-only Codex registry
+
+Deliver:
+
+- App Server initialize;
+- capabilities;
+- thread/list pagination;
+- loaded/status notifications;
+- workspace derivation;
+- sticky selection;
+- search/filter;
+- pin/alias;
+- Doctor Codex.
+
+Acceptance:
+useful before a single prompt is sent.
+
+## M2 — Daily conversation control
+
+Deliver:
+
+- thread read/resume;
+- paginated turns/items;
+- composer;
+- start/steer/interrupt;
+- approvals;
+- user input;
+- per-thread draft/scroll;
+- Quick Prompt.
+
+## M3 — Git and Review
+
+Deliver:
+
+- LocalRepoIdentity;
+- worktree detection;
+- branch/dirty;
+- changed files;
+- collision detection;
+- Review/Diff;
+- external editor.
+
+## M4 — Personal Planning
+
+Deliver:
+
+- WorkCard anchor/link model;
+- workflow derivation;
+- Attention orthogonality;
+- provenance/freshness;
+- Goal projection;
+- Saved Views;
+- Board/List;
+- ScratchWork;
+- notes/bookmarks;
+- snooze/unread;
+- hot slots.
+
+## M5 — Safe parallel engineering
+
+Deliver:
+
+- managed worktrees;
+- per-repo mutation lock;
+- OperationPlan/Receipt;
+- recovery/reconciliation;
+- notifications;
+- optional terminal drawer.
+
+## M6 — GitLab Self-Managed
+
+### M6a read-only
+
+- forge detection;
+- host/project resolution;
+- glab doctor;
+- Issues/Work Items baseline;
+- Issue Boards;
+- Merge Requests;
+- Pipelines;
+- approval/review summaries;
+- WorkCard relationships;
+- stale/degraded behavior.
+
+### M6b explicit mutations
+
+Only high-value mutations:
+
+- create/update WorkItem where justified;
+- create MR;
+- comment;
+- approve;
+- merge.
+
+Every mutation uses plan/verify/receipt.
+
+### M6c GitHub
+
+Implement same ForgeProvider contract.
+
+## M7 — Scale and polish
+
+- optional FTS;
+- richer SavedView query language;
+- batch actions;
+- launch presets;
+- performance budgets;
+- accessibility;
+- compatibility matrix;
+- stable/preview release process;
+- CLI/headless surface stabilization.
+
+## Optional later tracks
+
+- remote targets;
+- collaboration service;
+- web/mobile;
+- plugins;
+- multi-agent;
+- jobs/workflows.
+
+---
+
+# 44. Architecture gates for future proposals
+
+Any new feature must answer:
+
+1. What user problem does it solve for one developer?
+2. Which existing system is authoritative?
+3. Can it be derived rather than persisted?
+4. Does it require a new service?
+5. Does it create a stable compatibility promise?
+6. What happens offline or when the source is stale?
+7. How does it degrade when capability is unavailable?
+8. How is identity preserved across rename/move/restart?
+9. What are the tests?
+10. How is it deprecated?
+11. Does official Codex already provide this capability?
+12. Is this better as a Forge/repository integration rather than core?
+
+If these answers are weak, defer the feature.
+
+---
+
+# 45. Final success criteria
+
+## Personal
+
+A developer can operate 5–20 concurrent pieces of Codex work across multiple repositories without relying on remembered terminals, thread IDs or manual status tracking.
+
+The application makes:
+
+- attention obvious;
+- switching cheap;
+- parallel edits safe;
+- review fast;
+- recovery understandable.
+
+## Team
+
+A team can adopt codex-tui without deploying a new team service.
+
+Shared value comes through:
+
+- repository instructions/config/skills/scripts;
+- Git;
+- GitLab/GitHub;
+- common conventions.
+
+## Maintenance
+
+The project can evolve alongside Codex and GitLab without permanent version pinning or duplicated authority.
+
+---
+
+# 46. Final positioning
+
+> codex-tui is a personal-first, local-first Codex engineering workbench for planning, monitoring, controlling and reviewing many concurrent pieces of AI-assisted development across repositories.
+
+It uses official Codex state for execution, Git for code, and GitLab/GitHub for shared engineering workflow.
+
+Its job is not to replace those systems.
+
+Its job is to make one engineer dramatically better at operating all of them together.
