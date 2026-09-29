@@ -318,7 +318,9 @@ impl AppState {
             View::Registry => self
                 .selected_thread_id()
                 .map(|thread_id| SourceRef::codex_thread(&thread_id)),
-            View::Board => self.selected_planning_card().map(|card| card.anchor.clone()),
+            View::Board => self
+                .selected_planning_card()
+                .map(|card| card.anchor.clone()),
             View::Thread(id) | View::Review(id) | View::Workspace(id) => {
                 Some(SourceRef::codex_thread(id))
             }
@@ -1910,7 +1912,9 @@ mod tests {
         reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 1 });
         reduce(&mut app, Action::OpenBoard);
         reduce(&mut app, Action::NextAttention);
-        let selected = app.selected_planning_card().expect("selected attention card");
+        let selected = app
+            .selected_planning_card()
+            .expect("selected attention card");
         assert_eq!(selected.anchor, SourceRef::codex_thread(&app.threads[1].id));
         assert!(selected.needs_you());
     }
