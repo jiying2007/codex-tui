@@ -537,13 +537,13 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                     registry = Some(started.handle);
                     let effects = reduce(&mut app, Action::RefreshGitProjections);
                     apply_effects(
-                        &mut app,
-                        registry.as_ref(),
-                        &git,
-                        &mut mutations,
-                        &mut store,
-                        effects,
-                    )?;
+                &mut app,
+                registry.as_ref(),
+                &git,
+                &mut mutations,
+                &mut store,
+                effects,
+            )?;
                     reduce(
                         &mut app,
                         Action::ReconcilePlanning {
@@ -574,13 +574,13 @@ async fn run_app(fake_mode: bool) -> Result<()> {
         if registry_changed {
             let effects = reduce(&mut app, Action::RefreshGitProjections);
             apply_effects(
-                        &mut app,
-                        registry.as_ref(),
-                        &git,
-                        &mut mutations,
-                        &mut store,
-                        effects,
-                    )?;
+                &mut app,
+                registry.as_ref(),
+                &git,
+                &mut mutations,
+                &mut store,
+                effects,
+            )?;
             reduce(
                 &mut app,
                 Action::ReconcilePlanning {
@@ -627,13 +627,13 @@ async fn run_app(fake_mode: bool) -> Result<()> {
             reduce(&mut app, Action::BackendStatus(snapshot.status));
             let effects = reduce(&mut app, Action::RefreshGitProjections);
             apply_effects(
-                        &mut app,
-                        registry.as_ref(),
-                        &git,
-                        &mut mutations,
-                        &mut store,
-                        effects,
-                    )?;
+                &mut app,
+                registry.as_ref(),
+                &git,
+                &mut mutations,
+                &mut store,
+                effects,
+            )?;
             reduce(
                 &mut app,
                 Action::ReconcilePlanning {
@@ -661,13 +661,13 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                         needs_render = true;
                     }
                     apply_effects(
-                        &mut app,
-                        registry.as_ref(),
-                        &git,
-                        &mut mutations,
-                        &mut store,
-                        effects,
-                    )?;
+                &mut app,
+                registry.as_ref(),
+                &git,
+                &mut mutations,
+                &mut store,
+                effects,
+            )?;
                 }
                 Event::Resize(_, _) => needs_render = true,
                 _ => {}
@@ -1219,7 +1219,7 @@ fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
             | ViewKind::Workspace
             | ViewKind::ManagedWorktrees
             | ViewKind::Board
-            | ViewKind::Scratch => Action::Back
+            | ViewKind::Scratch => Action::Back,
         },
         Command::Back => Action::Back,
         Command::Help => Action::ToggleHelp,
