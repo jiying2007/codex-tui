@@ -151,7 +151,8 @@ Personal planning state is stored locally in SQLite: WorkCard relationships/over
 - M2 daily conversation control: implemented in the v0.2.x line.
 - M3 Git context and review: implemented in the v0.3.x line.
 - M4 personal planning + SQLite: implemented in the v0.4.x line.
-- M5 safe managed worktrees: next milestone.
+- M5 safe managed worktrees: implemented in the v0.5.x line.
+- M6 GitLab/GitHub forge projections: next milestone.
 
 Architecture and product research are archived under `docs/research/`.
 Implementation design lives under `docs/design/`.
@@ -171,3 +172,4 @@ See:
 - `docs/implementation/m2-daily-conversation-control.md`
 - `docs/implementation/m3-git-context-review.md`
 - `docs/implementation/m4-personal-planning-sqlite.md`
+- `docs/implementation/m5-safe-managed-worktrees.md`
