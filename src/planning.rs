@@ -292,7 +292,10 @@ pub fn apply_saved_view<'a>(
 pub fn saved_view_group_key(card: &WorkCardProjection, group_by: Option<&str>) -> String {
     match group_by {
         Some("stage") => card.stage.label().to_string(),
-        Some("workspace") => card.workspace.clone().unwrap_or_else(|| "No workspace".into()),
+        Some("workspace") => card
+            .workspace
+            .clone()
+            .unwrap_or_else(|| "No workspace".into()),
         Some("source") => format!("{:?}", card.anchor.kind),
         _ => String::new(),
     }
