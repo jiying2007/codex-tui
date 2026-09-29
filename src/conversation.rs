@@ -15,6 +15,208 @@ pub enum ConversationItemKind {
     Other,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum RpcRequestId {
+    Integer(i64),
+    String(String),
+}
+
+impl RpcRequestId {
+    pub fn from_value(value: &Value) -> Result<Self> {
+        if let Some(value) = value.as_i64() {
+            return Ok(Self::Integer(value));
+        }
+        if let Some(value) = value.as_str() {
+            return Ok(Self::String(value.to_string()));
+        }
+        anyhow::bail!("server request id must be an integer or string")
+    }
+
+    pub fn to_value(&self) -> Value {
+        match self {
+            Self::Integer(value) => Value::from(*value),
+            Self::String(value) => Value::from(value.clone()),
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UserInputQuestion {
+    pub id: String,
+    pub header: String,
+    pub question: String,
+    pub is_secret: bool,
+    pub options: Vec<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum InteractiveRequestKind {
+    CommandApproval {
+        command: String,
+        cwd: String,
+        reason: Option<String>,
+    },
+    FileChangeApproval {
+        reason: Option<String>,
+    },
+    PermissionsApproval {
+        reason: Option<String>,
+        network_requested: bool,
+        filesystem_requested: bool,
+    },
+    UserInput {
+        questions: Vec<UserInputQuestion>,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InteractiveRequest {
+    pub request_id: RpcRequestId,
+    pub thread_id: ThreadId,
+    pub turn_id: String,
+    pub item_id: String,
+    pub kind: InteractiveRequestKind,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum InteractiveResolution {
+    Accept,
+    Decline,
+    Cancel,
+    UserInput(BTreeMap<String, Vec<String>>),
+}
+
+pub fn parse_interactive_request(message: &Value) -> Result<Option<InteractiveRequest>> {
+    let Some(method) = message.get("method").and_then(Value::as_str) else {
+        return Ok(None);
+    };
+    let params = message.get("params").context("server request missing params")?;
+    let request_id = RpcRequestId::from_value(
+        message
+            .get("id")
+            .context("server request missing request id")?,
+    )?;
+
+    let request = match method {
+        "item/commandExecution/requestApproval" => InteractiveRequest {
+            request_id,
+            thread_id: ThreadId::new(required_string(params, "threadId", "command approval")?),
+            turn_id: required_string(params, "turnId", "command approval")?,
+            item_id: params
+                .get("approvalId")
+                .and_then(Value::as_str)
+                .or_else(|| params.get("itemId").and_then(Value::as_str))
+                .context("command approval missing itemId")?
+                .to_string(),
+            kind: InteractiveRequestKind::CommandApproval {
+                command: params
+                    .get("command")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+                cwd: params
+                    .get("cwd")
+                    .and_then(Value::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+                reason: params
+                    .get("reason")
+                    .and_then(Value::as_str)
+                    .map(ToOwned::to_owned),
+            },
+        },
+        "item/fileChange/requestApproval" => InteractiveRequest {
+            request_id,
+            thread_id: ThreadId::new(required_string(params, "threadId", "file approval")?),
+            turn_id: required_string(params, "turnId", "file approval")?,
+            item_id: required_string(params, "itemId", "file approval")?,
+            kind: InteractiveRequestKind::FileChangeApproval {
+                reason: params
+                    .get("reason")
+                    .and_then(Value::as_str)
+                    .map(ToOwned::to_owned),
+            },
+        },
+        "item/permissions/requestApproval" => {
+            let permissions = params
+                .get("permissions")
+                .context("permissions approval missing permissions")?;
+            InteractiveRequest {
+                request_id,
+                thread_id: ThreadId::new(required_string(
+                    params,
+                    "threadId",
+                    "permissions approval",
+                )?),
+                turn_id: required_string(params, "turnId", "permissions approval")?,
+                item_id: required_string(params, "itemId", "permissions approval")?,
+                kind: InteractiveRequestKind::PermissionsApproval {
+                    reason: params
+                        .get("reason")
+                        .and_then(Value::as_str)
+                        .map(ToOwned::to_owned),
+                    network_requested: permissions.get("network").is_some_and(|value| !value.is_null()),
+                    filesystem_requested: permissions
+                        .get("fileSystem")
+                        .is_some_and(|value| !value.is_null()),
+                },
+            }
+        }
+        "item/tool/requestUserInput" => {
+            let questions = params
+                .get("questions")
+                .and_then(Value::as_array)
+                .context("request_user_input missing questions")?
+                .iter()
+                .map(parse_user_input_question)
+                .collect::<Result<Vec<_>>>()?;
+            InteractiveRequest {
+                request_id,
+                thread_id: ThreadId::new(required_string(
+                    params,
+                    "threadId",
+                    "request_user_input",
+                )?),
+                turn_id: required_string(params, "turnId", "request_user_input")?,
+                item_id: required_string(params, "itemId", "request_user_input")?,
+                kind: InteractiveRequestKind::UserInput { questions },
+            }
+        }
+        _ => return Ok(None),
+    };
+
+    Ok(Some(request))
+}
+
+fn parse_user_input_question(value: &Value) -> Result<UserInputQuestion> {
+    let options = value
+        .get("options")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|option| {
+            option
+                .get("label")
+                .and_then(Value::as_str)
+                .map(ToOwned::to_owned)
+        })
+        .collect();
+    Ok(UserInputQuestion {
+        id: required_string(value, "id", "user input question")?,
+        header: value
+            .get("header")
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string(),
+        question: required_string(value, "question", "user input question")?,
+        is_secret: value
+            .get("isSecret")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        options,
+    })
+}
+
 impl ConversationItemKind {
     pub const fn label(&self) -> &'static str {
         match self {
@@ -360,6 +562,70 @@ fn optional_string(value: &Value, field: &str) -> Option<String> {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn parses_command_approval_into_normalized_request() {
+        let request = parse_interactive_request(&json!({
+            "id": 7,
+            "method": "item/commandExecution/requestApproval",
+            "params": {
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "itemId": "item-1",
+                "command": "cargo test",
+                "cwd": "/work/repo",
+                "reason": "run tests"
+            }
+        }))
+        .expect("parse")
+        .expect("known request");
+        assert_eq!(request.request_id, RpcRequestId::Integer(7));
+        assert_eq!(request.thread_id.0, "thread-1");
+        assert!(matches!(
+            request.kind,
+            InteractiveRequestKind::CommandApproval { .. }
+        ));
+    }
+
+    #[test]
+    fn parses_multiple_user_input_questions_without_losing_options() {
+        let request = parse_interactive_request(&json!({
+            "id": "req-1",
+            "method": "item/tool/requestUserInput",
+            "params": {
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "itemId": "item-1",
+                "questions": [
+                    {
+                        "id": "q1",
+                        "header": "Mode",
+                        "question": "Choose mode",
+                        "isOther": false,
+                        "isSecret": false,
+                        "options": [{"label":"fast","description":"Fast"}]
+                    },
+                    {
+                        "id": "q2",
+                        "header": "Token",
+                        "question": "Enter token",
+                        "isOther": true,
+                        "isSecret": true,
+                        "options": null
+                    }
+                ],
+                "isBlocking": true
+            }
+        }))
+        .expect("parse")
+        .expect("known request");
+        let InteractiveRequestKind::UserInput { questions } = request.kind else {
+            panic!("expected user input request");
+        };
+        assert_eq!(questions.len(), 2);
+        assert_eq!(questions[0].options, vec!["fast"]);
+        assert!(questions[1].is_secret);
+    }
 
     #[test]
     fn normalizes_recent_history_without_protocol_types_leaking_to_ui() {
