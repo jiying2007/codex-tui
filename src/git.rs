@@ -250,15 +250,20 @@ pub async fn probe_context(thread_id: ThreadId, cwd: String) -> Result<GitContex
         .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty());
-    let worktree_root = lines
-        .next()
-        .context("git rev-parse response missing worktree root")?
-        .to_string();
-    let common_dir = lines
-        .next()
-        .context("git rev-parse response missing common directory")?
-        .to_string();
-    let primary_root = primary_root_from_common_dir(&common_dir, &worktree_root);
+    let worktree_root = canonical_identity_path(
+        lines
+            .next()
+            .context("git rev-parse response missing worktree root")?,
+    );
+    let common_dir = canonical_identity_path(
+        lines
+            .next()
+            .context("git rev-parse response missing common directory")?,
+    );
+    let primary_root = canonical_identity_path(&primary_root_from_common_dir(
+        &common_dir,
+        &worktree_root,
+    ));
 
     let status = run_git_bytes(
         &cwd,
@@ -636,6 +641,13 @@ fn change_from_xy(
     })
 }
 
+fn canonical_identity_path(value: &str) -> String {
+    std::fs::canonicalize(value)
+        .unwrap_or_else(|_| PathBuf::from(value))
+        .to_string_lossy()
+        .into_owned()
+}
+
 fn primary_root_from_common_dir(common_dir: &str, worktree_root: &str) -> String {
     let path = Path::new(common_dir);
     if path.file_name().is_some_and(|name| name == ".git") {
@@ -713,6 +725,80 @@ mod tests {
         assert!(was_truncated);
         assert!(truncated.is_char_boundary(truncated.len()));
         assert!(truncated.len() <= MAX_REVIEW_DIFF_BYTES);
+    }
+
+    fn git(cwd: &Path, args: &[&str]) {
+        let status = std::process::Command::new("git")
+            .arg("-C")
+            .arg(cwd)
+            .args(args)
+            .status()
+            .expect("spawn git");
+        assert!(status.success(), "git command failed: {args:?}");
+    }
+
+    #[tokio::test]
+    async fn real_repo_and_linked_worktree_share_repo_identity() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path().join("repo");
+        std::fs::create_dir_all(&root).expect("create repo");
+        git(&root, &["init"]);
+        git(&root, &["config", "user.email", "ci@example.invalid"]);
+        git(&root, &["config", "user.name", "CI"]);
+        std::fs::write(root.join("tracked.txt"), "base\n").expect("write");
+        git(&root, &["add", "tracked.txt"]);
+        git(&root, &["commit", "-m", "base"]);
+
+        let linked = temp.path().join("linked");
+        let linked_text = linked.to_string_lossy().into_owned();
+        git(&root, &["worktree", "add", "-b", "feature", &linked_text]);
+
+        let main = probe_context(
+            ThreadId::new("main-thread"),
+            root.to_string_lossy().into_owned(),
+        )
+        .await
+        .expect("main context");
+        let other = probe_context(
+            ThreadId::new("linked-thread"),
+            linked.to_string_lossy().into_owned(),
+        )
+        .await
+        .expect("linked context");
+
+        assert_eq!(main.repo, other.repo);
+        assert_ne!(
+            main.worktree.as_ref().expect("main worktree").canonical_path,
+            other.worktree
+                .as_ref()
+                .expect("linked worktree")
+                .canonical_path
+        );
+        assert_eq!(other.branch.as_deref(), Some("feature"));
+    }
+
+    #[tokio::test]
+    async fn real_dirty_file_is_projected_from_porcelain_status() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path();
+        git(root, &["init"]);
+        git(root, &["config", "user.email", "ci@example.invalid"]);
+        git(root, &["config", "user.name", "CI"]);
+        std::fs::write(root.join("tracked.txt"), "base\n").expect("write");
+        git(root, &["add", "tracked.txt"]);
+        git(root, &["commit", "-m", "base"]);
+        std::fs::write(root.join("tracked.txt"), "changed\n").expect("change");
+
+        let context = probe_context(
+            ThreadId::new("dirty-thread"),
+            root.to_string_lossy().into_owned(),
+        )
+        .await
+        .expect("context");
+        assert!(context.dirty);
+        assert!(context.changes.iter().any(|change| {
+            change.path == "tracked.txt" && change.worktree_status == Some('M')
+        }));
     }
 
     #[test]
