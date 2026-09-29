@@ -471,29 +471,57 @@ pub fn reconcile_thread_card(input: ReconcileInput<'_>) -> WorkCardProjection {
 }
 
 pub fn reconcile_scratch_card(scratch: &ScratchWork) -> WorkCardProjection {
+    reconcile_scratch_card_with_local(scratch, None, scratch.updated_at_unix_ms)
+}
+
+pub fn reconcile_scratch_card_with_local(
+    scratch: &ScratchWork,
+    local: Option<&WorkCardRecord>,
+    now_unix_ms: u64,
+) -> WorkCardProjection {
     let stage = match scratch.state {
         ScratchState::Inbox => WorkflowStage::Inbox,
         ScratchState::Ready => WorkflowStage::Ready,
         ScratchState::Done => WorkflowStage::Done,
     };
+    let anchor = SourceRef {
+        kind: SourceKind::ScratchWork,
+        value: scratch.id.clone(),
+    };
+    let mut record = local
+        .cloned()
+        .unwrap_or_else(|| WorkCardRecord {
+            local_id: scratch.id.clone(),
+            anchor: anchor.clone(),
+            links: vec![],
+            overlay: WorkCardOverlay::default(),
+        });
+    if record.overlay.note.is_none() {
+        record.overlay.note.clone_from(&scratch.note);
+    }
+    if record.overlay.priority.is_none() {
+        record.overlay.priority = scratch.priority;
+    }
+    let snoozed = record
+        .overlay
+        .snooze_until_unix_ms
+        .is_some_and(|until| until > now_unix_ms);
+
     WorkCardProjection {
-        local_id: scratch.id.clone(),
-        anchor: SourceRef {
-            kind: SourceKind::ScratchWork,
-            value: scratch.id.clone(),
-        },
-        title: scratch.title.clone(),
+        local_id: record.local_id,
+        anchor,
+        title: record
+            .overlay
+            .title_override
+            .clone()
+            .unwrap_or_else(|| scratch.title.clone()),
         workspace: scratch.workspace.clone(),
         stage,
         stage_reason: format!("local ScratchWork state is {}", stage.label()),
         attention: BTreeSet::new(),
-        snoozed: false,
-        overlay: WorkCardOverlay {
-            note: scratch.note.clone(),
-            priority: scratch.priority,
-            ..WorkCardOverlay::default()
-        },
-        links: vec![],
+        snoozed,
+        overlay: record.overlay,
+        links: record.links,
         provenance: vec![Provenance {
             source: "local".into(),
             observed_at_unix_ms: Some(scratch.updated_at_unix_ms),
