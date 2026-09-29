@@ -362,12 +362,7 @@ fn goal_summary(app: &AppState, thread_id: &str) -> String {
     {
         return "unavailable on this App Server".into();
     }
-    if app
-        .backend_status
-        .capabilities
-        .iter()
-        .any(|capability| capability == "thread/goal/get")
-    {
+    if app.goal_checked.contains(thread_id) {
         return "none".into();
     }
     "probing…".into()
