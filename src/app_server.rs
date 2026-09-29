@@ -29,11 +29,21 @@ pub struct StartedRegistry {
 #[derive(Clone, Debug)]
 pub enum BackendCommand {
     LoadConversation(ThreadId),
+    SubmitPrompt {
+        thread_id: ThreadId,
+        text: String,
+        active_turn_id: Option<String>,
+    },
+    InterruptTurn {
+        thread_id: ThreadId,
+        turn_id: String,
+    },
 }
 
 #[derive(Clone, Debug)]
 pub enum ConversationEvent {
     Loaded(ConversationPage),
+    PromptSubmitted { thread_id: ThreadId, turn_id: String },
     Failed { thread_id: ThreadId, error: String },
 }
 
@@ -54,8 +64,29 @@ impl RegistryHandle {
     }
 
     pub fn load_conversation(&self, thread_id: ThreadId) -> Result<()> {
+        self.send_command(BackendCommand::LoadConversation(thread_id))
+    }
+
+    pub fn submit_prompt(
+        &self,
+        thread_id: ThreadId,
+        text: String,
+        active_turn_id: Option<String>,
+    ) -> Result<()> {
+        self.send_command(BackendCommand::SubmitPrompt {
+            thread_id,
+            text,
+            active_turn_id,
+        })
+    }
+
+    pub fn interrupt_turn(&self, thread_id: ThreadId, turn_id: String) -> Result<()> {
+        self.send_command(BackendCommand::InterruptTurn { thread_id, turn_id })
+    }
+
+    fn send_command(&self, command: BackendCommand) -> Result<()> {
         self.command_tx
-            .send(BackendCommand::LoadConversation(thread_id))
+            .send(command)
             .map_err(|_| anyhow!("App Server actor is not available"))
     }
 }
@@ -137,9 +168,51 @@ async fn run_registry_actor(
                 };
                 match command {
                     BackendCommand::LoadConversation(thread_id) => {
-                        match load_conversation(&mut rpc, thread_id.clone()).await {
-                            Ok(page) => {
-                                let _ = conversation_tx.send(ConversationEvent::Loaded(page));
+                        emit_conversation_load(&mut rpc, thread_id, &conversation_tx).await;
+                    }
+                    BackendCommand::SubmitPrompt {
+                        thread_id,
+                        text,
+                        active_turn_id,
+                    } => {
+                        match submit_prompt(
+                            &mut rpc,
+                            &mut threads,
+                            &thread_id,
+                            text,
+                            active_turn_id,
+                        )
+                        .await
+                        {
+                            Ok(turn_id) => {
+                                let _ = conversation_tx.send(ConversationEvent::PromptSubmitted {
+                                    thread_id: thread_id.clone(),
+                                    turn_id,
+                                });
+                                emit_conversation_load(
+                                    &mut rpc,
+                                    thread_id,
+                                    &conversation_tx,
+                                )
+                                .await;
+                            }
+                            Err(error) => {
+                                let _ = conversation_tx.send(ConversationEvent::Failed {
+                                    thread_id,
+                                    error: error.to_string(),
+                                });
+                            }
+                        }
+                    }
+                    BackendCommand::InterruptTurn { thread_id, turn_id } => {
+                        match interrupt_turn(&mut rpc, &thread_id, &turn_id).await {
+                            Ok(()) => {
+                                emit_conversation_load(
+                                    &mut rpc,
+                                    thread_id,
+                                    &conversation_tx,
+                                )
+                                .await;
                             }
                             Err(error) => {
                                 let _ = conversation_tx.send(ConversationEvent::Failed {
@@ -338,6 +411,126 @@ async fn load_all_loaded_ids(rpc: &mut RpcSession) -> Result<BTreeSet<String>> {
         }
     }
     Ok(loaded)
+}
+
+async fn emit_conversation_load(
+    rpc: &mut RpcSession,
+    thread_id: ThreadId,
+    tx: &mpsc::UnboundedSender<ConversationEvent>,
+) {
+    match load_conversation(rpc, thread_id.clone()).await {
+        Ok(page) => {
+            let _ = tx.send(ConversationEvent::Loaded(page));
+        }
+        Err(error) => {
+            let _ = tx.send(ConversationEvent::Failed {
+                thread_id,
+                error: error.to_string(),
+            });
+        }
+    }
+}
+
+async fn submit_prompt(
+    rpc: &mut RpcSession,
+    threads: &mut BTreeMap<String, ThreadSummary>,
+    thread_id: &ThreadId,
+    text: String,
+    active_turn_id: Option<String>,
+) -> Result<String> {
+    if let Some(turn_id) = active_turn_id {
+        let response = rpc
+            .request(
+                "turn/steer",
+                json!({
+                    "threadId": thread_id.0,
+                    "input": [{
+                        "type": "text",
+                        "text": text,
+                        "textElements": []
+                    }],
+                    "expectedTurnId": turn_id
+                }),
+            )
+            .await
+            .context("steer active turn")?;
+        return response
+            .get("turnId")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+            .context("turn/steer response missing turnId");
+    }
+
+    ensure_thread_loaded(rpc, threads, thread_id).await?;
+    let response = rpc
+        .request(
+            "turn/start",
+            json!({
+                "threadId": thread_id.0,
+                "input": [{
+                    "type": "text",
+                    "text": text,
+                    "textElements": []
+                }]
+            }),
+        )
+        .await
+        .context("start turn")?;
+    response
+        .pointer("/turn/id")
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned)
+        .context("turn/start response missing turn.id")
+}
+
+async fn ensure_thread_loaded(
+    rpc: &mut RpcSession,
+    threads: &mut BTreeMap<String, ThreadSummary>,
+    thread_id: &ThreadId,
+) -> Result<()> {
+    let metadata = rpc
+        .request(
+            "thread/read",
+            json!({
+                "threadId": thread_id.0,
+                "includeTurns": false
+            }),
+        )
+        .await
+        .context("read thread before turn start")?;
+    let is_not_loaded = metadata.pointer("/thread/status/type").and_then(Value::as_str)
+        == Some("notLoaded");
+    if !is_not_loaded {
+        return Ok(());
+    }
+
+    rpc.request(
+        "thread/resume",
+        json!({
+            "threadId": thread_id.0,
+            "excludeTurns": true
+        }),
+    )
+    .await
+    .context("resume thread before turn start")?;
+
+    if let Some(thread) = threads.get_mut(&thread_id.0) {
+        thread.metadata.loaded = Some(true);
+    }
+    Ok(())
+}
+
+async fn interrupt_turn(rpc: &mut RpcSession, thread_id: &ThreadId, turn_id: &str) -> Result<()> {
+    rpc.request(
+        "turn/interrupt",
+        json!({
+            "threadId": thread_id.0,
+            "turnId": turn_id
+        }),
+    )
+    .await
+    .context("interrupt active turn")?;
+    Ok(())
 }
 
 async fn load_conversation(rpc: &mut RpcSession, thread_id: ThreadId) -> Result<ConversationPage> {
