@@ -404,14 +404,7 @@ pub fn parse_legacy_thread_read(result: Value, thread_id: ThreadId) -> Result<Co
         }
     }
 
-    Ok(merge_history(
-        thread_id,
-        title,
-        turns,
-        items,
-        None,
-        None,
-    ))
+    Ok(merge_history(thread_id, title, turns, items, None, None))
 }
 
 pub fn parse_turns_page(result: Value) -> Result<(Vec<ConversationTurn>, Option<String>)> {
