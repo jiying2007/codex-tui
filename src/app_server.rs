@@ -766,10 +766,7 @@ async fn handle_unsolicited(
                 .and_then(Value::as_str)
                 .unwrap_or_default()
                 .to_string();
-            let params = message
-                .get("params")
-                .cloned()
-                .unwrap_or(Value::Null);
+            let params = message.get("params").cloned().unwrap_or(Value::Null);
             pending_requests.insert(
                 request.request_id.clone(),
                 PendingServerRequest { method, params },
@@ -779,7 +776,10 @@ async fn handle_unsolicited(
         }
 
         rpc.reject_request(
-            message.get("id").cloned().context("server request missing id")?,
+            message
+                .get("id")
+                .cloned()
+                .context("server request missing id")?,
             "unsupported App Server request in codex-tui",
         )
         .await?;
@@ -847,11 +847,8 @@ async fn resolve_interactive(
                     anyhow::bail!("user-input answer cannot resolve an approval")
                 }
             };
-            rpc.respond_result(
-                request_id.to_value(),
-                json!({"decision": decision}),
-            )
-            .await?;
+            rpc.respond_result(request_id.to_value(), json!({"decision": decision}))
+                .await?;
         }
         "item/permissions/requestApproval" => match resolution {
             InteractiveResolution::Accept => {
@@ -870,11 +867,8 @@ async fn resolve_interactive(
                 .await?;
             }
             InteractiveResolution::Decline | InteractiveResolution::Cancel => {
-                rpc.reject_request(
-                    request_id.to_value(),
-                    "permission request declined by user",
-                )
-                .await?;
+                rpc.reject_request(request_id.to_value(), "permission request declined by user")
+                    .await?;
             }
             InteractiveResolution::UserInput(_) => {
                 anyhow::bail!("user-input answer cannot resolve a permission request")
@@ -886,15 +880,10 @@ async fn resolve_interactive(
             };
             let answers = answers
                 .into_iter()
-                .map(|(question_id, answers)| {
-                    (question_id, json!({"answers": answers}))
-                })
+                .map(|(question_id, answers)| (question_id, json!({"answers": answers})))
                 .collect::<serde_json::Map<_, _>>();
-            rpc.respond_result(
-                request_id.to_value(),
-                json!({"answers": answers}),
-            )
-            .await?;
+            rpc.respond_result(request_id.to_value(), json!({"answers": answers}))
+                .await?;
         }
         other => anyhow::bail!("unsupported pending server request: {other}"),
     }
