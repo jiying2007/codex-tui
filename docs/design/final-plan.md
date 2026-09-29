@@ -255,6 +255,15 @@ Layers 5–6 are optional and may never be required for many users.
 
 ---
 
+
+## 4.1 Runtime-service invariant
+
+The normal local product does not introduce its own mandatory long-running codex-tui daemon.
+
+It may connect to or rely on an official Codex-managed App Server/daemon topology when supported upstream.
+
+Any future codex-tui background service must be optional, independently justified and must not become required for the personal core.
+
 # 5. Core identities
 
 Identity mistakes create the most expensive long-term bugs. Keep these distinct.
@@ -404,6 +413,34 @@ Useful link roles:
 Do not over-model link roles initially; add only those that improve UX.
 
 ---
+
+
+## 6.1 Anchor promotion and uniqueness
+
+WorkCard `local_id` is permanent local relationship identity.
+
+The anchor never changes automatically because of discovery.
+
+Explicit promotion is allowed, for example:
+
+~~~text
+ScratchWork
+  -- explicit "promote/link to GitLab Issue" -->
+ForgeWorkItem
+~~~
+
+Promotion rules:
+
+- preserve the same `local_id`;
+- store the previous anchor as a historical/related link when useful;
+- require an explicit user operation when authoritative ownership changes;
+- enforce that one external source reference maps to at most one active WorkCard;
+- never merge two WorkCards only because titles look similar;
+- duplicate-card merge is an explicit operation with a preview.
+
+If a Codex thread was the original anchor and a forge WorkItem is later linked, the Thread remains the anchor unless an explicit promotion operation changes it.
+
+This avoids silent identity churn while still allowing a personal Scratch item to graduate into shared team work.
 
 # 7. Workflow and Attention are separate state machines
 
@@ -910,6 +947,24 @@ Use Git CLI behind a GitService abstraction initially; avoid unnecessary libgit2
 
 ---
 
+
+## 18.4 Mutation scope and collision detection
+
+Collision detection must not rely only on `thread.cwd`.
+
+A thread can potentially write through additional runtime workspace roots or permission grants.
+
+Define a derived `MutationScope`:
+
+- writable repository/worktree roots known from Codex runtime/permission capabilities;
+- runtime workspace roots when available;
+- cwd/worktree as the conservative fallback;
+- explicit additional writable roots when exposed by upstream permission state.
+
+ConflictRisk is raised when active editing scopes overlap on the same mutable filesystem/repository state.
+
+If precise write scope is unavailable, prefer a conservative warning over a false claim of isolation.
+
 # 19. Code forge abstraction
 
 ## 19.1 ForgeProvider
@@ -992,6 +1047,20 @@ No core UI code checks provider == github or provider == gitlab.
 
 ---
 
+
+## 19.5 Forge provider availability
+
+The forge layer is optional for core personal use.
+
+If `glab` is absent, unauthenticated, incompatible or the GitLab host is unreachable:
+
+- Codex/Git/Planning remain usable;
+- forge features are disabled or marked unavailable/stale;
+- Doctor provides exact remediation;
+- startup does not fail.
+
+GitLab tier-specific capabilities are discovered and surfaced rather than assumed.
+
 # 20. Safe mutation model
 
 All significant Git/Forge mutations use:
@@ -1037,6 +1106,33 @@ Read-only actions do not need confirmation.
 
 ---
 
+
+## 20.1 Idempotency, retries and unknown outcomes
+
+External mutations can fail after the remote side has already applied the operation.
+
+Therefore a mutation must never be blindly retried.
+
+Each significant mutation receives a local `operation_id` and a lifecycle such as:
+
+- Planned;
+- Executing;
+- Succeeded;
+- Failed;
+- OutcomeUnknown.
+
+Before retrying an OutcomeUnknown operation, reconcile the target system first.
+
+Examples:
+
+- after an MR-create timeout, search for an MR matching the exact source branch/project before creating another;
+- after worktree-create interruption, inspect Git worktree state before retrying;
+- after forge WorkItem creation timeout, reconcile using returned/stored identifiers or carefully bounded matching rather than immediately creating a duplicate.
+
+OperationReceipt records the reconciliation result.
+
+Where an upstream API provides an idempotency mechanism, use it. Otherwise codex-tui implements reconcile-before-retry semantics.
+
 # 21. LocalStore
 
 Do not let JSON/SQLite shape leak into domain code.
@@ -1070,6 +1166,20 @@ Migration requirements:
 Still never own canonical Codex transcript.
 
 ---
+
+
+## 21.1 Local state privacy
+
+LocalStore can contain project paths, notes and unsent drafts.
+
+Requirements:
+
+- user-only filesystem permissions where the platform supports them;
+- atomic writes;
+- no automatic cloud synchronization;
+- secrets/tokens are never stored;
+- diagnostics redact sensitive paths/content by default;
+- encryption-at-rest is not a baseline requirement, but the storage abstraction must not prevent a future secure backend.
 
 # 22. Search
 
@@ -1781,6 +1891,18 @@ Dependency governance:
 Reference projects with restrictive licenses remain conceptual references only.
 
 ---
+
+
+# 40.1 Documentation authority
+
+To prevent design drift:
+
+1. `docs/design/final-plan.md` is the canonical current architecture baseline.
+2. Accepted ADRs are binding decisions and override older descriptive documents.
+3. Current implementation design documents must conform to the final plan and ADRs.
+4. `docs/research/` is historical evidence, not normative architecture.
+5. Superseded design documents should carry a clear superseded/non-authoritative notice rather than silently coexist as competing specifications.
+6. Any implementation PR that intentionally violates a binding ADR must update/supersede that ADR in the same change.
 
 # 41. Feature tiers
 
