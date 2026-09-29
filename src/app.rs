@@ -350,13 +350,20 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
         }
         Action::ResolvePending(resolution) => {
-            if let Some(request) = state.current_pending_request().cloned()
-                && !matches!(request.kind, InteractiveRequestKind::UserInput { .. })
-            {
-                return vec![Effect::ResolveInteractive {
-                    request_id: request.request_id,
-                    resolution,
-                }];
+            if let Some(request) = state.current_pending_request().cloned() {
+                let allowed = match request.kind {
+                    InteractiveRequestKind::UserInput { .. } => matches!(
+                        resolution,
+                        InteractiveResolution::Decline | InteractiveResolution::Cancel
+                    ),
+                    _ => !matches!(resolution, InteractiveResolution::UserInput(_)),
+                };
+                if allowed {
+                    return vec![Effect::ResolveInteractive {
+                        request_id: request.request_id,
+                        resolution,
+                    }];
+                }
             }
         }
         Action::BeginUserInput => {
