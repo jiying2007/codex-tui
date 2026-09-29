@@ -534,10 +534,53 @@ async fn run_registry_actor(
                     }
                 }
             }
+            _ = goal_probe.tick() => {
+                if goal_supported != Some(false)
+                    && let Some(thread_id) = goal_probe_queue.pop_front()
+                {
+                    goal_queued.remove(&thread_id.0);
+                    if !goal_probed.contains(&thread_id.0) {
+                        match load_goal(&mut rpc, thread_id.clone()).await {
+                            Ok(Some(goal)) => {
+                                goal_supported = Some(true);
+                                goal_probed.insert(thread_id.0.clone());
+                                mark_goal_supported(&mut status);
+                                let _ = conversation_tx.send(ConversationEvent::GoalObserved(goal));
+                            }
+                            Ok(None) => {
+                                goal_supported = Some(true);
+                                goal_probed.insert(thread_id.0.clone());
+                                mark_goal_supported(&mut status);
+                                let _ = conversation_tx.send(
+                                    ConversationEvent::GoalCleared(thread_id),
+                                );
+                            }
+                            Err(error) if is_goal_unsupported(&error) => {
+                                goal_supported = Some(false);
+                                goal_probe_queue.clear();
+                                goal_queued.clear();
+                                mark_goal_unsupported(&mut status);
+                            }
+                            Err(_) => {
+                                goal_probed.insert(thread_id.0);
+                            }
+                        }
+                    }
+                }
+            }
             _ = refresh.tick() => {
                 match load_registry(&mut rpc).await {
                     Ok((fresh, loaded_supported)) => {
                         threads = by_id(fresh);
+                        if goal_supported != Some(false) {
+                            for thread_id in threads.keys() {
+                                if !goal_probed.contains(thread_id)
+                                    && goal_queued.insert(thread_id.clone())
+                                {
+                                    goal_probe_queue.push_back(ThreadId::new(thread_id));
+                                }
+                            }
+                        }
                         status.connected = true;
                         status.error = None;
                         status.last_refresh_unix_ms = Some(now_unix_ms());
