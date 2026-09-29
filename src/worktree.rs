@@ -745,8 +745,7 @@ mod tests {
         git(root, &["init"]);
         git(root, &["config", "user.email", "ci@example.invalid"]);
         git(root, &["config", "user.name", "CI"]);
-        std::fs::write(root.join("tracked.txt"), "base
-").expect("write");
+        std::fs::write(root.join("tracked.txt"), "base\n").expect("write");
         git(root, &["add", "tracked.txt"]);
         git(root, &["commit", "-m", "base"]);
         let context = futures_lite_probe(root);
@@ -871,8 +870,7 @@ branch refs/heads/feature
         .await
         .expect("create");
         assert_eq!(create.state, OperationState::Succeeded);
-        std::fs::write(target.join("tracked.txt"), "dirty
-").expect("dirty");
+        std::fs::write(target.join("tracked.txt"), "dirty\n").expect("dirty");
 
         let remove = OperationPlan::remove_worktree(
             repo,
