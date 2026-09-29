@@ -1,4 +1,4 @@
-use crate::domain::{AttentionReason, RuntimeStatus, ThreadId, ThreadSummary};
+use crate::domain::{AttentionReason, RuntimeStatus, ThreadId, ThreadMetadata, ThreadSummary};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BackendFingerprint {
@@ -8,9 +8,57 @@ pub struct BackendFingerprint {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct BackendStatus {
+    pub source: String,
+    pub connected: bool,
+    pub version: Option<String>,
+    pub platform: Option<String>,
+    pub codex_home: Option<String>,
+    pub capabilities: Vec<String>,
+    pub optional_capabilities_missing: Vec<String>,
+    pub last_refresh_unix_ms: Option<u64>,
+    pub error: Option<String>,
+}
+
+impl BackendStatus {
+    pub fn starting(source: impl Into<String>) -> Self {
+        Self {
+            source: source.into(),
+            connected: false,
+            version: None,
+            platform: None,
+            codex_home: None,
+            capabilities: vec![],
+            optional_capabilities_missing: vec![],
+            last_refresh_unix_ms: None,
+            error: None,
+        }
+    }
+
+    pub fn fake() -> Self {
+        Self {
+            source: "fake".into(),
+            connected: true,
+            version: Some(env!("CARGO_PKG_VERSION").into()),
+            platform: Some(std::env::consts::OS.into()),
+            codex_home: None,
+            capabilities: vec![
+                "thread/list".into(),
+                "thread/status/changed".into(),
+                "attention-fixtures".into(),
+            ],
+            optional_capabilities_missing: vec![],
+            last_refresh_unix_ms: None,
+            error: None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct BackendSnapshot {
     pub generation: u64,
     pub threads: Vec<ThreadSummary>,
+    pub status: BackendStatus,
 }
 
 pub trait CodexBackend {
@@ -44,6 +92,7 @@ impl FakeBackend {
                     attention: vec![],
                     pinned: true,
                     alias: Some("M0 bootstrap".into()),
+                    metadata: ThreadMetadata::default(),
                 },
                 ThreadSummary {
                     id: ThreadId::new("thread-kws"),
@@ -53,6 +102,7 @@ impl FakeBackend {
                     attention: vec![AttentionReason::UserInputRequired],
                     pinned: false,
                     alias: None,
+                    metadata: ThreadMetadata::default(),
                 },
                 ThreadSummary {
                     id: ThreadId::new("thread-audio"),
@@ -62,6 +112,7 @@ impl FakeBackend {
                     attention: vec![AttentionReason::ReadyForReview],
                     pinned: false,
                     alias: None,
+                    metadata: ThreadMetadata::default(),
                 },
                 ThreadSummary {
                     id: ThreadId::new("thread-platform"),
@@ -71,6 +122,7 @@ impl FakeBackend {
                     attention: vec![],
                     pinned: false,
                     alias: None,
+                    metadata: ThreadMetadata::default(),
                 },
             ],
         }
@@ -94,6 +146,7 @@ impl CodexBackend for FakeBackend {
         BackendSnapshot {
             generation: self.generation,
             threads: self.threads.clone(),
+            status: BackendStatus::fake(),
         }
     }
 
