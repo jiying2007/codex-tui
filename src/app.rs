@@ -716,6 +716,9 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             let Some(thread_id) = state.current_thread_id().cloned() else {
                 return vec![];
             };
+            if !state.goals.contains_key(&thread_id.0) {
+                return vec![];
+            }
             state.goal_actions_open = false;
             return vec![Effect::SetGoal {
                 thread_id,
@@ -727,6 +730,9 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             let Some(thread_id) = state.current_thread_id().cloned() else {
                 return vec![];
             };
+            if !state.goals.contains_key(&thread_id.0) {
+                return vec![];
+            }
             state.goal_actions_open = false;
             return vec![Effect::ClearGoal(thread_id)];
         }
@@ -1123,8 +1129,11 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 .pending_requests
                 .retain(|pending| pending.request_id != request.request_id);
             state.pending_requests.push(request);
-            if is_current_thread && state.input_mode == InputMode::Composer {
-                state.input_mode = InputMode::Normal;
+            if is_current_thread {
+                state.goal_actions_open = false;
+                if state.input_mode == InputMode::Composer {
+                    state.input_mode = InputMode::Normal;
+                }
             }
         }
         Action::InteractiveResolved { request_id } => {
