@@ -1,6 +1,6 @@
 use crate::planning::{
-    PlanningSnapshot, SavedView, ScratchState, ScratchWork, SourceKind, SourceRef, WorkCardLink,
-    WorkCardOverlay, WorkCardRecord,
+    Bookmark, HotSlot, LocalNote, PlanningSnapshot, SavedView, ScratchState, ScratchWork,
+    SourceKind, SourceRef, WorkCardLink, WorkCardOverlay, WorkCardRecord,
 };
 use crate::store::{AppConfig, FileStore, LocalStateV1, LocalStore};
 use anyhow::{Context, Result};
@@ -91,6 +91,9 @@ impl SqliteStore {
             cards: load_cards(&conn)?,
             scratch: load_scratch(&conn)?,
             saved_views: load_saved_views(&conn)?,
+            notes: load_notes(&conn)?,
+            bookmarks: load_bookmarks(&conn)?,
+            hot_slots: load_hot_slots(&conn)?,
         })
     }
 
@@ -294,6 +297,99 @@ impl SqliteStore {
         let rowid = parse_prefixed_id(view_id, "view:")?;
         self.open_ready()?
             .execute("DELETE FROM saved_views WHERE id=?1", [rowid])?;
+        Ok(())
+    }
+
+    pub fn upsert_note(&self, note: &LocalNote) -> Result<()> {
+        let conn = self.open_ready()?;
+        conn.execute(
+            "INSERT INTO notes(owner_kind, owner_ref, text, updated_at_unix_ms)
+             VALUES(?1, ?2, ?3, ?4)
+             ON CONFLICT(owner_kind, owner_ref) DO UPDATE SET
+                text=excluded.text,
+                updated_at_unix_ms=excluded.updated_at_unix_ms",
+            params![
+                enum_text(&note.owner.kind)?,
+                note.owner.value,
+                note.text,
+                u64_to_i64(note.updated_at_unix_ms)?,
+            ],
+        )?;
+        Ok(())
+    }
+
+    pub fn delete_note(&self, owner: &SourceRef) -> Result<()> {
+        self.open_ready()?.execute(
+            "DELETE FROM notes WHERE owner_kind=?1 AND owner_ref=?2",
+            params![enum_text(&owner.kind)?, owner.value],
+        )?;
+        Ok(())
+    }
+
+    pub fn create_bookmark(
+        &self,
+        source: SourceRef,
+        label: Option<&str>,
+        note: Option<&str>,
+    ) -> Result<Bookmark> {
+        let conn = self.open_ready()?;
+        let now = now_unix_ms();
+        conn.execute(
+            "INSERT INTO bookmarks(source_kind, source_ref, label, note, created_at_unix_ms)
+             VALUES(?1, ?2, ?3, ?4, ?5)",
+            params![
+                enum_text(&source.kind)?,
+                source.value,
+                label,
+                note,
+                u64_to_i64(now)?,
+            ],
+        )?;
+        Ok(Bookmark {
+            id: bookmark_id(conn.last_insert_rowid()),
+            source,
+            label: label.map(ToOwned::to_owned),
+            note: note.map(ToOwned::to_owned),
+            created_at_unix_ms: now,
+        })
+    }
+
+    pub fn delete_bookmark(&self, bookmark_id: &str) -> Result<()> {
+        let rowid = parse_prefixed_id(bookmark_id, "bookmark:")?;
+        self.open_ready()?
+            .execute("DELETE FROM bookmarks WHERE id=?1", [rowid])?;
+        Ok(())
+    }
+
+    pub fn set_hot_slot(&self, slot: u8, target: SourceRef) -> Result<HotSlot> {
+        anyhow::ensure!((1..=9).contains(&slot), "hot slot must be between 1 and 9");
+        let conn = self.open_ready()?;
+        let now = now_unix_ms();
+        conn.execute(
+            "INSERT INTO hot_slots(slot, target_kind, target_ref, updated_at_unix_ms)
+             VALUES(?1, ?2, ?3, ?4)
+             ON CONFLICT(slot) DO UPDATE SET
+                target_kind=excluded.target_kind,
+                target_ref=excluded.target_ref,
+                updated_at_unix_ms=excluded.updated_at_unix_ms",
+            params![
+                i64::from(slot),
+                enum_text(&target.kind)?,
+                target.value,
+                u64_to_i64(now)?,
+            ],
+        )?;
+        Ok(HotSlot {
+            slot,
+            target,
+            updated_at_unix_ms: now,
+        })
+    }
+
+    pub fn clear_hot_slot(&self, slot: u8) -> Result<()> {
+        anyhow::ensure!((1..=9).contains(&slot), "hot slot must be between 1 and 9");
+        self.open_ready()?
+            .execute("DELETE FROM hot_slots WHERE slot=?1", [i64::from(slot)])?;
         Ok(())
     }
 
@@ -661,6 +757,92 @@ fn load_saved_views(conn: &Connection) -> Result<Vec<SavedView>> {
     .collect()
 }
 
+fn load_notes(conn: &Connection) -> Result<Vec<LocalNote>> {
+    let mut stmt = conn.prepare(
+        "SELECT owner_kind, owner_ref, text, updated_at_unix_ms
+         FROM notes ORDER BY owner_kind, owner_ref",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, i64>(3)?,
+        ))
+    })?;
+    rows.map(|row| {
+        let (kind, value, text, updated_at) = row?;
+        Ok(LocalNote {
+            owner: SourceRef {
+                kind: enum_from_text(&kind)?,
+                value,
+            },
+            text,
+            updated_at_unix_ms: i64_to_u64(updated_at)?,
+        })
+    })
+    .collect()
+}
+
+fn load_bookmarks(conn: &Connection) -> Result<Vec<Bookmark>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, source_kind, source_ref, label, note, created_at_unix_ms
+         FROM bookmarks ORDER BY id",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, Option<String>>(3)?,
+            row.get::<_, Option<String>>(4)?,
+            row.get::<_, i64>(5)?,
+        ))
+    })?;
+    rows.map(|row| {
+        let (id, kind, value, label, note, created_at) = row?;
+        Ok(Bookmark {
+            id: bookmark_id(id),
+            source: SourceRef {
+                kind: enum_from_text(&kind)?,
+                value,
+            },
+            label,
+            note,
+            created_at_unix_ms: i64_to_u64(created_at)?,
+        })
+    })
+    .collect()
+}
+
+fn load_hot_slots(conn: &Connection) -> Result<Vec<HotSlot>> {
+    let mut stmt = conn.prepare(
+        "SELECT slot, target_kind, target_ref, updated_at_unix_ms
+         FROM hot_slots ORDER BY slot",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, i64>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, i64>(3)?,
+        ))
+    })?;
+    rows.map(|row| {
+        let (slot, kind, value, updated_at) = row?;
+        let slot = u8::try_from(slot).context("hot slot outside u8 range")?;
+        Ok(HotSlot {
+            slot,
+            target: SourceRef {
+                kind: enum_from_text(&kind)?,
+                value,
+            },
+            updated_at_unix_ms: i64_to_u64(updated_at)?,
+        })
+    })
+    .collect()
+}
+
 fn metadata_get(conn: &Connection, key: &str) -> Result<Option<String>> {
     conn.query_row("SELECT value FROM metadata WHERE key=?1", [key], |row| {
         row.get(0)
@@ -735,6 +917,10 @@ fn scratch_id(rowid: i64) -> String {
 
 fn view_id(rowid: i64) -> String {
     format!("view:{rowid}")
+}
+
+fn bookmark_id(rowid: i64) -> String {
+    format!("bookmark:{rowid}")
 }
 
 fn now_unix_ms() -> u64 {
@@ -916,6 +1102,45 @@ mod tests {
             .upsert_work_card(&duplicate)
             .expect_err("duplicate anchor must fail");
         assert!(error.to_string().contains("WorkCard"));
+    }
+
+    #[test]
+    fn local_notes_bookmarks_and_hot_slots_round_trip() {
+        let root = tempdir().expect("tempdir");
+        let store = SqliteStore::at(root.path());
+        let thread = SourceRef {
+            kind: SourceKind::CodexThread,
+            value: "thread-1".into(),
+        };
+
+        store
+            .upsert_note(&LocalNote {
+                owner: thread.clone(),
+                text: "remember this".into(),
+                updated_at_unix_ms: 10,
+            })
+            .expect("note");
+        let bookmark = store
+            .create_bookmark(thread.clone(), Some("review"), Some("line 42"))
+            .expect("bookmark");
+        store
+            .set_hot_slot(3, thread.clone())
+            .expect("hot slot");
+
+        let snapshot = store.load_planning_snapshot().expect("snapshot");
+        assert_eq!(snapshot.notes.len(), 1);
+        assert_eq!(snapshot.bookmarks, vec![bookmark.clone()]);
+        assert_eq!(snapshot.hot_slots.len(), 1);
+        assert_eq!(snapshot.hot_slots[0].slot, 3);
+        assert_eq!(snapshot.hot_slots[0].target, thread);
+
+        store.delete_bookmark(&bookmark.id).expect("delete bookmark");
+        store.clear_hot_slot(3).expect("clear hot slot");
+        store.delete_note(&snapshot.notes[0].owner).expect("delete note");
+        let snapshot = store.load_planning_snapshot().expect("snapshot after delete");
+        assert!(snapshot.notes.is_empty());
+        assert!(snapshot.bookmarks.is_empty());
+        assert!(snapshot.hot_slots.is_empty());
     }
 
     #[test]
