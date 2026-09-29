@@ -59,6 +59,10 @@ impl SqliteStore {
         &self.db_path
     }
 
+    pub fn config_path(&self) -> PathBuf {
+        self.legacy.config_path()
+    }
+
     pub fn legacy_state_path(&self) -> PathBuf {
         self.legacy.state_path()
     }
