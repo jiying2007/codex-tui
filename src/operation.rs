@@ -34,9 +34,11 @@ pub fn mutation_scope_for_thread(
 
     MutationScope {
         repo: git.and_then(|context| context.repo.clone()),
-        writable_roots: (!thread.metadata.cwd.trim().is_empty())
-            .then(|| vec![thread.metadata.cwd.clone()])
-            .unwrap_or_default(),
+        writable_roots: if thread.metadata.cwd.trim().is_empty() {
+            vec![]
+        } else {
+            vec![thread.metadata.cwd.clone()]
+        },
         confidence: MutationScopeConfidence::ConservativeCwd,
     }
 }
