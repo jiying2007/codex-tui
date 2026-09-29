@@ -95,6 +95,7 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState) {
             Span::raw("p pin  "),
             Span::raw("e alias  "),
             Span::raw("x ack  "),
+            Span::raw("! shared-worktree  "),
             Span::raw("? help"),
         ]),
         status_line,
@@ -150,8 +151,13 @@ fn thread_list(app: &AppState) -> Paragraph<'static> {
         } else {
             "ack".into()
         };
+        let collision = if app.worktree_collision_count(&thread.id) > 0 {
+            "!"
+        } else {
+            " "
+        };
         let text = format!(
-            "{prefix}{pin} {:7} {:18} {:10} {}",
+            "{prefix}{pin}{collision} {:7} {:18} {:10} {}",
             thread.runtime.label(),
             truncate(&thread.workspace, 18),
             attention,
@@ -173,7 +179,7 @@ fn thread_list(app: &AppState) -> Paragraph<'static> {
 }
 
 fn detail_panel(app: &AppState) -> Paragraph<'static> {
-    let lines = if let Some(thread) = app.selected_thread() {
+    let mut lines = if let Some(thread) = app.selected_thread() {
         vec![
             Line::from(format!("Thread: {}", thread.id)),
             Line::from(format!("Workspace: {}", thread.workspace)),
@@ -210,10 +216,6 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
             )),
             Line::from(format!("Pinned: {}", thread.pinned)),
             Line::from(format!(
-                "Local attention ack: {}",
-                app.acknowledged_attention.contains(&thread.id.0)
-            )),
-            Line::from(format!(
                 "Pending interactive: {}",
                 app.pending_requests
                     .iter()
@@ -224,7 +226,62 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
     } else {
         vec![Line::from("No thread selected")]
     };
-    Paragraph::new(lines).block(Block::bordered().title(" Context "))
+
+    if let Some(thread) = app.selected_thread() {
+        lines.push(Line::from(""));
+        match app.git_context(&thread.id) {
+            None => lines.push(Line::from("Git: not probed")),
+            Some(context) if context.observed_at_unix_ms == 0 => {
+                lines.push(Line::from("Git: probing…"));
+            }
+            Some(context) if context.error.is_some() => {
+                lines.push(Line::from(format!(
+                    "Git: degraded · {}",
+                    context.error.as_deref().unwrap_or("unknown error")
+                )));
+            }
+            Some(context) if !context.is_repository => {
+                lines.push(Line::from("Git: not a repository"));
+            }
+            Some(context) => {
+                let branch = context
+                    .branch
+                    .as_deref()
+                    .or(context.head.as_deref())
+                    .unwrap_or("unknown");
+                lines.push(Line::from(format!("Git: {branch}")));
+                lines.push(Line::from(format!(
+                    "Dirty: {} · files={} · +{} -{}",
+                    context.dirty,
+                    context.changes.len(),
+                    context.ahead,
+                    context.behind
+                )));
+                if let Some(worktree) = &context.worktree {
+                    lines.push(Line::from(format!(
+                        "Worktree: {}",
+                        truncate(&worktree.canonical_path, 42)
+                    )));
+                }
+                if let Some(repo) = &context.repo {
+                    lines.push(Line::from(format!(
+                        "Repo: {}",
+                        truncate(&repo.primary_root, 42)
+                    )));
+                }
+                let collisions = app.worktree_collision_count(&thread.id);
+                if collisions > 0 {
+                    lines.push(Line::from(format!(
+                        "WARNING: shared mutable checkout with {collisions} active thread(s)"
+                    )));
+                }
+            }
+        }
+    }
+
+    Paragraph::new(lines)
+        .block(Block::bordered().title(" Context "))
+        .wrap(Wrap { trim: false })
 }
 
 fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
