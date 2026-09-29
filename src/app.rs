@@ -41,6 +41,7 @@ pub enum InputMode {
     Composer,
     UserInput,
     ScratchTitle,
+    Snooze,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -62,6 +63,9 @@ pub enum Action {
     CycleSavedView(i32),
     OpenPlanningSelected,
     BeginScratch,
+    BeginSnooze,
+    BeginHotSlotBind,
+    UseHotSlot(u8),
     MoveReview(i32),
     ScrollReviewBy(i16),
     ToggleReviewWordDiff,
@@ -102,6 +106,14 @@ pub enum Effect {
     CreateScratch {
         title: String,
         workspace: Option<String>,
+    },
+    SnoozeWorkCard {
+        anchor: SourceRef,
+        duration_ms: u64,
+    },
+    SetHotSlot {
+        slot: u8,
+        target: SourceRef,
     },
     ProbeGit {
         thread_id: ThreadId,
@@ -158,6 +170,8 @@ pub struct AppState {
     pub board_stage_index: usize,
     pub board_selected: usize,
     pub new_scratch_workspace: Option<String>,
+    pub snooze_target: Option<SourceRef>,
+    pub hot_slot_bind_pending: bool,
     pub review_selected: usize,
     pub review_scroll: u16,
     pub review_word_diff: bool,
@@ -196,6 +210,8 @@ impl AppState {
             board_stage_index: 0,
             board_selected: 0,
             new_scratch_workspace: None,
+            snooze_target: None,
+            hot_slot_bind_pending: false,
             review_selected: 0,
             review_scroll: 0,
             review_word_diff: false,
@@ -295,6 +311,22 @@ impl AppState {
         self.visible_planning_cards()
             .get(self.board_selected)
             .copied()
+    }
+
+    pub fn selected_local_target(&self) -> Option<SourceRef> {
+        match &self.view {
+            View::Registry => self
+                .selected_thread_id()
+                .map(|thread_id| SourceRef::codex_thread(&thread_id)),
+            View::Board => self.selected_planning_card().map(|card| card.anchor.clone()),
+            View::Thread(id) | View::Review(id) | View::Workspace(id) => {
+                Some(SourceRef::codex_thread(id))
+            }
+            View::Scratch(id) => Some(SourceRef {
+                kind: SourceKind::ScratchWork,
+                value: id.clone(),
+            }),
+        }
     }
 
     pub fn work_card_for_thread(&self, thread_id: &ThreadId) -> Option<&WorkCardProjection> {
@@ -602,6 +634,55 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.input_buffer.clear();
             state.input_mode = InputMode::ScratchTitle;
         }
+        Action::BeginSnooze => {
+            if let Some(target) = state.selected_local_target() {
+                state.snooze_target = Some(target);
+                state.input_buffer = "1h".into();
+                state.input_mode = InputMode::Snooze;
+            }
+        }
+        Action::BeginHotSlotBind => {
+            state.hot_slot_bind_pending = state.selected_local_target().is_some();
+        }
+        Action::UseHotSlot(slot) => {
+            if state.hot_slot_bind_pending {
+                state.hot_slot_bind_pending = false;
+                if let Some(target) = state.selected_local_target() {
+                    return vec![Effect::SetHotSlot { slot, target }];
+                }
+                return vec![];
+            }
+
+            let target = state
+                .planning_snapshot
+                .hot_slots
+                .iter()
+                .find(|hot_slot| hot_slot.slot == slot)
+                .map(|hot_slot| hot_slot.target.clone());
+            let Some(target) = target else {
+                return vec![];
+            };
+            match target.kind {
+                SourceKind::CodexThread => {
+                    let id = ThreadId::new(target.value);
+                    if let Some(index) = state.threads.iter().position(|thread| thread.id == id) {
+                        state.selected = index;
+                        state.view = View::Registry;
+                    }
+                }
+                SourceKind::ScratchWork => {
+                    if state
+                        .planning_snapshot
+                        .scratch
+                        .iter()
+                        .any(|scratch| scratch.id == target.value)
+                    {
+                        state.view = View::Scratch(target.value);
+                    }
+                }
+                _ => {}
+            }
+        }
         Action::ReviewError { thread_id, error } => {
             let review = state
                 .git_reviews
@@ -888,7 +969,13 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 return vec![Effect::StopWatchingConversation(thread_id)];
             }
         }
-        Action::NextAttention => select_next_attention(state),
+        Action::NextAttention => {
+            if matches!(state.view, View::Board) {
+                select_next_planning_attention(state);
+            } else {
+                select_next_attention(state);
+            }
+        }
         Action::ToggleHelp => state.show_help = !state.show_help,
         Action::SetDraft(draft) => {
             if let Some(id) = state.current_thread_id().cloned() {
@@ -1002,7 +1089,8 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             InputMode::Search
             | InputMode::Alias
             | InputMode::UserInput
-            | InputMode::ScratchTitle => {
+            | InputMode::ScratchTitle
+            | InputMode::Snooze => {
                 state.input_buffer.push(character);
                 if state.input_mode == InputMode::Search {
                     state.filter.clone_from(&state.input_buffer);
@@ -1021,7 +1109,8 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             InputMode::Search
             | InputMode::Alias
             | InputMode::UserInput
-            | InputMode::ScratchTitle => {
+            | InputMode::ScratchTitle
+            | InputMode::Snooze => {
                 state.input_buffer.pop();
                 if state.input_mode == InputMode::Search {
                     state.filter.clone_from(&state.input_buffer);
@@ -1040,6 +1129,22 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 state.input_mode = InputMode::Normal;
                 state.input_buffer.clear();
                 return vec![Effect::CreateScratch { title, workspace }];
+            }
+            if mode == InputMode::Snooze {
+                let Some(duration_ms) = parse_snooze_duration(&state.input_buffer) else {
+                    return vec![];
+                };
+                let Some(anchor) = state.snooze_target.take() else {
+                    state.input_mode = InputMode::Normal;
+                    state.input_buffer.clear();
+                    return vec![];
+                };
+                state.input_mode = InputMode::Normal;
+                state.input_buffer.clear();
+                return vec![Effect::SnoozeWorkCard {
+                    anchor,
+                    duration_ms,
+                }];
             }
             if mode == InputMode::UserInput {
                 let Some(request_id) = state.user_input_request_id.clone() else {
@@ -1144,6 +1249,9 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             if state.input_mode == InputMode::ScratchTitle {
                 state.new_scratch_workspace = None;
             }
+            if state.input_mode == InputMode::Snooze {
+                state.snooze_target = None;
+            }
             if state.input_mode == InputMode::Search {
                 state.filter.clone_from(&state.input_original);
                 ensure_selection_visible(state);
@@ -1159,6 +1267,62 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::Quit => state.should_quit = true,
     }
     vec![]
+}
+
+fn parse_snooze_duration(value: &str) -> Option<u64> {
+    let value = value.trim().to_ascii_lowercase();
+    if value.len() < 2 {
+        return None;
+    }
+    let (number, suffix) = value.split_at(value.len() - 1);
+    let amount = number.parse::<u64>().ok()?;
+    if amount == 0 {
+        return None;
+    }
+    let unit_ms = match suffix {
+        "m" => 60_000,
+        "h" => 60 * 60_000,
+        "d" => 24 * 60 * 60_000,
+        _ => return None,
+    };
+    amount.checked_mul(unit_ms)
+}
+
+fn select_next_planning_attention(state: &mut AppState) {
+    let view = state.active_saved_view();
+    let cards = apply_saved_view(&state.work_cards, &view);
+    if cards.is_empty() {
+        return;
+    }
+
+    let current_local_id = state
+        .selected_planning_card()
+        .map(|card| card.local_id.clone());
+    let start = current_local_id
+        .as_ref()
+        .and_then(|local_id| cards.iter().position(|card| &card.local_id == local_id))
+        .unwrap_or(0);
+
+    for offset in 1..=cards.len() {
+        let card = cards[(start + offset) % cards.len()];
+        if card.needs_you() {
+            state.planning_view_index = state
+                .planning_views()
+                .iter()
+                .position(|candidate| candidate.id == view.id)
+                .unwrap_or(state.planning_view_index);
+            state.board_stage_index = WorkflowStage::ALL
+                .iter()
+                .position(|stage| *stage == card.stage)
+                .unwrap_or(state.board_stage_index);
+            let visible = state.visible_planning_cards();
+            state.board_selected = visible
+                .iter()
+                .position(|candidate| candidate.local_id == card.local_id)
+                .unwrap_or(0);
+            return;
+        }
+    }
 }
 
 fn rebuild_planning(state: &mut AppState, now_unix_ms: u64) {
@@ -1682,6 +1846,49 @@ mod tests {
             [Effect::CreateScratch { title, .. }] if title == "Investigate wake miss"
         ));
         assert_eq!(app.input_mode, InputMode::Normal);
+    }
+
+    #[test]
+    fn snooze_duration_parser_is_bounded_and_unit_explicit() {
+        assert_eq!(parse_snooze_duration("15m"), Some(900_000));
+        assert_eq!(parse_snooze_duration("1h"), Some(3_600_000));
+        assert_eq!(parse_snooze_duration("2d"), Some(172_800_000));
+        assert_eq!(parse_snooze_duration("0h"), None);
+        assert_eq!(parse_snooze_duration("later"), None);
+    }
+
+    #[test]
+    fn hot_slot_binding_stores_only_source_reference() {
+        let mut app = app();
+        reduce(&mut app, Action::BeginHotSlotBind);
+        let effects = reduce(&mut app, Action::UseHotSlot(3));
+        assert_eq!(
+            effects,
+            vec![Effect::SetHotSlot {
+                slot: 3,
+                target: SourceRef::codex_thread(&ThreadId::new("thread-impl")),
+            }]
+        );
+        assert!(!app.hot_slot_bind_pending);
+    }
+
+    #[test]
+    fn board_attention_rotation_skips_snoozed_cards() {
+        let mut app = app();
+        app.threads[0].runtime = RuntimeStatus::Working;
+        app.threads[0].attention = vec![AttentionReason::ApprovalRequired];
+        app.threads[1].runtime = RuntimeStatus::Working;
+        app.threads[1].attention = vec![AttentionReason::UserInputRequired];
+
+        let mut local = crate::planning::WorkCardRecord::implicit_thread(&app.threads[0].id);
+        local.overlay.snooze_until_unix_ms = Some(10_000);
+        app.planning_snapshot.cards.push(local);
+        reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 1 });
+        reduce(&mut app, Action::OpenBoard);
+        reduce(&mut app, Action::NextAttention);
+        let selected = app.selected_planning_card().expect("selected attention card");
+        assert_eq!(selected.anchor, SourceRef::codex_thread(&app.threads[1].id));
+        assert!(selected.needs_you());
     }
 
     #[test]
