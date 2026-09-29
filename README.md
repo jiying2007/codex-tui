@@ -18,7 +18,7 @@ The chat view is part of the product, but the default product surface is a multi
 - Codex App Server owns conversation and runtime state.
 - Git/worktrees own code state and isolation.
 - AGENTS.md and .codex/config.toml own repository-shared team conventions.
-- GitHub issues/PRs/CI remain team collaboration and delivery authorities.
+- the configured code forge remains the team collaboration/delivery authority; GitLab Self-Managed is the first internal target, with GitHub behind the same forge contract.
 - codex-tui owns only local projection, navigation, attention and review UX.
 - Derive state whenever possible; persist only small UI metadata.
 - Codex only for the initial stable product.
@@ -69,7 +69,7 @@ The chat view is part of the product, but the default product surface is a multi
 - shared team database
 - team presence or RBAC
 - web/mobile UI
-- canonical custom Kanban/task database
+- canonical custom Kanban/task database or team collaboration server
 - general plugin system
 - universal coding-agent support
 - container/sandbox platform
@@ -89,11 +89,11 @@ The mature product adds planning without creating a second task authority:
 - Codex Goal projection
 - lightweight local scratch work
 - worktree lifecycle and review
-- GitHub Issue/PR/CI projection
+- GitLab Work Item/Issue Board/MR/Pipeline projection first; GitHub through the same forge abstraction
 - notes/bookmarks, snooze/unread and lightweight notifications
 - optional thread queue UI as upstream support stabilizes
 
-Board cards should project existing Codex/Git/GitHub work whenever possible.
+Board cards should project existing Codex/Git/forge work whenever possible; Needs You is an attention overlay, not a workflow column.
 
 ## Architecture
 
