@@ -6,8 +6,8 @@ use crate::conversation::{
 use crate::domain::{AttentionReason, RuntimeStatus, ThreadId, ThreadSummary, ThreadUiState};
 use crate::git::{GitContext, GitReview};
 use crate::planning::{
-    PlanningSnapshot, SourceRef, WorkCardProjection, reconcile_scratch_card,
-    reconcile_thread_card, ReconcileInput,
+    PlanningSnapshot, ReconcileInput, SourceRef, WorkCardProjection, reconcile_scratch_card,
+    reconcile_thread_card,
 };
 use crate::store::LocalStateV1;
 use std::collections::{BTreeMap, BTreeSet};
@@ -239,9 +239,9 @@ impl AppState {
     }
 
     pub fn work_card_for_thread(&self, thread_id: &ThreadId) -> Option<&WorkCardProjection> {
-        self.work_cards.iter().find(|card| {
-            card.anchor == SourceRef::codex_thread(thread_id)
-        })
+        self.work_cards
+            .iter()
+            .find(|card| card.anchor == SourceRef::codex_thread(thread_id))
     }
 
     pub fn worktree_collision_count(&self, thread_id: &ThreadId) -> usize {
@@ -980,9 +980,8 @@ fn rebuild_planning(state: &mut AppState, now_unix_ms: u64) {
         .map(|card| (card.anchor.clone(), card))
         .collect::<BTreeMap<_, _>>();
 
-    let mut projections = Vec::with_capacity(
-        state.threads.len() + state.planning_snapshot.scratch.len(),
-    );
+    let mut projections =
+        Vec::with_capacity(state.threads.len() + state.planning_snapshot.scratch.len());
 
     for thread in &state.threads {
         let anchor = SourceRef::codex_thread(&thread.id);
@@ -1456,12 +1455,7 @@ mod tests {
         let mut app = app();
         app.threads[0].runtime = RuntimeStatus::Working;
         app.threads[0].attention = vec![AttentionReason::ApprovalRequired];
-        reduce(
-            &mut app,
-            Action::ReconcilePlanning {
-                now_unix_ms: 100,
-            },
-        );
+        reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 100 });
         let card = app
             .work_card_for_thread(&ThreadId::new("thread-impl"))
             .expect("card");
@@ -1476,22 +1470,19 @@ mod tests {
     #[test]
     fn scratch_items_join_the_same_planning_projection_without_becoming_threads() {
         let mut app = app();
-        app.planning_snapshot.scratch.push(crate::planning::ScratchWork {
-            id: "scratch:1".into(),
-            title: "Investigate".into(),
-            note: None,
-            workspace: Some("kws".into()),
-            priority: Some(1),
-            state: crate::planning::ScratchState::Inbox,
-            created_at_unix_ms: 1,
-            updated_at_unix_ms: 1,
-        });
-        reduce(
-            &mut app,
-            Action::ReconcilePlanning {
-                now_unix_ms: 2,
-            },
-        );
+        app.planning_snapshot
+            .scratch
+            .push(crate::planning::ScratchWork {
+                id: "scratch:1".into(),
+                title: "Investigate".into(),
+                note: None,
+                workspace: Some("kws".into()),
+                priority: Some(1),
+                state: crate::planning::ScratchState::Inbox,
+                created_at_unix_ms: 1,
+                updated_at_unix_ms: 1,
+            });
+        reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 2 });
         assert!(app.work_cards.iter().any(|card| {
             card.anchor.kind == crate::planning::SourceKind::ScratchWork
                 && card.title == "Investigate"
