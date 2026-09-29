@@ -8,6 +8,10 @@ use crate::conversation::{
     parse_turns_page,
 };
 use crate::domain::{ThreadId, ThreadSummary};
+use crate::goal::{
+    GoalObservation, GoalStatus, parse_goal_cleared_thread, parse_goal_get, parse_goal_set,
+    parse_goal_updated,
+};
 use anyhow::{Context, Result, anyhow};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -96,6 +100,13 @@ pub enum BackendCommand {
         request_id: RpcRequestId,
         resolution: InteractiveResolution,
     },
+    RefreshGoal(ThreadId),
+    SetGoal {
+        thread_id: ThreadId,
+        objective: Option<String>,
+        status: Option<GoalStatus>,
+    },
+    ClearGoal(ThreadId),
 }
 
 #[derive(Clone, Debug)]
@@ -110,6 +121,8 @@ pub enum ConversationEvent {
     InteractiveResolved {
         request_id: RpcRequestId,
     },
+    GoalObserved(GoalObservation),
+    GoalCleared(ThreadId),
     Failed {
         thread_id: ThreadId,
         error: String,
@@ -179,6 +192,27 @@ impl RegistryHandle {
             request_id,
             resolution,
         })
+    }
+
+    pub fn refresh_goal(&self, thread_id: ThreadId) -> Result<()> {
+        self.send_command(BackendCommand::RefreshGoal(thread_id))
+    }
+
+    pub fn set_goal(
+        &self,
+        thread_id: ThreadId,
+        objective: Option<String>,
+        status: Option<GoalStatus>,
+    ) -> Result<()> {
+        self.send_command(BackendCommand::SetGoal {
+            thread_id,
+            objective,
+            status,
+        })
+    }
+
+    pub fn clear_goal(&self, thread_id: ThreadId) -> Result<()> {
+        self.send_command(BackendCommand::ClearGoal(thread_id))
     }
 
     fn send_command(&self, command: BackendCommand) -> Result<()> {
