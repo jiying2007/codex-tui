@@ -90,7 +90,9 @@ pub fn parse_interactive_request(message: &Value) -> Result<Option<InteractiveRe
     let Some(method) = message.get("method").and_then(Value::as_str) else {
         return Ok(None);
     };
-    let params = message.get("params").context("server request missing params")?;
+    let params = message
+        .get("params")
+        .context("server request missing params")?;
     let request_id = RpcRequestId::from_value(
         message
             .get("id")
@@ -155,7 +157,9 @@ pub fn parse_interactive_request(message: &Value) -> Result<Option<InteractiveRe
                         .get("reason")
                         .and_then(Value::as_str)
                         .map(ToOwned::to_owned),
-                    network_requested: permissions.get("network").is_some_and(|value| !value.is_null()),
+                    network_requested: permissions
+                        .get("network")
+                        .is_some_and(|value| !value.is_null()),
                     filesystem_requested: permissions
                         .get("fileSystem")
                         .is_some_and(|value| !value.is_null()),
@@ -734,7 +738,11 @@ mod tests {
         });
 
         assert_eq!(
-            state.turns.iter().map(|turn| turn.id.as_str()).collect::<Vec<_>>(),
+            state
+                .turns
+                .iter()
+                .map(|turn| turn.id.as_str())
+                .collect::<Vec<_>>(),
             vec!["turn-1", "turn-2"]
         );
         assert_eq!(
