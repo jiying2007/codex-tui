@@ -1,4 +1,5 @@
 use crate::app::{AppState, InputMode, View};
+use crate::conversation::{InteractiveRequest, InteractiveRequestKind};
 use crate::domain::ThreadSummary;
 use ratatui::{
     Frame,
@@ -65,6 +66,7 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState) {
             app.input_buffer
         )),
         InputMode::Composer => Line::from("composer active in Thread view"),
+        InputMode::UserInput => Line::from("user-input answer active in Thread view"),
         InputMode::Normal => {
             if let Some(error) = &app.backend_status.error {
                 Line::from(format!(
@@ -233,7 +235,7 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
     );
 
     let ui = app.thread_ui.get(thread_id).cloned().unwrap_or_default();
-    let conversation_lines = match app.conversations.get(thread_id) {
+    let mut conversation_lines = match app.conversations.get(thread_id) {
         Some(conversation) if conversation.loading => {
             vec![Line::from("Loading recent Codex history…")]
         }
@@ -264,6 +266,13 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
             .collect(),
         None => vec![Line::from("Conversation has not been loaded yet.")],
     };
+    if let Some(request) = app.current_pending_request() {
+        let mut request_lines = interactive_request_lines(request);
+        request_lines.push(Line::from(""));
+        request_lines.append(&mut conversation_lines);
+        conversation_lines = request_lines;
+    }
+
     let page_hint = app
         .conversations
         .get(thread_id)
@@ -282,25 +291,49 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
         chunks[1],
     );
 
-    let composer_title = if app.input_mode == InputMode::Composer {
-        " Composer · Enter send · Esc keep draft "
-    } else {
-        " Draft · a edit "
-    };
-    let composer = Paragraph::new(format!(
-        "{}\nscroll={} follow={}",
-        if ui.draft.is_empty() {
-            "<empty>"
+    let (composer_title, composer_text) = if app.input_mode == InputMode::UserInput {
+        let question = app.current_user_input_question();
+        let displayed_answer = if question.is_some_and(|question| question.is_secret) {
+            "*".repeat(app.input_buffer.chars().count())
         } else {
-            &ui.draft
-        },
-        ui.scroll,
-        ui.follow
-    ))
-    .block(Block::bordered().title(composer_title));
+            app.input_buffer.clone()
+        };
+        (
+            " User input · Enter next/send · Esc cancel editor ",
+            format!(
+                "{}\nanswer> {}",
+                question
+                    .map(|question| question.question.as_str())
+                    .unwrap_or("Question unavailable"),
+                displayed_answer
+            ),
+        )
+    } else {
+        (
+            if app.input_mode == InputMode::Composer {
+                " Composer · Enter send · Esc keep draft "
+            } else {
+                " Draft · a edit "
+            },
+            format!(
+                "{}\nscroll={} follow={}",
+                if ui.draft.is_empty() {
+                    "<empty>"
+                } else {
+                    &ui.draft
+                },
+                ui.scroll,
+                ui.follow
+            ),
+        )
+    };
+    let composer =
+        Paragraph::new(composer_text).block(Block::bordered().title(composer_title));
     frame.render_widget(composer, chunks[2]);
     frame.render_widget(
-        Paragraph::new("Esc back · PageUp/PageDown history · a composer · Ctrl+C interrupt"),
+        Paragraph::new(
+            "a composer · y accept · n decline · c cancel · i answer · Ctrl+C interrupt",
+        ),
         chunks[3],
     );
 }
@@ -315,7 +348,7 @@ fn render_help(frame: &mut Frame<'_>) {
                 "Registry: j/k · Enter · Space attention · / search · p pin · e alias · x ack",
             ),
             Line::from(
-                "Thread: a composer · Enter send · Ctrl+C interrupt · PageUp/PageDown history",
+                "Thread: a composer · y/n/c approval · i answer · Ctrl+C interrupt · PageUp/PageDown",
             ),
             Line::from(
                 "Authority: Codex/Git/Forge stay canonical; codex-tui stores operator state only.",
@@ -325,6 +358,67 @@ fn render_help(frame: &mut Frame<'_>) {
         .wrap(Wrap { trim: true }),
         area,
     );
+}
+
+fn interactive_request_lines(request: &InteractiveRequest) -> Vec<Line<'static>> {
+    let mut lines = vec![Line::from("NEEDS YOU")];
+    match &request.kind {
+        InteractiveRequestKind::CommandApproval {
+            command,
+            cwd,
+            reason,
+        } => {
+            lines.push(Line::from(format!("Command approval: {command}")));
+            if !cwd.is_empty() {
+                lines.push(Line::from(format!("cwd: {cwd}")));
+            }
+            if let Some(reason) = reason {
+                lines.push(Line::from(format!("reason: {reason}")));
+            }
+            lines.push(Line::from("y accept · n decline · c cancel"));
+        }
+        InteractiveRequestKind::FileChangeApproval { reason } => {
+            lines.push(Line::from("File change approval"));
+            if let Some(reason) = reason {
+                lines.push(Line::from(format!("reason: {reason}")));
+            }
+            lines.push(Line::from("y accept · n decline · c cancel"));
+        }
+        InteractiveRequestKind::PermissionsApproval {
+            reason,
+            network_requested,
+            filesystem_requested,
+        } => {
+            lines.push(Line::from(format!(
+                "Permission request: network={} filesystem={}",
+                network_requested, filesystem_requested
+            )));
+            if let Some(reason) = reason {
+                lines.push(Line::from(format!("reason: {reason}")));
+            }
+            lines.push(Line::from("y grant for this turn · n/c decline"));
+        }
+        InteractiveRequestKind::UserInput { questions } => {
+            lines.push(Line::from(format!(
+                "User input requested: {} question(s)",
+                questions.len()
+            )));
+            if let Some(question) = questions.first() {
+                lines.push(Line::from(format!(
+                    "{}: {}",
+                    question.header, question.question
+                )));
+                if !question.options.is_empty() {
+                    lines.push(Line::from(format!(
+                        "options: {}",
+                        question.options.join(", ")
+                    )));
+                }
+            }
+            lines.push(Line::from("i answer"));
+        }
+    }
+    lines
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
