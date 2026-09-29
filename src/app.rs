@@ -1,4 +1,5 @@
 use crate::backend::BackendStatus;
+use crate::conversation::{ConversationPage, ConversationState};
 use crate::domain::{AttentionReason, ThreadId, ThreadSummary, ThreadUiState};
 use crate::store::LocalStateV1;
 use std::collections::{BTreeMap, BTreeSet};
@@ -26,6 +27,8 @@ pub enum InputMode {
 pub enum Action {
     ReplaceThreads(Vec<ThreadSummary>),
     BackendStatus(BackendStatus),
+    ConversationLoaded(ConversationPage),
+    ConversationFailed { thread_id: ThreadId, error: String },
     MoveSelection(i32),
     OpenSelected,
     Back,
@@ -50,6 +53,7 @@ pub enum Action {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Effect {
     PersistOperatorState,
+    LoadConversation(ThreadId),
 }
 
 #[derive(Clone, Debug)]
@@ -59,6 +63,7 @@ pub struct AppState {
     pub view: View,
     pub previous_target: Option<ThreadId>,
     pub thread_ui: BTreeMap<String, ThreadUiState>,
+    pub conversations: BTreeMap<String, ConversationState>,
     pub show_help: bool,
     pub should_quit: bool,
     pub backend_status: BackendStatus,
@@ -77,6 +82,7 @@ impl AppState {
             view: View::Registry,
             previous_target: None,
             thread_ui: BTreeMap::new(),
+            conversations: BTreeMap::new(),
             show_help: false,
             should_quit: false,
             backend_status: BackendStatus::starting("unknown"),
@@ -114,6 +120,11 @@ impl AppState {
     pub fn current_thread_ui(&self) -> Option<&ThreadUiState> {
         let id = self.current_thread_id()?;
         self.thread_ui.get(&id.0)
+    }
+
+    pub fn current_conversation(&self) -> Option<&ConversationState> {
+        let id = self.current_thread_id()?;
+        self.conversations.get(&id.0)
     }
 
     pub fn visible_indices(&self) -> Vec<usize> {
@@ -231,12 +242,34 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             ensure_selection_visible(state);
         }
         Action::BackendStatus(status) => state.backend_status = status,
+        Action::ConversationLoaded(page) => {
+            let key = page.thread_id.0.clone();
+            state
+                .conversations
+                .entry(key)
+                .or_insert_with(|| ConversationState::loading(page.thread_id.clone()))
+                .replace_page(page);
+        }
+        Action::ConversationFailed { thread_id, error } => {
+            let conversation = state
+                .conversations
+                .entry(thread_id.0.clone())
+                .or_insert_with(|| ConversationState::loading(thread_id));
+            conversation.loading = false;
+            conversation.error = Some(error);
+        }
         Action::MoveSelection(delta) => move_selection(state, delta),
         Action::OpenSelected | Action::QuickPrompt => {
             if let Some(id) = state.selected_thread_id() {
                 state.previous_target = state.current_thread_id().cloned();
                 state.thread_ui.entry(id.0.clone()).or_default();
-                state.view = View::Thread(id);
+                state
+                    .conversations
+                    .entry(id.0.clone())
+                    .or_insert_with(|| ConversationState::loading(id.clone()))
+                    .loading = true;
+                state.view = View::Thread(id.clone());
+                return vec![Effect::LoadConversation(id)];
             }
         }
         Action::Back => state.view = View::Registry,
@@ -478,10 +511,40 @@ mod tests {
         let mut app = app();
         reduce(&mut app, Action::MoveSelection(1));
         let selected = app.selected;
-        reduce(&mut app, Action::OpenSelected);
+        let effects = reduce(&mut app, Action::OpenSelected);
+        assert_eq!(
+            effects,
+            vec![Effect::LoadConversation(
+                app.current_thread_id().expect("thread").clone()
+            )]
+        );
         reduce(&mut app, Action::Back);
         assert_eq!(app.selected, selected);
         assert_eq!(app.view, View::Registry);
+    }
+
+    #[test]
+    fn conversation_page_is_scoped_by_exact_thread_id() {
+        let mut app = app();
+        let thread_id = app.selected_thread_id().expect("thread");
+        reduce(&mut app, Action::OpenSelected);
+        reduce(
+            &mut app,
+            Action::ConversationLoaded(ConversationPage {
+                thread_id: thread_id.clone(),
+                title: Some("title".into()),
+                turns: vec![],
+                items: vec![],
+                next_turn_cursor: None,
+                next_item_cursor: None,
+            }),
+        );
+        let conversation = app
+            .conversations
+            .get(&thread_id.0)
+            .expect("conversation");
+        assert!(!conversation.loading);
+        assert_eq!(conversation.title.as_deref(), Some("title"));
     }
 
     #[test]
