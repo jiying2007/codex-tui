@@ -62,6 +62,7 @@ pub enum RuntimeStatus {
     Working,
     WaitingHuman,
     Ready,
+    SystemError,
     Inactive,
 }
 
@@ -71,6 +72,7 @@ impl RuntimeStatus {
             Self::Working => "WORKING",
             Self::WaitingHuman => "WAITING",
             Self::Ready => "READY",
+            Self::SystemError => "ERROR",
             Self::Inactive => "IDLE",
         }
     }
@@ -81,6 +83,7 @@ pub enum AttentionReason {
     ApprovalRequired,
     UserInputRequired,
     ReadyForReview,
+    SystemError,
     MarkedUnread,
 }
 
@@ -90,9 +93,22 @@ impl AttentionReason {
             Self::ApprovalRequired => "approval",
             Self::UserInputRequired => "input",
             Self::ReadyForReview => "review",
+            Self::SystemError => "error",
             Self::MarkedUnread => "unread",
         }
     }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ThreadMetadata {
+    pub cwd: String,
+    pub model: Option<String>,
+    pub project_id: Option<String>,
+    pub source: String,
+    pub updated_at: i64,
+    pub loaded: Option<bool>,
+    pub workspace_key: String,
+    pub workspace_basis: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -104,6 +120,8 @@ pub struct ThreadSummary {
     pub attention: Vec<AttentionReason>,
     pub pinned: bool,
     pub alias: Option<String>,
+    #[serde(default)]
+    pub metadata: ThreadMetadata,
 }
 
 impl ThreadSummary {

@@ -1,4 +1,4 @@
-use crate::app::{AppState, View};
+use crate::app::{AppState, InputMode, View};
 use crate::domain::ThreadSummary;
 use ratatui::{
     Frame,
@@ -56,41 +56,89 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState) {
         }
     }
 
-    let footer = Paragraph::new(Line::from(vec![
-        Span::raw("j/k move  "),
-        Span::raw("Enter open  "),
-        Span::raw("Space next attention  "),
-        Span::raw("a quick prompt  "),
-        Span::raw("Ctrl+K palette  "),
-        Span::raw("? help"),
-    ]));
+    let status_line = match app.input_mode {
+        InputMode::Search => {
+            Line::from(format!("/{}  · Enter keep · Esc cancel", app.input_buffer))
+        }
+        InputMode::Alias => Line::from(format!(
+            "alias> {}  · Enter save · Esc cancel",
+            app.input_buffer
+        )),
+        InputMode::Normal => {
+            if let Some(error) = &app.backend_status.error {
+                Line::from(format!(
+                    "{} · offline/degraded · {}",
+                    app.backend_status.source,
+                    truncate(error, 80)
+                ))
+            } else {
+                Line::from(format!(
+                    "{} · {}",
+                    app.backend_status.source,
+                    if app.backend_status.connected {
+                        "connected"
+                    } else {
+                        "offline"
+                    }
+                ))
+            }
+        }
+    };
+    let footer = Paragraph::new(vec![
+        Line::from(vec![
+            Span::raw("j/k move  "),
+            Span::raw("Space attention  "),
+            Span::raw("/ search  "),
+            Span::raw("p pin  "),
+            Span::raw("e alias  "),
+            Span::raw("x ack  "),
+            Span::raw("? help"),
+        ]),
+        status_line,
+    ]);
     frame.render_widget(footer, chunks[1]);
 }
 
 fn thread_list(app: &AppState) -> Paragraph<'static> {
-    let mut lines = Vec::with_capacity(app.threads.len() + 1);
-    lines.push(Line::from(format!(
-        "{} threads · {} need attention",
-        app.threads.len(),
-        app.threads
-            .iter()
-            .filter(|thread| thread.needs_attention())
-            .count()
-    )));
+    let visible = app.visible_indices();
+    let attention_count = visible
+        .iter()
+        .filter(|index| app.thread_needs_attention(**index))
+        .count();
+    let mut lines = Vec::with_capacity(visible.len() + 1);
+    let summary = if app.filter.is_empty() {
+        format!(
+            "{} threads · {} need attention",
+            app.threads.len(),
+            attention_count
+        )
+    } else {
+        format!(
+            "{}/{} threads · {} need attention · filter: {}",
+            visible.len(),
+            app.threads.len(),
+            attention_count,
+            app.filter
+        )
+    };
+    lines.push(Line::from(summary));
 
-    for (index, thread) in app.threads.iter().enumerate() {
+    for index in visible {
+        let thread = &app.threads[index];
         let selected = index == app.selected;
         let prefix = if selected { ">" } else { " " };
         let pin = if thread.pinned { "*" } else { " " };
-        let attention = if thread.needs_attention() {
+        let attention = if app.thread_needs_attention(index) {
             thread
                 .attention
                 .iter()
                 .map(|reason| reason.label())
                 .collect::<Vec<_>>()
                 .join(",")
-        } else {
+        } else if thread.attention.is_empty() {
             "-".into()
+        } else {
+            "ack".into()
         };
         let text = format!(
             "{prefix}{pin} {:7} {:18} {:10} {}",
@@ -108,7 +156,9 @@ fn thread_list(app: &AppState) -> Paragraph<'static> {
     }
 
     Paragraph::new(lines)
-        .block(Block::bordered().title(" Mission Control "))
+        .block(
+            Block::bordered().title(format!(" Mission Control · {} ", app.backend_status.source)),
+        )
         .wrap(Wrap { trim: false })
 }
 
@@ -131,7 +181,28 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
                         .join(", ")
                 }
             )),
-            Line::from("Source: FakeBackend (M0)"),
+            Line::from(format!(
+                "Model: {}",
+                thread.metadata.model.as_deref().unwrap_or("unknown")
+            )),
+            Line::from(format!("Cwd: {}", thread.metadata.cwd)),
+            Line::from(format!("Source: {}", thread.metadata.source)),
+            Line::from(format!(
+                "Workspace basis: {}",
+                thread.metadata.workspace_basis
+            )),
+            Line::from(format!(
+                "Loaded: {}",
+                thread
+                    .metadata
+                    .loaded
+                    .map_or("unknown".into(), |value| value.to_string())
+            )),
+            Line::from(format!("Pinned: {}", thread.pinned)),
+            Line::from(format!(
+                "Local attention ack: {}",
+                app.acknowledged_attention.contains(&thread.id.0)
+            )),
         ]
     } else {
         vec![Line::from("No thread selected")]
@@ -162,10 +233,10 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
 
     frame.render_widget(
         Paragraph::new(vec![
+            Line::from("M1 registry mode intentionally does not hydrate full transcript history."),
             Line::from(
-                "M0 uses a fake backend; canonical transcript persistence is intentionally absent.",
+                "Exact Codex thread id remains canonical; conversation control arrives in M2.",
             ),
-            Line::from("M1 will replace this body with paginated Codex App Server data."),
         ])
         .block(Block::bordered().title(" Conversation "))
         .wrap(Wrap { trim: false }),
@@ -197,7 +268,9 @@ fn render_help(frame: &mut Frame<'_>) {
     frame.render_widget(
         Paragraph::new(vec![
             Line::from("Global: ? help · Ctrl+K palette · / search · Esc back"),
-            Line::from("Registry: j/k · Enter · Space attention · a quick prompt"),
+            Line::from(
+                "Registry: j/k · Enter · Space attention · / search · p pin · e alias · x ack",
+            ),
             Line::from("Thread: PageUp/PageDown · r review · w workspace · g goal"),
             Line::from(
                 "Authority: Codex/Git/Forge stay canonical; codex-tui stores operator state only.",
