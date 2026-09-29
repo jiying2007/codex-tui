@@ -360,6 +360,11 @@ impl AppState {
         self.git_contexts.get(&thread_id.0)
     }
 
+    pub fn current_goal(&self) -> Option<&GoalObservation> {
+        let thread_id = self.current_thread_id()?;
+        self.goals.get(&thread_id.0)
+    }
+
     pub fn current_review(&self) -> Option<&GitReview> {
         let View::Review(thread_id) = &self.view else {
             return None;
