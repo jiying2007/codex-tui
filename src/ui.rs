@@ -56,14 +56,33 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState) {
         }
     }
 
-    let footer = Paragraph::new(Line::from(vec![
-        Span::raw("j/k move  "),
-        Span::raw("Enter open  "),
-        Span::raw("Space next attention  "),
-        Span::raw("a quick prompt  "),
-        Span::raw("Ctrl+K palette  "),
-        Span::raw("? help"),
-    ]));
+    let backend_line = if let Some(error) = &app.backend_status.error {
+        Line::from(format!(
+            "{} · offline/degraded · {}",
+            app.backend_status.source,
+            truncate(error, 80)
+        ))
+    } else {
+        Line::from(format!(
+            "{} · {}",
+            app.backend_status.source,
+            if app.backend_status.connected {
+                "connected"
+            } else {
+                "offline"
+            }
+        ))
+    };
+    let footer = Paragraph::new(vec![
+        Line::from(vec![
+            Span::raw("j/k move  "),
+            Span::raw("Enter open  "),
+            Span::raw("Space next attention  "),
+            Span::raw("Ctrl+K palette  "),
+            Span::raw("? help"),
+        ]),
+        backend_line,
+    ]);
     frame.render_widget(footer, chunks[1]);
 }
 
@@ -108,7 +127,10 @@ fn thread_list(app: &AppState) -> Paragraph<'static> {
     }
 
     Paragraph::new(lines)
-        .block(Block::bordered().title(" Mission Control "))
+        .block(Block::bordered().title(format!(
+            " Mission Control · {} ",
+            app.backend_status.source
+        )))
         .wrap(Wrap { trim: false })
 }
 
@@ -131,7 +153,23 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
                         .join(", ")
                 }
             )),
-            Line::from("Source: FakeBackend (M0)"),
+            Line::from(format!(
+                "Model: {}",
+                thread.metadata.model.as_deref().unwrap_or("unknown")
+            )),
+            Line::from(format!("Cwd: {}", thread.metadata.cwd)),
+            Line::from(format!("Source: {}", thread.metadata.source)),
+            Line::from(format!(
+                "Workspace basis: {}",
+                thread.metadata.workspace_basis
+            )),
+            Line::from(format!(
+                "Loaded: {}",
+                thread
+                    .metadata
+                    .loaded
+                    .map_or("unknown".into(), |value| value.to_string())
+            )),
         ]
     } else {
         vec![Line::from("No thread selected")]
@@ -163,9 +201,11 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
     frame.render_widget(
         Paragraph::new(vec![
             Line::from(
-                "M0 uses a fake backend; canonical transcript persistence is intentionally absent.",
+                "M1 registry mode intentionally does not hydrate full transcript history.",
             ),
-            Line::from("M1 will replace this body with paginated Codex App Server data."),
+            Line::from(
+                "Exact Codex thread id remains canonical; conversation control arrives in M2.",
+            ),
         ])
         .block(Block::bordered().title(" Conversation "))
         .wrap(Wrap { trim: false }),
