@@ -201,11 +201,7 @@ fn normalize_item(turn_id: String, item: &Value) -> Result<ConversationItem> {
         .to_string();
 
     let (kind, text, status) = match item_type {
-        "userMessage" => (
-            ConversationItemKind::User,
-            user_message_text(item),
-            None,
-        ),
+        "userMessage" => (ConversationItemKind::User, user_message_text(item), None),
         "agentMessage" => (
             ConversationItemKind::Assistant,
             item.get("text")
@@ -286,7 +282,10 @@ fn user_message_text(item: &Value) -> String {
         .into_iter()
         .flatten()
         .filter_map(|input| match input.get("type").and_then(Value::as_str) {
-            Some("text") => input.get("text").and_then(Value::as_str).map(str::to_string),
+            Some("text") => input
+                .get("text")
+                .and_then(Value::as_str)
+                .map(str::to_string),
             Some(kind) => Some(format!("[{kind}]")),
             None => None,
         })
