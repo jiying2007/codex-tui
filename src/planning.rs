@@ -338,7 +338,11 @@ fn card_matches_filter(card: &WorkCardProjection, filter: &str) -> bool {
         if let Some(goal) = token.strip_prefix("goal:") {
             return card.goal.as_ref().is_some_and(|observation| {
                 observation.objective.to_ascii_lowercase().contains(goal)
-                    || observation.status.wire().to_ascii_lowercase().contains(goal)
+                    || observation
+                        .status
+                        .wire()
+                        .to_ascii_lowercase()
+                        .contains(goal)
             });
         }
         if let Some(source) = token.strip_prefix("source:") {
@@ -429,8 +433,7 @@ pub fn reconcile_thread_card_with_goal(
         .unwrap_or_else(|| WorkCardRecord::implicit_thread(&thread.id));
 
     let git_dirty = input.git.is_some_and(|git| git.is_repository && git.dirty);
-    let (stage, stage_reason) =
-        derive_stage(&thread.runtime, git_dirty, &local.overlay, goal);
+    let (stage, stage_reason) = derive_stage(&thread.runtime, git_dirty, &local.overlay, goal);
 
     let mut attention = thread
         .attention
@@ -491,11 +494,7 @@ pub fn reconcile_thread_card_with_goal(
             source: "goal".into(),
             observed_at_unix_ms: Some(goal.observed_at_unix_ms),
             source_revision: Some(goal.updated_at.to_string()),
-            freshness: freshness(
-                Some(goal.observed_at_unix_ms),
-                input.now_unix_ms,
-                false,
-            ),
+            freshness: freshness(Some(goal.observed_at_unix_ms), input.now_unix_ms, false),
             degraded_reason: None,
         });
     }
@@ -615,10 +614,7 @@ fn derive_stage(
                 return (WorkflowStage::Working, "Codex Goal is blocked".into());
             }
             GoalStatus::UsageLimited => {
-                return (
-                    WorkflowStage::Working,
-                    "Codex Goal is usage-limited".into(),
-                );
+                return (WorkflowStage::Working, "Codex Goal is usage-limited".into());
             }
             GoalStatus::BudgetLimited => {
                 return (
