@@ -1,5 +1,6 @@
 use crate::domain::{LocalRepoIdentity, ThreadId, WorktreeIdentity};
 use anyhow::{Context, Result, anyhow};
+use similar::{ChangeTag, TextDiff};
 use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -9,6 +10,7 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 const GIT_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
+const MAX_REVIEW_DIFF_BYTES: usize = 2 * 1024 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitFileChange {
@@ -54,6 +56,62 @@ pub struct GitContext {
     pub error: Option<String>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GitReview {
+    pub thread_id: ThreadId,
+    pub cwd: String,
+    pub changes: Vec<GitFileChange>,
+    pub staged_diff: String,
+    pub unstaged_diff: String,
+    pub truncated: bool,
+    pub observed_at_unix_ms: u64,
+    pub error: Option<String>,
+}
+
+impl GitReview {
+    pub fn pending(thread_id: ThreadId, cwd: impl Into<String>) -> Self {
+        Self {
+            thread_id,
+            cwd: cwd.into(),
+            changes: vec![],
+            staged_diff: String::new(),
+            unstaged_diff: String::new(),
+            truncated: false,
+            observed_at_unix_ms: 0,
+            error: None,
+        }
+    }
+
+    fn failed(thread_id: ThreadId, cwd: String, error: String) -> Self {
+        let mut review = Self::pending(thread_id, cwd);
+        review.observed_at_unix_ms = now_unix_ms();
+        review.error = Some(error);
+        review
+    }
+
+    pub fn combined_diff(&self) -> String {
+        let mut out = String::new();
+        if !self.staged_diff.is_empty() {
+            out.push_str("### staged\n");
+            out.push_str(&self.staged_diff);
+            if !out.ends_with('\n') {
+                out.push('\n');
+            }
+        }
+        if !self.unstaged_diff.is_empty() {
+            out.push_str("### unstaged\n");
+            out.push_str(&self.unstaged_diff);
+        }
+        if self.truncated {
+            if !out.ends_with('\n') {
+                out.push('\n');
+            }
+            out.push_str("[diff output truncated]\n");
+        }
+        out
+    }
+}
+
 impl GitContext {
     pub fn pending(thread_id: ThreadId, cwd: impl Into<String>) -> Self {
         Self {
@@ -91,11 +149,13 @@ impl GitContext {
 #[derive(Clone, Debug)]
 pub enum GitCommand {
     Probe { thread_id: ThreadId, cwd: String },
+    LoadReview { thread_id: ThreadId, cwd: String },
 }
 
 #[derive(Clone, Debug)]
 pub enum GitEvent {
     Context(GitContext),
+    Review(GitReview),
 }
 
 pub struct GitHandle {
@@ -122,6 +182,12 @@ impl GitHandle {
             .map_err(|_| anyhow!("Git actor is not available"))
     }
 
+    pub fn load_review(&self, thread_id: ThreadId, cwd: String) -> Result<()> {
+        self.command_tx
+            .send(GitCommand::LoadReview { thread_id, cwd })
+            .map_err(|_| anyhow!("Git actor is not available"))
+    }
+
     pub fn try_recv(&mut self) -> Option<GitEvent> {
         self.event_rx.try_recv().ok()
     }
@@ -145,6 +211,13 @@ async fn run_actor(
                     Err(error) => GitContext::failed(thread_id, cwd, error.to_string()),
                 };
                 let _ = event_tx.send(GitEvent::Context(context));
+            }
+            GitCommand::LoadReview { thread_id, cwd } => {
+                let review = match load_review(thread_id.clone(), cwd.clone()).await {
+                    Ok(review) => review,
+                    Err(error) => GitReview::failed(thread_id, cwd, error.to_string()),
+                };
+                let _ = event_tx.send(GitEvent::Review(review));
             }
         }
     }
@@ -233,6 +306,111 @@ pub async fn probe_context(thread_id: ThreadId, cwd: String) -> Result<GitContex
         observed_at_unix_ms: now_unix_ms(),
         error: None,
     })
+}
+
+pub async fn load_review(thread_id: ThreadId, cwd: String) -> Result<GitReview> {
+    let context = probe_context(thread_id.clone(), cwd.clone()).await?;
+    if !context.is_repository {
+        return Err(anyhow!("cwd is not inside a Git repository"));
+    }
+
+    let staged = run_git(
+        &cwd,
+        ["diff", "--cached", "--no-ext-diff", "--no-color", "--unified=3", "--"],
+    )
+    .await?;
+    if !staged.success {
+        return Err(anyhow!("git staged diff failed: {}", staged.stderr.trim()));
+    }
+
+    let unstaged = run_git(
+        &cwd,
+        ["diff", "--no-ext-diff", "--no-color", "--unified=3", "--"],
+    )
+    .await?;
+    if !unstaged.success {
+        return Err(anyhow!("git unstaged diff failed: {}", unstaged.stderr.trim()));
+    }
+
+    let (staged_diff, staged_truncated) = truncate_diff(staged.stdout);
+    let (unstaged_diff, unstaged_truncated) = truncate_diff(unstaged.stdout);
+
+    Ok(GitReview {
+        thread_id,
+        cwd,
+        changes: context.changes,
+        staged_diff,
+        unstaged_diff,
+        truncated: staged_truncated || unstaged_truncated,
+        observed_at_unix_ms: now_unix_ms(),
+        error: None,
+    })
+}
+
+fn truncate_diff(mut value: String) -> (String, bool) {
+    if value.len() <= MAX_REVIEW_DIFF_BYTES {
+        return (value, false);
+    }
+    let mut end = MAX_REVIEW_DIFF_BYTES;
+    while !value.is_char_boundary(end) {
+        end = end.saturating_sub(1);
+    }
+    value.truncate(end);
+    (value, true)
+}
+
+pub fn presentation_diff_lines(review: &GitReview, word_diff: bool) -> Vec<String> {
+    let raw = review.combined_diff();
+    if !word_diff {
+        return raw.lines().map(ToOwned::to_owned).collect();
+    }
+
+    let source = raw.lines().collect::<Vec<_>>();
+    let mut lines = Vec::with_capacity(source.len());
+    let mut index = 0;
+    while index < source.len() {
+        let current = source[index];
+        if current.starts_with('-')
+            && !current.starts_with("---")
+            && let Some(next) = source.get(index + 1)
+            && next.starts_with('+')
+            && !next.starts_with("+++")
+        {
+            let (old, new) = inline_word_pair(&current[1..], &next[1..]);
+            lines.push(format!("-{old}"));
+            lines.push(format!("+{new}"));
+            index += 2;
+            continue;
+        }
+        lines.push(current.to_string());
+        index += 1;
+    }
+    lines
+}
+
+fn inline_word_pair(old: &str, new: &str) -> (String, String) {
+    let diff = TextDiff::from_words(old, new);
+    let mut old_out = String::new();
+    let mut new_out = String::new();
+    for change in diff.iter_all_changes() {
+        match change.tag() {
+            ChangeTag::Equal => {
+                old_out.push_str(change.value());
+                new_out.push_str(change.value());
+            }
+            ChangeTag::Delete => {
+                old_out.push_str("[-");
+                old_out.push_str(change.value());
+                old_out.push_str("-]");
+            }
+            ChangeTag::Insert => {
+                new_out.push_str("{+");
+                new_out.push_str(change.value());
+                new_out.push_str("+}");
+            }
+        }
+    }
+    (old_out, new_out)
 }
 
 #[derive(Debug)]
@@ -497,6 +675,34 @@ mod tests {
             Some("old name.rs")
         );
         assert!(parsed.changes[3].untracked);
+    }
+
+    #[test]
+    fn presentation_word_diff_only_changes_display_layer() {
+        let review = GitReview {
+            thread_id: ThreadId::new("t"),
+            cwd: "/repo".into(),
+            changes: vec![],
+            staged_diff: String::new(),
+            unstaged_diff: "-hello old world\n+hello new world\n".into(),
+            truncated: false,
+            observed_at_unix_ms: 1,
+            error: None,
+        };
+        let plain = presentation_diff_lines(&review, false);
+        assert_eq!(plain[1], "-hello old world");
+        let word = presentation_diff_lines(&review, true);
+        assert!(word.iter().any(|line| line.contains("[-old -]")));
+        assert!(word.iter().any(|line| line.contains("{+new +}")));
+    }
+
+    #[test]
+    fn review_diff_truncation_is_utf8_safe() {
+        let value = "é".repeat(MAX_REVIEW_DIFF_BYTES);
+        let (truncated, was_truncated) = truncate_diff(value);
+        assert!(was_truncated);
+        assert!(truncated.is_char_boundary(truncated.len()));
+        assert!(truncated.len() <= MAX_REVIEW_DIFF_BYTES);
     }
 
     #[test]
