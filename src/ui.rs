@@ -77,6 +77,10 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState) {
             "new scratch> {}  · Enter create · Esc cancel",
             app.input_buffer
         )),
+        InputMode::Snooze => Line::from(format!(
+            "snooze> {}  · examples 15m / 1h / 1d · Enter apply · Esc cancel",
+            app.input_buffer
+        )),
         InputMode::Normal => {
             if let Some(error) = &app.backend_status.error {
                 Line::from(format!(
@@ -105,6 +109,8 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState) {
             Span::raw("p pin  "),
             Span::raw("e alias  "),
             Span::raw("x ack  "),
+            Span::raw("s snooze  "),
+            Span::raw("= bind / 1–9 jump  "),
             Span::raw("! shared-worktree  "),
             Span::raw("? help"),
         ]),
@@ -536,11 +542,18 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState) {
             "new scratch> {} · Enter create · Esc cancel",
             app.input_buffer
         )
+    } else if app.input_mode == InputMode::Snooze {
+        format!(
+            "snooze> {} · 15m / 1h / 1d · Enter apply · Esc cancel",
+            app.input_buffer
+        )
+    } else if app.hot_slot_bind_pending {
+        "bind hot slot: press 1–9 · Esc cancels other input only".into()
     } else if let Some(error) = &app.planning_store_error {
         format!("LOCAL STORE DEGRADED · {}", truncate(error, 80))
     } else {
         format!(
-            "h/l stage · j/k item · Tab view · Enter open · a prompt · n scratch · view {}/{}",
+            "h/l stage · j/k item · Tab view · Enter open · Space attention · s snooze · = bind · 1–9 jump · n scratch · view {}/{}",
             app.planning_view_index + 1,
             app.planning_views().len()
         )
@@ -857,7 +870,10 @@ fn render_help(frame: &mut Frame<'_>) {
             ),
             Line::from("Review: j/k file · w word-diff · e editor · PageUp/PageDown · Esc"),
             Line::from("Workspace: Git identity/status only · r review · Esc"),
-            Line::from("Board: h/l stage · j/k item · Tab Saved View · Enter · n Scratch"),
+            Line::from(
+                "Board: h/l stage · j/k item · Space attention · s snooze · = bind · 1–9 hot slot",
+            ),
+            Line::from("Board: Tab Saved View · Enter open · a Quick Prompt · n Scratch"),
             Line::from("Scratch: local-only detail · Esc Board"),
             Line::from(
                 "Authority: Codex/Git/Forge stay canonical; codex-tui stores operator state only.",
