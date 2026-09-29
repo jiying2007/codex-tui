@@ -468,6 +468,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                             item_cursor,
                         }];
                     }
+                    return vec![];
                 }
 
                 let ui = state.thread_ui.entry(id.0).or_default();
@@ -821,7 +822,13 @@ mod tests {
                 app.current_thread_id().expect("thread").clone()
             )]
         );
-        reduce(&mut app, Action::Back);
+        let back_effects = reduce(&mut app, Action::Back);
+        assert_eq!(
+            back_effects,
+            vec![Effect::StopWatchingConversation(
+                app.threads[selected].id.clone()
+            )]
+        );
         assert_eq!(app.selected, selected);
         assert_eq!(app.view, View::Registry);
     }
