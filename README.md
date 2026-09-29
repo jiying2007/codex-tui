@@ -121,10 +121,34 @@ Codex App Server ───── conversation/runtime authority
 
 The first release should remain a single binary with no codex-tui-owned daemon.
 
+## Running the current implementation
+
+Requirements:
+
+- Rust stable (MSRV 1.88)
+- a working `codex` executable on `PATH` for live registry mode
+
+Commands:
+
+```bash
+cargo run
+cargo run -- doctor codex
+cargo run -- --fake
+```
+
+Normal startup launches a local read-only `codex app-server --listen stdio://` registry connection. It lists thread metadata, tracks official runtime/attention status, supports local fuzzy filtering, pin/alias/unread/attention acknowledgement, and does not hydrate full transcripts.
+
+`--fake` is a deterministic development/fixture mode; it is never an automatic fallback for a failed real backend.
+
 ## Status
 
-Architecture and product research are being archived under `docs/research/`.
+- M0 local control-plane skeleton: implemented and merged.
+- M1 read-only Codex thread registry: implemented in the v0.1.x line.
+- M2 daily conversation control: next milestone.
+
+Architecture and product research are archived under `docs/research/`.
 Implementation design lives under `docs/design/`.
+Implementation notes live under `docs/implementation/`.
 
 See:
 
@@ -135,3 +159,5 @@ See:
 - `docs/design/final-plan.md`
 - `docs/design/final-implementation-choices.md`
 - `docs/roadmap-v1.md`
+- `docs/implementation/m0-bootstrap.md`
+- `docs/implementation/m1-read-only-registry.md`
