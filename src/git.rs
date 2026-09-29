@@ -316,7 +316,14 @@ pub async fn load_review(thread_id: ThreadId, cwd: String) -> Result<GitReview> 
 
     let staged = run_git(
         &cwd,
-        ["diff", "--cached", "--no-ext-diff", "--no-color", "--unified=3", "--"],
+        [
+            "diff",
+            "--cached",
+            "--no-ext-diff",
+            "--no-color",
+            "--unified=3",
+            "--",
+        ],
     )
     .await?;
     if !staged.success {
@@ -329,7 +336,10 @@ pub async fn load_review(thread_id: ThreadId, cwd: String) -> Result<GitReview> 
     )
     .await?;
     if !unstaged.success {
-        return Err(anyhow!("git unstaged diff failed: {}", unstaged.stderr.trim()));
+        return Err(anyhow!(
+            "git unstaged diff failed: {}",
+            unstaged.stderr.trim()
+        ));
     }
 
     let (staged_diff, staged_truncated) = truncate_diff(staged.stdout);
