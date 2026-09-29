@@ -6,7 +6,9 @@ use codex_tui::{
     conversation::{InteractiveRequestKind, InteractiveResolution},
     git::{self, GitEvent, GitHandle},
     keymap::{Command, command_for_key},
-    planning::{PlanningSnapshot, SourceKind, SourceRef, WorkCardRecord},
+    planning::{
+        LocalNote, PlanningSnapshot, ScratchState, SourceKind, SourceRef, WorkCardRecord,
+    },
     sqlite_store::SqliteStore,
     store::{AppConfig, LocalStateV1, LocalStore},
     terminal::TerminalSession,
@@ -146,6 +148,128 @@ impl RuntimeStore {
         self.mutate_work_card(anchor, |card| {
             card.overlay.snooze_until_unix_ms = Some(until);
         })
+    }
+
+    fn save_source_note(
+        &mut self,
+        owner: SourceRef,
+        text: String,
+    ) -> Result<PlanningSnapshot, String> {
+        if !self.writable {
+            return Err(self
+                .error
+                .clone()
+                .unwrap_or_else(|| "SQLite planning store is read-only".into()));
+        }
+        let result = if text.trim().is_empty() {
+            self.sqlite.delete_note(&owner)
+        } else {
+            self.sqlite.upsert_note(&LocalNote {
+                owner,
+                text,
+                updated_at_unix_ms: now_unix_ms(),
+            })
+        }
+        .and_then(|_| self.sqlite.load_planning_snapshot());
+        self.finish_planning_write(result, "note")
+    }
+
+    fn update_scratch_note(
+        &mut self,
+        scratch_id: String,
+        note: Option<String>,
+    ) -> Result<PlanningSnapshot, String> {
+        self.update_scratch(scratch_id, |scratch| {
+            scratch.note = note;
+        })
+    }
+
+    fn update_scratch_state(
+        &mut self,
+        scratch_id: String,
+        state: ScratchState,
+    ) -> Result<PlanningSnapshot, String> {
+        self.update_scratch(scratch_id, |scratch| {
+            scratch.state = state;
+        })
+    }
+
+    fn update_scratch<F>(
+        &mut self,
+        scratch_id: String,
+        operation: F,
+    ) -> Result<PlanningSnapshot, String>
+    where
+        F: FnOnce(&mut codex_tui::planning::ScratchWork),
+    {
+        if !self.writable {
+            return Err(self
+                .error
+                .clone()
+                .unwrap_or_else(|| "SQLite planning store is read-only".into()));
+        }
+        let result = (|| -> Result<PlanningSnapshot> {
+            let mut scratch = self
+                .sqlite
+                .load_planning_snapshot()?
+                .scratch
+                .into_iter()
+                .find(|scratch| scratch.id == scratch_id)
+                .ok_or_else(|| anyhow::anyhow!("ScratchWork does not exist: {scratch_id}"))?;
+            operation(&mut scratch);
+            scratch.updated_at_unix_ms = now_unix_ms();
+            self.sqlite.update_scratch(&scratch)?;
+            self.sqlite.load_planning_snapshot()
+        })();
+        self.finish_planning_write(result, "ScratchWork")
+    }
+
+    fn delete_scratch(&mut self, scratch_id: String) -> Result<PlanningSnapshot, String> {
+        if !self.writable {
+            return Err(self
+                .error
+                .clone()
+                .unwrap_or_else(|| "SQLite planning store is read-only".into()));
+        }
+        let result = self
+            .sqlite
+            .delete_scratch(&scratch_id)
+            .and_then(|_| self.sqlite.load_planning_snapshot());
+        self.finish_planning_write(result, "ScratchWork delete")
+    }
+
+    fn create_bookmark(
+        &mut self,
+        source: SourceRef,
+        label: Option<String>,
+    ) -> Result<PlanningSnapshot, String> {
+        if !self.writable {
+            return Err(self
+                .error
+                .clone()
+                .unwrap_or_else(|| "SQLite planning store is read-only".into()));
+        }
+        let result = self
+            .sqlite
+            .create_bookmark(source, label.as_deref(), None)
+            .and_then(|_| self.sqlite.load_planning_snapshot());
+        self.finish_planning_write(result, "bookmark")
+    }
+
+    fn finish_planning_write(
+        &mut self,
+        result: Result<PlanningSnapshot>,
+        label: &str,
+    ) -> Result<PlanningSnapshot, String> {
+        match result {
+            Ok(snapshot) => Ok(snapshot),
+            Err(error) => {
+                let message = format!("SQLite {label} write failed: {error:#}");
+                self.writable = false;
+                self.error = Some(message.clone());
+                Err(message)
+            }
+        }
     }
 
     fn set_hot_slot(&mut self, slot: u8, target: SourceRef) -> Result<PlanningSnapshot, String> {
@@ -598,6 +722,33 @@ fn apply_effects(
                     reduce(app, Action::PlanningStoreDegraded(Some(error)));
                 }
             },
+            Effect::SaveSourceNote { owner, text } => {
+                apply_planning_store_result(
+                    app,
+                    store.save_source_note(owner, text),
+                );
+            }
+            Effect::UpdateScratchNote { scratch_id, note } => {
+                apply_planning_store_result(
+                    app,
+                    store.update_scratch_note(scratch_id, note),
+                );
+            }
+            Effect::CreateBookmark { source, label } => {
+                apply_planning_store_result(
+                    app,
+                    store.create_bookmark(source, label),
+                );
+            }
+            Effect::UpdateScratchState { scratch_id, state } => {
+                apply_planning_store_result(
+                    app,
+                    store.update_scratch_state(scratch_id, state),
+                );
+            }
+            Effect::DeleteScratch { scratch_id } => {
+                apply_planning_store_result(app, store.delete_scratch(scratch_id));
+            }
             Effect::SetHotSlot { slot, target } => match store.set_hot_slot(slot, target) {
                 Ok(snapshot) => {
                     reduce(app, Action::PlanningSnapshotLoaded(snapshot));
@@ -760,6 +911,27 @@ fn apply_effects(
     Ok(())
 }
 
+fn apply_planning_store_result(
+    app: &mut AppState,
+    result: Result<PlanningSnapshot, String>,
+) {
+    match result {
+        Ok(snapshot) => {
+            reduce(app, Action::PlanningSnapshotLoaded(snapshot));
+            reduce(
+                app,
+                Action::ReconcilePlanning {
+                    now_unix_ms: now_unix_ms(),
+                },
+            );
+            reduce(app, Action::PlanningStoreDegraded(None));
+        }
+        Err(error) => {
+            reduce(app, Action::PlanningStoreDegraded(Some(error)));
+        }
+    }
+}
+
 fn now_unix_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -792,6 +964,16 @@ fn open_external_editor(cwd: &str, relative_path: &str) -> Result<()> {
 fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
     if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
         return vec![];
+    }
+
+    if app.context_open {
+        return match key.code {
+            KeyCode::Esc => reduce(app, Action::CloseContext),
+            KeyCode::Char('j') | KeyCode::Down => reduce(app, Action::MoveContext(1)),
+            KeyCode::Char('k') | KeyCode::Up => reduce(app, Action::MoveContext(-1)),
+            KeyCode::Enter => reduce(app, Action::ExecuteContext),
+            _ => vec![],
+        };
     }
 
     if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('c') {
@@ -907,8 +1089,8 @@ fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
         Command::ToggleWordDiff => Action::ToggleReviewWordDiff,
         Command::ExternalEditor => Action::OpenReviewExternalEditor,
         Command::HotSlot(slot) => Action::UseHotSlot(slot),
+        Command::ContextActions => Action::OpenContext,
         Command::CommandPalette
-        | Command::ContextActions
         | Command::Goal
         | Command::OpenExternal => return vec![],
     };
