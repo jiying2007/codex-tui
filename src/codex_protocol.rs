@@ -130,10 +130,7 @@ fn normalize_status(status: &Value) -> (RuntimeStatus, Vec<AttentionReason>) {
             (runtime, attention)
         }
         "idle" => (RuntimeStatus::Ready, vec![]),
-        "systemError" => (
-            RuntimeStatus::Ready,
-            vec![AttentionReason::ReadyForReview],
-        ),
+        "systemError" => (RuntimeStatus::Ready, vec![AttentionReason::ReadyForReview]),
         _ => (RuntimeStatus::Inactive, vec![]),
     }
 }
