@@ -919,7 +919,13 @@ fn render_managed_worktrees(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
         let command = if plan.argv.is_empty() {
             "metadata-only adoption (no Git mutation)".to_string()
         } else {
-            format!("git -C {} {}", plan.cwd, plan.argv.join(" "))
+            let argv = plan
+                .argv
+                .iter()
+                .map(|argument| format!("{argument:?}"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            format!("git -C {:?} {argv}", plan.cwd)
         };
         lines.push(Line::from(format!("Exact operation: {command}")));
         lines.push(Line::from(format!(
