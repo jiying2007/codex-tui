@@ -22,6 +22,10 @@ pub enum Command {
     TogglePin,
     EditAlias,
     AcknowledgeAttention,
+    ApprovePending,
+    DeclinePending,
+    CancelPending,
+    AnswerPending,
     New,
     Goal,
     PageUp,
@@ -69,6 +73,11 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
         (ViewKind::Registry, KeyCode::Char(c @ '1'..='9')) => {
             Some(Command::HotSlot(c.to_digit(10)? as u8))
         }
+        (ViewKind::Thread, KeyCode::Char('a')) => Some(Command::QuickPrompt),
+        (ViewKind::Thread, KeyCode::Char('y')) => Some(Command::ApprovePending),
+        (ViewKind::Thread, KeyCode::Char('n')) => Some(Command::DeclinePending),
+        (ViewKind::Thread, KeyCode::Char('c')) => Some(Command::CancelPending),
+        (ViewKind::Thread, KeyCode::Char('i')) => Some(Command::AnswerPending),
         (ViewKind::Thread, KeyCode::Char('r')) => Some(Command::Review),
         (ViewKind::Thread, KeyCode::Char('w')) => Some(Command::Workspace),
         (ViewKind::Thread, KeyCode::Char('g')) => Some(Command::Goal),

@@ -1,4 +1,8 @@
 use crate::backend::BackendStatus;
+use crate::conversation::{
+    ConversationPage, ConversationState, InteractiveRequest, InteractiveRequestKind,
+    InteractiveResolution, RpcRequestId, UserInputQuestion,
+};
 use crate::domain::{AttentionReason, ThreadId, ThreadSummary, ThreadUiState};
 use crate::store::LocalStateV1;
 use std::collections::{BTreeMap, BTreeSet};
@@ -20,17 +24,28 @@ pub enum InputMode {
     Normal,
     Search,
     Alias,
+    Composer,
+    UserInput,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Action {
     ReplaceThreads(Vec<ThreadSummary>),
     BackendStatus(BackendStatus),
+    ConversationLoaded(ConversationPage),
+    OlderConversationLoaded(ConversationPage),
+    ConversationFailed { thread_id: ThreadId, error: String },
+    PromptSubmitted { thread_id: ThreadId },
+    InteractiveRequested(InteractiveRequest),
+    InteractiveResolved { request_id: RpcRequestId },
+    ResolvePending(InteractiveResolution),
+    BeginUserInput,
     MoveSelection(i32),
     OpenSelected,
     Back,
     NextAttention,
     QuickPrompt,
+    InterruptCurrent,
     ToggleHelp,
     SetDraft(String),
     ScrollBy(i16),
@@ -50,6 +65,26 @@ pub enum Action {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Effect {
     PersistOperatorState,
+    LoadConversation(ThreadId),
+    StopWatchingConversation(ThreadId),
+    LoadOlderConversation {
+        thread_id: ThreadId,
+        turn_cursor: Option<String>,
+        item_cursor: Option<String>,
+    },
+    SubmitPrompt {
+        thread_id: ThreadId,
+        text: String,
+        active_turn_id: Option<String>,
+    },
+    InterruptTurn {
+        thread_id: ThreadId,
+        turn_id: String,
+    },
+    ResolveInteractive {
+        request_id: RpcRequestId,
+        resolution: InteractiveResolution,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -59,6 +94,11 @@ pub struct AppState {
     pub view: View,
     pub previous_target: Option<ThreadId>,
     pub thread_ui: BTreeMap<String, ThreadUiState>,
+    pub conversations: BTreeMap<String, ConversationState>,
+    pub pending_requests: Vec<InteractiveRequest>,
+    pub user_input_request_id: Option<RpcRequestId>,
+    pub user_input_question_index: usize,
+    pub user_input_answers: BTreeMap<String, Vec<String>>,
     pub show_help: bool,
     pub should_quit: bool,
     pub backend_status: BackendStatus,
@@ -77,6 +117,11 @@ impl AppState {
             view: View::Registry,
             previous_target: None,
             thread_ui: BTreeMap::new(),
+            conversations: BTreeMap::new(),
+            pending_requests: vec![],
+            user_input_request_id: None,
+            user_input_question_index: 0,
+            user_input_answers: BTreeMap::new(),
             show_help: false,
             should_quit: false,
             backend_status: BackendStatus::starting("unknown"),
@@ -116,6 +161,30 @@ impl AppState {
         self.thread_ui.get(&id.0)
     }
 
+    pub fn current_conversation(&self) -> Option<&ConversationState> {
+        let id = self.current_thread_id()?;
+        self.conversations.get(&id.0)
+    }
+
+    pub fn current_pending_request(&self) -> Option<&InteractiveRequest> {
+        let thread_id = self.current_thread_id()?;
+        self.pending_requests
+            .iter()
+            .find(|request| request.thread_id == *thread_id)
+    }
+
+    pub fn current_user_input_question(&self) -> Option<&UserInputQuestion> {
+        let request_id = self.user_input_request_id.as_ref()?;
+        let request = self
+            .pending_requests
+            .iter()
+            .find(|request| &request.request_id == request_id)?;
+        let InteractiveRequestKind::UserInput { questions } = &request.kind else {
+            return None;
+        };
+        questions.get(self.user_input_question_index)
+    }
+
     pub fn visible_indices(&self) -> Vec<usize> {
         self.threads
             .iter()
@@ -136,7 +205,12 @@ impl AppState {
                     | AttentionReason::SystemError
             )
         });
+        let interactive = self
+            .pending_requests
+            .iter()
+            .any(|request| request.thread_id == thread.id);
         actionable
+            || interactive
             || (!thread.attention.is_empty() && !self.acknowledged_attention.contains(&thread.id.0))
     }
 
@@ -231,15 +305,150 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             ensure_selection_visible(state);
         }
         Action::BackendStatus(status) => state.backend_status = status,
+        Action::ConversationLoaded(page) => {
+            let key = page.thread_id.0.clone();
+            state
+                .conversations
+                .entry(key)
+                .or_insert_with(|| ConversationState::loading(page.thread_id.clone()))
+                .replace_page(page);
+        }
+        Action::OlderConversationLoaded(page) => {
+            let key = page.thread_id.0.clone();
+            state
+                .conversations
+                .entry(key)
+                .or_insert_with(|| ConversationState::loading(page.thread_id.clone()))
+                .prepend_page(page);
+        }
+        Action::ConversationFailed { thread_id, error } => {
+            let conversation = state
+                .conversations
+                .entry(thread_id.0.clone())
+                .or_insert_with(|| ConversationState::loading(thread_id));
+            conversation.loading = false;
+            conversation.loading_older = false;
+            conversation.error = Some(error);
+        }
+        Action::PromptSubmitted { thread_id } => {
+            if let Some(ui) = state.thread_ui.get_mut(&thread_id.0) {
+                ui.draft.clear();
+            }
+            return vec![Effect::PersistOperatorState];
+        }
+        Action::InteractiveRequested(request) => {
+            state.acknowledged_attention.remove(&request.thread_id.0);
+            let is_current_thread = state.current_thread_id() == Some(&request.thread_id);
+            state
+                .pending_requests
+                .retain(|pending| pending.request_id != request.request_id);
+            state.pending_requests.push(request);
+            if is_current_thread && state.input_mode == InputMode::Composer {
+                state.input_mode = InputMode::Normal;
+            }
+        }
+        Action::InteractiveResolved { request_id } => {
+            state
+                .pending_requests
+                .retain(|request| request.request_id != request_id);
+            if state.user_input_request_id.as_ref() == Some(&request_id) {
+                clear_user_input_editor(state);
+            }
+        }
+        Action::ResolvePending(resolution) => {
+            if let Some(request) = state.current_pending_request().cloned() {
+                let allowed = match request.kind {
+                    InteractiveRequestKind::UserInput { .. } => matches!(
+                        resolution,
+                        InteractiveResolution::Decline | InteractiveResolution::Cancel
+                    ),
+                    _ => !matches!(resolution, InteractiveResolution::UserInput(_)),
+                };
+                if allowed {
+                    return vec![Effect::ResolveInteractive {
+                        request_id: request.request_id,
+                        resolution,
+                    }];
+                }
+            }
+        }
+        Action::BeginUserInput => {
+            if let Some(request) = state.current_pending_request().cloned()
+                && matches!(request.kind, InteractiveRequestKind::UserInput { .. })
+            {
+                state.user_input_request_id = Some(request.request_id);
+                state.user_input_question_index = 0;
+                state.user_input_answers.clear();
+                state.input_buffer.clear();
+                state.input_mode = InputMode::UserInput;
+            }
+        }
         Action::MoveSelection(delta) => move_selection(state, delta),
-        Action::OpenSelected | Action::QuickPrompt => {
+        Action::OpenSelected => {
             if let Some(id) = state.selected_thread_id() {
                 state.previous_target = state.current_thread_id().cloned();
                 state.thread_ui.entry(id.0.clone()).or_default();
-                state.view = View::Thread(id);
+                state
+                    .conversations
+                    .entry(id.0.clone())
+                    .or_insert_with(|| ConversationState::loading(id.clone()))
+                    .loading = true;
+                state.view = View::Thread(id.clone());
+                return vec![Effect::LoadConversation(id)];
             }
         }
-        Action::Back => state.view = View::Registry,
+        Action::QuickPrompt => {
+            let id = match state.current_thread_id().cloned() {
+                Some(id) => id,
+                None => {
+                    let Some(id) = state.selected_thread_id() else {
+                        return vec![];
+                    };
+                    state.previous_target = None;
+                    state
+                        .conversations
+                        .entry(id.0.clone())
+                        .or_insert_with(|| ConversationState::loading(id.clone()))
+                        .loading = true;
+                    state.view = View::Thread(id.clone());
+                    id
+                }
+            };
+            state.thread_ui.entry(id.0.clone()).or_default();
+            state.input_mode = InputMode::Composer;
+            return vec![Effect::LoadConversation(id)];
+        }
+        Action::InterruptCurrent => {
+            if let Some(thread_id) = state.current_thread_id().cloned() {
+                let active_turn_id = state
+                    .conversations
+                    .get(&thread_id.0)
+                    .and_then(ConversationState::active_turn_id)
+                    .map(ToOwned::to_owned);
+                if let Some(turn_id) = active_turn_id {
+                    return vec![Effect::InterruptTurn { thread_id, turn_id }];
+                }
+                if state.input_mode == InputMode::UserInput {
+                    clear_user_input_editor(state);
+                } else {
+                    state.input_mode = InputMode::Normal;
+                }
+                state.view = View::Registry;
+                return vec![Effect::StopWatchingConversation(thread_id)];
+            }
+        }
+        Action::Back => {
+            let thread_id = state.current_thread_id().cloned();
+            if state.input_mode == InputMode::UserInput {
+                clear_user_input_editor(state);
+            } else {
+                state.input_mode = InputMode::Normal;
+            }
+            state.view = View::Registry;
+            if let Some(thread_id) = thread_id {
+                return vec![Effect::StopWatchingConversation(thread_id)];
+            }
+        }
         Action::NextAttention => select_next_attention(state),
         Action::ToggleHelp => state.show_help = !state.show_help,
         Action::SetDraft(draft) => {
@@ -250,6 +459,32 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         }
         Action::ScrollBy(delta) => {
             if let Some(id) = state.current_thread_id().cloned() {
+                let current_scroll = state.thread_ui.entry(id.0.clone()).or_default().scroll;
+                if delta.is_negative() && current_scroll == 0 {
+                    let older_request = state.conversations.get(&id.0).and_then(|conversation| {
+                        (!conversation.loading_older
+                            && (conversation.next_turn_cursor.is_some()
+                                || conversation.next_item_cursor.is_some()))
+                        .then(|| {
+                            (
+                                conversation.next_turn_cursor.clone(),
+                                conversation.next_item_cursor.clone(),
+                            )
+                        })
+                    });
+                    if let Some((turn_cursor, item_cursor)) = older_request {
+                        if let Some(conversation) = state.conversations.get_mut(&id.0) {
+                            conversation.loading_older = true;
+                        }
+                        return vec![Effect::LoadOlderConversation {
+                            thread_id: id,
+                            turn_cursor,
+                            item_cursor,
+                        }];
+                    }
+                    return vec![];
+                }
+
                 let ui = state.thread_ui.entry(id.0).or_default();
                 ui.follow = false;
                 ui.scroll = if delta.is_negative() {
@@ -312,26 +547,130 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 state.input_mode = InputMode::Alias;
             }
         }
-        Action::InputChar(character) => {
-            if state.input_mode != InputMode::Normal {
+        Action::InputChar(character) => match state.input_mode {
+            InputMode::Normal => {}
+            InputMode::Composer => {
+                if let Some(id) = state.current_thread_id().cloned() {
+                    state
+                        .thread_ui
+                        .entry(id.0)
+                        .or_default()
+                        .draft
+                        .push(character);
+                    return vec![Effect::PersistOperatorState];
+                }
+            }
+            InputMode::Search | InputMode::Alias | InputMode::UserInput => {
                 state.input_buffer.push(character);
                 if state.input_mode == InputMode::Search {
                     state.filter.clone_from(&state.input_buffer);
                     ensure_selection_visible(state);
                 }
             }
-        }
-        Action::InputBackspace => {
-            if state.input_mode != InputMode::Normal {
+        },
+        Action::InputBackspace => match state.input_mode {
+            InputMode::Normal => {}
+            InputMode::Composer => {
+                if let Some(id) = state.current_thread_id().cloned() {
+                    state.thread_ui.entry(id.0).or_default().draft.pop();
+                    return vec![Effect::PersistOperatorState];
+                }
+            }
+            InputMode::Search | InputMode::Alias | InputMode::UserInput => {
                 state.input_buffer.pop();
                 if state.input_mode == InputMode::Search {
                     state.filter.clone_from(&state.input_buffer);
                     ensure_selection_visible(state);
                 }
             }
-        }
+        },
         Action::CommitInput => {
             let mode = state.input_mode;
+            if mode == InputMode::UserInput {
+                let Some(request_id) = state.user_input_request_id.clone() else {
+                    clear_user_input_editor(state);
+                    return vec![];
+                };
+                let Some(question) = state.current_user_input_question().cloned() else {
+                    clear_user_input_editor(state);
+                    return vec![];
+                };
+                let input = state.input_buffer.trim();
+                if input.is_empty() {
+                    return vec![];
+                }
+                let answers = if question.options.is_empty() {
+                    vec![input.to_string()]
+                } else {
+                    input
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|answer| !answer.is_empty())
+                        .map(ToOwned::to_owned)
+                        .collect::<Vec<_>>()
+                };
+                if answers.is_empty() {
+                    return vec![];
+                }
+                state.user_input_answers.insert(question.id, answers);
+                state.input_buffer.clear();
+
+                let question_count = state
+                    .pending_requests
+                    .iter()
+                    .find(|request| request.request_id == request_id)
+                    .and_then(|request| match &request.kind {
+                        InteractiveRequestKind::UserInput { questions } => Some(questions.len()),
+                        _ => None,
+                    })
+                    .unwrap_or(0);
+
+                if state.user_input_question_index + 1 < question_count {
+                    state.user_input_question_index += 1;
+                    return vec![];
+                }
+
+                let answers = std::mem::take(&mut state.user_input_answers);
+                clear_user_input_editor(state);
+                return vec![Effect::ResolveInteractive {
+                    request_id,
+                    resolution: InteractiveResolution::UserInput(answers),
+                }];
+            }
+            if mode == InputMode::Composer {
+                if let Some(thread_id) = state.current_thread_id().cloned() {
+                    let conversation_ready =
+                        state
+                            .conversations
+                            .get(&thread_id.0)
+                            .is_some_and(|conversation| {
+                                !conversation.loading && conversation.error.is_none()
+                            });
+                    if !conversation_ready {
+                        return vec![];
+                    }
+
+                    let text = state
+                        .thread_ui
+                        .get(&thread_id.0)
+                        .map(|ui| ui.draft.trim().to_string())
+                        .unwrap_or_default();
+                    if !text.is_empty() {
+                        let active_turn_id = state
+                            .conversations
+                            .get(&thread_id.0)
+                            .and_then(ConversationState::active_turn_id)
+                            .map(ToOwned::to_owned);
+                        state.input_mode = InputMode::Normal;
+                        return vec![Effect::SubmitPrompt {
+                            thread_id,
+                            text,
+                            active_turn_id,
+                        }];
+                    }
+                }
+                return vec![];
+            }
             if mode == InputMode::Alias {
                 let alias = state.input_buffer.trim().to_string();
                 if let Some(thread) = state.threads.get_mut(state.selected) {
@@ -351,13 +690,25 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 state.filter.clone_from(&state.input_original);
                 ensure_selection_visible(state);
             }
-            state.input_mode = InputMode::Normal;
-            state.input_buffer.clear();
-            state.input_original.clear();
+            if state.input_mode == InputMode::UserInput {
+                clear_user_input_editor(state);
+            } else {
+                state.input_mode = InputMode::Normal;
+                state.input_buffer.clear();
+                state.input_original.clear();
+            }
         }
         Action::Quit => state.should_quit = true,
     }
     vec![]
+}
+
+fn clear_user_input_editor(state: &mut AppState) {
+    state.user_input_request_id = None;
+    state.user_input_question_index = 0;
+    state.user_input_answers.clear();
+    state.input_buffer.clear();
+    state.input_mode = InputMode::Normal;
 }
 
 fn remote_attention(thread: &ThreadSummary) -> Vec<AttentionReason> {
@@ -478,10 +829,255 @@ mod tests {
         let mut app = app();
         reduce(&mut app, Action::MoveSelection(1));
         let selected = app.selected;
-        reduce(&mut app, Action::OpenSelected);
-        reduce(&mut app, Action::Back);
+        let effects = reduce(&mut app, Action::OpenSelected);
+        assert_eq!(
+            effects,
+            vec![Effect::LoadConversation(
+                app.current_thread_id().expect("thread").clone()
+            )]
+        );
+        let back_effects = reduce(&mut app, Action::Back);
+        assert_eq!(
+            back_effects,
+            vec![Effect::StopWatchingConversation(
+                app.threads[selected].id.clone()
+            )]
+        );
         assert_eq!(app.selected, selected);
         assert_eq!(app.view, View::Registry);
+    }
+
+    #[test]
+    fn idle_interrupt_exits_thread_and_releases_watch() {
+        let mut app = app();
+        reduce(&mut app, Action::OpenSelected);
+        let thread_id = app.current_thread_id().expect("thread").clone();
+        let effects = reduce(&mut app, Action::InterruptCurrent);
+        assert_eq!(app.view, View::Registry);
+        assert_eq!(effects, vec![Effect::StopWatchingConversation(thread_id)]);
+    }
+
+    #[test]
+    fn quick_prompt_cannot_start_turn_before_history_resolves_active_turn_state() {
+        let mut app = app();
+        reduce(&mut app, Action::QuickPrompt);
+        reduce(&mut app, Action::InputChar('h'));
+        reduce(&mut app, Action::InputChar('i'));
+        let effects = reduce(&mut app, Action::CommitInput);
+        assert!(effects.is_empty());
+        assert_eq!(app.input_mode, InputMode::Composer);
+        let thread_id = app.current_thread_id().expect("thread").clone();
+        assert_eq!(app.thread_ui.get(&thread_id.0).expect("ui").draft, "hi");
+    }
+
+    #[test]
+    fn current_thread_interactive_request_pauses_composer_without_losing_draft() {
+        let mut app = app();
+        reduce(&mut app, Action::QuickPrompt);
+        reduce(&mut app, Action::InputChar('x'));
+        let thread_id = app.current_thread_id().expect("thread").clone();
+        reduce(
+            &mut app,
+            Action::InteractiveRequested(InteractiveRequest {
+                request_id: RpcRequestId::Integer(8),
+                thread_id: thread_id.clone(),
+                turn_id: "turn-1".into(),
+                item_id: "item-1".into(),
+                kind: InteractiveRequestKind::FileChangeApproval { reason: None },
+            }),
+        );
+        assert_eq!(app.input_mode, InputMode::Normal);
+        assert_eq!(app.thread_ui[&thread_id.0].draft, "x");
+    }
+
+    #[test]
+    fn approval_is_not_resolved_without_explicit_user_action() {
+        let mut app = app();
+        reduce(&mut app, Action::OpenSelected);
+        let thread_id = app.current_thread_id().expect("thread").clone();
+        reduce(
+            &mut app,
+            Action::InteractiveRequested(InteractiveRequest {
+                request_id: RpcRequestId::Integer(9),
+                thread_id,
+                turn_id: "turn-1".into(),
+                item_id: "item-1".into(),
+                kind: InteractiveRequestKind::CommandApproval {
+                    command: "cargo test".into(),
+                    cwd: "/repo".into(),
+                    reason: None,
+                },
+            }),
+        );
+        assert_eq!(app.pending_requests.len(), 1);
+        let effects = reduce(
+            &mut app,
+            Action::ResolvePending(InteractiveResolution::Accept),
+        );
+        assert_eq!(
+            effects,
+            vec![Effect::ResolveInteractive {
+                request_id: RpcRequestId::Integer(9),
+                resolution: InteractiveResolution::Accept,
+            }]
+        );
+    }
+
+    #[test]
+    fn multi_question_user_input_is_collected_sequentially() {
+        let mut app = app();
+        reduce(&mut app, Action::OpenSelected);
+        let thread_id = app.current_thread_id().expect("thread").clone();
+        reduce(
+            &mut app,
+            Action::InteractiveRequested(InteractiveRequest {
+                request_id: RpcRequestId::String("req-1".into()),
+                thread_id,
+                turn_id: "turn-1".into(),
+                item_id: "item-1".into(),
+                kind: InteractiveRequestKind::UserInput {
+                    questions: vec![
+                        UserInputQuestion {
+                            id: "q1".into(),
+                            header: "One".into(),
+                            question: "First?".into(),
+                            is_secret: false,
+                            options: vec![],
+                        },
+                        UserInputQuestion {
+                            id: "q2".into(),
+                            header: "Two".into(),
+                            question: "Second?".into(),
+                            is_secret: true,
+                            options: vec![],
+                        },
+                    ],
+                },
+            }),
+        );
+        reduce(&mut app, Action::BeginUserInput);
+        for ch in "alpha".chars() {
+            reduce(&mut app, Action::InputChar(ch));
+        }
+        assert!(reduce(&mut app, Action::CommitInput).is_empty());
+        for ch in "beta".chars() {
+            reduce(&mut app, Action::InputChar(ch));
+        }
+        let effects = reduce(&mut app, Action::CommitInput);
+        assert_eq!(effects.len(), 1);
+        let Effect::ResolveInteractive { resolution, .. } = &effects[0] else {
+            panic!("expected interactive resolution");
+        };
+        let InteractiveResolution::UserInput(answers) = resolution else {
+            panic!("expected user input answers");
+        };
+        assert_eq!(answers["q1"], vec!["alpha"]);
+        assert_eq!(answers["q2"], vec!["beta"]);
+    }
+
+    #[test]
+    fn free_text_user_input_preserves_commas() {
+        let mut app = app();
+        reduce(&mut app, Action::OpenSelected);
+        let thread_id = app.current_thread_id().expect("thread").clone();
+        reduce(
+            &mut app,
+            Action::InteractiveRequested(InteractiveRequest {
+                request_id: RpcRequestId::Integer(10),
+                thread_id,
+                turn_id: "turn-1".into(),
+                item_id: "item-1".into(),
+                kind: InteractiveRequestKind::UserInput {
+                    questions: vec![UserInputQuestion {
+                        id: "q1".into(),
+                        header: "Token".into(),
+                        question: "Enter value".into(),
+                        is_secret: true,
+                        options: vec![],
+                    }],
+                },
+            }),
+        );
+        reduce(&mut app, Action::BeginUserInput);
+        for ch in "alpha,beta".chars() {
+            reduce(&mut app, Action::InputChar(ch));
+        }
+        let effects = reduce(&mut app, Action::CommitInput);
+        let Effect::ResolveInteractive { resolution, .. } = &effects[0] else {
+            panic!("expected interactive resolution");
+        };
+        let InteractiveResolution::UserInput(answers) = resolution else {
+            panic!("expected user input answers");
+        };
+        assert_eq!(answers["q1"], vec!["alpha,beta"]);
+    }
+
+    #[test]
+    fn page_up_at_history_top_requests_older_page_when_cursor_exists() {
+        let mut app = app();
+        let thread_id = app.selected_thread_id().expect("thread");
+        reduce(&mut app, Action::OpenSelected);
+        reduce(
+            &mut app,
+            Action::ConversationLoaded(ConversationPage {
+                thread_id: thread_id.clone(),
+                title: None,
+                turns: vec![],
+                items: vec![],
+                next_turn_cursor: Some("turn-cursor".into()),
+                next_item_cursor: Some("item-cursor".into()),
+            }),
+        );
+        let effects = reduce(&mut app, Action::ScrollBy(-5));
+        assert_eq!(
+            effects,
+            vec![Effect::LoadOlderConversation {
+                thread_id,
+                turn_cursor: Some("turn-cursor".into()),
+                item_cursor: Some("item-cursor".into()),
+            }]
+        );
+    }
+
+    #[test]
+    fn repeated_page_up_does_not_queue_duplicate_older_requests() {
+        let mut app = app();
+        let thread_id = app.selected_thread_id().expect("thread");
+        reduce(&mut app, Action::OpenSelected);
+        reduce(
+            &mut app,
+            Action::ConversationLoaded(ConversationPage {
+                thread_id,
+                title: None,
+                turns: vec![],
+                items: vec![],
+                next_turn_cursor: Some("turn-cursor".into()),
+                next_item_cursor: Some("item-cursor".into()),
+            }),
+        );
+        assert_eq!(reduce(&mut app, Action::ScrollBy(-5)).len(), 1);
+        assert!(reduce(&mut app, Action::ScrollBy(-5)).is_empty());
+    }
+
+    #[test]
+    fn conversation_page_is_scoped_by_exact_thread_id() {
+        let mut app = app();
+        let thread_id = app.selected_thread_id().expect("thread");
+        reduce(&mut app, Action::OpenSelected);
+        reduce(
+            &mut app,
+            Action::ConversationLoaded(ConversationPage {
+                thread_id: thread_id.clone(),
+                title: Some("title".into()),
+                turns: vec![],
+                items: vec![],
+                next_turn_cursor: None,
+                next_item_cursor: None,
+            }),
+        );
+        let conversation = app.conversations.get(&thread_id.0).expect("conversation");
+        assert!(!conversation.loading);
+        assert_eq!(conversation.title.as_deref(), Some("title"));
     }
 
     #[test]

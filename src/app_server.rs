@@ -2,11 +2,17 @@ use crate::backend::{BackendSnapshot, BackendStatus};
 use crate::codex_protocol::{
     ThreadWire, apply_status, normalize_thread, parse_loaded_list, parse_thread_list,
 };
-use crate::domain::ThreadSummary;
+use crate::conversation::{
+    ConversationPage, InteractiveRequest, InteractiveResolution, RpcRequestId, merge_history,
+    parse_interactive_request, parse_items_page, parse_legacy_thread_read, parse_thread_title,
+    parse_turns_page,
+};
+use crate::domain::{ThreadId, ThreadSummary};
 use anyhow::{Context, Result, anyhow};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::ffi::OsString;
+use std::fmt;
 use std::process::Stdio;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter, Lines};
@@ -18,19 +24,167 @@ const PAGE_SIZE: u32 = 200;
 const REFRESH_INTERVAL: Duration = Duration::from_secs(2);
 const RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
+#[derive(Debug)]
+struct RpcResponseError {
+    method: String,
+    code: Option<i64>,
+    message: String,
+}
+
+impl fmt::Display for RpcResponseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.code {
+            Some(code) => write!(f, "{} failed ({code}): {}", self.method, self.message),
+            None => write!(f, "{} failed: {}", self.method, self.message),
+        }
+    }
+}
+
+impl std::error::Error for RpcResponseError {}
+
+fn is_history_pagination_unsupported(error: &anyhow::Error) -> bool {
+    let Some(source) = error.downcast_ref::<RpcResponseError>() else {
+        return false;
+    };
+    if source.code == Some(-32601) {
+        return true;
+    }
+    if !matches!(source.code, Some(-32600 | -32602)) {
+        return false;
+    }
+    let message = source.message.to_ascii_lowercase();
+    [
+        "historymode",
+        "history mode",
+        "excludeturns",
+        "exclude turns",
+        "thread/turns/list",
+        "thread/items/list",
+    ]
+    .into_iter()
+    .any(|field| message.contains(field))
+        || (message.contains("paginated")
+            && ["unknown variant", "unsupported variant", "invalid enum"]
+                .into_iter()
+                .any(|fragment| message.contains(fragment)))
+}
+
 pub struct StartedRegistry {
     pub initial: BackendSnapshot,
     pub handle: RegistryHandle,
 }
 
+#[derive(Clone, Debug)]
+pub enum BackendCommand {
+    LoadConversation(ThreadId),
+    StopWatchingConversation(ThreadId),
+    LoadOlderConversation {
+        thread_id: ThreadId,
+        turn_cursor: Option<String>,
+        item_cursor: Option<String>,
+    },
+    SubmitPrompt {
+        thread_id: ThreadId,
+        text: String,
+        active_turn_id: Option<String>,
+    },
+    InterruptTurn {
+        thread_id: ThreadId,
+        turn_id: String,
+    },
+    ResolveInteractive {
+        request_id: RpcRequestId,
+        resolution: InteractiveResolution,
+    },
+}
+
+#[derive(Clone, Debug)]
+pub enum ConversationEvent {
+    Loaded(ConversationPage),
+    OlderLoaded(ConversationPage),
+    PromptSubmitted {
+        thread_id: ThreadId,
+        turn_id: String,
+    },
+    InteractiveRequested(InteractiveRequest),
+    InteractiveResolved {
+        request_id: RpcRequestId,
+    },
+    Failed {
+        thread_id: ThreadId,
+        error: String,
+    },
+}
+
 pub struct RegistryHandle {
     rx: mpsc::UnboundedReceiver<BackendSnapshot>,
+    conversation_rx: mpsc::UnboundedReceiver<ConversationEvent>,
+    command_tx: mpsc::UnboundedSender<BackendCommand>,
     task: JoinHandle<()>,
 }
 
 impl RegistryHandle {
     pub fn try_recv(&mut self) -> Option<BackendSnapshot> {
         self.rx.try_recv().ok()
+    }
+
+    pub fn try_recv_conversation(&mut self) -> Option<ConversationEvent> {
+        self.conversation_rx.try_recv().ok()
+    }
+
+    pub fn load_conversation(&self, thread_id: ThreadId) -> Result<()> {
+        self.send_command(BackendCommand::LoadConversation(thread_id))
+    }
+
+    pub fn stop_watching_conversation(&self, thread_id: ThreadId) -> Result<()> {
+        self.send_command(BackendCommand::StopWatchingConversation(thread_id))
+    }
+
+    pub fn load_older_conversation(
+        &self,
+        thread_id: ThreadId,
+        turn_cursor: Option<String>,
+        item_cursor: Option<String>,
+    ) -> Result<()> {
+        self.send_command(BackendCommand::LoadOlderConversation {
+            thread_id,
+            turn_cursor,
+            item_cursor,
+        })
+    }
+
+    pub fn submit_prompt(
+        &self,
+        thread_id: ThreadId,
+        text: String,
+        active_turn_id: Option<String>,
+    ) -> Result<()> {
+        self.send_command(BackendCommand::SubmitPrompt {
+            thread_id,
+            text,
+            active_turn_id,
+        })
+    }
+
+    pub fn interrupt_turn(&self, thread_id: ThreadId, turn_id: String) -> Result<()> {
+        self.send_command(BackendCommand::InterruptTurn { thread_id, turn_id })
+    }
+
+    pub fn resolve_interactive(
+        &self,
+        request_id: RpcRequestId,
+        resolution: InteractiveResolution,
+    ) -> Result<()> {
+        self.send_command(BackendCommand::ResolveInteractive {
+            request_id,
+            resolution,
+        })
+    }
+
+    fn send_command(&self, command: BackendCommand) -> Result<()> {
+        self.command_tx
+            .send(command)
+            .map_err(|_| anyhow!("App Server actor is not available"))
     }
 }
 
@@ -63,11 +217,25 @@ pub async fn start(codex_bin: Option<OsString>) -> Result<StartedRegistry> {
         status: status.clone(),
     };
     let (tx, rx) = mpsc::unbounded_channel();
-    let task = tokio::spawn(run_registry_actor(rpc, threads, status, tx));
+    let (conversation_tx, conversation_rx) = mpsc::unbounded_channel();
+    let (command_tx, command_rx) = mpsc::unbounded_channel();
+    let task = tokio::spawn(run_registry_actor(
+        rpc,
+        threads,
+        status,
+        tx,
+        conversation_tx,
+        command_rx,
+    ));
 
     Ok(StartedRegistry {
         initial,
-        handle: RegistryHandle { rx, task },
+        handle: RegistryHandle {
+            rx,
+            conversation_rx,
+            command_tx,
+            task,
+        },
     })
 }
 
@@ -80,15 +248,133 @@ async fn run_registry_actor(
     initial_threads: Vec<ThreadSummary>,
     mut status: BackendStatus,
     tx: mpsc::UnboundedSender<BackendSnapshot>,
+    conversation_tx: mpsc::UnboundedSender<ConversationEvent>,
+    mut command_rx: mpsc::UnboundedReceiver<BackendCommand>,
 ) {
     let mut generation = 0_u64;
     let mut threads = by_id(initial_threads);
+    let mut pending_requests: BTreeMap<RpcRequestId, PendingServerRequest> = BTreeMap::new();
+    let mut watched_threads = BTreeSet::new();
     let mut refresh = tokio::time::interval(REFRESH_INTERVAL);
     refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     refresh.tick().await;
 
     loop {
         tokio::select! {
+            command = command_rx.recv() => {
+                let Some(command) = command else {
+                    return;
+                };
+                match command {
+                    BackendCommand::LoadConversation(thread_id) => {
+                        watched_threads.insert(thread_id.0.clone());
+                        emit_conversation_load(&mut rpc, thread_id, &conversation_tx).await;
+                    }
+                    BackendCommand::StopWatchingConversation(thread_id) => {
+                        watched_threads.remove(&thread_id.0);
+                    }
+                    BackendCommand::LoadOlderConversation {
+                        thread_id,
+                        turn_cursor,
+                        item_cursor,
+                    } => {
+                        watched_threads.insert(thread_id.0.clone());
+                        match load_older_conversation(
+                            &mut rpc,
+                            thread_id.clone(),
+                            turn_cursor,
+                            item_cursor,
+                        )
+                        .await
+                        {
+                            Ok(page) => {
+                                let _ = conversation_tx.send(ConversationEvent::OlderLoaded(page));
+                            }
+                            Err(error) => {
+                                let _ = conversation_tx.send(ConversationEvent::Failed {
+                                    thread_id,
+                                    error: error.to_string(),
+                                });
+                            }
+                        }
+                    }
+                    BackendCommand::SubmitPrompt {
+                        thread_id,
+                        text,
+                        active_turn_id,
+                    } => {
+                        watched_threads.insert(thread_id.0.clone());
+                        match submit_prompt(
+                            &mut rpc,
+                            &mut threads,
+                            &thread_id,
+                            text,
+                            active_turn_id,
+                        )
+                        .await
+                        {
+                            Ok(turn_id) => {
+                                let _ = conversation_tx.send(ConversationEvent::PromptSubmitted {
+                                    thread_id: thread_id.clone(),
+                                    turn_id,
+                                });
+                                emit_conversation_load(
+                                    &mut rpc,
+                                    thread_id,
+                                    &conversation_tx,
+                                )
+                                .await;
+                            }
+                            Err(error) => {
+                                let _ = conversation_tx.send(ConversationEvent::Failed {
+                                    thread_id,
+                                    error: error.to_string(),
+                                });
+                            }
+                        }
+                    }
+                    BackendCommand::InterruptTurn { thread_id, turn_id } => {
+                        match interrupt_turn(&mut rpc, &thread_id, &turn_id).await {
+                            Ok(()) => {
+                                emit_conversation_load(
+                                    &mut rpc,
+                                    thread_id,
+                                    &conversation_tx,
+                                )
+                                .await;
+                            }
+                            Err(error) => {
+                                let _ = conversation_tx.send(ConversationEvent::Failed {
+                                    thread_id,
+                                    error: error.to_string(),
+                                });
+                            }
+                        }
+                    }
+                    BackendCommand::ResolveInteractive {
+                        request_id,
+                        resolution,
+                    } => {
+                        match resolve_interactive(
+                            &mut rpc,
+                            &mut pending_requests,
+                            &request_id,
+                            resolution,
+                        )
+                        .await
+                        {
+                            Ok(()) => {
+                                let _ = conversation_tx.send(
+                                    ConversationEvent::InteractiveResolved { request_id },
+                                );
+                            }
+                            Err(error) => {
+                                status.error = Some(error.to_string());
+                            }
+                        }
+                    }
+                }
+            }
             _ = refresh.tick() => {
                 match load_registry(&mut rpc).await {
                     Ok((fresh, loaded_supported)) => {
@@ -114,7 +400,16 @@ async fn run_registry_actor(
             message = rpc.read_message() => {
                 match message {
                     Ok(Some(message)) => {
-                        if let Err(error) = handle_unsolicited(&mut rpc, message, &mut threads).await {
+                        if let Err(error) = handle_unsolicited(
+                            &mut rpc,
+                            message,
+                            &mut threads,
+                            &mut pending_requests,
+                            &watched_threads,
+                            &conversation_tx,
+                        )
+                        .await
+                        {
                             status.error = Some(error.to_string());
                         }
                         generation = generation.saturating_add(1);
@@ -278,34 +573,446 @@ async fn load_all_loaded_ids(rpc: &mut RpcSession) -> Result<BTreeSet<String>> {
     Ok(loaded)
 }
 
+async fn emit_conversation_load(
+    rpc: &mut RpcSession,
+    thread_id: ThreadId,
+    tx: &mpsc::UnboundedSender<ConversationEvent>,
+) {
+    match load_conversation(rpc, thread_id.clone()).await {
+        Ok(page) => {
+            let _ = tx.send(ConversationEvent::Loaded(page));
+        }
+        Err(error) => {
+            let _ = tx.send(ConversationEvent::Failed {
+                thread_id,
+                error: error.to_string(),
+            });
+        }
+    }
+}
+
+async fn submit_prompt(
+    rpc: &mut RpcSession,
+    threads: &mut BTreeMap<String, ThreadSummary>,
+    thread_id: &ThreadId,
+    text: String,
+    active_turn_id: Option<String>,
+) -> Result<String> {
+    if let Some(turn_id) = active_turn_id {
+        let response = rpc
+            .request(
+                "turn/steer",
+                json!({
+                    "threadId": thread_id.0,
+                    "input": [{
+                        "type": "text",
+                        "text": text,
+                        "textElements": []
+                    }],
+                    "expectedTurnId": turn_id
+                }),
+            )
+            .await
+            .context("steer active turn")?;
+        return response
+            .get("turnId")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned)
+            .context("turn/steer response missing turnId");
+    }
+
+    ensure_thread_loaded(rpc, threads, thread_id).await?;
+    let response = rpc
+        .request(
+            "turn/start",
+            json!({
+                "threadId": thread_id.0,
+                "input": [{
+                    "type": "text",
+                    "text": text,
+                    "textElements": []
+                }]
+            }),
+        )
+        .await
+        .context("start turn")?;
+    response
+        .pointer("/turn/id")
+        .and_then(Value::as_str)
+        .map(ToOwned::to_owned)
+        .context("turn/start response missing turn.id")
+}
+
+async fn ensure_thread_loaded(
+    rpc: &mut RpcSession,
+    threads: &mut BTreeMap<String, ThreadSummary>,
+    thread_id: &ThreadId,
+) -> Result<()> {
+    let metadata = rpc
+        .request(
+            "thread/read",
+            json!({
+                "threadId": thread_id.0,
+                "includeTurns": false
+            }),
+        )
+        .await
+        .context("read thread before turn start")?;
+    let is_not_loaded = metadata
+        .pointer("/thread/status/type")
+        .and_then(Value::as_str)
+        == Some("notLoaded");
+    if !is_not_loaded {
+        return Ok(());
+    }
+
+    let resume = rpc
+        .request(
+            "thread/resume",
+            json!({
+                "threadId": thread_id.0,
+                "excludeTurns": true
+            }),
+        )
+        .await;
+    match resume {
+        Ok(_) => {}
+        Err(error) if is_history_pagination_unsupported(&error) => {
+            rpc.request(
+                "thread/resume",
+                json!({
+                    "threadId": thread_id.0
+                }),
+            )
+            .await
+            .context("resume legacy thread before turn start")?;
+        }
+        Err(error) => return Err(error).context("resume thread before turn start"),
+    }
+
+    if let Some(thread) = threads.get_mut(&thread_id.0) {
+        thread.metadata.loaded = Some(true);
+    }
+    Ok(())
+}
+
+async fn interrupt_turn(rpc: &mut RpcSession, thread_id: &ThreadId, turn_id: &str) -> Result<()> {
+    rpc.request(
+        "turn/interrupt",
+        json!({
+            "threadId": thread_id.0,
+            "turnId": turn_id
+        }),
+    )
+    .await
+    .context("interrupt active turn")?;
+    Ok(())
+}
+
+async fn load_older_conversation(
+    rpc: &mut RpcSession,
+    thread_id: ThreadId,
+    turn_cursor: Option<String>,
+    item_cursor: Option<String>,
+) -> Result<ConversationPage> {
+    let (turns, next_turn_cursor) = if let Some(cursor) = turn_cursor {
+        let result = rpc
+            .request(
+                "thread/turns/list",
+                json!({
+                    "threadId": thread_id.0,
+                    "cursor": cursor,
+                    "limit": 20,
+                    "sortDirection": "desc",
+                    "itemsView": "notLoaded"
+                }),
+            )
+            .await
+            .context("list older turns")?;
+        let (mut turns, next_cursor) = parse_turns_page(result)?;
+        turns.reverse();
+        (turns, next_cursor)
+    } else {
+        (vec![], None)
+    };
+
+    let (items, next_item_cursor) = if let Some(cursor) = item_cursor {
+        let result = rpc
+            .request(
+                "thread/items/list",
+                json!({
+                    "threadId": thread_id.0,
+                    "cursor": cursor,
+                    "limit": 100,
+                    "sortDirection": "desc"
+                }),
+            )
+            .await
+            .context("list older items")?;
+        let (mut items, next_cursor) = parse_items_page(result)?;
+        items.reverse();
+        (items, next_cursor)
+    } else {
+        (vec![], None)
+    };
+
+    Ok(merge_history(
+        thread_id,
+        None,
+        turns,
+        items,
+        next_turn_cursor,
+        next_item_cursor,
+    ))
+}
+
+async fn load_conversation(rpc: &mut RpcSession, thread_id: ThreadId) -> Result<ConversationPage> {
+    let metadata = rpc
+        .request(
+            "thread/read",
+            json!({
+                "threadId": thread_id.0,
+                "includeTurns": false
+            }),
+        )
+        .await
+        .context("read thread metadata")?;
+    let title = parse_thread_title(&metadata);
+
+    let turns_result = match rpc
+        .request(
+            "thread/turns/list",
+            json!({
+                "threadId": thread_id.0,
+                "cursor": null,
+                "limit": 20,
+                "sortDirection": "desc",
+                "itemsView": "notLoaded"
+            }),
+        )
+        .await
+    {
+        Ok(result) => result,
+        Err(error) if is_history_pagination_unsupported(&error) => {
+            return load_legacy_conversation(rpc, thread_id).await;
+        }
+        Err(error) => return Err(error).context("list recent turns"),
+    };
+    let (mut turns, next_turn_cursor) = parse_turns_page(turns_result)?;
+    turns.reverse();
+
+    let items_result = match rpc
+        .request(
+            "thread/items/list",
+            json!({
+                "threadId": thread_id.0,
+                "cursor": null,
+                "limit": 100,
+                "sortDirection": "desc"
+            }),
+        )
+        .await
+    {
+        Ok(result) => result,
+        Err(error) if is_history_pagination_unsupported(&error) => {
+            return load_legacy_conversation(rpc, thread_id).await;
+        }
+        Err(error) => return Err(error).context("list recent thread items"),
+    };
+    let (mut items, next_item_cursor) = parse_items_page(items_result)?;
+    items.reverse();
+
+    Ok(merge_history(
+        thread_id,
+        title,
+        turns,
+        items,
+        next_turn_cursor,
+        next_item_cursor,
+    ))
+}
+
+async fn load_legacy_conversation(
+    rpc: &mut RpcSession,
+    thread_id: ThreadId,
+) -> Result<ConversationPage> {
+    let result = rpc
+        .request(
+            "thread/read",
+            json!({
+                "threadId": thread_id.0,
+                "includeTurns": true
+            }),
+        )
+        .await
+        .context("read legacy thread history")?;
+    parse_legacy_thread_read(result, thread_id)
+}
+
+#[derive(Clone, Debug)]
+struct PendingServerRequest {
+    method: String,
+    params: Value,
+}
+
 async fn handle_unsolicited(
     rpc: &mut RpcSession,
     message: Value,
     threads: &mut BTreeMap<String, ThreadSummary>,
+    pending_requests: &mut BTreeMap<RpcRequestId, PendingServerRequest>,
+    watched_threads: &BTreeSet<String>,
+    conversation_tx: &mpsc::UnboundedSender<ConversationEvent>,
 ) -> Result<()> {
     if message.get("id").is_some() && message.get("method").is_some() {
-        rpc.reject_server_request(&message).await?;
-        return Ok(());
+        if let Some(request) = parse_interactive_request(&message)? {
+            let method = message
+                .get("method")
+                .and_then(Value::as_str)
+                .unwrap_or_default()
+                .to_string();
+            let params = message.get("params").cloned().unwrap_or(Value::Null);
+            pending_requests.insert(
+                request.request_id.clone(),
+                PendingServerRequest { method, params },
+            );
+            let _ = conversation_tx.send(ConversationEvent::InteractiveRequested(request));
+            return Ok(());
+        }
+
+        rpc.reject_request(
+            message
+                .get("id")
+                .cloned()
+                .context("server request missing id")?,
+            "unsupported App Server request in codex-tui",
+        )
+        .await?;
+        anyhow::bail!(
+            "unsupported App Server request: {}",
+            message
+                .get("method")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown")
+        );
     }
 
     let Some(method) = message.get("method").and_then(Value::as_str) else {
         return Ok(());
     };
-    if method != "thread/status/changed" {
-        return Ok(());
-    }
     let Some(params) = message.get("params") else {
         return Ok(());
     };
+
+    if method == "serverRequest/resolved" {
+        if let Some(request_id) = params
+            .get("requestId")
+            .map(RpcRequestId::from_value)
+            .transpose()?
+        {
+            pending_requests.remove(&request_id);
+            let _ = conversation_tx.send(ConversationEvent::InteractiveResolved { request_id });
+        }
+        return Ok(());
+    }
+
     let Some(thread_id) = params.get("threadId").and_then(Value::as_str) else {
         return Ok(());
     };
-    let Some(status) = params.get("status") else {
+
+    if method == "thread/status/changed" {
+        let Some(status) = params.get("status") else {
+            return Ok(());
+        };
+        if let Some(thread) = threads.get_mut(thread_id) {
+            apply_status(thread, status);
+        }
         return Ok(());
-    };
-    if let Some(thread) = threads.get_mut(thread_id) {
-        apply_status(thread, status);
     }
+
+    if matches!(method, "turn/started" | "turn/completed" | "item/completed")
+        && watched_threads.contains(thread_id)
+    {
+        emit_conversation_load(rpc, ThreadId::new(thread_id), conversation_tx).await;
+    }
+
+    Ok(())
+}
+
+async fn resolve_interactive(
+    rpc: &mut RpcSession,
+    pending_requests: &mut BTreeMap<RpcRequestId, PendingServerRequest>,
+    request_id: &RpcRequestId,
+    resolution: InteractiveResolution,
+) -> Result<()> {
+    let pending = pending_requests
+        .get(request_id)
+        .cloned()
+        .context("interactive request is no longer pending")?;
+
+    match pending.method.as_str() {
+        "item/commandExecution/requestApproval" | "item/fileChange/requestApproval" => {
+            let decision = match resolution {
+                InteractiveResolution::Accept => "accept",
+                InteractiveResolution::Decline => "decline",
+                InteractiveResolution::Cancel => "cancel",
+                InteractiveResolution::UserInput(_) => {
+                    anyhow::bail!("user-input answer cannot resolve an approval")
+                }
+            };
+            rpc.respond_result(request_id.to_value(), json!({"decision": decision}))
+                .await?;
+        }
+        "item/permissions/requestApproval" => match resolution {
+            InteractiveResolution::Accept => {
+                let permissions = pending
+                    .params
+                    .get("permissions")
+                    .cloned()
+                    .context("permission request missing permissions")?;
+                rpc.respond_result(
+                    request_id.to_value(),
+                    json!({
+                        "permissions": permissions,
+                        "scope": "turn"
+                    }),
+                )
+                .await?;
+            }
+            InteractiveResolution::Decline | InteractiveResolution::Cancel => {
+                rpc.respond_result(
+                    request_id.to_value(),
+                    json!({
+                        "permissions": {},
+                        "scope": "turn"
+                    }),
+                )
+                .await?;
+            }
+            InteractiveResolution::UserInput(_) => {
+                anyhow::bail!("user-input answer cannot resolve a permission request")
+            }
+        },
+        "item/tool/requestUserInput" => match resolution {
+            InteractiveResolution::UserInput(answers) => {
+                let answers = answers
+                    .into_iter()
+                    .map(|(question_id, answers)| (question_id, json!({"answers": answers})))
+                    .collect::<serde_json::Map<_, _>>();
+                rpc.respond_result(request_id.to_value(), json!({"answers": answers}))
+                    .await?;
+            }
+            InteractiveResolution::Decline | InteractiveResolution::Cancel => {
+                rpc.reject_request(request_id.to_value(), "user input cancelled by user")
+                    .await?;
+            }
+            InteractiveResolution::Accept => {
+                anyhow::bail!("request_user_input requires explicit answers")
+            }
+        },
+        other => anyhow::bail!("unsupported pending server request: {other}"),
+    }
+
+    pending_requests.remove(request_id);
     Ok(())
 }
 
@@ -392,16 +1099,25 @@ impl RpcSession {
                 && message.get("method").is_none()
             {
                 if let Some(error) = message.get("error") {
-                    return Err(anyhow!("{method} failed: {error}"));
+                    let code = error.get("code").and_then(Value::as_i64);
+                    let error_message = error
+                        .get("message")
+                        .and_then(Value::as_str)
+                        .map(ToOwned::to_owned)
+                        .unwrap_or_else(|| error.to_string());
+                    return Err(RpcResponseError {
+                        method: method.to_string(),
+                        code,
+                        message: error_message,
+                    }
+                    .into());
                 }
                 return message
                     .get("result")
                     .cloned()
                     .ok_or_else(|| anyhow!("{method} response missing result"));
             }
-            if message.get("id").is_some() && message.get("method").is_some() {
-                self.reject_server_request(&message).await?;
-            } else if message.get("method").is_some() {
+            if message.get("method").is_some() {
                 self.queued_messages.push_back(message);
             }
         }
@@ -441,15 +1157,20 @@ impl RpcSession {
         }
     }
 
-    async fn reject_server_request(&mut self, request: &Value) -> Result<()> {
-        let Some(id) = request.get("id").cloned() else {
-            return Ok(());
-        };
+    async fn respond_result(&mut self, id: Value, result: Value) -> Result<()> {
+        self.write_message(&json!({
+            "id": id,
+            "result": result
+        }))
+        .await
+    }
+
+    async fn reject_request(&mut self, id: Value, message: &str) -> Result<()> {
         self.write_message(&json!({
             "id": id,
             "error": {
-                "code": -32601,
-                "message": "codex-tui M1 registry is read-only"
+                "code": -32000,
+                "message": message
             }
         }))
         .await
@@ -469,6 +1190,30 @@ impl RpcSession {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn history_compatibility_matches_official_error_semantics() {
+        let method_not_found = anyhow::Error::new(RpcResponseError {
+            method: "thread/turns/list".into(),
+            code: Some(-32601),
+            message: "method not found".into(),
+        });
+        assert!(is_history_pagination_unsupported(&method_not_found));
+
+        let legacy_invalid_params = anyhow::Error::new(RpcResponseError {
+            method: "thread/resume".into(),
+            code: Some(-32602),
+            message: "unknown field excludeTurns".into(),
+        });
+        assert!(is_history_pagination_unsupported(&legacy_invalid_params));
+
+        let ordinary_failure = anyhow::Error::new(RpcResponseError {
+            method: "thread/items/list".into(),
+            code: Some(-32000),
+            message: "database unavailable".into(),
+        });
+        assert!(!is_history_pagination_unsupported(&ordinary_failure));
+    }
 
     #[test]
     fn initialize_metadata_is_capability_oriented_not_version_gated() {

@@ -1,8 +1,9 @@
 use anyhow::Result;
 use codex_tui::{
     app::{Action, AppState, Effect, InputMode, ViewKind, reduce},
-    app_server::{self, RegistryHandle},
+    app_server::{self, ConversationEvent, RegistryHandle},
     backend::{BackendStatus, CodexBackend, FakeBackend},
+    conversation::{InteractiveRequestKind, InteractiveResolution},
     keymap::{Command, command_for_key},
     store::{FileStore, LocalStore},
     terminal::TerminalSession,
@@ -131,7 +132,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
             needs_render = true;
         }
 
-        needs_render |= drain_registry(&mut app, registry.as_mut());
+        needs_render |= drain_registry(&mut app, registry.as_mut(), &store);
 
         if let Some(fake) = fake_backend.as_mut()
             && last_fake_tick.elapsed() >= Duration::from_millis(900)
@@ -159,11 +160,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                     {
                         needs_render = true;
                     }
-                    for effect in effects {
-                        if effect == Effect::PersistOperatorState {
-                            store.save_state(&app.to_local_state())?;
-                        }
-                    }
+                    apply_effects(&mut app, registry.as_ref(), &store, effects)?;
                 }
                 Event::Resize(_, _) => needs_render = true,
                 _ => {}
@@ -194,7 +191,11 @@ fn backend_error_status(error: String) -> BackendStatus {
     }
 }
 
-fn drain_registry(app: &mut AppState, registry: Option<&mut RegistryHandle>) -> bool {
+fn drain_registry(
+    app: &mut AppState,
+    registry: Option<&mut RegistryHandle>,
+    store: &FileStore,
+) -> bool {
     let Some(registry) = registry else {
         return false;
     };
@@ -204,12 +205,174 @@ fn drain_registry(app: &mut AppState, registry: Option<&mut RegistryHandle>) -> 
         reduce(app, Action::BackendStatus(snapshot.status));
         changed = true;
     }
+    while let Some(event) = registry.try_recv_conversation() {
+        match event {
+            ConversationEvent::Loaded(page) => {
+                reduce(app, Action::ConversationLoaded(page));
+            }
+            ConversationEvent::OlderLoaded(page) => {
+                reduce(app, Action::OlderConversationLoaded(page));
+            }
+            ConversationEvent::InteractiveRequested(request) => {
+                reduce(app, Action::InteractiveRequested(request));
+            }
+            ConversationEvent::InteractiveResolved { request_id } => {
+                reduce(app, Action::InteractiveResolved { request_id });
+            }
+            ConversationEvent::PromptSubmitted { thread_id, .. } => {
+                let effects = reduce(app, Action::PromptSubmitted { thread_id });
+                for effect in effects {
+                    if effect == Effect::PersistOperatorState
+                        && let Err(error) = store.save_state(&app.to_local_state())
+                    {
+                        reduce(
+                            app,
+                            Action::BackendStatus(backend_error_status(format!(
+                                "persist draft state failed: {error}"
+                            ))),
+                        );
+                    }
+                }
+            }
+            ConversationEvent::Failed { thread_id, error } => {
+                reduce(app, Action::ConversationFailed { thread_id, error });
+            }
+        }
+        changed = true;
+    }
     changed
+}
+
+fn apply_effects(
+    app: &mut AppState,
+    registry: Option<&RegistryHandle>,
+    store: &FileStore,
+    effects: Vec<Effect>,
+) -> Result<()> {
+    for effect in effects {
+        match effect {
+            Effect::PersistOperatorState => store.save_state(&app.to_local_state())?,
+            Effect::LoadConversation(thread_id) => {
+                if let Some(registry) = registry {
+                    if let Err(error) = registry.load_conversation(thread_id.clone()) {
+                        reduce(
+                            app,
+                            Action::ConversationFailed {
+                                thread_id,
+                                error: error.to_string(),
+                            },
+                        );
+                    }
+                } else {
+                    reduce(
+                        app,
+                        Action::ConversationFailed {
+                            thread_id,
+                            error: "conversation backend unavailable".into(),
+                        },
+                    );
+                }
+            }
+            Effect::StopWatchingConversation(thread_id) => {
+                if let Some(registry) = registry
+                    && let Err(error) = registry.stop_watching_conversation(thread_id)
+                {
+                    reduce(
+                        app,
+                        Action::BackendStatus(backend_error_status(format!(
+                            "stop conversation watch failed: {error}"
+                        ))),
+                    );
+                }
+            }
+            Effect::LoadOlderConversation {
+                thread_id,
+                turn_cursor,
+                item_cursor,
+            } => {
+                if let Some(registry) = registry
+                    && let Err(error) = registry.load_older_conversation(
+                        thread_id.clone(),
+                        turn_cursor,
+                        item_cursor,
+                    )
+                {
+                    reduce(
+                        app,
+                        Action::ConversationFailed {
+                            thread_id,
+                            error: error.to_string(),
+                        },
+                    );
+                }
+            }
+            Effect::SubmitPrompt {
+                thread_id,
+                text,
+                active_turn_id,
+            } => {
+                if let Some(registry) = registry {
+                    if let Err(error) =
+                        registry.submit_prompt(thread_id.clone(), text, active_turn_id)
+                    {
+                        reduce(
+                            app,
+                            Action::ConversationFailed {
+                                thread_id,
+                                error: error.to_string(),
+                            },
+                        );
+                    }
+                } else {
+                    reduce(
+                        app,
+                        Action::ConversationFailed {
+                            thread_id,
+                            error: "conversation backend unavailable".into(),
+                        },
+                    );
+                }
+            }
+            Effect::ResolveInteractive {
+                request_id,
+                resolution,
+            } => {
+                if let Some(registry) = registry
+                    && let Err(error) = registry.resolve_interactive(request_id.clone(), resolution)
+                {
+                    reduce(
+                        app,
+                        Action::BackendStatus(backend_error_status(format!(
+                            "resolve interactive request failed: {error}"
+                        ))),
+                    );
+                }
+            }
+            Effect::InterruptTurn { thread_id, turn_id } => {
+                if let Some(registry) = registry
+                    && let Err(error) = registry.interrupt_turn(thread_id.clone(), turn_id)
+                {
+                    reduce(
+                        app,
+                        Action::ConversationFailed {
+                            thread_id,
+                            error: error.to_string(),
+                        },
+                    );
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
     if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
         return vec![];
+    }
+
+    if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('c') {
+        return handle_command(app, Command::QuitOrInterrupt);
     }
 
     if app.input_mode != InputMode::Normal {
@@ -229,6 +392,27 @@ fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
         return reduce(app, action);
     }
 
+    if let Some(request) = app.current_pending_request() {
+        let action = match (&request.kind, key.code) {
+            (InteractiveRequestKind::UserInput { .. }, KeyCode::Enter | KeyCode::Char('i')) => {
+                Some(Action::BeginUserInput)
+            }
+            (InteractiveRequestKind::UserInput { .. }, KeyCode::Char('n')) => {
+                Some(Action::ResolvePending(InteractiveResolution::Decline))
+            }
+            (InteractiveRequestKind::UserInput { .. }, KeyCode::Char('c')) => {
+                Some(Action::ResolvePending(InteractiveResolution::Cancel))
+            }
+            (_, KeyCode::Char('y')) => Some(Action::ResolvePending(InteractiveResolution::Accept)),
+            (_, KeyCode::Char('n')) => Some(Action::ResolvePending(InteractiveResolution::Decline)),
+            (_, KeyCode::Char('c')) => Some(Action::ResolvePending(InteractiveResolution::Cancel)),
+            _ => None,
+        };
+        if let Some(action) = action {
+            return reduce(app, action);
+        }
+    }
+
     let Some(command) = command_for_key(key, app.view_kind()) else {
         return vec![];
     };
@@ -241,7 +425,7 @@ fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
             if app.view_kind() == ViewKind::Registry {
                 Action::Quit
             } else {
-                Action::Back
+                Action::InterruptCurrent
             }
         }
         Command::Back => Action::Back,
@@ -256,6 +440,10 @@ fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
         Command::TogglePin => Action::TogglePin,
         Command::EditAlias => Action::BeginAlias,
         Command::AcknowledgeAttention => Action::AcknowledgeAttention,
+        Command::ApprovePending => Action::ResolvePending(InteractiveResolution::Accept),
+        Command::DeclinePending => Action::ResolvePending(InteractiveResolution::Decline),
+        Command::CancelPending => Action::ResolvePending(InteractiveResolution::Cancel),
+        Command::AnswerPending => Action::BeginUserInput,
         Command::PageUp => Action::ScrollBy(-5),
         Command::PageDown => Action::ScrollBy(5),
         Command::CommandPalette

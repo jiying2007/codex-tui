@@ -1,4 +1,5 @@
 use crate::app::{AppState, InputMode, View};
+use crate::conversation::{InteractiveRequest, InteractiveRequestKind};
 use crate::domain::ThreadSummary;
 use ratatui::{
     Frame,
@@ -64,6 +65,8 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState) {
             "alias> {}  · Enter save · Esc cancel",
             app.input_buffer
         )),
+        InputMode::Composer => Line::from("composer active in Thread view"),
+        InputMode::UserInput => Line::from("user-input answer active in Thread view"),
         InputMode::Normal => {
             if let Some(error) = &app.backend_status.error {
                 Line::from(format!(
@@ -128,13 +131,20 @@ fn thread_list(app: &AppState) -> Paragraph<'static> {
         let selected = index == app.selected;
         let prefix = if selected { ">" } else { " " };
         let pin = if thread.pinned { "*" } else { " " };
+        let pending_interactive = app
+            .pending_requests
+            .iter()
+            .any(|request| request.thread_id == thread.id);
         let attention = if app.thread_needs_attention(index) {
-            thread
+            let mut reasons = thread
                 .attention
                 .iter()
                 .map(|reason| reason.label())
-                .collect::<Vec<_>>()
-                .join(",")
+                .collect::<Vec<_>>();
+            if pending_interactive {
+                reasons.push("interactive");
+            }
+            reasons.join(",")
         } else if thread.attention.is_empty() {
             "-".into()
         } else {
@@ -203,6 +213,13 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
                 "Local attention ack: {}",
                 app.acknowledged_attention.contains(&thread.id.0)
             )),
+            Line::from(format!(
+                "Pending interactive: {}",
+                app.pending_requests
+                    .iter()
+                    .filter(|request| request.thread_id == thread.id)
+                    .count()
+            )),
         ]
     } else {
         vec![Line::from("No thread selected")]
@@ -231,33 +248,112 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
         chunks[0],
     );
 
+    let ui = app.thread_ui.get(thread_id).cloned().unwrap_or_default();
+    let mut conversation_lines = match app.conversations.get(thread_id) {
+        Some(conversation) if conversation.loading => {
+            vec![Line::from("Loading recent Codex history…")]
+        }
+        Some(conversation) if conversation.error.is_some() => {
+            vec![Line::from(format!(
+                "Conversation unavailable: {}",
+                conversation.error.as_deref().unwrap_or("unknown error")
+            ))]
+        }
+        Some(conversation) if conversation.items.is_empty() => {
+            vec![Line::from("No visible items in the loaded history page.")]
+        }
+        Some(conversation) => conversation
+            .items
+            .iter()
+            .map(|item| {
+                let status = item
+                    .status
+                    .as_deref()
+                    .map(|value| format!(" [{value}]"))
+                    .unwrap_or_default();
+                Line::from(format!(
+                    "{:>5}{status} {}",
+                    item.kind.label(),
+                    item.text.replace('\n', " ")
+                ))
+            })
+            .collect(),
+        None => vec![Line::from("Conversation has not been loaded yet.")],
+    };
+    if let Some(request) = app.current_pending_request() {
+        let mut request_lines = interactive_request_lines(request);
+        request_lines.push(Line::from(""));
+        request_lines.append(&mut conversation_lines);
+        conversation_lines = request_lines;
+    }
+
+    let page_hint = app
+        .conversations
+        .get(thread_id)
+        .is_some_and(|conversation| {
+            conversation.next_turn_cursor.is_some() || conversation.next_item_cursor.is_some()
+        });
     frame.render_widget(
-        Paragraph::new(vec![
-            Line::from("M1 registry mode intentionally does not hydrate full transcript history."),
-            Line::from(
-                "Exact Codex thread id remains canonical; conversation control arrives in M2.",
-            ),
-        ])
-        .block(Block::bordered().title(" Conversation "))
-        .wrap(Wrap { trim: false }),
+        Paragraph::new(conversation_lines)
+            .block(Block::bordered().title(if page_hint {
+                " Conversation · older history available "
+            } else {
+                " Conversation "
+            }))
+            .wrap(Wrap { trim: false })
+            .scroll((
+                if app.current_pending_request().is_some() {
+                    0
+                } else {
+                    ui.scroll
+                },
+                0,
+            )),
         chunks[1],
     );
 
-    let ui = app.thread_ui.get(thread_id).cloned().unwrap_or_default();
-    let composer = Paragraph::new(format!(
-        "draft: {}\nscroll={} follow={}",
-        if ui.draft.is_empty() {
-            "<empty>"
+    let (composer_title, composer_text) = if app.input_mode == InputMode::UserInput {
+        let question = app.current_user_input_question();
+        let displayed_answer = if question.is_some_and(|question| question.is_secret) {
+            "*".repeat(app.input_buffer.chars().count())
         } else {
-            &ui.draft
-        },
-        ui.scroll,
-        ui.follow
-    ))
-    .block(Block::bordered().title(" Local thread UI state "));
+            app.input_buffer.clone()
+        };
+        (
+            " User input · Enter next/send · Esc cancel editor ",
+            format!(
+                "{}\nanswer> {}",
+                question
+                    .map(|question| question.question.as_str())
+                    .unwrap_or("Question unavailable"),
+                displayed_answer
+            ),
+        )
+    } else {
+        (
+            if app.input_mode == InputMode::Composer {
+                " Composer · Enter send · Esc keep draft "
+            } else {
+                " Draft · a edit "
+            },
+            format!(
+                "{}\nscroll={} follow={}",
+                if ui.draft.is_empty() {
+                    "<empty>"
+                } else {
+                    &ui.draft
+                },
+                ui.scroll,
+                ui.follow
+            ),
+        )
+    };
+    let composer = Paragraph::new(composer_text).block(Block::bordered().title(composer_title));
     frame.render_widget(composer, chunks[2]);
     frame.render_widget(
-        Paragraph::new("Esc back · r review · w workspace · g goal"),
+        Paragraph::new(
+            "a composer · y accept · n decline · c cancel · i answer · Ctrl+C interrupt",
+        ),
         chunks[3],
     );
 }
@@ -271,7 +367,9 @@ fn render_help(frame: &mut Frame<'_>) {
             Line::from(
                 "Registry: j/k · Enter · Space attention · / search · p pin · e alias · x ack",
             ),
-            Line::from("Thread: PageUp/PageDown · r review · w workspace · g goal"),
+            Line::from(
+                "Thread: a composer · y/n/c approval · i answer · Ctrl+C interrupt · PageUp/PageDown",
+            ),
             Line::from(
                 "Authority: Codex/Git/Forge stay canonical; codex-tui stores operator state only.",
             ),
@@ -280,6 +378,67 @@ fn render_help(frame: &mut Frame<'_>) {
         .wrap(Wrap { trim: true }),
         area,
     );
+}
+
+fn interactive_request_lines(request: &InteractiveRequest) -> Vec<Line<'static>> {
+    let mut lines = vec![Line::from("NEEDS YOU")];
+    match &request.kind {
+        InteractiveRequestKind::CommandApproval {
+            command,
+            cwd,
+            reason,
+        } => {
+            lines.push(Line::from(format!("Command approval: {command}")));
+            if !cwd.is_empty() {
+                lines.push(Line::from(format!("cwd: {cwd}")));
+            }
+            if let Some(reason) = reason {
+                lines.push(Line::from(format!("reason: {reason}")));
+            }
+            lines.push(Line::from("y accept · n decline · c cancel"));
+        }
+        InteractiveRequestKind::FileChangeApproval { reason } => {
+            lines.push(Line::from("File change approval"));
+            if let Some(reason) = reason {
+                lines.push(Line::from(format!("reason: {reason}")));
+            }
+            lines.push(Line::from("y accept · n decline · c cancel"));
+        }
+        InteractiveRequestKind::PermissionsApproval {
+            reason,
+            network_requested,
+            filesystem_requested,
+        } => {
+            lines.push(Line::from(format!(
+                "Permission request: network={} filesystem={}",
+                network_requested, filesystem_requested
+            )));
+            if let Some(reason) = reason {
+                lines.push(Line::from(format!("reason: {reason}")));
+            }
+            lines.push(Line::from("y grant for this turn · n/c decline"));
+        }
+        InteractiveRequestKind::UserInput { questions } => {
+            lines.push(Line::from(format!(
+                "User input requested: {} question(s)",
+                questions.len()
+            )));
+            if let Some(question) = questions.first() {
+                lines.push(Line::from(format!(
+                    "{}: {}",
+                    question.header, question.question
+                )));
+                if !question.options.is_empty() {
+                    lines.push(Line::from(format!(
+                        "options: {}",
+                        question.options.join(", ")
+                    )));
+                }
+            }
+            lines.push(Line::from("i answer"));
+        }
+    }
+    lines
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
