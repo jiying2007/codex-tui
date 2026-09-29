@@ -2383,7 +2383,11 @@ mod tests {
         }
         assert!(reduce(&mut app, Action::CommitInput).is_empty());
         let temp = tempfile::tempdir().expect("tempdir");
-        let target = temp.path().join("feature-wt").to_string_lossy().into_owned();
+        let target = temp
+            .path()
+            .join("feature-wt")
+            .to_string_lossy()
+            .into_owned();
         for ch in target.chars() {
             reduce(&mut app, Action::InputChar(ch));
         }
