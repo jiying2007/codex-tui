@@ -5,12 +5,14 @@ use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::Command;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 const GIT_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
 const MAX_REVIEW_DIFF_BYTES: usize = 2 * 1024 * 1024;
+const MAX_GIT_STDERR_BYTES: usize = 64 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GitFileChange {
@@ -317,7 +319,7 @@ pub async fn load_review(thread_id: ThreadId, cwd: String) -> Result<GitReview> 
         return Err(anyhow!("cwd is not inside a Git repository"));
     }
 
-    let staged = run_git(
+    let staged = run_git_capped(
         &cwd,
         [
             "diff",
@@ -327,15 +329,17 @@ pub async fn load_review(thread_id: ThreadId, cwd: String) -> Result<GitReview> 
             "--unified=3",
             "--",
         ],
+        MAX_REVIEW_DIFF_BYTES,
     )
     .await?;
     if !staged.success {
         return Err(anyhow!("git staged diff failed: {}", staged.stderr.trim()));
     }
 
-    let unstaged = run_git(
+    let unstaged = run_git_capped(
         &cwd,
         ["diff", "--no-ext-diff", "--no-color", "--unified=3", "--"],
+        MAX_REVIEW_DIFF_BYTES,
     )
     .await?;
     if !unstaged.success {
@@ -345,31 +349,97 @@ pub async fn load_review(thread_id: ThreadId, cwd: String) -> Result<GitReview> 
         ));
     }
 
-    let (staged_diff, staged_truncated) = truncate_diff(staged.stdout);
-    let (unstaged_diff, unstaged_truncated) = truncate_diff(unstaged.stdout);
-
     Ok(GitReview {
         thread_id,
         cwd,
         changes: context.changes,
-        staged_diff,
-        unstaged_diff,
-        truncated: staged_truncated || unstaged_truncated,
+        staged_diff: staged.stdout,
+        unstaged_diff: unstaged.stdout,
+        truncated: staged.truncated || unstaged.truncated,
         observed_at_unix_ms: now_unix_ms(),
         error: None,
     })
 }
 
-fn truncate_diff(mut value: String) -> (String, bool) {
-    if value.len() <= MAX_REVIEW_DIFF_BYTES {
-        return (value, false);
+#[derive(Debug)]
+struct CappedGitOutput {
+    success: bool,
+    stdout: String,
+    stderr: String,
+    truncated: bool,
+}
+
+async fn run_git_capped<I, S>(cwd: &str, args: I, stdout_limit: usize) -> Result<CappedGitOutput>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+{
+    let mut command = Command::new("git");
+    command
+        .arg("-C")
+        .arg(cwd)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true);
+
+    let mut child = command.spawn().context("spawn git")?;
+    let stdout = child.stdout.take().context("git stdout unavailable")?;
+    let stderr = child.stderr.take().context("git stderr unavailable")?;
+
+    let capture = async {
+        let (stdout, stderr, status) = tokio::join!(
+            read_capped(stdout, stdout_limit),
+            read_capped(stderr, MAX_GIT_STDERR_BYTES),
+            child.wait(),
+        );
+        let (stdout, stdout_truncated) = stdout.context("read git stdout")?;
+        let (stderr, _stderr_truncated) = stderr.context("read git stderr")?;
+        let status = status.context("wait for git")?;
+        Result::<_, anyhow::Error>::Ok(CappedGitOutput {
+            success: status.success(),
+            stdout: String::from_utf8_lossy(&stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&stderr).into_owned(),
+            truncated: stdout_truncated,
+        })
+    };
+
+    tokio::time::timeout(GIT_PROBE_TIMEOUT, capture)
+        .await
+        .with_context(|| {
+            format!(
+                "git command timed out after {}s",
+                GIT_PROBE_TIMEOUT.as_secs()
+            )
+        })?
+}
+
+async fn read_capped<R>(mut reader: R, limit: usize) -> std::io::Result<(Vec<u8>, bool)>
+where
+    R: AsyncRead + Unpin,
+{
+    let mut stored = Vec::with_capacity(limit.min(8192));
+    let mut buffer = [0_u8; 8192];
+    let mut truncated = false;
+
+    loop {
+        let read = reader.read(&mut buffer).await?;
+        if read == 0 {
+            break;
+        }
+        let remaining = limit.saturating_sub(stored.len());
+        let keep = remaining.min(read);
+        stored.extend_from_slice(&buffer[..keep]);
+        truncated |= keep < read;
     }
-    let mut end = MAX_REVIEW_DIFF_BYTES;
-    while !value.is_char_boundary(end) {
-        end = end.saturating_sub(1);
+
+    while !stored.is_empty() && std::str::from_utf8(&stored).is_err() {
+        stored.pop();
+        truncated = true;
     }
-    value.truncate(end);
-    (value, true)
+
+    Ok((stored, truncated))
 }
 
 pub fn presentation_diff_lines(review: &GitReview, word_diff: bool) -> Vec<String> {
@@ -716,13 +786,18 @@ mod tests {
         assert!(word.iter().any(|line| line.contains("{+new +}")));
     }
 
-    #[test]
-    fn review_diff_truncation_is_utf8_safe() {
-        let value = "é".repeat(MAX_REVIEW_DIFF_BYTES);
-        let (truncated, was_truncated) = truncate_diff(value);
-        assert!(was_truncated);
-        assert!(truncated.is_char_boundary(truncated.len()));
-        assert!(truncated.len() <= MAX_REVIEW_DIFF_BYTES);
+    #[tokio::test]
+    async fn capped_reader_bounds_memory_and_keeps_utf8_valid() {
+        let payload = "é".repeat(10_000).into_bytes();
+        let (mut writer, reader) = tokio::io::duplex(payload.len() + 16);
+        tokio::spawn(async move {
+            use tokio::io::AsyncWriteExt;
+            writer.write_all(&payload).await.expect("write payload");
+        });
+        let (captured, truncated) = read_capped(reader, 1025).await.expect("read capped");
+        assert!(truncated);
+        assert!(captured.len() <= 1025);
+        assert!(std::str::from_utf8(&captured).is_ok());
     }
 
     fn git(cwd: &Path, args: &[&str]) {
