@@ -597,10 +597,13 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
             if mode == InputMode::Composer {
                 if let Some(thread_id) = state.current_thread_id().cloned() {
-                    let conversation_ready = state
-                        .conversations
-                        .get(&thread_id.0)
-                        .is_some_and(|conversation| !conversation.loading && conversation.error.is_none());
+                    let conversation_ready =
+                        state
+                            .conversations
+                            .get(&thread_id.0)
+                            .is_some_and(|conversation| {
+                                !conversation.loading && conversation.error.is_none()
+                            });
                     if !conversation_ready {
                         return vec![];
                     }
@@ -806,10 +809,7 @@ mod tests {
         assert!(effects.is_empty());
         assert_eq!(app.input_mode, InputMode::Composer);
         let thread_id = app.current_thread_id().expect("thread").clone();
-        assert_eq!(
-            app.thread_ui.get(&thread_id.0).expect("ui").draft,
-            "hi"
-        );
+        assert_eq!(app.thread_ui.get(&thread_id.0).expect("ui").draft, "hi");
     }
 
     #[test]
