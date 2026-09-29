@@ -338,10 +338,14 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         }
         Action::InteractiveRequested(request) => {
             state.acknowledged_attention.remove(&request.thread_id.0);
+            let is_current_thread = state.current_thread_id() == Some(&request.thread_id);
             state
                 .pending_requests
                 .retain(|pending| pending.request_id != request.request_id);
             state.pending_requests.push(request);
+            if is_current_thread && state.input_mode == InputMode::Composer {
+                state.input_mode = InputMode::Normal;
+            }
         }
         Action::InteractiveResolved { request_id } => {
             state
@@ -429,8 +433,12 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         }
         Action::Back => {
             let thread_id = state.current_thread_id().cloned();
+            if state.input_mode == InputMode::UserInput {
+                clear_user_input_editor(state);
+            } else {
+                state.input_mode = InputMode::Normal;
+            }
             state.view = View::Registry;
-            state.input_mode = InputMode::Normal;
             if let Some(thread_id) = thread_id {
                 return vec![Effect::StopWatchingConversation(thread_id)];
             }
@@ -844,6 +852,26 @@ mod tests {
         assert_eq!(app.input_mode, InputMode::Composer);
         let thread_id = app.current_thread_id().expect("thread").clone();
         assert_eq!(app.thread_ui.get(&thread_id.0).expect("ui").draft, "hi");
+    }
+
+    #[test]
+    fn current_thread_interactive_request_pauses_composer_without_losing_draft() {
+        let mut app = app();
+        reduce(&mut app, Action::QuickPrompt);
+        reduce(&mut app, Action::InputChar('x'));
+        let thread_id = app.current_thread_id().expect("thread").clone();
+        reduce(
+            &mut app,
+            Action::InteractiveRequested(InteractiveRequest {
+                request_id: RpcRequestId::Integer(8),
+                thread_id: thread_id.clone(),
+                turn_id: "turn-1".into(),
+                item_id: "item-1".into(),
+                kind: InteractiveRequestKind::FileChangeApproval { reason: None },
+            }),
+        );
+        assert_eq!(app.input_mode, InputMode::Normal);
+        assert_eq!(app.thread_ui[&thread_id.0].draft, "x");
     }
 
     #[test]
