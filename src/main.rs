@@ -2,7 +2,7 @@ use anyhow::Result;
 use codex_tui::{
     app::{Action, AppState, Effect, InputMode, ViewKind, reduce},
     app_server::{self, RegistryHandle},
-    backend::{BackendSnapshot, BackendStatus, CodexBackend, FakeBackend},
+    backend::{BackendStatus, CodexBackend, FakeBackend},
     keymap::{Command, command_for_key},
     store::{FileStore, LocalStore},
     terminal::TerminalSession,
@@ -80,34 +80,20 @@ async fn run_app(fake_mode: bool) -> Result<()> {
     let local = store.load_state()?;
 
     let mut fake_backend = fake_mode.then(FakeBackend::seeded);
-    let (initial, mut registry) = if let Some(fake) = &fake_backend {
-        (fake.snapshot(), None)
-    } else {
-        match app_server::start(None).await {
-            Ok(started) => (started.initial, Some(started.handle)),
-            Err(error) => (
-                BackendSnapshot {
-                    generation: 0,
-                    threads: vec![],
-                    status: BackendStatus {
-                        source: "codex-app-server".into(),
-                        connected: false,
-                        version: None,
-                        platform: None,
-                        codex_home: None,
-                        capabilities: vec![],
-                        optional_capabilities_missing: vec![],
-                        last_refresh_unix_ms: None,
-                        error: Some(error.to_string()),
-                    },
-                },
-                None,
-            ),
-        }
-    };
+    let mut registry: Option<RegistryHandle> = None;
+    let mut connect_task = None;
 
-    let mut app = AppState::new(initial.threads);
-    app.backend_status = initial.status;
+    let mut app = if let Some(fake) = &fake_backend {
+        let snapshot = fake.snapshot();
+        let mut app = AppState::new(snapshot.threads);
+        app.backend_status = snapshot.status;
+        app
+    } else {
+        connect_task = Some(tokio::spawn(app_server::start(None)));
+        let mut app = AppState::new(vec![]);
+        app.backend_status = BackendStatus::starting("codex-app-server");
+        app
+    };
     app.apply_local_state(&local);
 
     let mut terminal = TerminalSession::enter(config.ui.mouse)?;
@@ -115,6 +101,36 @@ async fn run_app(fake_mode: bool) -> Result<()> {
     let mut needs_render = true;
 
     while !app.should_quit {
+        if connect_task
+            .as_ref()
+            .is_some_and(tokio::task::JoinHandle::is_finished)
+        {
+            let task = connect_task.take().expect("finished connect task");
+            match task.await {
+                Ok(Ok(started)) => {
+                    reduce(&mut app, Action::ReplaceThreads(started.initial.threads));
+                    reduce(&mut app, Action::BackendStatus(started.initial.status));
+                    app.apply_local_state(&local);
+                    registry = Some(started.handle);
+                }
+                Ok(Err(error)) => {
+                    reduce(
+                        &mut app,
+                        Action::BackendStatus(backend_error_status(error.to_string())),
+                    );
+                }
+                Err(error) => {
+                    reduce(
+                        &mut app,
+                        Action::BackendStatus(backend_error_status(format!(
+                            "App Server connection task failed: {error}"
+                        ))),
+                    );
+                }
+            }
+            needs_render = true;
+        }
+
         needs_render |= drain_registry(&mut app, registry.as_mut());
 
         if let Some(fake) = fake_backend.as_mut()
@@ -157,8 +173,25 @@ async fn run_app(fake_mode: bool) -> Result<()> {
         tokio::time::sleep(Duration::from_millis(16)).await;
     }
 
+    if let Some(task) = connect_task {
+        task.abort();
+    }
     store.save_state(&app.to_local_state())?;
     Ok(())
+}
+
+fn backend_error_status(error: String) -> BackendStatus {
+    BackendStatus {
+        source: "codex-app-server".into(),
+        connected: false,
+        version: None,
+        platform: None,
+        codex_home: None,
+        capabilities: vec![],
+        optional_capabilities_missing: vec![],
+        last_refresh_unix_ms: None,
+        error: Some(error),
+    }
 }
 
 fn drain_registry(app: &mut AppState, registry: Option<&mut RegistryHandle>) -> bool {
