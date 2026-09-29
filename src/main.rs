@@ -5,6 +5,7 @@ use codex_tui::{
     backend::{BackendStatus, CodexBackend, FakeBackend},
     conversation::{InteractiveRequestKind, InteractiveResolution},
     git::{self, GitEvent, GitHandle},
+    goal::GoalStatus,
     keymap::{Command, command_for_key},
     planning::{
         LocalNote, PlanningSnapshot, SavedView, ScratchState, SourceKind, SourceRef, WorkCardRecord,
@@ -666,6 +667,12 @@ fn drain_registry(
             ConversationEvent::InteractiveResolved { request_id } => {
                 reduce(app, Action::InteractiveResolved { request_id });
             }
+            ConversationEvent::GoalObserved(goal) => {
+                reduce(app, Action::GoalObserved(goal));
+            }
+            ConversationEvent::GoalCleared(thread_id) => {
+                reduce(app, Action::GoalCleared(thread_id));
+            }
             ConversationEvent::PromptSubmitted { thread_id, .. } => {
                 let effects = reduce(app, Action::PromptSubmitted { thread_id });
                 for effect in effects {
@@ -786,6 +793,47 @@ fn apply_effects(
                     reduce(app, Action::PlanningStoreDegraded(Some(error)));
                 }
             },
+            Effect::RefreshGoal(thread_id) => {
+                if let Some(registry) = registry
+                    && let Err(error) = registry.refresh_goal(thread_id)
+                {
+                    reduce(
+                        app,
+                        Action::BackendStatus(backend_error_status(format!(
+                            "Goal refresh command failed: {error}"
+                        ))),
+                    );
+                }
+            }
+            Effect::SetGoal {
+                thread_id,
+                objective,
+                status,
+            } => {
+                if let Some(registry) = registry
+                    && let Err(error) =
+                        registry.set_goal(thread_id, objective, status)
+                {
+                    reduce(
+                        app,
+                        Action::BackendStatus(backend_error_status(format!(
+                            "Goal update command failed: {error}"
+                        ))),
+                    );
+                }
+            }
+            Effect::ClearGoal(thread_id) => {
+                if let Some(registry) = registry
+                    && let Err(error) = registry.clear_goal(thread_id)
+                {
+                    reduce(
+                        app,
+                        Action::BackendStatus(backend_error_status(format!(
+                            "Goal clear command failed: {error}"
+                        ))),
+                    );
+                }
+            }
             Effect::ProbeGit { thread_id, cwd } => {
                 if let Err(error) = git.probe(thread_id.clone(), cwd.clone()) {
                     let mut context = codex_tui::git::GitContext::pending(thread_id, cwd);
@@ -1016,6 +1064,21 @@ fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
         return reduce(app, action);
     }
 
+    if app.goal_actions_open {
+        let action = match key.code {
+            KeyCode::Esc => Some(Action::CloseGoalActions),
+            KeyCode::Enter | KeyCode::Char('e') => Some(Action::BeginGoalObjective),
+            KeyCode::Char('p') => Some(Action::SetGoalStatus(GoalStatus::Paused)),
+            KeyCode::Char('r') => Some(Action::SetGoalStatus(GoalStatus::Active)),
+            KeyCode::Char('c') => Some(Action::ClearGoal),
+            _ => None,
+        };
+        if let Some(action) = action {
+            return reduce(app, action);
+        }
+        return vec![];
+    }
+
     if let Some(request) = app.current_pending_request() {
         let action = match (&request.kind, key.code) {
             (InteractiveRequestKind::UserInput { .. }, KeyCode::Enter | KeyCode::Char('i')) => {
@@ -1109,7 +1172,8 @@ fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
         Command::ExternalEditor => Action::OpenReviewExternalEditor,
         Command::HotSlot(slot) => Action::UseHotSlot(slot),
         Command::ContextActions => Action::OpenContext,
-        Command::CommandPalette | Command::Goal | Command::OpenExternal => return vec![],
+        Command::Goal => Action::OpenGoalActions,
+        Command::CommandPalette | Command::OpenExternal => return vec![],
     };
     reduce(app, action)
 }
