@@ -260,10 +260,8 @@ pub async fn probe_context(thread_id: ThreadId, cwd: String) -> Result<GitContex
             .next()
             .context("git rev-parse response missing common directory")?,
     );
-    let primary_root = canonical_identity_path(&primary_root_from_common_dir(
-        &common_dir,
-        &worktree_root,
-    ));
+    let primary_root =
+        canonical_identity_path(&primary_root_from_common_dir(&common_dir, &worktree_root));
 
     let status = run_git_bytes(
         &cwd,
@@ -768,8 +766,12 @@ mod tests {
 
         assert_eq!(main.repo, other.repo);
         assert_ne!(
-            main.worktree.as_ref().expect("main worktree").canonical_path,
-            other.worktree
+            main.worktree
+                .as_ref()
+                .expect("main worktree")
+                .canonical_path,
+            other
+                .worktree
                 .as_ref()
                 .expect("linked worktree")
                 .canonical_path
@@ -796,9 +798,11 @@ mod tests {
         .await
         .expect("context");
         assert!(context.dirty);
-        assert!(context.changes.iter().any(|change| {
-            change.path == "tracked.txt" && change.worktree_status == Some('M')
-        }));
+        assert!(
+            context.changes.iter().any(|change| {
+                change.path == "tracked.txt" && change.worktree_status == Some('M')
+            })
+        );
     }
 
     #[test]
