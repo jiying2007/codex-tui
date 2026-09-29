@@ -69,7 +69,7 @@ The chat view is part of the product, but the default product surface is a multi
 - shared team database
 - team presence or RBAC
 - web/mobile UI
-- custom Kanban/task database
+- canonical custom Kanban/task database
 - general plugin system
 - universal coding-agent support
 - container/sandbox platform
@@ -80,6 +80,20 @@ The chat view is part of the product, but the default product surface is a multi
 - organization analytics
 
 These can be separate optional layers later if real usage justifies them.
+
+## Long-term target
+
+The mature product adds planning without creating a second task authority:
+
+- saved List and Board/Kanban views
+- Codex Goal projection
+- lightweight local scratch work
+- worktree lifecycle and review
+- GitHub Issue/PR/CI projection
+- notes/bookmarks, snooze/unread and lightweight notifications
+- optional thread queue UI as upstream support stabilizes
+
+Board cards should project existing Codex/Git/GitHub work whenever possible.
 
 ## Architecture
 
@@ -93,6 +107,8 @@ Codex App Server ───── conversation/runtime authority
  Session Registry  ◄──── Git metadata
         │
         ├──── Attention projection
+        │
+        ├──── Planning / Board projection
         │
         └──── tiny local ViewState
         │
@@ -113,4 +129,7 @@ Implementation design lives under `docs/design/`.
 See:
 
 - `docs/design/minimal-core.md`
+- `docs/design/core-user-flows.md`
+- `docs/design/kanban-and-feature-evaluation.md`
+- `docs/design/target-state.md`
 - `docs/roadmap-v1.md`
