@@ -405,9 +405,9 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     });
                 }
             }
-            state
-                .git_contexts
-                .retain(|thread_id, _| state.threads.iter().any(|thread| thread.id.0 == *thread_id));
+            state.git_contexts.retain(|thread_id, _| {
+                state.threads.iter().any(|thread| thread.id.0 == *thread_id)
+            });
             return effects;
         }
         Action::GitContextLoaded(context) => {
@@ -470,8 +470,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 return vec![];
             }
             let len = review.changes.len() as i32;
-            state.review_selected =
-                (state.review_selected as i32 + delta).rem_euclid(len) as usize;
+            state.review_selected = (state.review_selected as i32 + delta).rem_euclid(len) as usize;
             state.review_scroll = 0;
         }
         Action::ScrollReviewBy(delta) => {
