@@ -7,7 +7,7 @@ Status: target architecture
 
 codex-tui is a local-first Codex engineering workbench that connects planning, parallel execution, attention routing, conversation control, Git/worktree context and review in one terminal.
 
-It is not a replacement for Codex, Git or GitHub. It is the operator surface across them.
+It is not a replacement for Codex, Git or the configured code forge. It is the personal operator surface across them.
 
 ## Target user outcomes
 
@@ -35,7 +35,7 @@ Codex App Server
              ^
              |
 Git ---------------- code / worktrees / branch / diff
-GitHub ------------- issue / PR / CI / team planning
+Code Forge --------- work item / MR-or-PR / pipeline / team planning
 Repo config -------- AGENTS.md / .codex configuration
 Local ViewState ---- drafts / pins / aliases / views / scratch
 ~~~
@@ -101,10 +101,10 @@ Optional but expected for small-team mature use.
 
 Capabilities:
 
-- GitHub Issues
-- GitHub Projects views
-- PR/CI/review status
-- link issue <-> thread <-> worktree <-> PR
+- GitLab Self-Managed Work Items / Issue Boards / MR / Pipelines first
+- GitHub behind the same forge contract
+- change-request/pipeline/review status
+- link work item <-> thread <-> worktree <-> change request
 - repository-shared launch/review presets where Codex config does not already cover the need
 
 No team server is required.
@@ -203,11 +203,11 @@ WorkCard
   id: local view identity
   title
   source refs:
-    issue?
+    forge_work_item?
     thread?
     goal?
     worktree?
-    pr?
+    change_request?
     scratch?
   derived stage
   priority overlay?
@@ -221,10 +221,9 @@ Do not use display titles as stable identity.
 ## Target board workflow
 
 ~~~text
-Inbox -> Ready -> Working -> Needs You -> Review -> Done
-                   |             |
-                   +-------------+
-                        resume
+Inbox -> Ready -> Working -> Review -> Done
+
+Needs You is an orthogonal attention overlay and can apply to Working or Review.
 ~~~
 
 Not every transition is manually draggable. Derived state wins where source authority exists.
@@ -276,10 +275,10 @@ Even then, Codex transcript and Git data remain external authorities.
 Small-team target:
 
 ~~~text
-shared Git repo / GitHub Project
+shared Git repo / Code Forge
   |
   +-- AGENTS.md / .codex config
-  +-- issues / PRs / CI
+  +-- work items / MR-or-PR / pipelines
   |
 Developer A codex-tui     Developer B codex-tui
    local sessions            local sessions
