@@ -251,11 +251,7 @@ pub fn reconcile_thread_card(input: ReconcileInput<'_>) -> WorkCardProjection {
         .unwrap_or_else(|| WorkCardRecord::implicit_thread(&thread.id));
 
     let git_dirty = input.git.is_some_and(|git| git.is_repository && git.dirty);
-    let (stage, stage_reason) = derive_stage(
-        &thread.runtime,
-        git_dirty,
-        &local.overlay,
-    );
+    let (stage, stage_reason) = derive_stage(&thread.runtime, git_dirty, &local.overlay);
 
     let mut attention = thread
         .attention
@@ -383,10 +379,9 @@ fn derive_stage(
             WorkflowStage::Working,
             "Codex thread has a system error while work remains active".into(),
         ),
-        RuntimeStatus::Inactive if overlay.manual_ready => (
-            WorkflowStage::Ready,
-            "selected locally as ready".into(),
-        ),
+        RuntimeStatus::Inactive if overlay.manual_ready => {
+            (WorkflowStage::Ready, "selected locally as ready".into())
+        }
         RuntimeStatus::Inactive => (
             WorkflowStage::Inbox,
             "inactive thread has not been selected as ready".into(),
@@ -445,7 +440,10 @@ mod tests {
             now_unix_ms: 100,
         });
         assert_eq!(card.stage, WorkflowStage::Working);
-        assert!(card.attention.contains(&PlanningAttention::ApprovalRequired));
+        assert!(
+            card.attention
+                .contains(&PlanningAttention::ApprovalRequired)
+        );
         assert!(card.needs_you());
     }
 
@@ -506,7 +504,10 @@ mod tests {
             backend_error: None,
             now_unix_ms: 100,
         });
-        assert!(card.attention.contains(&PlanningAttention::UserInputRequired));
+        assert!(
+            card.attention
+                .contains(&PlanningAttention::UserInputRequired)
+        );
         assert!(card.snoozed);
         assert!(!card.needs_you());
     }
