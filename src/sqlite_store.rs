@@ -5,8 +5,8 @@ use crate::planning::{
 use crate::store::{AppConfig, FileStore, LocalStateV1, LocalStore};
 use anyhow::{Context, Result, anyhow};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
-use serde::de::DeserializeOwned;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -122,7 +122,10 @@ impl SqliteStore {
                 card.overlay.priority,
                 bool_i64(card.overlay.manual_ready),
                 card.overlay.done_at_unix_ms.map(u64_to_i64).transpose()?,
-                card.overlay.snooze_until_unix_ms.map(u64_to_i64).transpose()?,
+                card.overlay
+                    .snooze_until_unix_ms
+                    .map(u64_to_i64)
+                    .transpose()?,
                 u64_to_i64(now_unix_ms())?,
             ],
         )
@@ -160,9 +163,7 @@ impl SqliteStore {
             )
             .optional()
             .context("query WorkCard anchor")?;
-        local_id
-            .map(|id| load_card(&conn, &id))
-            .transpose()
+        local_id.map(|id| load_card(&conn, &id)).transpose()
     }
 
     pub fn create_scratch(
@@ -232,10 +233,7 @@ impl SqliteStore {
         tx.execute("DELETE FROM scratch_work WHERE id=?1", [rowid])?;
         tx.execute(
             "DELETE FROM work_cards WHERE anchor_kind=?1 AND anchor_ref=?2",
-            params![
-                enum_text(&SourceKind::ScratchWork)?,
-                scratch_id,
-            ],
+            params![enum_text(&SourceKind::ScratchWork)?, scratch_id,],
         )?;
         tx.commit()?;
         Ok(())
@@ -404,7 +402,9 @@ fn ensure_schema(conn: &mut Connection) -> Result<()> {
         return Ok(());
     }
 
-    let tx = conn.transaction().context("begin SQLite schema migration")?;
+    let tx = conn
+        .transaction()
+        .context("begin SQLite schema migration")?;
     tx.execute_batch(
         "CREATE TABLE metadata (
             key TEXT PRIMARY KEY,
@@ -658,11 +658,9 @@ fn load_saved_views(conn: &Connection) -> Result<Vec<SavedView>> {
 }
 
 fn metadata_get(conn: &Connection, key: &str) -> Result<Option<String>> {
-    conn.query_row(
-        "SELECT value FROM metadata WHERE key=?1",
-        [key],
-        |row| row.get(0),
-    )
+    conn.query_row("SELECT value FROM metadata WHERE key=?1", [key], |row| {
+        row.get(0)
+    })
     .optional()
     .map_err(Into::into)
 }
@@ -848,11 +846,8 @@ mod tests {
         current.pins.insert("new".into());
         store.save_state(&current).expect("save SQLite");
 
-        fs::copy(
-            store.legacy_backup_path(),
-            store.legacy_state_path(),
-        )
-        .expect("restore stale legacy file");
+        fs::copy(store.legacy_backup_path(), store.legacy_state_path())
+            .expect("restore stale legacy file");
 
         let reloaded = store.load_state().expect("reload");
         assert_eq!(reloaded.pins, BTreeSet::from(["new".into()]));
@@ -876,7 +871,12 @@ mod tests {
         store.upsert_work_card(&card).expect("card");
 
         let scratch = store
-            .create_scratch("Investigate wake miss", Some("local only"), Some("kws"), Some(1))
+            .create_scratch(
+                "Investigate wake miss",
+                Some("local only"),
+                Some("kws"),
+                Some(1),
+            )
             .expect("scratch");
 
         let view = store
