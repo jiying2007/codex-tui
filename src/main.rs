@@ -391,15 +391,9 @@ fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
             (InteractiveRequestKind::UserInput { .. }, KeyCode::Char('c')) => {
                 Some(Action::ResolvePending(InteractiveResolution::Cancel))
             }
-            (_, KeyCode::Char('y')) => {
-                Some(Action::ResolvePending(InteractiveResolution::Accept))
-            }
-            (_, KeyCode::Char('n')) => {
-                Some(Action::ResolvePending(InteractiveResolution::Decline))
-            }
-            (_, KeyCode::Char('c')) => {
-                Some(Action::ResolvePending(InteractiveResolution::Cancel))
-            }
+            (_, KeyCode::Char('y')) => Some(Action::ResolvePending(InteractiveResolution::Accept)),
+            (_, KeyCode::Char('n')) => Some(Action::ResolvePending(InteractiveResolution::Decline)),
+            (_, KeyCode::Char('c')) => Some(Action::ResolvePending(InteractiveResolution::Cancel)),
             _ => None,
         };
         if let Some(action) = action {
