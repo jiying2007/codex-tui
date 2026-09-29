@@ -49,9 +49,10 @@ pub fn scopes_overlap(left: &MutationScope, right: &MutationScope) -> bool {
     }
 
     left.writable_roots.iter().any(|left_root| {
-        right.writable_roots.iter().any(|right_root| {
-            paths_overlap(left_root, right_root)
-        })
+        right
+            .writable_roots
+            .iter()
+            .any(|right_root| paths_overlap(left_root, right_root))
     })
 }
 
@@ -175,11 +176,7 @@ impl OperationPlan {
             kind: OperationKind::RemoveWorktree,
             repo,
             cwd,
-            argv: vec![
-                "worktree".into(),
-                "remove".into(),
-                worktree_path.clone(),
-            ],
+            argv: vec!["worktree".into(), "remove".into(), worktree_path.clone()],
             target_worktree: Some(worktree_path),
             target_branch: None,
             expected_side_effect: "managed worktree removed; branch preserved".into(),
@@ -291,10 +288,7 @@ pub struct ManagedWorktreeRecord {
 
 pub fn new_operation_id(now_unix_ms: u64) -> String {
     let sequence = OPERATION_SEQUENCE.fetch_add(1, Ordering::Relaxed);
-    format!(
-        "op-{now_unix_ms}-{}-{sequence}",
-        std::process::id()
-    )
+    format!("op-{now_unix_ms}-{}-{sequence}", std::process::id())
 }
 
 pub fn now_unix_ms() -> u64 {
@@ -317,10 +311,7 @@ mod tests {
         let mut thread = thread;
         thread.metadata.cwd = "/repo".into();
         let scope = mutation_scope_for_thread(&thread, None);
-        assert_eq!(
-            scope.confidence,
-            MutationScopeConfidence::ConservativeCwd
-        );
+        assert_eq!(scope.confidence, MutationScopeConfidence::ConservativeCwd);
         assert_eq!(scope.writable_roots, vec!["/repo"]);
     }
 
@@ -345,12 +336,8 @@ mod tests {
             git_common_dir: "/repo/.git".into(),
             primary_root: "/repo".into(),
         };
-        let plan =
-            OperationPlan::remove_worktree(repo, "/repo".into(), "/repo-wt".into(), 1);
-        assert_eq!(
-            plan.argv,
-            vec!["worktree", "remove", "/repo-wt"]
-        );
+        let plan = OperationPlan::remove_worktree(repo, "/repo".into(), "/repo-wt".into(), 1);
+        assert_eq!(plan.argv, vec!["worktree", "remove", "/repo-wt"]);
         assert!(plan.target_branch.is_none());
     }
 
@@ -363,8 +350,16 @@ mod tests {
         let plan = OperationPlan::delete_branch(repo, "/repo".into(), "feature".into(), 1);
         let mut receipt = OperationReceipt::planned(plan);
         receipt.start(2);
-        receipt.outcome_unknown(3, "process timed out after mutation may have applied".into());
+        receipt.outcome_unknown(
+            3,
+            "process timed out after mutation may have applied".into(),
+        );
         assert_eq!(receipt.state, OperationState::OutcomeUnknown);
-        assert!(receipt.failure.as_deref().is_some_and(|value| value.contains("timed out")));
+        assert!(
+            receipt
+                .failure
+                .as_deref()
+                .is_some_and(|value| value.contains("timed out"))
+        );
     }
 }
