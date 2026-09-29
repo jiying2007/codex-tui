@@ -28,13 +28,13 @@ pub struct MutationRequest {
 
 #[derive(Clone, Debug)]
 pub enum MutationCommand {
-    Execute(MutationRequest),
+    Execute(Box<MutationRequest>),
     Recover,
 }
 
 #[derive(Clone, Debug)]
 pub enum MutationEvent {
-    Receipt(OperationReceipt),
+    Receipt(Box<OperationReceipt>),
     ManagedWorktrees(Vec<ManagedWorktreeRecord>),
     Notice(String),
 }
@@ -60,7 +60,7 @@ impl WorktreeMutationHandle {
 
     pub fn execute(&self, request: MutationRequest) -> Result<()> {
         self.command_tx
-            .send(MutationCommand::Execute(request))
+            .send(MutationCommand::Execute(Box::new(request)))
             .map_err(|_| anyhow!("worktree mutation coordinator is unavailable"))
     }
 
@@ -92,6 +92,7 @@ async fn run_coordinator(
     while let Some(command) = command_rx.recv().await {
         match command {
             MutationCommand::Execute(request) => {
+                let request = *request;
                 let store = store.clone();
                 let locks = locks.clone();
                 let event_tx = event_tx.clone();
@@ -99,7 +100,7 @@ async fn run_coordinator(
                     let receipt = execute_with_repo_lock(&store, &locks, request).await;
                     match receipt {
                         Ok(receipt) => {
-                            let _ = event_tx.send(MutationEvent::Receipt(receipt));
+                            let _ = event_tx.send(MutationEvent::Receipt(Box::new(receipt)));
                             emit_inventory(&store, &event_tx);
                         }
                         Err(error) => {
@@ -582,7 +583,7 @@ async fn recover_incomplete(
             }
             receipt = reconcile_receipt(store, receipt).await?;
         }
-        let _ = tx.send(MutationEvent::Receipt(receipt));
+        let _ = tx.send(MutationEvent::Receipt(Box::new(receipt)));
     }
     Ok(())
 }
@@ -771,8 +772,7 @@ mod tests {
         std::fs::write(root.join("tracked.txt"), "base\n").expect("write");
         git(root, &["add", "tracked.txt"]);
         git(root, &["commit", "-m", "base"]);
-        let context = futures_lite_probe(root);
-        context
+        futures_lite_probe(root)
     }
 
     fn futures_lite_probe(root: &Path) -> LocalRepoIdentity {
@@ -1046,7 +1046,7 @@ branch refs/heads/feature
             .await
             .expect("recover");
         let recovered = match rx.recv().await.expect("event") {
-            MutationEvent::Receipt(receipt) => receipt,
+            MutationEvent::Receipt(receipt) => *receipt,
             other => panic!("unexpected event: {other:?}"),
         };
         assert_eq!(recovered.state, OperationState::Succeeded);
