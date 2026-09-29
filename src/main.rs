@@ -811,8 +811,7 @@ fn apply_effects(
                 status,
             } => {
                 if let Some(registry) = registry
-                    && let Err(error) =
-                        registry.set_goal(thread_id, objective, status)
+                    && let Err(error) = registry.set_goal(thread_id, objective, status)
                 {
                     reduce(
                         app,
