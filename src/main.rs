@@ -1,6 +1,6 @@
 use anyhow::Result;
 use codex_tui::{
-    app::{Action, AppState, Effect, ViewKind, reduce},
+    app::{Action, AppState, Effect, InputMode, ViewKind, reduce},
     app_server::{self, RegistryHandle},
     backend::{BackendSnapshot, BackendStatus, CodexBackend, FakeBackend},
     keymap::{Command, command_for_key},
@@ -8,7 +8,7 @@ use codex_tui::{
     terminal::TerminalSession,
     ui,
 };
-use crossterm::event::{self, Event};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use std::time::{Duration, Instant};
 
 #[tokio::main]
@@ -130,10 +130,8 @@ async fn run_app(fake_mode: bool) -> Result<()> {
             .draw(|frame| ui::render(frame, &app))?;
 
         while event::poll(Duration::ZERO)? {
-            if let Event::Key(key) = event::read()?
-                && let Some(command) = command_for_key(key, app.view_kind())
-            {
-                for effect in handle_command(&mut app, command) {
+            if let Event::Key(key) = event::read()? {
+                for effect in handle_key(&mut app, key) {
                     if effect == Effect::PersistOperatorState {
                         store.save_state(&app.to_local_state())?;
                     }
@@ -158,6 +156,34 @@ fn drain_registry(app: &mut AppState, registry: Option<&mut RegistryHandle>) {
     }
 }
 
+fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
+    if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
+        return vec![];
+    }
+
+    if app.input_mode != InputMode::Normal {
+        let action = match key.code {
+            KeyCode::Esc => Action::CancelInput,
+            KeyCode::Enter => Action::CommitInput,
+            KeyCode::Backspace => Action::InputBackspace,
+            KeyCode::Char(character)
+                if !key
+                    .modifiers
+                    .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER) =>
+            {
+                Action::InputChar(character)
+            }
+            _ => return vec![],
+        };
+        return reduce(app, action);
+    }
+
+    let Some(command) = command_for_key(key, app.view_kind()) else {
+        return vec![];
+    };
+    handle_command(app, command)
+}
+
 fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
     let action = match command {
         Command::QuitOrInterrupt => {
@@ -169,16 +195,19 @@ fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
         }
         Command::Back => Action::Back,
         Command::Help => Action::ToggleHelp,
+        Command::Search => Action::BeginSearch,
         Command::Next => Action::MoveSelection(1),
         Command::Previous => Action::MoveSelection(-1),
         Command::Open => Action::OpenSelected,
         Command::NextAttention => Action::NextAttention,
         Command::QuickPrompt => Action::QuickPrompt,
         Command::MarkUnread => Action::MarkUnread,
+        Command::TogglePin => Action::TogglePin,
+        Command::EditAlias => Action::BeginAlias,
+        Command::AcknowledgeAttention => Action::AcknowledgeAttention,
         Command::PageUp => Action::ScrollBy(-5),
         Command::PageDown => Action::ScrollBy(5),
         Command::CommandPalette
-        | Command::Search
         | Command::ContextActions
         | Command::Board
         | Command::Review
