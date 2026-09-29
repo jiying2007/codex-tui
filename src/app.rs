@@ -854,10 +854,7 @@ mod tests {
         let thread_id = app.current_thread_id().expect("thread").clone();
         let effects = reduce(&mut app, Action::InterruptCurrent);
         assert_eq!(app.view, View::Registry);
-        assert_eq!(
-            effects,
-            vec![Effect::StopWatchingConversation(thread_id)]
-        );
+        assert_eq!(effects, vec![Effect::StopWatchingConversation(thread_id)]);
     }
 
     #[test]
