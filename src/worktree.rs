@@ -206,7 +206,10 @@ async fn execute_request(
                 receipt.succeed(now_unix_ms(), result_ref, verification);
             }
             Err(error) => {
-                receipt.fail(now_unix_ms(), format!("worktree adoption failed: {error:#}"));
+                receipt.fail(
+                    now_unix_ms(),
+                    format!("worktree adoption failed: {error:#}"),
+                );
             }
         }
         store.save_operation_receipt(&receipt)?;
@@ -984,7 +987,10 @@ branch refs/heads/feature
         let store = SqliteStore::at(temp.path().join("store"));
         let target = temp.path().join("existing-wt");
         let target_text = target.to_string_lossy().into_owned();
-        git(&repo_root, &["worktree", "add", "-b", "existing", &target_text]);
+        git(
+            &repo_root,
+            &["worktree", "add", "-b", "existing", &target_text],
+        );
 
         let plan = OperationPlan::adopt_worktree(
             repo.clone(),
@@ -1004,10 +1010,7 @@ branch refs/heads/feature
         assert_eq!(receipt.state, OperationState::Succeeded);
 
         let managed = store
-            .managed_worktree(
-                &repo.git_common_dir,
-                &canonical_path(&target_text),
-            )
+            .managed_worktree(&repo.git_common_dir, &canonical_path(&target_text))
             .expect("lookup")
             .expect("managed");
         assert!(managed.adopted);
