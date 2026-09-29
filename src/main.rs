@@ -46,7 +46,9 @@ impl RuntimeStore {
             match sqlite.load_planning_snapshot() {
                 Ok(snapshot) => snapshot,
                 Err(store_error) => {
-                    error = Some(format!("SQLite planning store unavailable: {store_error:#}"));
+                    error = Some(format!(
+                        "SQLite planning store unavailable: {store_error:#}"
+                    ));
                     PlanningSnapshot::default()
                 }
             }
@@ -120,7 +122,10 @@ async fn doctor(scope: Option<&str>) -> Result<()> {
                 println!("store-backend: sqlite");
                 println!("store-schema: {}", health.schema_version);
                 println!("integrity: {}", health.integrity);
-                println!("legacy-import: {}", health.legacy_import.as_deref().unwrap_or("unknown"));
+                println!(
+                    "legacy-import: {}",
+                    health.legacy_import.as_deref().unwrap_or("unknown")
+                );
                 match store.load_planning_snapshot() {
                     Ok(snapshot) => {
                         println!("work-cards: {}", snapshot.cards.len());
@@ -174,9 +179,7 @@ async fn doctor(scope: Option<&str>) -> Result<()> {
             }
         }
     } else {
-        println!(
-            "hint: run `codex-tui doctor codex`, `doctor git`, or `doctor store`"
-        );
+        println!("hint: run `codex-tui doctor codex`, `doctor git`, or `doctor store`");
     }
     Ok(())
 }
@@ -225,14 +228,8 @@ async fn run_app(fake_mode: bool) -> Result<()> {
         app
     };
     app.apply_local_state(&local);
-    reduce(
-        &mut app,
-        Action::PlanningSnapshotLoaded(bootstrap.planning),
-    );
-    reduce(
-        &mut app,
-        Action::PlanningStoreDegraded(store.error()),
-    );
+    reduce(&mut app, Action::PlanningSnapshotLoaded(bootstrap.planning));
+    reduce(&mut app, Action::PlanningStoreDegraded(store.error()));
     reduce(
         &mut app,
         Action::ReconcilePlanning {
