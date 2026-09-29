@@ -210,6 +210,145 @@ pub struct SavedView {
     pub visible_fields: Vec<String>,
 }
 
+impl SavedViewLayout {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::List => "List",
+            Self::Board => "Board",
+            Self::ReviewQueue => "Review Queue",
+        }
+    }
+}
+
+pub fn builtin_saved_views() -> Vec<SavedView> {
+    vec![
+        SavedView {
+            id: "builtin:all".into(),
+            name: "All Work".into(),
+            source_scope: "all".into(),
+            filter: String::new(),
+            group_by: Some("stage".into()),
+            order_by: Some("priority".into()),
+            layout: SavedViewLayout::Board,
+            visible_fields: vec!["stage".into(), "attention".into(), "workspace".into()],
+        },
+        SavedView {
+            id: "builtin:attention".into(),
+            name: "Needs You".into(),
+            source_scope: "all".into(),
+            filter: "status:needs-you".into(),
+            group_by: Some("workspace".into()),
+            order_by: Some("priority".into()),
+            layout: SavedViewLayout::List,
+            visible_fields: vec!["attention".into(), "stage".into(), "workspace".into()],
+        },
+        SavedView {
+            id: "builtin:review".into(),
+            name: "Needs Review".into(),
+            source_scope: "all".into(),
+            filter: "stage:review".into(),
+            group_by: Some("workspace".into()),
+            order_by: Some("priority".into()),
+            layout: SavedViewLayout::ReviewQueue,
+            visible_fields: vec!["workspace".into(), "attention".into()],
+        },
+    ]
+}
+
+pub fn apply_saved_view<'a>(
+    cards: &'a [WorkCardProjection],
+    view: &SavedView,
+) -> Vec<&'a WorkCardProjection> {
+    let mut selected = cards
+        .iter()
+        .filter(|card| card_matches_filter(card, &view.filter))
+        .collect::<Vec<_>>();
+
+    match view.order_by.as_deref() {
+        Some("title") => selected.sort_by(|left, right| left.title.cmp(&right.title)),
+        Some("stage") => selected.sort_by(|left, right| {
+            left.stage
+                .cmp(&right.stage)
+                .then_with(|| left.title.cmp(&right.title))
+        }),
+        Some("workspace") => selected.sort_by(|left, right| {
+            left.workspace
+                .as_deref()
+                .unwrap_or("")
+                .cmp(right.workspace.as_deref().unwrap_or(""))
+                .then_with(|| left.title.cmp(&right.title))
+        }),
+        _ => selected.sort_by(|left, right| {
+            left.overlay
+                .priority
+                .unwrap_or(i32::MAX)
+                .cmp(&right.overlay.priority.unwrap_or(i32::MAX))
+                .then_with(|| left.title.cmp(&right.title))
+        }),
+    }
+    selected
+}
+
+pub fn saved_view_group_key(card: &WorkCardProjection, group_by: Option<&str>) -> String {
+    match group_by {
+        Some("stage") => card.stage.label().to_string(),
+        Some("workspace") => card.workspace.clone().unwrap_or_else(|| "No workspace".into()),
+        Some("source") => format!("{:?}", card.anchor.kind),
+        _ => String::new(),
+    }
+}
+
+fn card_matches_filter(card: &WorkCardProjection, filter: &str) -> bool {
+    let normalized = filter.trim().to_ascii_lowercase();
+    if normalized.is_empty() {
+        return true;
+    }
+
+    normalized.split_whitespace().all(|token| {
+        if token == "status:needs-you" || token == "needs-you" {
+            return card.needs_you();
+        }
+        if let Some(stage) = token.strip_prefix("stage:") {
+            return card.stage.label().eq_ignore_ascii_case(stage);
+        }
+        if let Some(workspace) = token.strip_prefix("workspace:") {
+            return card
+                .workspace
+                .as_deref()
+                .is_some_and(|value| value.to_ascii_lowercase().contains(workspace));
+        }
+        if let Some(tag) = token.strip_prefix("tag:") {
+            return card
+                .overlay
+                .tags
+                .iter()
+                .any(|value| value.eq_ignore_ascii_case(tag));
+        }
+        if let Some(source) = token.strip_prefix("source:") {
+            return match source {
+                "scratch" => card.anchor.kind == SourceKind::ScratchWork,
+                "thread" | "codex" => card.anchor.kind == SourceKind::CodexThread,
+                "forge" => card.anchor.kind == SourceKind::ForgeWorkItem,
+                _ => false,
+            };
+        }
+
+        let haystack = format!(
+            "{} {} {} {}",
+            card.title,
+            card.workspace.as_deref().unwrap_or(""),
+            card.stage.label(),
+            card.attention
+                .iter()
+                .map(PlanningAttention::label)
+                .collect::<Vec<_>>()
+                .join(" ")
+        )
+        .to_ascii_lowercase();
+        haystack.contains(token)
+    })
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LocalNote {
     pub owner: SourceRef,
@@ -434,6 +573,60 @@ mod tests {
 
     fn first_thread() -> ThreadSummary {
         FakeBackend::seeded().snapshot().threads.remove(0)
+    }
+
+    #[test]
+    fn builtin_attention_view_filters_attention_without_changing_stage() {
+        let mut thread = first_thread();
+        thread.runtime = RuntimeStatus::Working;
+        thread.attention = vec![AttentionReason::ApprovalRequired];
+        let card = reconcile_thread_card(ReconcileInput {
+            thread: &thread,
+            git: None,
+            local: None,
+            collision_count: 0,
+            backend_observed_at_unix_ms: Some(100),
+            backend_error: None,
+            now_unix_ms: 100,
+        });
+        let cards = vec![card];
+        let views = builtin_saved_views();
+        let attention = views
+            .iter()
+            .find(|view| view.id == "builtin:attention")
+            .expect("attention view");
+        let visible = apply_saved_view(&cards, attention);
+        assert_eq!(visible.len(), 1);
+        assert_eq!(visible[0].stage, WorkflowStage::Working);
+        assert!(visible[0].needs_you());
+    }
+
+    #[test]
+    fn saved_view_filter_supports_stage_workspace_tag_and_source() {
+        let mut thread = first_thread();
+        thread.runtime = RuntimeStatus::Ready;
+        let mut local = WorkCardRecord::implicit_thread(&thread.id);
+        local.overlay.tags.insert("kws".into());
+        let card = reconcile_thread_card(ReconcileInput {
+            thread: &thread,
+            git: None,
+            local: Some(&local),
+            collision_count: 0,
+            backend_observed_at_unix_ms: Some(100),
+            backend_error: None,
+            now_unix_ms: 100,
+        });
+        let view = SavedView {
+            id: "test".into(),
+            name: "test".into(),
+            source_scope: "all".into(),
+            filter: "stage:ready tag:kws source:thread".into(),
+            group_by: Some("workspace".into()),
+            order_by: Some("title".into()),
+            layout: SavedViewLayout::List,
+            visible_fields: vec![],
+        };
+        assert_eq!(apply_saved_view(&[card], &view).len(), 1);
     }
 
     #[test]
