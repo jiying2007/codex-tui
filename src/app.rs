@@ -42,6 +42,32 @@ pub enum InputMode {
     UserInput,
     ScratchTitle,
     Snooze,
+    Note,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ContextChoice {
+    Snooze,
+    EditNote,
+    Bookmark,
+    ScratchInbox,
+    ScratchReady,
+    ScratchDone,
+    DeleteScratch,
+}
+
+impl ContextChoice {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Snooze => "Snooze attention…",
+            Self::EditNote => "Edit local note…",
+            Self::Bookmark => "Add local bookmark",
+            Self::ScratchInbox => "Scratch → Inbox",
+            Self::ScratchReady => "Scratch → Ready",
+            Self::ScratchDone => "Scratch → Done",
+            Self::DeleteScratch => "Delete local ScratchWork",
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -64,6 +90,10 @@ pub enum Action {
     OpenPlanningSelected,
     BeginScratch,
     BeginSnooze,
+    OpenContext,
+    CloseContext,
+    MoveContext(i32),
+    ExecuteContext,
     BeginHotSlotBind,
     UseHotSlot(u8),
     MoveReview(i32),
@@ -110,6 +140,25 @@ pub enum Effect {
     SnoozeWorkCard {
         anchor: SourceRef,
         duration_ms: u64,
+    },
+    SaveSourceNote {
+        owner: SourceRef,
+        text: String,
+    },
+    UpdateScratchNote {
+        scratch_id: String,
+        note: Option<String>,
+    },
+    CreateBookmark {
+        source: SourceRef,
+        label: Option<String>,
+    },
+    UpdateScratchState {
+        scratch_id: String,
+        state: crate::planning::ScratchState,
+    },
+    DeleteScratch {
+        scratch_id: String,
     },
     SetHotSlot {
         slot: u8,
@@ -171,6 +220,9 @@ pub struct AppState {
     pub board_selected: usize,
     pub new_scratch_workspace: Option<String>,
     pub snooze_target: Option<SourceRef>,
+    pub note_target: Option<SourceRef>,
+    pub context_open: bool,
+    pub context_selected: usize,
     pub hot_slot_bind_pending: bool,
     pub review_selected: usize,
     pub review_scroll: u16,
@@ -211,6 +263,9 @@ impl AppState {
             board_selected: 0,
             new_scratch_workspace: None,
             snooze_target: None,
+            note_target: None,
+            context_open: false,
+            context_selected: 0,
             hot_slot_bind_pending: false,
             review_selected: 0,
             review_scroll: 0,
@@ -329,6 +384,30 @@ impl AppState {
                 value: id.clone(),
             }),
         }
+    }
+
+    pub fn context_choices(&self) -> Vec<ContextChoice> {
+        let Some(target) = self.selected_local_target() else {
+            return vec![];
+        };
+        let mut choices = vec![
+            ContextChoice::Snooze,
+            ContextChoice::EditNote,
+            ContextChoice::Bookmark,
+        ];
+        if target.kind == SourceKind::ScratchWork {
+            choices.extend([
+                ContextChoice::ScratchInbox,
+                ContextChoice::ScratchReady,
+                ContextChoice::ScratchDone,
+                ContextChoice::DeleteScratch,
+            ]);
+        }
+        choices
+    }
+
+    pub fn context_choice(&self) -> Option<ContextChoice> {
+        self.context_choices().get(self.context_selected).copied()
     }
 
     pub fn work_card_for_thread(&self, thread_id: &ThreadId) -> Option<&WorkCardProjection> {
@@ -642,6 +721,98 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.input_buffer.clear();
             state.input_mode = InputMode::ScratchTitle;
         }
+        Action::OpenContext => {
+            if !state.context_choices().is_empty() {
+                state.context_open = true;
+                state.context_selected = 0;
+            }
+        }
+        Action::CloseContext => {
+            state.context_open = false;
+            state.context_selected = 0;
+        }
+        Action::MoveContext(delta) => {
+            let len = state.context_choices().len();
+            if len == 0 {
+                state.context_selected = 0;
+            } else {
+                state.context_selected =
+                    (state.context_selected as i32 + delta).rem_euclid(len as i32) as usize;
+            }
+        }
+        Action::ExecuteContext => {
+            let Some(choice) = state.context_choice() else {
+                state.context_open = false;
+                return vec![];
+            };
+            let Some(target) = state.selected_local_target() else {
+                state.context_open = false;
+                return vec![];
+            };
+            state.context_open = false;
+            state.context_selected = 0;
+
+            match choice {
+                ContextChoice::Snooze => {
+                    state.snooze_target = Some(target);
+                    state.input_buffer = "1h".into();
+                    state.input_mode = InputMode::Snooze;
+                }
+                ContextChoice::EditNote => {
+                    let existing = if target.kind == SourceKind::ScratchWork {
+                        state
+                            .planning_snapshot
+                            .scratch
+                            .iter()
+                            .find(|scratch| scratch.id == target.value)
+                            .and_then(|scratch| scratch.note.clone())
+                    } else {
+                        state
+                            .planning_snapshot
+                            .notes
+                            .iter()
+                            .find(|note| note.owner == target)
+                            .map(|note| note.text.clone())
+                    };
+                    state.note_target = Some(target);
+                    state.input_buffer = existing.unwrap_or_default();
+                    state.input_mode = InputMode::Note;
+                }
+                ContextChoice::Bookmark => {
+                    let label = state
+                        .work_cards
+                        .iter()
+                        .find(|card| card.anchor == target)
+                        .map(|card| card.title.clone());
+                    return vec![Effect::CreateBookmark {
+                        source: target,
+                        label,
+                    }];
+                }
+                ContextChoice::ScratchInbox
+                | ContextChoice::ScratchReady
+                | ContextChoice::ScratchDone => {
+                    let scratch_state = match choice {
+                        ContextChoice::ScratchInbox => crate::planning::ScratchState::Inbox,
+                        ContextChoice::ScratchReady => crate::planning::ScratchState::Ready,
+                        ContextChoice::ScratchDone => crate::planning::ScratchState::Done,
+                        _ => unreachable!(),
+                    };
+                    return vec![Effect::UpdateScratchState {
+                        scratch_id: target.value,
+                        state: scratch_state,
+                    }];
+                }
+                ContextChoice::DeleteScratch => {
+                    if matches!(state.view, View::Scratch(_)) {
+                        state.view = View::Board;
+                    }
+                    return vec![Effect::DeleteScratch {
+                        scratch_id: target.value,
+                    }];
+                }
+            }
+        }
         Action::BeginSnooze => {
             if let Some(target) = state.selected_local_target() {
                 state.snooze_target = Some(target);
@@ -948,6 +1119,11 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
         }
         Action::Back => {
+            if state.context_open {
+                state.context_open = false;
+                state.context_selected = 0;
+                return vec![];
+            }
             if state.hot_slot_bind_pending {
                 state.hot_slot_bind_pending = false;
                 return vec![];
@@ -1101,7 +1277,8 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::Alias
             | InputMode::UserInput
             | InputMode::ScratchTitle
-            | InputMode::Snooze => {
+            | InputMode::Snooze
+            | InputMode::Note => {
                 state.input_buffer.push(character);
                 if state.input_mode == InputMode::Search {
                     state.filter.clone_from(&state.input_buffer);
@@ -1121,7 +1298,8 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::Alias
             | InputMode::UserInput
             | InputMode::ScratchTitle
-            | InputMode::Snooze => {
+            | InputMode::Snooze
+            | InputMode::Note => {
                 state.input_buffer.pop();
                 if state.input_mode == InputMode::Search {
                     state.filter.clone_from(&state.input_buffer);
@@ -1140,6 +1318,26 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 state.input_mode = InputMode::Normal;
                 state.input_buffer.clear();
                 return vec![Effect::CreateScratch { title, workspace }];
+            }
+            if mode == InputMode::Note {
+                let text = state.input_buffer.trim().to_string();
+                let Some(target) = state.note_target.take() else {
+                    state.input_mode = InputMode::Normal;
+                    state.input_buffer.clear();
+                    return vec![];
+                };
+                state.input_mode = InputMode::Normal;
+                state.input_buffer.clear();
+                if target.kind == SourceKind::ScratchWork {
+                    return vec![Effect::UpdateScratchNote {
+                        scratch_id: target.value,
+                        note: (!text.is_empty()).then_some(text),
+                    }];
+                }
+                return vec![Effect::SaveSourceNote {
+                    owner: target,
+                    text,
+                }];
             }
             if mode == InputMode::Snooze {
                 let Some(duration_ms) = parse_snooze_duration(&state.input_buffer) else {
@@ -1262,6 +1460,9 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
             if state.input_mode == InputMode::Snooze {
                 state.snooze_target = None;
+            }
+            if state.input_mode == InputMode::Note {
+                state.note_target = None;
             }
             if state.input_mode == InputMode::Search {
                 state.filter.clone_from(&state.input_original);
@@ -1860,6 +2061,50 @@ mod tests {
             [Effect::CreateScratch { title, .. }] if title == "Investigate wake miss"
         ));
         assert_eq!(app.input_mode, InputMode::Normal);
+    }
+
+    #[test]
+    fn context_menu_exposes_workflow_changes_only_for_scratch() {
+        let mut app = app();
+        let thread_choices = app.context_choices();
+        assert_eq!(thread_choices.len(), 3);
+        assert!(!thread_choices.contains(&ContextChoice::ScratchDone));
+
+        app.planning_snapshot.scratch.push(crate::planning::ScratchWork {
+            id: "scratch:1".into(),
+            title: "Local".into(),
+            note: None,
+            workspace: None,
+            priority: None,
+            state: crate::planning::ScratchState::Inbox,
+            created_at_unix_ms: 1,
+            updated_at_unix_ms: 1,
+        });
+        app.work_cards.push(reconcile_scratch_card_with_local(
+            &app.planning_snapshot.scratch[0],
+            None,
+            1,
+        ));
+        app.view = View::Scratch("scratch:1".into());
+        let scratch_choices = app.context_choices();
+        assert!(scratch_choices.contains(&ContextChoice::ScratchReady));
+        assert!(scratch_choices.contains(&ContextChoice::DeleteScratch));
+    }
+
+    #[test]
+    fn context_note_prefills_existing_thread_note() {
+        let mut app = app();
+        let owner = SourceRef::codex_thread(&ThreadId::new("thread-impl"));
+        app.planning_snapshot.notes.push(crate::planning::LocalNote {
+            owner,
+            text: "remember".into(),
+            updated_at_unix_ms: 1,
+        });
+        reduce(&mut app, Action::OpenContext);
+        reduce(&mut app, Action::MoveContext(1));
+        reduce(&mut app, Action::ExecuteContext);
+        assert_eq!(app.input_mode, InputMode::Note);
+        assert_eq!(app.input_buffer, "remember");
     }
 
     #[test]
