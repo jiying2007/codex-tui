@@ -6,9 +6,7 @@ use codex_tui::{
     conversation::{InteractiveRequestKind, InteractiveResolution},
     git::{self, GitEvent, GitHandle},
     keymap::{Command, command_for_key},
-    planning::{
-        PlanningSnapshot, SourceKind, SourceRef, WorkCardRecord,
-    },
+    planning::{PlanningSnapshot, SourceKind, SourceRef, WorkCardRecord},
     sqlite_store::SqliteStore,
     store::{AppConfig, LocalStateV1, LocalStore},
     terminal::TerminalSession,
@@ -111,11 +109,9 @@ impl RuntimeStore {
             let mut card = match self.sqlite.work_card_for_anchor(&anchor)? {
                 Some(card) => card,
                 None => match anchor.kind {
-                    SourceKind::CodexThread => {
-                        WorkCardRecord::implicit_thread(&codex_tui::domain::ThreadId::new(
-                            anchor.value.clone(),
-                        ))
-                    }
+                    SourceKind::CodexThread => WorkCardRecord::implicit_thread(
+                        &codex_tui::domain::ThreadId::new(anchor.value.clone()),
+                    ),
                     SourceKind::ScratchWork => WorkCardRecord {
                         local_id: anchor.value.clone(),
                         anchor: anchor.clone(),
@@ -152,11 +148,7 @@ impl RuntimeStore {
         })
     }
 
-    fn set_hot_slot(
-        &mut self,
-        slot: u8,
-        target: SourceRef,
-    ) -> Result<PlanningSnapshot, String> {
+    fn set_hot_slot(&mut self, slot: u8, target: SourceRef) -> Result<PlanningSnapshot, String> {
         if !self.writable {
             return Err(self
                 .error
