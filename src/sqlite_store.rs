@@ -1,4 +1,6 @@
-use crate::operation::{ManagedWorktreeRecord, OperationReceipt, OperationState};
+use crate::operation::{
+    ManagedWorktreeRecord, OperationPlan, OperationReceipt, OperationState,
+};
 use crate::planning::{
     Bookmark, HotSlot, LocalNote, PlanningSnapshot, SavedView, ScratchState, ScratchWork,
     SourceKind, SourceRef, WorkCardLink, WorkCardOverlay, WorkCardRecord,
@@ -394,6 +396,171 @@ impl SqliteStore {
         Ok(())
     }
 
+    pub fn upsert_managed_worktree(&self, record: &ManagedWorktreeRecord) -> Result<()> {
+        let conn = self.open_ready()?;
+        conn.execute(
+            "INSERT INTO managed_worktrees (
+                repo_common_dir, repo_primary_root, canonical_path, branch,
+                created_by_operation_id, adopted, created_at_unix_ms, last_verified_at_unix_ms
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(repo_common_dir, canonical_path) DO UPDATE SET
+                repo_primary_root=excluded.repo_primary_root,
+                branch=excluded.branch,
+                created_by_operation_id=excluded.created_by_operation_id,
+                adopted=excluded.adopted,
+                created_at_unix_ms=excluded.created_at_unix_ms,
+                last_verified_at_unix_ms=excluded.last_verified_at_unix_ms",
+            params![
+                record.repo.git_common_dir,
+                record.repo.primary_root,
+                record.canonical_path,
+                record.branch,
+                record.created_by_operation_id,
+                bool_i64(record.adopted),
+                u64_to_i64(record.created_at_unix_ms)?,
+                u64_to_i64(record.last_verified_at_unix_ms)?,
+            ],
+        )
+        .context("upsert managed worktree")?;
+        Ok(())
+    }
+
+    pub fn remove_managed_worktree(
+        &self,
+        repo_common_dir: &str,
+        canonical_path: &str,
+    ) -> Result<()> {
+        self.open_ready()?.execute(
+            "DELETE FROM managed_worktrees
+             WHERE repo_common_dir=?1 AND canonical_path=?2",
+            params![repo_common_dir, canonical_path],
+        )?;
+        Ok(())
+    }
+
+    pub fn load_managed_worktrees(&self) -> Result<Vec<ManagedWorktreeRecord>> {
+        let conn = self.open_ready()?;
+        let mut stmt = conn.prepare(
+            "SELECT repo_common_dir, repo_primary_root, canonical_path, branch,
+                    created_by_operation_id, adopted, created_at_unix_ms,
+                    last_verified_at_unix_ms
+             FROM managed_worktrees
+             ORDER BY repo_common_dir, canonical_path",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, Option<String>>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, i64>(5)?,
+                row.get::<_, i64>(6)?,
+                row.get::<_, i64>(7)?,
+            ))
+        })?;
+        rows.map(|row| {
+            let (
+                git_common_dir,
+                primary_root,
+                canonical_path,
+                branch,
+                created_by_operation_id,
+                adopted,
+                created_at,
+                last_verified_at,
+            ) = row?;
+            Ok(ManagedWorktreeRecord {
+                repo: crate::domain::LocalRepoIdentity {
+                    git_common_dir,
+                    primary_root,
+                },
+                canonical_path,
+                branch,
+                created_by_operation_id,
+                adopted: adopted != 0,
+                created_at_unix_ms: i64_to_u64(created_at)?,
+                last_verified_at_unix_ms: i64_to_u64(last_verified_at)?,
+            })
+        })
+        .collect()
+    }
+
+    pub fn managed_worktree(
+        &self,
+        repo_common_dir: &str,
+        canonical_path: &str,
+    ) -> Result<Option<ManagedWorktreeRecord>> {
+        Ok(self
+            .load_managed_worktrees()?
+            .into_iter()
+            .find(|record| {
+                record.repo.git_common_dir == repo_common_dir
+                    && record.canonical_path == canonical_path
+            }))
+    }
+
+    pub fn save_operation_receipt(&self, receipt: &OperationReceipt) -> Result<()> {
+        let conn = self.open_ready()?;
+        let plan_json =
+            serde_json::to_string(&receipt.plan).context("serialize operation plan")?;
+        conn.execute(
+            "INSERT INTO operation_receipts (
+                operation_id, plan_json, state, started_at_unix_ms, completed_at_unix_ms,
+                result_ref, verification, failure, updated_at_unix_ms
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+             ON CONFLICT(operation_id) DO UPDATE SET
+                plan_json=excluded.plan_json,
+                state=excluded.state,
+                started_at_unix_ms=excluded.started_at_unix_ms,
+                completed_at_unix_ms=excluded.completed_at_unix_ms,
+                result_ref=excluded.result_ref,
+                verification=excluded.verification,
+                failure=excluded.failure,
+                updated_at_unix_ms=excluded.updated_at_unix_ms",
+            params![
+                receipt.operation_id,
+                plan_json,
+                enum_text(&receipt.state)?,
+                receipt.started_at_unix_ms.map(u64_to_i64).transpose()?,
+                receipt.completed_at_unix_ms.map(u64_to_i64).transpose()?,
+                receipt.result_ref,
+                receipt.verification,
+                receipt.failure,
+                u64_to_i64(now_unix_ms())?,
+            ],
+        )
+        .context("save operation receipt")?;
+        Ok(())
+    }
+
+    pub fn operation_receipt(&self, operation_id: &str) -> Result<Option<OperationReceipt>> {
+        let conn = self.open_ready()?;
+        conn.query_row(
+            "SELECT operation_id, plan_json, state, started_at_unix_ms,
+                    completed_at_unix_ms, result_ref, verification, failure
+             FROM operation_receipts WHERE operation_id=?1",
+            [operation_id],
+            decode_operation_receipt,
+        )
+        .optional()
+        .context("load operation receipt")
+    }
+
+    pub fn load_recent_operation_receipts(&self, limit: usize) -> Result<Vec<OperationReceipt>> {
+        let conn = self.open_ready()?;
+        let limit = i64::try_from(limit).context("receipt limit exceeds SQLite range")?;
+        let mut stmt = conn.prepare(
+            "SELECT operation_id, plan_json, state, started_at_unix_ms,
+                    completed_at_unix_ms, result_ref, verification, failure
+             FROM operation_receipts
+             ORDER BY updated_at_unix_ms DESC, operation_id DESC
+             LIMIT ?1",
+        )?;
+        let rows = stmt.query_map([limit], decode_operation_receipt)?;
+        rows.map(|row| row.map_err(Into::into)).collect()
+    }
+
     fn open_ready(&self) -> Result<Connection> {
         ensure_private_parent(&self.db_path)?;
         let mut conn = Connection::open(&self.db_path)
@@ -620,6 +787,43 @@ fn ensure_schema(conn: &mut Connection) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn decode_operation_receipt(row: &rusqlite::Row<'_>) -> rusqlite::Result<OperationReceipt> {
+    let operation_id: String = row.get(0)?;
+    let plan_json: String = row.get(1)?;
+    let state_text: String = row.get(2)?;
+    let started: Option<i64> = row.get(3)?;
+    let completed: Option<i64> = row.get(4)?;
+    let result_ref: Option<String> = row.get(5)?;
+    let verification: Option<String> = row.get(6)?;
+    let failure: Option<String> = row.get(7)?;
+
+    let plan: OperationPlan = serde_json::from_str(&plan_json).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(
+            1,
+            rusqlite::types::Type::Text,
+            Box::new(error),
+        )
+    })?;
+    let state: OperationState = enum_from_text(&state_text).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(
+            2,
+            rusqlite::types::Type::Text,
+            error.into(),
+        )
+    })?;
+
+    Ok(OperationReceipt {
+        operation_id,
+        plan,
+        state,
+        started_at_unix_ms: started.and_then(|value| u64::try_from(value).ok()),
+        completed_at_unix_ms: completed.and_then(|value| u64::try_from(value).ok()),
+        result_ref,
+        verification,
+        failure,
+    })
 }
 
 fn save_operator_state_tx(tx: &Transaction<'_>, state: &LocalStateV1) -> Result<()> {
