@@ -89,6 +89,7 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
         (ViewKind::Review, KeyCode::PageDown) => Some(Command::PageDown),
         (ViewKind::Review, KeyCode::Char('w')) => Some(Command::ToggleWordDiff),
         (ViewKind::Review, KeyCode::Char('e')) => Some(Command::ExternalEditor),
+        (ViewKind::Workspace, KeyCode::Char('r')) => Some(Command::Review),
         _ => None,
     }
 }
