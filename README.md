@@ -133,4 +133,5 @@ See:
 - `docs/design/kanban-and-feature-evaluation.md`
 - `docs/design/target-state.md`
 - `docs/design/final-plan.md`
+- `docs/design/final-implementation-choices.md`
 - `docs/roadmap-v1.md`
