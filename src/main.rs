@@ -6,9 +6,7 @@ use codex_tui::{
     conversation::{InteractiveRequestKind, InteractiveResolution},
     git::{self, GitEvent, GitHandle},
     keymap::{Command, command_for_key},
-    planning::{
-        LocalNote, PlanningSnapshot, ScratchState, SourceKind, SourceRef, WorkCardRecord,
-    },
+    planning::{LocalNote, PlanningSnapshot, ScratchState, SourceKind, SourceRef, WorkCardRecord},
     sqlite_store::SqliteStore,
     store::{AppConfig, LocalStateV1, LocalStore},
     terminal::TerminalSession,
@@ -723,28 +721,16 @@ fn apply_effects(
                 }
             },
             Effect::SaveSourceNote { owner, text } => {
-                apply_planning_store_result(
-                    app,
-                    store.save_source_note(owner, text),
-                );
+                apply_planning_store_result(app, store.save_source_note(owner, text));
             }
             Effect::UpdateScratchNote { scratch_id, note } => {
-                apply_planning_store_result(
-                    app,
-                    store.update_scratch_note(scratch_id, note),
-                );
+                apply_planning_store_result(app, store.update_scratch_note(scratch_id, note));
             }
             Effect::CreateBookmark { source, label } => {
-                apply_planning_store_result(
-                    app,
-                    store.create_bookmark(source, label),
-                );
+                apply_planning_store_result(app, store.create_bookmark(source, label));
             }
             Effect::UpdateScratchState { scratch_id, state } => {
-                apply_planning_store_result(
-                    app,
-                    store.update_scratch_state(scratch_id, state),
-                );
+                apply_planning_store_result(app, store.update_scratch_state(scratch_id, state));
             }
             Effect::DeleteScratch { scratch_id } => {
                 apply_planning_store_result(app, store.delete_scratch(scratch_id));
@@ -911,10 +897,7 @@ fn apply_effects(
     Ok(())
 }
 
-fn apply_planning_store_result(
-    app: &mut AppState,
-    result: Result<PlanningSnapshot, String>,
-) {
+fn apply_planning_store_result(app: &mut AppState, result: Result<PlanningSnapshot, String>) {
     match result {
         Ok(snapshot) => {
             reduce(app, Action::PlanningSnapshotLoaded(snapshot));
@@ -1090,9 +1073,7 @@ fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
         Command::ExternalEditor => Action::OpenReviewExternalEditor,
         Command::HotSlot(slot) => Action::UseHotSlot(slot),
         Command::ContextActions => Action::OpenContext,
-        Command::CommandPalette
-        | Command::Goal
-        | Command::OpenExternal => return vec![],
+        Command::CommandPalette | Command::Goal | Command::OpenExternal => return vec![],
     };
     reduce(app, action)
 }
