@@ -679,13 +679,13 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                         needs_render = true;
                     }
                     apply_effects(
-                &mut app,
-                registry.as_ref(),
-                &git,
-                &mut mutations,
-                &mut store,
-                effects,
-            )?;
+                        &mut app,
+                        registry.as_ref(),
+                        &git,
+                        &mut mutations,
+                        &mut store,
+                        effects,
+                    )?;
                 }
                 Event::Resize(_, _) => needs_render = true,
                 _ => {}
