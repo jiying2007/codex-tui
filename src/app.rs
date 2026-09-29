@@ -1873,6 +1873,75 @@ mod tests {
     }
 
     #[test]
+    fn goal_actions_are_explicit_app_server_effects() {
+        let mut app = app();
+        reduce(&mut app, Action::OpenSelected);
+        let refresh = reduce(&mut app, Action::OpenGoalActions);
+        assert!(matches!(refresh.as_slice(), [Effect::RefreshGoal(_)]));
+
+        let thread_id = app.current_thread_id().expect("thread").clone();
+        reduce(
+            &mut app,
+            Action::GoalObserved(GoalObservation {
+                thread_id: thread_id.clone(),
+                objective: "Ship M4".into(),
+                status: GoalStatus::Active,
+                token_budget: Some(10_000),
+                tokens_used: 100,
+                time_used_seconds: 30,
+                created_at: 1,
+                updated_at: 2,
+                observed_at_unix_ms: 10,
+            }),
+        );
+        let pause = reduce(&mut app, Action::SetGoalStatus(GoalStatus::Paused));
+        assert_eq!(
+            pause,
+            vec![Effect::SetGoal {
+                thread_id: thread_id.clone(),
+                objective: None,
+                status: Some(GoalStatus::Paused),
+            }]
+        );
+
+        let clear = reduce(&mut app, Action::ClearGoal);
+        assert_eq!(clear, vec![Effect::ClearGoal(thread_id)]);
+    }
+
+    #[test]
+    fn goal_observation_reconciles_without_entering_local_store_state() {
+        let mut app = app();
+        let thread_id = app.threads[0].id.clone();
+        reduce(
+            &mut app,
+            Action::GoalObserved(GoalObservation {
+                thread_id: thread_id.clone(),
+                objective: "Ship M4".into(),
+                status: GoalStatus::Blocked,
+                token_budget: None,
+                tokens_used: 0,
+                time_used_seconds: 0,
+                created_at: 1,
+                updated_at: 1,
+                observed_at_unix_ms: 100,
+            }),
+        );
+        reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 100 });
+        let card = app.work_card_for_thread(&thread_id).expect("card");
+        assert_eq!(card.stage, WorkflowStage::Working);
+        assert!(
+            card.attention
+                .contains(&crate::planning::PlanningAttention::GoalBlocked)
+        );
+
+        let local = app.to_local_state();
+        assert_eq!(local.schema_version, 1);
+        assert!(!serde_json::to_string(&local)
+            .expect("serialize")
+            .contains("Ship M4"));
+    }
+
+    #[test]
     fn refresh_never_steals_manual_selection() {
         let mut app = app();
         reduce(&mut app, Action::MoveSelection(2));
