@@ -435,8 +435,7 @@ fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
 
     if review.observed_at_unix_ms == 0 {
         frame.render_widget(
-            Paragraph::new("Loading Git review…")
-                .block(Block::bordered().title(" Review ")),
+            Paragraph::new("Loading Git review…").block(Block::bordered().title(" Review ")),
             outer[0],
         );
     } else if let Some(error) = &review.error {
@@ -453,11 +452,7 @@ fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
             .map(|(index, change)| {
                 let selected = index == app.review_selected;
                 let prefix = if selected { ">" } else { " " };
-                let text = format!(
-                    "{prefix} {:2} {}",
-                    change.status_label(),
-                    change.path
-                );
+                let text = format!("{prefix} {:2} {}", change.status_label(), change.path);
                 let style = if selected {
                     Style::default().add_modifier(Modifier::REVERSED)
                 } else {
@@ -484,10 +479,10 @@ fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
                 .split(outer[0]);
             frame.render_widget(
                 Paragraph::new(files)
-                    .block(Block::bordered().title(format!(
-                        " Changed files ({}) ",
-                        review.changes.len()
-                    )))
+                    .block(
+                        Block::bordered()
+                            .title(format!(" Changed files ({}) ", review.changes.len())),
+                    )
                     .wrap(Wrap { trim: false }),
                 columns[0],
             );
@@ -496,7 +491,11 @@ fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
                     .block(Block::bordered().title(format!(
                         " Git diff · word={}{} ",
                         app.review_word_diff,
-                        if review.truncated { " · truncated" } else { "" }
+                        if review.truncated {
+                            " · truncated"
+                        } else {
+                            ""
+                        }
                     )))
                     .wrap(Wrap { trim: false })
                     .scroll((app.review_scroll, 0)),
@@ -518,7 +517,11 @@ fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
                     .block(Block::bordered().title(format!(
                         " Git diff · word={}{} ",
                         app.review_word_diff,
-                        if review.truncated { " · truncated" } else { "" }
+                        if review.truncated {
+                            " · truncated"
+                        } else {
+                            ""
+                        }
                     )))
                     .wrap(Wrap { trim: false })
                     .scroll((app.review_scroll, 0)),
