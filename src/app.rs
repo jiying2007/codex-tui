@@ -4,7 +4,7 @@ use crate::conversation::{
     InteractiveResolution, RpcRequestId, UserInputQuestion,
 };
 use crate::domain::{AttentionReason, RuntimeStatus, ThreadId, ThreadSummary, ThreadUiState};
-use crate::git::GitContext;
+use crate::git::{GitContext, GitReview};
 use crate::store::LocalStateV1;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -12,12 +12,14 @@ use std::collections::{BTreeMap, BTreeSet};
 pub enum View {
     Registry,
     Thread(ThreadId),
+    Review(ThreadId),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ViewKind {
     Registry,
     Thread,
+    Review,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -35,6 +37,13 @@ pub enum Action {
     BackendStatus(BackendStatus),
     RefreshGitProjections,
     GitContextLoaded(GitContext),
+    GitReviewLoaded(GitReview),
+    ReviewError { thread_id: ThreadId, error: String },
+    OpenReview,
+    MoveReview(i32),
+    ScrollReviewBy(i16),
+    ToggleReviewWordDiff,
+    OpenReviewExternalEditor,
     ConversationLoaded(ConversationPage),
     OlderConversationLoaded(ConversationPage),
     ConversationFailed { thread_id: ThreadId, error: String },
@@ -72,6 +81,15 @@ pub enum Effect {
         thread_id: ThreadId,
         cwd: String,
     },
+    LoadGitReview {
+        thread_id: ThreadId,
+        cwd: String,
+    },
+    OpenExternalEditor {
+        thread_id: ThreadId,
+        cwd: String,
+        path: String,
+    },
     LoadConversation(ThreadId),
     StopWatchingConversation(ThreadId),
     LoadOlderConversation {
@@ -103,6 +121,11 @@ pub struct AppState {
     pub thread_ui: BTreeMap<String, ThreadUiState>,
     pub conversations: BTreeMap<String, ConversationState>,
     pub git_contexts: BTreeMap<String, GitContext>,
+    pub git_reviews: BTreeMap<String, GitReview>,
+    pub review_return_view: Option<View>,
+    pub review_selected: usize,
+    pub review_scroll: u16,
+    pub review_word_diff: bool,
     pub pending_requests: Vec<InteractiveRequest>,
     pub user_input_request_id: Option<RpcRequestId>,
     pub user_input_question_index: usize,
@@ -127,6 +150,11 @@ impl AppState {
             thread_ui: BTreeMap::new(),
             conversations: BTreeMap::new(),
             git_contexts: BTreeMap::new(),
+            git_reviews: BTreeMap::new(),
+            review_return_view: None,
+            review_selected: 0,
+            review_scroll: 0,
+            review_word_diff: false,
             pending_requests: vec![],
             user_input_request_id: None,
             user_input_question_index: 0,
@@ -146,6 +174,7 @@ impl AppState {
         match self.view {
             View::Registry => ViewKind::Registry,
             View::Thread(_) => ViewKind::Thread,
+            View::Review(_) => ViewKind::Review,
         }
     }
 
@@ -161,7 +190,7 @@ impl AppState {
     pub fn current_thread_id(&self) -> Option<&ThreadId> {
         match &self.view {
             View::Registry => None,
-            View::Thread(id) => Some(id),
+            View::Thread(id) | View::Review(id) => Some(id),
         }
     }
 
@@ -177,6 +206,17 @@ impl AppState {
 
     pub fn git_context(&self, thread_id: &ThreadId) -> Option<&GitContext> {
         self.git_contexts.get(&thread_id.0)
+    }
+
+    pub fn current_review(&self) -> Option<&GitReview> {
+        let View::Review(thread_id) = &self.view else {
+            return None;
+        };
+        self.git_reviews.get(&thread_id.0)
+    }
+
+    pub fn selected_review_change(&self) -> Option<&crate::git::GitFileChange> {
+        self.current_review()?.changes.get(self.review_selected)
     }
 
     pub fn worktree_collision_count(&self, thread_id: &ThreadId) -> usize {
@@ -375,6 +415,89 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 .git_contexts
                 .insert(context.thread_id.0.clone(), context);
         }
+        Action::GitReviewLoaded(review) => {
+            let key = review.thread_id.0.clone();
+            let len = review.changes.len();
+            state.git_reviews.insert(key, review);
+            state.review_selected = if len == 0 {
+                0
+            } else {
+                state.review_selected.min(len - 1)
+            };
+        }
+        Action::ReviewError { thread_id, error } => {
+            let review = state
+                .git_reviews
+                .entry(thread_id.0.clone())
+                .or_insert_with(|| GitReview::pending(thread_id, ""));
+            review.error = Some(error);
+        }
+        Action::OpenReview => {
+            let thread_id = match &state.view {
+                View::Registry => state.selected_thread_id(),
+                View::Thread(id) | View::Review(id) => Some(id.clone()),
+            };
+            let Some(thread_id) = thread_id else {
+                return vec![];
+            };
+            let cwd = state
+                .threads
+                .iter()
+                .find(|thread| thread.id == thread_id)
+                .map(|thread| thread.metadata.cwd.clone())
+                .unwrap_or_default();
+            if cwd.trim().is_empty() {
+                return vec![];
+            }
+            if !matches!(state.view, View::Review(_)) {
+                state.review_return_view = Some(state.view.clone());
+            }
+            state.review_selected = 0;
+            state.review_scroll = 0;
+            state.git_reviews.insert(
+                thread_id.0.clone(),
+                GitReview::pending(thread_id.clone(), cwd.clone()),
+            );
+            state.view = View::Review(thread_id.clone());
+            return vec![Effect::LoadGitReview { thread_id, cwd }];
+        }
+        Action::MoveReview(delta) => {
+            let Some(review) = state.current_review() else {
+                return vec![];
+            };
+            if review.changes.is_empty() {
+                state.review_selected = 0;
+                return vec![];
+            }
+            let len = review.changes.len() as i32;
+            state.review_selected =
+                (state.review_selected as i32 + delta).rem_euclid(len) as usize;
+            state.review_scroll = 0;
+        }
+        Action::ScrollReviewBy(delta) => {
+            state.review_scroll = if delta.is_negative() {
+                state.review_scroll.saturating_sub(delta.unsigned_abs())
+            } else {
+                state.review_scroll.saturating_add(delta as u16)
+            };
+        }
+        Action::ToggleReviewWordDiff => state.review_word_diff = !state.review_word_diff,
+        Action::OpenReviewExternalEditor => {
+            let View::Review(thread_id) = &state.view else {
+                return vec![];
+            };
+            let Some(review) = state.git_reviews.get(&thread_id.0) else {
+                return vec![];
+            };
+            let Some(change) = review.changes.get(state.review_selected) else {
+                return vec![];
+            };
+            return vec![Effect::OpenExternalEditor {
+                thread_id: thread_id.clone(),
+                cwd: review.cwd.clone(),
+                path: change.path.clone(),
+            }];
+        }
         Action::ConversationLoaded(page) => {
             let key = page.thread_id.0.clone();
             state
@@ -508,6 +631,11 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
         }
         Action::Back => {
+            if matches!(state.view, View::Review(_)) {
+                state.view = state.review_return_view.take().unwrap_or(View::Registry);
+                state.review_scroll = 0;
+                return vec![];
+            }
             let thread_id = state.current_thread_id().cloned();
             if state.input_mode == InputMode::UserInput {
                 clear_user_input_editor(state);
@@ -1127,6 +1255,58 @@ mod tests {
         );
         assert_eq!(reduce(&mut app, Action::ScrollBy(-5)).len(), 1);
         assert!(reduce(&mut app, Action::ScrollBy(-5)).is_empty());
+    }
+
+    #[test]
+    fn review_returns_to_originating_view_and_selects_changed_files() {
+        let mut app = app();
+        app.git_contexts.insert(
+            "thread-impl".into(),
+            GitContext::pending(ThreadId::new("thread-impl"), "/repo"),
+        );
+        let effects = reduce(&mut app, Action::OpenReview);
+        assert!(matches!(app.view, View::Review(_)));
+        assert_eq!(
+            effects,
+            vec![Effect::LoadGitReview {
+                thread_id: ThreadId::new("thread-impl"),
+                cwd: String::new(),
+            }]
+        );
+        reduce(
+            &mut app,
+            Action::GitReviewLoaded(GitReview {
+                thread_id: ThreadId::new("thread-impl"),
+                cwd: "/repo".into(),
+                changes: vec![
+                    crate::git::GitFileChange {
+                        path: "a.rs".into(),
+                        original_path: None,
+                        index_status: Some('M'),
+                        worktree_status: None,
+                        untracked: false,
+                        conflict: false,
+                    },
+                    crate::git::GitFileChange {
+                        path: "b.rs".into(),
+                        original_path: None,
+                        index_status: None,
+                        worktree_status: Some('M'),
+                        untracked: false,
+                        conflict: false,
+                    },
+                ],
+                staged_diff: String::new(),
+                unstaged_diff: String::new(),
+                truncated: false,
+                observed_at_unix_ms: 1,
+                error: None,
+            }),
+        );
+        reduce(&mut app, Action::MoveReview(1));
+        assert_eq!(app.selected_review_change().expect("change").path, "b.rs");
+        reduce(&mut app, Action::Back);
+        assert_eq!(app.view, View::Registry);
     }
 
     #[test]
