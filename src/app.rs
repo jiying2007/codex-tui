@@ -66,6 +66,7 @@ pub enum Action {
 pub enum Effect {
     PersistOperatorState,
     LoadConversation(ThreadId),
+    StopWatchingConversation(ThreadId),
     LoadOlderConversation {
         thread_id: ThreadId,
         turn_cursor: Option<String>,
@@ -326,6 +327,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 .entry(thread_id.0.clone())
                 .or_insert_with(|| ConversationState::loading(thread_id));
             conversation.loading = false;
+            conversation.loading_older = false;
             conversation.error = Some(error);
         }
         Action::PromptSubmitted { thread_id } => {
@@ -425,7 +427,14 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
             state.view = View::Registry;
         }
-        Action::Back => state.view = View::Registry,
+        Action::Back => {
+            let thread_id = state.current_thread_id().cloned();
+            state.view = View::Registry;
+            state.input_mode = InputMode::Normal;
+            if let Some(thread_id) = thread_id {
+                return vec![Effect::StopWatchingConversation(thread_id)];
+            }
+        }
         Action::NextAttention => select_next_attention(state),
         Action::ToggleHelp => state.show_help = !state.show_help,
         Action::SetDraft(draft) => {
@@ -437,17 +446,28 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::ScrollBy(delta) => {
             if let Some(id) = state.current_thread_id().cloned() {
                 let current_scroll = state.thread_ui.entry(id.0.clone()).or_default().scroll;
-                if delta.is_negative()
-                    && current_scroll == 0
-                    && let Some(conversation) = state.conversations.get(&id.0)
-                    && (conversation.next_turn_cursor.is_some()
-                        || conversation.next_item_cursor.is_some())
-                {
-                    return vec![Effect::LoadOlderConversation {
-                        thread_id: id,
-                        turn_cursor: conversation.next_turn_cursor.clone(),
-                        item_cursor: conversation.next_item_cursor.clone(),
-                    }];
+                if delta.is_negative() && current_scroll == 0 {
+                    let older_request = state.conversations.get(&id.0).and_then(|conversation| {
+                        (!conversation.loading_older
+                            && (conversation.next_turn_cursor.is_some()
+                                || conversation.next_item_cursor.is_some()))
+                        .then(|| {
+                            (
+                                conversation.next_turn_cursor.clone(),
+                                conversation.next_item_cursor.clone(),
+                            )
+                        })
+                    });
+                    if let Some((turn_cursor, item_cursor)) = older_request {
+                        if let Some(conversation) = state.conversations.get_mut(&id.0) {
+                            conversation.loading_older = true;
+                        }
+                        return vec![Effect::LoadOlderConversation {
+                            thread_id: id,
+                            turn_cursor,
+                            item_cursor,
+                        }];
+                    }
                 }
 
                 let ui = state.thread_ui.entry(id.0).or_default();
@@ -922,6 +942,26 @@ mod tests {
                 item_cursor: Some("item-cursor".into()),
             }]
         );
+    }
+
+    #[test]
+    fn repeated_page_up_does_not_queue_duplicate_older_requests() {
+        let mut app = app();
+        let thread_id = app.selected_thread_id().expect("thread");
+        reduce(&mut app, Action::OpenSelected);
+        reduce(
+            &mut app,
+            Action::ConversationLoaded(ConversationPage {
+                thread_id,
+                title: None,
+                turns: vec![],
+                items: vec![],
+                next_turn_cursor: Some("turn-cursor".into()),
+                next_item_cursor: Some("item-cursor".into()),
+            }),
+        );
+        assert_eq!(reduce(&mut app, Action::ScrollBy(-5)).len(), 1);
+        assert!(reduce(&mut app, Action::ScrollBy(-5)).is_empty());
     }
 
     #[test]
