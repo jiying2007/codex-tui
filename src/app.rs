@@ -1260,6 +1260,7 @@ mod tests {
     #[test]
     fn review_returns_to_originating_view_and_selects_changed_files() {
         let mut app = app();
+        app.threads[0].metadata.cwd = "/repo".into();
         app.git_contexts.insert(
             "thread-impl".into(),
             GitContext::pending(ThreadId::new("thread-impl"), "/repo"),
@@ -1270,7 +1271,7 @@ mod tests {
             effects,
             vec![Effect::LoadGitReview {
                 thread_id: ThreadId::new("thread-impl"),
-                cwd: String::new(),
+                cwd: "/repo".into(),
             }]
         );
         reduce(
