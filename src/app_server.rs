@@ -4,13 +4,15 @@ use crate::codex_protocol::{
 };
 use crate::conversation::{
     ConversationPage, InteractiveRequest, InteractiveResolution, RpcRequestId, merge_history,
-    parse_interactive_request, parse_items_page, parse_thread_title, parse_turns_page,
+    parse_interactive_request, parse_items_page, parse_legacy_thread_read, parse_thread_title,
+    parse_turns_page,
 };
 use crate::domain::{ThreadId, ThreadSummary};
 use anyhow::{Context, Result, anyhow};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::ffi::OsString;
+use std::fmt;
 use std::process::Stdio;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter, Lines};
@@ -21,6 +23,51 @@ use tokio::task::JoinHandle;
 const PAGE_SIZE: u32 = 200;
 const REFRESH_INTERVAL: Duration = Duration::from_secs(2);
 const RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+
+#[derive(Debug)]
+struct RpcResponseError {
+    method: String,
+    code: Option<i64>,
+    message: String,
+}
+
+impl fmt::Display for RpcResponseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.code {
+            Some(code) => write!(f, "{} failed ({code}): {}", self.method, self.message),
+            None => write!(f, "{} failed: {}", self.method, self.message),
+        }
+    }
+}
+
+impl std::error::Error for RpcResponseError {}
+
+fn is_history_pagination_unsupported(error: &anyhow::Error) -> bool {
+    let Some(source) = error.downcast_ref::<RpcResponseError>() else {
+        return false;
+    };
+    if source.code == Some(-32601) {
+        return true;
+    }
+    if !matches!(source.code, Some(-32600 | -32602)) {
+        return false;
+    }
+    let message = source.message.to_ascii_lowercase();
+    [
+        "historymode",
+        "history mode",
+        "excludeturns",
+        "exclude turns",
+        "thread/turns/list",
+        "thread/items/list",
+    ]
+    .into_iter()
+    .any(|field| message.contains(field))
+        || (message.contains("paginated")
+            && ["unknown variant", "unsupported variant", "invalid enum"]
+                .into_iter()
+                .any(|fragment| message.contains(fragment)))
+}
 
 pub struct StartedRegistry {
     pub initial: BackendSnapshot,
@@ -619,15 +666,29 @@ async fn ensure_thread_loaded(
         return Ok(());
     }
 
-    rpc.request(
-        "thread/resume",
-        json!({
-            "threadId": thread_id.0,
-            "excludeTurns": true
-        }),
-    )
-    .await
-    .context("resume thread before turn start")?;
+    let resume = rpc
+        .request(
+            "thread/resume",
+            json!({
+                "threadId": thread_id.0,
+                "excludeTurns": true
+            }),
+        )
+        .await;
+    match resume {
+        Ok(_) => {}
+        Err(error) if is_history_pagination_unsupported(&error) => {
+            rpc.request(
+                "thread/resume",
+                json!({
+                    "threadId": thread_id.0
+                }),
+            )
+            .await
+            .context("resume legacy thread before turn start")?;
+        }
+        Err(error) => return Err(error).context("resume thread before turn start"),
+    }
 
     if let Some(thread) = threads.get_mut(&thread_id.0) {
         thread.metadata.loaded = Some(true);
@@ -718,7 +779,7 @@ async fn load_conversation(rpc: &mut RpcSession, thread_id: ThreadId) -> Result<
         .context("read thread metadata")?;
     let title = parse_thread_title(&metadata);
 
-    let turns_result = rpc
+    let turns_result = match rpc
         .request(
             "thread/turns/list",
             json!({
@@ -730,11 +791,17 @@ async fn load_conversation(rpc: &mut RpcSession, thread_id: ThreadId) -> Result<
             }),
         )
         .await
-        .context("list recent turns")?;
+    {
+        Ok(result) => result,
+        Err(error) if is_history_pagination_unsupported(&error) => {
+            return load_legacy_conversation(rpc, thread_id).await;
+        }
+        Err(error) => return Err(error).context("list recent turns"),
+    };
     let (mut turns, next_turn_cursor) = parse_turns_page(turns_result)?;
     turns.reverse();
 
-    let items_result = rpc
+    let items_result = match rpc
         .request(
             "thread/items/list",
             json!({
@@ -745,7 +812,13 @@ async fn load_conversation(rpc: &mut RpcSession, thread_id: ThreadId) -> Result<
             }),
         )
         .await
-        .context("list recent thread items")?;
+    {
+        Ok(result) => result,
+        Err(error) if is_history_pagination_unsupported(&error) => {
+            return load_legacy_conversation(rpc, thread_id).await;
+        }
+        Err(error) => return Err(error).context("list recent thread items"),
+    };
     let (mut items, next_item_cursor) = parse_items_page(items_result)?;
     items.reverse();
 
@@ -757,6 +830,23 @@ async fn load_conversation(rpc: &mut RpcSession, thread_id: ThreadId) -> Result<
         next_turn_cursor,
         next_item_cursor,
     ))
+}
+
+async fn load_legacy_conversation(
+    rpc: &mut RpcSession,
+    thread_id: ThreadId,
+) -> Result<ConversationPage> {
+    let result = rpc
+        .request(
+            "thread/read",
+            json!({
+                "threadId": thread_id.0,
+                "includeTurns": true
+            }),
+        )
+        .await
+        .context("read legacy thread history")?;
+    parse_legacy_thread_read(result, thread_id)
 }
 
 #[derive(Clone, Debug)]
@@ -1009,7 +1099,18 @@ impl RpcSession {
                 && message.get("method").is_none()
             {
                 if let Some(error) = message.get("error") {
-                    return Err(anyhow!("{method} failed: {error}"));
+                    let code = error.get("code").and_then(Value::as_i64);
+                    let error_message = error
+                        .get("message")
+                        .and_then(Value::as_str)
+                        .map(ToOwned::to_owned)
+                        .unwrap_or_else(|| error.to_string());
+                    return Err(RpcResponseError {
+                        method: method.to_string(),
+                        code,
+                        message: error_message,
+                    }
+                    .into());
                 }
                 return message
                     .get("result")
