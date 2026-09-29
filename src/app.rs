@@ -1387,7 +1387,8 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::ScratchTitle
             | InputMode::Snooze
             | InputMode::Note
-            | InputMode::SavedViewName => {
+            | InputMode::SavedViewName
+            | InputMode::GoalObjective => {
                 state.input_buffer.push(character);
                 if state.input_mode == InputMode::Search {
                     state.filter.clone_from(&state.input_buffer);
@@ -1409,7 +1410,8 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::ScratchTitle
             | InputMode::Snooze
             | InputMode::Note
-            | InputMode::SavedViewName => {
+            | InputMode::SavedViewName
+            | InputMode::GoalObjective => {
                 state.input_buffer.pop();
                 if state.input_mode == InputMode::Search {
                     state.filter.clone_from(&state.input_buffer);
@@ -1419,6 +1421,25 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         },
         Action::CommitInput => {
             let mode = state.input_mode;
+            if mode == InputMode::GoalObjective {
+                let Some(thread_id) = state.current_thread_id().cloned() else {
+                    state.input_mode = InputMode::Normal;
+                    state.input_buffer.clear();
+                    return vec![];
+                };
+                let objective = state.input_buffer.trim().to_string();
+                if objective.is_empty() {
+                    return vec![];
+                }
+                let is_new = !state.goals.contains_key(&thread_id.0);
+                state.input_mode = InputMode::Normal;
+                state.input_buffer.clear();
+                return vec![Effect::SetGoal {
+                    thread_id,
+                    objective: Some(objective),
+                    status: is_new.then_some(GoalStatus::Active),
+                }];
+            }
             if mode == InputMode::ScratchTitle {
                 let title = state.input_buffer.trim().to_string();
                 if title.is_empty() {
@@ -1580,6 +1601,11 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.input_original.clear();
         }
         Action::CancelInput => {
+            if state.input_mode == InputMode::GoalObjective {
+                state.input_mode = InputMode::Normal;
+                state.input_buffer.clear();
+                return vec![];
+            }
             if state.input_mode == InputMode::ScratchTitle {
                 state.new_scratch_workspace = None;
             }
