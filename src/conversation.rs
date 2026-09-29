@@ -369,6 +369,51 @@ pub fn parse_thread_title(result: &Value) -> Option<String> {
         })
 }
 
+pub fn parse_legacy_thread_read(result: Value, thread_id: ThreadId) -> Result<ConversationPage> {
+    let title = parse_thread_title(&result);
+    let turns_value = result
+        .pointer("/thread/turns")
+        .and_then(Value::as_array)
+        .context("legacy thread/read response missing thread.turns")?;
+
+    let mut turns = Vec::with_capacity(turns_value.len());
+    let mut items = Vec::new();
+    for turn in turns_value {
+        let turn_id = required_string(turn, "id", "legacy turn")?;
+        let status = turn
+            .get("status")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown")
+            .to_string();
+        let error = turn
+            .pointer("/error/message")
+            .and_then(Value::as_str)
+            .map(ToOwned::to_owned);
+        turns.push(ConversationTurn {
+            id: turn_id.clone(),
+            status,
+            started_at: turn.get("startedAt").and_then(Value::as_i64),
+            completed_at: turn.get("completedAt").and_then(Value::as_i64),
+            error,
+        });
+
+        if let Some(turn_items) = turn.get("items").and_then(Value::as_array) {
+            for item in turn_items {
+                items.push(normalize_item(turn_id.clone(), item)?);
+            }
+        }
+    }
+
+    Ok(merge_history(
+        thread_id,
+        title,
+        turns,
+        items,
+        None,
+        None,
+    ))
+}
+
 pub fn parse_turns_page(result: Value) -> Result<(Vec<ConversationTurn>, Option<String>)> {
     let data = result
         .get("data")
@@ -635,6 +680,43 @@ mod tests {
         assert_eq!(questions.len(), 2);
         assert_eq!(questions[0].options, vec!["fast"]);
         assert!(questions[1].is_secret);
+    }
+
+    #[test]
+    fn legacy_thread_read_normalizes_full_turn_history() {
+        let page = parse_legacy_thread_read(
+            json!({
+                "thread": {
+                    "name": "Legacy",
+                    "turns": [{
+                        "id": "turn-1",
+                        "status": "completed",
+                        "startedAt": 1,
+                        "completedAt": 2,
+                        "error": null,
+                        "items": [
+                            {
+                                "type": "userMessage",
+                                "id": "u1",
+                                "content": [{"type":"text","text":"hello"}]
+                            },
+                            {
+                                "type": "agentMessage",
+                                "id": "a1",
+                                "text": "world"
+                            }
+                        ]
+                    }]
+                }
+            }),
+            ThreadId::new("thread-legacy"),
+        )
+        .expect("legacy page");
+        assert_eq!(page.title.as_deref(), Some("Legacy"));
+        assert_eq!(page.turns.len(), 1);
+        assert_eq!(page.items.len(), 2);
+        assert!(page.next_turn_cursor.is_none());
+        assert!(page.next_item_cursor.is_none());
     }
 
     #[test]
