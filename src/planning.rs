@@ -265,7 +265,7 @@ pub fn reconcile_thread_card(input: ReconcileInput<'_>) -> WorkCardProjection {
     if input.collision_count > 0 {
         attention.insert(PlanningAttention::ConflictRisk);
     }
-    if stage == WorkflowStage::Review && !local.overlay.done_at_unix_ms.is_some() {
+    if stage == WorkflowStage::Review && local.overlay.done_at_unix_ms.is_none() {
         attention.insert(PlanningAttention::ReviewUnseen);
     }
 
