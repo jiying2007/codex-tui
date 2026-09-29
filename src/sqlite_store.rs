@@ -1390,6 +1390,87 @@ mod tests {
     }
 
     #[test]
+    fn schema_v1_upgrades_to_v2_without_losing_m4_state() {
+        let root = tempdir().expect("tempdir");
+        let store = SqliteStore::at(root.path());
+
+        let mut state = LocalStateV1::default();
+        state.pins.insert("thread-1".into());
+        store.save_state(&state).expect("state");
+
+        let mut card = WorkCardRecord::implicit_thread(&crate::domain::ThreadId::new("thread-1"));
+        card.overlay.note = Some("keep me".into());
+        store.upsert_work_card(&card).expect("card");
+
+        {
+            let conn = Connection::open(store.db_path()).expect("open raw database");
+            conn.execute_batch(
+                "DROP TABLE managed_worktrees;
+                 DROP TABLE operation_receipts;
+                 PRAGMA user_version = 1;",
+            )
+            .expect("downgrade fixture to v1");
+        }
+
+        let health = store.health().expect("upgrade to v2");
+        assert_eq!(health.schema_version, 2);
+        assert_eq!(store.load_state().expect("state after upgrade"), state);
+        assert_eq!(
+            store.load_planning_snapshot().expect("planning").cards,
+            vec![card]
+        );
+    }
+
+    #[test]
+    fn managed_worktree_and_unknown_receipt_survive_restart() {
+        let root = tempdir().expect("tempdir");
+        let store = SqliteStore::at(root.path());
+        let repo = crate::domain::LocalRepoIdentity {
+            git_common_dir: "/repo/.git".into(),
+            primary_root: "/repo".into(),
+        };
+        let plan = OperationPlan::create_worktree(
+            repo.clone(),
+            "/repo".into(),
+            "/tmp/wt-feature".into(),
+            "feature".into(),
+            "HEAD".into(),
+            10,
+        );
+        let mut receipt = OperationReceipt::planned(plan.clone());
+        receipt.start(11);
+        receipt.outcome_unknown(12, "git process timed out".into());
+        store
+            .save_operation_receipt(&receipt)
+            .expect("save unknown receipt");
+
+        let managed = ManagedWorktreeRecord {
+            repo: repo.clone(),
+            canonical_path: "/tmp/wt-feature".into(),
+            branch: Some("feature".into()),
+            created_by_operation_id: plan.operation_id.clone(),
+            adopted: false,
+            created_at_unix_ms: 10,
+            last_verified_at_unix_ms: 13,
+        };
+        store
+            .upsert_managed_worktree(&managed)
+            .expect("save managed worktree");
+
+        let reopened = SqliteStore::at(root.path());
+        assert_eq!(
+            reopened
+                .operation_receipt(&plan.operation_id)
+                .expect("load receipt"),
+            Some(receipt)
+        );
+        assert_eq!(
+            reopened.load_managed_worktrees().expect("managed list"),
+            vec![managed]
+        );
+    }
+
+    #[test]
     fn config_remains_toml_while_runtime_state_moves_to_sqlite() {
         let root = tempdir().expect("tempdir");
         let store = SqliteStore::at(root.path());
