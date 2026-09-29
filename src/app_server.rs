@@ -30,6 +30,7 @@ pub struct StartedRegistry {
 #[derive(Clone, Debug)]
 pub enum BackendCommand {
     LoadConversation(ThreadId),
+    StopWatchingConversation(ThreadId),
     LoadOlderConversation {
         thread_id: ThreadId,
         turn_cursor: Option<String>,
@@ -86,6 +87,10 @@ impl RegistryHandle {
 
     pub fn load_conversation(&self, thread_id: ThreadId) -> Result<()> {
         self.send_command(BackendCommand::LoadConversation(thread_id))
+    }
+
+    pub fn stop_watching_conversation(&self, thread_id: ThreadId) -> Result<()> {
+        self.send_command(BackendCommand::StopWatchingConversation(thread_id))
     }
 
     pub fn load_older_conversation(
@@ -217,6 +222,9 @@ async fn run_registry_actor(
                     BackendCommand::LoadConversation(thread_id) => {
                         watched_threads.insert(thread_id.0.clone());
                         emit_conversation_load(&mut rpc, thread_id, &conversation_tx).await;
+                    }
+                    BackendCommand::StopWatchingConversation(thread_id) => {
+                        watched_threads.remove(&thread_id.0);
                     }
                     BackendCommand::LoadOlderConversation {
                         thread_id,
