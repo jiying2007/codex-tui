@@ -1,3 +1,4 @@
+use crate::backend::BackendStatus;
 use crate::domain::{AttentionReason, ThreadId, ThreadSummary, ThreadUiState};
 use crate::store::LocalStateV1;
 use std::collections::BTreeMap;
@@ -17,6 +18,7 @@ pub enum ViewKind {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Action {
     ReplaceThreads(Vec<ThreadSummary>),
+    BackendStatus(BackendStatus),
     MoveSelection(i32),
     OpenSelected,
     Back,
@@ -44,6 +46,7 @@ pub struct AppState {
     pub thread_ui: BTreeMap<String, ThreadUiState>,
     pub show_help: bool,
     pub should_quit: bool,
+    pub backend_status: BackendStatus,
 }
 
 impl AppState {
@@ -56,6 +59,7 @@ impl AppState {
             thread_ui: BTreeMap::new(),
             show_help: false,
             should_quit: false,
+            backend_status: BackendStatus::starting("unknown"),
         }
     }
 
@@ -154,6 +158,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 state.selected = state.selected.min(state.threads.len() - 1);
             }
         }
+        Action::BackendStatus(status) => state.backend_status = status,
         Action::MoveSelection(delta) => move_selection(state, delta),
         Action::OpenSelected | Action::QuickPrompt => {
             if let Some(id) = state.selected_thread_id() {
