@@ -1,5 +1,6 @@
 use crate::domain::{AttentionReason, RuntimeStatus, ThreadId, ThreadSummary};
 use crate::git::GitContext;
+use crate::goal::{GoalObservation, GoalStatus};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -133,6 +134,9 @@ pub enum PlanningAttention {
     SystemError,
     MarkedUnread,
     ConflictRisk,
+    GoalBlocked,
+    UsageLimited,
+    BudgetLimited,
     ReviewUnseen,
 }
 
@@ -144,6 +148,9 @@ impl PlanningAttention {
             Self::SystemError => "error",
             Self::MarkedUnread => "unread",
             Self::ConflictRisk => "conflict",
+            Self::GoalBlocked => "goal-blocked",
+            Self::UsageLimited => "usage-limited",
+            Self::BudgetLimited => "budget-limited",
             Self::ReviewUnseen => "review",
         }
     }
@@ -397,6 +404,13 @@ pub struct ReconcileInput<'a> {
 }
 
 pub fn reconcile_thread_card(input: ReconcileInput<'_>) -> WorkCardProjection {
+    reconcile_thread_card_with_goal(input, None)
+}
+
+pub fn reconcile_thread_card_with_goal(
+    input: ReconcileInput<'_>,
+    goal: Option<&GoalObservation>,
+) -> WorkCardProjection {
     let thread = input.thread;
     let local = input
         .local
@@ -404,7 +418,8 @@ pub fn reconcile_thread_card(input: ReconcileInput<'_>) -> WorkCardProjection {
         .unwrap_or_else(|| WorkCardRecord::implicit_thread(&thread.id));
 
     let git_dirty = input.git.is_some_and(|git| git.is_repository && git.dirty);
-    let (stage, stage_reason) = derive_stage(&thread.runtime, git_dirty, &local.overlay);
+    let (stage, stage_reason) =
+        derive_stage(&thread.runtime, git_dirty, &local.overlay, goal);
 
     let mut attention = thread
         .attention
@@ -413,6 +428,25 @@ pub fn reconcile_thread_card(input: ReconcileInput<'_>) -> WorkCardProjection {
         .collect::<BTreeSet<_>>();
     if input.collision_count > 0 {
         attention.insert(PlanningAttention::ConflictRisk);
+    }
+    if let Some(goal) = goal {
+        match goal.status {
+            GoalStatus::Blocked => {
+                attention.insert(PlanningAttention::GoalBlocked);
+            }
+            GoalStatus::UsageLimited => {
+                attention.insert(PlanningAttention::UsageLimited);
+            }
+            GoalStatus::BudgetLimited => {
+                attention.insert(PlanningAttention::BudgetLimited);
+            }
+            GoalStatus::Complete => {
+                if local.overlay.done_at_unix_ms.is_none() {
+                    attention.insert(PlanningAttention::ReviewUnseen);
+                }
+            }
+            GoalStatus::Active | GoalStatus::Paused => {}
+        }
     }
     if stage == WorkflowStage::Review && local.overlay.done_at_unix_ms.is_none() {
         attention.insert(PlanningAttention::ReviewUnseen);
@@ -440,6 +474,20 @@ pub fn reconcile_thread_card(input: ReconcileInput<'_>) -> WorkCardProjection {
         ),
         degraded_reason: input.backend_error.map(ToOwned::to_owned),
     }];
+
+    if let Some(goal) = goal {
+        provenance.push(Provenance {
+            source: "goal".into(),
+            observed_at_unix_ms: Some(goal.observed_at_unix_ms),
+            source_revision: Some(goal.updated_at.to_string()),
+            freshness: freshness(
+                Some(goal.observed_at_unix_ms),
+                input.now_unix_ms,
+                false,
+            ),
+            degraded_reason: None,
+        });
+    }
 
     if let Some(git) = input.git {
         provenance.push(Provenance {
@@ -534,12 +582,44 @@ fn derive_stage(
     runtime: &RuntimeStatus,
     git_dirty: bool,
     overlay: &WorkCardOverlay,
+    goal: Option<&GoalObservation>,
 ) -> (WorkflowStage, String) {
     if overlay.done_at_unix_ms.is_some() {
         return (
             WorkflowStage::Done,
             "completion explicitly acknowledged locally".into(),
         );
+    }
+    if let Some(goal) = goal {
+        match goal.status {
+            GoalStatus::Active => {
+                return (WorkflowStage::Working, "Codex Goal is active".into());
+            }
+            GoalStatus::Paused => {
+                return (WorkflowStage::Ready, "Codex Goal is paused".into());
+            }
+            GoalStatus::Blocked => {
+                return (WorkflowStage::Working, "Codex Goal is blocked".into());
+            }
+            GoalStatus::UsageLimited => {
+                return (
+                    WorkflowStage::Working,
+                    "Codex Goal is usage-limited".into(),
+                );
+            }
+            GoalStatus::BudgetLimited => {
+                return (
+                    WorkflowStage::Working,
+                    "Codex Goal is budget-limited".into(),
+                );
+            }
+            GoalStatus::Complete => {
+                return (
+                    WorkflowStage::Review,
+                    "Codex Goal is complete and awaits human review".into(),
+                );
+            }
+        }
     }
     match runtime {
         RuntimeStatus::Working | RuntimeStatus::WaitingHuman => (
@@ -656,6 +736,88 @@ mod tests {
             visible_fields: vec![],
         };
         assert_eq!(apply_saved_view(&[card], &view).len(), 1);
+    }
+
+    fn goal(status: GoalStatus) -> GoalObservation {
+        GoalObservation {
+            thread_id: ThreadId::new("thread-impl"),
+            objective: "Ship M4".into(),
+            status,
+            token_budget: Some(10_000),
+            tokens_used: 1_000,
+            time_used_seconds: 60,
+            created_at: 1,
+            updated_at: 2,
+            observed_at_unix_ms: 100,
+        }
+    }
+
+    #[test]
+    fn active_goal_drives_working_stage_without_becoming_local_authority() {
+        let mut thread = first_thread();
+        thread.runtime = RuntimeStatus::Inactive;
+        let goal = goal(GoalStatus::Active);
+        let card = reconcile_thread_card_with_goal(
+            ReconcileInput {
+                thread: &thread,
+                git: None,
+                local: None,
+                collision_count: 0,
+                backend_observed_at_unix_ms: Some(100),
+                backend_error: None,
+                now_unix_ms: 100,
+            },
+            Some(&goal),
+        );
+        assert_eq!(card.stage, WorkflowStage::Working);
+        assert_eq!(card.stage_reason, "Codex Goal is active");
+        assert!(card.provenance.iter().any(|p| p.source == "goal"));
+    }
+
+    #[test]
+    fn blocked_and_limited_goals_are_attention_not_workflow_columns() {
+        let thread = first_thread();
+        for (status, attention) in [
+            (GoalStatus::Blocked, PlanningAttention::GoalBlocked),
+            (GoalStatus::UsageLimited, PlanningAttention::UsageLimited),
+            (GoalStatus::BudgetLimited, PlanningAttention::BudgetLimited),
+        ] {
+            let goal = goal(status);
+            let card = reconcile_thread_card_with_goal(
+                ReconcileInput {
+                    thread: &thread,
+                    git: None,
+                    local: None,
+                    collision_count: 0,
+                    backend_observed_at_unix_ms: Some(100),
+                    backend_error: None,
+                    now_unix_ms: 100,
+                },
+                Some(&goal),
+            );
+            assert_eq!(card.stage, WorkflowStage::Working);
+            assert!(card.attention.contains(&attention));
+        }
+    }
+
+    #[test]
+    fn completed_goal_projects_to_review_until_local_completion_is_acknowledged() {
+        let thread = first_thread();
+        let goal = goal(GoalStatus::Complete);
+        let card = reconcile_thread_card_with_goal(
+            ReconcileInput {
+                thread: &thread,
+                git: None,
+                local: None,
+                collision_count: 0,
+                backend_observed_at_unix_ms: Some(100),
+                backend_error: None,
+                now_unix_ms: 100,
+            },
+            Some(&goal),
+        );
+        assert_eq!(card.stage, WorkflowStage::Review);
+        assert!(card.attention.contains(&PlanningAttention::ReviewUnseen));
     }
 
     #[test]
