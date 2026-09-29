@@ -580,13 +580,20 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     clear_user_input_editor(state);
                     return vec![];
                 };
-                let answers = state
-                    .input_buffer
-                    .split(',')
-                    .map(str::trim)
-                    .filter(|answer| !answer.is_empty())
-                    .map(ToOwned::to_owned)
-                    .collect::<Vec<_>>();
+                let input = state.input_buffer.trim();
+                if input.is_empty() {
+                    return vec![];
+                }
+                let answers = if question.options.is_empty() {
+                    vec![input.to_string()]
+                } else {
+                    input
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|answer| !answer.is_empty())
+                        .map(ToOwned::to_owned)
+                        .collect::<Vec<_>>()
+                };
                 if answers.is_empty() {
                     return vec![];
                 }
@@ -915,6 +922,43 @@ mod tests {
         };
         assert_eq!(answers["q1"], vec!["alpha"]);
         assert_eq!(answers["q2"], vec!["beta"]);
+    }
+
+    #[test]
+    fn free_text_user_input_preserves_commas() {
+        let mut app = app();
+        reduce(&mut app, Action::OpenSelected);
+        let thread_id = app.current_thread_id().expect("thread").clone();
+        reduce(
+            &mut app,
+            Action::InteractiveRequested(InteractiveRequest {
+                request_id: RpcRequestId::Integer(10),
+                thread_id,
+                turn_id: "turn-1".into(),
+                item_id: "item-1".into(),
+                kind: InteractiveRequestKind::UserInput {
+                    questions: vec![UserInputQuestion {
+                        id: "q1".into(),
+                        header: "Token".into(),
+                        question: "Enter value".into(),
+                        is_secret: true,
+                        options: vec![],
+                    }],
+                },
+            }),
+        );
+        reduce(&mut app, Action::BeginUserInput);
+        for ch in "alpha,beta".chars() {
+            reduce(&mut app, Action::InputChar(ch));
+        }
+        let effects = reduce(&mut app, Action::CommitInput);
+        let Effect::ResolveInteractive { resolution, .. } = &effects[0] else {
+            panic!("expected interactive resolution");
+        };
+        let InteractiveResolution::UserInput(answers) = resolution else {
+            panic!("expected user input answers");
+        };
+        assert_eq!(answers["q1"], vec!["alpha,beta"]);
     }
 
     #[test]
