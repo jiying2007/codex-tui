@@ -3,7 +3,8 @@ use crate::conversation::{
     ConversationPage, ConversationState, InteractiveRequest, InteractiveRequestKind,
     InteractiveResolution, RpcRequestId, UserInputQuestion,
 };
-use crate::domain::{AttentionReason, ThreadId, ThreadSummary, ThreadUiState};
+use crate::domain::{AttentionReason, RuntimeStatus, ThreadId, ThreadSummary, ThreadUiState};
+use crate::git::GitContext;
 use crate::store::LocalStateV1;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -32,6 +33,8 @@ pub enum InputMode {
 pub enum Action {
     ReplaceThreads(Vec<ThreadSummary>),
     BackendStatus(BackendStatus),
+    RefreshGitProjections,
+    GitContextLoaded(GitContext),
     ConversationLoaded(ConversationPage),
     OlderConversationLoaded(ConversationPage),
     ConversationFailed { thread_id: ThreadId, error: String },
@@ -65,6 +68,10 @@ pub enum Action {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Effect {
     PersistOperatorState,
+    ProbeGit {
+        thread_id: ThreadId,
+        cwd: String,
+    },
     LoadConversation(ThreadId),
     StopWatchingConversation(ThreadId),
     LoadOlderConversation {
@@ -95,6 +102,7 @@ pub struct AppState {
     pub previous_target: Option<ThreadId>,
     pub thread_ui: BTreeMap<String, ThreadUiState>,
     pub conversations: BTreeMap<String, ConversationState>,
+    pub git_contexts: BTreeMap<String, GitContext>,
     pub pending_requests: Vec<InteractiveRequest>,
     pub user_input_request_id: Option<RpcRequestId>,
     pub user_input_question_index: usize,
@@ -118,6 +126,7 @@ impl AppState {
             previous_target: None,
             thread_ui: BTreeMap::new(),
             conversations: BTreeMap::new(),
+            git_contexts: BTreeMap::new(),
             pending_requests: vec![],
             user_input_request_id: None,
             user_input_question_index: 0,
@@ -164,6 +173,36 @@ impl AppState {
     pub fn current_conversation(&self) -> Option<&ConversationState> {
         let id = self.current_thread_id()?;
         self.conversations.get(&id.0)
+    }
+
+    pub fn git_context(&self, thread_id: &ThreadId) -> Option<&GitContext> {
+        self.git_contexts.get(&thread_id.0)
+    }
+
+    pub fn worktree_collision_count(&self, thread_id: &ThreadId) -> usize {
+        let Some(context) = self.git_context(thread_id) else {
+            return 0;
+        };
+        let Some(worktree) = context.worktree.as_ref() else {
+            return 0;
+        };
+        self.threads
+            .iter()
+            .filter(|thread| {
+                thread.id != *thread_id
+                    && matches!(
+                        thread.runtime,
+                        RuntimeStatus::Working | RuntimeStatus::WaitingHuman
+                    )
+                    && self
+                        .git_context(&thread.id)
+                        .and_then(|other| other.worktree.as_ref())
+                        .is_some_and(|other| {
+                            other.canonical_path == worktree.canonical_path
+                                && other.repo == worktree.repo
+                        })
+            })
+            .count()
     }
 
     pub fn current_pending_request(&self) -> Option<&InteractiveRequest> {
@@ -305,6 +344,37 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             ensure_selection_visible(state);
         }
         Action::BackendStatus(status) => state.backend_status = status,
+        Action::RefreshGitProjections => {
+            let mut effects = Vec::new();
+            for thread in &state.threads {
+                if thread.metadata.cwd.trim().is_empty() {
+                    continue;
+                }
+                let needs_probe = state
+                    .git_contexts
+                    .get(&thread.id.0)
+                    .is_none_or(|context| context.cwd != thread.metadata.cwd);
+                if needs_probe {
+                    state.git_contexts.insert(
+                        thread.id.0.clone(),
+                        GitContext::pending(thread.id.clone(), thread.metadata.cwd.clone()),
+                    );
+                    effects.push(Effect::ProbeGit {
+                        thread_id: thread.id.clone(),
+                        cwd: thread.metadata.cwd.clone(),
+                    });
+                }
+            }
+            state
+                .git_contexts
+                .retain(|thread_id, _| state.threads.iter().any(|thread| thread.id.0 == *thread_id));
+            return effects;
+        }
+        Action::GitContextLoaded(context) => {
+            state
+                .git_contexts
+                .insert(context.thread_id.0.clone(), context);
+        }
         Action::ConversationLoaded(page) => {
             let key = page.thread_id.0.clone();
             state
@@ -1057,6 +1127,53 @@ mod tests {
         );
         assert_eq!(reduce(&mut app, Action::ScrollBy(-5)).len(), 1);
         assert!(reduce(&mut app, Action::ScrollBy(-5)).is_empty());
+    }
+
+    #[test]
+    fn git_projection_probe_is_emitted_once_until_cwd_changes() {
+        let mut app = app();
+        let effects = reduce(&mut app, Action::RefreshGitProjections);
+        assert_eq!(effects.len(), 4);
+        assert!(reduce(&mut app, Action::RefreshGitProjections).is_empty());
+
+        app.threads[0].metadata.cwd = "/new/cwd".into();
+        let effects = reduce(&mut app, Action::RefreshGitProjections);
+        assert_eq!(
+            effects,
+            vec![Effect::ProbeGit {
+                thread_id: ThreadId::new("thread-impl"),
+                cwd: "/new/cwd".into(),
+            }]
+        );
+    }
+
+    #[test]
+    fn collision_is_derived_from_active_threads_sharing_one_worktree() {
+        let mut app = app();
+        app.threads[0].runtime = RuntimeStatus::Working;
+        app.threads[1].runtime = RuntimeStatus::WaitingHuman;
+
+        let repo = crate::domain::LocalRepoIdentity {
+            git_common_dir: "/repo/.git".into(),
+            primary_root: "/repo".into(),
+        };
+        for thread_id in ["thread-impl", "thread-kws"] {
+            let mut context = GitContext::pending(ThreadId::new(thread_id), "/repo");
+            context.is_repository = true;
+            context.repo = Some(repo.clone());
+            context.worktree = Some(crate::domain::WorktreeIdentity {
+                repo: repo.clone(),
+                canonical_path: "/repo".into(),
+                branch: Some("main".into()),
+                managed_by_codex_tui: false,
+            });
+            app.git_contexts.insert(thread_id.into(), context);
+        }
+
+        assert_eq!(
+            app.worktree_collision_count(&ThreadId::new("thread-impl")),
+            1
+        );
     }
 
     #[test]
