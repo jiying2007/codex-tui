@@ -202,6 +202,7 @@ async fn run_registry_actor(
     let mut generation = 0_u64;
     let mut threads = by_id(initial_threads);
     let mut pending_requests: BTreeMap<RpcRequestId, PendingServerRequest> = BTreeMap::new();
+    let mut watched_threads = BTreeSet::new();
     let mut refresh = tokio::time::interval(REFRESH_INTERVAL);
     refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     refresh.tick().await;
@@ -214,6 +215,7 @@ async fn run_registry_actor(
                 };
                 match command {
                     BackendCommand::LoadConversation(thread_id) => {
+                        watched_threads.insert(thread_id.0.clone());
                         emit_conversation_load(&mut rpc, thread_id, &conversation_tx).await;
                     }
                     BackendCommand::LoadOlderConversation {
@@ -221,6 +223,7 @@ async fn run_registry_actor(
                         turn_cursor,
                         item_cursor,
                     } => {
+                        watched_threads.insert(thread_id.0.clone());
                         match load_older_conversation(
                             &mut rpc,
                             thread_id.clone(),
@@ -245,6 +248,7 @@ async fn run_registry_actor(
                         text,
                         active_turn_id,
                     } => {
+                        watched_threads.insert(thread_id.0.clone());
                         match submit_prompt(
                             &mut rpc,
                             &mut threads,
@@ -346,6 +350,7 @@ async fn run_registry_actor(
                             message,
                             &mut threads,
                             &mut pending_requests,
+                            &watched_threads,
                             &conversation_tx,
                         )
                         .await
@@ -757,6 +762,7 @@ async fn handle_unsolicited(
     message: Value,
     threads: &mut BTreeMap<String, ThreadSummary>,
     pending_requests: &mut BTreeMap<RpcRequestId, PendingServerRequest>,
+    watched_threads: &BTreeSet<String>,
     conversation_tx: &mpsc::UnboundedSender<ConversationEvent>,
 ) -> Result<()> {
     if message.get("id").is_some() && message.get("method").is_some() {
@@ -811,18 +817,33 @@ async fn handle_unsolicited(
         return Ok(());
     }
 
-    if method != "thread/status/changed" {
-        return Ok(());
-    }
     let Some(thread_id) = params.get("threadId").and_then(Value::as_str) else {
         return Ok(());
     };
-    let Some(status) = params.get("status") else {
+
+    if method == "thread/status/changed" {
+        let Some(status) = params.get("status") else {
+            return Ok(());
+        };
+        if let Some(thread) = threads.get_mut(thread_id) {
+            apply_status(thread, status);
+        }
         return Ok(());
-    };
-    if let Some(thread) = threads.get_mut(thread_id) {
-        apply_status(thread, status);
     }
+
+    if matches!(
+        method,
+        "turn/started" | "turn/completed" | "item/completed"
+    ) && watched_threads.contains(thread_id)
+    {
+        emit_conversation_load(
+            rpc,
+            ThreadId::new(thread_id),
+            conversation_tx,
+        )
+        .await;
+    }
+
     Ok(())
 }
 
