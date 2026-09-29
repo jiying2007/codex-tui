@@ -458,6 +458,80 @@ async fn run_registry_actor(
                             }
                         }
                     }
+                    BackendCommand::RefreshGoal(thread_id) => {
+                        match load_goal(&mut rpc, thread_id.clone()).await {
+                            Ok(Some(goal)) => {
+                                goal_supported = Some(true);
+                                goal_probed.insert(thread_id.0.clone());
+                                mark_goal_supported(&mut status);
+                                let _ = conversation_tx.send(ConversationEvent::GoalObserved(goal));
+                            }
+                            Ok(None) => {
+                                goal_supported = Some(true);
+                                goal_probed.insert(thread_id.0.clone());
+                                mark_goal_supported(&mut status);
+                                let _ = conversation_tx.send(ConversationEvent::GoalCleared(thread_id));
+                            }
+                            Err(error) if is_goal_unsupported(&error) => {
+                                goal_supported = Some(false);
+                                goal_probe_queue.clear();
+                                goal_queued.clear();
+                                mark_goal_unsupported(&mut status);
+                            }
+                            Err(error) => {
+                                status.error = Some(format!("Goal refresh failed: {error}"));
+                            }
+                        }
+                    }
+                    BackendCommand::SetGoal {
+                        thread_id,
+                        objective,
+                        status: goal_status,
+                    } => {
+                        match set_goal(
+                            &mut rpc,
+                            thread_id.clone(),
+                            objective,
+                            goal_status,
+                        )
+                        .await
+                        {
+                            Ok(goal) => {
+                                goal_supported = Some(true);
+                                goal_probed.insert(thread_id.0.clone());
+                                mark_goal_supported(&mut status);
+                                let _ = conversation_tx.send(ConversationEvent::GoalObserved(goal));
+                            }
+                            Err(error) if is_goal_unsupported(&error) => {
+                                goal_supported = Some(false);
+                                goal_probe_queue.clear();
+                                goal_queued.clear();
+                                mark_goal_unsupported(&mut status);
+                            }
+                            Err(error) => {
+                                status.error = Some(format!("Goal update failed: {error}"));
+                            }
+                        }
+                    }
+                    BackendCommand::ClearGoal(thread_id) => {
+                        match clear_goal(&mut rpc, &thread_id).await {
+                            Ok(()) => {
+                                goal_supported = Some(true);
+                                goal_probed.insert(thread_id.0.clone());
+                                mark_goal_supported(&mut status);
+                                let _ = conversation_tx.send(ConversationEvent::GoalCleared(thread_id));
+                            }
+                            Err(error) if is_goal_unsupported(&error) => {
+                                goal_supported = Some(false);
+                                goal_probe_queue.clear();
+                                goal_queued.clear();
+                                mark_goal_unsupported(&mut status);
+                            }
+                            Err(error) => {
+                                status.error = Some(format!("Goal clear failed: {error}"));
+                            }
+                        }
+                    }
                 }
             }
             _ = refresh.tick() => {
