@@ -43,7 +43,10 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
     if app.context_open {
         render_context_actions(frame, app);
     }
-    if matches!(app.input_mode, InputMode::Note | InputMode::Snooze) {
+    if matches!(
+        app.input_mode,
+        InputMode::Note | InputMode::Snooze | InputMode::SavedViewName
+    ) {
         render_local_input_overlay(frame, app);
     }
 }
@@ -89,6 +92,10 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState) {
         )),
         InputMode::Note => Line::from(format!(
             "note> {}  · Enter save · Esc cancel",
+            truncate(&app.input_buffer, 60)
+        )),
+        InputMode::SavedViewName => Line::from(format!(
+            "view name> {}  · Enter save · Esc cancel",
             truncate(&app.input_buffer, 60)
         )),
         InputMode::Normal => {
@@ -568,6 +575,11 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState) {
             "note> {} · Enter save · Esc cancel",
             truncate(&app.input_buffer, 80)
         )
+    } else if app.input_mode == InputMode::SavedViewName {
+        format!(
+            "view name> {} · Enter save · Esc cancel",
+            truncate(&app.input_buffer, 80)
+        )
     } else if app.hot_slot_bind_pending {
         "bind hot slot: press 1–9 · Esc cancels other input only".into()
     } else if let Some(error) = &app.planning_store_error {
@@ -915,6 +927,7 @@ fn render_local_input_overlay(frame: &mut Frame<'_>, app: &AppState) {
     let (title, hint) = match app.input_mode {
         InputMode::Note => (" Local note ", "Enter save · Esc cancel"),
         InputMode::Snooze => (" Snooze ", "15m / 1h / 1d · Enter apply · Esc cancel"),
+        InputMode::SavedViewName => (" Save current view ", "Enter save · Esc cancel"),
         _ => return,
     };
     let area = centered_fixed(64, 7, frame.area());
