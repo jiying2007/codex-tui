@@ -6,8 +6,9 @@ use crate::conversation::{
 use crate::domain::{AttentionReason, RuntimeStatus, ThreadId, ThreadSummary, ThreadUiState};
 use crate::git::{GitContext, GitReview};
 use crate::planning::{
-    PlanningSnapshot, ReconcileInput, SourceRef, WorkCardProjection, reconcile_scratch_card,
-    reconcile_thread_card,
+    PlanningSnapshot, ReconcileInput, SavedView, SavedViewLayout, SourceKind, SourceRef,
+    WorkCardProjection, WorkflowStage, apply_saved_view, builtin_saved_views,
+    reconcile_scratch_card, reconcile_thread_card,
 };
 use crate::store::LocalStateV1;
 use std::collections::{BTreeMap, BTreeSet};
@@ -18,6 +19,8 @@ pub enum View {
     Thread(ThreadId),
     Review(ThreadId),
     Workspace(ThreadId),
+    Board,
+    Scratch(String),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -26,6 +29,8 @@ pub enum ViewKind {
     Thread,
     Review,
     Workspace,
+    Board,
+    Scratch,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -35,6 +40,7 @@ pub enum InputMode {
     Alias,
     Composer,
     UserInput,
+    ScratchTitle,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -50,6 +56,12 @@ pub enum Action {
     PlanningStoreDegraded(Option<String>),
     OpenReview,
     OpenWorkspace,
+    OpenBoard,
+    MoveBoardColumn(i32),
+    MovePlanningSelection(i32),
+    CycleSavedView(i32),
+    OpenPlanningSelected,
+    BeginScratch,
     MoveReview(i32),
     ScrollReviewBy(i16),
     ToggleReviewWordDiff,
@@ -87,6 +99,10 @@ pub enum Action {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Effect {
     PersistOperatorState,
+    CreateScratch {
+        title: String,
+        workspace: Option<String>,
+    },
     ProbeGit {
         thread_id: ThreadId,
         cwd: String,
@@ -137,6 +153,11 @@ pub struct AppState {
     pub planning_store_error: Option<String>,
     pub review_return_view: Option<View>,
     pub workspace_return_view: Option<View>,
+    pub board_return_view: Option<View>,
+    pub planning_view_index: usize,
+    pub board_stage_index: usize,
+    pub board_selected: usize,
+    pub new_scratch_workspace: Option<String>,
     pub review_selected: usize,
     pub review_scroll: u16,
     pub review_word_diff: bool,
@@ -170,6 +191,11 @@ impl AppState {
             planning_store_error: None,
             review_return_view: None,
             workspace_return_view: None,
+            board_return_view: None,
+            planning_view_index: 0,
+            board_stage_index: 0,
+            board_selected: 0,
+            new_scratch_workspace: None,
             review_selected: 0,
             review_scroll: 0,
             review_word_diff: false,
@@ -194,6 +220,8 @@ impl AppState {
             View::Thread(_) => ViewKind::Thread,
             View::Review(_) => ViewKind::Review,
             View::Workspace(_) => ViewKind::Workspace,
+            View::Board => ViewKind::Board,
+            View::Scratch(_) => ViewKind::Scratch,
         }
     }
 
@@ -210,6 +238,7 @@ impl AppState {
         match &self.view {
             View::Registry => None,
             View::Thread(id) | View::Review(id) | View::Workspace(id) => Some(id),
+            View::Board | View::Scratch(_) => None,
         }
     }
 
@@ -236,6 +265,34 @@ impl AppState {
 
     pub fn selected_review_change(&self) -> Option<&crate::git::GitFileChange> {
         self.current_review()?.changes.get(self.review_selected)
+    }
+
+    pub fn planning_views(&self) -> Vec<SavedView> {
+        let mut views = builtin_saved_views();
+        views.extend(self.planning_snapshot.saved_views.iter().cloned());
+        views
+    }
+
+    pub fn active_saved_view(&self) -> SavedView {
+        let views = self.planning_views();
+        views
+            .get(self.planning_view_index.min(views.len().saturating_sub(1)))
+            .cloned()
+            .unwrap_or_else(|| builtin_saved_views().remove(0))
+    }
+
+    pub fn visible_planning_cards(&self) -> Vec<&WorkCardProjection> {
+        let view = self.active_saved_view();
+        let mut cards = apply_saved_view(&self.work_cards, &view);
+        if view.layout == SavedViewLayout::Board {
+            let stage = WorkflowStage::ALL[self.board_stage_index % WorkflowStage::ALL.len()];
+            cards.retain(|card| card.stage == stage);
+        }
+        cards
+    }
+
+    pub fn selected_planning_card(&self) -> Option<&WorkCardProjection> {
+        self.visible_planning_cards().get(self.board_selected).copied()
     }
 
     pub fn work_card_for_thread(&self, thread_id: &ThreadId) -> Option<&WorkCardProjection> {
@@ -452,12 +509,94 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         }
         Action::PlanningSnapshotLoaded(snapshot) => {
             state.planning_snapshot = snapshot;
+            state.planning_view_index = state
+                .planning_view_index
+                .min(state.planning_views().len().saturating_sub(1));
+            state.board_selected = 0;
         }
         Action::PlanningStoreDegraded(error) => {
             state.planning_store_error = error;
         }
         Action::ReconcilePlanning { now_unix_ms } => {
             rebuild_planning(state, now_unix_ms);
+        }
+        Action::OpenBoard => {
+            if !matches!(state.view, View::Board) {
+                state.board_return_view = Some(state.view.clone());
+            }
+            state.view = View::Board;
+            state.board_selected = 0;
+        }
+        Action::MoveBoardColumn(delta) => {
+            let len = WorkflowStage::ALL.len() as i32;
+            state.board_stage_index =
+                (state.board_stage_index as i32 + delta).rem_euclid(len) as usize;
+            state.board_selected = 0;
+        }
+        Action::MovePlanningSelection(delta) => {
+            let len = state.visible_planning_cards().len();
+            if len == 0 {
+                state.board_selected = 0;
+            } else {
+                state.board_selected =
+                    (state.board_selected as i32 + delta).rem_euclid(len as i32) as usize;
+            }
+        }
+        Action::CycleSavedView(delta) => {
+            let len = state.planning_views().len();
+            if len == 0 {
+                state.planning_view_index = 0;
+            } else {
+                state.planning_view_index =
+                    (state.planning_view_index as i32 + delta).rem_euclid(len as i32) as usize;
+            }
+            state.board_selected = 0;
+        }
+        Action::OpenPlanningSelected => {
+            let Some(card) = state.selected_planning_card().cloned() else {
+                return vec![];
+            };
+            match card.anchor.kind {
+                SourceKind::CodexThread => {
+                    let id = ThreadId::new(card.anchor.value);
+                    if state.threads.iter().any(|thread| thread.id == id) {
+                        state.previous_target = state.current_thread_id().cloned();
+                        state.thread_ui.entry(id.0.clone()).or_default();
+                        state
+                            .conversations
+                            .entry(id.0.clone())
+                            .or_insert_with(|| ConversationState::loading(id.clone()))
+                            .loading = true;
+                        state.view = View::Thread(id.clone());
+                        return vec![Effect::LoadConversation(id)];
+                    }
+                }
+                SourceKind::ScratchWork => {
+                    state.view = View::Scratch(card.anchor.value);
+                }
+                _ => {}
+            }
+        }
+        Action::BeginScratch => {
+            state.new_scratch_workspace = match &state.view {
+                View::Registry => state.selected_thread().map(|thread| thread.workspace.clone()),
+                View::Board => state
+                    .selected_planning_card()
+                    .and_then(|card| card.workspace.clone()),
+                View::Thread(id) | View::Review(id) | View::Workspace(id) => state
+                    .threads
+                    .iter()
+                    .find(|thread| thread.id == *id)
+                    .map(|thread| thread.workspace.clone()),
+                View::Scratch(id) => state
+                    .planning_snapshot
+                    .scratch
+                    .iter()
+                    .find(|scratch| scratch.id == *id)
+                    .and_then(|scratch| scratch.workspace.clone()),
+            };
+            state.input_buffer.clear();
+            state.input_mode = InputMode::ScratchTitle;
         }
         Action::ReviewError { thread_id, error } => {
             let review = state
@@ -470,6 +609,13 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             let thread_id = match &state.view {
                 View::Registry => state.selected_thread_id(),
                 View::Thread(id) | View::Review(id) | View::Workspace(id) => Some(id.clone()),
+                View::Board => state
+                    .selected_planning_card()
+                    .and_then(|card| {
+                        (card.anchor.kind == SourceKind::CodexThread)
+                            .then(|| ThreadId::new(card.anchor.value.clone()))
+                    }),
+                View::Scratch(_) => None,
             };
             let Some(thread_id) = thread_id else {
                 return vec![];
@@ -499,6 +645,13 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             let thread_id = match &state.view {
                 View::Registry => state.selected_thread_id(),
                 View::Thread(id) | View::Review(id) | View::Workspace(id) => Some(id.clone()),
+                View::Board => state
+                    .selected_planning_card()
+                    .and_then(|card| {
+                        (card.anchor.kind == SourceKind::CodexThread)
+                            .then(|| ThreadId::new(card.anchor.value.clone()))
+                    }),
+                View::Scratch(_) => None,
             };
             let Some(thread_id) = thread_id else {
                 return vec![];
@@ -660,6 +813,15 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::QuickPrompt => {
             let id = match state.current_thread_id().cloned() {
                 Some(id) => id,
+                None if matches!(state.view, View::Board) => {
+                    let Some(card) = state.selected_planning_card() else {
+                        return vec![];
+                    };
+                    if card.anchor.kind != SourceKind::CodexThread {
+                        return vec![];
+                    }
+                    ThreadId::new(card.anchor.value.clone())
+                }
                 None => {
                     let Some(id) = state.selected_thread_id() else {
                         return vec![];
@@ -698,6 +860,14 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
         }
         Action::Back => {
+            if matches!(state.view, View::Scratch(_)) {
+                state.view = View::Board;
+                return vec![];
+            }
+            if matches!(state.view, View::Board) {
+                state.view = state.board_return_view.take().unwrap_or(View::Registry);
+                return vec![];
+            }
             if matches!(state.view, View::Review(_)) {
                 state.view = state.review_return_view.take().unwrap_or(View::Registry);
                 state.review_scroll = 0;
@@ -829,7 +999,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     return vec![Effect::PersistOperatorState];
                 }
             }
-            InputMode::Search | InputMode::Alias | InputMode::UserInput => {
+            InputMode::Search | InputMode::Alias | InputMode::UserInput | InputMode::ScratchTitle => {
                 state.input_buffer.push(character);
                 if state.input_mode == InputMode::Search {
                     state.filter.clone_from(&state.input_buffer);
@@ -845,7 +1015,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     return vec![Effect::PersistOperatorState];
                 }
             }
-            InputMode::Search | InputMode::Alias | InputMode::UserInput => {
+            InputMode::Search | InputMode::Alias | InputMode::UserInput | InputMode::ScratchTitle => {
                 state.input_buffer.pop();
                 if state.input_mode == InputMode::Search {
                     state.filter.clone_from(&state.input_buffer);
@@ -855,6 +1025,16 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         },
         Action::CommitInput => {
             let mode = state.input_mode;
+            if mode == InputMode::ScratchTitle {
+                let title = state.input_buffer.trim().to_string();
+                if title.is_empty() {
+                    return vec![];
+                }
+                let workspace = state.new_scratch_workspace.take();
+                state.input_mode = InputMode::Normal;
+                state.input_buffer.clear();
+                return vec![Effect::CreateScratch { title, workspace }];
+            }
             if mode == InputMode::UserInput {
                 let Some(request_id) = state.user_input_request_id.clone() else {
                     clear_user_input_editor(state);
@@ -955,6 +1135,9 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.input_original.clear();
         }
         Action::CancelInput => {
+            if state.input_mode == InputMode::ScratchTitle {
+                state.new_scratch_workspace = None;
+            }
             if state.input_mode == InputMode::Search {
                 state.filter.clone_from(&state.input_original);
                 ensure_selection_visible(state);
@@ -1448,6 +1631,41 @@ mod tests {
         assert_eq!(app.selected_review_change().expect("change").path, "b.rs");
         reduce(&mut app, Action::Back);
         assert_eq!(app.view, View::Registry);
+    }
+
+    #[test]
+    fn board_keeps_workflow_columns_separate_from_needs_you_filter() {
+        let mut app = app();
+        app.threads[0].runtime = RuntimeStatus::Working;
+        app.threads[0].attention = vec![AttentionReason::ApprovalRequired];
+        reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 10 });
+        reduce(&mut app, Action::OpenBoard);
+        assert_eq!(app.active_saved_view().layout, SavedViewLayout::Board);
+        app.board_stage_index = WorkflowStage::ALL
+            .iter()
+            .position(|stage| *stage == WorkflowStage::Working)
+            .expect("working");
+        assert!(app.visible_planning_cards().iter().any(|card| {
+            card.stage == WorkflowStage::Working && card.needs_you()
+        }));
+        reduce(&mut app, Action::CycleSavedView(1));
+        assert_eq!(app.active_saved_view().id, "builtin:attention");
+        assert!(app.visible_planning_cards().iter().all(|card| card.needs_you()));
+    }
+
+    #[test]
+    fn new_scratch_is_an_explicit_local_effect() {
+        let mut app = app();
+        reduce(&mut app, Action::BeginScratch);
+        for ch in "Investigate wake miss".chars() {
+            reduce(&mut app, Action::InputChar(ch));
+        }
+        let effects = reduce(&mut app, Action::CommitInput);
+        assert!(matches!(
+            effects.as_slice(),
+            [Effect::CreateScratch { title, .. }] if title == "Investigate wake miss"
+        ));
+        assert_eq!(app.input_mode, InputMode::Normal);
     }
 
     #[test]
