@@ -2,7 +2,10 @@ use crate::backend::{BackendSnapshot, BackendStatus};
 use crate::codex_protocol::{
     ThreadWire, apply_status, normalize_thread, parse_loaded_list, parse_thread_list,
 };
-use crate::domain::ThreadSummary;
+use crate::conversation::{
+    ConversationPage, merge_history, parse_items_page, parse_thread_title, parse_turns_page,
+};
+use crate::domain::{ThreadId, ThreadSummary};
 use anyhow::{Context, Result, anyhow};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -23,14 +26,37 @@ pub struct StartedRegistry {
     pub handle: RegistryHandle,
 }
 
+#[derive(Clone, Debug)]
+pub enum BackendCommand {
+    LoadConversation(ThreadId),
+}
+
+#[derive(Clone, Debug)]
+pub enum ConversationEvent {
+    Loaded(ConversationPage),
+    Failed { thread_id: ThreadId, error: String },
+}
+
 pub struct RegistryHandle {
     rx: mpsc::UnboundedReceiver<BackendSnapshot>,
+    conversation_rx: mpsc::UnboundedReceiver<ConversationEvent>,
+    command_tx: mpsc::UnboundedSender<BackendCommand>,
     task: JoinHandle<()>,
 }
 
 impl RegistryHandle {
     pub fn try_recv(&mut self) -> Option<BackendSnapshot> {
         self.rx.try_recv().ok()
+    }
+
+    pub fn try_recv_conversation(&mut self) -> Option<ConversationEvent> {
+        self.conversation_rx.try_recv().ok()
+    }
+
+    pub fn load_conversation(&self, thread_id: ThreadId) -> Result<()> {
+        self.command_tx
+            .send(BackendCommand::LoadConversation(thread_id))
+            .map_err(|_| anyhow!("App Server actor is not available"))
     }
 }
 
@@ -63,11 +89,25 @@ pub async fn start(codex_bin: Option<OsString>) -> Result<StartedRegistry> {
         status: status.clone(),
     };
     let (tx, rx) = mpsc::unbounded_channel();
-    let task = tokio::spawn(run_registry_actor(rpc, threads, status, tx));
+    let (conversation_tx, conversation_rx) = mpsc::unbounded_channel();
+    let (command_tx, command_rx) = mpsc::unbounded_channel();
+    let task = tokio::spawn(run_registry_actor(
+        rpc,
+        threads,
+        status,
+        tx,
+        conversation_tx,
+        command_rx,
+    ));
 
     Ok(StartedRegistry {
         initial,
-        handle: RegistryHandle { rx, task },
+        handle: RegistryHandle {
+            rx,
+            conversation_rx,
+            command_tx,
+            task,
+        },
     })
 }
 
@@ -80,6 +120,8 @@ async fn run_registry_actor(
     initial_threads: Vec<ThreadSummary>,
     mut status: BackendStatus,
     tx: mpsc::UnboundedSender<BackendSnapshot>,
+    conversation_tx: mpsc::UnboundedSender<ConversationEvent>,
+    mut command_rx: mpsc::UnboundedReceiver<BackendCommand>,
 ) {
     let mut generation = 0_u64;
     let mut threads = by_id(initial_threads);
@@ -89,6 +131,26 @@ async fn run_registry_actor(
 
     loop {
         tokio::select! {
+            command = command_rx.recv() => {
+                let Some(command) = command else {
+                    return;
+                };
+                match command {
+                    BackendCommand::LoadConversation(thread_id) => {
+                        match load_conversation(&mut rpc, thread_id.clone()).await {
+                            Ok(page) => {
+                                let _ = conversation_tx.send(ConversationEvent::Loaded(page));
+                            }
+                            Err(error) => {
+                                let _ = conversation_tx.send(ConversationEvent::Failed {
+                                    thread_id,
+                                    error: error.to_string(),
+                                });
+                            }
+                        }
+                    }
+                }
+            }
             _ = refresh.tick() => {
                 match load_registry(&mut rpc).await {
                     Ok((fresh, loaded_supported)) => {
@@ -276,6 +338,60 @@ async fn load_all_loaded_ids(rpc: &mut RpcSession) -> Result<BTreeSet<String>> {
         }
     }
     Ok(loaded)
+}
+
+async fn load_conversation(rpc: &mut RpcSession, thread_id: ThreadId) -> Result<ConversationPage> {
+    let metadata = rpc
+        .request(
+            "thread/read",
+            json!({
+                "threadId": thread_id.0,
+                "includeTurns": false
+            }),
+        )
+        .await
+        .context("read thread metadata")?;
+    let title = parse_thread_title(&metadata);
+
+    let turns_result = rpc
+        .request(
+            "thread/turns/list",
+            json!({
+                "threadId": thread_id.0,
+                "cursor": null,
+                "limit": 20,
+                "sortDirection": "desc",
+                "itemsView": "notLoaded"
+            }),
+        )
+        .await
+        .context("list recent turns")?;
+    let (mut turns, next_turn_cursor) = parse_turns_page(turns_result)?;
+    turns.reverse();
+
+    let items_result = rpc
+        .request(
+            "thread/items/list",
+            json!({
+                "threadId": thread_id.0,
+                "cursor": null,
+                "limit": 100,
+                "sortDirection": "desc"
+            }),
+        )
+        .await
+        .context("list recent thread items")?;
+    let (mut items, next_item_cursor) = parse_items_page(items_result)?;
+    items.reverse();
+
+    Ok(merge_history(
+        thread_id,
+        title,
+        turns,
+        items,
+        next_turn_cursor,
+        next_item_cursor,
+    ))
 }
 
 async fn handle_unsolicited(
