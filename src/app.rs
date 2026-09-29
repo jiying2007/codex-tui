@@ -96,7 +96,8 @@ impl AppState {
     }
 
     pub fn selected_thread(&self) -> Option<&ThreadSummary> {
-        self.threads.get(self.selected)
+        let thread = self.threads.get(self.selected)?;
+        matches_filter(thread, &self.filter).then_some(thread)
     }
 
     pub fn selected_thread_id(&self) -> Option<ThreadId> {
@@ -134,8 +135,7 @@ impl AppState {
             )
         });
         actionable
-            || (!thread.attention.is_empty()
-                && !self.acknowledged_attention.contains(&thread.id.0))
+            || (!thread.attention.is_empty() && !self.acknowledged_attention.contains(&thread.id.0))
     }
 
     pub fn apply_local_state(&mut self, local: &LocalStateV1) {
@@ -266,7 +266,9 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
         }
         Action::MarkUnread => {
-            if let Some(thread) = state.threads.get_mut(state.selected) {
+            if state.selected_thread().is_some()
+                && let Some(thread) = state.threads.get_mut(state.selected)
+            {
                 state.acknowledged_attention.remove(&thread.id.0);
                 if !thread.attention.contains(&AttentionReason::MarkedUnread) {
                     thread.attention.push(AttentionReason::MarkedUnread);
@@ -275,13 +277,17 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
         }
         Action::TogglePin => {
-            if let Some(thread) = state.threads.get_mut(state.selected) {
+            if state.selected_thread().is_some()
+                && let Some(thread) = state.threads.get_mut(state.selected)
+            {
                 thread.pinned = !thread.pinned;
                 return vec![Effect::PersistOperatorState];
             }
         }
         Action::AcknowledgeAttention => {
-            if let Some(thread) = state.threads.get_mut(state.selected) {
+            if state.selected_thread().is_some()
+                && let Some(thread) = state.threads.get_mut(state.selected)
+            {
                 state.acknowledged_attention.insert(thread.id.0.clone());
                 thread
                     .attention
@@ -503,7 +509,10 @@ mod tests {
             reduce(&mut app, Action::InputChar(character));
         }
         assert_eq!(app.visible_indices(), vec![2]);
-        assert_eq!(app.selected_thread_id().expect("selected").0, "thread-audio");
+        assert_eq!(
+            app.selected_thread_id().expect("selected").0,
+            "thread-audio"
+        );
     }
 
     #[test]
@@ -512,6 +521,20 @@ mod tests {
         app.selected = 1;
         reduce(&mut app, Action::AcknowledgeAttention);
         assert!(app.thread_needs_attention(1));
+    }
+
+    #[test]
+    fn empty_filter_result_has_no_hidden_selection_or_mutation_target() {
+        let mut app = app();
+        reduce(&mut app, Action::BeginSearch);
+        for character in "no-such-thread".chars() {
+            reduce(&mut app, Action::InputChar(character));
+        }
+        assert!(app.visible_indices().is_empty());
+        assert!(app.selected_thread().is_none());
+        let effects = reduce(&mut app, Action::TogglePin);
+        assert!(effects.is_empty());
+        assert!(!app.threads[0].pinned);
     }
 
     #[test]
