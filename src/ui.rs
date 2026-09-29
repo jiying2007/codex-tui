@@ -72,7 +72,10 @@ fn thread_list(app: &AppState) -> Paragraph<'static> {
     lines.push(Line::from(format!(
         "{} threads · {} need attention",
         app.threads.len(),
-        app.threads.iter().filter(|thread| thread.needs_attention()).count()
+        app.threads
+            .iter()
+            .filter(|thread| thread.needs_attention())
+            .count()
     )));
 
     for (index, thread) in app.threads.iter().enumerate() {
@@ -153,14 +156,15 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
         .map(ThreadSummary::display_title)
         .unwrap_or("Unknown thread");
     frame.render_widget(
-        Paragraph::new(format!("{title}\n{thread_id}"))
-            .block(Block::bordered().title(" Thread ")),
+        Paragraph::new(format!("{title}\n{thread_id}")).block(Block::bordered().title(" Thread ")),
         chunks[0],
     );
 
     frame.render_widget(
         Paragraph::new([
-            Line::from("M0 uses a fake backend; canonical transcript persistence is intentionally absent."),
+            Line::from(
+                "M0 uses a fake backend; canonical transcript persistence is intentionally absent.",
+            ),
             Line::from("M1 will replace this body with paginated Codex App Server data."),
         ])
         .block(Block::bordered().title(" Conversation "))
@@ -171,7 +175,11 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
     let ui = app.thread_ui.get(thread_id).cloned().unwrap_or_default();
     let composer = Paragraph::new(format!(
         "draft: {}\nscroll={} follow={}",
-        if ui.draft.is_empty() { "<empty>" } else { &ui.draft },
+        if ui.draft.is_empty() {
+            "<empty>"
+        } else {
+            &ui.draft
+        },
         ui.scroll,
         ui.follow
     ))
@@ -191,7 +199,9 @@ fn render_help(frame: &mut Frame<'_>) {
             Line::from("Global: ? help · Ctrl+K palette · / search · Esc back"),
             Line::from("Registry: j/k · Enter · Space attention · a quick prompt"),
             Line::from("Thread: PageUp/PageDown · r review · w workspace · g goal"),
-            Line::from("Authority: Codex/Git/Forge stay canonical; codex-tui stores operator state only."),
+            Line::from(
+                "Authority: Codex/Git/Forge stay canonical; codex-tui stores operator state only.",
+            ),
         ])
         .block(Block::bordered().title(" Help "))
         .wrap(Wrap { trim: true }),
@@ -223,7 +233,10 @@ fn truncate(value: &str, max: usize) -> String {
     if count <= max {
         return value.to_string();
     }
-    let mut out = value.chars().take(max.saturating_sub(1)).collect::<String>();
+    let mut out = value
+        .chars()
+        .take(max.saturating_sub(1))
+        .collect::<String>();
     out.push('…');
     out
 }

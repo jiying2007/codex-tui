@@ -93,8 +93,8 @@ impl FileStore {
         if path.exists() {
             return Ok(());
         }
-        let default = toml::to_string_pretty(&AppConfig::default())
-            .context("serialize default config")?;
+        let default =
+            toml::to_string_pretty(&AppConfig::default()).context("serialize default config")?;
         atomic_write(&path, default.as_bytes())
     }
 }
@@ -103,8 +103,8 @@ impl LocalStore for FileStore {
     fn load_config(&self) -> Result<AppConfig> {
         self.ensure_default_config()?;
         let path = self.config_path();
-        let text = fs::read_to_string(&path)
-            .with_context(|| format!("read config {}", path.display()))?;
+        let text =
+            fs::read_to_string(&path).with_context(|| format!("read config {}", path.display()))?;
         toml::from_str(&text).with_context(|| format!("parse config {}", path.display()))
     }
 
@@ -135,11 +135,11 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
     let parent = path
         .parent()
         .with_context(|| format!("path has no parent: {}", path.display()))?;
-    fs::create_dir_all(parent)
-        .with_context(|| format!("create directory {}", parent.display()))?;
+    fs::create_dir_all(parent).with_context(|| format!("create directory {}", parent.display()))?;
 
     let mut temp = NamedTempFile::new_in(parent).context("create temporary state file")?;
-    temp.write_all(bytes).context("write temporary state file")?;
+    temp.write_all(bytes)
+        .context("write temporary state file")?;
     temp.flush().context("flush temporary state file")?;
     temp.as_file()
         .sync_all()
