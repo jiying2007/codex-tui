@@ -1,0 +1,25 @@
+[package]
+name = "codex-tui"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Personal-first local terminal workbench for Codex engineering"
+repository = "https://github.com/jiying2007/codex-tui"
+publish = false
+
+[dependencies]
+anyhow = "1"
+crossterm = "0.29"
+directories = "6"
+ratatui = "0.30"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tempfile = "3"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "time"] }
+toml = "0.9"
+
+[dev-dependencies]
+pretty_assertions = "1"
+
+[lints.rust]
+unsafe_code = "forbid"
