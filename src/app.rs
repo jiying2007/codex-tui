@@ -143,8 +143,19 @@ impl AppState {
 
 pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
     match action {
-        Action::ReplaceThreads(threads) => {
+        Action::ReplaceThreads(mut threads) => {
             let selected_id = state.selected_thread_id();
+            for fresh in &mut threads {
+                if let Some(existing) = state.threads.iter().find(|old| old.id == fresh.id) {
+                    fresh.pinned = existing.pinned;
+                    fresh.alias.clone_from(&existing.alias);
+                    if existing.attention.contains(&AttentionReason::MarkedUnread)
+                        && !fresh.attention.contains(&AttentionReason::MarkedUnread)
+                    {
+                        fresh.attention.push(AttentionReason::MarkedUnread);
+                    }
+                }
+            }
             state.threads = threads;
             if state.threads.is_empty() {
                 state.selected = 0;
