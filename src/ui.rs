@@ -274,10 +274,7 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
                     .map(|card| card.stage_reason.as_str())
                     .unwrap_or("<unprojected>")
             )),
-            Line::from(format!(
-                "Goal: {}",
-                goal_summary(app, &thread.id.0)
-            )),
+            Line::from(format!("Goal: {}", goal_summary(app, &thread.id.0))),
         ]
     } else {
         vec![Line::from("No thread selected")]
