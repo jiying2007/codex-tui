@@ -1517,13 +1517,13 @@ mod tests {
         assert_eq!(recoverable.len(), 3);
         assert!(recoverable.iter().all(|receipt| matches!(
             receipt.state,
-            OperationState::Planned
-                | OperationState::Executing
-                | OperationState::OutcomeUnknown
+            OperationState::Planned | OperationState::Executing | OperationState::OutcomeUnknown
         )));
 
         planned.fail(10, "cancelled".into());
-        store.save_operation_receipt(&planned).expect("update planned");
+        store
+            .save_operation_receipt(&planned)
+            .expect("update planned");
         assert_eq!(
             store
                 .load_recoverable_operation_receipts()
