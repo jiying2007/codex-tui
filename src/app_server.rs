@@ -16,6 +16,7 @@ use tokio::task::JoinHandle;
 
 const PAGE_SIZE: u32 = 200;
 const REFRESH_INTERVAL: Duration = Duration::from_secs(2);
+const RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
 pub struct StartedRegistry {
     pub initial: BackendSnapshot,
@@ -175,7 +176,9 @@ async fn initialize(rpc: &mut RpcSession) -> Result<Value> {
         )
         .await
         .context("initialize codex app-server")?;
-    rpc.notify("initialized", None).await?;
+    tokio::time::timeout(RPC_REQUEST_TIMEOUT, rpc.notify("initialized", None))
+        .await
+        .context("initialized notification timed out")??;
     Ok(result)
 }
 
@@ -357,6 +360,20 @@ impl RpcSession {
     }
 
     async fn request(&mut self, method: &str, params: Value) -> Result<Value> {
+        tokio::time::timeout(
+            RPC_REQUEST_TIMEOUT,
+            self.request_without_timeout(method, params),
+        )
+        .await
+        .with_context(|| {
+            format!(
+                "{method} timed out after {}s",
+                RPC_REQUEST_TIMEOUT.as_secs()
+            )
+        })?
+    }
+
+    async fn request_without_timeout(&mut self, method: &str, params: Value) -> Result<Value> {
         let id = self.next_id;
         self.next_id = self.next_id.saturating_add(1);
         self.write_message(&json!({
