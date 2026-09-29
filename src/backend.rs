@@ -106,7 +106,7 @@ impl CodexBackend for FakeBackend {
                 2 => RuntimeStatus::Ready,
                 _ => RuntimeStatus::Inactive,
             };
-            first.attention = if self.generation % 4 == 0 {
+            first.attention = if self.generation.is_multiple_of(4) {
                 vec![AttentionReason::ApprovalRequired]
             } else {
                 vec![]
