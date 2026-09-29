@@ -57,10 +57,9 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState) {
     }
 
     let status_line = match app.input_mode {
-        InputMode::Search => Line::from(format!(
-            "/{}  · Enter keep · Esc cancel",
-            app.input_buffer
-        )),
+        InputMode::Search => {
+            Line::from(format!("/{}  · Enter keep · Esc cancel", app.input_buffer))
+        }
         InputMode::Alias => Line::from(format!(
             "alias> {}  · Enter save · Esc cancel",
             app.input_buffer
