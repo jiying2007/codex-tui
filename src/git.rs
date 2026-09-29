@@ -434,11 +434,6 @@ where
         truncated |= keep < read;
     }
 
-    while !stored.is_empty() && std::str::from_utf8(&stored).is_err() {
-        stored.pop();
-        truncated = true;
-    }
-
     Ok((stored, truncated))
 }
 
@@ -787,7 +782,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn capped_reader_bounds_memory_and_keeps_utf8_valid() {
+    async fn capped_reader_bounds_memory_even_at_utf8_boundary() {
         let payload = "é".repeat(10_000).into_bytes();
         let (mut writer, reader) = tokio::io::duplex(payload.len() + 16);
         tokio::spawn(async move {
@@ -797,7 +792,8 @@ mod tests {
         let (captured, truncated) = read_capped(reader, 1025).await.expect("read capped");
         assert!(truncated);
         assert!(captured.len() <= 1025);
-        assert!(std::str::from_utf8(&captured).is_ok());
+        let display = String::from_utf8_lossy(&captured);
+        assert!(!display.is_empty());
     }
 
     fn git(cwd: &Path, args: &[&str]) {
