@@ -133,10 +133,14 @@ Commands:
 ```bash
 cargo run
 cargo run -- doctor codex
+cargo run -- doctor git
+cargo run -- doctor store
 cargo run -- --fake
 ```
 
-Normal startup launches a local `codex app-server --listen stdio://` connection after the first UI frame. Mission Control stays metadata-first; opening a thread loads only the recent conversation page. Thread View supports paginated history, persistent local drafts, turn start/steer/interrupt, approvals and user-input requests.
+Normal startup launches a local `codex app-server --listen stdio://` connection after the first UI frame. Mission Control stays metadata-first; opening a thread loads only the recent conversation page. Thread View supports paginated history, persistent local drafts, turn start/steer/interrupt, approvals, user-input requests, and stable Codex Goal projection when the connected App Server supports it.
+
+Personal planning state is stored locally in SQLite: WorkCard relationships/overlays, ScratchWork, Saved Views, notes, bookmarks, snooze and hot slots. Canonical Codex conversations/Goals and Git state are never copied into SQLite.
 
 `--fake` is a deterministic development/fixture mode; it is never an automatic fallback for a failed real backend.
 
@@ -146,7 +150,8 @@ Normal startup launches a local `codex app-server --listen stdio://` connection 
 - M1 read-only Codex thread registry: implemented in the v0.1.x line.
 - M2 daily conversation control: implemented in the v0.2.x line.
 - M3 Git context and review: implemented in the v0.3.x line.
-- M4 personal planning + SQLite: next milestone.
+- M4 personal planning + SQLite: implemented in the v0.4.x line.
+- M5 safe managed worktrees: next milestone.
 
 Architecture and product research are archived under `docs/research/`.
 Implementation design lives under `docs/design/`.
@@ -165,3 +170,4 @@ See:
 - `docs/implementation/m1-read-only-registry.md`
 - `docs/implementation/m2-daily-conversation-control.md`
 - `docs/implementation/m3-git-context-review.md`
+- `docs/implementation/m4-personal-planning-sqlite.md`

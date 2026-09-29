@@ -5,15 +5,350 @@ use codex_tui::{
     backend::{BackendStatus, CodexBackend, FakeBackend},
     conversation::{InteractiveRequestKind, InteractiveResolution},
     git::{self, GitEvent, GitHandle},
+    goal::GoalStatus,
     keymap::{Command, command_for_key},
-    store::{FileStore, LocalStore},
+    planning::{
+        LocalNote, PlanningSnapshot, SavedView, ScratchState, SourceKind, SourceRef, WorkCardRecord,
+    },
+    sqlite_store::SqliteStore,
+    store::{AppConfig, LocalStateV1, LocalStore},
     terminal::TerminalSession,
     ui,
 };
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use std::path::Path;
 use std::process::Stdio;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+
+struct RuntimeStore {
+    sqlite: SqliteStore,
+    writable: bool,
+    error: Option<String>,
+}
+
+struct StoreBootstrap {
+    config: AppConfig,
+    local: LocalStateV1,
+    planning: PlanningSnapshot,
+}
+
+impl RuntimeStore {
+    fn discover() -> Result<(Self, StoreBootstrap)> {
+        let sqlite = SqliteStore::discover()?;
+        let config = sqlite.load_config()?;
+
+        let mut error = None;
+        let local = match sqlite.load_state() {
+            Ok(state) => state,
+            Err(store_error) => {
+                error = Some(format!("SQLite LocalStore unavailable: {store_error:#}"));
+                LocalStateV1::default()
+            }
+        };
+        let planning = if error.is_none() {
+            match sqlite.load_planning_snapshot() {
+                Ok(snapshot) => snapshot,
+                Err(store_error) => {
+                    error = Some(format!(
+                        "SQLite planning store unavailable: {store_error:#}"
+                    ));
+                    PlanningSnapshot::default()
+                }
+            }
+        } else {
+            PlanningSnapshot::default()
+        };
+        let writable = error.is_none();
+
+        Ok((
+            Self {
+                sqlite,
+                writable,
+                error,
+            },
+            StoreBootstrap {
+                config,
+                local,
+                planning,
+            },
+        ))
+    }
+
+    fn persist_operator_state(&mut self, state: &LocalStateV1) -> Option<String> {
+        if !self.writable {
+            return None;
+        }
+        match self.sqlite.save_state(state) {
+            Ok(()) => None,
+            Err(error) => {
+                let message = format!("SQLite operator-state write failed: {error:#}");
+                self.writable = false;
+                self.error = Some(message.clone());
+                Some(message)
+            }
+        }
+    }
+
+    fn error(&self) -> Option<String> {
+        self.error.clone()
+    }
+
+    fn mutate_work_card<F>(
+        &mut self,
+        anchor: SourceRef,
+        operation: F,
+    ) -> Result<PlanningSnapshot, String>
+    where
+        F: FnOnce(&mut WorkCardRecord),
+    {
+        if !self.writable {
+            return Err(self
+                .error
+                .clone()
+                .unwrap_or_else(|| "SQLite planning store is read-only".into()));
+        }
+
+        let result = (|| -> Result<PlanningSnapshot> {
+            let mut card = match self.sqlite.work_card_for_anchor(&anchor)? {
+                Some(card) => card,
+                None => match anchor.kind {
+                    SourceKind::CodexThread => WorkCardRecord::implicit_thread(
+                        &codex_tui::domain::ThreadId::new(anchor.value.clone()),
+                    ),
+                    SourceKind::ScratchWork => WorkCardRecord {
+                        local_id: anchor.value.clone(),
+                        anchor: anchor.clone(),
+                        links: vec![],
+                        overlay: Default::default(),
+                    },
+                    _ => anyhow::bail!("local overlay unsupported for {:?}", anchor.kind),
+                },
+            };
+            operation(&mut card);
+            self.sqlite.upsert_work_card(&card)?;
+            self.sqlite.load_planning_snapshot()
+        })();
+
+        match result {
+            Ok(snapshot) => Ok(snapshot),
+            Err(error) => {
+                let message = format!("SQLite WorkCard write failed: {error:#}");
+                self.writable = false;
+                self.error = Some(message.clone());
+                Err(message)
+            }
+        }
+    }
+
+    fn snooze_work_card(
+        &mut self,
+        anchor: SourceRef,
+        duration_ms: u64,
+    ) -> Result<PlanningSnapshot, String> {
+        let until = now_unix_ms().saturating_add(duration_ms);
+        self.mutate_work_card(anchor, |card| {
+            card.overlay.snooze_until_unix_ms = Some(until);
+        })
+    }
+
+    fn save_source_note(
+        &mut self,
+        owner: SourceRef,
+        text: String,
+    ) -> Result<PlanningSnapshot, String> {
+        if !self.writable {
+            return Err(self
+                .error
+                .clone()
+                .unwrap_or_else(|| "SQLite planning store is read-only".into()));
+        }
+        let result = if text.trim().is_empty() {
+            self.sqlite.delete_note(&owner)
+        } else {
+            self.sqlite.upsert_note(&LocalNote {
+                owner,
+                text,
+                updated_at_unix_ms: now_unix_ms(),
+            })
+        }
+        .and_then(|_| self.sqlite.load_planning_snapshot());
+        self.finish_planning_write(result, "note")
+    }
+
+    fn update_scratch_note(
+        &mut self,
+        scratch_id: String,
+        note: Option<String>,
+    ) -> Result<PlanningSnapshot, String> {
+        self.update_scratch(scratch_id, |scratch| {
+            scratch.note = note;
+        })
+    }
+
+    fn update_scratch_state(
+        &mut self,
+        scratch_id: String,
+        state: ScratchState,
+    ) -> Result<PlanningSnapshot, String> {
+        self.update_scratch(scratch_id, |scratch| {
+            scratch.state = state;
+        })
+    }
+
+    fn update_scratch<F>(
+        &mut self,
+        scratch_id: String,
+        operation: F,
+    ) -> Result<PlanningSnapshot, String>
+    where
+        F: FnOnce(&mut codex_tui::planning::ScratchWork),
+    {
+        if !self.writable {
+            return Err(self
+                .error
+                .clone()
+                .unwrap_or_else(|| "SQLite planning store is read-only".into()));
+        }
+        let result = (|| -> Result<PlanningSnapshot> {
+            let mut scratch = self
+                .sqlite
+                .load_planning_snapshot()?
+                .scratch
+                .into_iter()
+                .find(|scratch| scratch.id == scratch_id)
+                .ok_or_else(|| anyhow::anyhow!("ScratchWork does not exist: {scratch_id}"))?;
+            operation(&mut scratch);
+            scratch.updated_at_unix_ms = now_unix_ms();
+            self.sqlite.update_scratch(&scratch)?;
+            self.sqlite.load_planning_snapshot()
+        })();
+        self.finish_planning_write(result, "ScratchWork")
+    }
+
+    fn delete_scratch(&mut self, scratch_id: String) -> Result<PlanningSnapshot, String> {
+        if !self.writable {
+            return Err(self
+                .error
+                .clone()
+                .unwrap_or_else(|| "SQLite planning store is read-only".into()));
+        }
+        let result = self
+            .sqlite
+            .delete_scratch(&scratch_id)
+            .and_then(|_| self.sqlite.load_planning_snapshot());
+        self.finish_planning_write(result, "ScratchWork delete")
+    }
+
+    fn create_bookmark(
+        &mut self,
+        source: SourceRef,
+        label: Option<String>,
+    ) -> Result<PlanningSnapshot, String> {
+        if !self.writable {
+            return Err(self
+                .error
+                .clone()
+                .unwrap_or_else(|| "SQLite planning store is read-only".into()));
+        }
+        let result = self
+            .sqlite
+            .create_bookmark(source, label.as_deref(), None)
+            .and_then(|_| self.sqlite.load_planning_snapshot());
+        self.finish_planning_write(result, "bookmark")
+    }
+
+    fn finish_planning_write(
+        &mut self,
+        result: Result<PlanningSnapshot>,
+        label: &str,
+    ) -> Result<PlanningSnapshot, String> {
+        match result {
+            Ok(snapshot) => Ok(snapshot),
+            Err(error) => {
+                let message = format!("SQLite {label} write failed: {error:#}");
+                self.writable = false;
+                self.error = Some(message.clone());
+                Err(message)
+            }
+        }
+    }
+
+    fn save_view(&mut self, view: SavedView) -> Result<PlanningSnapshot, String> {
+        if !self.writable {
+            return Err(self
+                .error
+                .clone()
+                .unwrap_or_else(|| "SQLite planning store is read-only".into()));
+        }
+        let result = self
+            .sqlite
+            .save_view(&view)
+            .and_then(|_| self.sqlite.load_planning_snapshot());
+        self.finish_planning_write(result, "SavedView")
+    }
+
+    fn delete_view(&mut self, view_id: String) -> Result<PlanningSnapshot, String> {
+        if !self.writable {
+            return Err(self
+                .error
+                .clone()
+                .unwrap_or_else(|| "SQLite planning store is read-only".into()));
+        }
+        let result = self
+            .sqlite
+            .delete_view(&view_id)
+            .and_then(|_| self.sqlite.load_planning_snapshot());
+        self.finish_planning_write(result, "SavedView delete")
+    }
+
+    fn set_hot_slot(&mut self, slot: u8, target: SourceRef) -> Result<PlanningSnapshot, String> {
+        if !self.writable {
+            return Err(self
+                .error
+                .clone()
+                .unwrap_or_else(|| "SQLite planning store is read-only".into()));
+        }
+        let result = self
+            .sqlite
+            .set_hot_slot(slot, target)
+            .and_then(|_| self.sqlite.load_planning_snapshot());
+        match result {
+            Ok(snapshot) => Ok(snapshot),
+            Err(error) => {
+                let message = format!("SQLite hot-slot write failed: {error:#}");
+                self.writable = false;
+                self.error = Some(message.clone());
+                Err(message)
+            }
+        }
+    }
+
+    fn create_scratch(
+        &mut self,
+        title: String,
+        workspace: Option<String>,
+    ) -> Result<PlanningSnapshot, String> {
+        if !self.writable {
+            return Err(self
+                .error
+                .clone()
+                .unwrap_or_else(|| "SQLite planning store is read-only".into()));
+        }
+        let result = self
+            .sqlite
+            .create_scratch(&title, None, workspace.as_deref(), None)
+            .and_then(|_| self.sqlite.load_planning_snapshot());
+        match result {
+            Ok(snapshot) => Ok(snapshot),
+            Err(error) => {
+                let message = format!("SQLite ScratchWork write failed: {error:#}");
+                self.writable = false;
+                self.error = Some(message.clone());
+                Err(message)
+            }
+        }
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -27,17 +362,45 @@ async fn main() -> Result<()> {
 }
 
 async fn doctor(scope: Option<&str>) -> Result<()> {
-    let store = FileStore::discover()?;
+    let store = SqliteStore::discover()?;
     let config = store.load_config()?;
-    let state = store.load_state()?;
 
     println!("codex-tui {}", env!("CARGO_PKG_VERSION"));
     println!("config: {}", store.config_path().display());
-    println!("state: {}", store.state_path().display());
+    println!("state: {}", store.db_path().display());
     println!("mouse: {}", config.ui.mouse);
-    println!("schemaVersion: {}", state.schema_version);
 
-    if scope == Some("git") {
+    match store.load_state() {
+        Ok(state) => println!("operator-schemaVersion: {}", state.schema_version),
+        Err(error) => println!("operator-state: DEGRADED · {error:#}"),
+    }
+
+    if scope == Some("store") {
+        match store.health() {
+            Ok(health) => {
+                println!("store-backend: sqlite");
+                println!("store-schema: {}", health.schema_version);
+                println!("integrity: {}", health.integrity);
+                println!(
+                    "legacy-import: {}",
+                    health.legacy_import.as_deref().unwrap_or("unknown")
+                );
+                match store.load_planning_snapshot() {
+                    Ok(snapshot) => {
+                        println!("work-cards: {}", snapshot.cards.len());
+                        println!("scratch: {}", snapshot.scratch.len());
+                        println!("saved-views: {}", snapshot.saved_views.len());
+                    }
+                    Err(error) => println!("planning: DEGRADED · {error:#}"),
+                }
+            }
+            Err(error) => {
+                println!("store-backend: sqlite");
+                println!("integrity: DEGRADED");
+                println!("error: {error:#}");
+            }
+        }
+    } else if scope == Some("git") {
         let cwd = std::env::current_dir()?;
         let context = git::probe_context(
             codex_tui::domain::ThreadId::new("doctor"),
@@ -75,7 +438,7 @@ async fn doctor(scope: Option<&str>) -> Result<()> {
             }
         }
     } else {
-        println!("hint: run `codex-tui doctor codex` or `codex-tui doctor git`");
+        println!("hint: run `codex-tui doctor codex`, `doctor git`, or `doctor store`");
     }
     Ok(())
 }
@@ -104,9 +467,9 @@ fn print_backend_status(status: &BackendStatus) {
 }
 
 async fn run_app(fake_mode: bool) -> Result<()> {
-    let store = FileStore::discover()?;
-    let config = store.load_config()?;
-    let local = store.load_state()?;
+    let (mut store, bootstrap) = RuntimeStore::discover()?;
+    let config = bootstrap.config;
+    let local = bootstrap.local;
 
     let mut fake_backend = fake_mode.then(FakeBackend::seeded);
     let mut registry: Option<RegistryHandle> = None;
@@ -124,6 +487,14 @@ async fn run_app(fake_mode: bool) -> Result<()> {
         app
     };
     app.apply_local_state(&local);
+    reduce(&mut app, Action::PlanningSnapshotLoaded(bootstrap.planning));
+    reduce(&mut app, Action::PlanningStoreDegraded(store.error()));
+    reduce(
+        &mut app,
+        Action::ReconcilePlanning {
+            now_unix_ms: now_unix_ms(),
+        },
+    );
 
     let mut git = GitHandle::start();
     let initial_git_effects = reduce(&mut app, Action::RefreshGitProjections);
@@ -131,7 +502,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
         &mut app,
         registry.as_ref(),
         &git,
-        &store,
+        &mut store,
         initial_git_effects,
     )?;
 
@@ -152,7 +523,13 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                     app.apply_local_state(&local);
                     registry = Some(started.handle);
                     let effects = reduce(&mut app, Action::RefreshGitProjections);
-                    apply_effects(&mut app, registry.as_ref(), &git, &store, effects)?;
+                    apply_effects(&mut app, registry.as_ref(), &git, &mut store, effects)?;
+                    reduce(
+                        &mut app,
+                        Action::ReconcilePlanning {
+                            now_unix_ms: now_unix_ms(),
+                        },
+                    );
                 }
                 Ok(Err(error)) => {
                     reduce(
@@ -172,13 +549,28 @@ async fn run_app(fake_mode: bool) -> Result<()> {
             needs_render = true;
         }
 
-        let registry_changed = drain_registry(&mut app, registry.as_mut(), &store);
+        let registry_changed = drain_registry(&mut app, registry.as_mut(), &mut store);
         needs_render |= registry_changed;
         if registry_changed {
             let effects = reduce(&mut app, Action::RefreshGitProjections);
-            apply_effects(&mut app, registry.as_ref(), &git, &store, effects)?;
+            apply_effects(&mut app, registry.as_ref(), &git, &mut store, effects)?;
+            reduce(
+                &mut app,
+                Action::ReconcilePlanning {
+                    now_unix_ms: now_unix_ms(),
+                },
+            );
         }
-        needs_render |= drain_git(&mut app, &mut git);
+        let git_changed = drain_git(&mut app, &mut git);
+        needs_render |= git_changed;
+        if git_changed {
+            reduce(
+                &mut app,
+                Action::ReconcilePlanning {
+                    now_unix_ms: now_unix_ms(),
+                },
+            );
+        }
 
         if let Some(fake) = fake_backend.as_mut()
             && last_fake_tick.elapsed() >= Duration::from_millis(900)
@@ -187,7 +579,13 @@ async fn run_app(fake_mode: bool) -> Result<()> {
             reduce(&mut app, Action::ReplaceThreads(snapshot.threads));
             reduce(&mut app, Action::BackendStatus(snapshot.status));
             let effects = reduce(&mut app, Action::RefreshGitProjections);
-            apply_effects(&mut app, registry.as_ref(), &git, &store, effects)?;
+            apply_effects(&mut app, registry.as_ref(), &git, &mut store, effects)?;
+            reduce(
+                &mut app,
+                Action::ReconcilePlanning {
+                    now_unix_ms: now_unix_ms(),
+                },
+            );
             last_fake_tick = Instant::now();
             needs_render = true;
         }
@@ -208,7 +606,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                     {
                         needs_render = true;
                     }
-                    apply_effects(&mut app, registry.as_ref(), &git, &store, effects)?;
+                    apply_effects(&mut app, registry.as_ref(), &git, &mut store, effects)?;
                 }
                 Event::Resize(_, _) => needs_render = true,
                 _ => {}
@@ -221,7 +619,9 @@ async fn run_app(fake_mode: bool) -> Result<()> {
     if let Some(task) = connect_task {
         task.abort();
     }
-    store.save_state(&app.to_local_state())?;
+    if let Some(error) = store.persist_operator_state(&app.to_local_state()) {
+        reduce(&mut app, Action::PlanningStoreDegraded(Some(error)));
+    }
     Ok(())
 }
 
@@ -242,7 +642,7 @@ fn backend_error_status(error: String) -> BackendStatus {
 fn drain_registry(
     app: &mut AppState,
     registry: Option<&mut RegistryHandle>,
-    store: &FileStore,
+    store: &mut RuntimeStore,
 ) -> bool {
     let Some(registry) = registry else {
         return false;
@@ -267,18 +667,19 @@ fn drain_registry(
             ConversationEvent::InteractiveResolved { request_id } => {
                 reduce(app, Action::InteractiveResolved { request_id });
             }
+            ConversationEvent::GoalObserved(goal) => {
+                reduce(app, Action::GoalObserved(goal));
+            }
+            ConversationEvent::GoalCleared(thread_id) => {
+                reduce(app, Action::GoalCleared(thread_id));
+            }
             ConversationEvent::PromptSubmitted { thread_id, .. } => {
                 let effects = reduce(app, Action::PromptSubmitted { thread_id });
                 for effect in effects {
                     if effect == Effect::PersistOperatorState
-                        && let Err(error) = store.save_state(&app.to_local_state())
+                        && let Some(error) = store.persist_operator_state(&app.to_local_state())
                     {
-                        reduce(
-                            app,
-                            Action::BackendStatus(backend_error_status(format!(
-                                "persist draft state failed: {error}"
-                            ))),
-                        );
+                        reduce(app, Action::PlanningStoreDegraded(Some(error)));
                     }
                 }
             }
@@ -311,12 +712,127 @@ fn apply_effects(
     app: &mut AppState,
     registry: Option<&RegistryHandle>,
     git: &GitHandle,
-    store: &FileStore,
+    store: &mut RuntimeStore,
     effects: Vec<Effect>,
 ) -> Result<()> {
     for effect in effects {
         match effect {
-            Effect::PersistOperatorState => store.save_state(&app.to_local_state())?,
+            Effect::PersistOperatorState => {
+                if let Some(error) = store.persist_operator_state(&app.to_local_state()) {
+                    reduce(app, Action::PlanningStoreDegraded(Some(error)));
+                }
+            }
+            Effect::CreateScratch { title, workspace } => {
+                match store.create_scratch(title, workspace) {
+                    Ok(snapshot) => {
+                        reduce(app, Action::PlanningSnapshotLoaded(snapshot));
+                        reduce(
+                            app,
+                            Action::ReconcilePlanning {
+                                now_unix_ms: now_unix_ms(),
+                            },
+                        );
+                        reduce(app, Action::PlanningStoreDegraded(None));
+                    }
+                    Err(error) => {
+                        reduce(app, Action::PlanningStoreDegraded(Some(error)));
+                    }
+                }
+            }
+            Effect::SnoozeWorkCard {
+                anchor,
+                duration_ms,
+            } => match store.snooze_work_card(anchor, duration_ms) {
+                Ok(snapshot) => {
+                    reduce(app, Action::PlanningSnapshotLoaded(snapshot));
+                    reduce(
+                        app,
+                        Action::ReconcilePlanning {
+                            now_unix_ms: now_unix_ms(),
+                        },
+                    );
+                    reduce(app, Action::PlanningStoreDegraded(None));
+                }
+                Err(error) => {
+                    reduce(app, Action::PlanningStoreDegraded(Some(error)));
+                }
+            },
+            Effect::SaveSourceNote { owner, text } => {
+                apply_planning_store_result(app, store.save_source_note(owner, text));
+            }
+            Effect::UpdateScratchNote { scratch_id, note } => {
+                apply_planning_store_result(app, store.update_scratch_note(scratch_id, note));
+            }
+            Effect::CreateBookmark { source, label } => {
+                apply_planning_store_result(app, store.create_bookmark(source, label));
+            }
+            Effect::UpdateScratchState { scratch_id, state } => {
+                apply_planning_store_result(app, store.update_scratch_state(scratch_id, state));
+            }
+            Effect::DeleteScratch { scratch_id } => {
+                apply_planning_store_result(app, store.delete_scratch(scratch_id));
+            }
+            Effect::SaveSavedView { view } => {
+                apply_planning_store_result(app, store.save_view(view));
+            }
+            Effect::DeleteSavedView { view_id } => {
+                apply_planning_store_result(app, store.delete_view(view_id));
+            }
+            Effect::SetHotSlot { slot, target } => match store.set_hot_slot(slot, target) {
+                Ok(snapshot) => {
+                    reduce(app, Action::PlanningSnapshotLoaded(snapshot));
+                    reduce(
+                        app,
+                        Action::ReconcilePlanning {
+                            now_unix_ms: now_unix_ms(),
+                        },
+                    );
+                    reduce(app, Action::PlanningStoreDegraded(None));
+                }
+                Err(error) => {
+                    reduce(app, Action::PlanningStoreDegraded(Some(error)));
+                }
+            },
+            Effect::RefreshGoal(thread_id) => {
+                if let Some(registry) = registry
+                    && let Err(error) = registry.refresh_goal(thread_id)
+                {
+                    reduce(
+                        app,
+                        Action::BackendStatus(backend_error_status(format!(
+                            "Goal refresh command failed: {error}"
+                        ))),
+                    );
+                }
+            }
+            Effect::SetGoal {
+                thread_id,
+                objective,
+                status,
+            } => {
+                if let Some(registry) = registry
+                    && let Err(error) = registry.set_goal(thread_id, objective, status)
+                {
+                    reduce(
+                        app,
+                        Action::BackendStatus(backend_error_status(format!(
+                            "Goal update command failed: {error}"
+                        ))),
+                    );
+                }
+            }
+            Effect::ClearGoal(thread_id) => {
+                if let Some(registry) = registry
+                    && let Err(error) = registry.clear_goal(thread_id)
+                {
+                    reduce(
+                        app,
+                        Action::BackendStatus(backend_error_status(format!(
+                            "Goal clear command failed: {error}"
+                        ))),
+                    );
+                }
+            }
             Effect::ProbeGit { thread_id, cwd } => {
                 if let Err(error) = git.probe(thread_id.clone(), cwd.clone()) {
                     let mut context = codex_tui::git::GitContext::pending(thread_id, cwd);
@@ -464,6 +980,33 @@ fn apply_effects(
     Ok(())
 }
 
+fn apply_planning_store_result(app: &mut AppState, result: Result<PlanningSnapshot, String>) {
+    match result {
+        Ok(snapshot) => {
+            reduce(app, Action::PlanningSnapshotLoaded(snapshot));
+            reduce(
+                app,
+                Action::ReconcilePlanning {
+                    now_unix_ms: now_unix_ms(),
+                },
+            );
+            reduce(app, Action::PlanningStoreDegraded(None));
+        }
+        Err(error) => {
+            reduce(app, Action::PlanningStoreDegraded(Some(error)));
+        }
+    }
+}
+
+fn now_unix_ms() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        .try_into()
+        .unwrap_or(u64::MAX)
+}
+
 fn open_external_editor(cwd: &str, relative_path: &str) -> Result<()> {
     let editor =
         std::env::var_os("CODEX_TUI_EDITOR").unwrap_or_else(|| std::ffi::OsString::from("code"));
@@ -489,6 +1032,16 @@ fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
         return vec![];
     }
 
+    if app.context_open {
+        return match key.code {
+            KeyCode::Esc => reduce(app, Action::CloseContext),
+            KeyCode::Char('j') | KeyCode::Down => reduce(app, Action::MoveContext(1)),
+            KeyCode::Char('k') | KeyCode::Up => reduce(app, Action::MoveContext(-1)),
+            KeyCode::Enter => reduce(app, Action::ExecuteContext),
+            _ => vec![],
+        };
+    }
+
     if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('c') {
         return handle_command(app, Command::QuitOrInterrupt);
     }
@@ -508,6 +1061,21 @@ fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
             _ => return vec![],
         };
         return reduce(app, action);
+    }
+
+    if app.goal_actions_open {
+        let action = match key.code {
+            KeyCode::Esc => Some(Action::CloseGoalActions),
+            KeyCode::Enter | KeyCode::Char('e') => Some(Action::BeginGoalObjective),
+            KeyCode::Char('p') => Some(Action::SetGoalStatus(GoalStatus::Paused)),
+            KeyCode::Char('r') => Some(Action::SetGoalStatus(GoalStatus::Active)),
+            KeyCode::Char('c') => Some(Action::ClearGoal),
+            _ => None,
+        };
+        if let Some(action) = action {
+            return reduce(app, action);
+        }
+        return vec![];
     }
 
     if let Some(request) = app.current_pending_request() {
@@ -542,26 +1110,30 @@ fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
         Command::QuitOrInterrupt => match app.view_kind() {
             ViewKind::Registry => Action::Quit,
             ViewKind::Thread => Action::InterruptCurrent,
-            ViewKind::Review | ViewKind::Workspace => Action::Back,
+            ViewKind::Review | ViewKind::Workspace | ViewKind::Board | ViewKind::Scratch => {
+                Action::Back
+            }
         },
         Command::Back => Action::Back,
         Command::Help => Action::ToggleHelp,
         Command::Search => Action::BeginSearch,
-        Command::Next => {
-            if app.view_kind() == ViewKind::Review {
-                Action::MoveReview(1)
+        Command::Next => match app.view_kind() {
+            ViewKind::Review => Action::MoveReview(1),
+            ViewKind::Board => Action::MovePlanningSelection(1),
+            _ => Action::MoveSelection(1),
+        },
+        Command::Previous => match app.view_kind() {
+            ViewKind::Review => Action::MoveReview(-1),
+            ViewKind::Board => Action::MovePlanningSelection(-1),
+            _ => Action::MoveSelection(-1),
+        },
+        Command::Open => {
+            if app.view_kind() == ViewKind::Board {
+                Action::OpenPlanningSelected
             } else {
-                Action::MoveSelection(1)
+                Action::OpenSelected
             }
         }
-        Command::Previous => {
-            if app.view_kind() == ViewKind::Review {
-                Action::MoveReview(-1)
-            } else {
-                Action::MoveSelection(-1)
-            }
-        }
-        Command::Open => Action::OpenSelected,
         Command::NextAttention => Action::NextAttention,
         Command::QuickPrompt => Action::QuickPrompt,
         Command::MarkUnread => Action::MarkUnread,
@@ -572,8 +1144,15 @@ fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
         Command::DeclinePending => Action::ResolvePending(InteractiveResolution::Decline),
         Command::CancelPending => Action::ResolvePending(InteractiveResolution::Cancel),
         Command::AnswerPending => Action::BeginUserInput,
+        Command::Board => Action::OpenBoard,
+        Command::BoardLeft => Action::MoveBoardColumn(-1),
+        Command::BoardRight => Action::MoveBoardColumn(1),
+        Command::CycleSavedView => Action::CycleSavedView(1),
         Command::Review => Action::OpenReview,
         Command::Workspace => Action::OpenWorkspace,
+        Command::New => Action::BeginScratch,
+        Command::Snooze => Action::BeginSnooze,
+        Command::BeginHotSlotBind => Action::BeginHotSlotBind,
         Command::PageUp => {
             if app.view_kind() == ViewKind::Review {
                 Action::ScrollReviewBy(-10)
@@ -590,15 +1169,10 @@ fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
         }
         Command::ToggleWordDiff => Action::ToggleReviewWordDiff,
         Command::ExternalEditor => Action::OpenReviewExternalEditor,
-        Command::CommandPalette
-        | Command::ContextActions
-        | Command::Board
-        | Command::Snooze
-        | Command::New
-        | Command::Goal
-        | Command::OpenExternal
-        | Command::HotSlot(_)
-        | Command::BeginHotSlotBind => return vec![],
+        Command::HotSlot(slot) => Action::UseHotSlot(slot),
+        Command::ContextActions => Action::OpenContext,
+        Command::Goal => Action::OpenGoalActions,
+        Command::CommandPalette | Command::OpenExternal => return vec![],
     };
     reduce(app, action)
 }

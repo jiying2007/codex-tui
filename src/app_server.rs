@@ -8,6 +8,10 @@ use crate::conversation::{
     parse_turns_page,
 };
 use crate::domain::{ThreadId, ThreadSummary};
+use crate::goal::{
+    GoalObservation, GoalStatus, parse_goal_cleared_thread, parse_goal_get, parse_goal_set,
+    parse_goal_updated,
+};
 use anyhow::{Context, Result, anyhow};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -22,6 +26,7 @@ use tokio::task::JoinHandle;
 
 const PAGE_SIZE: u32 = 200;
 const REFRESH_INTERVAL: Duration = Duration::from_secs(2);
+const GOAL_PROBE_INTERVAL: Duration = Duration::from_millis(250);
 const RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug)]
@@ -41,6 +46,43 @@ impl fmt::Display for RpcResponseError {
 }
 
 impl std::error::Error for RpcResponseError {}
+
+fn is_goal_unsupported(error: &anyhow::Error) -> bool {
+    let Some(source) = error.downcast_ref::<RpcResponseError>() else {
+        return false;
+    };
+    if source.code == Some(-32601) {
+        return true;
+    }
+    if !matches!(source.code, Some(-32600 | -32602)) {
+        return false;
+    }
+    source.message.to_ascii_lowercase().contains("goal")
+}
+
+fn mark_goal_supported(status: &mut BackendStatus) {
+    for capability in ["thread/goal/get", "thread/goal/set", "thread/goal/clear"] {
+        if !status.capabilities.iter().any(|value| value == capability) {
+            status.capabilities.push(capability.into());
+        }
+        status
+            .optional_capabilities_missing
+            .retain(|value| value != capability);
+    }
+}
+
+fn mark_goal_unsupported(status: &mut BackendStatus) {
+    for capability in ["thread/goal/get", "thread/goal/set", "thread/goal/clear"] {
+        if !status
+            .optional_capabilities_missing
+            .iter()
+            .any(|value| value == capability)
+        {
+            status.optional_capabilities_missing.push(capability.into());
+        }
+        status.capabilities.retain(|value| value != capability);
+    }
+}
 
 fn is_history_pagination_unsupported(error: &anyhow::Error) -> bool {
     let Some(source) = error.downcast_ref::<RpcResponseError>() else {
@@ -96,6 +138,13 @@ pub enum BackendCommand {
         request_id: RpcRequestId,
         resolution: InteractiveResolution,
     },
+    RefreshGoal(ThreadId),
+    SetGoal {
+        thread_id: ThreadId,
+        objective: Option<String>,
+        status: Option<GoalStatus>,
+    },
+    ClearGoal(ThreadId),
 }
 
 #[derive(Clone, Debug)]
@@ -110,6 +159,8 @@ pub enum ConversationEvent {
     InteractiveResolved {
         request_id: RpcRequestId,
     },
+    GoalObserved(GoalObservation),
+    GoalCleared(ThreadId),
     Failed {
         thread_id: ThreadId,
         error: String,
@@ -179,6 +230,27 @@ impl RegistryHandle {
             request_id,
             resolution,
         })
+    }
+
+    pub fn refresh_goal(&self, thread_id: ThreadId) -> Result<()> {
+        self.send_command(BackendCommand::RefreshGoal(thread_id))
+    }
+
+    pub fn set_goal(
+        &self,
+        thread_id: ThreadId,
+        objective: Option<String>,
+        status: Option<GoalStatus>,
+    ) -> Result<()> {
+        self.send_command(BackendCommand::SetGoal {
+            thread_id,
+            objective,
+            status,
+        })
+    }
+
+    pub fn clear_goal(&self, thread_id: ThreadId) -> Result<()> {
+        self.send_command(BackendCommand::ClearGoal(thread_id))
     }
 
     fn send_command(&self, command: BackendCommand) -> Result<()> {
@@ -255,9 +327,22 @@ async fn run_registry_actor(
     let mut threads = by_id(initial_threads);
     let mut pending_requests: BTreeMap<RpcRequestId, PendingServerRequest> = BTreeMap::new();
     let mut watched_threads = BTreeSet::new();
+    let mut goal_supported: Option<bool> = None;
+    let mut goal_probed = BTreeSet::new();
+    let mut goal_queued = threads.keys().cloned().collect::<BTreeSet<_>>();
+    let mut goal_probe_queue = threads
+        .keys()
+        .cloned()
+        .map(ThreadId::new)
+        .collect::<VecDeque<_>>();
+
     let mut refresh = tokio::time::interval(REFRESH_INTERVAL);
     refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     refresh.tick().await;
+
+    let mut goal_probe = tokio::time::interval(GOAL_PROBE_INTERVAL);
+    goal_probe.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    goal_probe.tick().await;
 
     loop {
         tokio::select! {
@@ -373,12 +458,129 @@ async fn run_registry_actor(
                             }
                         }
                     }
+                    BackendCommand::RefreshGoal(thread_id) => {
+                        match load_goal(&mut rpc, thread_id.clone()).await {
+                            Ok(Some(goal)) => {
+                                goal_supported = Some(true);
+                                goal_probed.insert(thread_id.0.clone());
+                                mark_goal_supported(&mut status);
+                                let _ = conversation_tx.send(ConversationEvent::GoalObserved(goal));
+                            }
+                            Ok(None) => {
+                                goal_supported = Some(true);
+                                goal_probed.insert(thread_id.0.clone());
+                                mark_goal_supported(&mut status);
+                                let _ = conversation_tx.send(ConversationEvent::GoalCleared(thread_id));
+                            }
+                            Err(error) if is_goal_unsupported(&error) => {
+                                goal_supported = Some(false);
+                                goal_probe_queue.clear();
+                                goal_queued.clear();
+                                mark_goal_unsupported(&mut status);
+                            }
+                            Err(error) => {
+                                status.error = Some(format!("Goal refresh failed: {error}"));
+                            }
+                        }
+                    }
+                    BackendCommand::SetGoal {
+                        thread_id,
+                        objective,
+                        status: goal_status,
+                    } => {
+                        match set_goal(
+                            &mut rpc,
+                            thread_id.clone(),
+                            objective,
+                            goal_status,
+                        )
+                        .await
+                        {
+                            Ok(goal) => {
+                                goal_supported = Some(true);
+                                goal_probed.insert(thread_id.0.clone());
+                                mark_goal_supported(&mut status);
+                                let _ = conversation_tx.send(ConversationEvent::GoalObserved(goal));
+                            }
+                            Err(error) if is_goal_unsupported(&error) => {
+                                goal_supported = Some(false);
+                                goal_probe_queue.clear();
+                                goal_queued.clear();
+                                mark_goal_unsupported(&mut status);
+                            }
+                            Err(error) => {
+                                status.error = Some(format!("Goal update failed: {error}"));
+                            }
+                        }
+                    }
+                    BackendCommand::ClearGoal(thread_id) => {
+                        match clear_goal(&mut rpc, &thread_id).await {
+                            Ok(()) => {
+                                goal_supported = Some(true);
+                                goal_probed.insert(thread_id.0.clone());
+                                mark_goal_supported(&mut status);
+                                let _ = conversation_tx.send(ConversationEvent::GoalCleared(thread_id));
+                            }
+                            Err(error) if is_goal_unsupported(&error) => {
+                                goal_supported = Some(false);
+                                goal_probe_queue.clear();
+                                goal_queued.clear();
+                                mark_goal_unsupported(&mut status);
+                            }
+                            Err(error) => {
+                                status.error = Some(format!("Goal clear failed: {error}"));
+                            }
+                        }
+                    }
+                }
+            }
+            _ = goal_probe.tick() => {
+                if goal_supported != Some(false)
+                    && let Some(thread_id) = goal_probe_queue.pop_front()
+                {
+                    goal_queued.remove(&thread_id.0);
+                    if !goal_probed.contains(&thread_id.0) {
+                        match load_goal(&mut rpc, thread_id.clone()).await {
+                            Ok(Some(goal)) => {
+                                goal_supported = Some(true);
+                                goal_probed.insert(thread_id.0.clone());
+                                mark_goal_supported(&mut status);
+                                let _ = conversation_tx.send(ConversationEvent::GoalObserved(goal));
+                            }
+                            Ok(None) => {
+                                goal_supported = Some(true);
+                                goal_probed.insert(thread_id.0.clone());
+                                mark_goal_supported(&mut status);
+                                let _ = conversation_tx.send(
+                                    ConversationEvent::GoalCleared(thread_id),
+                                );
+                            }
+                            Err(error) if is_goal_unsupported(&error) => {
+                                goal_supported = Some(false);
+                                goal_probe_queue.clear();
+                                goal_queued.clear();
+                                mark_goal_unsupported(&mut status);
+                            }
+                            Err(_) => {
+                                goal_probed.insert(thread_id.0);
+                            }
+                        }
+                    }
                 }
             }
             _ = refresh.tick() => {
                 match load_registry(&mut rpc).await {
                     Ok((fresh, loaded_supported)) => {
                         threads = by_id(fresh);
+                        if goal_supported != Some(false) {
+                            for thread_id in threads.keys() {
+                                if !goal_probed.contains(thread_id)
+                                    && goal_queued.insert(thread_id.clone())
+                                {
+                                    goal_probe_queue.push_back(ThreadId::new(thread_id));
+                                }
+                            }
+                        }
                         status.connected = true;
                         status.error = None;
                         status.last_refresh_unix_ms = Some(now_unix_ms());
@@ -571,6 +773,57 @@ async fn load_all_loaded_ids(rpc: &mut RpcSession) -> Result<BTreeSet<String>> {
         }
     }
     Ok(loaded)
+}
+
+async fn load_goal(rpc: &mut RpcSession, thread_id: ThreadId) -> Result<Option<GoalObservation>> {
+    let result = rpc
+        .request(
+            "thread/goal/get",
+            json!({
+                "threadId": thread_id.0
+            }),
+        )
+        .await
+        .context("get thread Goal")?;
+    parse_goal_get(result, now_unix_ms())
+}
+
+async fn set_goal(
+    rpc: &mut RpcSession,
+    thread_id: ThreadId,
+    objective: Option<String>,
+    status: Option<GoalStatus>,
+) -> Result<GoalObservation> {
+    let mut params = serde_json::Map::new();
+    params.insert("threadId".into(), json!(thread_id.0));
+    if let Some(objective) = objective {
+        params.insert("objective".into(), json!(objective));
+    }
+    if let Some(status) = status {
+        params.insert("status".into(), json!(status.wire()));
+    }
+    let result = rpc
+        .request("thread/goal/set", Value::Object(params))
+        .await
+        .context("set thread Goal")?;
+    parse_goal_set(result, now_unix_ms())
+}
+
+async fn clear_goal(rpc: &mut RpcSession, thread_id: &ThreadId) -> Result<()> {
+    let result = rpc
+        .request(
+            "thread/goal/clear",
+            json!({
+                "threadId": thread_id.0
+            }),
+        )
+        .await
+        .context("clear thread Goal")?;
+    anyhow::ensure!(
+        result.get("cleared").and_then(Value::as_bool) == Some(true),
+        "thread/goal/clear did not confirm cleared=true"
+    );
+    Ok(())
 }
 
 async fn emit_conversation_load(
@@ -915,6 +1168,18 @@ async fn handle_unsolicited(
         return Ok(());
     }
 
+    if method == "thread/goal/updated" {
+        let goal = parse_goal_updated(params, now_unix_ms())?;
+        let _ = conversation_tx.send(ConversationEvent::GoalObserved(goal));
+        return Ok(());
+    }
+
+    if method == "thread/goal/cleared" {
+        let thread_id = parse_goal_cleared_thread(params)?;
+        let _ = conversation_tx.send(ConversationEvent::GoalCleared(thread_id));
+        return Ok(());
+    }
+
     let Some(thread_id) = params.get("threadId").and_then(Value::as_str) else {
         return Ok(());
     };
@@ -1213,6 +1478,30 @@ mod tests {
             message: "database unavailable".into(),
         });
         assert!(!is_history_pagination_unsupported(&ordinary_failure));
+    }
+
+    #[test]
+    fn goal_capability_degrades_only_for_unsupported_protocol_errors() {
+        let method_not_found = anyhow::Error::new(RpcResponseError {
+            method: "thread/goal/get".into(),
+            code: Some(-32601),
+            message: "method not found".into(),
+        });
+        assert!(is_goal_unsupported(&method_not_found));
+
+        let old_invalid_params = anyhow::Error::new(RpcResponseError {
+            method: "thread/goal/get".into(),
+            code: Some(-32602),
+            message: "unknown Goal request".into(),
+        });
+        assert!(is_goal_unsupported(&old_invalid_params));
+
+        let ordinary_failure = anyhow::Error::new(RpcResponseError {
+            method: "thread/goal/get".into(),
+            code: Some(-32000),
+            message: "database unavailable".into(),
+        });
+        assert!(!is_goal_unsupported(&ordinary_failure));
     }
 
     #[test]

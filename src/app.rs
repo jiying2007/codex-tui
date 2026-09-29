@@ -5,6 +5,12 @@ use crate::conversation::{
 };
 use crate::domain::{AttentionReason, RuntimeStatus, ThreadId, ThreadSummary, ThreadUiState};
 use crate::git::{GitContext, GitReview};
+use crate::goal::{GoalObservation, GoalStatus};
+use crate::planning::{
+    PlanningSnapshot, ReconcileInput, SavedView, SavedViewLayout, SourceKind, SourceRef,
+    WorkCardProjection, WorkflowStage, apply_saved_view, builtin_saved_views,
+    reconcile_scratch_card_with_local, reconcile_thread_card_with_goal,
+};
 use crate::store::LocalStateV1;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -14,6 +20,8 @@ pub enum View {
     Thread(ThreadId),
     Review(ThreadId),
     Workspace(ThreadId),
+    Board,
+    Scratch(String),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -22,6 +30,8 @@ pub enum ViewKind {
     Thread,
     Review,
     Workspace,
+    Board,
+    Scratch,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -31,6 +41,40 @@ pub enum InputMode {
     Alias,
     Composer,
     UserInput,
+    ScratchTitle,
+    Snooze,
+    Note,
+    SavedViewName,
+    GoalObjective,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ContextChoice {
+    Snooze,
+    EditNote,
+    Bookmark,
+    ScratchInbox,
+    ScratchReady,
+    ScratchDone,
+    DeleteScratch,
+    SaveCurrentView,
+    DeleteCurrentView,
+}
+
+impl ContextChoice {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Snooze => "Snooze attention…",
+            Self::EditNote => "Edit local note…",
+            Self::Bookmark => "Add local bookmark",
+            Self::ScratchInbox => "Scratch → Inbox",
+            Self::ScratchReady => "Scratch → Ready",
+            Self::ScratchDone => "Scratch → Done",
+            Self::DeleteScratch => "Delete local ScratchWork",
+            Self::SaveCurrentView => "Save current view as…",
+            Self::DeleteCurrentView => "Delete current SavedView",
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -41,8 +85,31 @@ pub enum Action {
     GitContextLoaded(GitContext),
     GitReviewLoaded(GitReview),
     ReviewError { thread_id: ThreadId, error: String },
+    PlanningSnapshotLoaded(PlanningSnapshot),
+    ReconcilePlanning { now_unix_ms: u64 },
+    PlanningStoreDegraded(Option<String>),
+    GoalObserved(GoalObservation),
+    GoalCleared(ThreadId),
+    OpenGoalActions,
+    CloseGoalActions,
+    BeginGoalObjective,
+    SetGoalStatus(GoalStatus),
+    ClearGoal,
     OpenReview,
     OpenWorkspace,
+    OpenBoard,
+    MoveBoardColumn(i32),
+    MovePlanningSelection(i32),
+    CycleSavedView(i32),
+    OpenPlanningSelected,
+    BeginScratch,
+    BeginSnooze,
+    OpenContext,
+    CloseContext,
+    MoveContext(i32),
+    ExecuteContext,
+    BeginHotSlotBind,
+    UseHotSlot(u8),
     MoveReview(i32),
     ScrollReviewBy(i16),
     ToggleReviewWordDiff,
@@ -80,6 +147,50 @@ pub enum Action {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Effect {
     PersistOperatorState,
+    CreateScratch {
+        title: String,
+        workspace: Option<String>,
+    },
+    SnoozeWorkCard {
+        anchor: SourceRef,
+        duration_ms: u64,
+    },
+    SaveSourceNote {
+        owner: SourceRef,
+        text: String,
+    },
+    UpdateScratchNote {
+        scratch_id: String,
+        note: Option<String>,
+    },
+    CreateBookmark {
+        source: SourceRef,
+        label: Option<String>,
+    },
+    UpdateScratchState {
+        scratch_id: String,
+        state: crate::planning::ScratchState,
+    },
+    DeleteScratch {
+        scratch_id: String,
+    },
+    SaveSavedView {
+        view: SavedView,
+    },
+    DeleteSavedView {
+        view_id: String,
+    },
+    SetHotSlot {
+        slot: u8,
+        target: SourceRef,
+    },
+    RefreshGoal(ThreadId),
+    SetGoal {
+        thread_id: ThreadId,
+        objective: Option<String>,
+        status: Option<GoalStatus>,
+    },
+    ClearGoal(ThreadId),
     ProbeGit {
         thread_id: ThreadId,
         cwd: String,
@@ -125,8 +236,25 @@ pub struct AppState {
     pub conversations: BTreeMap<String, ConversationState>,
     pub git_contexts: BTreeMap<String, GitContext>,
     pub git_reviews: BTreeMap<String, GitReview>,
+    pub planning_snapshot: PlanningSnapshot,
+    pub work_cards: Vec<WorkCardProjection>,
+    pub goals: BTreeMap<String, GoalObservation>,
+    pub goal_checked: BTreeSet<String>,
+    pub goal_actions_open: bool,
+    pub planning_store_error: Option<String>,
     pub review_return_view: Option<View>,
     pub workspace_return_view: Option<View>,
+    pub board_return_view: Option<View>,
+    pub planning_view_index: usize,
+    pub board_stage_index: usize,
+    pub board_selected: usize,
+    pub new_scratch_workspace: Option<String>,
+    pub snooze_target: Option<SourceRef>,
+    pub note_target: Option<SourceRef>,
+    pub saved_view_template: Option<SavedView>,
+    pub context_open: bool,
+    pub context_selected: usize,
+    pub hot_slot_bind_pending: bool,
     pub review_selected: usize,
     pub review_scroll: u16,
     pub review_word_diff: bool,
@@ -155,8 +283,25 @@ impl AppState {
             conversations: BTreeMap::new(),
             git_contexts: BTreeMap::new(),
             git_reviews: BTreeMap::new(),
+            planning_snapshot: PlanningSnapshot::default(),
+            work_cards: vec![],
+            goals: BTreeMap::new(),
+            goal_checked: BTreeSet::new(),
+            goal_actions_open: false,
+            planning_store_error: None,
             review_return_view: None,
             workspace_return_view: None,
+            board_return_view: None,
+            planning_view_index: 0,
+            board_stage_index: 0,
+            board_selected: 0,
+            new_scratch_workspace: None,
+            snooze_target: None,
+            note_target: None,
+            saved_view_template: None,
+            context_open: false,
+            context_selected: 0,
+            hot_slot_bind_pending: false,
             review_selected: 0,
             review_scroll: 0,
             review_word_diff: false,
@@ -181,6 +326,8 @@ impl AppState {
             View::Thread(_) => ViewKind::Thread,
             View::Review(_) => ViewKind::Review,
             View::Workspace(_) => ViewKind::Workspace,
+            View::Board => ViewKind::Board,
+            View::Scratch(_) => ViewKind::Scratch,
         }
     }
 
@@ -197,6 +344,7 @@ impl AppState {
         match &self.view {
             View::Registry => None,
             View::Thread(id) | View::Review(id) | View::Workspace(id) => Some(id),
+            View::Board | View::Scratch(_) => None,
         }
     }
 
@@ -214,6 +362,11 @@ impl AppState {
         self.git_contexts.get(&thread_id.0)
     }
 
+    pub fn current_goal(&self) -> Option<&GoalObservation> {
+        let thread_id = self.current_thread_id()?;
+        self.goals.get(&thread_id.0)
+    }
+
     pub fn current_review(&self) -> Option<&GitReview> {
         let View::Review(thread_id) = &self.view else {
             return None;
@@ -223,6 +376,90 @@ impl AppState {
 
     pub fn selected_review_change(&self) -> Option<&crate::git::GitFileChange> {
         self.current_review()?.changes.get(self.review_selected)
+    }
+
+    pub fn planning_views(&self) -> Vec<SavedView> {
+        let mut views = builtin_saved_views();
+        views.extend(self.planning_snapshot.saved_views.iter().cloned());
+        views
+    }
+
+    pub fn active_saved_view(&self) -> SavedView {
+        let views = self.planning_views();
+        views
+            .get(self.planning_view_index.min(views.len().saturating_sub(1)))
+            .cloned()
+            .unwrap_or_else(|| builtin_saved_views().remove(0))
+    }
+
+    pub fn visible_planning_cards(&self) -> Vec<&WorkCardProjection> {
+        let view = self.active_saved_view();
+        let mut cards = apply_saved_view(&self.work_cards, &view);
+        if view.layout == SavedViewLayout::Board {
+            let stage = WorkflowStage::ALL[self.board_stage_index % WorkflowStage::ALL.len()];
+            cards.retain(|card| card.stage == stage);
+        }
+        cards
+    }
+
+    pub fn selected_planning_card(&self) -> Option<&WorkCardProjection> {
+        self.visible_planning_cards()
+            .get(self.board_selected)
+            .copied()
+    }
+
+    pub fn selected_local_target(&self) -> Option<SourceRef> {
+        match &self.view {
+            View::Registry => self
+                .selected_thread_id()
+                .map(|thread_id| SourceRef::codex_thread(&thread_id)),
+            View::Board => self
+                .selected_planning_card()
+                .map(|card| card.anchor.clone()),
+            View::Thread(id) | View::Review(id) | View::Workspace(id) => {
+                Some(SourceRef::codex_thread(id))
+            }
+            View::Scratch(id) => Some(SourceRef {
+                kind: SourceKind::ScratchWork,
+                value: id.clone(),
+            }),
+        }
+    }
+
+    pub fn context_choices(&self) -> Vec<ContextChoice> {
+        let mut choices = Vec::new();
+        if let Some(target) = self.selected_local_target() {
+            choices.extend([
+                ContextChoice::Snooze,
+                ContextChoice::EditNote,
+                ContextChoice::Bookmark,
+            ]);
+            if target.kind == SourceKind::ScratchWork {
+                choices.extend([
+                    ContextChoice::ScratchInbox,
+                    ContextChoice::ScratchReady,
+                    ContextChoice::ScratchDone,
+                    ContextChoice::DeleteScratch,
+                ]);
+            }
+        }
+        if matches!(self.view, View::Board) {
+            choices.push(ContextChoice::SaveCurrentView);
+            if self.active_saved_view().id.starts_with("view:") {
+                choices.push(ContextChoice::DeleteCurrentView);
+            }
+        }
+        choices
+    }
+
+    pub fn context_choice(&self) -> Option<ContextChoice> {
+        self.context_choices().get(self.context_selected).copied()
+    }
+
+    pub fn work_card_for_thread(&self, thread_id: &ThreadId) -> Option<&WorkCardProjection> {
+        self.work_cards
+            .iter()
+            .find(|card| card.anchor == SourceRef::codex_thread(thread_id))
     }
 
     pub fn worktree_collision_count(&self, thread_id: &ThreadId) -> usize {
@@ -282,6 +519,12 @@ impl AppState {
         let Some(thread) = self.threads.get(index) else {
             return false;
         };
+        if self
+            .work_card_for_thread(&thread.id)
+            .is_some_and(|card| card.snoozed)
+        {
+            return false;
+        }
         let actionable = thread.attention.iter().any(|reason| {
             matches!(
                 reason,
@@ -431,6 +674,325 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 state.review_selected.min(len - 1)
             };
         }
+        Action::PlanningSnapshotLoaded(snapshot) => {
+            state.planning_snapshot = snapshot;
+            state.planning_view_index = state
+                .planning_view_index
+                .min(state.planning_views().len().saturating_sub(1));
+            state.board_selected = 0;
+        }
+        Action::PlanningStoreDegraded(error) => {
+            state.planning_store_error = error;
+        }
+        Action::GoalObserved(goal) => {
+            state.goal_checked.insert(goal.thread_id.0.clone());
+            state.goals.insert(goal.thread_id.0.clone(), goal);
+        }
+        Action::GoalCleared(thread_id) => {
+            state.goal_checked.insert(thread_id.0.clone());
+            state.goals.remove(&thread_id.0);
+            state.goal_actions_open = false;
+        }
+        Action::OpenGoalActions => {
+            if state.current_pending_request().is_some() {
+                return vec![];
+            }
+            if let Some(thread_id) = state.current_thread_id().cloned() {
+                state.goal_actions_open = true;
+                if !state.goal_checked.contains(&thread_id.0) {
+                    return vec![Effect::RefreshGoal(thread_id)];
+                }
+            }
+        }
+        Action::CloseGoalActions => {
+            state.goal_actions_open = false;
+        }
+        Action::BeginGoalObjective => {
+            let Some(thread_id) = state.current_thread_id().cloned() else {
+                return vec![];
+            };
+            if state
+                .backend_status
+                .optional_capabilities_missing
+                .iter()
+                .any(|capability| capability == "thread/goal/get")
+            {
+                return vec![];
+            }
+            if !state.goal_checked.contains(&thread_id.0) {
+                return vec![Effect::RefreshGoal(thread_id)];
+            }
+            state.input_buffer = state
+                .goals
+                .get(&thread_id.0)
+                .map(|goal| goal.objective.clone())
+                .unwrap_or_default();
+            state.goal_actions_open = false;
+            state.input_mode = InputMode::GoalObjective;
+        }
+        Action::SetGoalStatus(status) => {
+            let Some(thread_id) = state.current_thread_id().cloned() else {
+                return vec![];
+            };
+            if !state.goals.contains_key(&thread_id.0) {
+                return vec![];
+            }
+            state.goal_actions_open = false;
+            return vec![Effect::SetGoal {
+                thread_id,
+                objective: None,
+                status: Some(status),
+            }];
+        }
+        Action::ClearGoal => {
+            let Some(thread_id) = state.current_thread_id().cloned() else {
+                return vec![];
+            };
+            if !state.goals.contains_key(&thread_id.0) {
+                return vec![];
+            }
+            state.goal_actions_open = false;
+            return vec![Effect::ClearGoal(thread_id)];
+        }
+        Action::ReconcilePlanning { now_unix_ms } => {
+            rebuild_planning(state, now_unix_ms);
+        }
+        Action::OpenBoard => {
+            if !matches!(state.view, View::Board) {
+                state.board_return_view = Some(state.view.clone());
+            }
+            state.view = View::Board;
+            state.board_selected = 0;
+        }
+        Action::MoveBoardColumn(delta) => {
+            let len = WorkflowStage::ALL.len() as i32;
+            state.board_stage_index =
+                (state.board_stage_index as i32 + delta).rem_euclid(len) as usize;
+            state.board_selected = 0;
+        }
+        Action::MovePlanningSelection(delta) => {
+            let len = state.visible_planning_cards().len();
+            if len == 0 {
+                state.board_selected = 0;
+            } else {
+                state.board_selected =
+                    (state.board_selected as i32 + delta).rem_euclid(len as i32) as usize;
+            }
+        }
+        Action::CycleSavedView(delta) => {
+            let len = state.planning_views().len();
+            if len == 0 {
+                state.planning_view_index = 0;
+            } else {
+                state.planning_view_index =
+                    (state.planning_view_index as i32 + delta).rem_euclid(len as i32) as usize;
+            }
+            state.board_selected = 0;
+        }
+        Action::OpenPlanningSelected => {
+            let Some(card) = state.selected_planning_card().cloned() else {
+                return vec![];
+            };
+            match card.anchor.kind {
+                SourceKind::CodexThread => {
+                    let id = ThreadId::new(card.anchor.value);
+                    if state.threads.iter().any(|thread| thread.id == id) {
+                        state.previous_target = state.current_thread_id().cloned();
+                        state.thread_ui.entry(id.0.clone()).or_default();
+                        state
+                            .conversations
+                            .entry(id.0.clone())
+                            .or_insert_with(|| ConversationState::loading(id.clone()))
+                            .loading = true;
+                        state.view = View::Thread(id.clone());
+                        return vec![Effect::LoadConversation(id)];
+                    }
+                }
+                SourceKind::ScratchWork => {
+                    state.view = View::Scratch(card.anchor.value);
+                }
+                _ => {}
+            }
+        }
+        Action::BeginScratch => {
+            state.new_scratch_workspace = match &state.view {
+                View::Registry => state
+                    .selected_thread()
+                    .map(|thread| thread.workspace.clone()),
+                View::Board => state
+                    .selected_planning_card()
+                    .and_then(|card| card.workspace.clone()),
+                View::Thread(id) | View::Review(id) | View::Workspace(id) => state
+                    .threads
+                    .iter()
+                    .find(|thread| thread.id == *id)
+                    .map(|thread| thread.workspace.clone()),
+                View::Scratch(id) => state
+                    .planning_snapshot
+                    .scratch
+                    .iter()
+                    .find(|scratch| scratch.id == *id)
+                    .and_then(|scratch| scratch.workspace.clone()),
+            };
+            state.input_buffer.clear();
+            state.input_mode = InputMode::ScratchTitle;
+        }
+        Action::OpenContext => {
+            if !state.context_choices().is_empty() {
+                state.context_open = true;
+                state.context_selected = 0;
+            }
+        }
+        Action::CloseContext => {
+            state.context_open = false;
+            state.context_selected = 0;
+        }
+        Action::MoveContext(delta) => {
+            let len = state.context_choices().len();
+            if len == 0 {
+                state.context_selected = 0;
+            } else {
+                state.context_selected =
+                    (state.context_selected as i32 + delta).rem_euclid(len as i32) as usize;
+            }
+        }
+        Action::ExecuteContext => {
+            let Some(choice) = state.context_choice() else {
+                state.context_open = false;
+                return vec![];
+            };
+            state.context_open = false;
+            state.context_selected = 0;
+
+            if choice == ContextChoice::SaveCurrentView {
+                let mut template = state.active_saved_view();
+                template.id.clear();
+                state.input_buffer = format!("{} Copy", template.name);
+                state.saved_view_template = Some(template);
+                state.input_mode = InputMode::SavedViewName;
+                return vec![];
+            }
+            if choice == ContextChoice::DeleteCurrentView {
+                let view_id = state.active_saved_view().id;
+                if view_id.starts_with("view:") {
+                    return vec![Effect::DeleteSavedView { view_id }];
+                }
+                return vec![];
+            }
+
+            let Some(target) = state.selected_local_target() else {
+                return vec![];
+            };
+            match choice {
+                ContextChoice::Snooze => {
+                    state.snooze_target = Some(target);
+                    state.input_buffer = "1h".into();
+                    state.input_mode = InputMode::Snooze;
+                }
+                ContextChoice::EditNote => {
+                    let existing = if target.kind == SourceKind::ScratchWork {
+                        state
+                            .planning_snapshot
+                            .scratch
+                            .iter()
+                            .find(|scratch| scratch.id == target.value)
+                            .and_then(|scratch| scratch.note.clone())
+                    } else {
+                        state
+                            .planning_snapshot
+                            .notes
+                            .iter()
+                            .find(|note| note.owner == target)
+                            .map(|note| note.text.clone())
+                    };
+                    state.note_target = Some(target);
+                    state.input_buffer = existing.unwrap_or_default();
+                    state.input_mode = InputMode::Note;
+                }
+                ContextChoice::Bookmark => {
+                    let label = state
+                        .work_cards
+                        .iter()
+                        .find(|card| card.anchor == target)
+                        .map(|card| card.title.clone());
+                    return vec![Effect::CreateBookmark {
+                        source: target,
+                        label,
+                    }];
+                }
+                ContextChoice::ScratchInbox
+                | ContextChoice::ScratchReady
+                | ContextChoice::ScratchDone => {
+                    let scratch_state = match choice {
+                        ContextChoice::ScratchInbox => crate::planning::ScratchState::Inbox,
+                        ContextChoice::ScratchReady => crate::planning::ScratchState::Ready,
+                        ContextChoice::ScratchDone => crate::planning::ScratchState::Done,
+                        _ => unreachable!(),
+                    };
+                    return vec![Effect::UpdateScratchState {
+                        scratch_id: target.value,
+                        state: scratch_state,
+                    }];
+                }
+                ContextChoice::DeleteScratch => {
+                    if matches!(state.view, View::Scratch(_)) {
+                        state.view = View::Board;
+                    }
+                    return vec![Effect::DeleteScratch {
+                        scratch_id: target.value,
+                    }];
+                }
+                ContextChoice::SaveCurrentView | ContextChoice::DeleteCurrentView => unreachable!(),
+            }
+        }
+        Action::BeginSnooze => {
+            if let Some(target) = state.selected_local_target() {
+                state.snooze_target = Some(target);
+                state.input_buffer = "1h".into();
+                state.input_mode = InputMode::Snooze;
+            }
+        }
+        Action::BeginHotSlotBind => {
+            state.hot_slot_bind_pending = state.selected_local_target().is_some();
+        }
+        Action::UseHotSlot(slot) => {
+            if state.hot_slot_bind_pending {
+                state.hot_slot_bind_pending = false;
+                if let Some(target) = state.selected_local_target() {
+                    return vec![Effect::SetHotSlot { slot, target }];
+                }
+                return vec![];
+            }
+
+            let target = state
+                .planning_snapshot
+                .hot_slots
+                .iter()
+                .find(|hot_slot| hot_slot.slot == slot)
+                .map(|hot_slot| hot_slot.target.clone());
+            let Some(target) = target else {
+                return vec![];
+            };
+            match target.kind {
+                SourceKind::CodexThread => {
+                    let id = ThreadId::new(target.value);
+                    if let Some(index) = state.threads.iter().position(|thread| thread.id == id) {
+                        state.selected = index;
+                        state.view = View::Registry;
+                    }
+                }
+                SourceKind::ScratchWork
+                    if state
+                        .planning_snapshot
+                        .scratch
+                        .iter()
+                        .any(|scratch| scratch.id == target.value) =>
+                {
+                    state.view = View::Scratch(target.value);
+                }
+                _ => {}
+            }
+        }
         Action::ReviewError { thread_id, error } => {
             let review = state
                 .git_reviews
@@ -442,6 +1004,11 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             let thread_id = match &state.view {
                 View::Registry => state.selected_thread_id(),
                 View::Thread(id) | View::Review(id) | View::Workspace(id) => Some(id.clone()),
+                View::Board => state.selected_planning_card().and_then(|card| {
+                    (card.anchor.kind == SourceKind::CodexThread)
+                        .then(|| ThreadId::new(card.anchor.value.clone()))
+                }),
+                View::Scratch(_) => None,
             };
             let Some(thread_id) = thread_id else {
                 return vec![];
@@ -471,6 +1038,11 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             let thread_id = match &state.view {
                 View::Registry => state.selected_thread_id(),
                 View::Thread(id) | View::Review(id) | View::Workspace(id) => Some(id.clone()),
+                View::Board => state.selected_planning_card().and_then(|card| {
+                    (card.anchor.kind == SourceKind::CodexThread)
+                        .then(|| ThreadId::new(card.anchor.value.clone()))
+                }),
+                View::Scratch(_) => None,
             };
             let Some(thread_id) = thread_id else {
                 return vec![];
@@ -575,8 +1147,11 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 .pending_requests
                 .retain(|pending| pending.request_id != request.request_id);
             state.pending_requests.push(request);
-            if is_current_thread && state.input_mode == InputMode::Composer {
-                state.input_mode = InputMode::Normal;
+            if is_current_thread {
+                state.goal_actions_open = false;
+                if state.input_mode == InputMode::Composer {
+                    state.input_mode = InputMode::Normal;
+                }
             }
         }
         Action::InteractiveResolved { request_id } => {
@@ -632,6 +1207,15 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::QuickPrompt => {
             let id = match state.current_thread_id().cloned() {
                 Some(id) => id,
+                None if matches!(state.view, View::Board) => {
+                    let Some(card) = state.selected_planning_card() else {
+                        return vec![];
+                    };
+                    if card.anchor.kind != SourceKind::CodexThread {
+                        return vec![];
+                    }
+                    ThreadId::new(card.anchor.value.clone())
+                }
                 None => {
                     let Some(id) = state.selected_thread_id() else {
                         return vec![];
@@ -670,6 +1254,23 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
         }
         Action::Back => {
+            if state.context_open {
+                state.context_open = false;
+                state.context_selected = 0;
+                return vec![];
+            }
+            if state.hot_slot_bind_pending {
+                state.hot_slot_bind_pending = false;
+                return vec![];
+            }
+            if matches!(state.view, View::Scratch(_)) {
+                state.view = View::Board;
+                return vec![];
+            }
+            if matches!(state.view, View::Board) {
+                state.view = state.board_return_view.take().unwrap_or(View::Registry);
+                return vec![];
+            }
             if matches!(state.view, View::Review(_)) {
                 state.view = state.review_return_view.take().unwrap_or(View::Registry);
                 state.review_scroll = 0;
@@ -690,7 +1291,13 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 return vec![Effect::StopWatchingConversation(thread_id)];
             }
         }
-        Action::NextAttention => select_next_attention(state),
+        Action::NextAttention => {
+            if matches!(state.view, View::Board) {
+                select_next_planning_attention(state);
+            } else {
+                select_next_attention(state);
+            }
+        }
         Action::ToggleHelp => state.show_help = !state.show_help,
         Action::SetDraft(draft) => {
             if let Some(id) = state.current_thread_id().cloned() {
@@ -801,7 +1408,14 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     return vec![Effect::PersistOperatorState];
                 }
             }
-            InputMode::Search | InputMode::Alias | InputMode::UserInput => {
+            InputMode::Search
+            | InputMode::Alias
+            | InputMode::UserInput
+            | InputMode::ScratchTitle
+            | InputMode::Snooze
+            | InputMode::Note
+            | InputMode::SavedViewName
+            | InputMode::GoalObjective => {
                 state.input_buffer.push(character);
                 if state.input_mode == InputMode::Search {
                     state.filter.clone_from(&state.input_buffer);
@@ -817,7 +1431,14 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     return vec![Effect::PersistOperatorState];
                 }
             }
-            InputMode::Search | InputMode::Alias | InputMode::UserInput => {
+            InputMode::Search
+            | InputMode::Alias
+            | InputMode::UserInput
+            | InputMode::ScratchTitle
+            | InputMode::Snooze
+            | InputMode::Note
+            | InputMode::SavedViewName
+            | InputMode::GoalObjective => {
                 state.input_buffer.pop();
                 if state.input_mode == InputMode::Search {
                     state.filter.clone_from(&state.input_buffer);
@@ -827,6 +1448,86 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         },
         Action::CommitInput => {
             let mode = state.input_mode;
+            if mode == InputMode::GoalObjective {
+                let Some(thread_id) = state.current_thread_id().cloned() else {
+                    state.input_mode = InputMode::Normal;
+                    state.input_buffer.clear();
+                    return vec![];
+                };
+                let objective = state.input_buffer.trim().to_string();
+                if objective.is_empty() {
+                    return vec![];
+                }
+                let is_new = !state.goals.contains_key(&thread_id.0);
+                state.input_mode = InputMode::Normal;
+                state.input_buffer.clear();
+                return vec![Effect::SetGoal {
+                    thread_id,
+                    objective: Some(objective),
+                    status: is_new.then_some(GoalStatus::Active),
+                }];
+            }
+            if mode == InputMode::ScratchTitle {
+                let title = state.input_buffer.trim().to_string();
+                if title.is_empty() {
+                    return vec![];
+                }
+                let workspace = state.new_scratch_workspace.take();
+                state.input_mode = InputMode::Normal;
+                state.input_buffer.clear();
+                return vec![Effect::CreateScratch { title, workspace }];
+            }
+            if mode == InputMode::SavedViewName {
+                let name = state.input_buffer.trim().to_string();
+                let Some(mut view) = state.saved_view_template.take() else {
+                    state.input_mode = InputMode::Normal;
+                    state.input_buffer.clear();
+                    return vec![];
+                };
+                if name.is_empty() {
+                    return vec![];
+                }
+                view.name = name;
+                state.input_mode = InputMode::Normal;
+                state.input_buffer.clear();
+                return vec![Effect::SaveSavedView { view }];
+            }
+            if mode == InputMode::Note {
+                let text = state.input_buffer.trim().to_string();
+                let Some(target) = state.note_target.take() else {
+                    state.input_mode = InputMode::Normal;
+                    state.input_buffer.clear();
+                    return vec![];
+                };
+                state.input_mode = InputMode::Normal;
+                state.input_buffer.clear();
+                if target.kind == SourceKind::ScratchWork {
+                    return vec![Effect::UpdateScratchNote {
+                        scratch_id: target.value,
+                        note: (!text.is_empty()).then_some(text),
+                    }];
+                }
+                return vec![Effect::SaveSourceNote {
+                    owner: target,
+                    text,
+                }];
+            }
+            if mode == InputMode::Snooze {
+                let Some(duration_ms) = parse_snooze_duration(&state.input_buffer) else {
+                    return vec![];
+                };
+                let Some(anchor) = state.snooze_target.take() else {
+                    state.input_mode = InputMode::Normal;
+                    state.input_buffer.clear();
+                    return vec![];
+                };
+                state.input_mode = InputMode::Normal;
+                state.input_buffer.clear();
+                return vec![Effect::SnoozeWorkCard {
+                    anchor,
+                    duration_ms,
+                }];
+            }
             if mode == InputMode::UserInput {
                 let Some(request_id) = state.user_input_request_id.clone() else {
                     clear_user_input_editor(state);
@@ -927,6 +1628,23 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.input_original.clear();
         }
         Action::CancelInput => {
+            if state.input_mode == InputMode::GoalObjective {
+                state.input_mode = InputMode::Normal;
+                state.input_buffer.clear();
+                return vec![];
+            }
+            if state.input_mode == InputMode::ScratchTitle {
+                state.new_scratch_workspace = None;
+            }
+            if state.input_mode == InputMode::Snooze {
+                state.snooze_target = None;
+            }
+            if state.input_mode == InputMode::Note {
+                state.note_target = None;
+            }
+            if state.input_mode == InputMode::SavedViewName {
+                state.saved_view_template = None;
+            }
             if state.input_mode == InputMode::Search {
                 state.filter.clone_from(&state.input_original);
                 ensure_selection_visible(state);
@@ -942,6 +1660,135 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::Quit => state.should_quit = true,
     }
     vec![]
+}
+
+fn parse_snooze_duration(value: &str) -> Option<u64> {
+    let value = value.trim().to_ascii_lowercase();
+    if value.len() < 2 {
+        return None;
+    }
+    let (number, suffix) = value.split_at(value.len() - 1);
+    let amount = number.parse::<u64>().ok()?;
+    if amount == 0 {
+        return None;
+    }
+    let unit_ms = match suffix {
+        "m" => 60_000,
+        "h" => 60 * 60_000,
+        "d" => 24 * 60 * 60_000,
+        _ => return None,
+    };
+    amount.checked_mul(unit_ms)
+}
+
+fn select_next_planning_attention(state: &mut AppState) {
+    let view = state.active_saved_view();
+    let cards = apply_saved_view(&state.work_cards, &view);
+    if cards.is_empty() {
+        return;
+    }
+
+    let current_local_id = state
+        .selected_planning_card()
+        .map(|card| card.local_id.clone());
+    let start = current_local_id
+        .as_ref()
+        .and_then(|local_id| cards.iter().position(|card| &card.local_id == local_id))
+        .unwrap_or(0);
+
+    let next = (1..=cards.len()).find_map(|offset| {
+        let card = cards[(start + offset) % cards.len()];
+        card.needs_you()
+            .then(|| (card.local_id.clone(), card.stage))
+    });
+    drop(cards);
+
+    if let Some((local_id, stage)) = next {
+        state.planning_view_index = state
+            .planning_views()
+            .iter()
+            .position(|candidate| candidate.id == view.id)
+            .unwrap_or(state.planning_view_index);
+        state.board_stage_index = WorkflowStage::ALL
+            .iter()
+            .position(|candidate| *candidate == stage)
+            .unwrap_or(state.board_stage_index);
+        let visible = state.visible_planning_cards();
+        state.board_selected = visible
+            .iter()
+            .position(|candidate| candidate.local_id == local_id)
+            .unwrap_or(0);
+    }
+}
+
+fn rebuild_planning(state: &mut AppState, now_unix_ms: u64) {
+    let local_by_anchor = state
+        .planning_snapshot
+        .cards
+        .iter()
+        .map(|card| (card.anchor.clone(), card))
+        .collect::<BTreeMap<_, _>>();
+
+    let mut projections =
+        Vec::with_capacity(state.threads.len() + state.planning_snapshot.scratch.len());
+
+    for thread in &state.threads {
+        let anchor = SourceRef::codex_thread(&thread.id);
+        let projection = reconcile_thread_card_with_goal(
+            ReconcileInput {
+                thread,
+                git: state.git_context(&thread.id),
+                local: local_by_anchor.get(&anchor).copied(),
+                collision_count: state.worktree_collision_count(&thread.id),
+                backend_observed_at_unix_ms: state.backend_status.last_refresh_unix_ms,
+                backend_error: state.backend_status.error.as_deref(),
+                now_unix_ms,
+            },
+            state.goals.get(&thread.id.0),
+        );
+        projections.push(projection);
+    }
+
+    projections.extend(state.planning_snapshot.scratch.iter().map(|scratch| {
+        let anchor = SourceRef {
+            kind: SourceKind::ScratchWork,
+            value: scratch.id.clone(),
+        };
+        reconcile_scratch_card_with_local(
+            scratch,
+            local_by_anchor.get(&anchor).copied(),
+            now_unix_ms,
+        )
+    }));
+
+    for projection in &mut projections {
+        if let Some(note) = state
+            .planning_snapshot
+            .notes
+            .iter()
+            .find(|note| note.owner == projection.anchor)
+        {
+            projection.overlay.note = Some(note.text.clone());
+        }
+    }
+
+    projections.sort_by(|left, right| {
+        right
+            .overlay
+            .pinned
+            .cmp(&left.overlay.pinned)
+            .then_with(|| left.stage.cmp(&right.stage))
+            .then_with(|| {
+                left.overlay
+                    .priority
+                    .unwrap_or(i32::MAX)
+                    .cmp(&right.overlay.priority.unwrap_or(i32::MAX))
+            })
+            .then_with(|| left.title.cmp(&right.title))
+            .then_with(|| left.local_id.cmp(&right.local_id))
+    });
+
+    state.work_cards = projections;
 }
 
 fn clear_user_input_editor(state: &mut AppState) {
@@ -1050,6 +1897,77 @@ mod tests {
 
     fn app() -> AppState {
         AppState::new(FakeBackend::seeded().snapshot().threads)
+    }
+
+    #[test]
+    fn goal_actions_are_explicit_app_server_effects() {
+        let mut app = app();
+        reduce(&mut app, Action::OpenSelected);
+        let refresh = reduce(&mut app, Action::OpenGoalActions);
+        assert!(matches!(refresh.as_slice(), [Effect::RefreshGoal(_)]));
+
+        let thread_id = app.current_thread_id().expect("thread").clone();
+        reduce(
+            &mut app,
+            Action::GoalObserved(GoalObservation {
+                thread_id: thread_id.clone(),
+                objective: "Ship M4".into(),
+                status: GoalStatus::Active,
+                token_budget: Some(10_000),
+                tokens_used: 100,
+                time_used_seconds: 30,
+                created_at: 1,
+                updated_at: 2,
+                observed_at_unix_ms: 10,
+            }),
+        );
+        let pause = reduce(&mut app, Action::SetGoalStatus(GoalStatus::Paused));
+        assert_eq!(
+            pause,
+            vec![Effect::SetGoal {
+                thread_id: thread_id.clone(),
+                objective: None,
+                status: Some(GoalStatus::Paused),
+            }]
+        );
+
+        let clear = reduce(&mut app, Action::ClearGoal);
+        assert_eq!(clear, vec![Effect::ClearGoal(thread_id)]);
+    }
+
+    #[test]
+    fn goal_observation_reconciles_without_entering_local_store_state() {
+        let mut app = app();
+        let thread_id = app.threads[0].id.clone();
+        reduce(
+            &mut app,
+            Action::GoalObserved(GoalObservation {
+                thread_id: thread_id.clone(),
+                objective: "Ship M4".into(),
+                status: GoalStatus::Blocked,
+                token_budget: None,
+                tokens_used: 0,
+                time_used_seconds: 0,
+                created_at: 1,
+                updated_at: 1,
+                observed_at_unix_ms: 100,
+            }),
+        );
+        reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 100 });
+        let card = app.work_card_for_thread(&thread_id).expect("card");
+        assert_eq!(card.stage, WorkflowStage::Working);
+        assert!(
+            card.attention
+                .contains(&crate::planning::PlanningAttention::GoalBlocked)
+        );
+
+        let local = app.to_local_state();
+        assert_eq!(local.schema_version, 1);
+        assert!(
+            !serde_json::to_string(&local)
+                .expect("serialize")
+                .contains("Ship M4")
+        );
     }
 
     #[test]
@@ -1368,6 +2286,212 @@ mod tests {
         assert_eq!(app.selected_review_change().expect("change").path, "b.rs");
         reduce(&mut app, Action::Back);
         assert_eq!(app.view, View::Registry);
+    }
+
+    #[test]
+    fn board_keeps_workflow_columns_separate_from_needs_you_filter() {
+        let mut app = app();
+        app.threads[0].runtime = RuntimeStatus::Working;
+        app.threads[0].attention = vec![AttentionReason::ApprovalRequired];
+        reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 10 });
+        reduce(&mut app, Action::OpenBoard);
+        assert_eq!(app.active_saved_view().layout, SavedViewLayout::Board);
+        app.board_stage_index = WorkflowStage::ALL
+            .iter()
+            .position(|stage| *stage == WorkflowStage::Working)
+            .expect("working");
+        assert!(
+            app.visible_planning_cards()
+                .iter()
+                .any(|card| { card.stage == WorkflowStage::Working && card.needs_you() })
+        );
+        reduce(&mut app, Action::CycleSavedView(1));
+        assert_eq!(app.active_saved_view().id, "builtin:attention");
+        assert!(
+            app.visible_planning_cards()
+                .iter()
+                .all(|card| card.needs_you())
+        );
+    }
+
+    #[test]
+    fn new_scratch_is_an_explicit_local_effect() {
+        let mut app = app();
+        reduce(&mut app, Action::BeginScratch);
+        for ch in "Investigate wake miss".chars() {
+            reduce(&mut app, Action::InputChar(ch));
+        }
+        let effects = reduce(&mut app, Action::CommitInput);
+        assert!(matches!(
+            effects.as_slice(),
+            [Effect::CreateScratch { title, .. }] if title == "Investigate wake miss"
+        ));
+        assert_eq!(app.input_mode, InputMode::Normal);
+    }
+
+    #[test]
+    fn board_context_can_save_but_not_delete_builtin_views() {
+        let mut app = app();
+        reduce(&mut app, Action::OpenBoard);
+        let choices = app.context_choices();
+        assert!(choices.contains(&ContextChoice::SaveCurrentView));
+        assert!(!choices.contains(&ContextChoice::DeleteCurrentView));
+
+        reduce(&mut app, Action::OpenContext);
+        let save_index = app
+            .context_choices()
+            .iter()
+            .position(|choice| *choice == ContextChoice::SaveCurrentView)
+            .expect("save view action");
+        app.context_selected = save_index;
+        reduce(&mut app, Action::ExecuteContext);
+        assert_eq!(app.input_mode, InputMode::SavedViewName);
+        assert!(app.saved_view_template.is_some());
+    }
+
+    #[test]
+    fn context_menu_exposes_workflow_changes_only_for_scratch() {
+        let mut app = app();
+        let thread_choices = app.context_choices();
+        assert_eq!(thread_choices.len(), 3);
+        assert!(!thread_choices.contains(&ContextChoice::ScratchDone));
+
+        app.planning_snapshot
+            .scratch
+            .push(crate::planning::ScratchWork {
+                id: "scratch:1".into(),
+                title: "Local".into(),
+                note: None,
+                workspace: None,
+                priority: None,
+                state: crate::planning::ScratchState::Inbox,
+                created_at_unix_ms: 1,
+                updated_at_unix_ms: 1,
+            });
+        app.work_cards.push(reconcile_scratch_card_with_local(
+            &app.planning_snapshot.scratch[0],
+            None,
+            1,
+        ));
+        app.view = View::Scratch("scratch:1".into());
+        let scratch_choices = app.context_choices();
+        assert!(scratch_choices.contains(&ContextChoice::ScratchReady));
+        assert!(scratch_choices.contains(&ContextChoice::DeleteScratch));
+    }
+
+    #[test]
+    fn context_note_prefills_existing_thread_note() {
+        let mut app = app();
+        let owner = SourceRef::codex_thread(&ThreadId::new("thread-impl"));
+        app.planning_snapshot
+            .notes
+            .push(crate::planning::LocalNote {
+                owner,
+                text: "remember".into(),
+                updated_at_unix_ms: 1,
+            });
+        reduce(&mut app, Action::OpenContext);
+        reduce(&mut app, Action::MoveContext(1));
+        reduce(&mut app, Action::ExecuteContext);
+        assert_eq!(app.input_mode, InputMode::Note);
+        assert_eq!(app.input_buffer, "remember");
+    }
+
+    #[test]
+    fn snooze_duration_parser_is_bounded_and_unit_explicit() {
+        assert_eq!(parse_snooze_duration("15m"), Some(900_000));
+        assert_eq!(parse_snooze_duration("1h"), Some(3_600_000));
+        assert_eq!(parse_snooze_duration("2d"), Some(172_800_000));
+        assert_eq!(parse_snooze_duration("0h"), None);
+        assert_eq!(parse_snooze_duration("later"), None);
+    }
+
+    #[test]
+    fn back_cancels_hot_slot_binding_before_navigation() {
+        let mut app = app();
+        reduce(&mut app, Action::BeginHotSlotBind);
+        assert!(app.hot_slot_bind_pending);
+        let effects = reduce(&mut app, Action::Back);
+        assert!(effects.is_empty());
+        assert!(!app.hot_slot_bind_pending);
+        assert_eq!(app.view, View::Registry);
+    }
+
+    #[test]
+    fn hot_slot_binding_stores_only_source_reference() {
+        let mut app = app();
+        reduce(&mut app, Action::BeginHotSlotBind);
+        let effects = reduce(&mut app, Action::UseHotSlot(3));
+        assert_eq!(
+            effects,
+            vec![Effect::SetHotSlot {
+                slot: 3,
+                target: SourceRef::codex_thread(&ThreadId::new("thread-impl")),
+            }]
+        );
+        assert!(!app.hot_slot_bind_pending);
+    }
+
+    #[test]
+    fn board_attention_rotation_skips_snoozed_cards() {
+        let mut app = app();
+        app.threads[0].runtime = RuntimeStatus::Working;
+        app.threads[0].attention = vec![AttentionReason::ApprovalRequired];
+        app.threads[1].runtime = RuntimeStatus::Working;
+        app.threads[1].attention = vec![AttentionReason::UserInputRequired];
+
+        let mut local = crate::planning::WorkCardRecord::implicit_thread(&app.threads[0].id);
+        local.overlay.snooze_until_unix_ms = Some(10_000);
+        app.planning_snapshot.cards.push(local);
+        reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 1 });
+        reduce(&mut app, Action::OpenBoard);
+        reduce(&mut app, Action::NextAttention);
+        let selected = app
+            .selected_planning_card()
+            .expect("selected attention card");
+        assert_ne!(selected.anchor, SourceRef::codex_thread(&app.threads[0].id));
+        assert!(!selected.snoozed);
+        assert!(selected.needs_you());
+    }
+
+    #[test]
+    fn planning_reconciliation_keeps_workflow_and_attention_orthogonal() {
+        let mut app = app();
+        app.threads[0].runtime = RuntimeStatus::Working;
+        app.threads[0].attention = vec![AttentionReason::ApprovalRequired];
+        reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 100 });
+        let card = app
+            .work_card_for_thread(&ThreadId::new("thread-impl"))
+            .expect("card");
+        assert_eq!(card.stage, crate::planning::WorkflowStage::Working);
+        assert!(card.needs_you());
+        assert!(
+            card.attention
+                .contains(&crate::planning::PlanningAttention::ApprovalRequired)
+        );
+    }
+
+    #[test]
+    fn scratch_items_join_the_same_planning_projection_without_becoming_threads() {
+        let mut app = app();
+        app.planning_snapshot
+            .scratch
+            .push(crate::planning::ScratchWork {
+                id: "scratch:1".into(),
+                title: "Investigate".into(),
+                note: None,
+                workspace: Some("kws".into()),
+                priority: Some(1),
+                state: crate::planning::ScratchState::Inbox,
+                created_at_unix_ms: 1,
+                updated_at_unix_ms: 1,
+            });
+        reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 2 });
+        assert!(app.work_cards.iter().any(|card| {
+            card.anchor.kind == crate::planning::SourceKind::ScratchWork
+                && card.title == "Investigate"
+        }));
+        assert_eq!(app.threads.len(), 4);
     }
 
     #[test]

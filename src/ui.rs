@@ -2,6 +2,7 @@ use crate::app::{AppState, InputMode, View};
 use crate::conversation::{InteractiveRequest, InteractiveRequestKind};
 use crate::domain::ThreadSummary;
 use crate::git::presentation_diff_lines;
+use crate::planning::{SavedViewLayout, WorkflowStage, apply_saved_view, saved_view_group_key};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -33,9 +34,20 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
         View::Thread(id) => render_thread(frame, app, id.0.as_str()),
         View::Review(id) => render_review(frame, app, id.0.as_str()),
         View::Workspace(id) => render_workspace(frame, app, id.0.as_str()),
+        View::Board => render_board(frame, app),
+        View::Scratch(id) => render_scratch(frame, app, id),
     }
     if app.show_help {
         render_help(frame);
+    }
+    if app.context_open {
+        render_context_actions(frame, app);
+    }
+    if matches!(
+        app.input_mode,
+        InputMode::Note | InputMode::Snooze | InputMode::SavedViewName
+    ) {
+        render_local_input_overlay(frame, app);
     }
 }
 
@@ -70,6 +82,23 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState) {
         )),
         InputMode::Composer => Line::from("composer active in Thread view"),
         InputMode::UserInput => Line::from("user-input answer active in Thread view"),
+        InputMode::ScratchTitle => Line::from(format!(
+            "new scratch> {}  · Enter create · Esc cancel",
+            app.input_buffer
+        )),
+        InputMode::Snooze => Line::from(format!(
+            "snooze> {}  · examples 15m / 1h / 1d · Enter apply · Esc cancel",
+            app.input_buffer
+        )),
+        InputMode::Note => Line::from(format!(
+            "note> {}  · Enter save · Esc cancel",
+            truncate(&app.input_buffer, 60)
+        )),
+        InputMode::SavedViewName => Line::from(format!(
+            "view name> {}  · Enter save · Esc cancel",
+            truncate(&app.input_buffer, 60)
+        )),
+        InputMode::GoalObjective => Line::from("Goal objective editor active in Thread view"),
         InputMode::Normal => {
             if let Some(error) = &app.backend_status.error {
                 Line::from(format!(
@@ -98,6 +127,8 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState) {
             Span::raw("p pin  "),
             Span::raw("e alias  "),
             Span::raw("x ack  "),
+            Span::raw("s snooze  "),
+            Span::raw("= bind / 1–9 jump  "),
             Span::raw("! shared-worktree  "),
             Span::raw("? help"),
         ]),
@@ -225,6 +256,25 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
                     .filter(|request| request.thread_id == thread.id)
                     .count()
             )),
+            Line::from(format!(
+                "Planning note: {}",
+                app.work_card_for_thread(&thread.id)
+                    .and_then(|card| card.overlay.note.as_deref())
+                    .unwrap_or("<none>")
+            )),
+            Line::from(format!(
+                "Planning stage: {}",
+                app.work_card_for_thread(&thread.id)
+                    .map(|card| card.stage.label())
+                    .unwrap_or("<unprojected>")
+            )),
+            Line::from(format!(
+                "Stage reason: {}",
+                app.work_card_for_thread(&thread.id)
+                    .map(|card| card.stage_reason.as_str())
+                    .unwrap_or("<unprojected>")
+            )),
+            Line::from(format!("Goal: {}", goal_summary(app, &thread.id.0))),
         ]
     } else {
         vec![Line::from("No thread selected")]
@@ -287,12 +337,40 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
         .wrap(Wrap { trim: false })
 }
 
+fn goal_summary(app: &AppState, thread_id: &str) -> String {
+    if let Some(goal) = app.goals.get(thread_id) {
+        let budget = goal
+            .token_budget
+            .map(|budget| format!("{}/{budget}", goal.tokens_used))
+            .unwrap_or_else(|| goal.tokens_used.to_string());
+        return format!(
+            "{} · {} · tokens={} · {}s",
+            goal.status.label(),
+            truncate(&goal.objective, 42),
+            budget,
+            goal.time_used_seconds
+        );
+    }
+    if app
+        .backend_status
+        .optional_capabilities_missing
+        .iter()
+        .any(|capability| capability == "thread/goal/get")
+    {
+        return "unavailable on this App Server".into();
+    }
+    if app.goal_checked.contains(thread_id) {
+        return "none".into();
+    }
+    "probing…".into()
+}
+
 fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
     let area = frame.area();
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),
+            Constraint::Length(5),
             Constraint::Min(4),
             Constraint::Length(4),
             Constraint::Length(1),
@@ -304,7 +382,11 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
         .map(ThreadSummary::display_title)
         .unwrap_or("Unknown thread");
     frame.render_widget(
-        Paragraph::new(format!("{title}\n{thread_id}")).block(Block::bordered().title(" Thread ")),
+        Paragraph::new(format!(
+            "{title}\n{thread_id}\nGoal: {}",
+            goal_summary(app, thread_id)
+        ))
+        .block(Block::bordered().title(" Thread ")),
         chunks[0],
     );
 
@@ -372,7 +454,32 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
         chunks[1],
     );
 
-    let (composer_title, composer_text) = if app.input_mode == InputMode::UserInput {
+    let (composer_title, composer_text) = if app.input_mode == InputMode::GoalObjective {
+        (
+            " Goal objective · Enter set · Esc cancel ",
+            format!("objective> {}", app.input_buffer),
+        )
+    } else if app.goal_actions_open {
+        let text = app.current_goal().map_or_else(
+            || "No Goal observed. e/Enter creates one with ACTIVE status.".into(),
+            |goal| {
+                format!(
+                    "{}\nstatus={} · tokens={}{} · elapsed={}s",
+                    goal.objective,
+                    goal.status.label(),
+                    goal.tokens_used,
+                    goal.token_budget
+                        .map(|budget| format!("/{budget}"))
+                        .unwrap_or_default(),
+                    goal.time_used_seconds
+                )
+            },
+        );
+        (
+            " Goal actions · e objective · p pause · r resume · c clear · Esc close ",
+            text,
+        )
+    } else if app.input_mode == InputMode::UserInput {
         let question = app.current_user_input_question();
         let displayed_answer = if question.is_some_and(|question| question.is_secret) {
             "*".repeat(app.input_buffer.chars().count())
@@ -412,10 +519,243 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
     frame.render_widget(composer, chunks[2]);
     frame.render_widget(
         Paragraph::new(
-            "a composer · y accept · n decline · c cancel · i answer · Ctrl+C interrupt",
+            "a composer · g goal · y accept · n decline · c cancel · i answer · Ctrl+C interrupt",
         ),
         chunks[3],
     );
+}
+
+fn render_board(frame: &mut Frame<'_>, app: &AppState) {
+    let area = frame.area();
+    let outer = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(4), Constraint::Length(2)])
+        .split(area);
+    let view = app.active_saved_view();
+
+    match view.layout {
+        SavedViewLayout::Board if area.width >= 120 => {
+            let columns = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints([Constraint::Ratio(1, 5); 5])
+                .split(outer[0]);
+            let filtered = apply_saved_view(&app.work_cards, &view);
+
+            for (stage_index, stage) in WorkflowStage::ALL.iter().enumerate() {
+                let stage_cards = filtered
+                    .iter()
+                    .copied()
+                    .filter(|card| card.stage == *stage)
+                    .collect::<Vec<_>>();
+                let lines = stage_cards
+                    .iter()
+                    .enumerate()
+                    .map(|(index, card)| {
+                        let selected =
+                            stage_index == app.board_stage_index && index == app.board_selected;
+                        let attention = if card.needs_you() { "!" } else { " " };
+                        let pin = if card.overlay.pinned { "*" } else { " " };
+                        let goal = card
+                            .goal
+                            .as_ref()
+                            .map(|goal| format!(" [{}]", goal.status.label()))
+                            .unwrap_or_default();
+                        let text = format!(
+                            "{}{}{} {}{}",
+                            if selected { ">" } else { " " },
+                            pin,
+                            attention,
+                            truncate(&card.title, 20),
+                            goal
+                        );
+                        let style = if selected {
+                            Style::default().add_modifier(Modifier::REVERSED)
+                        } else {
+                            Style::default()
+                        };
+                        Line::from(Span::styled(text, style))
+                    })
+                    .collect::<Vec<_>>();
+                frame.render_widget(
+                    Paragraph::new(lines)
+                        .block(Block::bordered().title(format!(
+                            " {} ({}) ",
+                            stage.label(),
+                            stage_cards.len()
+                        )))
+                        .wrap(Wrap { trim: false }),
+                    columns[stage_index],
+                );
+            }
+        }
+        SavedViewLayout::Board => {
+            let stage = WorkflowStage::ALL[app.board_stage_index % WorkflowStage::ALL.len()];
+            let lines = app
+                .visible_planning_cards()
+                .iter()
+                .enumerate()
+                .map(|(index, card)| planning_card_line(card, index == app.board_selected))
+                .collect::<Vec<_>>();
+            frame.render_widget(
+                Paragraph::new(lines)
+                    .block(Block::bordered().title(format!(
+                        " {} · {} · {}/{} ",
+                        view.name,
+                        stage.label(),
+                        app.board_stage_index + 1,
+                        WorkflowStage::ALL.len()
+                    )))
+                    .wrap(Wrap { trim: false }),
+                outer[0],
+            );
+        }
+        SavedViewLayout::List | SavedViewLayout::ReviewQueue => {
+            let cards = app.visible_planning_cards();
+            let mut lines = Vec::new();
+            let mut previous_group = String::new();
+            for (index, card) in cards.iter().enumerate() {
+                let group = saved_view_group_key(card, view.group_by.as_deref());
+                if !group.is_empty() && group != previous_group {
+                    lines.push(Line::from(format!("── {group} ──")));
+                    previous_group = group;
+                }
+                lines.push(planning_card_line(card, index == app.board_selected));
+            }
+            if lines.is_empty() {
+                lines.push(Line::from("No cards match this Saved View."));
+            }
+            frame.render_widget(
+                Paragraph::new(lines)
+                    .block(Block::bordered().title(format!(
+                        " {} · {} ",
+                        view.name,
+                        view.layout.label()
+                    )))
+                    .wrap(Wrap { trim: false }),
+                outer[0],
+            );
+        }
+    }
+
+    let input = if app.input_mode == InputMode::ScratchTitle {
+        format!(
+            "new scratch> {} · Enter create · Esc cancel",
+            app.input_buffer
+        )
+    } else if app.input_mode == InputMode::Snooze {
+        format!(
+            "snooze> {} · 15m / 1h / 1d · Enter apply · Esc cancel",
+            app.input_buffer
+        )
+    } else if app.input_mode == InputMode::Note {
+        format!(
+            "note> {} · Enter save · Esc cancel",
+            truncate(&app.input_buffer, 80)
+        )
+    } else if app.input_mode == InputMode::SavedViewName {
+        format!(
+            "view name> {} · Enter save · Esc cancel",
+            truncate(&app.input_buffer, 80)
+        )
+    } else if app.hot_slot_bind_pending {
+        "bind hot slot: press 1–9 · Esc cancels other input only".into()
+    } else if let Some(error) = &app.planning_store_error {
+        format!("LOCAL STORE DEGRADED · {}", truncate(error, 80))
+    } else {
+        format!(
+            "h/l stage · j/k item · Tab view · Enter open · Space attention · s snooze · = bind · 1–9 jump · n scratch · view {}/{}",
+            app.planning_view_index + 1,
+            app.planning_views().len()
+        )
+    };
+    frame.render_widget(Paragraph::new(input), outer[1]);
+}
+
+fn planning_card_line(card: &crate::planning::WorkCardProjection, selected: bool) -> Line<'static> {
+    let attention = if card.needs_you() {
+        card.attention
+            .iter()
+            .map(crate::planning::PlanningAttention::label)
+            .collect::<Vec<_>>()
+            .join(",")
+    } else if card.snoozed && !card.attention.is_empty() {
+        "snoozed".into()
+    } else {
+        "-".into()
+    };
+    let source = match card.anchor.kind {
+        crate::planning::SourceKind::ScratchWork => "scratch",
+        crate::planning::SourceKind::CodexThread => "thread",
+        crate::planning::SourceKind::ForgeWorkItem => "forge",
+        _ => "link",
+    };
+    let goal = card
+        .goal
+        .as_ref()
+        .map(|goal| goal.status.label())
+        .unwrap_or("-");
+    let text = format!(
+        "{} {:7} {:10} {:12} {:8} {}",
+        if selected { ">" } else { " " },
+        card.stage.label(),
+        truncate(&attention, 10),
+        truncate(goal, 12),
+        source,
+        card.title
+    );
+    let style = if selected {
+        Style::default().add_modifier(Modifier::REVERSED)
+    } else {
+        Style::default()
+    };
+    Line::from(Span::styled(text, style))
+}
+
+fn render_scratch(frame: &mut Frame<'_>, app: &AppState, scratch_id: &str) {
+    let area = frame.area();
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(4), Constraint::Length(1)])
+        .split(area);
+    let lines = if let Some(scratch) = app
+        .planning_snapshot
+        .scratch
+        .iter()
+        .find(|scratch| scratch.id == scratch_id)
+    {
+        vec![
+            Line::from(format!("Scratch: {}", scratch.id)),
+            Line::from(format!("Title: {}", scratch.title)),
+            Line::from(format!(
+                "State: {:?} · priority={}",
+                scratch.state,
+                scratch
+                    .priority
+                    .map_or_else(|| "none".into(), |value| value.to_string())
+            )),
+            Line::from(format!(
+                "Workspace: {}",
+                scratch.workspace.as_deref().unwrap_or("<none>")
+            )),
+            Line::from(format!(
+                "Note: {}",
+                scratch.note.as_deref().unwrap_or("<empty>")
+            )),
+            Line::from(""),
+            Line::from(
+                "Local ScratchWork only. It is not a Codex thread, Git work item, or forge issue.",
+            ),
+        ]
+    } else {
+        vec![Line::from("ScratchWork no longer exists.")]
+    };
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(Block::bordered().title(" ScratchWork "))
+            .wrap(Wrap { trim: false }),
+        chunks[0],
+    );
+    frame.render_widget(Paragraph::new("Esc back to Board"), chunks[1]);
 }
 
 fn render_workspace(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
@@ -632,12 +972,78 @@ fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
     );
 }
 
+fn render_context_actions(frame: &mut Frame<'_>, app: &AppState) {
+    let choices = app.context_choices();
+    let lines = choices
+        .iter()
+        .enumerate()
+        .map(|(index, choice)| {
+            let selected = index == app.context_selected;
+            let style = if selected {
+                Style::default().add_modifier(Modifier::REVERSED)
+            } else {
+                Style::default()
+            };
+            Line::from(Span::styled(
+                format!("{} {}", if selected { ">" } else { " " }, choice.label()),
+                style,
+            ))
+        })
+        .chain(std::iter::once(Line::from(
+            "j/k move · Enter execute · Esc close",
+        )))
+        .collect::<Vec<_>>();
+    let height = u16::try_from(lines.len().saturating_add(2))
+        .unwrap_or(12)
+        .clamp(6, 14);
+    let area = centered_fixed(58, height, frame.area());
+    frame.render_widget(Clear, area);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(Block::bordered().title(" Context Actions "))
+            .wrap(Wrap { trim: false }),
+        area,
+    );
+}
+
+fn render_local_input_overlay(frame: &mut Frame<'_>, app: &AppState) {
+    let (title, hint) = match app.input_mode {
+        InputMode::Note => (" Local note ", "Enter save · Esc cancel"),
+        InputMode::Snooze => (" Snooze ", "15m / 1h / 1d · Enter apply · Esc cancel"),
+        InputMode::SavedViewName => (" Save current view ", "Enter save · Esc cancel"),
+        _ => return,
+    };
+    let area = centered_fixed(64, 7, frame.area());
+    frame.render_widget(Clear, area);
+    frame.render_widget(
+        Paragraph::new(vec![
+            Line::from(app.input_buffer.clone()),
+            Line::from(""),
+            Line::from(hint),
+        ])
+        .block(Block::bordered().title(title))
+        .wrap(Wrap { trim: false }),
+        area,
+    );
+}
+
+fn centered_fixed(width: u16, height: u16, area: Rect) -> Rect {
+    let width = width.min(area.width.saturating_sub(2)).max(1);
+    let height = height.min(area.height.saturating_sub(2)).max(1);
+    Rect {
+        x: area.x + area.width.saturating_sub(width) / 2,
+        y: area.y + area.height.saturating_sub(height) / 2,
+        width,
+        height,
+    }
+}
+
 fn render_help(frame: &mut Frame<'_>) {
     let area = centered_rect(70, 70, frame.area());
     frame.render_widget(Clear, area);
     frame.render_widget(
         Paragraph::new(vec![
-            Line::from("Global: ? help · Ctrl+K palette · / search · Esc back"),
+            Line::from("Global: ? help · Ctrl+K palette · / search · . context · Esc back"),
             Line::from(
                 "Registry: j/k · Enter · Space attention · / search · p pin · e alias · x ack",
             ),
@@ -646,6 +1052,11 @@ fn render_help(frame: &mut Frame<'_>) {
             ),
             Line::from("Review: j/k file · w word-diff · e editor · PageUp/PageDown · Esc"),
             Line::from("Workspace: Git identity/status only · r review · Esc"),
+            Line::from(
+                "Board: h/l stage · j/k item · Space attention · s snooze · = bind · 1–9 hot slot",
+            ),
+            Line::from("Board: Tab Saved View · Enter open · a Quick Prompt · n Scratch"),
+            Line::from("Scratch: local-only detail · Esc Board"),
             Line::from(
                 "Authority: Codex/Git/Forge stay canonical; codex-tui stores operator state only.",
             ),
