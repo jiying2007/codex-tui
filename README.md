@@ -136,7 +136,7 @@ cargo run -- doctor codex
 cargo run -- --fake
 ```
 
-Normal startup launches a local read-only `codex app-server --listen stdio://` registry connection. It lists thread metadata, tracks official runtime/attention status, supports local fuzzy filtering, pin/alias/unread/attention acknowledgement, and does not hydrate full transcripts.
+Normal startup launches a local `codex app-server --listen stdio://` connection after the first UI frame. Mission Control stays metadata-first; opening a thread loads only the recent conversation page. Thread View supports paginated history, persistent local drafts, turn start/steer/interrupt, approvals and user-input requests.
 
 `--fake` is a deterministic development/fixture mode; it is never an automatic fallback for a failed real backend.
 
@@ -144,7 +144,8 @@ Normal startup launches a local read-only `codex app-server --listen stdio://` r
 
 - M0 local control-plane skeleton: implemented and merged.
 - M1 read-only Codex thread registry: implemented in the v0.1.x line.
-- M2 daily conversation control: next milestone.
+- M2 daily conversation control: implemented in the v0.1.x line.
+- M3 Git context and review: next milestone.
 
 Architecture and product research are archived under `docs/research/`.
 Implementation design lives under `docs/design/`.
@@ -161,3 +162,4 @@ See:
 - `docs/roadmap-v1.md`
 - `docs/implementation/m0-bootstrap.md`
 - `docs/implementation/m1-read-only-registry.md`
+- `docs/implementation/m2-daily-conversation-control.md`
