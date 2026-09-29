@@ -168,6 +168,7 @@ pub struct WorkCardProjection {
     pub snoozed: bool,
     pub overlay: WorkCardOverlay,
     pub links: Vec<WorkCardLink>,
+    pub goal: Option<GoalObservation>,
     pub provenance: Vec<Provenance>,
 }
 
@@ -334,6 +335,12 @@ fn card_matches_filter(card: &WorkCardProjection, filter: &str) -> bool {
                 .iter()
                 .any(|value| value.eq_ignore_ascii_case(tag));
         }
+        if let Some(goal) = token.strip_prefix("goal:") {
+            return card.goal.as_ref().is_some_and(|observation| {
+                observation.objective.to_ascii_lowercase().contains(goal)
+                    || observation.status.wire().to_ascii_lowercase().contains(goal)
+            });
+        }
         if let Some(source) = token.strip_prefix("source:") {
             return match source {
                 "scratch" => card.anchor.kind == SourceKind::ScratchWork,
@@ -344,10 +351,14 @@ fn card_matches_filter(card: &WorkCardProjection, filter: &str) -> bool {
         }
 
         let haystack = format!(
-            "{} {} {} {}",
+            "{} {} {} {} {}",
             card.title,
             card.workspace.as_deref().unwrap_or(""),
             card.stage.label(),
+            card.goal
+                .as_ref()
+                .map(|goal| goal.objective.as_str())
+                .unwrap_or(""),
             card.attention
                 .iter()
                 .map(PlanningAttention::label)
@@ -514,6 +525,7 @@ pub fn reconcile_thread_card_with_goal(
         snoozed,
         overlay: local.overlay,
         links: local.links,
+        goal: goal.cloned(),
         provenance,
     }
 }
@@ -568,6 +580,7 @@ pub fn reconcile_scratch_card_with_local(
         snoozed,
         overlay: record.overlay,
         links: record.links,
+        goal: None,
         provenance: vec![Provenance {
             source: "local".into(),
             observed_at_unix_ms: Some(scratch.updated_at_unix_ms),
