@@ -5,6 +5,7 @@ pub mod codex_protocol;
 pub mod conversation;
 pub mod domain;
 pub mod git;
+pub mod goal;
 pub mod keymap;
 pub mod planning;
 pub mod sqlite_store;
