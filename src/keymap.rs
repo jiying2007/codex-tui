@@ -69,6 +69,7 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
         (ViewKind::Registry, KeyCode::Char(c @ '1'..='9')) => {
             Some(Command::HotSlot(c.to_digit(10)? as u8))
         }
+        (ViewKind::Thread, KeyCode::Char('a')) => Some(Command::QuickPrompt),
         (ViewKind::Thread, KeyCode::Char('r')) => Some(Command::Review),
         (ViewKind::Thread, KeyCode::Char('w')) => Some(Command::Workspace),
         (ViewKind::Thread, KeyCode::Char('g')) => Some(Command::Goal),
