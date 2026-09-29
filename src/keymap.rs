@@ -102,6 +102,11 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
         (ViewKind::Board, KeyCode::Char(' ')) => Some(Command::NextAttention),
         (ViewKind::Board, KeyCode::Char('a')) => Some(Command::QuickPrompt),
         (ViewKind::Board, KeyCode::Char('n')) => Some(Command::New),
+        (ViewKind::Board, KeyCode::Char('s')) => Some(Command::Snooze),
+        (ViewKind::Board, KeyCode::Char('=')) => Some(Command::BeginHotSlotBind),
+        (ViewKind::Board, KeyCode::Char(c @ '1'..='9')) => {
+            Some(Command::HotSlot(c.to_digit(10)? as u8))
+        }
         (ViewKind::Board, KeyCode::Char('r')) => Some(Command::Review),
         (ViewKind::Board, KeyCode::Char('w')) => Some(Command::Workspace),
         (ViewKind::Board, KeyCode::Tab) => Some(Command::CycleSavedView),
