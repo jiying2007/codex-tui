@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 use std::fmt;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -15,6 +16,45 @@ impl fmt::Display for ThreadId {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(&self.0)
     }
+}
+
+pub type ThreadIdentity = ThreadId;
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CodexTarget {
+    pub codex_home: Option<String>,
+    pub backend_fingerprint: String,
+    pub platform: String,
+    #[serde(default)]
+    pub capabilities: BTreeSet<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum WorkspaceSource {
+    CodexProject,
+    GitRepository,
+    WorkingDirectory,
+    ExplicitRegistration,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorkspaceIdentity {
+    pub stable_key: String,
+    pub source: WorkspaceSource,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub struct LocalRepoIdentity {
+    pub git_common_dir: String,
+    pub primary_root: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WorktreeIdentity {
+    pub repo: LocalRepoIdentity,
+    pub canonical_path: String,
+    pub branch: Option<String>,
+    pub managed_by_codex_tui: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -90,5 +130,33 @@ impl Default for ThreadUiState {
             scroll: 0,
             follow: true,
         }
+    }
+}
+
+#[cfg(test)]
+mod identity_tests {
+    use super::*;
+
+    #[test]
+    fn repository_identity_is_distinct_from_worktree_identity() {
+        let repo = LocalRepoIdentity {
+            git_common_dir: "/repo/.git".into(),
+            primary_root: "/repo".into(),
+        };
+        let left = WorktreeIdentity {
+            repo: repo.clone(),
+            canonical_path: "/repo".into(),
+            branch: Some("main".into()),
+            managed_by_codex_tui: false,
+        };
+        let right = WorktreeIdentity {
+            repo,
+            canonical_path: "/tmp/worktrees/feature".into(),
+            branch: Some("feature".into()),
+            managed_by_codex_tui: true,
+        };
+
+        assert_eq!(left.repo, right.repo);
+        assert_ne!(left.canonical_path, right.canonical_path);
     }
 }
