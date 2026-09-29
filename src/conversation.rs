@@ -101,6 +101,39 @@ impl ConversationState {
         self.loading = false;
         self.error = None;
     }
+
+    pub fn prepend_page(&mut self, page: ConversationPage) {
+        let existing_turns = self
+            .turns
+            .iter()
+            .map(|turn| turn.id.as_str())
+            .collect::<std::collections::BTreeSet<_>>();
+        let mut turns = page
+            .turns
+            .into_iter()
+            .filter(|turn| !existing_turns.contains(turn.id.as_str()))
+            .collect::<Vec<_>>();
+        turns.append(&mut self.turns);
+        self.turns = turns;
+
+        let existing_items = self
+            .items
+            .iter()
+            .map(|item| item.item_id.as_str())
+            .collect::<std::collections::BTreeSet<_>>();
+        let mut items = page
+            .items
+            .into_iter()
+            .filter(|item| !existing_items.contains(item.item_id.as_str()))
+            .collect::<Vec<_>>();
+        items.append(&mut self.items);
+        self.items = items;
+
+        self.next_turn_cursor = page.next_turn_cursor;
+        self.next_item_cursor = page.next_item_cursor;
+        self.loading = false;
+        self.error = None;
+    }
 }
 
 pub fn parse_thread_title(result: &Value) -> Option<String> {
@@ -370,6 +403,82 @@ mod tests {
         assert_eq!(items[1].kind, ConversationItemKind::Assistant);
         assert_eq!(next_turn.as_deref(), Some("older-turns"));
         assert_eq!(next_item.as_deref(), Some("older-items"));
+    }
+
+    #[test]
+    fn older_pages_prepend_without_duplicate_turns_or_items() {
+        let mut state = ConversationState::loading(ThreadId::new("thread-1"));
+        state.replace_page(ConversationPage {
+            thread_id: ThreadId::new("thread-1"),
+            title: Some("title".into()),
+            turns: vec![ConversationTurn {
+                id: "turn-2".into(),
+                status: "completed".into(),
+                started_at: None,
+                completed_at: None,
+                error: None,
+            }],
+            items: vec![ConversationItem {
+                turn_id: "turn-2".into(),
+                item_id: "item-2".into(),
+                kind: ConversationItemKind::Assistant,
+                text: "new".into(),
+                status: None,
+            }],
+            next_turn_cursor: Some("cursor-1".into()),
+            next_item_cursor: Some("cursor-1".into()),
+        });
+        state.prepend_page(ConversationPage {
+            thread_id: ThreadId::new("thread-1"),
+            title: None,
+            turns: vec![
+                ConversationTurn {
+                    id: "turn-1".into(),
+                    status: "completed".into(),
+                    started_at: None,
+                    completed_at: None,
+                    error: None,
+                },
+                ConversationTurn {
+                    id: "turn-2".into(),
+                    status: "completed".into(),
+                    started_at: None,
+                    completed_at: None,
+                    error: None,
+                },
+            ],
+            items: vec![
+                ConversationItem {
+                    turn_id: "turn-1".into(),
+                    item_id: "item-1".into(),
+                    kind: ConversationItemKind::User,
+                    text: "old".into(),
+                    status: None,
+                },
+                ConversationItem {
+                    turn_id: "turn-2".into(),
+                    item_id: "item-2".into(),
+                    kind: ConversationItemKind::Assistant,
+                    text: "duplicate".into(),
+                    status: None,
+                },
+            ],
+            next_turn_cursor: None,
+            next_item_cursor: None,
+        });
+
+        assert_eq!(
+            state.turns.iter().map(|turn| turn.id.as_str()).collect::<Vec<_>>(),
+            vec!["turn-1", "turn-2"]
+        );
+        assert_eq!(
+            state
+                .items
+                .iter()
+                .map(|item| item.item_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["item-1", "item-2"]
+        );
     }
 
     #[test]
