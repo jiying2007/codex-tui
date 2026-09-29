@@ -112,9 +112,10 @@ async fn run_app(fake_mode: bool) -> Result<()> {
 
     let mut terminal = TerminalSession::enter(config.ui.mouse)?;
     let mut last_fake_tick = Instant::now();
+    let mut needs_render = true;
 
     while !app.should_quit {
-        drain_registry(&mut app, registry.as_mut());
+        needs_render |= drain_registry(&mut app, registry.as_mut());
 
         if let Some(fake) = fake_backend.as_mut()
             && last_fake_tick.elapsed() >= Duration::from_millis(900)
@@ -123,19 +124,31 @@ async fn run_app(fake_mode: bool) -> Result<()> {
             reduce(&mut app, Action::ReplaceThreads(snapshot.threads));
             reduce(&mut app, Action::BackendStatus(snapshot.status));
             last_fake_tick = Instant::now();
+            needs_render = true;
         }
 
-        terminal
-            .terminal_mut()
-            .draw(|frame| ui::render(frame, &app))?;
+        if needs_render {
+            terminal
+                .terminal_mut()
+                .draw(|frame| ui::render(frame, &app))?;
+            needs_render = false;
+        }
 
         while event::poll(Duration::ZERO)? {
-            if let Event::Key(key) = event::read()? {
-                for effect in handle_key(&mut app, key) {
-                    if effect == Effect::PersistOperatorState {
-                        store.save_state(&app.to_local_state())?;
+            match event::read()? {
+                Event::Key(key) => {
+                    let effects = handle_key(&mut app, key);
+                    if !effects.is_empty() || matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
+                        needs_render = true;
+                    }
+                    for effect in effects {
+                        if effect == Effect::PersistOperatorState {
+                            store.save_state(&app.to_local_state())?;
+                        }
                     }
                 }
+                Event::Resize(_, _) => needs_render = true,
+                _ => {}
             }
         }
 
@@ -146,14 +159,17 @@ async fn run_app(fake_mode: bool) -> Result<()> {
     Ok(())
 }
 
-fn drain_registry(app: &mut AppState, registry: Option<&mut RegistryHandle>) {
+fn drain_registry(app: &mut AppState, registry: Option<&mut RegistryHandle>) -> bool {
     let Some(registry) = registry else {
-        return;
+        return false;
     };
+    let mut changed = false;
     while let Some(snapshot) = registry.try_recv() {
         reduce(app, Action::ReplaceThreads(snapshot.threads));
         reduce(app, Action::BackendStatus(snapshot.status));
+        changed = true;
     }
+    changed
 }
 
 fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
