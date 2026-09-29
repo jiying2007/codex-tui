@@ -6,6 +6,10 @@ use crate::conversation::{
 use crate::domain::{AttentionReason, RuntimeStatus, ThreadId, ThreadSummary, ThreadUiState};
 use crate::git::{GitContext, GitReview};
 use crate::goal::{GoalObservation, GoalStatus};
+use crate::operation::{
+    ManagedWorktreeRecord, MutationScope, OperationPlan, OperationReceipt, OperationState,
+    mutation_scope_for_thread, now_unix_ms,
+};
 use crate::planning::{
     PlanningSnapshot, ReconcileInput, SavedView, SavedViewLayout, SourceKind, SourceRef,
     WorkCardProjection, WorkflowStage, apply_saved_view, builtin_saved_views,
@@ -20,6 +24,7 @@ pub enum View {
     Thread(ThreadId),
     Review(ThreadId),
     Workspace(ThreadId),
+    ManagedWorktrees(ThreadId),
     Board,
     Scratch(String),
 }
@@ -30,6 +35,7 @@ pub enum ViewKind {
     Thread,
     Review,
     Workspace,
+    ManagedWorktrees,
     Board,
     Scratch,
 }
@@ -46,6 +52,10 @@ pub enum InputMode {
     Note,
     SavedViewName,
     GoalObjective,
+    WorktreeCreateBranch,
+    WorktreeCreatePath,
+    WorktreeCreateStartPoint,
+    WorktreeDeleteBranch,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -92,6 +102,17 @@ pub enum Action {
     GoalCleared(ThreadId),
     OpenGoalActions,
     CloseGoalActions,
+    OpenManagedWorktrees,
+    ManagedWorktreesLoaded(Vec<ManagedWorktreeRecord>),
+    MutationReceipt(Box<OperationReceipt>),
+    MutationNotice(String),
+    MoveManagedWorktree(i32),
+    BeginCreateWorktree,
+    BeginAdoptCurrentWorktree,
+    BeginRemoveManagedWorktree,
+    BeginDeleteBranch,
+    ConfirmPendingOperation,
+    CancelPendingOperation,
     BeginGoalObjective,
     SetGoalStatus(GoalStatus),
     ClearGoal,
@@ -191,6 +212,8 @@ pub enum Effect {
         status: Option<GoalStatus>,
     },
     ClearGoal(ThreadId),
+    RefreshManagedWorktrees,
+    ExecuteOperation(Box<OperationPlan>),
     ProbeGit {
         thread_id: ThreadId,
         cwd: String,
@@ -241,6 +264,14 @@ pub struct AppState {
     pub goals: BTreeMap<String, GoalObservation>,
     pub goal_checked: BTreeSet<String>,
     pub goal_actions_open: bool,
+    pub managed_worktrees: Vec<ManagedWorktreeRecord>,
+    pub managed_selected: usize,
+    pub managed_return_view: Option<View>,
+    pub pending_operation: Option<OperationPlan>,
+    pub recent_operations: Vec<OperationReceipt>,
+    pub mutation_notice: Option<String>,
+    pub create_worktree_branch: Option<String>,
+    pub create_worktree_path: Option<String>,
     pub planning_store_error: Option<String>,
     pub review_return_view: Option<View>,
     pub workspace_return_view: Option<View>,
@@ -288,6 +319,14 @@ impl AppState {
             goals: BTreeMap::new(),
             goal_checked: BTreeSet::new(),
             goal_actions_open: false,
+            managed_worktrees: vec![],
+            managed_selected: 0,
+            managed_return_view: None,
+            pending_operation: None,
+            recent_operations: vec![],
+            mutation_notice: None,
+            create_worktree_branch: None,
+            create_worktree_path: None,
             planning_store_error: None,
             review_return_view: None,
             workspace_return_view: None,
@@ -326,6 +365,7 @@ impl AppState {
             View::Thread(_) => ViewKind::Thread,
             View::Review(_) => ViewKind::Review,
             View::Workspace(_) => ViewKind::Workspace,
+            View::ManagedWorktrees(_) => ViewKind::ManagedWorktrees,
             View::Board => ViewKind::Board,
             View::Scratch(_) => ViewKind::Scratch,
         }
@@ -343,7 +383,10 @@ impl AppState {
     pub fn current_thread_id(&self) -> Option<&ThreadId> {
         match &self.view {
             View::Registry => None,
-            View::Thread(id) | View::Review(id) | View::Workspace(id) => Some(id),
+            View::Thread(id)
+            | View::Review(id)
+            | View::Workspace(id)
+            | View::ManagedWorktrees(id) => Some(id),
             View::Board | View::Scratch(_) => None,
         }
     }
@@ -365,6 +408,44 @@ impl AppState {
     pub fn current_goal(&self) -> Option<&GoalObservation> {
         let thread_id = self.current_thread_id()?;
         self.goals.get(&thread_id.0)
+    }
+
+    pub fn visible_managed_worktrees(&self) -> Vec<&ManagedWorktreeRecord> {
+        let repo = self
+            .current_thread_id()
+            .and_then(|thread_id| self.git_context(thread_id))
+            .and_then(|context| context.repo.as_ref());
+        self.managed_worktrees
+            .iter()
+            .filter(|record| repo.is_none_or(|repo| &record.repo == repo))
+            .collect()
+    }
+
+    pub fn selected_managed_worktree(&self) -> Option<&ManagedWorktreeRecord> {
+        self.visible_managed_worktrees()
+            .get(self.managed_selected)
+            .copied()
+    }
+
+    pub fn active_mutation_scopes(&self) -> Vec<MutationScope> {
+        self.threads
+            .iter()
+            .filter(|thread| {
+                matches!(
+                    thread.runtime,
+                    RuntimeStatus::Working | RuntimeStatus::WaitingHuman
+                ) || self.goals.get(&thread.id.0).is_some_and(|goal| {
+                    matches!(
+                        goal.status,
+                        GoalStatus::Active
+                            | GoalStatus::Blocked
+                            | GoalStatus::UsageLimited
+                            | GoalStatus::BudgetLimited
+                    )
+                })
+            })
+            .map(|thread| mutation_scope_for_thread(thread, self.git_context(&thread.id)))
+            .collect()
     }
 
     pub fn current_review(&self) -> Option<&GitReview> {
