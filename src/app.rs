@@ -43,6 +43,7 @@ pub enum InputMode {
     ScratchTitle,
     Snooze,
     Note,
+    SavedViewName,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -54,6 +55,8 @@ pub enum ContextChoice {
     ScratchReady,
     ScratchDone,
     DeleteScratch,
+    SaveCurrentView,
+    DeleteCurrentView,
 }
 
 impl ContextChoice {
@@ -66,6 +69,8 @@ impl ContextChoice {
             Self::ScratchReady => "Scratch → Ready",
             Self::ScratchDone => "Scratch → Done",
             Self::DeleteScratch => "Delete local ScratchWork",
+            Self::SaveCurrentView => "Save current view as…",
+            Self::DeleteCurrentView => "Delete current SavedView",
         }
     }
 }
@@ -160,6 +165,12 @@ pub enum Effect {
     DeleteScratch {
         scratch_id: String,
     },
+    SaveSavedView {
+        view: SavedView,
+    },
+    DeleteSavedView {
+        view_id: String,
+    },
     SetHotSlot {
         slot: u8,
         target: SourceRef,
@@ -221,6 +232,7 @@ pub struct AppState {
     pub new_scratch_workspace: Option<String>,
     pub snooze_target: Option<SourceRef>,
     pub note_target: Option<SourceRef>,
+    pub saved_view_template: Option<SavedView>,
     pub context_open: bool,
     pub context_selected: usize,
     pub hot_slot_bind_pending: bool,
@@ -264,6 +276,7 @@ impl AppState {
             new_scratch_workspace: None,
             snooze_target: None,
             note_target: None,
+            saved_view_template: None,
             context_open: false,
             context_selected: 0,
             hot_slot_bind_pending: false,
@@ -387,21 +400,27 @@ impl AppState {
     }
 
     pub fn context_choices(&self) -> Vec<ContextChoice> {
-        let Some(target) = self.selected_local_target() else {
-            return vec![];
-        };
-        let mut choices = vec![
-            ContextChoice::Snooze,
-            ContextChoice::EditNote,
-            ContextChoice::Bookmark,
-        ];
-        if target.kind == SourceKind::ScratchWork {
+        let mut choices = Vec::new();
+        if let Some(target) = self.selected_local_target() {
             choices.extend([
-                ContextChoice::ScratchInbox,
-                ContextChoice::ScratchReady,
-                ContextChoice::ScratchDone,
-                ContextChoice::DeleteScratch,
+                ContextChoice::Snooze,
+                ContextChoice::EditNote,
+                ContextChoice::Bookmark,
             ]);
+            if target.kind == SourceKind::ScratchWork {
+                choices.extend([
+                    ContextChoice::ScratchInbox,
+                    ContextChoice::ScratchReady,
+                    ContextChoice::ScratchDone,
+                    ContextChoice::DeleteScratch,
+                ]);
+            }
+        }
+        if matches!(self.view, View::Board) {
+            choices.push(ContextChoice::SaveCurrentView);
+            if self.active_saved_view().id.starts_with("view:") {
+                choices.push(ContextChoice::DeleteCurrentView);
+            }
         }
         choices
     }
@@ -745,13 +764,28 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 state.context_open = false;
                 return vec![];
             };
-            let Some(target) = state.selected_local_target() else {
-                state.context_open = false;
-                return vec![];
-            };
             state.context_open = false;
             state.context_selected = 0;
 
+            if choice == ContextChoice::SaveCurrentView {
+                let mut template = state.active_saved_view();
+                template.id.clear();
+                state.input_buffer = format!("{} Copy", template.name);
+                state.saved_view_template = Some(template);
+                state.input_mode = InputMode::SavedViewName;
+                return vec![];
+            }
+            if choice == ContextChoice::DeleteCurrentView {
+                let view_id = state.active_saved_view().id;
+                if view_id.starts_with("view:") {
+                    return vec![Effect::DeleteSavedView { view_id }];
+                }
+                return vec![];
+            }
+
+            let Some(target) = state.selected_local_target() else {
+                return vec![];
+            };
             match choice {
                 ContextChoice::Snooze => {
                     state.snooze_target = Some(target);
@@ -811,6 +845,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                         scratch_id: target.value,
                     }];
                 }
+                ContextChoice::SaveCurrentView | ContextChoice::DeleteCurrentView => unreachable!(),
             }
         }
         Action::BeginSnooze => {
@@ -1278,7 +1313,8 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::UserInput
             | InputMode::ScratchTitle
             | InputMode::Snooze
-            | InputMode::Note => {
+            | InputMode::Note
+            | InputMode::SavedViewName => {
                 state.input_buffer.push(character);
                 if state.input_mode == InputMode::Search {
                     state.filter.clone_from(&state.input_buffer);
@@ -1299,7 +1335,8 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::UserInput
             | InputMode::ScratchTitle
             | InputMode::Snooze
-            | InputMode::Note => {
+            | InputMode::Note
+            | InputMode::SavedViewName => {
                 state.input_buffer.pop();
                 if state.input_mode == InputMode::Search {
                     state.filter.clone_from(&state.input_buffer);
@@ -1318,6 +1355,21 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 state.input_mode = InputMode::Normal;
                 state.input_buffer.clear();
                 return vec![Effect::CreateScratch { title, workspace }];
+            }
+            if mode == InputMode::SavedViewName {
+                let name = state.input_buffer.trim().to_string();
+                let Some(mut view) = state.saved_view_template.take() else {
+                    state.input_mode = InputMode::Normal;
+                    state.input_buffer.clear();
+                    return vec![];
+                };
+                if name.is_empty() {
+                    return vec![];
+                }
+                view.name = name;
+                state.input_mode = InputMode::Normal;
+                state.input_buffer.clear();
+                return vec![Effect::SaveSavedView { view }];
             }
             if mode == InputMode::Note {
                 let text = state.input_buffer.trim().to_string();
@@ -1463,6 +1515,9 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
             if state.input_mode == InputMode::Note {
                 state.note_target = None;
+            }
+            if state.input_mode == InputMode::SavedViewName {
+                state.saved_view_template = None;
             }
             if state.input_mode == InputMode::Search {
                 state.filter.clone_from(&state.input_original);
@@ -2072,6 +2127,26 @@ mod tests {
             [Effect::CreateScratch { title, .. }] if title == "Investigate wake miss"
         ));
         assert_eq!(app.input_mode, InputMode::Normal);
+    }
+
+    #[test]
+    fn board_context_can_save_but_not_delete_builtin_views() {
+        let mut app = app();
+        reduce(&mut app, Action::OpenBoard);
+        let choices = app.context_choices();
+        assert!(choices.contains(&ContextChoice::SaveCurrentView));
+        assert!(!choices.contains(&ContextChoice::DeleteCurrentView));
+
+        reduce(&mut app, Action::OpenContext);
+        let save_index = app
+            .context_choices()
+            .iter()
+            .position(|choice| *choice == ContextChoice::SaveCurrentView)
+            .expect("save view action");
+        app.context_selected = save_index;
+        reduce(&mut app, Action::ExecuteContext);
+        assert_eq!(app.input_mode, InputMode::SavedViewName);
+        assert!(app.saved_view_template.is_some());
     }
 
     #[test]
