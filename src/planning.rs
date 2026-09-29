@@ -95,7 +95,7 @@ pub struct Provenance {
     pub degraded_reason: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkCardOverlay {
     pub title_override: Option<String>,
     pub note: Option<String>,
@@ -107,20 +107,6 @@ pub struct WorkCardOverlay {
     pub snooze_until_unix_ms: Option<u64>,
 }
 
-impl Default for WorkCardOverlay {
-    fn default() -> Self {
-        Self {
-            title_override: None,
-            note: None,
-            pinned: false,
-            tags: BTreeSet::new(),
-            priority: None,
-            manual_ready: false,
-            done_at_unix_ms: None,
-            snooze_until_unix_ms: None,
-        }
-    }
-}
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkCardRecord {
