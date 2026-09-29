@@ -95,6 +95,18 @@ impl AttentionReason {
     }
 }
 
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ThreadMetadata {
+    pub cwd: String,
+    pub model: Option<String>,
+    pub project_id: Option<String>,
+    pub source: String,
+    pub updated_at: i64,
+    pub loaded: Option<bool>,
+    pub workspace_key: String,
+    pub workspace_basis: String,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ThreadSummary {
     pub id: ThreadId,
@@ -104,6 +116,8 @@ pub struct ThreadSummary {
     pub attention: Vec<AttentionReason>,
     pub pinned: bool,
     pub alias: Option<String>,
+    #[serde(default)]
+    pub metadata: ThreadMetadata,
 }
 
 impl ThreadSummary {
