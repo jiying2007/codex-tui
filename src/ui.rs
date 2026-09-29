@@ -348,8 +348,7 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
             ),
         )
     };
-    let composer =
-        Paragraph::new(composer_text).block(Block::bordered().title(composer_title));
+    let composer = Paragraph::new(composer_text).block(Block::bordered().title(composer_title));
     frame.render_widget(composer, chunks[2]);
     frame.render_widget(
         Paragraph::new(
