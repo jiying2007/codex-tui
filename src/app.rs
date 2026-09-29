@@ -584,18 +584,26 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
             if mode == InputMode::Composer {
                 if let Some(thread_id) = state.current_thread_id().cloned() {
+                    let conversation_ready = state
+                        .conversations
+                        .get(&thread_id.0)
+                        .is_some_and(|conversation| !conversation.loading && conversation.error.is_none());
+                    if !conversation_ready {
+                        return vec![];
+                    }
+
                     let text = state
                         .thread_ui
                         .get(&thread_id.0)
                         .map(|ui| ui.draft.trim().to_string())
                         .unwrap_or_default();
-                    state.input_mode = InputMode::Normal;
                     if !text.is_empty() {
                         let active_turn_id = state
                             .conversations
                             .get(&thread_id.0)
                             .and_then(ConversationState::active_turn_id)
                             .map(ToOwned::to_owned);
+                        state.input_mode = InputMode::Normal;
                         return vec![Effect::SubmitPrompt {
                             thread_id,
                             text,
@@ -773,6 +781,22 @@ mod tests {
         reduce(&mut app, Action::Back);
         assert_eq!(app.selected, selected);
         assert_eq!(app.view, View::Registry);
+    }
+
+    #[test]
+    fn quick_prompt_cannot_start_turn_before_history_resolves_active_turn_state() {
+        let mut app = app();
+        reduce(&mut app, Action::QuickPrompt);
+        reduce(&mut app, Action::InputChar('h'));
+        reduce(&mut app, Action::InputChar('i'));
+        let effects = reduce(&mut app, Action::CommitInput);
+        assert!(effects.is_empty());
+        assert_eq!(app.input_mode, InputMode::Composer);
+        let thread_id = app.current_thread_id().expect("thread").clone();
+        assert_eq!(
+            app.thread_ui.get(&thread_id.0).expect("ui").draft,
+            "hi"
+        );
     }
 
     #[test]
