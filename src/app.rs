@@ -29,6 +29,7 @@ pub enum Action {
     ReplaceThreads(Vec<ThreadSummary>),
     BackendStatus(BackendStatus),
     ConversationLoaded(ConversationPage),
+    OlderConversationLoaded(ConversationPage),
     ConversationFailed { thread_id: ThreadId, error: String },
     PromptSubmitted { thread_id: ThreadId },
     MoveSelection(i32),
@@ -57,6 +58,11 @@ pub enum Action {
 pub enum Effect {
     PersistOperatorState,
     LoadConversation(ThreadId),
+    LoadOlderConversation {
+        thread_id: ThreadId,
+        turn_cursor: Option<String>,
+        item_cursor: Option<String>,
+    },
     SubmitPrompt {
         thread_id: ThreadId,
         text: String,
@@ -262,6 +268,14 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 .or_insert_with(|| ConversationState::loading(page.thread_id.clone()))
                 .replace_page(page);
         }
+        Action::OlderConversationLoaded(page) => {
+            let key = page.thread_id.0.clone();
+            state
+                .conversations
+                .entry(key)
+                .or_insert_with(|| ConversationState::loading(page.thread_id.clone()))
+                .prepend_page(page);
+        }
         Action::ConversationFailed { thread_id, error } => {
             let conversation = state
                 .conversations
@@ -335,6 +349,20 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         }
         Action::ScrollBy(delta) => {
             if let Some(id) = state.current_thread_id().cloned() {
+                let current_scroll = state.thread_ui.entry(id.0.clone()).or_default().scroll;
+                if delta.is_negative()
+                    && current_scroll == 0
+                    && let Some(conversation) = state.conversations.get(&id.0)
+                    && (conversation.next_turn_cursor.is_some()
+                        || conversation.next_item_cursor.is_some())
+                {
+                    return vec![Effect::LoadOlderConversation {
+                        thread_id: id,
+                        turn_cursor: conversation.next_turn_cursor.clone(),
+                        item_cursor: conversation.next_item_cursor.clone(),
+                    }];
+                }
+
                 let ui = state.thread_ui.entry(id.0).or_default();
                 ui.follow = false;
                 ui.scroll = if delta.is_negative() {
@@ -615,6 +643,33 @@ mod tests {
         reduce(&mut app, Action::Back);
         assert_eq!(app.selected, selected);
         assert_eq!(app.view, View::Registry);
+    }
+
+    #[test]
+    fn page_up_at_history_top_requests_older_page_when_cursor_exists() {
+        let mut app = app();
+        let thread_id = app.selected_thread_id().expect("thread");
+        reduce(&mut app, Action::OpenSelected);
+        reduce(
+            &mut app,
+            Action::ConversationLoaded(ConversationPage {
+                thread_id: thread_id.clone(),
+                title: None,
+                turns: vec![],
+                items: vec![],
+                next_turn_cursor: Some("turn-cursor".into()),
+                next_item_cursor: Some("item-cursor".into()),
+            }),
+        );
+        let effects = reduce(&mut app, Action::ScrollBy(-5));
+        assert_eq!(
+            effects,
+            vec![Effect::LoadOlderConversation {
+                thread_id,
+                turn_cursor: Some("turn-cursor".into()),
+                item_cursor: Some("item-cursor".into()),
+            }]
+        );
     }
 
     #[test]
