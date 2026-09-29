@@ -319,10 +319,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     .and_then(ConversationState::active_turn_id)
                     .map(ToOwned::to_owned);
                 if let Some(turn_id) = active_turn_id {
-                    return vec![Effect::InterruptTurn {
-                        thread_id,
-                        turn_id,
-                    }];
+                    return vec![Effect::InterruptTurn { thread_id, turn_id }];
                 }
             }
             state.view = View::Registry;
@@ -400,42 +397,43 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 state.input_mode = InputMode::Alias;
             }
         }
-        Action::InputChar(character) => {
-            match state.input_mode {
-                InputMode::Normal => {}
-                InputMode::Composer => {
-                    if let Some(id) = state.current_thread_id().cloned() {
-                        state.thread_ui.entry(id.0).or_default().draft.push(character);
-                        return vec![Effect::PersistOperatorState];
-                    }
-                }
-                InputMode::Search | InputMode::Alias => {
-                    state.input_buffer.push(character);
-                    if state.input_mode == InputMode::Search {
-                        state.filter.clone_from(&state.input_buffer);
-                        ensure_selection_visible(state);
-                    }
+        Action::InputChar(character) => match state.input_mode {
+            InputMode::Normal => {}
+            InputMode::Composer => {
+                if let Some(id) = state.current_thread_id().cloned() {
+                    state
+                        .thread_ui
+                        .entry(id.0)
+                        .or_default()
+                        .draft
+                        .push(character);
+                    return vec![Effect::PersistOperatorState];
                 }
             }
-        }
-        Action::InputBackspace => {
-            match state.input_mode {
-                InputMode::Normal => {}
-                InputMode::Composer => {
-                    if let Some(id) = state.current_thread_id().cloned() {
-                        state.thread_ui.entry(id.0).or_default().draft.pop();
-                        return vec![Effect::PersistOperatorState];
-                    }
-                }
-                InputMode::Search | InputMode::Alias => {
-                    state.input_buffer.pop();
-                    if state.input_mode == InputMode::Search {
-                        state.filter.clone_from(&state.input_buffer);
-                        ensure_selection_visible(state);
-                    }
+            InputMode::Search | InputMode::Alias => {
+                state.input_buffer.push(character);
+                if state.input_mode == InputMode::Search {
+                    state.filter.clone_from(&state.input_buffer);
+                    ensure_selection_visible(state);
                 }
             }
-        }
+        },
+        Action::InputBackspace => match state.input_mode {
+            InputMode::Normal => {}
+            InputMode::Composer => {
+                if let Some(id) = state.current_thread_id().cloned() {
+                    state.thread_ui.entry(id.0).or_default().draft.pop();
+                    return vec![Effect::PersistOperatorState];
+                }
+            }
+            InputMode::Search | InputMode::Alias => {
+                state.input_buffer.pop();
+                if state.input_mode == InputMode::Search {
+                    state.filter.clone_from(&state.input_buffer);
+                    ensure_selection_visible(state);
+                }
+            }
+        },
         Action::CommitInput => {
             let mode = state.input_mode;
             if mode == InputMode::Composer {
