@@ -210,11 +210,37 @@ pub struct SavedView {
     pub visible_fields: Vec<String>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LocalNote {
+    pub owner: SourceRef,
+    pub text: String,
+    pub updated_at_unix_ms: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Bookmark {
+    pub id: String,
+    pub source: SourceRef,
+    pub label: Option<String>,
+    pub note: Option<String>,
+    pub created_at_unix_ms: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HotSlot {
+    pub slot: u8,
+    pub target: SourceRef,
+    pub updated_at_unix_ms: u64,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PlanningSnapshot {
     pub cards: Vec<WorkCardRecord>,
     pub scratch: Vec<ScratchWork>,
     pub saved_views: Vec<SavedView>,
+    pub notes: Vec<LocalNote>,
+    pub bookmarks: Vec<Bookmark>,
+    pub hot_slots: Vec<HotSlot>,
 }
 
 #[derive(Clone, Debug)]
