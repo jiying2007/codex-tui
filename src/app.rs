@@ -947,6 +947,10 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
         }
         Action::Back => {
+            if state.hot_slot_bind_pending {
+                state.hot_slot_bind_pending = false;
+                return vec![];
+            }
             if matches!(state.view, View::Scratch(_)) {
                 state.view = View::Board;
                 return vec![];
@@ -1864,6 +1868,17 @@ mod tests {
         assert_eq!(parse_snooze_duration("2d"), Some(172_800_000));
         assert_eq!(parse_snooze_duration("0h"), None);
         assert_eq!(parse_snooze_duration("later"), None);
+    }
+
+    #[test]
+    fn back_cancels_hot_slot_binding_before_navigation() {
+        let mut app = app();
+        reduce(&mut app, Action::BeginHotSlotBind);
+        assert!(app.hot_slot_bind_pending);
+        let effects = reduce(&mut app, Action::Back);
+        assert!(effects.is_empty());
+        assert!(!app.hot_slot_bind_pending);
+        assert_eq!(app.view, View::Registry);
     }
 
     #[test]
