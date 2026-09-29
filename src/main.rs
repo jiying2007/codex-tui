@@ -209,6 +209,9 @@ fn drain_registry(
             ConversationEvent::Loaded(page) => {
                 reduce(app, Action::ConversationLoaded(page));
             }
+            ConversationEvent::OlderLoaded(page) => {
+                reduce(app, Action::OlderConversationLoaded(page));
+            }
             ConversationEvent::PromptSubmitted { thread_id, .. } => {
                 let effects = reduce(app, Action::PromptSubmitted { thread_id });
                 for effect in effects {
@@ -259,6 +262,27 @@ fn apply_effects(
                         Action::ConversationFailed {
                             thread_id,
                             error: "conversation backend unavailable".into(),
+                        },
+                    );
+                }
+            }
+            Effect::LoadOlderConversation {
+                thread_id,
+                turn_cursor,
+                item_cursor,
+            } => {
+                if let Some(registry) = registry
+                    && let Err(error) = registry.load_older_conversation(
+                        thread_id.clone(),
+                        turn_cursor,
+                        item_cursor,
+                    )
+                {
+                    reduce(
+                        app,
+                        Action::ConversationFailed {
+                            thread_id,
+                            error: error.to_string(),
                         },
                     );
                 }
