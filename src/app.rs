@@ -292,7 +292,9 @@ impl AppState {
     }
 
     pub fn selected_planning_card(&self) -> Option<&WorkCardProjection> {
-        self.visible_planning_cards().get(self.board_selected).copied()
+        self.visible_planning_cards()
+            .get(self.board_selected)
+            .copied()
     }
 
     pub fn work_card_for_thread(&self, thread_id: &ThreadId) -> Option<&WorkCardProjection> {
@@ -579,7 +581,9 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         }
         Action::BeginScratch => {
             state.new_scratch_workspace = match &state.view {
-                View::Registry => state.selected_thread().map(|thread| thread.workspace.clone()),
+                View::Registry => state
+                    .selected_thread()
+                    .map(|thread| thread.workspace.clone()),
                 View::Board => state
                     .selected_planning_card()
                     .and_then(|card| card.workspace.clone()),
@@ -609,12 +613,10 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             let thread_id = match &state.view {
                 View::Registry => state.selected_thread_id(),
                 View::Thread(id) | View::Review(id) | View::Workspace(id) => Some(id.clone()),
-                View::Board => state
-                    .selected_planning_card()
-                    .and_then(|card| {
-                        (card.anchor.kind == SourceKind::CodexThread)
-                            .then(|| ThreadId::new(card.anchor.value.clone()))
-                    }),
+                View::Board => state.selected_planning_card().and_then(|card| {
+                    (card.anchor.kind == SourceKind::CodexThread)
+                        .then(|| ThreadId::new(card.anchor.value.clone()))
+                }),
                 View::Scratch(_) => None,
             };
             let Some(thread_id) = thread_id else {
@@ -645,12 +647,10 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             let thread_id = match &state.view {
                 View::Registry => state.selected_thread_id(),
                 View::Thread(id) | View::Review(id) | View::Workspace(id) => Some(id.clone()),
-                View::Board => state
-                    .selected_planning_card()
-                    .and_then(|card| {
-                        (card.anchor.kind == SourceKind::CodexThread)
-                            .then(|| ThreadId::new(card.anchor.value.clone()))
-                    }),
+                View::Board => state.selected_planning_card().and_then(|card| {
+                    (card.anchor.kind == SourceKind::CodexThread)
+                        .then(|| ThreadId::new(card.anchor.value.clone()))
+                }),
                 View::Scratch(_) => None,
             };
             let Some(thread_id) = thread_id else {
@@ -999,7 +999,10 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     return vec![Effect::PersistOperatorState];
                 }
             }
-            InputMode::Search | InputMode::Alias | InputMode::UserInput | InputMode::ScratchTitle => {
+            InputMode::Search
+            | InputMode::Alias
+            | InputMode::UserInput
+            | InputMode::ScratchTitle => {
                 state.input_buffer.push(character);
                 if state.input_mode == InputMode::Search {
                     state.filter.clone_from(&state.input_buffer);
@@ -1015,7 +1018,10 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     return vec![Effect::PersistOperatorState];
                 }
             }
-            InputMode::Search | InputMode::Alias | InputMode::UserInput | InputMode::ScratchTitle => {
+            InputMode::Search
+            | InputMode::Alias
+            | InputMode::UserInput
+            | InputMode::ScratchTitle => {
                 state.input_buffer.pop();
                 if state.input_mode == InputMode::Search {
                     state.filter.clone_from(&state.input_buffer);
@@ -1645,12 +1651,18 @@ mod tests {
             .iter()
             .position(|stage| *stage == WorkflowStage::Working)
             .expect("working");
-        assert!(app.visible_planning_cards().iter().any(|card| {
-            card.stage == WorkflowStage::Working && card.needs_you()
-        }));
+        assert!(
+            app.visible_planning_cards()
+                .iter()
+                .any(|card| { card.stage == WorkflowStage::Working && card.needs_you() })
+        );
         reduce(&mut app, Action::CycleSavedView(1));
         assert_eq!(app.active_saved_view().id, "builtin:attention");
-        assert!(app.visible_planning_cards().iter().all(|card| card.needs_you()));
+        assert!(
+            app.visible_planning_cards()
+                .iter()
+                .all(|card| card.needs_you())
+        );
     }
 
     #[test]
