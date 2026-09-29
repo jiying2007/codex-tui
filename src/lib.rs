@@ -13,3 +13,4 @@ pub mod sqlite_store;
 pub mod store;
 pub mod terminal;
 pub mod ui;
+pub mod worktree;
