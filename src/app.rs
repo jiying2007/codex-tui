@@ -1707,15 +1707,18 @@ fn rebuild_planning(state: &mut AppState, now_unix_ms: u64) {
 
     for thread in &state.threads {
         let anchor = SourceRef::codex_thread(&thread.id);
-        let projection = reconcile_thread_card(ReconcileInput {
-            thread,
-            git: state.git_context(&thread.id),
-            local: local_by_anchor.get(&anchor).copied(),
-            collision_count: state.worktree_collision_count(&thread.id),
-            backend_observed_at_unix_ms: state.backend_status.last_refresh_unix_ms,
-            backend_error: state.backend_status.error.as_deref(),
-            now_unix_ms,
-        });
+        let projection = reconcile_thread_card_with_goal(
+            ReconcileInput {
+                thread,
+                git: state.git_context(&thread.id),
+                local: local_by_anchor.get(&anchor).copied(),
+                collision_count: state.worktree_collision_count(&thread.id),
+                backend_observed_at_unix_ms: state.backend_status.last_refresh_unix_ms,
+                backend_error: state.backend_status.error.as_deref(),
+                now_unix_ms,
+            },
+            state.goals.get(&thread.id.0),
+        );
         projections.push(projection);
     }
 
