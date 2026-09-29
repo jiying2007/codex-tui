@@ -144,8 +144,9 @@ Normal startup launches a local `codex app-server --listen stdio://` connection 
 
 - M0 local control-plane skeleton: implemented and merged.
 - M1 read-only Codex thread registry: implemented in the v0.1.x line.
-- M2 daily conversation control: implemented in the v0.1.x line.
-- M3 Git context and review: next milestone.
+- M2 daily conversation control: implemented in the v0.2.x line.
+- M3 Git context and review: implemented in the v0.3.x line.
+- M4 personal planning + SQLite: next milestone.
 
 Architecture and product research are archived under `docs/research/`.
 Implementation design lives under `docs/design/`.
@@ -163,3 +164,4 @@ See:
 - `docs/implementation/m0-bootstrap.md`
 - `docs/implementation/m1-read-only-registry.md`
 - `docs/implementation/m2-daily-conversation-control.md`
+- `docs/implementation/m3-git-context-review.md`
