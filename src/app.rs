@@ -1963,9 +1963,11 @@ mod tests {
 
         let local = app.to_local_state();
         assert_eq!(local.schema_version, 1);
-        assert!(!serde_json::to_string(&local)
-            .expect("serialize")
-            .contains("Ship M4"));
+        assert!(
+            !serde_json::to_string(&local)
+                .expect("serialize")
+                .contains("Ship M4")
+        );
     }
 
     #[test]
