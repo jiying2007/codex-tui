@@ -30,6 +30,7 @@ pub struct MutationRequest {
 pub enum MutationCommand {
     Execute(Box<MutationRequest>),
     Recover,
+    RefreshInventory,
 }
 
 #[derive(Clone, Debug)]
@@ -67,6 +68,12 @@ impl WorktreeMutationHandle {
     pub fn recover(&self) -> Result<()> {
         self.command_tx
             .send(MutationCommand::Recover)
+            .map_err(|_| anyhow!("worktree mutation coordinator is unavailable"))
+    }
+
+    pub fn refresh_inventory(&self) -> Result<()> {
+        self.command_tx
+            .send(MutationCommand::RefreshInventory)
             .map_err(|_| anyhow!("worktree mutation coordinator is unavailable"))
     }
 
@@ -123,6 +130,9 @@ async fn run_coordinator(
                     }
                     emit_inventory(&store, &event_tx);
                 });
+            }
+            MutationCommand::RefreshInventory => {
+                emit_inventory(&store, &event_tx);
             }
         }
     }
