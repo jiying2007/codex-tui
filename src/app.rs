@@ -8,7 +8,7 @@ use crate::git::{GitContext, GitReview};
 use crate::planning::{
     PlanningSnapshot, ReconcileInput, SavedView, SavedViewLayout, SourceKind, SourceRef,
     WorkCardProjection, WorkflowStage, apply_saved_view, builtin_saved_views,
-    reconcile_scratch_card, reconcile_thread_card,
+    reconcile_scratch_card_with_local, reconcile_thread_card,
 };
 use crate::store::LocalStateV1;
 use std::collections::{BTreeMap, BTreeSet};
@@ -1186,13 +1186,17 @@ fn rebuild_planning(state: &mut AppState, now_unix_ms: u64) {
         projections.push(projection);
     }
 
-    projections.extend(
-        state
-            .planning_snapshot
-            .scratch
-            .iter()
-            .map(reconcile_scratch_card),
-    );
+    projections.extend(state.planning_snapshot.scratch.iter().map(|scratch| {
+        let anchor = SourceRef {
+            kind: SourceKind::ScratchWork,
+            value: scratch.id.clone(),
+        };
+        reconcile_scratch_card_with_local(
+            scratch,
+            local_by_anchor.get(&anchor).copied(),
+            now_unix_ms,
+        )
+    }));
 
     projections.sort_by(|left, right| {
         right
