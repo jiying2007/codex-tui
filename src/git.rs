@@ -90,10 +90,7 @@ impl GitContext {
 
 #[derive(Clone, Debug)]
 pub enum GitCommand {
-    Probe {
-        thread_id: ThreadId,
-        cwd: String,
-    },
+    Probe { thread_id: ThreadId, cwd: String },
 }
 
 #[derive(Clone, Debug)]
@@ -175,7 +172,11 @@ pub async fn probe_context(thread_id: ThreadId, cwd: String) -> Result<GitContex
         ));
     }
 
-    let mut lines = identity.stdout.lines().map(str::trim).filter(|line| !line.is_empty());
+    let mut lines = identity
+        .stdout
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty());
     let worktree_root = lines
         .next()
         .context("git rev-parse response missing worktree root")?
@@ -297,7 +298,12 @@ where
 
     let output = tokio::time::timeout(GIT_PROBE_TIMEOUT, command.output())
         .await
-        .with_context(|| format!("git command timed out after {}s", GIT_PROBE_TIMEOUT.as_secs()))?
+        .with_context(|| {
+            format!(
+                "git command timed out after {}s",
+                GIT_PROBE_TIMEOUT.as_secs()
+            )
+        })?
         .context("spawn git")?;
 
     Ok(RawGitOutput {
@@ -455,9 +461,7 @@ fn primary_root_from_common_dir(common_dir: &str, worktree_root: &str) -> String
 }
 
 fn looks_like_not_repository(stderr: &str) -> bool {
-    stderr
-        .to_ascii_lowercase()
-        .contains("not a git repository")
+    stderr.to_ascii_lowercase().contains("not a git repository")
 }
 
 fn now_unix_ms() -> u64 {
@@ -497,10 +501,8 @@ mod tests {
 
     #[test]
     fn detached_head_does_not_invent_a_branch() {
-        let parsed = parse_porcelain_v2(
-            b"# branch.oid deadbeef\0# branch.head (detached)\0",
-        )
-        .expect("parse");
+        let parsed = parse_porcelain_v2(b"# branch.oid deadbeef\0# branch.head (detached)\0")
+            .expect("parse");
         assert_eq!(parsed.head.as_deref(), Some("deadbeef"));
         assert!(parsed.branch.is_none());
     }
