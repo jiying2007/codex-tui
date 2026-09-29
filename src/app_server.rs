@@ -5,7 +5,7 @@ use crate::codex_protocol::{
 use crate::domain::ThreadSummary;
 use anyhow::{Context, Result, anyhow};
 use serde_json::{Value, json};
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::ffi::OsString;
 use std::process::Stdio;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -319,6 +319,7 @@ struct RpcSession {
     reader: Lines<BufReader<ChildStdout>>,
     writer: BufWriter<ChildStdin>,
     next_id: u64,
+    queued_messages: VecDeque<Value>,
 }
 
 impl RpcSession {
@@ -351,6 +352,7 @@ impl RpcSession {
             reader: BufReader::new(stdout).lines(),
             writer: BufWriter::new(stdin),
             next_id: 1,
+            queued_messages: VecDeque::new(),
         })
     }
 
@@ -366,7 +368,7 @@ impl RpcSession {
 
         loop {
             let message = self
-                .read_message()
+                .read_wire_message()
                 .await?
                 .ok_or_else(|| anyhow!("codex app-server closed while waiting for {method}"))?;
             if message.get("id").and_then(Value::as_u64) == Some(id)
@@ -382,6 +384,8 @@ impl RpcSession {
             }
             if message.get("id").is_some() && message.get("method").is_some() {
                 self.reject_server_request(&message).await?;
+            } else if message.get("method").is_some() {
+                self.queued_messages.push_back(message);
             }
         }
     }
@@ -395,6 +399,13 @@ impl RpcSession {
     }
 
     async fn read_message(&mut self) -> Result<Option<Value>> {
+        if let Some(message) = self.queued_messages.pop_front() {
+            return Ok(Some(message));
+        }
+        self.read_wire_message().await
+    }
+
+    async fn read_wire_message(&mut self) -> Result<Option<Value>> {
         loop {
             let Some(line) = self
                 .reader
