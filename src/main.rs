@@ -131,7 +131,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
             needs_render = true;
         }
 
-        needs_render |= drain_registry(&mut app, registry.as_mut());
+        needs_render |= drain_registry(&mut app, registry.as_mut(), &store);
 
         if let Some(fake) = fake_backend.as_mut()
             && last_fake_tick.elapsed() >= Duration::from_millis(900)
@@ -190,7 +190,11 @@ fn backend_error_status(error: String) -> BackendStatus {
     }
 }
 
-fn drain_registry(app: &mut AppState, registry: Option<&mut RegistryHandle>) -> bool {
+fn drain_registry(
+    app: &mut AppState,
+    registry: Option<&mut RegistryHandle>,
+    store: &FileStore,
+) -> bool {
     let Some(registry) = registry else {
         return false;
     };
@@ -206,7 +210,19 @@ fn drain_registry(app: &mut AppState, registry: Option<&mut RegistryHandle>) -> 
                 reduce(app, Action::ConversationLoaded(page));
             }
             ConversationEvent::PromptSubmitted { thread_id, .. } => {
-                reduce(app, Action::PromptSubmitted { thread_id });
+                let effects = reduce(app, Action::PromptSubmitted { thread_id });
+                for effect in effects {
+                    if effect == Effect::PersistOperatorState {
+                        if let Err(error) = store.save_state(&app.to_local_state()) {
+                            reduce(
+                                app,
+                                Action::BackendStatus(backend_error_status(format!(
+                                    "persist draft state failed: {error}"
+                                ))),
+                            );
+                        }
+                    }
+                }
             }
             ConversationEvent::Failed { thread_id, error } => {
                 reduce(app, Action::ConversationFailed { thread_id, error });
@@ -275,16 +291,16 @@ fn apply_effects(
                 }
             }
             Effect::InterruptTurn { thread_id, turn_id } => {
-                if let Some(registry) = registry {
-                    if let Err(error) = registry.interrupt_turn(thread_id.clone(), turn_id) {
-                        reduce(
-                            app,
-                            Action::ConversationFailed {
-                                thread_id,
-                                error: error.to_string(),
-                            },
-                        );
-                    }
+                if let Some(registry) = registry
+                    && let Err(error) = registry.interrupt_turn(thread_id.clone(), turn_id)
+                {
+                    reduce(
+                        app,
+                        Action::ConversationFailed {
+                            thread_id,
+                            error: error.to_string(),
+                        },
+                    );
                 }
             }
         }
