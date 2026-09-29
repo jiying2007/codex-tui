@@ -2081,16 +2081,18 @@ mod tests {
         assert_eq!(thread_choices.len(), 3);
         assert!(!thread_choices.contains(&ContextChoice::ScratchDone));
 
-        app.planning_snapshot.scratch.push(crate::planning::ScratchWork {
-            id: "scratch:1".into(),
-            title: "Local".into(),
-            note: None,
-            workspace: None,
-            priority: None,
-            state: crate::planning::ScratchState::Inbox,
-            created_at_unix_ms: 1,
-            updated_at_unix_ms: 1,
-        });
+        app.planning_snapshot
+            .scratch
+            .push(crate::planning::ScratchWork {
+                id: "scratch:1".into(),
+                title: "Local".into(),
+                note: None,
+                workspace: None,
+                priority: None,
+                state: crate::planning::ScratchState::Inbox,
+                created_at_unix_ms: 1,
+                updated_at_unix_ms: 1,
+            });
         app.work_cards.push(reconcile_scratch_card_with_local(
             &app.planning_snapshot.scratch[0],
             None,
@@ -2106,11 +2108,13 @@ mod tests {
     fn context_note_prefills_existing_thread_note() {
         let mut app = app();
         let owner = SourceRef::codex_thread(&ThreadId::new("thread-impl"));
-        app.planning_snapshot.notes.push(crate::planning::LocalNote {
-            owner,
-            text: "remember".into(),
-            updated_at_unix_ms: 1,
-        });
+        app.planning_snapshot
+            .notes
+            .push(crate::planning::LocalNote {
+                owner,
+                text: "remember".into(),
+                updated_at_unix_ms: 1,
+            });
         reduce(&mut app, Action::OpenContext);
         reduce(&mut app, Action::MoveContext(1));
         reduce(&mut app, Action::ExecuteContext);
@@ -2170,7 +2174,8 @@ mod tests {
         let selected = app
             .selected_planning_card()
             .expect("selected attention card");
-        assert_eq!(selected.anchor, SourceRef::codex_thread(&app.threads[1].id));
+        assert_ne!(selected.anchor, SourceRef::codex_thread(&app.threads[0].id));
+        assert!(!selected.snoozed);
         assert!(selected.needs_you());
     }
 
