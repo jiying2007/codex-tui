@@ -488,14 +488,12 @@ pub fn reconcile_scratch_card_with_local(
         kind: SourceKind::ScratchWork,
         value: scratch.id.clone(),
     };
-    let mut record = local
-        .cloned()
-        .unwrap_or_else(|| WorkCardRecord {
-            local_id: scratch.id.clone(),
-            anchor: anchor.clone(),
-            links: vec![],
-            overlay: WorkCardOverlay::default(),
-        });
+    let mut record = local.cloned().unwrap_or_else(|| WorkCardRecord {
+        local_id: scratch.id.clone(),
+        anchor: anchor.clone(),
+        links: vec![],
+        overlay: WorkCardOverlay::default(),
+    });
     if record.overlay.note.is_none() {
         record.overlay.note.clone_from(&scratch.note);
     }
