@@ -2128,6 +2128,7 @@ mod tests {
             aliases: BTreeMap::new(),
             marked_unread: BTreeSet::new(),
             acknowledged_attention: BTreeSet::new(),
+            host_local_only: true,
         };
         store.save_state(&state).expect("save");
         assert_eq!(store.load_state().expect("load"), state);
