@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 import argparse
 import json
 import os
@@ -8,11 +10,13 @@ import tarfile
 import tempfile
 import zipfile
 
+from _compat import safe_extract_tar
+
 
 def extract(archive: pathlib.Path, destination: pathlib.Path) -> pathlib.Path:
     if archive.name.endswith(".tar.gz"):
         with tarfile.open(archive, "r:gz") as handle:
-            handle.extractall(destination, filter="data")
+            safe_extract_tar(handle, destination)
     elif archive.suffix == ".zip":
         with zipfile.ZipFile(archive) as handle:
             handle.extractall(destination)

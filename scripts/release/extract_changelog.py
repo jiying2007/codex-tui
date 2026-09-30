@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 import argparse
 import pathlib
 import re
+
+from _compat import write_text_lf
 
 
 def main() -> int:
@@ -25,11 +29,7 @@ def main() -> int:
         raise SystemExit(f"CHANGELOG section for {args.version} is empty")
 
     output = pathlib.Path(args.output)
-    output.write_text(
-        f"# codex-tui {args.version}\n\n{body}\n",
-        encoding="utf-8",
-        newline="\n",
-    )
+    write_text_lf(output, f"# codex-tui {args.version}\n\n{body}\n")
     print(f"WROTE {output}")
     return 0
 

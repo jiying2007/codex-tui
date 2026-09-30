@@ -240,18 +240,20 @@ Third-party runtime dependency notices are generated from the locked Cargo depen
 
 ## Linux Tier 1 stable qualification
 
+Release helper scripts require **Python 3.8+**. Use `python3`; do not rely on a `python` alias.
+
 v1.0 stable prioritizes Linux. macOS and Windows remain in canonical CI and native release packaging, but they do not block v1.0 stable on real-environment retained evidence.
 
 After completing the documented real-TTY Terminal Drawer smoke on Linux:
 
 ```bash
-python scripts/release/create_terminal_receipt.py \
+python3 scripts/release/create_terminal_receipt.py \
   --platform linux \
   --terminal "<your terminal>" \
   --pass \
   --output release/evidence/linux/terminal-linux.json
 
-python scripts/release/linux_qualify.py \
+python3 scripts/release/linux_qualify.py \
   --canonical-ci-run <exact-main-ci-run-id> \
   --terminal-receipt release/evidence/linux/terminal-linux.json \
   --source "<retained-linux-machine-id>"

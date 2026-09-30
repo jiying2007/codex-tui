@@ -1,7 +1,11 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 import argparse
 import hashlib
 import pathlib
+
+from _compat import write_text_lf
 
 
 def sha256(path: pathlib.Path) -> str:
@@ -28,7 +32,7 @@ def main() -> int:
         raise SystemExit("no files found for checksum manifest")
 
     lines = [f"{sha256(path)}  {path.name}" for path in files]
-    output.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+    write_text_lf(output, "\n".join(lines) + "\n")
     print(f"WROTE {output} ({len(files)} files)")
     return 0
 

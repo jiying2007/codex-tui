@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 import argparse
 import json
 import pathlib
 import re
 import subprocess
 import sys
-import tomllib
+
+from _compat import cargo_package, write_text_lf
 
 HEX40 = re.compile(r"^[0-9a-fA-F]{40}$")
 TERMINAL_SCHEMA = "codex-tui/terminal-restoration/v1"
@@ -43,8 +46,7 @@ def load_json(path: pathlib.Path) -> dict:
 
 
 def github_repo_from_cargo(root: pathlib.Path) -> str:
-    with (root / "Cargo.toml").open("rb") as handle:
-        repository = tomllib.load(handle)["package"]["repository"]
+    repository = cargo_package(root).get("repository") or ""
     match = re.fullmatch(r"https://github\.com/([^/]+/[^/]+?)(?:\.git)?/?", repository)
     if not match:
         raise SystemExit(f"unsupported GitHub repository URL: {repository}")
@@ -85,8 +87,7 @@ def main() -> int:
     if branch != "main":
         raise SystemExit(f"qualification must run from main; got {branch!r}")
 
-    with (root / "Cargo.toml").open("rb") as handle:
-        package = tomllib.load(handle)["package"]
+    package = cargo_package(root)
     version = package["version"]
     if version != "1.0.0":
         raise SystemExit(f"Linux v1 qualification requires version 1.0.0; got {version}")
@@ -105,7 +106,7 @@ def main() -> int:
         ],
         cwd=root,
     )
-    ci_json.write_text(ci.stdout, encoding="utf-8", newline="\n")
+    write_text_lf(ci_json, ci.stdout)
     run(
         [
             sys.executable,
@@ -159,7 +160,7 @@ def main() -> int:
         ],
         cwd=root,
     )
-    perf_path.write_text(perf.stdout, encoding="utf-8", newline="\n")
+    write_text_lf(perf_path, perf.stdout)
     performance = json.loads(perf.stdout)
     if performance.get("schema") != PERFORMANCE_SCHEMA:
         raise SystemExit("performance schema mismatch")
@@ -242,7 +243,7 @@ def main() -> int:
         ],
         cwd=root,
     )
-    verify_path.write_text(verify.stdout, encoding="utf-8", newline="\n")
+    write_text_lf(verify_path, verify.stdout)
     verification = json.loads(verify.stdout)
     if verification.get("valid") is not True:
         raise SystemExit(
@@ -270,10 +271,9 @@ def main() -> int:
         "next": "Run GitHub release workflow: stable + publish=false on this exact SHA.",
     }
     summary_path = output_dir / "qualification-summary.json"
-    summary_path.write_text(
+    write_text_lf(
+        summary_path,
         json.dumps(summary, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-        newline="\n",
     )
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0

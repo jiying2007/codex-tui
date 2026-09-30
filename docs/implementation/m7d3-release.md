@@ -162,7 +162,7 @@ cargo run --release --locked -- release benchmark \
 Canonical compatibility capture on each supported platform:
 
 ```bash
-python scripts/release/capture_compat.py \
+python3 scripts/release/capture_compat.py \
   --binary <path-to-v1-candidate-binary> \
   --output compat-<platform>.json
 ```
@@ -211,7 +211,7 @@ The support policy is intentionally asymmetric so Linux stable is not blocked by
 After the real-TTY smoke receipt exists, run from a clean `main` checkout of the exact candidate SHA:
 
 ```bash
-python scripts/release/linux_qualify.py \
+python3 scripts/release/linux_qualify.py \
   --canonical-ci-run <successful-main-ci-run-id> \
   --terminal-receipt release/evidence/linux/terminal-linux.json \
   --source <retained-linux-machine-id>
