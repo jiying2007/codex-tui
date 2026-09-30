@@ -488,7 +488,7 @@ async fn doctor(scope: Option<&str>) -> Result<()> {
         for (capability, state) in &observation.capabilities {
             println!("capability.{}: {}", capability.label(), state.label());
         }
-        println!("open-issues: {}", observation.issues.len());
+        println!("recent-issues: {}", observation.issues.len());
         println!("open-merge-requests: {}", observation.change_requests.len());
         println!("recent-pipelines: {}", observation.pipelines.len());
         println!("issue-boards: {}", snapshot.boards.len());
