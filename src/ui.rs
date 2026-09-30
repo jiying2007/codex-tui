@@ -1765,6 +1765,48 @@ mod tests {
     }
 
     #[test]
+    fn terminal_drawer_overlay_renders_status_rows_and_focus_hint() {
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+        app.terminal_drawer_open = true;
+        app.terminal_focused = true;
+        app.terminal_snapshot = Some(crate::terminal_drawer::TerminalSnapshot {
+            cwd: "/repo".into(),
+            size: TerminalSize { rows: 10, cols: 98 },
+            rows: vec!["hello from PTY".into(), "$ ".into()],
+            cursor_row: 1,
+            cursor_col: 2,
+            scrollback: 0,
+            state: crate::terminal_drawer::TerminalProcessState::Running,
+        });
+
+        terminal.draw(|frame| render(frame, &app)).expect("draw");
+        let buffer = terminal.backend().buffer();
+        let mut snapshot = String::new();
+        for y in 0..buffer.area.height {
+            for x in 0..buffer.area.width {
+                snapshot.push_str(buffer[(x, y)].symbol());
+            }
+            snapshot.push('\n');
+        }
+        assert!(snapshot.contains("Terminal Drawer"));
+        assert!(snapshot.contains("hello from PTY"));
+        assert!(snapshot.contains("Ctrl+] app"));
+    }
+
+    #[test]
+    fn terminal_drawer_size_is_bounded_and_accounts_for_border() {
+        assert_eq!(
+            terminal_drawer_pty_size(100, 30),
+            TerminalSize { rows: 10, cols: 98 }
+        );
+        let small = terminal_drawer_pty_size(20, 8);
+        assert!(small.rows > 0);
+        assert!(small.cols > 0);
+    }
+
+    #[test]
     fn responsive_layout_breakpoints_are_locked() {
         assert_eq!(layout_mode(40), LayoutMode::Compact);
         assert_eq!(layout_mode(80), LayoutMode::Standard);
