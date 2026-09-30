@@ -444,9 +444,9 @@ mod tests {
     }
 
     #[test]
-    fn current_pre_v1_package_cannot_be_stable() {
-        assert!(!stable_version_allowed(env!("CARGO_PKG_VERSION")));
-        assert!(stable_version_allowed("1.0.0"));
+    fn current_v1_package_is_stable_eligible_but_prerelease_versions_are_not() {
+        assert_eq!(env!("CARGO_PKG_VERSION"), "1.0.0");
+        assert!(stable_version_allowed(env!("CARGO_PKG_VERSION")));
         assert!(stable_version_allowed("2.3.4"));
         assert!(!stable_version_allowed("1.0.0-rc.1"));
     }
@@ -464,6 +464,23 @@ mod tests {
         });
         assert!(report.valid, "{:?}", report.blockers);
         assert!(!report.project_license_present);
+    }
+
+    #[test]
+    fn apache_license_allows_preview_publish_gate_to_advance() {
+        let root = repo_with_lock_and_changelog();
+        fs::write(root.path().join("LICENSE"), "Apache License\nVersion 2.0")
+            .expect("license");
+        let report = verify(&ReleaseVerifyOptions {
+            channel: ReleaseChannel::Preview,
+            tag: format!("v{}-preview.1", env!("CARGO_PKG_VERSION")),
+            commit_sha: sha(),
+            evidence_path: None,
+            publish: true,
+            repo_root: root.path().into(),
+        });
+        assert!(report.valid, "{:?}", report.blockers);
+        assert!(report.project_license_present);
     }
 
     #[test]
