@@ -255,7 +255,7 @@ pub enum ForgeCommand {
 
 #[derive(Clone, Debug)]
 pub enum ForgeEvent {
-    Observation(ForgeObservation),
+    Observation(Box<ForgeObservation>),
     Review(ForgeReviewSummary),
 }
 
@@ -321,7 +321,7 @@ async fn run_actor(
         match command {
             ForgeCommand::Probe { thread_id, cwd } => {
                 let observation = probe_thread(thread_id, cwd).await;
-                let _ = event_tx.send(ForgeEvent::Observation(observation));
+                let _ = event_tx.send(ForgeEvent::Observation(Box::new(observation)));
             }
             ForgeCommand::ProbeReview {
                 thread_id,
