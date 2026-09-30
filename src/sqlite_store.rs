@@ -168,13 +168,13 @@ impl SqliteStore {
         plan.validate().context("validate local batch plan")?;
 
         let mut conn = self.open_ready()?;
-        let existing = load_cards(&conn)?
-            .into_iter()
-            .map(|card| (card.anchor.clone(), card))
-            .collect::<BTreeMap<_, _>>();
         let tx = conn
             .transaction()
             .context("begin local batch transaction")?;
+        let existing = load_cards(&tx)?
+            .into_iter()
+            .map(|card| (card.anchor.clone(), card))
+            .collect::<BTreeMap<_, _>>();
         let now = now_unix_ms();
 
         for target in &plan.targets {
