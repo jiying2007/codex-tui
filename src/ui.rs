@@ -1822,7 +1822,7 @@ fn centered_fixed(width: u16, height: u16, area: Rect) -> Rect {
 }
 
 const HELP_LINES: &[&str] = &[
-    "Global: ? help · Ctrl+K palette · / search · . context · t terminal · T close terminal · Esc back",
+    "Global: ? help · Ctrl+K palette · / search · . actions · t terminal · T close terminal · Esc back",
     "Registry: j/k · Enter · Space attention · / search · l local-only · g repo-only · h recent/all-history · p pin · e alias · x ack",
     "Thread: a composer · y/n/c approval · i answer · Ctrl+C interrupt · r review",
     "Review: j/k file · w word-diff · e editor · . Forge actions · PageUp/PageDown · Esc",
@@ -2115,7 +2115,8 @@ mod tests {
         }
 
         assert!(snapshot.contains("Mission Control · codex-app-server · linux/linux"));
-        assert!(snapshot.contains("Backend: codex-app-server · linux/linux"));
+        assert!(snapshot.contains("Selected"));
+        assert!(!snapshot.contains("Backend: codex-app-server"));
         assert!(snapshot.contains("Codex home: /home/jun/.codex"));
         assert!(snapshot.contains("selected cwd: empty · terminal blocked · git skipped"));
 
@@ -2125,6 +2126,31 @@ mod tests {
             .into_owned();
         let status = registry_scope_status(&app, 160);
         assert!(status.contains("selected cwd: local · terminal ready · git not-probed"));
+    }
+
+    #[test]
+    fn daily_selected_hides_unavailable_forge_internals_but_workspace_keeps_doctor_hint() {
+        let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+        let thread = app.threads[0].clone();
+        app.forge_observations.insert(
+            thread.id.0.clone(),
+            crate::forge::ForgeObservation::unavailable(
+                thread.id.clone(),
+                thread.metadata.cwd.clone(),
+                "resolve GitLab project: glab api /projects/example failed",
+            ),
+        );
+
+        assert!(forge_context_lines(&app, &thread.id, false).is_empty());
+        let diagnostic = forge_context_lines(&app, &thread.id, true);
+        let diagnostic_text = diagnostic
+            .iter()
+            .flat_map(|line| line.spans.iter())
+            .map(|span| span.content.as_ref())
+            .collect::<Vec<_>>()
+            .join("");
+        assert!(diagnostic_text.contains("doctor forge"));
+        assert!(!diagnostic_text.contains("resolve GitLab project"));
     }
 
     #[test]
@@ -2353,7 +2379,7 @@ mod tests {
                 Command::Search,
             ),
             (
-                ". context",
+                ". actions",
                 KeyEvent::new(KeyCode::Char('.'), KeyModifiers::NONE),
                 ViewKind::Registry,
                 Command::ContextActions,
@@ -2414,7 +2440,7 @@ mod tests {
             assert!(snapshot.contains("Mission Control"), "width={width}");
             assert!(snapshot.contains("M0 bootstrap"), "width={width}");
             if width >= 120 {
-                assert!(snapshot.contains("Context"), "width={width}");
+                assert!(snapshot.contains("Selected"), "width={width}");
             }
         }
     }
