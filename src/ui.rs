@@ -109,7 +109,7 @@ fn render_terminal_drawer(frame: &mut Frame<'_>, app: &AppState) {
         .map(|snapshot| snapshot.cwd.as_str())
         .unwrap_or("<starting>");
     let focus = if app.terminal_focused {
-        "FOCUSED · Ctrl+] app"
+        "FOCUSED · F6 release · Ctrl+] alt"
     } else {
         "unfocused · t focus · T close"
     };
@@ -1758,7 +1758,7 @@ const HELP_LINES: &[&str] = &[
     "Board: h/l stage · j/k item · Space attention · s snooze · = bind · 1–9 hot slot",
     "Board: Tab Saved View · . batch-local/context · Enter open · a Quick Prompt · n Scratch",
     "Scratch: local-only detail · Esc Board",
-    "Terminal focus: keys go to PTY · Ctrl+] return to app · Shift+PgUp/PgDn scrollback.",
+    "Terminal focus: keys go to PTY · F6 return to app · Ctrl+] alternate · Shift+PgUp/PgDn scrollback.",
     "Authority: Codex/Git/Forge stay canonical; codex-tui stores operator state only.",
 ];
 
@@ -2082,7 +2082,7 @@ mod tests {
         }
         assert!(snapshot.contains("Terminal Drawer"));
         assert!(snapshot.contains("hello from PTY"));
-        assert!(snapshot.contains("Ctrl+] app"));
+        assert!(snapshot.contains("F6 release"));
     }
 
     #[test]
