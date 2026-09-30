@@ -1793,8 +1793,7 @@ mod tests {
         let backend = TestBackend::new(160, 16);
         let mut terminal = Terminal::new(backend).expect("terminal");
         let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
-        app.threads[0].metadata.cwd =
-            r"/vsdata/repo/C:\Users\jun\repo".into();
+        app.threads[0].metadata.cwd = r"/vsdata/repo/C:\Users\jun\repo".into();
 
         terminal.draw(|frame| render(frame, &app)).expect("draw");
         let buffer = terminal.backend().buffer();
