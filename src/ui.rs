@@ -579,51 +579,59 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
 
     if let Some(thread) = app.selected_thread() {
         lines.push(Line::from(""));
-        match app.git_context(&thread.id) {
-            None => lines.push(Line::from("Git: not probed")),
-            Some(context) if context.observed_at_unix_ms == 0 => {
-                lines.push(Line::from("Git: probing…"));
-            }
-            Some(context) if context.error.is_some() => {
-                lines.push(Line::from(format!(
-                    "Git: degraded · {}",
-                    context.error.as_deref().unwrap_or("unknown error")
-                )));
-            }
-            Some(context) if !context.is_repository => {
-                lines.push(Line::from("Git: not a repository"));
-            }
-            Some(context) => {
-                let branch = context
-                    .branch
-                    .as_deref()
-                    .or(context.head.as_deref())
-                    .unwrap_or("unknown");
-                lines.push(Line::from(format!("Git: {branch}")));
-                lines.push(Line::from(format!(
-                    "Dirty: {} · files={} · +{} -{}",
-                    context.dirty,
-                    context.changes.len(),
-                    context.ahead,
-                    context.behind
-                )));
-                if let Some(worktree) = &context.worktree {
+        let locality = classify_cwd(&thread.metadata.cwd);
+        if !locality.terminal_usable() {
+            lines.push(Line::from(format!(
+                "Git: skipped · cwd {} on this host",
+                locality.label()
+            )));
+        } else {
+            match app.git_context(&thread.id) {
+                None => lines.push(Line::from("Git: not probed")),
+                Some(context) if context.observed_at_unix_ms == 0 => {
+                    lines.push(Line::from("Git: probing…"));
+                }
+                Some(context) if context.error.is_some() => {
                     lines.push(Line::from(format!(
-                        "Worktree: {}",
-                        truncate_display(&worktree.canonical_path, 42)
+                        "Git: degraded · {}",
+                        context.error.as_deref().unwrap_or("unknown error")
                     )));
                 }
-                if let Some(repo) = &context.repo {
-                    lines.push(Line::from(format!(
-                        "Repo: {}",
-                        truncate_display(&repo.primary_root, 42)
-                    )));
+                Some(context) if !context.is_repository => {
+                    lines.push(Line::from("Git: not a repository"));
                 }
-                let collisions = app.worktree_collision_count(&thread.id);
-                if collisions > 0 {
+                Some(context) => {
+                    let branch = context
+                        .branch
+                        .as_deref()
+                        .or(context.head.as_deref())
+                        .unwrap_or("unknown");
+                    lines.push(Line::from(format!("Git: {branch}")));
                     lines.push(Line::from(format!(
-                        "WARNING: shared mutable checkout with {collisions} active thread(s)"
+                        "Dirty: {} · files={} · +{} -{}",
+                        context.dirty,
+                        context.changes.len(),
+                        context.ahead,
+                        context.behind
                     )));
+                    if let Some(worktree) = &context.worktree {
+                        lines.push(Line::from(format!(
+                            "Worktree: {}",
+                            truncate_display(&worktree.canonical_path, 42)
+                        )));
+                    }
+                    if let Some(repo) = &context.repo {
+                        lines.push(Line::from(format!(
+                            "Repo: {}",
+                            truncate_display(&repo.primary_root, 42)
+                        )));
+                    }
+                    let collisions = app.worktree_collision_count(&thread.id);
+                    if collisions > 0 {
+                        lines.push(Line::from(format!(
+                            "WARNING: shared mutable checkout with {collisions} active thread(s)"
+                        )));
+                    }
                 }
             }
         }
@@ -2019,6 +2027,7 @@ mod tests {
         assert!(snapshot.contains("foreign-windows"));
         assert!(snapshot.contains(r"C:\Users\jun\repo"));
         assert!(!snapshot.contains(r"/vsdata/repo/C:\Users\jun\repo"));
+        assert!(snapshot.contains("Git: skipped · cwd foreign-windows on this host"));
     }
 
     #[test]

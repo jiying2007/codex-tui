@@ -993,10 +993,12 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::BackendStatus(status) => state.backend_status = status,
         Action::RefreshGitProjections => {
             let mut effects = Vec::new();
+            let mut host_local_thread_ids = BTreeSet::new();
             for thread in &state.threads {
-                if thread.metadata.cwd.trim().is_empty() {
+                if !classify_cwd(&thread.metadata.cwd).terminal_usable() {
                     continue;
                 }
+                host_local_thread_ids.insert(thread.id.0.clone());
                 let needs_probe = state
                     .git_contexts
                     .get(&thread.id.0)
@@ -1012,12 +1014,12 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     });
                 }
             }
-            state.git_contexts.retain(|thread_id, _| {
-                state.threads.iter().any(|thread| thread.id.0 == *thread_id)
-            });
-            state.forge_observations.retain(|thread_id, _| {
-                state.threads.iter().any(|thread| thread.id.0 == *thread_id)
-            });
+            state
+                .git_contexts
+                .retain(|thread_id, _| host_local_thread_ids.contains(thread_id));
+            state
+                .forge_observations
+                .retain(|thread_id, _| host_local_thread_ids.contains(thread_id));
             return effects;
         }
         Action::RefreshForgeProjections => {
@@ -4233,23 +4235,76 @@ mod tests {
 
     #[test]
     fn git_projection_probe_is_emitted_once_until_cwd_changes() {
+        let root = tempfile::tempdir().expect("tempdir");
         let mut app = app();
         for (index, thread) in app.threads.iter_mut().enumerate() {
-            thread.metadata.cwd = format!("/repo-{index}");
+            let cwd = root.path().join(format!("repo-{index}"));
+            std::fs::create_dir_all(&cwd).expect("create cwd");
+            thread.metadata.cwd = cwd.to_string_lossy().into_owned();
         }
         let effects = reduce(&mut app, Action::RefreshGitProjections);
         assert_eq!(effects.len(), 4);
         assert!(reduce(&mut app, Action::RefreshGitProjections).is_empty());
 
-        app.threads[0].metadata.cwd = "/new/cwd".into();
+        let next = root.path().join("new-cwd");
+        std::fs::create_dir_all(&next).expect("create changed cwd");
+        let next = next.to_string_lossy().into_owned();
+        app.threads[0].metadata.cwd.clone_from(&next);
         let effects = reduce(&mut app, Action::RefreshGitProjections);
         assert_eq!(
             effects,
             vec![Effect::ProbeGit {
                 thread_id: ThreadId::new("thread-impl"),
-                cwd: "/new/cwd".into(),
+                cwd: next,
             }]
         );
+    }
+
+    #[test]
+    fn git_projection_skips_nonlocal_cwds_and_drops_old_projection() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let local = root.path().join("local");
+        std::fs::create_dir_all(&local).expect("create local cwd");
+
+        let mut app = app();
+        app.threads[0].metadata.cwd = local.to_string_lossy().into_owned();
+        app.threads[1].metadata.cwd = if cfg!(windows) {
+            "/foreign/unix/repo".into()
+        } else {
+            r"C:\Users\jun\repo".into()
+        };
+        app.threads[2].metadata.cwd = "relative/repo".into();
+        app.threads[3].metadata.cwd = root
+            .path()
+            .join("missing")
+            .to_string_lossy()
+            .into_owned();
+
+        for thread in app.threads.iter().skip(1) {
+            app.git_contexts.insert(
+                thread.id.0.clone(),
+                GitContext::pending(thread.id.clone(), thread.metadata.cwd.clone()),
+            );
+        }
+        let foreign = app.threads[1].clone();
+        app.forge_observations.insert(
+            foreign.id.0.clone(),
+            ForgeObservation::pending(foreign.id.clone(), foreign.metadata.cwd.clone()),
+        );
+
+        let effects = reduce(&mut app, Action::RefreshGitProjections);
+        assert_eq!(
+            effects,
+            vec![Effect::ProbeGit {
+                thread_id: ThreadId::new("thread-impl"),
+                cwd: app.threads[0].metadata.cwd.clone(),
+            }]
+        );
+        assert_eq!(
+            app.git_contexts.keys().cloned().collect::<Vec<_>>(),
+            vec!["thread-impl".to_string()]
+        );
+        assert!(app.forge_observations.is_empty());
     }
 
     #[test]
