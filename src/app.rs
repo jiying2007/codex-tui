@@ -4,6 +4,7 @@ use crate::conversation::{
     InteractiveResolution, RpcRequestId, UserInputQuestion,
 };
 use crate::domain::{AttentionReason, RuntimeStatus, ThreadId, ThreadSummary, ThreadUiState};
+use crate::forge::ForgeObservation;
 use crate::git::{GitContext, GitReview};
 use crate::goal::{GoalObservation, GoalStatus};
 use crate::operation::{
@@ -13,7 +14,7 @@ use crate::operation::{
 use crate::planning::{
     PlanningSnapshot, ReconcileInput, SavedView, SavedViewLayout, SourceKind, SourceRef,
     WorkCardProjection, WorkflowStage, apply_saved_view, builtin_saved_views,
-    reconcile_scratch_card_with_local, reconcile_thread_card_with_goal,
+    reconcile_scratch_card_with_local, reconcile_thread_card_with_goal_and_forge,
 };
 use crate::store::LocalStateV1;
 use std::collections::{BTreeMap, BTreeSet};
@@ -93,6 +94,7 @@ pub enum Action {
     BackendStatus(BackendStatus),
     RefreshGitProjections,
     GitContextLoaded(GitContext),
+    ForgeObservationLoaded(ForgeObservation),
     GitReviewLoaded(GitReview),
     ReviewError { thread_id: ThreadId, error: String },
     PlanningSnapshotLoaded(PlanningSnapshot),
@@ -218,6 +220,10 @@ pub enum Effect {
         thread_id: ThreadId,
         cwd: String,
     },
+    ProbeForge {
+        thread_id: ThreadId,
+        cwd: String,
+    },
     LoadGitReview {
         thread_id: ThreadId,
         cwd: String,
@@ -258,6 +264,7 @@ pub struct AppState {
     pub thread_ui: BTreeMap<String, ThreadUiState>,
     pub conversations: BTreeMap<String, ConversationState>,
     pub git_contexts: BTreeMap<String, GitContext>,
+    pub forge_observations: BTreeMap<String, ForgeObservation>,
     pub git_reviews: BTreeMap<String, GitReview>,
     pub planning_snapshot: PlanningSnapshot,
     pub work_cards: Vec<WorkCardProjection>,
@@ -313,6 +320,7 @@ impl AppState {
             thread_ui: BTreeMap::new(),
             conversations: BTreeMap::new(),
             git_contexts: BTreeMap::new(),
+            forge_observations: BTreeMap::new(),
             git_reviews: BTreeMap::new(),
             planning_snapshot: PlanningSnapshot::default(),
             work_cards: vec![],
@@ -403,6 +411,10 @@ impl AppState {
 
     pub fn git_context(&self, thread_id: &ThreadId) -> Option<&GitContext> {
         self.git_contexts.get(&thread_id.0)
+    }
+
+    pub fn forge_observation(&self, thread_id: &ThreadId) -> Option<&ForgeObservation> {
+        self.forge_observations.get(&thread_id.0)
     }
 
     pub fn current_goal(&self) -> Option<&GoalObservation> {
@@ -739,12 +751,29 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.git_contexts.retain(|thread_id, _| {
                 state.threads.iter().any(|thread| thread.id.0 == *thread_id)
             });
+            state.forge_observations.retain(|thread_id, _| {
+                state.threads.iter().any(|thread| thread.id.0 == *thread_id)
+            });
             return effects;
         }
         Action::GitContextLoaded(context) => {
+            let thread_id = context.thread_id.clone();
+            let cwd = context.cwd.clone();
+            let should_probe_forge = context.is_repository
+                && context.error.is_none()
+                && state
+                    .forge_observations
+                    .get(&thread_id.0)
+                    .is_none_or(|observation| observation.cwd != cwd);
+            state.git_contexts.insert(thread_id.0.clone(), context);
+            if should_probe_forge {
+                return vec![Effect::ProbeForge { thread_id, cwd }];
+            }
+        }
+        Action::ForgeObservationLoaded(observation) => {
             state
-                .git_contexts
-                .insert(context.thread_id.0.clone(), context);
+                .forge_observations
+                .insert(observation.thread_id.0.clone(), observation);
         }
         Action::GitReviewLoaded(review) => {
             let key = review.thread_id.0.clone();
@@ -817,6 +846,12 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state
                 .git_contexts
                 .retain(|_, context| context.repo.as_ref() != Some(&repo));
+            state.forge_observations.retain(|thread_id, _| {
+                state
+                    .git_contexts
+                    .get(thread_id)
+                    .is_some_and(|context| context.repo.as_ref() != Some(&repo))
+            });
             state
                 .recent_operations
                 .retain(|item| item.operation_id != receipt.operation_id);
@@ -2092,7 +2127,7 @@ fn rebuild_planning(state: &mut AppState, now_unix_ms: u64) {
 
     for thread in &state.threads {
         let anchor = SourceRef::codex_thread(&thread.id);
-        let projection = reconcile_thread_card_with_goal(
+        let projection = reconcile_thread_card_with_goal_and_forge(
             ReconcileInput {
                 thread,
                 git: state.git_context(&thread.id),
@@ -2103,6 +2138,7 @@ fn rebuild_planning(state: &mut AppState, now_unix_ms: u64) {
                 now_unix_ms,
             },
             state.goals.get(&thread.id.0),
+            state.forge_observation(&thread.id),
         );
         projections.push(projection);
     }
