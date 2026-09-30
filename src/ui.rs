@@ -413,8 +413,9 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
         };
         let text = match layout_mode(area.width) {
             LayoutMode::Compact => format!(
-                "{prefix}{pin}{collision}{locality} {:7} {}",
+                "{prefix}{pin}{collision}{locality} {:7} {} {}",
                 thread.runtime.label(),
+                fit_display(&thread.workspace, 12),
                 sanitize_inline(thread.display_title())
             ),
             LayoutMode::Standard | LayoutMode::Wide => format!(
