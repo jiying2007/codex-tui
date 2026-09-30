@@ -402,6 +402,19 @@ impl RuntimeServices {
 async fn main() -> Result<()> {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
 
+    if matches!(args.as_slice(), [arg] if arg == "--version" || arg == "version") {
+        println!("codex-tui {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+
+    if args.first().is_some_and(|arg| arg == "release") {
+        let code = codex_tui::release::run_cli(&args[1..])?;
+        if code != 0 {
+            std::process::exit(code);
+        }
+        return Ok(());
+    }
+
     if args.first().is_some_and(|arg| arg == "headless") {
         let code = codex_tui::headless::run(&args[1..]).await?;
         if code != codex_tui::headless::EXIT_OK {
