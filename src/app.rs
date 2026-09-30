@@ -93,6 +93,7 @@ pub enum Action {
     ReplaceThreads(Vec<ThreadSummary>),
     BackendStatus(BackendStatus),
     RefreshGitProjections,
+    RefreshForgeProjections,
     GitContextLoaded(GitContext),
     ForgeObservationLoaded(ForgeObservation),
     GitReviewLoaded(GitReview),
@@ -756,19 +757,32 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             });
             return effects;
         }
-        Action::GitContextLoaded(context) => {
-            let thread_id = context.thread_id.clone();
-            let cwd = context.cwd.clone();
-            let should_probe_forge = context.is_repository
-                && context.error.is_none()
-                && state
+        Action::RefreshForgeProjections => {
+            let mut effects = Vec::new();
+            for thread in &state.threads {
+                let Some(context) = state.git_context(&thread.id) else {
+                    continue;
+                };
+                if !context.is_repository || context.error.is_some() {
+                    continue;
+                }
+                let needs_probe = state
                     .forge_observations
-                    .get(&thread_id.0)
-                    .is_none_or(|observation| observation.cwd != cwd);
-            state.git_contexts.insert(thread_id.0.clone(), context);
-            if should_probe_forge {
-                return vec![Effect::ProbeForge { thread_id, cwd }];
+                    .get(&thread.id.0)
+                    .is_none_or(|observation| observation.cwd != thread.metadata.cwd);
+                if needs_probe {
+                    effects.push(Effect::ProbeForge {
+                        thread_id: thread.id.clone(),
+                        cwd: thread.metadata.cwd.clone(),
+                    });
+                }
             }
+            return effects;
+        }
+        Action::GitContextLoaded(context) => {
+            state
+                .git_contexts
+                .insert(context.thread_id.0.clone(), context);
         }
         Action::ForgeObservationLoaded(observation) => {
             state
