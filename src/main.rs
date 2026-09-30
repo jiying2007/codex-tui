@@ -9,6 +9,7 @@ use codex_tui::{
     git::{self, GitEvent, GitHandle},
     goal::GoalStatus,
     keymap::{Command, command_for_key},
+    domain::{CwdLocality, classify_cwd, display_cwd},
     planning::{
         LocalNote, PlanningSnapshot, SavedView, ScratchState, SourceKind, SourceRef, WorkCardRecord,
     },
@@ -666,7 +667,61 @@ async fn doctor(scope: Option<&str>) -> Result<()> {
         match app_server::probe(None).await {
             Ok(snapshot) => {
                 print_backend_status(&snapshot.status);
+                println!(
+                    "codex-home: {}",
+                    snapshot.status.codex_home.as_deref().unwrap_or("<unknown>")
+                );
                 println!("threads: {}", snapshot.threads.len());
+
+                let mut local = 0usize;
+                let mut foreign_windows = 0usize;
+                let mut foreign_unix = 0usize;
+                let mut stale = 0usize;
+                let mut relative = 0usize;
+                let mut empty = 0usize;
+                let mut local_samples = Vec::new();
+                let mut foreign_samples = Vec::new();
+
+                for thread in &snapshot.threads {
+                    match classify_cwd(&thread.metadata.cwd) {
+                        CwdLocality::LocalDirectory => {
+                            local += 1;
+                            if local_samples.len() < 5 {
+                                local_samples.push(display_cwd(&thread.metadata.cwd).to_string());
+                            }
+                        }
+                        CwdLocality::ForeignWindows => {
+                            foreign_windows += 1;
+                            if foreign_samples.len() < 5 {
+                                foreign_samples
+                                    .push(display_cwd(&thread.metadata.cwd).to_string());
+                            }
+                        }
+                        CwdLocality::ForeignUnix => {
+                            foreign_unix += 1;
+                            if foreign_samples.len() < 5 {
+                                foreign_samples
+                                    .push(display_cwd(&thread.metadata.cwd).to_string());
+                            }
+                        }
+                        CwdLocality::NativeMissing => stale += 1,
+                        CwdLocality::Relative => relative += 1,
+                        CwdLocality::Empty => empty += 1,
+                    }
+                }
+
+                println!("threads-local: {local}");
+                println!("threads-foreign-windows: {foreign_windows}");
+                println!("threads-foreign-unix: {foreign_unix}");
+                println!("threads-stale: {stale}");
+                println!("threads-relative: {relative}");
+                println!("threads-empty-cwd: {empty}");
+                for cwd in local_samples {
+                    println!("local-cwd: {cwd}");
+                }
+                for cwd in foreign_samples {
+                    println!("foreign-cwd: {cwd}");
+                }
             }
             Err(error) => {
                 println!("backend: codex-app-server");
