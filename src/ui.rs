@@ -46,9 +46,16 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
     }
     if matches!(
         app.input_mode,
-        InputMode::Note | InputMode::Snooze | InputMode::SavedViewName
+        InputMode::Note
+            | InputMode::Snooze
+            | InputMode::SavedViewName
+            | InputMode::ForgeMergeRequestTitle
+            | InputMode::ForgeComment
     ) {
         render_local_input_overlay(frame, app);
+    }
+    if app.pending_forge_operation.is_some() {
+        render_forge_mutation_confirmation(frame, app);
     }
 }
 
@@ -100,6 +107,9 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState) {
             truncate(&app.input_buffer, 60)
         )),
         InputMode::GoalObjective => Line::from("Goal objective editor active in Thread view"),
+        InputMode::ForgeMergeRequestTitle | InputMode::ForgeComment => {
+            Line::from("forge mutation input active in Review/Workspace")
+        }
         InputMode::WorktreeCreateBranch
         | InputMode::WorktreeCreatePath
         | InputMode::WorktreeCreateStartPoint
@@ -434,6 +444,13 @@ fn forge_context_lines(app: &AppState, thread_id: &crate::domain::ThreadId) -> V
         }
     } else {
         lines.push(Line::from("MR/Pipeline: current branch unavailable"));
+    }
+
+    if let Some(notice) = &app.mutation_notice {
+        lines.push(Line::from(format!(
+            "Mutation: {}",
+            truncate(notice, 90)
+        )));
     }
 
     lines
@@ -956,7 +973,7 @@ fn render_workspace(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
         chunks[0],
     );
     frame.render_widget(
-        Paragraph::new("r review · m managed worktrees · Esc back"),
+        Paragraph::new("r review · m managed worktrees · . forge/context actions · Esc back"),
         chunks[1],
     );
 }
@@ -1219,7 +1236,9 @@ fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
     }
 
     frame.render_widget(
-        Paragraph::new("j/k file · PageUp/PageDown diff · w word-diff · e editor · Esc back"),
+        Paragraph::new(
+            "j/k file · PageUp/PageDown diff · w word-diff · e editor · . forge/context actions · Esc back",
+        ),
         outer[1],
     );
 }
@@ -1263,6 +1282,14 @@ fn render_local_input_overlay(frame: &mut Frame<'_>, app: &AppState) {
         InputMode::Note => (" Local note ", "Enter save · Esc cancel"),
         InputMode::Snooze => (" Snooze ", "15m / 1h / 1d · Enter apply · Esc cancel"),
         InputMode::SavedViewName => (" Save current view ", "Enter save · Esc cancel"),
+        InputMode::ForgeMergeRequestTitle => (
+            " Create GitLab merge request ",
+            "Enter creates a plan only · Esc cancel",
+        ),
+        InputMode::ForgeComment => (
+            " Comment on GitLab merge request ",
+            "Enter creates a plan only · Esc cancel",
+        ),
         _ => return,
     };
     let area = centered_fixed(64, 7, frame.area());
@@ -1275,6 +1302,59 @@ fn render_local_input_overlay(frame: &mut Frame<'_>, app: &AppState) {
         ])
         .block(Block::bordered().title(title))
         .wrap(Wrap { trim: false }),
+        area,
+    );
+}
+
+fn render_forge_mutation_confirmation(frame: &mut Frame<'_>, app: &AppState) {
+    let Some(plan) = &app.pending_forge_operation else {
+        return;
+    };
+
+    let mut lines = vec![
+        Line::from("CONFIRM REQUIRED — no GitLab mutation has executed yet."),
+        Line::from(format!("Operation: {}", plan.kind.label())),
+        Line::from(format!("Project: {}/{}", plan.host, plan.project_path)),
+    ];
+    if let Some(iid) = plan.change_request_iid {
+        lines.push(Line::from(format!("Merge request: !{iid}")));
+    }
+    if plan.source_branch.is_some() || plan.target_branch.is_some() {
+        lines.push(Line::from(format!(
+            "Branches: {} -> {}",
+            plan.source_branch.as_deref().unwrap_or("<none>"),
+            plan.target_branch.as_deref().unwrap_or("<none>")
+        )));
+    }
+    if let Some(title) = &plan.title {
+        lines.push(Line::from(format!("Title: {}", truncate(title, 88))));
+    }
+    if let Some(bytes) = plan.payload_bytes {
+        lines.push(Line::from(format!(
+            "Payload: {bytes} bytes · body intentionally not persisted"
+        )));
+    }
+    lines.push(Line::from(format!(
+        "Expected: {}",
+        truncate(&plan.expected_side_effect, 100)
+    )));
+    lines.push(Line::from(""));
+    lines.push(Line::from("Preconditions revalidated at execution time:"));
+    lines.extend(plan.preconditions.iter().take(8).map(|item| {
+        Line::from(format!("  {} = {}", item.key, item.expected))
+    }));
+    lines.push(Line::from(""));
+    lines.push(Line::from("y CONFIRM execute · c/Esc cancel"));
+
+    let height = u16::try_from(lines.len().saturating_add(2))
+        .unwrap_or(18)
+        .clamp(10, 22);
+    let area = centered_fixed(82, height, frame.area());
+    frame.render_widget(Clear, area);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(Block::bordered().title(" Forge Mutation Plan "))
+            .wrap(Wrap { trim: false }),
         area,
     );
 }
@@ -1302,9 +1382,11 @@ fn render_help(frame: &mut Frame<'_>) {
             Line::from(
                 "Thread: a composer · y/n/c approval · i answer · Ctrl+C interrupt · r review",
             ),
-            Line::from("Review: j/k file · w word-diff · e editor · PageUp/PageDown · Esc"),
             Line::from(
-                "Workspace: Git + Forge read-only context · r review · m managed worktrees · Esc",
+                "Review: j/k file · w word-diff · e editor · . Forge actions · PageUp/PageDown · Esc",
+            ),
+            Line::from(
+                "Workspace: Git + Forge context · . Forge actions · r review · m worktrees · Esc",
             ),
             Line::from(
                 "Managed Worktrees: n create · a adopt · d remove · x delete branch · y confirm",
