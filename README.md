@@ -147,6 +147,7 @@ cargo run -- headless threads --json
 cargo run -- headless work
 cargo run -- headless work --json
 cargo run -- headless threads --fixture-10k
+cargo run -- release verify --channel preview --tag v0.7.0-preview.1 --commit "$(git rev-parse HEAD)" --json
 cargo run -- --fake
 ```
 
@@ -165,6 +166,8 @@ M6c completes the normalized forge layer with a GitHub.com read-only provider. E
 M7a establishes a read-only automation and scale baseline. `headless threads` and `headless work` emit stable text or secret-safe JSON snapshots with explicit degraded exit codes. `doctor compat` reports local OS/architecture, SQLite, Codex, Git, `glab`, and `gh` compatibility without remote forge API probes. `--fixture-10k` provides deterministic scale data, while the Divan benchmark target measures resident 10k planning filters without turning noisy hosted-runner timings into release gates.
 
 M7b3 adds repository-shared `.codex-tui.toml` launch presets as a deliberately narrow argv-only feature. Presets are selected from Workspace/Review context actions, shown as an exact cwd/argv plan, and require explicit confirmation before codex-tui starts the external process. The config has no shell string, env templating, chaining, hooks or scheduler semantics; common shell executables are rejected.
+
+M7d3 adds a manually dispatched, fail-closed release path. Preview and stable identity derive from the Cargo version; Cargo.lock pins candidates; Linux/macOS/Windows build native archives and smoke the extracted binary; runtime dependency licenses/notices and SHA-256 manifests are retained. Stable release requires canonical CI, three-platform READY compatibility report hashes, three terminal-restoration PASS receipts, and retained 10k p95/p99 evidence. The current 0.7.0 line cannot be stable, and publication remains blocked until the project owner explicitly adds a project LICENSE.
 
 ## Status
 
@@ -187,7 +190,7 @@ M7b3 adds repository-shared `.codex-tui.toml` launch presets as a deliberately n
 - M7c3 PTY lifecycle/cleanup E2E: implemented across Ubuntu/macOS/Windows, including Windows ConPTY terminal-query handling.
 - M7d1 accessibility/CJK/grapheme/keyboard-focus hardening: implemented on the v0.7.x line.
 - M7d2 compatibility matrix + Doctor evidence contract: implemented as `compat/v2` with required/optional readiness and retained-evidence metadata.
-- M7d3 stable/preview release hardening: next.
+- M7d3 stable/preview release hardening: implemented with locked three-platform packaging, archive smoke, notices/checksums, and fail-closed stable evidence gates. Publication is intentionally blocked until a project LICENSE is chosen.
 
 Architecture and product research are archived under `docs/research/`.
 Implementation design lives under `docs/design/`.
@@ -220,3 +223,7 @@ See:
 - `docs/implementation/m7c3-pty-lifecycle.md`
 - `docs/implementation/m7d1-accessibility.md`
 - `docs/implementation/m7d2-compatibility.md`
+- `docs/implementation/m7d3-release.md`
+- `docs/release/install-upgrade.md`
+- `release/v1.0-criteria.json`
+- `CHANGELOG.md`
