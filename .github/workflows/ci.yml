@@ -21,7 +21,34 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+      - uses: actions/setup-python@v5
+        if: runner.os == 'Linux'
+        with:
+          python-version: "3.8"
       - uses: Swatinem/rust-cache@v2
+      - name: Smoke release tools on Python 3.8
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python --version
+          OUT="$RUNNER_TEMP/release-py38"
+          mkdir -p "$OUT"
+
+          python scripts/release/create_terminal_receipt.py             --platform linux             --terminal ci-python38             --pass             --output "$OUT/terminal.json"
+
+          python scripts/release/create_evidence.py             --output "$OUT/evidence.json"             --compat-schema codex-tui/compat/v2             --version 1.0.0             --commit 0123456789abcdef0123456789abcdef01234567             --canonical-ci-run 1             --linux-compat-sha256 "$(printf 'a%.0s' {1..64})"             --linux-compat-observed-at 2026-09-30T00:00:00Z             --linux-terminal ci-python38             --linux-terminal-observed-at 2026-09-30T00:00:00Z             --performance-iterations 200             --performance-p95-ms 1             --performance-p99-ms 2             --performance-source ci-python38             --performance-observed-at 2026-09-30T00:00:00Z
+
+          python scripts/release/extract_changelog.py             --version 1.0.0             --output "$OUT/RELEASE_NOTES.md"
+
+          python scripts/release/checksums.py "$OUT"             --output "$OUT/SHA256SUMS"
+
+          python scripts/release/capture_compat.py --help >/dev/null
+          python scripts/release/generate_notices.py --help >/dev/null
+          python scripts/release/package_release.py --help >/dev/null
+          python scripts/release/verify_archive.py --help >/dev/null
+          python scripts/release/validate_ci_run.py --help >/dev/null
+          python scripts/release/linux_qualify.py --help >/dev/null
       - name: Verify release scripts parse
         run: python -c "import pathlib, py_compile; [py_compile.compile(str(p), doraise=True) for p in pathlib.Path('scripts/release').glob('*.py')]"
       - run: cargo fmt --all -- --check
