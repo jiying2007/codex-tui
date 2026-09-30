@@ -190,7 +190,10 @@ impl ForgeMutationPlan {
         )?;
         plan.preconditions.extend([
             precondition("merge-request-not-draft", "true"),
-            precondition("blocking-discussions-resolved", "true when capability available"),
+            precondition(
+                "blocking-discussions-resolved",
+                "true when capability available",
+            ),
             precondition("approval-rules-satisfied", "true when capability available"),
             precondition("head-pipeline-not-failed", "true when pipeline available"),
         ]);
@@ -819,7 +822,10 @@ async fn execute_mutation(
                 .target_branch
                 .as_deref()
                 .context("create MR plan missing target branch")?;
-            let title = plan.title.as_deref().context("create MR plan missing title")?;
+            let title = plan
+                .title
+                .as_deref()
+                .context("create MR plan missing title")?;
             let mr: GitLabMergeRequest = glab_api_mutation_json(
                 &plan.cwd,
                 &plan.host,
@@ -923,7 +929,10 @@ async fn verify_success(
                 ),
             )
             .await?;
-            let payload = request.payload.as_deref().context("comment payload missing")?;
+            let payload = request
+                .payload
+                .as_deref()
+                .context("comment payload missing")?;
             anyhow::ensure!(note.body == payload, "GitLab note readback body mismatch");
             Ok((
                 format!("{}#note-{note_id}", mr_ref(plan, iid)),
@@ -995,8 +1004,14 @@ enum ReconciledOutcome {
 async fn reconcile_outcome(plan: &ForgeMutationPlan) -> Result<ReconciledOutcome> {
     match plan.kind {
         ForgeMutationKind::CreateMergeRequest => {
-            let source = plan.source_branch.as_deref().context("missing source branch")?;
-            let target = plan.target_branch.as_deref().context("missing target branch")?;
+            let source = plan
+                .source_branch
+                .as_deref()
+                .context("missing source branch")?;
+            let target = plan
+                .target_branch
+                .as_deref()
+                .context("missing target branch")?;
             let title = plan.title.as_deref().context("missing title")?;
             let matches = matching_merge_requests(plan, source, target).await?;
             let exact = matches
@@ -1020,10 +1035,13 @@ async fn reconcile_outcome(plan: &ForgeMutationPlan) -> Result<ReconciledOutcome
             }
         }
         ForgeMutationKind::CommentMergeRequest => Ok(ReconciledOutcome::Unknown(
-            "comment outcome cannot be proven after payload left memory; never retry blindly".into(),
+            "comment outcome cannot be proven after payload left memory; never retry blindly"
+                .into(),
         )),
         ForgeMutationKind::ApproveMergeRequest => {
-            let iid = plan.change_request_iid.context("approve plan missing iid")?;
+            let iid = plan
+                .change_request_iid
+                .context("approve plan missing iid")?;
             let user: GitLabUser = glab_api_json(&plan.cwd, &plan.host, "/user").await?;
             let approvals = approvals(plan, iid).await?;
             if approvals
@@ -1033,8 +1051,8 @@ async fn reconcile_outcome(plan: &ForgeMutationPlan) -> Result<ReconciledOutcome
             {
                 Ok(ReconciledOutcome::Succeeded {
                     result_ref: mr_ref(plan, iid),
-                    verification: "reconciled after uncertain outcome: authenticated user is approved"
-                        .into(),
+                    verification:
+                        "reconciled after uncertain outcome: authenticated user is approved".into(),
                 })
             } else {
                 Ok(ReconciledOutcome::Failed(
@@ -1048,7 +1066,8 @@ async fn reconcile_outcome(plan: &ForgeMutationPlan) -> Result<ReconciledOutcome
             match mr.state.as_str() {
                 "merged" => Ok(ReconciledOutcome::Succeeded {
                     result_ref: mr_ref(plan, iid),
-                    verification: "reconciled after uncertain outcome: GitLab reports merged".into(),
+                    verification: "reconciled after uncertain outcome: GitLab reports merged"
+                        .into(),
                 }),
                 "opened" => Ok(ReconciledOutcome::Failed(
                     "reconciliation confirms merge request remains open".into(),
@@ -1160,7 +1179,12 @@ mod tests {
                 .iter()
                 .any(|item| item.key == "approval-rules-satisfied")
         );
-        assert!(!plan.expected_side_effect.to_ascii_lowercase().contains("force"));
+        assert!(
+            !plan
+                .expected_side_effect
+                .to_ascii_lowercase()
+                .contains("force")
+        );
     }
 
     #[test]
