@@ -859,6 +859,9 @@ fn drain_forge(app: &mut AppState, forge: &mut ForgeHandle) -> bool {
             ForgeEvent::Observation(observation) => {
                 reduce(app, Action::ForgeObservationLoaded(observation));
             }
+            ForgeEvent::Review(review) => {
+                reduce(app, Action::ForgeReviewLoaded(review));
+            }
         }
         changed = true;
     }
@@ -1051,6 +1054,39 @@ fn apply_effects(
                             cwd,
                             error.to_string(),
                         )),
+                    );
+                }
+            }
+            Effect::ProbeForgeReview {
+                thread_id,
+                cwd,
+                host,
+                project_id,
+                change_request_iid,
+            } => {
+                if let Err(error) = forge.probe_review(
+                    thread_id.clone(),
+                    cwd.clone(),
+                    host,
+                    project_id,
+                    change_request_iid,
+                ) {
+                    reduce(
+                        app,
+                        Action::ForgeReviewLoaded(forge::ForgeReviewSummary {
+                            thread_id,
+                            cwd,
+                            change_request_iid,
+                            approvals_required: None,
+                            approvals_left: None,
+                            approved_by_count: 0,
+                            discussions_total: 0,
+                            unresolved_discussions: 0,
+                            approvals_available: false,
+                            discussions_available: false,
+                            observed_at_unix_ms: now_unix_ms(),
+                            error: Some(error.to_string()),
+                        }),
                     );
                 }
             }
