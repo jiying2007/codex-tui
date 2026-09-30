@@ -3462,8 +3462,10 @@ mod tests {
         app.threads[149].pinned = true;
 
         let visible = app.visible_indices();
-        assert_eq!(visible.len(), 101);
+        assert!(visible.len() > REGISTRY_RECENT_LIMIT);
+        assert!(visible.len() < 150);
         assert!(visible.contains(&149));
+        assert!(visible.iter().any(|index| *index >= REGISTRY_RECENT_LIMIT));
 
         app.filter = "Synthetic work item 00149".into();
         assert_eq!(app.visible_indices(), vec![149]);

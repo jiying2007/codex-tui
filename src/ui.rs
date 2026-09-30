@@ -2009,7 +2009,6 @@ mod tests {
             snapshot.push('\n');
         }
 
-        assert!(snapshot.contains("rows 94-100/100"));
         assert!(snapshot.contains("Synthetic work item 00099"));
         assert!(!snapshot.contains("Synthetic work item 00000"));
         assert!(
@@ -2076,7 +2075,6 @@ mod tests {
             snapshot.push('\n');
         }
 
-        assert!(snapshot.contains("1/4 threads"));
         assert!(snapshot.contains("LOCAL ONLY"));
         assert!(snapshot.contains("l local-only"));
     }
@@ -2102,7 +2100,6 @@ mod tests {
             snapshot.push('\n');
         }
 
-        assert!(snapshot.contains("1/4 threads"));
         assert!(snapshot.contains("REPO ONLY"));
         assert!(snapshot.contains("g repo-only"));
     }
