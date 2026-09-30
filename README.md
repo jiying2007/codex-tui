@@ -140,6 +140,7 @@ cargo run -- doctor forge
 cargo run -- doctor store
 cargo run -- doctor compat
 cargo run -- doctor compat --json
+cargo run -- doctor presets
 cargo run -- headless threads
 cargo run -- headless threads --json
 cargo run -- headless work
@@ -162,6 +163,8 @@ M6c completes the normalized forge layer with a GitHub.com read-only provider. E
 
 M7a establishes a read-only automation and scale baseline. `headless threads` and `headless work` emit stable text or secret-safe JSON snapshots with explicit degraded exit codes. `doctor compat` reports local OS/architecture, SQLite, Codex, Git, `glab`, and `gh` compatibility without remote forge API probes. `--fixture-10k` provides deterministic scale data, while the Divan benchmark target measures resident 10k planning filters without turning noisy hosted-runner timings into release gates.
 
+M7b3 adds repository-shared `.codex-tui.toml` launch presets as a deliberately narrow argv-only feature. Presets are selected from Workspace/Review context actions, shown as an exact cwd/argv plan, and require explicit confirmation before codex-tui starts the external process. The config has no shell string, env templating, chaining, hooks or scheduler semantics; common shell executables are rejected.
+
 ## Status
 
 - M0 local control-plane skeleton: implemented and merged.
@@ -177,7 +180,8 @@ M7a establishes a read-only automation and scale baseline. `headless threads` an
 - M7a headless read-only CLI + scale baselines: implemented in the v0.7.x line.
 - M7b1 richer SavedView query language: implemented in the v0.7.x line.
 - M7b2 safe transactional batch-local actions: implemented with frozen targets, explicit confirmation, and one SQLite transaction.
-- M7b3 repository-shared launch presets: next.
+- M7b3 repository-shared safe launch presets: implemented with argv-only config, explicit plan/confirmation, and no shell/PTY semantics.
+- M7c bounded cross-platform Terminal Drawer: next.
 
 Architecture and product research are archived under `docs/research/`.
 Implementation design lives under `docs/design/`.
@@ -204,3 +208,4 @@ See:
 - `docs/implementation/m7a-headless-scale.md`
 - `docs/implementation/m7b1-saved-view-query.md`
 - `docs/implementation/m7b2-batch-local.md`
+- `docs/implementation/m7b3-launch-presets.md`
