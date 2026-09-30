@@ -295,7 +295,7 @@ fn registry_viewport(app: &AppState, area_height: u16) -> (Vec<usize>, RegistryV
 }
 
 fn render_thread_list(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
-    let (paragraph, viewport) = thread_list(app, area.height);
+    let (paragraph, viewport) = thread_list(app, area);
     frame.render_widget(paragraph, area);
 
     if viewport.total <= viewport.row_capacity || viewport.row_capacity == 0 || area.width == 0 {
@@ -326,8 +326,8 @@ fn render_thread_list(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
     );
 }
 
-fn thread_list(app: &AppState, area_height: u16) -> (Paragraph<'static>, RegistryViewport) {
-    let (visible, viewport) = registry_viewport(app, area_height);
+fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewport) {
+    let (visible, viewport) = registry_viewport(app, area.height);
     let attention_count = visible
         .iter()
         .filter(|index| app.thread_needs_attention(**index))
@@ -411,13 +411,20 @@ fn thread_list(app: &AppState, area_height: u16) -> (Paragraph<'static>, Registr
             CwdLocality::NativeMissing => "!",
             CwdLocality::Relative | CwdLocality::Empty => "?",
         };
-        let text = format!(
-            "{prefix}{pin}{collision}{locality} {:7} {} {} {}",
-            thread.runtime.label(),
-            fit_display(&thread.workspace, 18),
-            fit_display(&attention, 10),
-            sanitize_inline(thread.display_title())
-        );
+        let text = match layout_mode(area.width) {
+            LayoutMode::Compact => format!(
+                "{prefix}{pin}{collision}{locality} {:7} {}",
+                thread.runtime.label(),
+                sanitize_inline(thread.display_title())
+            ),
+            LayoutMode::Standard | LayoutMode::Wide => format!(
+                "{prefix}{pin}{collision}{locality} {:7} {} {} {}",
+                thread.runtime.label(),
+                fit_display(&thread.workspace, 18),
+                fit_display(&attention, 10),
+                sanitize_inline(thread.display_title())
+            ),
+        };
         let style = if selected {
             Style::default().add_modifier(Modifier::REVERSED)
         } else {
