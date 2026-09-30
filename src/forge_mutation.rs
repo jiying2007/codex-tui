@@ -4,7 +4,7 @@ use crate::forge::{
 };
 use crate::operation::{OperationState, new_operation_id, now_unix_ms};
 use crate::sqlite_store::SqliteStore;
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -330,7 +330,7 @@ impl ForgeMutationReceipt {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ForgeMutationRequest {
     pub plan: ForgeMutationPlan,
     pub payload: Option<String>,
