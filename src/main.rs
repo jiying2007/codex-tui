@@ -4,12 +4,12 @@ use codex_tui::{
     app_server::{self, ConversationEvent, RegistryHandle},
     backend::{BackendStatus, CodexBackend, FakeBackend},
     conversation::{InteractiveRequestKind, InteractiveResolution},
+    domain::{CwdLocality, classify_cwd, display_cwd},
     forge::{self, ForgeEvent, ForgeHandle},
     forge_mutation::{ForgeMutationEvent, ForgeMutationHandle},
     git::{self, GitEvent, GitHandle},
     goal::GoalStatus,
     keymap::{Command, command_for_key},
-    domain::{CwdLocality, classify_cwd, display_cwd},
     planning::{
         LocalNote, PlanningSnapshot, SavedView, ScratchState, SourceKind, SourceRef, WorkCardRecord,
     },
@@ -693,15 +693,13 @@ async fn doctor(scope: Option<&str>) -> Result<()> {
                         CwdLocality::ForeignWindows => {
                             foreign_windows += 1;
                             if foreign_samples.len() < 5 {
-                                foreign_samples
-                                    .push(display_cwd(&thread.metadata.cwd).to_string());
+                                foreign_samples.push(display_cwd(&thread.metadata.cwd).to_string());
                             }
                         }
                         CwdLocality::ForeignUnix => {
                             foreign_unix += 1;
                             if foreign_samples.len() < 5 {
-                                foreign_samples
-                                    .push(display_cwd(&thread.metadata.cwd).to_string());
+                                foreign_samples.push(display_cwd(&thread.metadata.cwd).to_string());
                             }
                         }
                         CwdLocality::NativeMissing => stale += 1,
