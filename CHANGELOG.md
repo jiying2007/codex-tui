@@ -7,7 +7,8 @@ All notable codex-tui changes are recorded here.
 ### Development
 
 - opened the 1.1 development line after the immutable v1.0.0 stable release;
-- new 1.1 changes are recorded here until the next stable publication.
+- new 1.1 changes are recorded here until the next stable publication;
+- generalized Linux Tier 1 qualification and the retained v1 stable support policy beyond the original v1.0.0 release.
 
 ## [1.0.0] - 2026-09-30
 

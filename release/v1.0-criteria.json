@@ -86,6 +86,6 @@
       "macos",
       "windows"
     ],
-    "policy": "v1.0 stable requires real retained compatibility, terminal-restoration and performance evidence on Linux. macOS/Windows remain required in canonical CI and native package/archive smoke but do not block stable on real-environment retained evidence."
+    "policy": "v1 stable releases require real retained compatibility, terminal-restoration and performance evidence on Linux. macOS/Windows remain required in canonical CI and native package/archive smoke but do not block stable on real-environment retained evidence."
   }
 }
