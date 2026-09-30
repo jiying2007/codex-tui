@@ -1091,7 +1091,10 @@ fn apply_effects(
                             },
                         );
                         reduce(app, Action::PlanningStoreDegraded(None));
-                        reduce(app, Action::MutationNotice(format!("local batch applied · {preview}")));
+                        reduce(
+                            app,
+                            Action::MutationNotice(format!("local batch applied · {preview}")),
+                        );
                     }
                     Err(error) => {
                         reduce(app, Action::PlanningStoreDegraded(Some(error)));
