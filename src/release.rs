@@ -38,13 +38,21 @@ pub struct PlatformTerminalReceipt {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct PlatformCompatReceipt {
+    pub status: String,
+    pub report_sha256: String,
+    pub observed_at: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ReleaseEvidenceReceipt {
     pub schema: String,
     pub version: String,
     pub commit_sha: String,
     pub canonical_ci_run: u64,
     pub compat_schema: String,
-    pub compat_readiness: String,
+    pub compatibility: BTreeMap<String, PlatformCompatReceipt>,
     pub terminal_restoration: BTreeMap<String, PlatformTerminalReceipt>,
 }
 
@@ -72,6 +80,7 @@ pub struct ReleaseVerification {
     pub cargo_lock_present: bool,
     pub changelog_version_present: bool,
     pub project_license_present: bool,
+    pub stable_criteria_present: bool,
     pub evidence_status: String,
 }
 
@@ -126,6 +135,14 @@ pub fn verify(options: &ReleaseVerifyOptions) -> ReleaseVerification {
         );
     }
 
+    let stable_criteria_present = options
+        .repo_root
+        .join("release/v1.0-criteria.json")
+        .is_file();
+    if !stable_criteria_present {
+        blockers.push("release/v1.0-criteria.json is required for release candidates".into());
+    }
+
     let evidence_status = if options.channel == ReleaseChannel::Stable {
         match options.evidence_path.as_deref() {
             None => {
@@ -169,6 +186,7 @@ pub fn verify(options: &ReleaseVerifyOptions) -> ReleaseVerification {
         cargo_lock_present,
         changelog_version_present,
         project_license_present,
+        stable_criteria_present,
         evidence_status,
     }
 }
@@ -196,12 +214,24 @@ pub fn validate_evidence(path: &Path, version: &str, commit_sha: &str) -> Result
         receipt.compat_schema == COMPAT_SCHEMA,
         "receipt compatibility schema must be {COMPAT_SCHEMA}"
     );
-    anyhow::ensure!(
-        receipt.compat_readiness == "ready",
-        "stable receipt requires compatReadiness=ready"
-    );
-
     for platform in ["linux", "macos", "windows"] {
+        let compatibility = receipt
+            .compatibility
+            .get(platform)
+            .with_context(|| format!("missing compatibility evidence for {platform}"))?;
+        anyhow::ensure!(
+            compatibility.status.eq_ignore_ascii_case("ready"),
+            "compatibility evidence for {platform} must be READY"
+        );
+        anyhow::ensure!(
+            valid_sha256(&compatibility.report_sha256),
+            "compatibility report SHA-256 for {platform} must be 64 hexadecimal characters"
+        );
+        anyhow::ensure!(
+            !compatibility.observed_at.trim().is_empty(),
+            "compatibility observation timestamp for {platform} must not be empty"
+        );
+
         let evidence = receipt
             .terminal_restoration
             .get(platform)
@@ -247,6 +277,10 @@ pub fn valid_commit_sha(value: &str) -> bool {
     value.len() == 40 && value.chars().all(|ch| ch.is_ascii_hexdigit())
 }
 
+pub fn valid_sha256(value: &str) -> bool {
+    value.len() == 64 && value.chars().all(|ch| ch.is_ascii_hexdigit())
+}
+
 pub fn print_text(report: &ReleaseVerification) {
     println!("schema: {}", report.schema);
     println!("channel: {:?}", report.channel);
@@ -257,6 +291,7 @@ pub fn print_text(report: &ReleaseVerification) {
     println!("cargo-lock: {}", report.cargo_lock_present);
     println!("changelog-version: {}", report.changelog_version_present);
     println!("project-license: {}", report.project_license_present);
+    println!("stable-criteria: {}", report.stable_criteria_present);
     println!("evidence: {}", report.evidence_status);
     println!("valid: {}", report.valid);
     for blocker in &report.blockers {
@@ -347,6 +382,8 @@ mod tests {
             format!("# Changelog\n\n## [{}]\n", env!("CARGO_PKG_VERSION")),
         )
         .expect("changelog");
+        fs::create_dir_all(root.path().join("release")).expect("release dir");
+        fs::write(root.path().join("release/v1.0-criteria.json"), "{}").expect("criteria");
         root
     }
 
@@ -417,7 +454,32 @@ mod tests {
                 commit_sha: sha(),
                 canonical_ci_run: 123,
                 compat_schema: COMPAT_SCHEMA.into(),
-                compat_readiness: "ready".into(),
+                compatibility: BTreeMap::from([
+                    (
+                        "linux".into(),
+                        PlatformCompatReceipt {
+                            status: "ready".into(),
+                            report_sha256: "a".repeat(64),
+                            observed_at: "2026-09-30T00:00:00Z".into(),
+                        },
+                    ),
+                    (
+                        "macos".into(),
+                        PlatformCompatReceipt {
+                            status: "ready".into(),
+                            report_sha256: "b".repeat(64),
+                            observed_at: "2026-09-30T00:00:00Z".into(),
+                        },
+                    ),
+                    (
+                        "windows".into(),
+                        PlatformCompatReceipt {
+                            status: "ready".into(),
+                            report_sha256: "c".repeat(64),
+                            observed_at: "2026-09-30T00:00:00Z".into(),
+                        },
+                    ),
+                ]),
                 terminal_restoration: BTreeMap::from([(
                     "linux".into(),
                     PlatformTerminalReceipt {
@@ -443,5 +505,12 @@ mod tests {
         assert!(!valid_commit_sha(
             "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
         ));
+    }
+
+    #[test]
+    fn sha256_contract_is_exact() {
+        assert!(valid_sha256(&"a".repeat(64)));
+        assert!(!valid_sha256(&"a".repeat(63)));
+        assert!(!valid_sha256(&"z".repeat(64)));
     }
 }
