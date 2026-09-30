@@ -24,6 +24,10 @@ def main() -> int:
     parser.add_argument("--version", required=True)
     parser.add_argument("--commit", required=True)
     parser.add_argument("--canonical-ci-run", required=True, type=int)
+    parser.add_argument("--performance-p95-ms", required=True, type=float)
+    parser.add_argument("--performance-p99-ms", required=True, type=float)
+    parser.add_argument("--performance-source", required=True)
+    parser.add_argument("--performance-observed-at", required=True)
     for platform in PLATFORMS:
         parser.add_argument(f"--{platform}-compat-sha256", required=True)
         parser.add_argument(f"--{platform}-compat-observed-at", required=True)
@@ -62,6 +66,11 @@ def main() -> int:
             ),
         }
 
+    if not (0 <= args.performance_p95_ms <= 50):
+        raise SystemExit("stable performance p95 must be between 0 and 50 ms")
+    if not (0 <= args.performance_p99_ms <= 100):
+        raise SystemExit("stable performance p99 must be between 0 and 100 ms")
+
     receipt = {
         "schema": args.schema,
         "version": args.version,
@@ -70,6 +79,16 @@ def main() -> int:
         "compatSchema": args.compat_schema,
         "compatibility": compatibility,
         "terminalRestoration": terminal,
+        "performance": {
+            "fixture": "resident-planning-10k",
+            "p95Ms": args.performance_p95_ms,
+            "p99Ms": args.performance_p99_ms,
+            "source": nonempty(args.performance_source, "performance source"),
+            "observedAt": nonempty(
+                args.performance_observed_at,
+                "performance observed-at",
+            ),
+        },
     }
 
     output = pathlib.Path(args.output)
