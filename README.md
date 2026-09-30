@@ -238,6 +238,22 @@ codex-tui is licensed under the Apache License 2.0. See `LICENSE`.
 
 Third-party runtime dependency notices are generated from the locked Cargo dependency graph for release archives.
 
+
+### Mission Control host-local sessions
+
+Mission Control classifies each Codex thread cwd against the current host:
+
+- `L` / `local`: cwd is a directory that exists on this host; Terminal Drawer is allowed.
+- `F` / `foreign-windows` or `foreign-unix`: cwd belongs to another OS; Terminal Drawer is blocked.
+- `!` / `stale`: native absolute cwd no longer exists.
+- `?`: cwd is empty or relative.
+
+Press `/`, type `local`, then Enter to show only sessions whose cwd exists on the current host.
+
+Codex app-server may normalize a stored Windows cwd while running on Linux, yielding a value such as `/linux/current/dir/C:\\Users\\...`. codex-tui detects the embedded foreign Windows path, displays the Windows portion as foreign, and never uses that value as a Linux PTY cwd.
+
+Run `codex-tui doctor codex` to see the active Codex home plus local/foreign/stale session counts and sample cwd values.
+
 ## Linux Tier 1 stable qualification
 
 Release helper scripts require **Python 3.8+**. Use `python3`; do not rely on a `python` alias.
