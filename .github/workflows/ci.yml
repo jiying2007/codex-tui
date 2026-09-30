@@ -77,6 +77,7 @@ jobs:
           python scripts/release/verify_archive.py --help >/dev/null
           python scripts/release/validate_ci_run.py --help >/dev/null
           python scripts/release/linux_qualify.py --help >/dev/null
+          PYTHONPATH=scripts/release python -c 'import linux_qualify as q; assert q.stable_version_allowed("1.0.0"); assert q.stable_version_allowed("1.1.0"); assert q.stable_version_allowed("2.3.4"); assert not q.stable_version_allowed("0.9.0"); assert not q.stable_version_allowed("1.1.0-rc.1"); assert not q.stable_version_allowed("01.1.0")'
       - name: Verify release scripts parse
         run: python -c "import pathlib, py_compile; [py_compile.compile(str(p), doraise=True) for p in pathlib.Path('scripts/release').glob('*.py')]"
       - run: cargo fmt --all -- --check

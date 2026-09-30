@@ -171,11 +171,11 @@ The compatibility helper refuses anything other than `readiness=ready` and print
 
 Terminal-restoration evidence remains an explicit real-controlling-TTY smoke receipt; it is not synthesized by CI.
 
-## v1.0 criteria
+## v1 stable criteria baseline
 
-`release/v1.0-criteria.json` is the machine-readable stable gate list and is shipped inside every archive.
+`release/v1.0-criteria.json` is the machine-readable v1 stable gate baseline and is shipped inside every archive. The filename is retained for compatibility because v1.0.0 is the first stable version.
 
-The repository is Apache-2.0 licensed and v1.0.0 was published on 2026-09-30. Stable publication is fail-closed on exact-commit canonical CI plus the Linux Tier 1 retained compatibility, real terminal-restoration and performance evidence defined below. macOS and Windows remain required in canonical CI and native package/archive smoke as Tier 2 automated-compatibility platforms; their real-environment retained receipts are optional for v1.0 stable.
+The repository is Apache-2.0 licensed and v1.0.0 was published on 2026-09-30. Stable publication across the v1 line is fail-closed on exact-commit canonical CI plus the Linux Tier 1 retained compatibility, real terminal-restoration and performance evidence defined below. macOS and Windows remain required in canonical CI and native package/archive smoke as Tier 2 automated-compatibility platforms; their real-environment retained receipts are optional for v1 stable releases.
 
 ## Non-goals
 
@@ -188,9 +188,9 @@ M7d3 does not add:
 - a generic workflow/job engine;
 - a second source of product version truth.
 
-## Linux-first v1.0 support policy
+## Linux-first v1 stable support policy
 
-For v1.0, Linux is the Tier 1 stable platform.
+For the v1 stable line, Linux is the Tier 1 stable platform.
 
 Stable-blocking real-world retained evidence:
 
@@ -202,7 +202,7 @@ macOS and Windows remain Tier 2 automated-compatibility platforms:
 
 - canonical CI remains required on both;
 - native release build, notices, archive construction, Apache-2.0 archive smoke, binary smoke and bundle checks remain required;
-- their real Codex-environment compatibility and real-TTY receipts are optional for v1.0 stable.
+- their real Codex-environment compatibility and real-TTY receipts are optional for v1 stable releases.
 
 The support policy is intentionally asymmetric so Linux stable is not blocked by unavailable macOS/Windows real-environment evidence while cross-platform build regressions still fail the release.
 
@@ -226,7 +226,7 @@ It performs:
 5. 20 warmup + 200 measured resident-planning-10k samples;
 6. Linux terminal receipt validation;
 7. `release-evidence/v2` assembly;
-8. local `stable v1.0.0` release verification.
+8. local stable release verification for the current Cargo package version.
 
 The result is retained under `release/evidence/linux/`. The script never publishes.
 

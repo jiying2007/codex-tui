@@ -11,6 +11,9 @@ import sys
 from _compat import cargo_package, write_text_lf
 
 HEX40 = re.compile(r"^[0-9a-fA-F]{40}$")
+STABLE_VERSION = re.compile(
+    r"^[1-9][0-9]*\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)$"
+)
 TERMINAL_SCHEMA = "codex-tui/terminal-restoration/v1"
 COMPAT_SCHEMA = "codex-tui/compat/v2"
 PERFORMANCE_SCHEMA = "codex-tui/performance/v1"
@@ -45,6 +48,10 @@ def load_json(path: pathlib.Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def stable_version_allowed(version: str) -> bool:
+    return STABLE_VERSION.fullmatch(version) is not None
+
+
 def github_repo_from_cargo(root: pathlib.Path) -> str:
     repository = cargo_package(root).get("repository") or ""
     match = re.fullmatch(r"https://github\.com/([^/]+/[^/]+?)(?:\.git)?/?", repository)
@@ -55,7 +62,7 @@ def github_repo_from_cargo(root: pathlib.Path) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Run the Linux Tier-1 v1.0 stable qualification chain."
+        description="Run the Linux Tier-1 stable qualification chain."
     )
     parser.add_argument("--canonical-ci-run", required=True, type=int)
     parser.add_argument("--terminal-receipt", required=True)
@@ -89,8 +96,11 @@ def main() -> int:
 
     package = cargo_package(root)
     version = package["version"]
-    if version != "1.0.0":
-        raise SystemExit(f"Linux v1 qualification requires version 1.0.0; got {version}")
+    if not stable_version_allowed(version):
+        raise SystemExit(
+            "Linux stable qualification requires a release version X.Y.Z "
+            f"with major >= 1; got {version}"
+        )
     if package.get("license") != "Apache-2.0":
         raise SystemExit("Cargo package license must be Apache-2.0")
     if not (root / "LICENSE").is_file():
