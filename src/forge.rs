@@ -513,7 +513,7 @@ pub async fn probe_gitlab(thread_id: ThreadId, cwd: String) -> Result<ForgeObser
         &cwd,
         &remote.host,
         &format!(
-            "/projects/{encoded_id}/issues?state=all&order_by=updated_at&sort=desc&per_page={DEFAULT_PAGE_SIZE}"
+            "/projects/{encoded_id}/issues?scope=all&state=all&order_by=updated_at&sort=desc&per_page={DEFAULT_PAGE_SIZE}"
         ),
     )
     .await
@@ -522,7 +522,7 @@ pub async fn probe_gitlab(thread_id: ThreadId, cwd: String) -> Result<ForgeObser
     let merge_requests: Vec<GitLabMergeRequest> = glab_api_json(
         &cwd,
         &remote.host,
-        &format!("/projects/{encoded_id}/merge_requests?state=opened&per_page={DEFAULT_PAGE_SIZE}"),
+        &format!("/projects/{encoded_id}/merge_requests?scope=all&state=opened&per_page={DEFAULT_PAGE_SIZE}"),
     )
     .await
     .context("load GitLab merge requests")?;
