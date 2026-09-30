@@ -4,6 +4,7 @@ use crate::conversation::{
     InteractiveResolution, RpcRequestId, UserInputQuestion,
 };
 use crate::domain::{AttentionReason, RuntimeStatus, ThreadId, ThreadSummary, ThreadUiState};
+use crate::forge::{CapabilityState, ForgeCapability, ForgeObservation, ForgeReviewSummary};
 use crate::git::{GitContext, GitReview};
 use crate::goal::{GoalObservation, GoalStatus};
 use crate::operation::{
@@ -13,7 +14,8 @@ use crate::operation::{
 use crate::planning::{
     PlanningSnapshot, ReconcileInput, SavedView, SavedViewLayout, SourceKind, SourceRef,
     WorkCardProjection, WorkflowStage, apply_saved_view, builtin_saved_views,
-    reconcile_scratch_card_with_local, reconcile_thread_card_with_goal,
+    forge_issue_source_ref, reconcile_forge_issue_card, reconcile_scratch_card_with_local,
+    reconcile_thread_card_with_goal_and_forge,
 };
 use crate::store::LocalStateV1;
 use std::collections::{BTreeMap, BTreeSet};
@@ -92,7 +94,10 @@ pub enum Action {
     ReplaceThreads(Vec<ThreadSummary>),
     BackendStatus(BackendStatus),
     RefreshGitProjections,
+    RefreshForgeProjections,
     GitContextLoaded(GitContext),
+    ForgeObservationLoaded(ForgeObservation),
+    ForgeReviewLoaded(ForgeReviewSummary),
     GitReviewLoaded(GitReview),
     ReviewError { thread_id: ThreadId, error: String },
     PlanningSnapshotLoaded(PlanningSnapshot),
@@ -218,6 +223,17 @@ pub enum Effect {
         thread_id: ThreadId,
         cwd: String,
     },
+    ProbeForge {
+        thread_id: ThreadId,
+        cwd: String,
+    },
+    ProbeForgeReview {
+        thread_id: ThreadId,
+        cwd: String,
+        host: String,
+        project_id: String,
+        change_request_iid: u64,
+    },
     LoadGitReview {
         thread_id: ThreadId,
         cwd: String,
@@ -258,6 +274,7 @@ pub struct AppState {
     pub thread_ui: BTreeMap<String, ThreadUiState>,
     pub conversations: BTreeMap<String, ConversationState>,
     pub git_contexts: BTreeMap<String, GitContext>,
+    pub forge_observations: BTreeMap<String, ForgeObservation>,
     pub git_reviews: BTreeMap<String, GitReview>,
     pub planning_snapshot: PlanningSnapshot,
     pub work_cards: Vec<WorkCardProjection>,
@@ -313,6 +330,7 @@ impl AppState {
             thread_ui: BTreeMap::new(),
             conversations: BTreeMap::new(),
             git_contexts: BTreeMap::new(),
+            forge_observations: BTreeMap::new(),
             git_reviews: BTreeMap::new(),
             planning_snapshot: PlanningSnapshot::default(),
             work_cards: vec![],
@@ -403,6 +421,10 @@ impl AppState {
 
     pub fn git_context(&self, thread_id: &ThreadId) -> Option<&GitContext> {
         self.git_contexts.get(&thread_id.0)
+    }
+
+    pub fn forge_observation(&self, thread_id: &ThreadId) -> Option<&ForgeObservation> {
+        self.forge_observations.get(&thread_id.0)
     }
 
     pub fn current_goal(&self) -> Option<&GoalObservation> {
@@ -739,12 +761,48 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.git_contexts.retain(|thread_id, _| {
                 state.threads.iter().any(|thread| thread.id.0 == *thread_id)
             });
+            state.forge_observations.retain(|thread_id, _| {
+                state.threads.iter().any(|thread| thread.id.0 == *thread_id)
+            });
             return effects;
+        }
+        Action::RefreshForgeProjections => {
+            return refresh_forge_projections(state);
         }
         Action::GitContextLoaded(context) => {
             state
                 .git_contexts
                 .insert(context.thread_id.0.clone(), context);
+        }
+        Action::ForgeObservationLoaded(observation) => {
+            propagate_forge_observation(state, observation);
+        }
+        Action::ForgeReviewLoaded(review) => {
+            if let Some(observation) = state.forge_observations.get_mut(&review.thread_id.0)
+                && observation.cwd == review.cwd
+                && observation
+                    .change_requests
+                    .iter()
+                    .any(|change| change.iid == review.change_request_iid)
+            {
+                observation.capabilities.insert(
+                    ForgeCapability::ApprovalSummary,
+                    if review.approvals_available {
+                        CapabilityState::Available
+                    } else {
+                        CapabilityState::Unavailable
+                    },
+                );
+                observation.capabilities.insert(
+                    ForgeCapability::Discussions,
+                    if review.discussions_available {
+                        CapabilityState::Available
+                    } else {
+                        CapabilityState::Unavailable
+                    },
+                );
+                observation.review = Some(review);
+            }
         }
         Action::GitReviewLoaded(review) => {
             let key = review.thread_id.0.clone();
@@ -817,6 +875,12 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state
                 .git_contexts
                 .retain(|_, context| context.repo.as_ref() != Some(&repo));
+            state.forge_observations.retain(|thread_id, _| {
+                state
+                    .git_contexts
+                    .get(thread_id)
+                    .is_some_and(|context| context.repo.as_ref() != Some(&repo))
+            });
             state
                 .recent_operations
                 .retain(|item| item.operation_id != receipt.operation_id);
@@ -1275,8 +1339,33 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 thread_id.0.clone(),
                 GitReview::pending(thread_id.clone(), cwd.clone()),
             );
+
+            let forge_review_effect = state
+                .git_context(&thread_id)
+                .and_then(|context| context.branch.as_deref())
+                .and_then(|branch| {
+                    state.forge_observation(&thread_id).and_then(|observation| {
+                        let identity = observation.identity.as_ref()?;
+                        let change = observation.change_request_for_branch(branch)?;
+                        let already_loaded = observation.review.as_ref().is_some_and(|review| {
+                            review.change_request_iid == change.iid && review.cwd == cwd
+                        });
+                        (!already_loaded).then(|| Effect::ProbeForgeReview {
+                            thread_id: thread_id.clone(),
+                            cwd: cwd.clone(),
+                            host: identity.host.clone(),
+                            project_id: identity.project_id.clone(),
+                            change_request_iid: change.iid,
+                        })
+                    })
+                });
+
             state.view = View::Review(thread_id.clone());
-            return vec![Effect::LoadGitReview { thread_id, cwd }];
+            let mut effects = vec![Effect::LoadGitReview { thread_id, cwd }];
+            if let Some(effect) = forge_review_effect {
+                effects.push(effect);
+            }
+            return effects;
         }
         Action::OpenWorkspace => {
             let thread_id = match &state.view {
@@ -2079,6 +2168,148 @@ fn select_next_planning_attention(state: &mut AppState) {
     }
 }
 
+const FORGE_REFRESH_TTL_MS: u64 = 60_000;
+
+fn forge_scope_key(state: &AppState, thread: &ThreadSummary) -> String {
+    if let Some(identity) = state
+        .forge_observations
+        .get(&thread.id.0)
+        .and_then(|observation| observation.identity.as_ref())
+    {
+        format!(
+            "forge:{}:{}:{}",
+            identity.provider.label(),
+            identity.host,
+            identity.project_id
+        )
+    } else {
+        format!("cwd:{}", thread.metadata.cwd)
+    }
+}
+
+fn refresh_forge_projections(state: &mut AppState) -> Vec<Effect> {
+    let now = now_unix_ms();
+    let mut groups = BTreeMap::<String, Vec<(ThreadId, String)>>::new();
+
+    for thread in &state.threads {
+        let Some(context) = state.git_context(&thread.id) else {
+            continue;
+        };
+        if !context.is_repository || context.error.is_some() || context.cwd != thread.metadata.cwd {
+            continue;
+        }
+        groups
+            .entry(forge_scope_key(state, thread))
+            .or_default()
+            .push((thread.id.clone(), thread.metadata.cwd.clone()));
+    }
+
+    let mut effects = Vec::new();
+    for targets in groups.into_values() {
+        let newest = targets
+            .iter()
+            .filter_map(|(thread_id, cwd)| {
+                state
+                    .forge_observations
+                    .get(&thread_id.0)
+                    .filter(|observation| observation.cwd == *cwd)
+            })
+            .max_by_key(|observation| observation.observed_at_unix_ms);
+
+        if newest.is_some_and(|observation| {
+            observation.observed_at_unix_ms == 0
+                || now.saturating_sub(observation.observed_at_unix_ms) <= FORGE_REFRESH_TTL_MS
+        }) {
+            continue;
+        }
+
+        let Some((thread_id, cwd)) = targets.first().cloned() else {
+            continue;
+        };
+        state.forge_observations.insert(
+            thread_id.0.clone(),
+            ForgeObservation::pending(thread_id.clone(), cwd.clone()),
+        );
+        effects.push(Effect::ProbeForge { thread_id, cwd });
+    }
+
+    effects
+}
+
+fn propagate_forge_observation(state: &mut AppState, observation: ForgeObservation) {
+    let source_cwd = observation.cwd.clone();
+    let source_identity = observation.identity.clone();
+    let mut targets = state
+        .threads
+        .iter()
+        .filter(|thread| {
+            let valid_git = state.git_context(&thread.id).is_some_and(|context| {
+                context.is_repository
+                    && context.error.is_none()
+                    && context.cwd == thread.metadata.cwd
+            });
+            if !valid_git {
+                return false;
+            }
+            if thread.metadata.cwd == source_cwd {
+                return true;
+            }
+            source_identity.as_ref().is_some_and(|identity| {
+                state
+                    .forge_observations
+                    .get(&thread.id.0)
+                    .and_then(|existing| existing.identity.as_ref())
+                    == Some(identity)
+            })
+        })
+        .map(|thread| (thread.id.clone(), thread.metadata.cwd.clone()))
+        .collect::<Vec<_>>();
+
+    if targets.is_empty() {
+        targets.push((observation.thread_id.clone(), source_cwd));
+    }
+
+    for (thread_id, cwd) in targets {
+        let existing_review = state
+            .forge_observations
+            .get(&thread_id.0)
+            .and_then(|existing| existing.review.clone())
+            .filter(|review| {
+                review.cwd == cwd
+                    && observation
+                        .change_requests
+                        .iter()
+                        .any(|change| change.iid == review.change_request_iid)
+            });
+
+        let mut projected = observation.clone();
+        projected.thread_id = thread_id.clone();
+        projected.cwd = cwd;
+        projected.review = existing_review;
+        if let Some(review) = &projected.review {
+            projected.capabilities.insert(
+                ForgeCapability::ApprovalSummary,
+                if review.approvals_available {
+                    CapabilityState::Available
+                } else {
+                    CapabilityState::Unavailable
+                },
+            );
+            projected.capabilities.insert(
+                ForgeCapability::Discussions,
+                if review.discussions_available {
+                    CapabilityState::Available
+                } else {
+                    CapabilityState::Unavailable
+                },
+            );
+        }
+        state
+            .forge_observations
+            .insert(thread_id.0.clone(), projected);
+    }
+}
+
 fn rebuild_planning(state: &mut AppState, now_unix_ms: u64) {
     let local_by_anchor = state
         .planning_snapshot
@@ -2092,7 +2323,7 @@ fn rebuild_planning(state: &mut AppState, now_unix_ms: u64) {
 
     for thread in &state.threads {
         let anchor = SourceRef::codex_thread(&thread.id);
-        let projection = reconcile_thread_card_with_goal(
+        let projection = reconcile_thread_card_with_goal_and_forge(
             ReconcileInput {
                 thread,
                 git: state.git_context(&thread.id),
@@ -2103,6 +2334,7 @@ fn rebuild_planning(state: &mut AppState, now_unix_ms: u64) {
                 now_unix_ms,
             },
             state.goals.get(&thread.id.0),
+            state.forge_observation(&thread.id),
         );
         projections.push(projection);
     }
@@ -2118,6 +2350,36 @@ fn rebuild_planning(state: &mut AppState, now_unix_ms: u64) {
             now_unix_ms,
         )
     }));
+
+    let mut forge_issues = BTreeMap::new();
+    for observation in state.forge_observations.values() {
+        if observation.observed_at_unix_ms == 0 || observation.identity.is_none() {
+            continue;
+        }
+        for issue in &observation.issues {
+            let Some(anchor) = forge_issue_source_ref(observation, issue) else {
+                continue;
+            };
+            let candidate = (observation.observed_at_unix_ms, observation, issue);
+            match forge_issues.get(&anchor) {
+                Some((observed_at, _, _)) if *observed_at >= observation.observed_at_unix_ms => {}
+                _ => {
+                    forge_issues.insert(anchor, candidate);
+                }
+            }
+        }
+    }
+
+    for (anchor, (_, observation, issue)) in forge_issues {
+        if let Some(projection) = reconcile_forge_issue_card(
+            observation,
+            issue,
+            local_by_anchor.get(&anchor).copied(),
+            now_unix_ms,
+        ) {
+            projections.push(projection);
+        }
+    }
 
     for projection in &mut projections {
         if let Some(note) = state
@@ -2971,6 +3233,167 @@ mod tests {
                 cwd: "/new/cwd".into(),
             }]
         );
+    }
+
+    #[test]
+    fn planning_deduplicates_same_gitlab_issue_across_threads() {
+        use crate::forge::{
+            CapabilityState, ForgeCapability, ForgeFreshness, ForgeIdentity, ForgeIssueSummary,
+            ForgeProviderKind,
+        };
+
+        let mut app = app();
+        let issue = ForgeIssueSummary {
+            iid: 12,
+            title: "Shared issue".into(),
+            state: "opened".into(),
+            web_url: "https://gitlab.example.com/team/repo/-/issues/12".into(),
+            updated_at: Some("2026-09-30T00:00:00Z".into()),
+        };
+
+        for (index, thread) in app.threads.iter().take(2).enumerate() {
+            app.forge_observations.insert(
+                thread.id.0.clone(),
+                ForgeObservation {
+                    thread_id: thread.id.clone(),
+                    cwd: thread.metadata.cwd.clone(),
+                    remote_name: Some("origin".into()),
+                    remote_url: Some("git@gitlab.example.com:team/repo.git".into()),
+                    identity: Some(ForgeIdentity {
+                        provider: ForgeProviderKind::GitLab,
+                        host: "gitlab.example.com".into(),
+                        project_id: "42".into(),
+                        path_with_namespace: "team/repo".into(),
+                        web_url: "https://gitlab.example.com/team/repo".into(),
+                    }),
+                    capabilities: BTreeMap::from([(
+                        ForgeCapability::Issues,
+                        CapabilityState::Available,
+                    )]),
+                    issues: vec![issue.clone()],
+                    change_requests: vec![],
+                    pipelines: vec![],
+                    review: None,
+                    observed_at_unix_ms: 100 + index as u64,
+                    freshness: ForgeFreshness::Fresh,
+                    error: None,
+                },
+            );
+        }
+
+        reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 102 });
+
+        let issue_cards = app
+            .work_cards
+            .iter()
+            .filter(|card| card.anchor.kind == SourceKind::ForgeWorkItem)
+            .collect::<Vec<_>>();
+        assert_eq!(issue_cards.len(), 1);
+        assert_eq!(
+            issue_cards[0].anchor.value,
+            "gitlab://gitlab.example.com/projects/42/issues/12"
+        );
+    }
+
+    #[test]
+    fn forge_refresh_coalesces_same_checkout_and_reprobes_after_ttl() {
+        use crate::forge::{ForgeFreshness, ForgeIdentity, ForgeProviderKind};
+
+        let mut app = app();
+        let ids = app
+            .threads
+            .iter()
+            .take(2)
+            .map(|thread| thread.id.clone())
+            .collect::<Vec<_>>();
+        for thread in app.threads.iter_mut().take(2) {
+            thread.metadata.cwd = "/repo".into();
+        }
+        for thread_id in &ids {
+            let mut context = GitContext::pending(thread_id.clone(), "/repo");
+            context.is_repository = true;
+            app.git_contexts.insert(thread_id.0.clone(), context);
+        }
+
+        let effects = reduce(&mut app, Action::RefreshForgeProjections);
+        assert_eq!(effects.len(), 1);
+        let Effect::ProbeForge {
+            thread_id: source_thread,
+            cwd,
+        } = effects[0].clone()
+        else {
+            panic!("expected one forge probe");
+        };
+        assert_eq!(cwd, "/repo");
+
+        reduce(
+            &mut app,
+            Action::ForgeObservationLoaded(ForgeObservation {
+                thread_id: source_thread,
+                cwd: "/repo".into(),
+                remote_name: Some("origin".into()),
+                remote_url: Some("git@gitlab.example.com:team/repo.git".into()),
+                identity: Some(ForgeIdentity {
+                    provider: ForgeProviderKind::GitLab,
+                    host: "gitlab.example.com".into(),
+                    project_id: "42".into(),
+                    path_with_namespace: "team/repo".into(),
+                    web_url: "https://gitlab.example.com/team/repo".into(),
+                }),
+                capabilities: BTreeMap::new(),
+                issues: vec![],
+                change_requests: vec![],
+                pipelines: vec![],
+                review: None,
+                observed_at_unix_ms: now_unix_ms(),
+                freshness: ForgeFreshness::Fresh,
+                error: None,
+            }),
+        );
+
+        assert!(ids.iter().all(|thread_id| {
+            app.forge_observation(thread_id)
+                .is_some_and(|observation| observation.identity.is_some())
+        }));
+        assert!(reduce(&mut app, Action::RefreshForgeProjections).is_empty());
+
+        for thread_id in &ids {
+            app.forge_observations
+                .get_mut(&thread_id.0)
+                .expect("forge observation")
+                .observed_at_unix_ms = 1;
+        }
+        assert_eq!(reduce(&mut app, Action::RefreshForgeProjections).len(), 1);
+    }
+
+    #[test]
+    fn forge_projection_probe_is_git_authoritative_and_deduplicated() {
+        let mut app = app();
+        app.threads[0].metadata.cwd = "/repo".into();
+        let thread_id = app.threads[0].id.clone();
+
+        let mut context = GitContext::pending(thread_id.clone(), "/repo");
+        context.is_repository = true;
+        reduce(&mut app, Action::GitContextLoaded(context));
+
+        let effects = reduce(&mut app, Action::RefreshForgeProjections);
+        assert_eq!(
+            effects,
+            vec![Effect::ProbeForge {
+                thread_id: thread_id.clone(),
+                cwd: "/repo".into(),
+            }]
+        );
+        assert_eq!(
+            app.forge_observation(&thread_id)
+                .expect("pending forge observation")
+                .observed_at_unix_ms,
+            0
+        );
+        assert!(reduce(&mut app, Action::RefreshForgeProjections).is_empty());
+
+        app.threads[0].metadata.cwd = "/new/repo".into();
+        assert!(reduce(&mut app, Action::RefreshForgeProjections).is_empty());
     }
 
     #[test]

@@ -127,6 +127,7 @@ Requirements:
 
 - Rust stable (MSRV 1.88)
 - a working `codex` executable on `PATH` for live registry mode
+- optional `glab` authenticated to the repository's GitLab host for M6a forge projection
 
 Commands:
 
@@ -134,6 +135,7 @@ Commands:
 cargo run
 cargo run -- doctor codex
 cargo run -- doctor git
+cargo run -- doctor forge
 cargo run -- doctor store
 cargo run -- --fake
 ```
@@ -144,6 +146,8 @@ Personal planning state is stored locally in SQLite: WorkCard relationships/over
 
 `--fake` is a deterministic development/fixture mode; it is never an automatic fallback for a failed real backend.
 
+M6a adds an asynchronous read-only GitLab projection. A normal forge refresh stays within four `glab api` calls (project, recent Issues, open MRs, recent Pipelines); approval/discussion details are loaded only when Review is opened. Forge observations remain derived and carry freshness/provenance. GitLab Issues appear as deduplicated WorkCards, while matching MRs/Pipelines enrich the corresponding Codex thread card. Forge failure never blocks Codex/Git operation.
+
 ## Status
 
 - M0 local control-plane skeleton: implemented and merged.
@@ -152,7 +156,8 @@ Personal planning state is stored locally in SQLite: WorkCard relationships/over
 - M3 Git context and review: implemented in the v0.3.x line.
 - M4 personal planning + SQLite: implemented in the v0.4.x line.
 - M5 safe managed worktrees: implemented in the v0.5.x line.
-- M6 GitLab/GitHub forge projections: next milestone.
+- M6a GitLab Self-Managed read-only forge projection: implemented in the v0.6.x line.
+- M6b explicit GitLab mutations and M6c GitHub provider: remaining M6 work.
 
 Architecture and product research are archived under `docs/research/`.
 Implementation design lives under `docs/design/`.
@@ -173,3 +178,4 @@ See:
 - `docs/implementation/m3-git-context-review.md`
 - `docs/implementation/m4-personal-planning-sqlite.md`
 - `docs/implementation/m5-safe-managed-worktrees.md`
+- `docs/implementation/m6-gitlab-readonly-forge.md`

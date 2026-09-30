@@ -4,6 +4,7 @@ use codex_tui::{
     app_server::{self, ConversationEvent, RegistryHandle},
     backend::{BackendStatus, CodexBackend, FakeBackend},
     conversation::{InteractiveRequestKind, InteractiveResolution},
+    forge::{self, ForgeEvent, ForgeHandle},
     git::{self, GitEvent, GitHandle},
     goal::GoalStatus,
     keymap::{Command, command_for_key},
@@ -448,6 +449,52 @@ async fn doctor(scope: Option<&str>) -> Result<()> {
         if let Some(error) = context.error {
             println!("error: {error}");
         }
+    } else if scope == Some("forge") {
+        let cwd = std::env::current_dir()?;
+        let snapshot = forge::doctor(cwd.to_string_lossy().into_owned()).await;
+        println!(
+            "glab-version: {}",
+            snapshot.glab_version.as_deref().unwrap_or("<unavailable>")
+        );
+        println!(
+            "glab-authenticated: {}",
+            snapshot
+                .authenticated
+                .map(|value| value.to_string())
+                .as_deref()
+                .unwrap_or("<unknown>")
+        );
+        println!(
+            "gitlab-server-version: {}",
+            snapshot.server_version.as_deref().unwrap_or("<unknown>")
+        );
+        if let Some(remote) = &snapshot.remote {
+            println!("forge-remote: {}", remote.remote_name);
+            println!("forge-host: {}", remote.host);
+            println!("forge-path: {}", remote.path_with_namespace);
+        } else {
+            println!("forge-remote: <unresolved>");
+        }
+        let observation = &snapshot.observation;
+        if let Some(identity) = &observation.identity {
+            println!("provider: {}", identity.provider.label());
+            println!("project-id: {}", identity.project_id);
+            println!("project-path: {}", identity.path_with_namespace);
+            println!("project-url: {}", identity.web_url);
+        } else {
+            println!("provider: unavailable");
+        }
+        println!("freshness: {}", observation.freshness.label());
+        for (capability, state) in &observation.capabilities {
+            println!("capability.{}: {}", capability.label(), state.label());
+        }
+        println!("recent-issues: {}", observation.issues.len());
+        println!("open-merge-requests: {}", observation.change_requests.len());
+        println!("recent-pipelines: {}", observation.pipelines.len());
+        println!("issue-boards: {}", snapshot.boards.len());
+        if let Some(error) = &observation.error {
+            println!("error: {error}");
+        }
     } else if scope == Some("codex") {
         match app_server::probe(None).await {
             Ok(snapshot) => {
@@ -461,7 +508,9 @@ async fn doctor(scope: Option<&str>) -> Result<()> {
             }
         }
     } else {
-        println!("hint: run `codex-tui doctor codex`, `doctor git`, or `doctor store`");
+        println!(
+            "hint: run `codex-tui doctor codex`, `doctor git`, `doctor forge`, or `doctor store`"
+        );
     }
     Ok(())
 }
@@ -520,6 +569,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
     );
 
     let mut git = GitHandle::start();
+    let mut forge_runtime = ForgeHandle::start();
     let mut mutations = WorktreeMutationHandle::start(store.sqlite_clone());
     if let Err(error) = mutations.recover() {
         reduce(
@@ -532,6 +582,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
         &mut app,
         registry.as_ref(),
         &git,
+        &forge_runtime,
         &mut mutations,
         &mut store,
         initial_git_effects,
@@ -539,6 +590,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
 
     let mut terminal = TerminalSession::enter(config.ui.mouse)?;
     let mut last_fake_tick = Instant::now();
+    let mut last_forge_reconcile = Instant::now();
     let mut needs_render = true;
 
     while !app.should_quit {
@@ -558,6 +610,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                         &mut app,
                         registry.as_ref(),
                         &git,
+                        &forge_runtime,
                         &mut mutations,
                         &mut store,
                         effects,
@@ -595,6 +648,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                 &mut app,
                 registry.as_ref(),
                 &git,
+                &forge_runtime,
                 &mut mutations,
                 &mut store,
                 effects,
@@ -609,6 +663,27 @@ async fn run_app(fake_mode: bool) -> Result<()> {
         let git_changed = drain_git(&mut app, &mut git);
         needs_render |= git_changed;
         if git_changed {
+            let effects = reduce(&mut app, Action::RefreshForgeProjections);
+            apply_effects(
+                &mut app,
+                registry.as_ref(),
+                &git,
+                &forge_runtime,
+                &mut mutations,
+                &mut store,
+                effects,
+            )?;
+            reduce(
+                &mut app,
+                Action::ReconcilePlanning {
+                    now_unix_ms: now_unix_ms(),
+                },
+            );
+        }
+
+        let forge_changed = drain_forge(&mut app, &mut forge_runtime);
+        needs_render |= forge_changed;
+        if forge_changed {
             reduce(
                 &mut app,
                 Action::ReconcilePlanning {
@@ -625,6 +700,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                 &mut app,
                 registry.as_ref(),
                 &git,
+                &forge_runtime,
                 &mut mutations,
                 &mut store,
                 effects,
@@ -635,6 +711,27 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                     now_unix_ms: now_unix_ms(),
                 },
             );
+        }
+
+        if last_forge_reconcile.elapsed() >= Duration::from_secs(15) {
+            let effects = reduce(&mut app, Action::RefreshForgeProjections);
+            apply_effects(
+                &mut app,
+                registry.as_ref(),
+                &git,
+                &forge_runtime,
+                &mut mutations,
+                &mut store,
+                effects,
+            )?;
+            reduce(
+                &mut app,
+                Action::ReconcilePlanning {
+                    now_unix_ms: now_unix_ms(),
+                },
+            );
+            last_forge_reconcile = Instant::now();
+            needs_render = true;
         }
 
         if let Some(fake) = fake_backend.as_mut()
@@ -648,6 +745,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                 &mut app,
                 registry.as_ref(),
                 &git,
+                &forge_runtime,
                 &mut mutations,
                 &mut store,
                 effects,
@@ -682,6 +780,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                         &mut app,
                         registry.as_ref(),
                         &git,
+                        &forge_runtime,
                         &mut mutations,
                         &mut store,
                         effects,
@@ -787,6 +886,22 @@ fn drain_git(app: &mut AppState, git: &mut GitHandle) -> bool {
     changed
 }
 
+fn drain_forge(app: &mut AppState, forge: &mut ForgeHandle) -> bool {
+    let mut changed = false;
+    while let Some(event) = forge.try_recv() {
+        match event {
+            ForgeEvent::Observation(observation) => {
+                reduce(app, Action::ForgeObservationLoaded(*observation));
+            }
+            ForgeEvent::Review(review) => {
+                reduce(app, Action::ForgeReviewLoaded(review));
+            }
+        }
+        changed = true;
+    }
+    changed
+}
+
 fn drain_mutations(app: &mut AppState, mutations: &mut WorktreeMutationHandle) -> bool {
     let mut changed = false;
     while let Some(event) = mutations.try_recv() {
@@ -810,6 +925,7 @@ fn apply_effects(
     app: &mut AppState,
     registry: Option<&RegistryHandle>,
     git: &GitHandle,
+    forge: &ForgeHandle,
     mutations: &mut WorktreeMutationHandle,
     store: &mut RuntimeStore,
     effects: Vec<Effect>,
@@ -961,6 +1077,51 @@ fn apply_effects(
                     let mut context = codex_tui::git::GitContext::pending(thread_id, cwd);
                     context.error = Some(error.to_string());
                     reduce(app, Action::GitContextLoaded(context));
+                }
+            }
+            Effect::ProbeForge { thread_id, cwd } => {
+                if let Err(error) = forge.probe(thread_id.clone(), cwd.clone()) {
+                    reduce(
+                        app,
+                        Action::ForgeObservationLoaded(forge::ForgeObservation::unavailable(
+                            thread_id,
+                            cwd,
+                            error.to_string(),
+                        )),
+                    );
+                }
+            }
+            Effect::ProbeForgeReview {
+                thread_id,
+                cwd,
+                host,
+                project_id,
+                change_request_iid,
+            } => {
+                if let Err(error) = forge.probe_review(
+                    thread_id.clone(),
+                    cwd.clone(),
+                    host,
+                    project_id,
+                    change_request_iid,
+                ) {
+                    reduce(
+                        app,
+                        Action::ForgeReviewLoaded(forge::ForgeReviewSummary {
+                            thread_id,
+                            cwd,
+                            change_request_iid,
+                            approvals_required: None,
+                            approvals_left: None,
+                            approved_by_count: 0,
+                            discussions_total: 0,
+                            unresolved_discussions: 0,
+                            approvals_available: false,
+                            discussions_available: false,
+                            observed_at_unix_ms: now_unix_ms(),
+                            error: Some(error.to_string()),
+                        }),
+                    );
                 }
             }
             Effect::LoadGitReview { thread_id, cwd } => {
