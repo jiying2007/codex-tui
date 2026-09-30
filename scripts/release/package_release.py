@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
+import tomllib
 import zipfile
 
 
@@ -77,6 +78,17 @@ def main() -> int:
     args = parser.parse_args()
 
     root = pathlib.Path.cwd()
+    with (root / "Cargo.toml").open("rb") as handle:
+        cargo_package = tomllib.load(handle)["package"]
+    license_spdx = cargo_package.get("license")
+    if license_spdx != "Apache-2.0":
+        raise SystemExit(
+            f"release packaging requires Cargo license Apache-2.0; got {license_spdx!r}"
+        )
+    project_license = root / "LICENSE"
+    if not project_license.is_file():
+        raise SystemExit("release packaging requires project LICENSE")
+
     binary = pathlib.Path(args.binary)
     notices = pathlib.Path(args.notices)
     if not binary.is_file():
@@ -106,11 +118,7 @@ def main() -> int:
             stage / "V1-STABLE-CRITERIA.json",
         )
 
-        for license_name in ("LICENSE", "LICENSE.txt", "LICENSE.md"):
-            license_path = root / license_name
-            if license_path.is_file():
-                copy_file(license_path, stage / license_name)
-                break
+        copy_file(project_license, stage / "LICENSE")
 
         metadata = {
             "schema": "codex-tui/release-artifact/v1",
@@ -120,6 +128,7 @@ def main() -> int:
             "platform": args.platform,
             "hostTriple": triple,
             "binary": binary_name,
+            "license": license_spdx,
         }
         (stage / "RELEASE-METADATA.json").write_text(
             json.dumps(metadata, indent=2, sort_keys=True) + "\n",
