@@ -88,6 +88,18 @@ fn line(value: &str) -> Vec<u8> {
     format!("{value}\r").into_bytes()
 }
 
+fn ensure_shell_ready(handle: &PtyHandle) {
+    handle
+        .send(PtyCommand::Input(line("echo CODEX_TUI_SHELL_READY")))
+        .expect("shell ready probe");
+    let output = wait_output_contains(handle, "CODEX_TUI_SHELL_READY");
+    assert!(
+        String::from_utf8_lossy(&output).contains("CODEX_TUI_SHELL_READY"),
+        "shell readiness marker missing"
+    );
+}
+
+
 #[test]
 fn default_shell_starts_accepts_input_and_exits() {
     let root = tempdir().expect("tempdir");
@@ -140,6 +152,7 @@ fn explicit_terminate_stops_a_long_running_child_promptly() {
     let handle =
         PtyHandle::start(root.path(), TerminalSize { rows: 24, cols: 80 }).expect("start PTY");
     wait_event(&handle, |event| matches!(event, PtyEvent::Ready { .. }));
+    ensure_shell_ready(&handle);
 
     #[cfg(windows)]
     let long_command = "ping.exe -n 30 127.0.0.1 >NUL";
@@ -166,6 +179,7 @@ fn ctrl_c_is_delivered_to_child_and_shell_remains_usable() {
     let handle =
         PtyHandle::start(root.path(), TerminalSize { rows: 24, cols: 80 }).expect("start PTY");
     wait_event(&handle, |event| matches!(event, PtyEvent::Ready { .. }));
+    ensure_shell_ready(&handle);
 
     #[cfg(windows)]
     let long_command = "ping.exe -n 30 127.0.0.1 >NUL";
@@ -197,6 +211,7 @@ fn dropping_handle_cleans_up_actor_without_hanging() {
     let handle =
         PtyHandle::start(root.path(), TerminalSize { rows: 24, cols: 80 }).expect("start PTY");
     wait_event(&handle, |event| matches!(event, PtyEvent::Ready { .. }));
+    ensure_shell_ready(&handle);
 
     #[cfg(windows)]
     let long_command = "ping.exe -n 30 127.0.0.1 >NUL";
