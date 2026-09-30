@@ -306,10 +306,8 @@ pub type ForgeFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 pub trait ForgeProvider: Send + Sync {
     fn probe<'a>(&'a self, thread_id: ThreadId, cwd: String) -> ForgeFuture<'a, ForgeObservation>;
 
-    fn probe_review<'a>(
-        &'a self,
-        target: ForgeReviewTarget,
-    ) -> ForgeFuture<'a, ForgeReviewSummary>;
+    fn probe_review<'a>(&'a self, target: ForgeReviewTarget)
+    -> ForgeFuture<'a, ForgeReviewSummary>;
 }
 
 pub fn provider_kind_for_host(host: &str) -> ForgeProviderKind {
@@ -386,10 +384,7 @@ impl ForgeProvider for GitLabProvider {
 
 #[derive(Clone, Debug)]
 pub enum ForgeCommand {
-    Probe {
-        thread_id: ThreadId,
-        cwd: String,
-    },
+    Probe { thread_id: ThreadId, cwd: String },
     ProbeReview(ForgeReviewTarget),
 }
 
