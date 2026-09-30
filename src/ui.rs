@@ -337,9 +337,70 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
         }
     }
 
+    if let Some(thread) = app.selected_thread() {
+        lines.push(Line::from(""));
+        lines.extend(forge_context_lines(app, &thread.id));
+    }
+
     Paragraph::new(lines)
         .block(Block::bordered().title(" Context "))
         .wrap(Wrap { trim: false })
+}
+
+fn forge_context_lines(
+    app: &AppState,
+    thread_id: &crate::domain::ThreadId,
+) -> Vec<Line<'static>> {
+    let Some(observation) = app.forge_observation(thread_id) else {
+        return vec![Line::from("Forge: not probed")];
+    };
+
+    let Some(identity) = &observation.identity else {
+        return vec![Line::from(format!(
+            "Forge: unavailable · {}",
+            truncate(
+                observation.error.as_deref().unwrap_or("identity unresolved"),
+                80
+            )
+        ))];
+    };
+
+    let mut lines = vec![Line::from(format!(
+        "Forge: {} · {}/{} · {}",
+        identity.provider.label(),
+        identity.host,
+        identity.path_with_namespace,
+        observation.freshness.label()
+    ))];
+
+    let branch = app
+        .git_context(thread_id)
+        .and_then(|context| context.branch.as_deref());
+    if let Some(branch) = branch {
+        if let Some(change) = observation.change_request_for_branch(branch) {
+            lines.push(Line::from(format!(
+                "MR: !{} · {}{} · {}",
+                change.iid,
+                if change.draft { "draft · " } else { "" },
+                change.state,
+                truncate(&change.title, 58)
+            )));
+        } else {
+            lines.push(Line::from(format!("MR: none for branch {branch}")));
+        }
+        if let Some(pipeline) = observation.pipeline_for_branch(branch) {
+            lines.push(Line::from(format!(
+                "Pipeline: #{} · {}",
+                pipeline.id, pipeline.status
+            )));
+        } else {
+            lines.push(Line::from("Pipeline: none for current branch"));
+        }
+    } else {
+        lines.push(Line::from("MR/Pipeline: current branch unavailable"));
+    }
+
+    lines
 }
 
 fn goal_summary(app: &AppState, thread_id: &str) -> String {
@@ -772,7 +833,10 @@ fn render_workspace(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
 
     let thread = app.threads.iter().find(|thread| thread.id.0 == thread_id);
     let Some(thread) = thread else {
-        frame.render_widget(
+        lines.push(Line::from(""));
+    lines.extend(forge_context_lines(app, &thread.id));
+
+    frame.render_widget(
             Paragraph::new("Thread no longer exists.")
                 .block(Block::bordered().title(" Workspace ")),
             chunks[0],
