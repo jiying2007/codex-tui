@@ -37,6 +37,7 @@ impl TerminalSize {
 pub enum PtyCommand {
     Input(Vec<u8>),
     Resize(TerminalSize),
+    CloseInput,
     Terminate,
 }
 
@@ -141,7 +142,7 @@ fn run_actor_inner(
     drop(pair.slave);
 
     let mut reader = pair.master.try_clone_reader().context("clone PTY reader")?;
-    let mut writer = pair.master.take_writer().context("take PTY writer")?;
+    let mut writer = Some(pair.master.take_writer().context("take PTY writer")?);
 
     let output_tx = event_tx.clone();
     thread::Builder::new()
@@ -195,12 +196,16 @@ fn run_actor_inner(
     while let Ok(command) = command_rx.recv() {
         match command {
             PtyCommand::Input(bytes) => {
+                let writer = writer.as_mut().context("PTY input is closed")?;
                 writer.write_all(&bytes).context("write PTY input")?;
                 writer.flush().context("flush PTY input")?;
             }
             PtyCommand::Resize(size) => {
                 let size = size.validate()?;
                 pair.master.resize(size.portable()).context("resize PTY")?;
+            }
+            PtyCommand::CloseInput => {
+                writer.take();
             }
             PtyCommand::Terminate => {
                 let _ = killer.kill();
