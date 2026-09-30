@@ -4274,11 +4274,7 @@ mod tests {
             r"C:\Users\jun\repo".into()
         };
         app.threads[2].metadata.cwd = "relative/repo".into();
-        app.threads[3].metadata.cwd = root
-            .path()
-            .join("missing")
-            .to_string_lossy()
-            .into_owned();
+        app.threads[3].metadata.cwd = root.path().join("missing").to_string_lossy().into_owned();
 
         for thread in app.threads.iter().skip(1) {
             app.git_contexts.insert(
