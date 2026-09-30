@@ -143,9 +143,7 @@ pub async fn probe() -> CompatReport {
                 Some(format!("schema-{}", health.schema_version)),
                 "SQLite integrity check passed",
             );
-            component
-                .facts
-                .insert("integrity".into(), health.integrity);
+            component.facts.insert("integrity".into(), health.integrity);
             component.facts.insert(
                 "legacyImport".into(),
                 health.legacy_import.unwrap_or_else(|| "unknown".into()),
@@ -160,9 +158,7 @@ pub async fn probe() -> CompatReport {
                 format!("SQLite integrity={}", health.integrity),
             );
             component.state = ComponentState::Degraded;
-            component
-                .facts
-                .insert("integrity".into(), health.integrity);
+            component.facts.insert("integrity".into(), health.integrity);
             component
         }
         Err(error) => CompatComponent::unavailable(
@@ -307,10 +303,7 @@ pub fn build_report(components: Vec<CompatComponent>) -> CompatReport {
                 "terminal-pty".into(),
             ],
             optional_components: vec!["glab".into(), "gh".into()],
-            stable_retained_evidence: vec![
-                "terminal-restoration".into(),
-                "pty-lifecycle".into(),
-            ],
+            stable_retained_evidence: vec!["terminal-restoration".into(), "pty-lifecycle".into()],
         },
         retained_evidence: vec![
             RetainedEvidenceRequirement {
@@ -364,16 +357,10 @@ pub fn print_text(report: &CompatReport) {
     }
 
     if !report.required_failures.is_empty() {
-        println!(
-            "required-failures: {}",
-            report.required_failures.join(",")
-        );
+        println!("required-failures: {}", report.required_failures.join(","));
     }
     if !report.required_degraded.is_empty() {
-        println!(
-            "required-degraded: {}",
-            report.required_degraded.join(",")
-        );
+        println!("required-degraded: {}", report.required_degraded.join(","));
     }
     if !report.optional_unavailable.is_empty() {
         println!(
@@ -541,7 +528,10 @@ mod tests {
 
         let ci = include_str!("../.github/workflows/ci.yml");
         for runner in ["ubuntu-latest", "macos-latest", "windows-latest"] {
-            assert!(ci.contains(runner), "compat matrix drifted from CI: {runner}");
+            assert!(
+                ci.contains(runner),
+                "compat matrix drifted from CI: {runner}"
+            );
         }
     }
 
