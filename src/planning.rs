@@ -439,13 +439,9 @@ fn card_matches_query_term(card: &WorkCardProjection, token: &str) -> bool {
                 .forge_provider
                 .is_some_and(|provider| provider.label().eq_ignore_ascii_case(value)),
             "mr" | "cr" => match value {
-                "open" | "opened" => card
-                    .change_request_state
-                    .as_deref()
-                    .is_some_and(|state| {
-                        state.eq_ignore_ascii_case("open")
-                            || state.eq_ignore_ascii_case("opened")
-                    }),
+                "open" | "opened" => card.change_request_state.as_deref().is_some_and(|state| {
+                    state.eq_ignore_ascii_case("open") || state.eq_ignore_ascii_case("opened")
+                }),
                 "closed" | "merged" => card
                     .change_request_state
                     .as_deref()
@@ -486,7 +482,9 @@ fn card_matches_query_term(card: &WorkCardProjection, token: &str) -> bool {
                 }
                 _ => false,
             },
-            "pinned" => parse_query_bool(value).is_some_and(|expected| card.overlay.pinned == expected),
+            "pinned" => {
+                parse_query_bool(value).is_some_and(|expected| card.overlay.pinned == expected)
+            }
             "snoozed" => parse_query_bool(value).is_some_and(|expected| card.snoozed == expected),
             _ => false,
         };
@@ -507,7 +505,9 @@ fn card_matches_query_term(card: &WorkCardProjection, token: &str) -> bool {
             .collect::<Vec<_>>()
             .join(" "),
         card.branch.as_deref().unwrap_or(""),
-        card.forge_provider.map(ForgeProviderKind::label).unwrap_or(""),
+        card.forge_provider
+            .map(ForgeProviderKind::label)
+            .unwrap_or(""),
         card.change_request_state.as_deref().unwrap_or(""),
         card.overlay
             .tags
@@ -1101,7 +1101,8 @@ mod tests {
     #[test]
     fn saved_view_query_uses_observed_branch_forge_and_change_request_state() {
         use crate::forge::{
-            CapabilityState, ChangeRequestSummary, ForgeCapability, ForgeIdentity, ForgeProviderKind,
+            CapabilityState, ChangeRequestSummary, ForgeCapability, ForgeIdentity,
+            ForgeProviderKind,
         };
         use std::collections::BTreeMap;
 
@@ -1184,7 +1185,12 @@ mod tests {
             backend_error: None,
             now_unix_ms: 100,
         });
-        for filter in ["unknown:value", "pinned:maybe", "stage:banana", "\"unterminated"] {
+        for filter in [
+            "unknown:value",
+            "pinned:maybe",
+            "stage:banana",
+            "\"unterminated",
+        ] {
             let view = SavedView {
                 id: "invalid".into(),
                 name: "invalid".into(),
