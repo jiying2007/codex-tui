@@ -4,7 +4,7 @@ use crate::conversation::{
     InteractiveResolution, RpcRequestId, UserInputQuestion,
 };
 use crate::domain::{AttentionReason, RuntimeStatus, ThreadId, ThreadSummary, ThreadUiState};
-use crate::forge::ForgeObservation;
+use crate::forge::{CapabilityState, ForgeCapability, ForgeObservation, ForgeReviewSummary};
 use crate::git::{GitContext, GitReview};
 use crate::goal::{GoalObservation, GoalStatus};
 use crate::operation::{
@@ -96,6 +96,7 @@ pub enum Action {
     RefreshForgeProjections,
     GitContextLoaded(GitContext),
     ForgeObservationLoaded(ForgeObservation),
+    ForgeReviewLoaded(ForgeReviewSummary),
     GitReviewLoaded(GitReview),
     ReviewError { thread_id: ThreadId, error: String },
     PlanningSnapshotLoaded(PlanningSnapshot),
@@ -224,6 +225,13 @@ pub enum Effect {
     ProbeForge {
         thread_id: ThreadId,
         cwd: String,
+    },
+    ProbeForgeReview {
+        thread_id: ThreadId,
+        cwd: String,
+        host: String,
+        project_id: String,
+        change_request_iid: u64,
     },
     LoadGitReview {
         thread_id: ThreadId,
@@ -796,6 +804,33 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 .forge_observations
                 .insert(observation.thread_id.0.clone(), observation);
         }
+        Action::ForgeReviewLoaded(review) => {
+            if let Some(observation) = state.forge_observations.get_mut(&review.thread_id.0)
+                && observation.cwd == review.cwd
+                && observation
+                    .change_requests
+                    .iter()
+                    .any(|change| change.iid == review.change_request_iid)
+            {
+                observation.capabilities.insert(
+                    ForgeCapability::ApprovalSummary,
+                    if review.approvals_available {
+                        CapabilityState::Available
+                    } else {
+                        CapabilityState::Unavailable
+                    },
+                );
+                observation.capabilities.insert(
+                    ForgeCapability::Discussions,
+                    if review.discussions_available {
+                        CapabilityState::Available
+                    } else {
+                        CapabilityState::Unavailable
+                    },
+                );
+                observation.review = Some(review);
+            }
+        }
         Action::GitReviewLoaded(review) => {
             let key = review.thread_id.0.clone();
             let len = review.changes.len();
@@ -1331,8 +1366,33 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 thread_id.0.clone(),
                 GitReview::pending(thread_id.clone(), cwd.clone()),
             );
+
+            let forge_review_effect = state
+                .git_context(&thread_id)
+                .and_then(|context| context.branch.as_deref())
+                .and_then(|branch| {
+                    state.forge_observation(&thread_id).and_then(|observation| {
+                        let identity = observation.identity.as_ref()?;
+                        let change = observation.change_request_for_branch(branch)?;
+                        let already_loaded = observation.review.as_ref().is_some_and(|review| {
+                            review.change_request_iid == change.iid && review.cwd == cwd
+                        });
+                        (!already_loaded).then(|| Effect::ProbeForgeReview {
+                            thread_id: thread_id.clone(),
+                            cwd: cwd.clone(),
+                            host: identity.host.clone(),
+                            project_id: identity.project_id.clone(),
+                            change_request_iid: change.iid,
+                        })
+                    })
+                });
+
             state.view = View::Review(thread_id.clone());
-            return vec![Effect::LoadGitReview { thread_id, cwd }];
+            let mut effects = vec![Effect::LoadGitReview { thread_id, cwd }];
+            if let Some(effect) = forge_review_effect {
+                effects.push(effect);
+            }
+            return effects;
         }
         Action::OpenWorkspace => {
             let thread_id = match &state.view {
