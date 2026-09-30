@@ -1068,7 +1068,6 @@ mod tests {
         assert_eq!(apply_saved_view(&[card], &view).len(), 1);
     }
 
-
     #[test]
     fn registry_pin_projects_into_work_card_queries_and_sorting() {
         let mut thread = first_thread();
