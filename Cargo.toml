@@ -1,10 +1,11 @@
 [package]
 name = "codex-tui"
-version = "0.7.0"
+version = "1.0.0"
 edition = "2024"
 rust-version = "1.88"
 description = "Personal-first local terminal workbench for Codex engineering"
 repository = "https://github.com/jiying2007/codex-tui"
+license = "Apache-2.0"
 publish = false
 
 [dependencies]

@@ -72,6 +72,7 @@ It binds:
 
 The stable verifier requires:
 
+- at least 200 retained resident-planning-10k samples;
 - p95 <= 50 ms;
 - p99 <= 100 ms;
 - compatibility report hashes are exactly 64 hexadecimal characters.
@@ -145,11 +146,35 @@ The retained workflow artifact is the release bundle even when `publish=false`.
 
 For stable channel, the evidence receipt is included in the bundle.
 
+## Retained evidence capture
+
+Canonical performance capture:
+
+```bash
+cargo run --release --locked -- release benchmark \
+  --warmup 20 \
+  --iterations 200 \
+  --source <machine-or-retained-runner-id> \
+  --json
+```
+
+Canonical compatibility capture on each supported platform:
+
+```bash
+python scripts/release/capture_compat.py \
+  --binary <path-to-v1-candidate-binary> \
+  --output compat-<platform>.json
+```
+
+The compatibility helper refuses anything other than `readiness=ready` and prints the report SHA-256 and observation timestamp used by stable evidence.
+
+Terminal-restoration evidence remains an explicit real-controlling-TTY smoke receipt; it is not synthesized by CI.
+
 ## v1.0 criteria
 
 `release/v1.0-criteria.json` is the machine-readable stable gate list and is shipped inside every archive.
 
-The current 0.7.0 line cannot pass the stable-version rule, and the repository currently has no project LICENSE. Therefore M7d3 prepares and verifies the release path without falsely publishing v1.0.0.
+The repository is now Apache-2.0 licensed and the Cargo package line is 1.0.0, so the version/license gates are stable-eligible. This still does not constitute a stable release: exact-commit canonical CI, three-platform READY compatibility captures, three terminal-restoration PASS receipts and retained performance evidence must all be present before stable publication.
 
 ## Non-goals
 

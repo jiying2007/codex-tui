@@ -24,6 +24,7 @@ def main() -> int:
     parser.add_argument("--version", required=True)
     parser.add_argument("--commit", required=True)
     parser.add_argument("--canonical-ci-run", required=True, type=int)
+    parser.add_argument("--performance-iterations", required=True, type=int)
     parser.add_argument("--performance-p95-ms", required=True, type=float)
     parser.add_argument("--performance-p99-ms", required=True, type=float)
     parser.add_argument("--performance-source", required=True)
@@ -66,6 +67,8 @@ def main() -> int:
             ),
         }
 
+    if args.performance_iterations < 200:
+        raise SystemExit("stable performance evidence requires at least 200 iterations")
     if not (0 <= args.performance_p95_ms <= 50):
         raise SystemExit("stable performance p95 must be between 0 and 50 ms")
     if not (0 <= args.performance_p99_ms <= 100):
@@ -81,6 +84,7 @@ def main() -> int:
         "terminalRestoration": terminal,
         "performance": {
             "fixture": "resident-planning-10k",
+            "iterations": args.performance_iterations,
             "p95Ms": args.performance_p95_ms,
             "p99Ms": args.performance_p99_ms,
             "source": nonempty(args.performance_source, "performance source"),

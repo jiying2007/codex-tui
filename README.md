@@ -2,6 +2,8 @@
 
 A local-first terminal workbench for managing multiple Codex projects and conversations.
 
+**License:** Apache-2.0 · **Current package line:** v1.0.0 release candidate (stable not yet published).
+
 ## Product goal
 
 codex-tui answers four questions quickly:
@@ -147,7 +149,8 @@ cargo run -- headless threads --json
 cargo run -- headless work
 cargo run -- headless work --json
 cargo run -- headless threads --fixture-10k
-cargo run -- release verify --channel preview --tag v0.7.0-preview.1 --commit "$(git rev-parse HEAD)" --json
+cargo run -- release verify --channel preview --tag v1.0.0-preview.1 --commit "$(git rev-parse HEAD)" --json
+cargo run -- release benchmark --iterations 200 --source retained-runner --json
 cargo run -- --fake
 ```
 
@@ -167,7 +170,7 @@ M7a establishes a read-only automation and scale baseline. `headless threads` an
 
 M7b3 adds repository-shared `.codex-tui.toml` launch presets as a deliberately narrow argv-only feature. Presets are selected from Workspace/Review context actions, shown as an exact cwd/argv plan, and require explicit confirmation before codex-tui starts the external process. The config has no shell string, env templating, chaining, hooks or scheduler semantics; common shell executables are rejected.
 
-M7d3 adds a fail-closed release path: publication is manually dispatched, while release-pipeline changes on main automatically run a non-publishing preview self-test. Preview and stable identity derive from the Cargo version; Cargo.lock pins candidates; Linux/macOS/Windows build native archives and smoke the extracted binary; runtime dependency licenses/notices and SHA-256 manifests are retained. Stable release requires canonical CI, three-platform READY compatibility report hashes, three terminal-restoration PASS receipts, and retained 10k p95/p99 evidence. The current 0.7.0 line cannot be stable, and publication remains blocked until the project owner explicitly adds a project LICENSE.
+M7d3 adds a fail-closed release path: publication is manually dispatched, while release-pipeline changes on main automatically run a non-publishing preview self-test. Preview and stable identity derive from the Cargo version; Cargo.lock pins candidates; Linux/macOS/Windows build native archives and smoke the extracted binary; runtime dependency licenses/notices and SHA-256 manifests are retained. The project is now Apache-2.0 licensed and the package line is v1.0.0. Stable release still requires canonical CI, three-platform READY compatibility report hashes, three terminal-restoration PASS receipts, and retained 10k performance evidence with at least 200 samples, p95 <= 50 ms and p99 <= 100 ms.
 
 ## Status
 
@@ -190,7 +193,8 @@ M7d3 adds a fail-closed release path: publication is manually dispatched, while 
 - M7c3 PTY lifecycle/cleanup E2E: implemented across Ubuntu/macOS/Windows, including Windows ConPTY terminal-query handling.
 - M7d1 accessibility/CJK/grapheme/keyboard-focus hardening: implemented on the v0.7.x line.
 - M7d2 compatibility matrix + Doctor evidence contract: implemented as `compat/v2` with required/optional readiness and retained-evidence metadata.
-- M7d3 stable/preview release hardening: implemented with locked three-platform packaging, archive smoke, notices/checksums, and fail-closed stable evidence gates. Publication is intentionally blocked until a project LICENSE is chosen.
+- M7d3 stable/preview release hardening: implemented with locked three-platform packaging, archive smoke, notices/checksums, and fail-closed stable evidence gates.
+- v1.0 release candidate: Apache-2.0 license selected; package line advanced to 1.0.0; stable publication still awaits retained cross-platform compatibility, terminal-restoration and performance evidence.
 
 Architecture and product research are archived under `docs/research/`.
 Implementation design lives under `docs/design/`.
@@ -227,3 +231,9 @@ See:
 - `docs/release/install-upgrade.md`
 - `release/v1.0-criteria.json`
 - `CHANGELOG.md`
+
+## License
+
+codex-tui is licensed under the Apache License 2.0. See `LICENSE`.
+
+Third-party runtime dependency notices are generated from the locked Cargo dependency graph for release archives.
