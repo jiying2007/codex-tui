@@ -41,12 +41,12 @@
     {
       "id": "compatibility",
       "authority": "codex-tui doctor compat --json",
-      "evidence": "READY retained report SHA-256 for Linux, macOS and Windows"
+      "evidence": "Linux READY retained compat/v2 report SHA-256 is required. macOS/Windows retained reports are optional Tier 2 evidence; canonical CI/package smoke remain required."
     },
     {
       "id": "terminal-restoration",
       "authority": "retained interactive smoke",
-      "evidence": "PASS receipt for Linux, macOS and Windows"
+      "evidence": "Linux real controlling-TTY PASS receipt is required. macOS/Windows terminal receipts are optional Tier 2 evidence."
     },
     {
       "id": "pty-lifecycle",
@@ -56,7 +56,7 @@
     {
       "id": "performance",
       "authority": "retained benchmark run",
-      "evidence": "resident-planning-10k >= 200 iterations, p95 <= 50 ms and p99 <= 100 ms"
+      "evidence": "Linux resident-planning-10k >= 200 iterations, p95 <= 50 ms and p99 <= 100 ms"
     },
     {
       "id": "third-party-notices",
@@ -77,5 +77,15 @@
   "license": {
     "spdx": "Apache-2.0",
     "file": "LICENSE"
+  },
+  "supportPolicy": {
+    "tier1StableRequired": [
+      "linux"
+    ],
+    "tier2AutomatedCompatibility": [
+      "macos",
+      "windows"
+    ],
+    "policy": "v1.0 stable requires real retained compatibility, terminal-restoration and performance evidence on Linux. macOS/Windows remain required in canonical CI and native package/archive smoke but do not block stable on real-environment retained evidence."
   }
 }
