@@ -110,6 +110,27 @@ impl LaunchPreset {
             !self.argv[0].trim().is_empty(),
             "launch preset executable must not be empty"
         );
+        let executable = Path::new(&self.argv[0])
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or(self.argv[0].as_str())
+            .to_ascii_lowercase();
+        anyhow::ensure!(
+            !matches!(
+                executable.as_str(),
+                "sh"
+                    | "bash"
+                    | "zsh"
+                    | "fish"
+                    | "cmd"
+                    | "cmd.exe"
+                    | "powershell"
+                    | "powershell.exe"
+                    | "pwsh"
+                    | "pwsh.exe"
+            ),
+            "shell executables are not allowed in launch presets"
+        );
         Ok(())
     }
 }
@@ -236,6 +257,16 @@ command = "cargo test && rm -rf build"
         )
         .expect("write");
         assert!(RepoLaunchConfig::load(root.path()).is_err());
+    }
+
+    #[test]
+    fn shell_executables_are_rejected_even_with_argv_form() {
+        let preset = LaunchPreset {
+            name: "bad".into(),
+            argv: vec!["bash".into(), "-c".into(), "cargo test && echo nope".into()],
+            cwd: LaunchCwd::Repo,
+        };
+        assert!(preset.validate().is_err());
     }
 
     #[test]
