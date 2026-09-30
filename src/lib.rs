@@ -19,5 +19,6 @@ pub mod pty;
 pub mod sqlite_store;
 pub mod store;
 pub mod terminal;
+pub mod terminal_drawer;
 pub mod ui;
 pub mod worktree;

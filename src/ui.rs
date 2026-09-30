@@ -3,6 +3,7 @@ use crate::conversation::{InteractiveRequest, InteractiveRequestKind};
 use crate::domain::ThreadSummary;
 use crate::git::presentation_diff_lines;
 use crate::planning::{SavedViewLayout, WorkflowStage, apply_saved_view, saved_view_group_key};
+use crate::pty::TerminalSize;
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -38,6 +39,9 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
         View::Board => render_board(frame, app),
         View::Scratch(id) => render_scratch(frame, app, id),
     }
+    if app.terminal_drawer_open {
+        render_terminal_drawer(frame, app);
+    }
     if app.show_help {
         render_help(frame);
     }
@@ -69,6 +73,79 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
     }
     if app.pending_launch_plan.is_some() {
         render_launch_confirmation(frame, app);
+    }
+}
+
+pub fn terminal_drawer_rect(area: Rect) -> Rect {
+    let height = (area.height.saturating_mul(2) / 5)
+        .clamp(7, 22)
+        .min(area.height);
+    Rect {
+        x: area.x,
+        y: area.y + area.height.saturating_sub(height),
+        width: area.width,
+        height,
+    }
+}
+
+pub fn terminal_drawer_pty_size(cols: u16, rows: u16) -> TerminalSize {
+    let area = terminal_drawer_rect(Rect::new(0, 0, cols, rows));
+    TerminalSize {
+        rows: area.height.saturating_sub(2).max(1),
+        cols: area.width.saturating_sub(2).max(1),
+    }
+}
+
+fn render_terminal_drawer(frame: &mut Frame<'_>, app: &AppState) {
+    let area = terminal_drawer_rect(frame.area());
+    frame.render_widget(Clear, area);
+
+    let snapshot = app.terminal_snapshot.as_ref();
+    let status = snapshot
+        .map(|snapshot| snapshot.state.label())
+        .unwrap_or_else(|| "starting".into());
+    let cwd = snapshot
+        .map(|snapshot| snapshot.cwd.as_str())
+        .unwrap_or("<starting>");
+    let focus = if app.terminal_focused {
+        "FOCUSED · Ctrl+] app"
+    } else {
+        "unfocused · t focus · T close"
+    };
+    let title = format!(
+        " Terminal Drawer · {focus} · {} · {} ",
+        truncate(cwd, 44),
+        truncate(&status, 36)
+    );
+
+    let lines = snapshot.map_or_else(
+        || vec![Line::from("Starting platform default terminal…")],
+        |snapshot| {
+            snapshot
+                .rows
+                .iter()
+                .map(|row| Line::from(row.clone()))
+                .collect::<Vec<_>>()
+        },
+    );
+
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(Block::bordered().title(title))
+            .wrap(Wrap { trim: false }),
+        area,
+    );
+
+    if app.terminal_focused
+        && let Some(snapshot) = snapshot
+    {
+        let inner_x = area.x.saturating_add(1);
+        let inner_y = area.y.saturating_add(1);
+        let max_x = area.x.saturating_add(area.width.saturating_sub(2));
+        let max_y = area.y.saturating_add(area.height.saturating_sub(2));
+        let cursor_x = inner_x.saturating_add(snapshot.cursor_col).min(max_x);
+        let cursor_y = inner_y.saturating_add(snapshot.cursor_row).min(max_y);
+        frame.set_cursor_position((cursor_x, cursor_y));
     }
 }
 
@@ -1532,7 +1609,9 @@ fn render_help(frame: &mut Frame<'_>) {
     frame.render_widget(Clear, area);
     frame.render_widget(
         Paragraph::new(vec![
-            Line::from("Global: ? help · Ctrl+K palette · / search · . context · Esc back"),
+            Line::from(
+                "Global: ? help · Ctrl+K palette · / search · . context · t terminal · T close terminal · Esc back",
+            ),
             Line::from(
                 "Registry: j/k · Enter · Space attention · / search · p pin · e alias · x ack",
             ),
@@ -1555,6 +1634,9 @@ fn render_help(frame: &mut Frame<'_>) {
                 "Board: Tab Saved View · . batch-local/context · Enter open · a Quick Prompt · n Scratch",
             ),
             Line::from("Scratch: local-only detail · Esc Board"),
+            Line::from(
+                "Terminal focus: keys go to PTY · Ctrl+] return to app · Shift+PgUp/PgDn scrollback.",
+            ),
             Line::from(
                 "Authority: Codex/Git/Forge stay canonical; codex-tui stores operator state only.",
             ),
@@ -1680,6 +1762,48 @@ mod tests {
             out.push('\n');
         }
         out
+    }
+
+    #[test]
+    fn terminal_drawer_overlay_renders_status_rows_and_focus_hint() {
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+        app.terminal_drawer_open = true;
+        app.terminal_focused = true;
+        app.terminal_snapshot = Some(crate::terminal_drawer::TerminalSnapshot {
+            cwd: "/repo".into(),
+            size: TerminalSize { rows: 10, cols: 98 },
+            rows: vec!["hello from PTY".into(), "$ ".into()],
+            cursor_row: 1,
+            cursor_col: 2,
+            scrollback: 0,
+            state: crate::terminal_drawer::TerminalProcessState::Running,
+        });
+
+        terminal.draw(|frame| render(frame, &app)).expect("draw");
+        let buffer = terminal.backend().buffer();
+        let mut snapshot = String::new();
+        for y in 0..buffer.area.height {
+            for x in 0..buffer.area.width {
+                snapshot.push_str(buffer[(x, y)].symbol());
+            }
+            snapshot.push('\n');
+        }
+        assert!(snapshot.contains("Terminal Drawer"));
+        assert!(snapshot.contains("hello from PTY"));
+        assert!(snapshot.contains("Ctrl+] app"));
+    }
+
+    #[test]
+    fn terminal_drawer_size_is_bounded_and_accounts_for_border() {
+        assert_eq!(
+            terminal_drawer_pty_size(100, 30),
+            TerminalSize { rows: 10, cols: 98 }
+        );
+        let small = terminal_drawer_pty_size(20, 8);
+        assert!(small.rows > 0);
+        assert!(small.cols > 0);
     }
 
     #[test]
