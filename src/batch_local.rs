@@ -156,9 +156,7 @@ pub fn parse_priority(value: &str) -> Result<i32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::planning::{
-        PlanningAttention, SourceKind, WorkCardOverlay, WorkflowStage,
-    };
+    use crate::planning::{PlanningAttention, SourceKind, WorkCardOverlay, WorkflowStage};
 
     fn card(local_id: &str) -> WorkCardProjection {
         WorkCardProjection {
@@ -188,12 +186,8 @@ mod tests {
     fn freeze_keeps_exact_visible_target_set() {
         let first = card("scratch:1");
         let second = card("scratch:2");
-        let plan = LocalBatchPlan::freeze(
-            &[&first, &second],
-            LocalBatchAction::SetDone(true),
-            100,
-        )
-        .expect("plan");
+        let plan = LocalBatchPlan::freeze(&[&first, &second], LocalBatchAction::SetDone(true), 100)
+            .expect("plan");
         assert_eq!(plan.targets.len(), 2);
         assert_eq!(plan.targets[0].local_id, "scratch:1");
         assert_eq!(plan.targets[1].local_id, "scratch:2");
@@ -206,12 +200,8 @@ mod tests {
             LocalBatchPlan::freeze(&[&one], LocalBatchAction::AddTag(" ".into()), 100).is_err()
         );
         assert!(
-            LocalBatchPlan::freeze(
-                &[&one],
-                LocalBatchAction::SnoozeUntil(Some(100)),
-                100,
-            )
-            .is_err()
+            LocalBatchPlan::freeze(&[&one], LocalBatchAction::SnoozeUntil(Some(100)), 100,)
+                .is_err()
         );
         assert!(parse_priority("abc").is_err());
     }
