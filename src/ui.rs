@@ -1757,6 +1757,59 @@ mod tests {
     }
 
     #[test]
+    fn compact_registry_handles_cjk_emoji_graphemes_and_control_text() {
+        let backend = TestBackend::new(40, 12);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+        app.threads[0].workspace = "机器人研发中心".into();
+        app.threads[0].title = "唤醒词👨‍👩‍👧‍👦 e\u{301} 测试\n控制\u{0007}字符".into();
+
+        terminal.draw(|frame| render(frame, &app)).expect("draw");
+        let buffer = terminal.backend().buffer();
+        let mut snapshot = String::new();
+        for y in 0..buffer.area.height {
+            for x in 0..buffer.area.width {
+                snapshot.push_str(buffer[(x, y)].symbol());
+            }
+            snapshot.push('\n');
+        }
+
+        assert!(snapshot.contains("机器人"));
+        assert!(snapshot.contains("唤醒词"));
+        assert!(!snapshot.contains('\u{0007}'));
+    }
+
+    #[test]
+    fn terminal_drawer_preserves_semantic_cjk_rows() {
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+        app.terminal_drawer_open = true;
+        app.terminal_focused = false;
+        app.terminal_snapshot = Some(crate::terminal_drawer::TerminalSnapshot {
+            cwd: "/repo/机器人".into(),
+            size: TerminalSize { rows: 7, cols: 78 },
+            rows: vec!["中文终端 e\u{301} 👩‍💻".into()],
+            cursor_row: 0,
+            cursor_col: 0,
+            scrollback: 0,
+            state: crate::terminal_drawer::TerminalProcessState::Running,
+        });
+
+        terminal.draw(|frame| render(frame, &app)).expect("draw");
+        let buffer = terminal.backend().buffer();
+        let mut snapshot = String::new();
+        for y in 0..buffer.area.height {
+            for x in 0..buffer.area.width {
+                snapshot.push_str(buffer[(x, y)].symbol());
+            }
+            snapshot.push('\n');
+        }
+        assert!(snapshot.contains("中文终端"));
+        assert!(snapshot.contains("机器人"));
+    }
+
+    #[test]
     fn terminal_drawer_overlay_renders_status_rows_and_focus_hint() {
         let backend = TestBackend::new(100, 30);
         let mut terminal = Terminal::new(backend).expect("terminal");
