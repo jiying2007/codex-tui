@@ -32,9 +32,11 @@ Stable validation requires retained evidence before publication.
 
 ## Publication model
 
-The release workflow is `workflow_dispatch` only.
+Release publication is `workflow_dispatch` only.
 
-It must be dispatched from `main`. The workflow computes the tag from the checked-out Cargo version and selected channel. It does not accept an arbitrary pre-existing tag as authority.
+The same workflow also has a narrow non-publishing self-test trigger: a push to `main` runs `preview.1` with `publish=false` only when the release workflow, release scripts, release verifier, release criteria, CHANGELOG, release docs or Cargo.lock changed. Ordinary product commits do not run the three-platform packaging self-test.
+
+Manual release dispatch must use `main`. The workflow computes the tag from the checked-out Cargo version and selected channel. It does not accept an arbitrary pre-existing tag as authority.
 
 `publish=false` performs validation, three-platform build/package/smoke and emits a retained release-bundle artifact without creating a Git tag or GitHub Release.
 
