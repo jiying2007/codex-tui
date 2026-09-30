@@ -290,6 +290,17 @@ pub struct ForgeDoctorSnapshot {
     pub boards: Vec<IssueBoardSummary>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ForgeReviewTarget {
+    pub thread_id: ThreadId,
+    pub cwd: String,
+    pub provider: ForgeProviderKind,
+    pub host: String,
+    pub project_id: String,
+    pub project_path: String,
+    pub change_request_iid: u64,
+}
+
 pub type ForgeFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 pub trait ForgeProvider: Send + Sync {
@@ -297,13 +308,7 @@ pub trait ForgeProvider: Send + Sync {
 
     fn probe_review<'a>(
         &'a self,
-        thread_id: ThreadId,
-        cwd: String,
-        provider: ForgeProviderKind,
-        host: String,
-        project_id: String,
-        project_path: String,
-        change_request_iid: u64,
+        target: ForgeReviewTarget,
     ) -> ForgeFuture<'a, ForgeReviewSummary>;
 }
 
@@ -343,34 +348,13 @@ impl ForgeProvider for RoutingForgeProvider {
 
     fn probe_review<'a>(
         &'a self,
-        thread_id: ThreadId,
-        cwd: String,
-        provider: ForgeProviderKind,
-        host: String,
-        project_id: String,
-        project_path: String,
-        change_request_iid: u64,
+        target: ForgeReviewTarget,
     ) -> ForgeFuture<'a, ForgeReviewSummary> {
-        match provider {
-            ForgeProviderKind::GitHub => GitHubProvider.probe_review(
-                thread_id,
-                cwd,
-                provider,
-                host,
-                project_id,
-                project_path,
-                change_request_iid,
-            ),
-            ForgeProviderKind::GitLab => GitLabProvider.probe_review(
-                thread_id,
-                cwd,
-                provider,
-                host,
-                project_id,
-                project_path,
-                change_request_iid,
-            ),
+        match target.provider {
+            ForgeProviderKind::GitHub => GitHubProvider.probe_review(target),
+            ForgeProviderKind::GitLab => GitLabProvider.probe_review(target),
         }
+    }
     }
 }
 
@@ -389,21 +373,16 @@ impl ForgeProvider for GitLabProvider {
 
     fn probe_review<'a>(
         &'a self,
-        thread_id: ThreadId,
-        cwd: String,
-        _provider: ForgeProviderKind,
-        host: String,
-        project_id: String,
-        _project_path: String,
-        change_request_iid: u64,
+        target: ForgeReviewTarget,
     ) -> ForgeFuture<'a, ForgeReviewSummary> {
         Box::pin(probe_change_request_review(
-            thread_id,
-            cwd,
-            host,
-            project_id,
-            change_request_iid,
+            target.thread_id,
+            target.cwd,
+            target.host,
+            target.project_id,
+            target.change_request_iid,
         ))
+    }
     }
 }
 
@@ -413,15 +392,7 @@ pub enum ForgeCommand {
         thread_id: ThreadId,
         cwd: String,
     },
-    ProbeReview {
-        thread_id: ThreadId,
-        cwd: String,
-        provider: ForgeProviderKind,
-        host: String,
-        project_id: String,
-        project_path: String,
-        change_request_iid: u64,
-    },
+    ProbeReview(ForgeReviewTarget),
 }
 
 #[derive(Clone, Debug)]
@@ -458,26 +429,9 @@ impl ForgeHandle {
             .map_err(|_| anyhow!("Forge actor is not available"))
     }
 
-    pub fn probe_review(
-        &self,
-        thread_id: ThreadId,
-        cwd: String,
-        provider: ForgeProviderKind,
-        host: String,
-        project_id: String,
-        project_path: String,
-        change_request_iid: u64,
-    ) -> Result<()> {
+    pub fn probe_review(&self, target: ForgeReviewTarget) -> Result<()> {
         self.command_tx
-            .send(ForgeCommand::ProbeReview {
-                thread_id,
-                cwd,
-                provider,
-                host,
-                project_id,
-                project_path,
-                change_request_iid,
-            })
+            .send(ForgeCommand::ProbeReview(target))
             .map_err(|_| anyhow!("Forge actor is not available"))
     }
 
@@ -503,26 +457,8 @@ async fn run_actor(
                 let observation = provider.probe(thread_id, cwd).await;
                 let _ = event_tx.send(ForgeEvent::Observation(Box::new(observation)));
             }
-            ForgeCommand::ProbeReview {
-                thread_id,
-                cwd,
-                provider: provider_kind,
-                host,
-                project_id,
-                project_path,
-                change_request_iid,
-            } => {
-                let review = provider
-                    .probe_review(
-                        thread_id,
-                        cwd,
-                        provider_kind,
-                        host,
-                        project_id,
-                        project_path,
-                        change_request_iid,
-                    )
-                    .await;
+            ForgeCommand::ProbeReview(target) => {
+                let review = provider.probe_review(target).await;
                 let _ = event_tx.send(ForgeEvent::Review(review));
             }
         }
