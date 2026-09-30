@@ -3191,9 +3191,21 @@ fn matches_filter(thread: &ThreadSummary, query: &str) -> bool {
     ]
     .map(str::to_lowercase);
 
-    query
-        .split_whitespace()
-        .all(|token| fields.iter().any(|field| fuzzy_subsequence(token, field)))
+    query.split_whitespace().all(|token| {
+        if matches!(
+            token,
+            "local"
+                | "stale"
+                | "foreign-windows"
+                | "foreign-unix"
+                | "relative"
+                | "empty"
+        ) {
+            token == locality
+        } else {
+            fields.iter().any(|field| fuzzy_subsequence(token, field))
+        }
+    })
 }
 
 fn fuzzy_subsequence(needle: &str, haystack: &str) -> bool {
@@ -3287,6 +3299,7 @@ mod tests {
             .to_string_lossy()
             .into_owned();
         if app.threads.len() > 1 {
+            app.threads[1].title = "local-looking foreign history".into();
             app.threads[1].metadata.cwd = if cfg!(windows) {
                 "/foreign/unix/repo".into()
             } else {
