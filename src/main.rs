@@ -1126,15 +1126,19 @@ fn apply_effects(
             Effect::ProbeForgeReview {
                 thread_id,
                 cwd,
+                provider,
                 host,
                 project_id,
+                project_path,
                 change_request_iid,
             } => {
                 if let Err(error) = forge.probe_review(
                     thread_id.clone(),
                     cwd.clone(),
+                    provider,
                     host,
                     project_id,
+                    project_path,
                     change_request_iid,
                 ) {
                     reduce(
@@ -1146,6 +1150,7 @@ fn apply_effects(
                             approvals_required: None,
                             approvals_left: None,
                             approved_by_count: 0,
+                            changes_requested_by_count: 0,
                             discussions_total: 0,
                             unresolved_discussions: 0,
                             approvals_available: false,
