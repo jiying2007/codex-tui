@@ -418,6 +418,28 @@ async fn doctor(scope: Option<&str>) -> Result<()> {
                     }
                     Err(error) => println!("operation-receipts: DEGRADED · {error:#}"),
                 }
+                match store.load_recent_forge_mutation_receipts(10) {
+                    Ok(receipts) => {
+                        println!("recent-forge-mutation-receipts: {}", receipts.len());
+                        for receipt in receipts {
+                            println!(
+                                "forge-receipt: {} · {} · {:?} · {}/{} · mr={}",
+                                receipt.operation_id,
+                                receipt.plan.kind.label(),
+                                receipt.state,
+                                receipt.plan.host,
+                                receipt.plan.project_path,
+                                receipt
+                                    .plan
+                                    .change_request_iid
+                                    .map_or_else(|| "-".into(), |iid| iid.to_string())
+                            );
+                        }
+                    }
+                    Err(error) => {
+                        println!("forge-mutation-receipts: DEGRADED · {error:#}");
+                    }
+                }
             }
             Err(error) => {
                 println!("store-backend: sqlite");
