@@ -1858,6 +1858,7 @@ fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
         Command::Back => Action::Back,
         Command::Help => Action::ToggleHelp,
         Command::Search => Action::BeginSearch,
+        Command::ToggleHostLocalFilter => Action::ToggleHostLocalFilter,
         Command::Next => match app.view_kind() {
             ViewKind::Review => Action::MoveReview(1),
             ViewKind::ManagedWorktrees => Action::MoveManagedWorktree(1),
