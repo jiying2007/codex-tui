@@ -44,6 +44,9 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
     if app.context_open {
         render_context_actions(frame, app);
     }
+    if app.launch_menu_open {
+        render_launch_presets(frame, app);
+    }
     if matches!(
         app.input_mode,
         InputMode::Note
@@ -63,6 +66,9 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
     }
     if app.pending_local_batch.is_some() {
         render_local_batch_confirmation(frame, app);
+    }
+    if app.pending_launch_plan.is_some() {
+        render_launch_confirmation(frame, app);
     }
 }
 
@@ -1438,6 +1444,78 @@ fn render_local_batch_confirmation(frame: &mut Frame<'_>, app: &AppState) {
     );
 }
 
+fn render_launch_presets(frame: &mut Frame<'_>, app: &AppState) {
+    let mut lines = Vec::new();
+    if app.launch_presets.is_empty() {
+        lines.push(Line::from("No [[launch]] presets in .codex-tui.toml."));
+    } else {
+        for (index, preset) in app.launch_presets.iter().enumerate() {
+            let selected = index == app.launch_selected;
+            let style = if selected {
+                Style::default().add_modifier(Modifier::REVERSED)
+            } else {
+                Style::default()
+            };
+            let argv = preset
+                .argv
+                .iter()
+                .map(|arg| format!("{arg:?}"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            lines.push(Line::from(Span::styled(
+                format!(
+                    "{} {} · cwd={:?} · {}",
+                    if selected { ">" } else { " " },
+                    preset.name,
+                    preset.cwd,
+                    truncate(&argv, 72)
+                ),
+                style,
+            )));
+        }
+    }
+    lines.extend([
+        Line::from(""),
+        Line::from("j/k move · Enter create exact launch plan · Esc close"),
+    ]);
+    let height = u16::try_from(lines.len().saturating_add(2))
+        .unwrap_or(12)
+        .clamp(7, 22);
+    let area = centered_fixed(92, height, frame.area());
+    frame.render_widget(Clear, area);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(Block::bordered().title(" Repository Launch Presets "))
+            .wrap(Wrap { trim: false }),
+        area,
+    );
+}
+
+fn render_launch_confirmation(frame: &mut Frame<'_>, app: &AppState) {
+    let Some(plan) = &app.pending_launch_plan else {
+        return;
+    };
+    let lines = vec![
+        Line::from("CONFIRM REQUIRED — process has not started."),
+        Line::from(format!("Preset: {}", plan.name)),
+        Line::from(format!("Config: {}", plan.config_path.display())),
+        Line::from(format!("Cwd: {}", plan.cwd.display())),
+        Line::from(format!("Exact argv: {}", plan.command_preview())),
+        Line::from(""),
+        Line::from("No shell/eval/interpolation is used."),
+        Line::from("External process only; this is not the embedded Terminal Drawer."),
+        Line::from("y CONFIRM start · c/Esc cancel"),
+    ];
+    let area = centered_fixed(92, 13, frame.area());
+    frame.render_widget(Clear, area);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(Block::bordered().title(" Launch Preset Plan "))
+            .wrap(Wrap { trim: false }),
+        area,
+    );
+}
+
 fn centered_fixed(width: u16, height: u16, area: Rect) -> Rect {
     let width = width.min(area.width.saturating_sub(2)).max(1);
     let height = height.min(area.height.saturating_sub(2)).max(1);
@@ -1465,7 +1543,7 @@ fn render_help(frame: &mut Frame<'_>) {
                 "Review: j/k file · w word-diff · e editor · . Forge actions · PageUp/PageDown · Esc",
             ),
             Line::from(
-                "Workspace: Git + Forge · . explicit Forge actions · r review · m worktrees · Esc",
+                "Workspace: Git + Forge · . actions/launch presets · r review · m worktrees · Esc",
             ),
             Line::from(
                 "Managed Worktrees: n create · a adopt · d remove · x delete branch · y confirm",
