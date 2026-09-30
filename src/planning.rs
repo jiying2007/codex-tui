@@ -1,5 +1,5 @@
 use crate::domain::{AttentionReason, RuntimeStatus, ThreadId, ThreadSummary};
-use crate::forge::{ForgeFreshness, ForgeIssueSummary, ForgeObservation};
+use crate::forge::{ForgeFreshness, ForgeIssueSummary, ForgeObservation, ForgeProviderKind};
 use crate::git::GitContext;
 use crate::goal::{GoalObservation, GoalStatus};
 use serde::{Deserialize, Serialize};
@@ -167,6 +167,10 @@ pub struct WorkCardProjection {
     pub anchor: SourceRef,
     pub title: String,
     pub workspace: Option<String>,
+    pub branch: Option<String>,
+    pub forge_provider: Option<ForgeProviderKind>,
+    pub change_request_state: Option<String>,
+    pub change_request_draft: bool,
     pub stage: WorkflowStage,
     pub stage_reason: String,
     pub attention: BTreeSet<PlanningAttention>,
@@ -284,6 +288,7 @@ pub fn apply_saved_view<'a>(
 ) -> Vec<&'a WorkCardProjection> {
     let mut selected = cards
         .iter()
+        .filter(|card| source_scope_matches(card, &view.source_scope))
         .filter(|card| card_matches_filter(card, &view.filter))
         .collect::<Vec<_>>();
 
@@ -324,48 +329,150 @@ pub fn saved_view_group_key(card: &WorkCardProjection, group_by: Option<&str>) -
     }
 }
 
-fn card_matches_filter(card: &WorkCardProjection, filter: &str) -> bool {
-    let normalized = filter.trim().to_ascii_lowercase();
-    if normalized.is_empty() {
-        return true;
+fn source_scope_matches(card: &WorkCardProjection, scope: &str) -> bool {
+    match scope.trim().to_ascii_lowercase().as_str() {
+        "" | "all" => true,
+        "scratch" => card.anchor.kind == SourceKind::ScratchWork,
+        "thread" | "codex" => card.anchor.kind == SourceKind::CodexThread,
+        "forge" => card.anchor.kind == SourceKind::ForgeWorkItem || card.forge_provider.is_some(),
+        _ => false,
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct QueryTerm {
+    value: String,
+    negated: bool,
+}
+
+fn parse_query_terms(filter: &str) -> Option<Vec<QueryTerm>> {
+    let mut terms = Vec::new();
+    let mut chars = filter.chars().peekable();
+
+    loop {
+        while chars.peek().is_some_and(|ch| ch.is_whitespace()) {
+            chars.next();
+        }
+        if chars.peek().is_none() {
+            break;
+        }
+
+        let negated = chars.peek() == Some(&'-');
+        if negated {
+            chars.next();
+        }
+
+        let mut value = String::new();
+        let mut quoted = false;
+        let mut escaped = false;
+
+        for ch in chars.by_ref() {
+            if escaped {
+                value.push(ch);
+                escaped = false;
+                continue;
+            }
+            if quoted && ch == '\\' {
+                escaped = true;
+                continue;
+            }
+            if ch == '"' {
+                quoted = !quoted;
+                continue;
+            }
+            if !quoted && ch.is_whitespace() {
+                break;
+            }
+            value.push(ch);
+        }
+
+        if quoted || escaped || value.is_empty() {
+            return None;
+        }
+        terms.push(QueryTerm {
+            value: value.to_ascii_lowercase(),
+            negated,
+        });
     }
 
-    normalized.split_whitespace().all(|token| {
-        if token == "status:needs-you" || token == "needs-you" {
-            return card.needs_you();
+    Some(terms)
+}
+
+fn card_matches_filter(card: &WorkCardProjection, filter: &str) -> bool {
+    let Some(terms) = parse_query_terms(filter) else {
+        return false;
+    };
+    terms.into_iter().all(|term| {
+        let matched = card_matches_query_term(card, &term.value);
+        if term.negated { !matched } else { matched }
+    })
+}
+
+fn card_matches_query_term(card: &WorkCardProjection, token: &str) -> bool {
+    if token == "needs-you" {
+        return card.needs_you();
+    }
+
+    if let Some((field, value)) = token.split_once(':') {
+        if value.is_empty() {
+            return false;
         }
-        if let Some(stage) = token.strip_prefix("stage:") {
-            return card.stage.label().eq_ignore_ascii_case(stage);
-        }
-        if let Some(workspace) = token.strip_prefix("workspace:") {
-            return card
+        return match field {
+            "status" => match value {
+                "needs-you" => card.needs_you(),
+                "snoozed" => card.snoozed,
+                "active" => card.stage != WorkflowStage::Done && !card.snoozed,
+                _ => false,
+            },
+            "stage" => WorkflowStage::ALL
+                .iter()
+                .any(|stage| stage.label().eq_ignore_ascii_case(value) && card.stage == *stage),
+            "workspace" | "project" => card
                 .workspace
                 .as_deref()
-                .is_some_and(|value| value.to_ascii_lowercase().contains(workspace));
-        }
-        if let Some(tag) = token.strip_prefix("tag:") {
-            return card
+                .is_some_and(|workspace| workspace.to_ascii_lowercase().contains(value)),
+            "branch" => card
+                .branch
+                .as_deref()
+                .is_some_and(|branch| branch.to_ascii_lowercase().contains(value)),
+            "forge" => card
+                .forge_provider
+                .is_some_and(|provider| provider.label().eq_ignore_ascii_case(value)),
+            "mr" | "cr" => match value {
+                "open" | "opened" => card.change_request_state.as_deref().is_some_and(|state| {
+                    state.eq_ignore_ascii_case("open") || state.eq_ignore_ascii_case("opened")
+                }),
+                "closed" | "merged" => card
+                    .change_request_state
+                    .as_deref()
+                    .is_some_and(|state| state.eq_ignore_ascii_case(value)),
+                "draft" => card.change_request_draft,
+                "none" => card.change_request_state.is_none() && !card.change_request_draft,
+                _ => false,
+            },
+            "tag" => card
                 .overlay
                 .tags
                 .iter()
-                .any(|value| value.eq_ignore_ascii_case(tag));
-        }
-        if let Some(goal) = token.strip_prefix("goal:") {
-            return card.goal.as_ref().is_some_and(|observation| {
-                observation.objective.to_ascii_lowercase().contains(goal)
-                    || observation
-                        .status
-                        .wire()
-                        .to_ascii_lowercase()
-                        .contains(goal)
-            });
-        }
-        if let Some(source) = token.strip_prefix("source:") {
-            return match source {
+                .any(|tag| tag.eq_ignore_ascii_case(value)),
+            "goal" => card.goal.as_ref().is_some_and(|goal| {
+                goal.objective.to_ascii_lowercase().contains(value)
+                    || goal.status.wire().to_ascii_lowercase().contains(value)
+            }),
+            "attention" => match value {
+                "any" => !card.attention.is_empty(),
+                "none" => card.attention.is_empty(),
+                _ => card
+                    .attention
+                    .iter()
+                    .any(|attention| attention.label().eq_ignore_ascii_case(value)),
+            },
+            "source" => match value {
                 "scratch" => card.anchor.kind == SourceKind::ScratchWork,
                 "thread" | "codex" => card.anchor.kind == SourceKind::CodexThread,
                 "forge" => {
                     card.anchor.kind == SourceKind::ForgeWorkItem
+                        || card.forge_provider.is_some()
                         || card.links.iter().any(|link| {
                             matches!(
                                 link.source.kind,
@@ -374,27 +481,51 @@ fn card_matches_filter(card: &WorkCardProjection, filter: &str) -> bool {
                         })
                 }
                 _ => false,
-            };
-        }
+            },
+            "pinned" => {
+                parse_query_bool(value).is_some_and(|expected| card.overlay.pinned == expected)
+            }
+            "snoozed" => parse_query_bool(value).is_some_and(|expected| card.snoozed == expected),
+            _ => false,
+        };
+    }
 
-        let haystack = format!(
-            "{} {} {} {} {}",
-            card.title,
-            card.workspace.as_deref().unwrap_or(""),
-            card.stage.label(),
-            card.goal
-                .as_ref()
-                .map(|goal| goal.objective.as_str())
-                .unwrap_or(""),
-            card.attention
-                .iter()
-                .map(PlanningAttention::label)
-                .collect::<Vec<_>>()
-                .join(" ")
-        )
-        .to_ascii_lowercase();
-        haystack.contains(token)
-    })
+    let haystack = format!(
+        "{} {} {} {} {} {} {} {} {}",
+        card.title,
+        card.workspace.as_deref().unwrap_or(""),
+        card.stage.label(),
+        card.goal
+            .as_ref()
+            .map(|goal| goal.objective.as_str())
+            .unwrap_or(""),
+        card.attention
+            .iter()
+            .map(PlanningAttention::label)
+            .collect::<Vec<_>>()
+            .join(" "),
+        card.branch.as_deref().unwrap_or(""),
+        card.forge_provider
+            .map(ForgeProviderKind::label)
+            .unwrap_or(""),
+        card.change_request_state.as_deref().unwrap_or(""),
+        card.overlay
+            .tags
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>()
+            .join(" ")
+    )
+    .to_ascii_lowercase();
+    haystack.contains(token)
+}
+
+fn parse_query_bool(value: &str) -> Option<bool> {
+    match value {
+        "true" => Some(true),
+        "false" => Some(false),
+        _ => None,
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -458,10 +589,11 @@ pub fn reconcile_thread_card_with_goal_and_forge(
     forge: Option<&ForgeObservation>,
 ) -> WorkCardProjection {
     let thread = input.thread;
-    let local = input
+    let mut local = input
         .local
         .cloned()
         .unwrap_or_else(|| WorkCardRecord::implicit_thread(&thread.id));
+    local.overlay.pinned |= thread.pinned;
 
     let git_dirty = input.git.is_some_and(|git| git.is_repository && git.dirty);
     let (mut stage, mut stage_reason) =
@@ -609,6 +741,12 @@ pub fn reconcile_thread_card_with_goal_and_forge(
         anchor: local.anchor,
         title,
         workspace: Some(thread.workspace.clone()),
+        branch: branch.map(ToOwned::to_owned),
+        forge_provider: forge
+            .and_then(|observation| observation.identity.as_ref())
+            .map(|identity| identity.provider),
+        change_request_state: change_request.map(|change_request| change_request.state.clone()),
+        change_request_draft: change_request.is_some_and(|change_request| change_request.draft),
         stage,
         stage_reason,
         attention,
@@ -682,6 +820,10 @@ pub fn reconcile_forge_issue_card(
             .clone()
             .unwrap_or_else(|| format!("#{} {}", issue.iid, issue.title)),
         workspace: Some(identity.path_with_namespace.clone()),
+        branch: None,
+        forge_provider: Some(identity.provider),
+        change_request_state: None,
+        change_request_draft: false,
         stage,
         stage_reason,
         attention: BTreeSet::new(),
@@ -748,6 +890,10 @@ pub fn reconcile_scratch_card_with_local(
             .clone()
             .unwrap_or_else(|| scratch.title.clone()),
         workspace: scratch.workspace.clone(),
+        branch: None,
+        forge_provider: None,
+        change_request_state: None,
+        change_request_draft: false,
         stage,
         stage_reason: format!("local ScratchWork state is {}", stage.label()),
         attention: BTreeSet::new(),
@@ -920,6 +1066,195 @@ mod tests {
             visible_fields: vec![],
         };
         assert_eq!(apply_saved_view(&[card], &view).len(), 1);
+    }
+
+    #[test]
+    fn registry_pin_projects_into_work_card_queries_and_sorting() {
+        let mut thread = first_thread();
+        thread.pinned = true;
+        let card = reconcile_thread_card(ReconcileInput {
+            thread: &thread,
+            git: None,
+            local: None,
+            collision_count: 0,
+            backend_observed_at_unix_ms: Some(100),
+            backend_error: None,
+            now_unix_ms: 100,
+        });
+        assert!(card.overlay.pinned);
+
+        let view = SavedView {
+            id: "pinned".into(),
+            name: "pinned".into(),
+            source_scope: "all".into(),
+            filter: "pinned:true".into(),
+            group_by: None,
+            order_by: None,
+            layout: SavedViewLayout::List,
+            visible_fields: vec![],
+        };
+        assert_eq!(apply_saved_view(&[card], &view).len(), 1);
+    }
+
+    #[test]
+    fn saved_view_query_supports_quoted_terms_negation_and_project_alias() {
+        let mut thread = first_thread();
+        thread.workspace = "audio pipeline".into();
+        thread.title = "Investigate noisy call".into();
+        thread.runtime = RuntimeStatus::Ready;
+        let mut local = WorkCardRecord::implicit_thread(&thread.id);
+        local.overlay.tags.insert("research".into());
+        let card = reconcile_thread_card(ReconcileInput {
+            thread: &thread,
+            git: None,
+            local: Some(&local),
+            collision_count: 0,
+            backend_observed_at_unix_ms: Some(100),
+            backend_error: None,
+            now_unix_ms: 100,
+        });
+        let view = SavedView {
+            id: "quoted".into(),
+            name: "quoted".into(),
+            source_scope: "all".into(),
+            filter: "project:\"audio pipeline\" tag:research -stage:done".into(),
+            group_by: None,
+            order_by: None,
+            layout: SavedViewLayout::List,
+            visible_fields: vec![],
+        };
+        assert_eq!(apply_saved_view(&[card], &view).len(), 1);
+    }
+
+    #[test]
+    fn saved_view_query_uses_observed_branch_forge_and_change_request_state() {
+        use crate::forge::{
+            CapabilityState, ChangeRequestSummary, ForgeCapability, ForgeIdentity,
+            ForgeProviderKind,
+        };
+        use std::collections::BTreeMap;
+
+        let mut thread = first_thread();
+        thread.runtime = RuntimeStatus::Ready;
+        let mut git = GitContext::pending(thread.id.clone(), "/repo");
+        git.is_repository = true;
+        git.branch = Some("feature/search".into());
+        git.observed_at_unix_ms = 100;
+        let forge = ForgeObservation {
+            thread_id: thread.id.clone(),
+            cwd: "/repo".into(),
+            remote_name: Some("origin".into()),
+            remote_url: Some("git@gitlab.example.com:team/repo.git".into()),
+            identity: Some(ForgeIdentity {
+                provider: ForgeProviderKind::GitLab,
+                host: "gitlab.example.com".into(),
+                project_id: "42".into(),
+                path_with_namespace: "team/repo".into(),
+                web_url: "https://gitlab.example.com/team/repo".into(),
+                default_branch: Some("main".into()),
+            }),
+            capabilities: BTreeMap::from([(
+                ForgeCapability::MergeRequests,
+                CapabilityState::Available,
+            )]),
+            issues: vec![],
+            change_requests: vec![ChangeRequestSummary {
+                iid: 8,
+                title: "Search".into(),
+                state: "opened".into(),
+                source_branch: "feature/search".into(),
+                target_branch: "main".into(),
+                web_url: "https://gitlab.example.com/team/repo/-/merge_requests/8".into(),
+                updated_at: None,
+                draft: false,
+                detailed_merge_status: None,
+                blocking_discussions_resolved: None,
+            }],
+            pipelines: vec![],
+            review: None,
+            observed_at_unix_ms: 100,
+            freshness: ForgeFreshness::Fresh,
+            error: None,
+        };
+        let card = reconcile_thread_card_with_goal_and_forge(
+            ReconcileInput {
+                thread: &thread,
+                git: Some(&git),
+                local: None,
+                collision_count: 0,
+                backend_observed_at_unix_ms: Some(100),
+                backend_error: None,
+                now_unix_ms: 100,
+            },
+            None,
+            Some(&forge),
+        );
+        let view = SavedView {
+            id: "observed".into(),
+            name: "observed".into(),
+            source_scope: "all".into(),
+            filter: "branch:feature/search forge:gitlab mr:open -attention:pipeline-failed".into(),
+            group_by: None,
+            order_by: None,
+            layout: SavedViewLayout::List,
+            visible_fields: vec![],
+        };
+        assert_eq!(apply_saved_view(&[card], &view).len(), 1);
+    }
+
+    #[test]
+    fn invalid_structured_query_fails_closed() {
+        let card = reconcile_thread_card(ReconcileInput {
+            thread: &first_thread(),
+            git: None,
+            local: None,
+            collision_count: 0,
+            backend_observed_at_unix_ms: Some(100),
+            backend_error: None,
+            now_unix_ms: 100,
+        });
+        for filter in [
+            "unknown:value",
+            "pinned:maybe",
+            "stage:banana",
+            "\"unterminated",
+        ] {
+            let view = SavedView {
+                id: "invalid".into(),
+                name: "invalid".into(),
+                source_scope: "all".into(),
+                filter: filter.into(),
+                group_by: None,
+                order_by: None,
+                layout: SavedViewLayout::List,
+                visible_fields: vec![],
+            };
+            assert!(apply_saved_view(std::slice::from_ref(&card), &view).is_empty());
+        }
+    }
+
+    #[test]
+    fn saved_view_source_scope_is_enforced() {
+        let card = reconcile_thread_card(ReconcileInput {
+            thread: &first_thread(),
+            git: None,
+            local: None,
+            collision_count: 0,
+            backend_observed_at_unix_ms: Some(100),
+            backend_error: None,
+            now_unix_ms: 100,
+        });
+        let view = SavedView {
+            id: "scope".into(),
+            name: "scope".into(),
+            source_scope: "scratch".into(),
+            filter: String::new(),
+            group_by: None,
+            order_by: None,
+            layout: SavedViewLayout::List,
+            visible_fields: vec![],
+        };
+        assert!(apply_saved_view(&[card], &view).is_empty());
     }
 
     fn goal(status: GoalStatus) -> GoalObservation {

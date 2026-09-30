@@ -175,7 +175,8 @@ M7a establishes a read-only automation and scale baseline. `headless threads` an
 - M6c GitHub.com read-only provider: implemented in the v0.6.x line.
 - M6 forge integration: complete.
 - M7a headless read-only CLI + scale baselines: implemented in the v0.7.x line.
-- M7b productivity (richer SavedView queries, safe batch-local actions, launch presets): next.
+- M7b1 richer SavedView query language: implemented in the v0.7.x line.
+- M7b2 safe transactional batch-local actions: next; M7b3 repository-shared launch presets follows.
 
 Architecture and product research are archived under `docs/research/`.
 Implementation design lives under `docs/design/`.
@@ -200,3 +201,4 @@ See:
 - `docs/implementation/m6b-safe-gitlab-mutations.md`
 - `docs/implementation/m6c-github-provider.md`
 - `docs/implementation/m7a-headless-scale.md`
+- `docs/implementation/m7b1-saved-view-query.md`
