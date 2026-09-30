@@ -154,12 +154,9 @@ impl TerminalDrawerRuntime {
                 PtyEvent::Output(bytes) => {
                     self.parser.process(&bytes);
                     let (cursor_row, cursor_col) = self.parser.screen().cursor_position();
-                    for response in vt_query_responses(
-                        &mut self.query_tail,
-                        &bytes,
-                        cursor_row,
-                        cursor_col,
-                    ) {
+                    for response in
+                        vt_query_responses(&mut self.query_tail, &bytes, cursor_row, cursor_col)
+                    {
                         if let Err(error) = handle.send(PtyCommand::Input(response)) {
                             self.state = TerminalProcessState::Error(format!(
                                 "terminal query response failed: {error:#}"
