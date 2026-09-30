@@ -377,10 +377,7 @@ fn forge_review_label(app: &AppState, thread_id: &str) -> String {
         " · approvals n/a".into()
     };
     let changes_requested = if review.changes_requested_by_count > 0 {
-        format!(
-            " · changes requested {}",
-            review.changes_requested_by_count
-        )
+        format!(" · changes requested {}", review.changes_requested_by_count)
     } else {
         String::new()
     };
