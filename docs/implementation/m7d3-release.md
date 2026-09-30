@@ -58,7 +58,7 @@ This gate prevents accidental publication when project license metadata is absen
 
 ## Stable evidence
 
-Stable evidence is represented by `codex-tui/release-evidence/v1`.
+Stable evidence is represented by `codex-tui/release-evidence/v2`.
 
 It binds:
 
