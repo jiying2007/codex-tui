@@ -1,0 +1,373 @@
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Release channel
+        type: choice
+        required: true
+        default: preview
+        options:
+          - preview
+          - stable
+      preview_number:
+        description: Preview sequence N for vX.Y.Z-preview.N
+        type: string
+        required: false
+        default: "1"
+      publish:
+        description: Create the GitHub Release after all gates pass
+        type: boolean
+        required: true
+        default: false
+      canonical_ci_run:
+        description: Stable only - successful canonical main CI run ID bound to this commit
+        type: string
+        required: false
+        default: "0"
+      linux_compat_sha256:
+        description: Stable only - SHA-256 of retained Linux doctor compat JSON
+        type: string
+        required: false
+        default: ""
+      linux_compat_observed_at:
+        description: Stable only - Linux compatibility observation timestamp
+        type: string
+        required: false
+        default: ""
+      linux_terminal:
+        description: Stable only - Linux terminal used for restoration smoke
+        type: string
+        required: false
+        default: ""
+      linux_terminal_observed_at:
+        description: Stable only - Linux terminal smoke timestamp
+        type: string
+        required: false
+        default: ""
+      macos_compat_sha256:
+        description: Stable only - SHA-256 of retained macOS doctor compat JSON
+        type: string
+        required: false
+        default: ""
+      macos_compat_observed_at:
+        description: Stable only - macOS compatibility observation timestamp
+        type: string
+        required: false
+        default: ""
+      macos_terminal:
+        description: Stable only - macOS terminal used for restoration smoke
+        type: string
+        required: false
+        default: ""
+      macos_terminal_observed_at:
+        description: Stable only - macOS terminal smoke timestamp
+        type: string
+        required: false
+        default: ""
+      windows_compat_sha256:
+        description: Stable only - SHA-256 of retained Windows doctor compat JSON
+        type: string
+        required: false
+        default: ""
+      windows_compat_observed_at:
+        description: Stable only - Windows compatibility observation timestamp
+        type: string
+        required: false
+        default: ""
+      windows_terminal:
+        description: Stable only - Windows terminal used for restoration smoke
+        type: string
+        required: false
+        default: ""
+      windows_terminal_observed_at:
+        description: Stable only - Windows terminal smoke timestamp
+        type: string
+        required: false
+        default: ""
+      performance_p95_ms:
+        description: Stable only - retained resident-planning-10k p95 milliseconds
+        type: string
+        required: false
+        default: ""
+      performance_p99_ms:
+        description: Stable only - retained resident-planning-10k p99 milliseconds
+        type: string
+        required: false
+        default: ""
+      performance_source:
+        description: Stable only - retained benchmark runner/source identifier
+        type: string
+        required: false
+        default: ""
+      performance_observed_at:
+        description: Stable only - performance observation timestamp
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}-${{ inputs.channel }}
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    name: release-gate
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+      channel: ${{ steps.meta.outputs.channel }}
+      publish: ${{ steps.meta.outputs.publish }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Derive release identity
+        id: meta
+        shell: bash
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          PREVIEW_NUMBER: ${{ inputs.preview_number }}
+          PUBLISH: ${{ inputs.publish }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/main" || {
+            echo "Release workflow must be dispatched from main; got $GITHUB_REF" >&2
+            exit 1
+          }
+
+          VERSION="$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml","rb"))["package"]["version"])')"
+          if [ "$CHANNEL" = "preview" ]; then
+            [[ "$PREVIEW_NUMBER" =~ ^[1-9][0-9]*$ ]] || {
+              echo "preview_number must be an integer >= 1" >&2
+              exit 1
+            }
+            TAG="v${VERSION}-preview.${PREVIEW_NUMBER}"
+          else
+            TAG="v${VERSION}"
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
+          echo "publish=$PUBLISH" >> "$GITHUB_OUTPUT"
+
+          if [ "$PUBLISH" = "true" ] && git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "Refusing to publish over existing tag $TAG" >&2
+            exit 1
+          fi
+
+      - name: Verify canonical CI and create stable evidence
+        if: inputs.channel == 'stable'
+        shell: bash
+        env:
+          CI_RUN: ${{ inputs.canonical_ci_run }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          LINUX_COMPAT_SHA: ${{ inputs.linux_compat_sha256 }}
+          LINUX_COMPAT_AT: ${{ inputs.linux_compat_observed_at }}
+          LINUX_TERMINAL: ${{ inputs.linux_terminal }}
+          LINUX_TERMINAL_AT: ${{ inputs.linux_terminal_observed_at }}
+          MACOS_COMPAT_SHA: ${{ inputs.macos_compat_sha256 }}
+          MACOS_COMPAT_AT: ${{ inputs.macos_compat_observed_at }}
+          MACOS_TERMINAL: ${{ inputs.macos_terminal }}
+          MACOS_TERMINAL_AT: ${{ inputs.macos_terminal_observed_at }}
+          WINDOWS_COMPAT_SHA: ${{ inputs.windows_compat_sha256 }}
+          WINDOWS_COMPAT_AT: ${{ inputs.windows_compat_observed_at }}
+          WINDOWS_TERMINAL: ${{ inputs.windows_terminal }}
+          WINDOWS_TERMINAL_AT: ${{ inputs.windows_terminal_observed_at }}
+          PERF_P95: ${{ inputs.performance_p95_ms }}
+          PERF_P99: ${{ inputs.performance_p99_ms }}
+          PERF_SOURCE: ${{ inputs.performance_source }}
+          PERF_AT: ${{ inputs.performance_observed_at }}
+        run: |
+          set -euo pipefail
+          [[ "$CI_RUN" =~ ^[1-9][0-9]*$ ]] || {
+            echo "stable canonical_ci_run must be a nonzero integer" >&2
+            exit 1
+          }
+
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CI_RUN" > canonical-ci.json
+          python3 scripts/release/validate_ci_run.py             --run-json canonical-ci.json             --commit "${{ github.sha }}"
+
+          python3 scripts/release/create_evidence.py             --output release-evidence.json             --compat-schema codex-tui/compat/v2             --version "$VERSION"             --commit "${{ github.sha }}"             --canonical-ci-run "$CI_RUN"             --linux-compat-sha256 "$LINUX_COMPAT_SHA"             --linux-compat-observed-at "$LINUX_COMPAT_AT"             --linux-terminal "$LINUX_TERMINAL"             --linux-terminal-observed-at "$LINUX_TERMINAL_AT"             --macos-compat-sha256 "$MACOS_COMPAT_SHA"             --macos-compat-observed-at "$MACOS_COMPAT_AT"             --macos-terminal "$MACOS_TERMINAL"             --macos-terminal-observed-at "$MACOS_TERMINAL_AT"             --windows-compat-sha256 "$WINDOWS_COMPAT_SHA"             --windows-compat-observed-at "$WINDOWS_COMPAT_AT"             --windows-terminal "$WINDOWS_TERMINAL"             --windows-terminal-observed-at "$WINDOWS_TERMINAL_AT"             --performance-p95-ms "$PERF_P95"             --performance-p99-ms "$PERF_P99"             --performance-source "$PERF_SOURCE"             --performance-observed-at "$PERF_AT"
+
+      - name: Verify release contract
+        shell: bash
+        env:
+          CHANNEL: ${{ steps.meta.outputs.channel }}
+          TAG: ${{ steps.meta.outputs.tag }}
+          PUBLISH: ${{ inputs.publish }}
+        run: |
+          set -euo pipefail
+          ARGS=(
+            release verify
+            --channel "$CHANNEL"
+            --tag "$TAG"
+            --commit "${{ github.sha }}"
+            --json
+          )
+          if [ "$CHANNEL" = "stable" ]; then
+            ARGS+=(--evidence release-evidence.json)
+          fi
+          if [ "$PUBLISH" = "true" ]; then
+            ARGS+=(--publish)
+          fi
+          cargo run --locked -- "${ARGS[@]}" > release-verification.json
+
+          mkdir -p gate
+          cp release-verification.json gate/release-verification.json
+          cp release/v1.0-criteria.json gate/V1-STABLE-CRITERIA.json
+          if [ -f release-evidence.json ]; then
+            cp release-evidence.json gate/release-evidence.json
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-gate
+          path: gate/
+          if-no-files-found: error
+          retention-days: 30
+
+  package:
+    name: package-${{ matrix.platform }}
+    needs: gate
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+            binary: target/release/codex-tui
+            python: python3
+          - os: macos-latest
+            platform: macos
+            binary: target/release/codex-tui
+            python: python3
+          - os: windows-latest
+            platform: windows
+            binary: target/release/codex-tui.exe
+            python: python
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build locked release binary
+        run: cargo build --release --locked
+
+      - name: Generate third-party notices
+        run: ${{ matrix.python }} scripts/release/generate_notices.py --output dist/THIRD_PARTY_NOTICES.txt
+
+      - name: Build deterministic native archive
+        run: >
+          ${{ matrix.python }} scripts/release/package_release.py
+          --binary "${{ matrix.binary }}"
+          --version "${{ needs.gate.outputs.version }}"
+          --tag "${{ needs.gate.outputs.tag }}"
+          --commit "${{ github.sha }}"
+          --platform "${{ matrix.platform }}"
+          --notices dist/THIRD_PARTY_NOTICES.txt
+          --output-dir dist
+
+      - name: Smoke the extracted distributable
+        run: >
+          ${{ matrix.python }} scripts/release/verify_archive.py
+          --archive-dir dist
+          --version "${{ needs.gate.outputs.version }}"
+          --tag "${{ needs.gate.outputs.tag }}"
+          --commit "${{ github.sha }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package-${{ matrix.platform }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+          if-no-files-found: error
+          retention-days: 30
+
+  bundle:
+    name: release-bundle
+    needs: [gate, package]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: package-*
+          path: bundle
+          merge-multiple: true
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-gate
+          path: bundle
+
+      - name: Validate platform archive count
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path("bundle")
+          archives = [p for p in root.iterdir() if p.name.endswith(".tar.gz") or p.suffix == ".zip"]
+          if len(archives) != 3:
+              raise SystemExit(f"expected 3 platform archives, found {len(archives)}: {archives}")
+          print("archives:", *sorted(p.name for p in archives), sep="\n  ")
+          PY
+
+      - name: Extract release notes
+        run: >
+          python3 scripts/release/extract_changelog.py
+          --version "${{ needs.gate.outputs.version }}"
+          --output bundle/RELEASE_NOTES.md
+
+      - name: Generate checksum manifest
+        run: python3 scripts/release/checksums.py bundle --output bundle/SHA256SUMS
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-bundle
+          path: bundle/
+          if-no-files-found: error
+          retention-days: 90
+
+  publish:
+    name: publish-github-release
+    if: inputs.publish == true
+    needs: [gate, bundle]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-bundle
+          path: bundle
+
+      - name: Publish gated GitHub Release
+        shell: bash
+        env:
+          CHANNEL: ${{ needs.gate.outputs.channel }}
+          TAG: ${{ needs.gate.outputs.tag }}
+        run: |
+          set -euo pipefail
+          EXTRA=()
+          if [ "$CHANNEL" = "preview" ]; then
+            EXTRA+=(--prerelease)
+          fi
+          gh release create "$TAG" bundle/*             --repo "$GITHUB_REPOSITORY"             --target "$GITHUB_SHA"             --title "codex-tui $TAG"             --notes-file bundle/RELEASE_NOTES.md             "${EXTRA[@]}"

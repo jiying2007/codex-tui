@@ -1,0 +1,76 @@
+{
+  "schema": "codex-tui/stable-criteria/v1",
+  "firstStableVersion": "1.0.0",
+  "canonicalPlatforms": [
+    "linux",
+    "macos",
+    "windows"
+  ],
+  "performance": {
+    "fixture": "resident-planning-10k",
+    "p95MsMax": 50,
+    "p99MsMax": 100
+  },
+  "requiredGates": [
+    {
+      "id": "project-license",
+      "authority": "repository",
+      "evidence": "LICENSE, LICENSE.txt or LICENSE.md"
+    },
+    {
+      "id": "cargo-lock",
+      "authority": "repository",
+      "evidence": "Cargo.lock"
+    },
+    {
+      "id": "version-tag",
+      "authority": "release verifier",
+      "evidence": "Cargo package version exactly matches stable vX.Y.Z tag"
+    },
+    {
+      "id": "changelog",
+      "authority": "repository",
+      "evidence": "CHANGELOG.md version section"
+    },
+    {
+      "id": "canonical-ci",
+      "authority": "GitHub Actions ci workflow",
+      "evidence": "successful main run bound to release commit"
+    },
+    {
+      "id": "compatibility",
+      "authority": "codex-tui doctor compat --json",
+      "evidence": "READY retained report SHA-256 for Linux, macOS and Windows"
+    },
+    {
+      "id": "terminal-restoration",
+      "authority": "retained interactive smoke",
+      "evidence": "PASS receipt for Linux, macOS and Windows"
+    },
+    {
+      "id": "pty-lifecycle",
+      "authority": "canonical all-target/all-feature tests",
+      "evidence": "cross-platform PTY lifecycle suite in canonical CI"
+    },
+    {
+      "id": "performance",
+      "authority": "retained benchmark run",
+      "evidence": "resident-planning-10k p95 <= 50 ms and p99 <= 100 ms"
+    },
+    {
+      "id": "third-party-notices",
+      "authority": "release packaging",
+      "evidence": "THIRD_PARTY_NOTICES.txt generated from locked normal dependency closure"
+    },
+    {
+      "id": "archive-smoke",
+      "authority": "release packaging",
+      "evidence": "extracted binary version and 10k headless fixture smoke pass on each platform"
+    },
+    {
+      "id": "checksums",
+      "authority": "release aggregation",
+      "evidence": "SHA256SUMS for all release bundle files"
+    }
+  ]
+}
