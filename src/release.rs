@@ -9,7 +9,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 pub const RELEASE_VERIFY_SCHEMA: &str = "codex-tui/release-verification/v1";
-pub const RELEASE_EVIDENCE_SCHEMA: &str = "codex-tui/release-evidence/v1";
+pub const RELEASE_EVIDENCE_SCHEMA: &str = "codex-tui/release-evidence/v2";
+pub const PRIMARY_STABLE_PLATFORM: &str = "linux";
+pub const SECONDARY_PLATFORMS: [&str; 2] = ["macos", "windows"];
 pub const EXIT_RELEASE_BLOCKED: i32 = 4;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -50,6 +52,7 @@ pub struct PlatformCompatReceipt {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PerformanceReceipt {
+    pub platform: String,
     pub fixture: String,
     pub iterations: usize,
     pub p95_ms: f64,
@@ -66,6 +69,8 @@ pub struct ReleaseEvidenceReceipt {
     pub commit_sha: String,
     pub canonical_ci_run: u64,
     pub compat_schema: String,
+    pub primary_platform: String,
+    pub secondary_platforms: Vec<String>,
     pub compatibility: BTreeMap<String, PlatformCompatReceipt>,
     pub terminal_restoration: BTreeMap<String, PlatformTerminalReceipt>,
     pub performance: PerformanceReceipt,
@@ -229,42 +234,38 @@ pub fn validate_evidence(path: &Path, version: &str, commit_sha: &str) -> Result
         receipt.compat_schema == COMPAT_SCHEMA,
         "receipt compatibility schema must be {COMPAT_SCHEMA}"
     );
-    for platform in ["linux", "macos", "windows"] {
-        let compatibility = receipt
-            .compatibility
-            .get(platform)
-            .with_context(|| format!("missing compatibility evidence for {platform}"))?;
-        anyhow::ensure!(
-            compatibility.status.eq_ignore_ascii_case("ready"),
-            "compatibility evidence for {platform} must be READY"
-        );
-        anyhow::ensure!(
-            valid_sha256(&compatibility.report_sha256),
-            "compatibility report SHA-256 for {platform} must be 64 hexadecimal characters"
-        );
-        anyhow::ensure!(
-            !compatibility.observed_at.trim().is_empty(),
-            "compatibility observation timestamp for {platform} must not be empty"
-        );
+    anyhow::ensure!(
+        receipt.primary_platform == PRIMARY_STABLE_PLATFORM,
+        "stable primary platform must be {PRIMARY_STABLE_PLATFORM}"
+    );
+    anyhow::ensure!(
+        receipt.secondary_platforms
+            == SECONDARY_PLATFORMS
+                .iter()
+                .map(|platform| (*platform).to_string())
+                .collect::<Vec<_>>(),
+        "secondary platform policy mismatch"
+    );
 
-        let evidence = receipt
-            .terminal_restoration
-            .get(platform)
-            .with_context(|| format!("missing terminal restoration evidence for {platform}"))?;
-        anyhow::ensure!(
-            evidence.status.eq_ignore_ascii_case("pass"),
-            "terminal restoration evidence for {platform} must PASS"
-        );
-        anyhow::ensure!(
-            !evidence.terminal.trim().is_empty(),
-            "terminal identifier for {platform} must not be empty"
-        );
-        anyhow::ensure!(
-            !evidence.observed_at.trim().is_empty(),
-            "observation timestamp for {platform} must not be empty"
-        );
+    validate_platform_evidence(
+        PRIMARY_STABLE_PLATFORM,
+        &receipt.compatibility,
+        &receipt.terminal_restoration,
+        true,
+    )?;
+    for platform in SECONDARY_PLATFORMS {
+        validate_platform_evidence(
+            platform,
+            &receipt.compatibility,
+            &receipt.terminal_restoration,
+            false,
+        )?;
     }
 
+    anyhow::ensure!(
+        receipt.performance.platform == PRIMARY_STABLE_PLATFORM,
+        "stable performance evidence must be captured on {PRIMARY_STABLE_PLATFORM}"
+    );
     anyhow::ensure!(
         receipt.performance.fixture == PERFORMANCE_FIXTURE,
         "stable performance fixture must be {PERFORMANCE_FIXTURE}"
@@ -298,6 +299,50 @@ pub fn validate_evidence(path: &Path, version: &str, commit_sha: &str) -> Result
         "performance observation timestamp must not be empty"
     );
 
+    Ok(())
+}
+
+fn validate_platform_evidence(
+    platform: &str,
+    compatibility: &BTreeMap<String, PlatformCompatReceipt>,
+    terminal_restoration: &BTreeMap<String, PlatformTerminalReceipt>,
+    required: bool,
+) -> Result<()> {
+    let compat = compatibility.get(platform);
+    let terminal = terminal_restoration.get(platform);
+
+    if !required && compat.is_none() && terminal.is_none() {
+        return Ok(());
+    }
+
+    let compat = compat.with_context(|| format!("missing compatibility evidence for {platform}"))?;
+    anyhow::ensure!(
+        compat.status.eq_ignore_ascii_case("ready"),
+        "compatibility evidence for {platform} must be READY"
+    );
+    anyhow::ensure!(
+        valid_sha256(&compat.report_sha256),
+        "compatibility report SHA-256 for {platform} must be 64 hexadecimal characters"
+    );
+    anyhow::ensure!(
+        !compat.observed_at.trim().is_empty(),
+        "compatibility observation timestamp for {platform} must not be empty"
+    );
+
+    let terminal = terminal
+        .with_context(|| format!("missing terminal restoration evidence for {platform}"))?;
+    anyhow::ensure!(
+        terminal.status.eq_ignore_ascii_case("pass"),
+        "terminal restoration evidence for {platform} must PASS"
+    );
+    anyhow::ensure!(
+        !terminal.terminal.trim().is_empty(),
+        "terminal identifier for {platform} must not be empty"
+    );
+    anyhow::ensure!(
+        !terminal.observed_at.trim().is_empty(),
+        "observation timestamp for {platform} must not be empty"
+    );
     Ok(())
 }
 
@@ -513,17 +558,74 @@ mod tests {
     }
 
     #[test]
-    fn stable_evidence_requires_all_platform_terminal_receipts() {
+    fn stable_evidence_requires_linux_but_not_secondary_real_world_receipts() {
         let root = repo_with_lock_and_changelog();
         let evidence = root.path().join("evidence.json");
         fs::write(
             &evidence,
             serde_json::to_vec_pretty(&ReleaseEvidenceReceipt {
                 schema: RELEASE_EVIDENCE_SCHEMA.into(),
-                version: "1.0.0".into(),
+                version: env!("CARGO_PKG_VERSION").into(),
                 commit_sha: sha(),
                 canonical_ci_run: 123,
                 compat_schema: COMPAT_SCHEMA.into(),
+                primary_platform: PRIMARY_STABLE_PLATFORM.into(),
+                secondary_platforms: SECONDARY_PLATFORMS
+                    .iter()
+                    .map(|platform| (*platform).to_string())
+                    .collect(),
+                compatibility: BTreeMap::from([(
+                    "linux".into(),
+                    PlatformCompatReceipt {
+                        status: "ready".into(),
+                        report_sha256: "a".repeat(64),
+                        observed_at: "2026-09-30T00:00:00Z".into(),
+                    },
+                )]),
+                terminal_restoration: BTreeMap::from([(
+                    "linux".into(),
+                    PlatformTerminalReceipt {
+                        status: "pass".into(),
+                        terminal: "xterm".into(),
+                        observed_at: "2026-09-30T00:00:00Z".into(),
+                        notes: None,
+                    },
+                )]),
+                performance: PerformanceReceipt {
+                    platform: PRIMARY_STABLE_PLATFORM.into(),
+                    fixture: PERFORMANCE_FIXTURE.into(),
+                    iterations: STABLE_MIN_ITERATIONS,
+                    p95_ms: 40.0,
+                    p99_ms: 80.0,
+                    source: "retained-linux".into(),
+                    observed_at: "2026-09-30T00:00:00Z".into(),
+                },
+            })
+            .expect("evidence json"),
+        )
+        .expect("evidence");
+
+        validate_evidence(&evidence, env!("CARGO_PKG_VERSION"), &sha())
+            .expect("Linux Tier 1 evidence should satisfy stable retained evidence");
+    }
+
+    #[test]
+    fn optional_secondary_evidence_must_be_complete_when_provided() {
+        let root = repo_with_lock_and_changelog();
+        let evidence = root.path().join("evidence.json");
+        fs::write(
+            &evidence,
+            serde_json::to_vec_pretty(&ReleaseEvidenceReceipt {
+                schema: RELEASE_EVIDENCE_SCHEMA.into(),
+                version: env!("CARGO_PKG_VERSION").into(),
+                commit_sha: sha(),
+                canonical_ci_run: 123,
+                compat_schema: COMPAT_SCHEMA.into(),
+                primary_platform: PRIMARY_STABLE_PLATFORM.into(),
+                secondary_platforms: SECONDARY_PLATFORMS
+                    .iter()
+                    .map(|platform| (*platform).to_string())
+                    .collect(),
                 compatibility: BTreeMap::from([
                     (
                         "linux".into(),
@@ -541,14 +643,6 @@ mod tests {
                             observed_at: "2026-09-30T00:00:00Z".into(),
                         },
                     ),
-                    (
-                        "windows".into(),
-                        PlatformCompatReceipt {
-                            status: "ready".into(),
-                            report_sha256: "c".repeat(64),
-                            observed_at: "2026-09-30T00:00:00Z".into(),
-                        },
-                    ),
                 ]),
                 terminal_restoration: BTreeMap::from([(
                     "linux".into(),
@@ -560,11 +654,12 @@ mod tests {
                     },
                 )]),
                 performance: PerformanceReceipt {
+                    platform: PRIMARY_STABLE_PLATFORM.into(),
                     fixture: PERFORMANCE_FIXTURE.into(),
                     iterations: STABLE_MIN_ITERATIONS,
                     p95_ms: 40.0,
                     p99_ms: 80.0,
-                    source: "retained-runner".into(),
+                    source: "retained-linux".into(),
                     observed_at: "2026-09-30T00:00:00Z".into(),
                 },
             })
@@ -572,7 +667,8 @@ mod tests {
         )
         .expect("evidence");
 
-        let error = validate_evidence(&evidence, "1.0.0", &sha()).expect_err("missing platforms");
+        let error = validate_evidence(&evidence, env!("CARGO_PKG_VERSION"), &sha())
+            .expect_err("partial macOS evidence must fail");
         assert!(format!("{error:#}").contains("macos"));
     }
 
@@ -608,17 +704,15 @@ mod tests {
                 commit_sha: sha(),
                 canonical_ci_run: 123,
                 compat_schema: COMPAT_SCHEMA.into(),
-                compatibility: BTreeMap::from([
-                    ("linux".into(), compatibility('a')),
-                    ("macos".into(), compatibility('b')),
-                    ("windows".into(), compatibility('c')),
-                ]),
-                terminal_restoration: BTreeMap::from([
-                    ("linux".into(), terminal("xterm")),
-                    ("macos".into(), terminal("Terminal.app")),
-                    ("windows".into(), terminal("Windows Terminal")),
-                ]),
+                primary_platform: PRIMARY_STABLE_PLATFORM.into(),
+                secondary_platforms: SECONDARY_PLATFORMS
+                    .iter()
+                    .map(|platform| (*platform).to_string())
+                    .collect(),
+                compatibility: BTreeMap::from([("linux".into(), compatibility('a'))]),
+                terminal_restoration: BTreeMap::from([("linux".into(), terminal("xterm"))]),
                 performance: PerformanceReceipt {
+                    platform: PRIMARY_STABLE_PLATFORM.into(),
                     fixture: PERFORMANCE_FIXTURE.into(),
                     iterations: STABLE_MIN_ITERATIONS - 1,
                     p95_ms: 1.0,
