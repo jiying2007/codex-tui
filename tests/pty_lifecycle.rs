@@ -1,4 +1,5 @@
 use codex_tui::pty::{PtyCommand, PtyEvent, PtyHandle, TerminalSize};
+use codex_tui::terminal_drawer::vt_query_responses;
 use std::thread;
 use std::time::{Duration, Instant};
 use tempfile::tempdir;
@@ -24,10 +25,16 @@ fn wait_event(handle: &PtyHandle, predicate: impl Fn(&PtyEvent) -> bool) -> PtyE
 fn wait_output_contains(handle: &PtyHandle, marker: &str) -> Vec<u8> {
     let deadline = Instant::now() + WAIT;
     let mut output = Vec::new();
+    let mut query_tail = Vec::new();
     loop {
         if let Some(event) = handle.try_recv() {
             match event {
                 PtyEvent::Output(bytes) => {
+                    for response in vt_query_responses(&mut query_tail, &bytes, 0, 0) {
+                        handle
+                            .send(PtyCommand::Input(response))
+                            .expect("terminal query response");
+                    }
                     output.extend(bytes);
                     if String::from_utf8_lossy(&output).contains(marker) {
                         return output;
