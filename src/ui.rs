@@ -1564,7 +1564,7 @@ fn render_launch_presets(frame: &mut Frame<'_>, app: &AppState) {
                     "{} {} · cwd={:?} · {}",
                     if selected { ">" } else { " " },
                     sanitize_inline(&preset.name),
-                    sanitize_inline(&preset.cwd),
+                    preset.cwd.label(),
                     truncate_display(&argv, 72)
                 ),
                 style,
