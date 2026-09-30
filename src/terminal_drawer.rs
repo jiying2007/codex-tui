@@ -150,6 +150,7 @@ impl TerminalDrawerRuntime {
                 PtyEvent::Output(bytes) => {
                     self.parser.process(&bytes);
                 }
+                PtyEvent::ReaderClosed => {}
                 PtyEvent::Exited { success, code } => {
                     self.state = TerminalProcessState::Exited { success, code };
                 }
