@@ -253,7 +253,8 @@ pub struct RemoteIdentity {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ForgeDoctorSnapshot {
-    pub glab_version: Option<String>,
+    pub client_name: Option<String>,
+    pub client_version: Option<String>,
     pub authenticated: Option<bool>,
     pub server_version: Option<String>,
     pub remote: Option<RemoteIdentity>,
@@ -779,32 +780,64 @@ pub async fn probe_change_request_review(
 }
 
 pub async fn doctor(cwd: String) -> ForgeDoctorSnapshot {
-    let glab_version = run_command("glab", &["version"], Some(Path::new(&cwd)))
-        .await
-        .ok()
-        .and_then(|output| {
-            output
-                .success
-                .then(|| first_nonempty_line(&output.stdout).map(ToOwned::to_owned))
-                .flatten()
-        });
-
     let remote = resolve_git_remote(Path::new(&cwd)).await.ok();
-    let (authenticated, server_version) = if let Some(remote) = &remote {
-        let auth_args = ["auth", "status", "--hostname", remote.host.as_str()];
-        let auth = run_command("glab", &auth_args, Some(Path::new(&cwd)));
-        let version = glab_api_json::<GitLabVersion>(&cwd, &remote.host, "/version");
-        let (auth, version) = tokio::join!(auth, version);
-        (
-            auth.ok().map(|output| output.success),
-            version.ok().map(|version| version.version),
-        )
+    let provider = remote
+        .as_ref()
+        .map(|remote| provider_kind_for_host(&remote.host));
+
+    let client_name = provider.map(|provider| match provider {
+        ForgeProviderKind::GitLab => "glab".to_string(),
+        ForgeProviderKind::GitHub => "gh".to_string(),
+    });
+    let client_version = match provider {
+        Some(ForgeProviderKind::GitLab) => run_command("glab", &["version"], Some(Path::new(&cwd)))
+            .await
+            .ok()
+            .and_then(|output| {
+                output
+                    .success
+                    .then(|| first_nonempty_line(&output.stdout).map(ToOwned::to_owned))
+                    .flatten()
+            }),
+        Some(ForgeProviderKind::GitHub) => run_command("gh", &["--version"], Some(Path::new(&cwd)))
+            .await
+            .ok()
+            .and_then(|output| {
+                output
+                    .success
+                    .then(|| first_nonempty_line(&output.stdout).map(ToOwned::to_owned))
+                    .flatten()
+            }),
+        None => None,
+    };
+
+    let (authenticated, server_version) = if let (Some(remote), Some(provider)) = (&remote, provider)
+    {
+        match provider {
+            ForgeProviderKind::GitLab => {
+                let auth_args = ["auth", "status", "--hostname", remote.host.as_str()];
+                let auth = run_command("glab", &auth_args, Some(Path::new(&cwd)));
+                let version = glab_api_json::<GitLabVersion>(&cwd, &remote.host, "/version");
+                let (auth, version) = tokio::join!(auth, version);
+                (
+                    auth.ok().map(|output| output.success),
+                    version.ok().map(|version| version.version),
+                )
+            }
+            ForgeProviderKind::GitHub => {
+                let auth_args = ["auth", "status", "--hostname", remote.host.as_str()];
+                let auth = run_command("gh", &auth_args, Some(Path::new(&cwd))).await;
+                (auth.ok().map(|output| output.success), None)
+            }
+        }
     } else {
         (None, None)
     };
 
     let mut observation = probe_thread(ThreadId::new("doctor-forge"), cwd.clone()).await;
-    let boards_result = if observation.identity.is_some() {
+    let boards_result = if observation.identity.as_ref().is_some_and(|identity| {
+        identity.provider == ForgeProviderKind::GitLab
+    }) {
         Some(probe_issue_boards(&cwd).await)
     } else {
         None
@@ -826,7 +859,8 @@ pub async fn doctor(cwd: String) -> ForgeDoctorSnapshot {
     };
 
     ForgeDoctorSnapshot {
-        glab_version,
+        client_name,
+        client_version,
         authenticated,
         server_version,
         remote,
