@@ -871,7 +871,7 @@ async fn matching_merge_requests(
     target: &str,
 ) -> Result<Vec<GitLabMergeRequest>> {
     let endpoint = format!(
-        "{}/merge_requests?state=opened&source_branch={}&target_branch={}&per_page=20",
+        "{}/merge_requests?scope=all&state=opened&source_branch={}&target_branch={}&per_page=20",
         project_endpoint(plan),
         percent_encode_component(source),
         percent_encode_component(target)
