@@ -497,11 +497,15 @@ async fn doctor(scope: Option<&str>) -> Result<()> {
         let cwd = std::env::current_dir()?;
         let snapshot = forge::doctor(cwd.to_string_lossy().into_owned()).await;
         println!(
-            "glab-version: {}",
-            snapshot.glab_version.as_deref().unwrap_or("<unavailable>")
+            "forge-client: {}",
+            snapshot.client_name.as_deref().unwrap_or("<unresolved>")
         );
         println!(
-            "glab-authenticated: {}",
+            "forge-client-version: {}",
+            snapshot.client_version.as_deref().unwrap_or("<unavailable>")
+        );
+        println!(
+            "forge-authenticated: {}",
             snapshot
                 .authenticated
                 .map(|value| value.to_string())
@@ -509,7 +513,7 @@ async fn doctor(scope: Option<&str>) -> Result<()> {
                 .unwrap_or("<unknown>")
         );
         println!(
-            "gitlab-server-version: {}",
+            "forge-server-version: {}",
             snapshot.server_version.as_deref().unwrap_or("<unknown>")
         );
         if let Some(remote) = &snapshot.remote {
