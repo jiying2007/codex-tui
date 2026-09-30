@@ -12,6 +12,9 @@ on:
       - "docs/release/**"
       - "docs/implementation/m7d3-release.md"
       - "Cargo.lock"
+      - "Cargo.toml"
+      - "LICENSE"
+      - "LICENSE.*"
   workflow_dispatch:
     inputs:
       channel:
