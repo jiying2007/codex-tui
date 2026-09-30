@@ -3299,6 +3299,79 @@ mod tests {
     }
 
     #[test]
+    fn forge_refresh_coalesces_same_checkout_and_reprobes_after_ttl() {
+        use crate::forge::{ForgeFreshness, ForgeIdentity, ForgeProviderKind};
+
+        let mut app = app();
+        let ids = app
+            .threads
+            .iter()
+            .take(2)
+            .map(|thread| thread.id.clone())
+            .collect::<Vec<_>>();
+        for thread in app.threads.iter_mut().take(2) {
+            thread.metadata.cwd = "/repo".into();
+        }
+        for thread_id in &ids {
+            let mut context = GitContext::pending(thread_id.clone(), "/repo");
+            context.is_repository = true;
+            app.git_contexts.insert(thread_id.0.clone(), context);
+        }
+
+        let effects = reduce(&mut app, Action::RefreshForgeProjections);
+        assert_eq!(effects.len(), 1);
+        let Effect::ProbeForge {
+            thread_id: source_thread,
+            cwd,
+        } = effects[0].clone()
+        else {
+            panic!("expected one forge probe");
+        };
+        assert_eq!(cwd, "/repo");
+
+        reduce(
+            &mut app,
+            Action::ForgeObservationLoaded(ForgeObservation {
+                thread_id: source_thread,
+                cwd: "/repo".into(),
+                remote_name: Some("origin".into()),
+                remote_url: Some("git@gitlab.example.com:team/repo.git".into()),
+                identity: Some(ForgeIdentity {
+                    provider: ForgeProviderKind::GitLab,
+                    host: "gitlab.example.com".into(),
+                    project_id: "42".into(),
+                    path_with_namespace: "team/repo".into(),
+                    web_url: "https://gitlab.example.com/team/repo".into(),
+                }),
+                capabilities: BTreeMap::new(),
+                issues: vec![],
+                change_requests: vec![],
+                pipelines: vec![],
+                review: None,
+                observed_at_unix_ms: now_unix_ms(),
+                freshness: ForgeFreshness::Fresh,
+                error: None,
+            }),
+        );
+
+        assert!(ids.iter().all(|thread_id| app
+            .forge_observation(thread_id)
+            .is_some_and(|observation| observation.identity.is_some())));
+        assert!(reduce(&mut app, Action::RefreshForgeProjections).is_empty());
+
+        for thread_id in &ids {
+            app.forge_observations
+                .get_mut(&thread_id.0)
+                .expect("forge observation")
+                .observed_at_unix_ms = 1;
+        }
+        assert_eq!(
+            reduce(&mut app, Action::RefreshForgeProjections).len(),
+            1
+        );
+    }
+
+    #[test]
     fn forge_projection_probe_is_git_authoritative_and_deduplicated() {
         let mut app = app();
         app.threads[0].metadata.cwd = "/repo".into();
