@@ -15,6 +15,7 @@ use codex_tui::{
     sqlite_store::SqliteStore,
     store::{AppConfig, LocalStateV1, LocalStore},
     terminal::TerminalSession,
+    terminal_drawer::TerminalDrawerRuntime,
     ui,
     worktree::{MutationEvent, MutationRequest, WorktreeMutationHandle},
 };
@@ -379,6 +380,7 @@ struct RuntimeServices {
     forge: ForgeHandle,
     forge_mutations: ForgeMutationHandle,
     mutations: WorktreeMutationHandle,
+    terminal_drawer: TerminalDrawerRuntime,
     store: RuntimeStore,
 }
 
@@ -390,6 +392,7 @@ impl RuntimeServices {
             forge: ForgeHandle::start(),
             forge_mutations: ForgeMutationHandle::start(sqlite.clone()),
             mutations: WorktreeMutationHandle::start(sqlite),
+            terminal_drawer: TerminalDrawerRuntime::default(),
             store,
         }
     }
@@ -1046,6 +1049,7 @@ fn apply_effects(
         forge,
         forge_mutations,
         mutations,
+        terminal_drawer,
         store,
     } = services;
     for effect in effects {
@@ -1211,6 +1215,61 @@ fn apply_effects(
                     );
                 }
             },
+            Effect::OpenTerminalDrawer { cwd } => {
+                let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
+                let size = ui::terminal_drawer_pty_size(cols, rows);
+                match terminal_drawer.open(&cwd, size) {
+                    Ok(()) => {
+                        reduce(app, Action::TerminalSnapshot(terminal_drawer.snapshot()));
+                    }
+                    Err(error) => {
+                        reduce(
+                            app,
+                            Action::MutationNotice(format!(
+                                "terminal drawer open failed: {error:#}"
+                            )),
+                        );
+                        reduce(app, Action::CloseTerminalDrawer);
+                    }
+                }
+            }
+            Effect::CloseTerminalDrawer => {
+                terminal_drawer.close();
+            }
+            Effect::TerminalInput(bytes) => {
+                if let Err(error) = terminal_drawer.send_input(bytes) {
+                    reduce(
+                        app,
+                        Action::MutationNotice(format!(
+                            "terminal input unavailable: {error:#}"
+                        )),
+                    );
+                }
+            }
+            Effect::TerminalResize(size) => {
+                if let Err(error) = terminal_drawer.resize(size) {
+                    reduce(
+                        app,
+                        Action::MutationNotice(format!(
+                            "terminal resize unavailable: {error:#}"
+                        )),
+                    );
+                } else {
+                    reduce(app, Action::TerminalSnapshot(terminal_drawer.snapshot()));
+                }
+            }
+            Effect::TerminalScroll(delta) => {
+                if let Err(error) = terminal_drawer.scroll(delta) {
+                    reduce(
+                        app,
+                        Action::MutationNotice(format!(
+                            "terminal scroll unavailable: {error:#}"
+                        )),
+                    );
+                } else {
+                    reduce(app, Action::TerminalSnapshot(terminal_drawer.snapshot()));
+                }
+            }
             Effect::RefreshGoal(thread_id) => {
                 if let Some(registry) = registry
                     && let Err(error) = registry.refresh_goal(thread_id)
@@ -1519,6 +1578,21 @@ fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
         return vec![];
     }
 
+    if app.terminal_focused {
+        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char(']') {
+            return reduce(app, Action::SetTerminalFocus(false));
+        }
+        if key.modifiers.contains(KeyModifiers::SHIFT) && key.code == KeyCode::PageUp {
+            return reduce(app, Action::TerminalScroll(10));
+        }
+        if key.modifiers.contains(KeyModifiers::SHIFT) && key.code == KeyCode::PageDown {
+            return reduce(app, Action::TerminalScroll(-10));
+        }
+        return terminal_key_bytes(key)
+            .map(|bytes| vec![Effect::TerminalInput(bytes)])
+            .unwrap_or_default();
+    }
+
     if app.launch_menu_open {
         return match key.code {
             KeyCode::Esc => reduce(app, Action::CloseLaunchPresets),
@@ -1628,6 +1702,52 @@ fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
     handle_command(app, command)
 }
 
+fn terminal_key_bytes(key: KeyEvent) -> Option<Vec<u8>> {
+    if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
+        return None;
+    }
+
+    let mut bytes = match key.code {
+        KeyCode::Char(character) if key.modifiers.contains(KeyModifiers::CONTROL) => {
+            if character.is_ascii() {
+                let value = character as u8;
+                if (b'@'..=b'_').contains(&value.to_ascii_uppercase()) {
+                    vec![value.to_ascii_uppercase() & 0x1f]
+                } else {
+                    return None;
+                }
+            } else {
+                return None;
+            }
+        }
+        KeyCode::Char(character) => {
+            let mut buffer = [0_u8; 4];
+            character.encode_utf8(&mut buffer).as_bytes().to_vec()
+        }
+        KeyCode::Enter => vec![b'\r'],
+        KeyCode::Backspace => vec![0x7f],
+        KeyCode::Tab => vec![b'\t'],
+        KeyCode::BackTab => b"\x1b[Z".to_vec(),
+        KeyCode::Esc => vec![0x1b],
+        KeyCode::Left => b"\x1b[D".to_vec(),
+        KeyCode::Right => b"\x1b[C".to_vec(),
+        KeyCode::Up => b"\x1b[A".to_vec(),
+        KeyCode::Down => b"\x1b[B".to_vec(),
+        KeyCode::Home => b"\x1b[H".to_vec(),
+        KeyCode::End => b"\x1b[F".to_vec(),
+        KeyCode::Delete => b"\x1b[3~".to_vec(),
+        KeyCode::Insert => b"\x1b[2~".to_vec(),
+        KeyCode::PageUp => b"\x1b[5~".to_vec(),
+        KeyCode::PageDown => b"\x1b[6~".to_vec(),
+        _ => return None,
+    };
+
+    if key.modifiers.contains(KeyModifiers::ALT) {
+        bytes.insert(0, 0x1b);
+    }
+    Some(bytes)
+}
+
 fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
     let action = match command {
         Command::QuitOrInterrupt => match app.view_kind() {
@@ -1703,6 +1823,8 @@ fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
         }
         Command::ToggleWordDiff => Action::ToggleReviewWordDiff,
         Command::ExternalEditor => Action::OpenReviewExternalEditor,
+        Command::TerminalDrawer => Action::ToggleTerminalDrawer,
+        Command::CloseTerminalDrawer => Action::CloseTerminalDrawer,
         Command::HotSlot(slot) => Action::UseHotSlot(slot),
         Command::ContextActions => Action::OpenContext,
         Command::Goal => Action::OpenGoalActions,
