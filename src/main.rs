@@ -626,7 +626,12 @@ async fn run_app(fake_mode: bool) -> Result<()> {
         );
     }
     let initial_git_effects = reduce(&mut app, Action::RefreshGitProjections);
-    apply_effects(&mut app, registry.as_ref(), &mut services, initial_git_effects)?;
+    apply_effects(
+        &mut app,
+        registry.as_ref(),
+        &mut services,
+        initial_git_effects,
+    )?;
 
     let mut terminal = TerminalSession::enter(config.ui.mouse)?;
     let mut last_fake_tick = Instant::now();
