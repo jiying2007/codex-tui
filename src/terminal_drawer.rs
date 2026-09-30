@@ -1,6 +1,5 @@
 use crate::pty::{PtyCommand, PtyEvent, PtyHandle, TerminalSize};
 use anyhow::{Context, Result};
-use std::num::NonZeroU16;
 use std::path::{Path, PathBuf};
 
 pub const DEFAULT_DRAWER_ROWS: u16 = 12;
@@ -120,10 +119,7 @@ impl TerminalDrawerRuntime {
             .as_ref()
             .context("terminal drawer is not open")?;
         handle.send(PtyCommand::Resize(size))?;
-        self.parser.screen_mut().set_size(
-            NonZeroU16::new(size.rows).context("terminal rows became zero")?,
-            NonZeroU16::new(size.cols).context("terminal cols became zero")?,
-        );
+        self.parser.screen_mut().set_size(size.rows, size.cols);
         self.size = size;
         Ok(())
     }
