@@ -376,14 +376,17 @@ fn forge_review_label(app: &AppState, thread_id: &str) -> String {
     } else {
         " · approvals n/a".into()
     };
+    let changes_requested = (review.changes_requested_by_count > 0)
+        .then(|| format!(" · changes requested {}", review.changes_requested_by_count))
+        .unwrap_or_default();
     let discussions = if review.discussions_available {
         format!(" · unresolved {}", review.unresolved_discussions)
     } else {
         " · discussions n/a".into()
     };
     format!(
-        " · MR !{}{}{}",
-        review.change_request_iid, approvals, discussions
+        " · MR !{}{}{}{}",
+        review.change_request_iid, approvals, changes_requested, discussions
     )
 }
 
