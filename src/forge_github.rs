@@ -52,14 +52,7 @@ impl ForgeProvider for GitHubProvider {
                     "GitHub provider received non-GitHub review target".into(),
                 );
             }
-            probe_github_review(
-                thread_id,
-                cwd,
-                host,
-                project_path,
-                change_request_iid,
-            )
-            .await
+            probe_github_review(thread_id, cwd, host, project_path, change_request_iid).await
         })
     }
 }
@@ -187,7 +180,9 @@ pub(crate) async fn probe_github_with_remote(
     // Match the M6a bounded refresh shape: repository identity + issues + PRs + workflow runs.
     let repository: GitHubRepository = gh_api_json(&cwd, &remote.host, &repo_endpoint).await?;
     anyhow::ensure!(
-        repository.full_name.eq_ignore_ascii_case(&remote.path_with_namespace),
+        repository
+            .full_name
+            .eq_ignore_ascii_case(&remote.path_with_namespace),
         "GitHub repository identity mismatch: remote={} api={}",
         remote.path_with_namespace,
         repository.full_name
@@ -196,10 +191,8 @@ pub(crate) async fn probe_github_with_remote(
     let issues_endpoint = format!(
         "{repo_endpoint}/issues?state=all&sort=updated&direction=desc&per_page={DEFAULT_PAGE_SIZE}"
     );
-    let pulls_endpoint =
-        format!("{repo_endpoint}/pulls?state=open&per_page={DEFAULT_PAGE_SIZE}");
-    let runs_endpoint =
-        format!("{repo_endpoint}/actions/runs?per_page={DEFAULT_PAGE_SIZE}");
+    let pulls_endpoint = format!("{repo_endpoint}/pulls?state=open&per_page={DEFAULT_PAGE_SIZE}");
+    let runs_endpoint = format!("{repo_endpoint}/actions/runs?per_page={DEFAULT_PAGE_SIZE}");
 
     let (issues, pulls, runs) = tokio::join!(
         gh_api_json::<Vec<GitHubIssue>>(&cwd, &remote.host, &issues_endpoint),
@@ -288,12 +281,7 @@ async fn probe_github_review(
     let (owner, repo) = match split_repository_path(&project_path) {
         Ok(parts) => parts,
         Err(error) => {
-            return unavailable_review(
-                thread_id,
-                cwd,
-                change_request_iid,
-                error.to_string(),
-            );
+            return unavailable_review(thread_id, cwd, change_request_iid, error.to_string());
         }
     };
     let reviews_endpoint =
@@ -389,7 +377,11 @@ async fn github_review_threads(
         cwd,
         host,
         QUERY,
-        &[("owner", owner, false), ("name", repo, false), ("number", &number, true)],
+        &[
+            ("owner", owner, false),
+            ("name", repo, false),
+            ("number", &number, true),
+        ],
     )
     .await?;
     response
@@ -504,7 +496,10 @@ mod tests {
 
     #[test]
     fn github_repository_path_is_exact_owner_repo() {
-        assert_eq!(split_repository_path("openai/codex").unwrap(), ("openai", "codex"));
+        assert_eq!(
+            split_repository_path("openai/codex").unwrap(),
+            ("openai", "codex")
+        );
         assert!(split_repository_path("group/sub/repo").is_err());
         assert!(split_repository_path("repo").is_err());
     }
@@ -531,7 +526,10 @@ mod tests {
         ]))
         .expect("fixture");
         assert_eq!(
-            issues.iter().filter(|issue| issue.pull_request.is_none()).count(),
+            issues
+                .iter()
+                .filter(|issue| issue.pull_request.is_none())
+                .count(),
             1
         );
     }
@@ -552,7 +550,10 @@ mod tests {
     fn github_action_failure_maps_to_existing_pipeline_attention_semantics() {
         assert_eq!(normalize_run_status("completed", Some("failure")), "failed");
         assert_eq!(normalize_run_status("in_progress", None), "in_progress");
-        assert_eq!(normalize_run_status("completed", Some("success")), "success");
+        assert_eq!(
+            normalize_run_status("completed", Some("success")),
+            "success"
+        );
     }
 
     #[test]
@@ -582,7 +583,11 @@ mod tests {
             .review_threads;
         assert!(threads.page_info.has_next_page);
         assert_eq!(
-            threads.nodes.iter().filter(|thread| !thread.is_resolved).count(),
+            threads
+                .nodes
+                .iter()
+                .filter(|thread| !thread.is_resolved)
+                .count(),
             1
         );
     }
