@@ -1164,14 +1164,11 @@ fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
                 .split(outer[0]);
             frame.render_widget(
                 Paragraph::new(files)
-                    .block(
-                        Block::bordered()
-                            .title(format!(
-                                " Changed files ({}){} ",
-                                review.changes.len(),
-                                forge_summary
-                            )),
-                    )
+                    .block(Block::bordered().title(format!(
+                        " Changed files ({}){} ",
+                        review.changes.len(),
+                        forge_summary
+                    )))
                     .wrap(Wrap { trim: false }),
                 columns[0],
             );
@@ -1197,10 +1194,7 @@ fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
                 .split(outer[0]);
             frame.render_widget(
                 Paragraph::new(files)
-                    .block(Block::bordered().title(format!(
-                        " Changed files{} ",
-                        forge_summary
-                    )))
+                    .block(Block::bordered().title(format!(" Changed files{} ", forge_summary)))
                     .wrap(Wrap { trim: false }),
                 rows[0],
             );
