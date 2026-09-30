@@ -589,10 +589,11 @@ pub fn reconcile_thread_card_with_goal_and_forge(
     forge: Option<&ForgeObservation>,
 ) -> WorkCardProjection {
     let thread = input.thread;
-    let local = input
+    let mut local = input
         .local
         .cloned()
         .unwrap_or_else(|| WorkCardRecord::implicit_thread(&thread.id));
+    local.overlay.pinned |= thread.pinned;
 
     let git_dirty = input.git.is_some_and(|git| git.is_repository && git.dirty);
     let (mut stage, mut stage_reason) =
@@ -1067,6 +1068,34 @@ mod tests {
         assert_eq!(apply_saved_view(&[card], &view).len(), 1);
     }
 
+
+    #[test]
+    fn registry_pin_projects_into_work_card_queries_and_sorting() {
+        let mut thread = first_thread();
+        thread.pinned = true;
+        let card = reconcile_thread_card(ReconcileInput {
+            thread: &thread,
+            git: None,
+            local: None,
+            collision_count: 0,
+            backend_observed_at_unix_ms: Some(100),
+            backend_error: None,
+            now_unix_ms: 100,
+        });
+        assert!(card.overlay.pinned);
+
+        let view = SavedView {
+            id: "pinned".into(),
+            name: "pinned".into(),
+            source_scope: "all".into(),
+            filter: "pinned:true".into(),
+            group_by: None,
+            order_by: None,
+            layout: SavedViewLayout::List,
+            visible_fields: vec![],
+        };
+        assert_eq!(apply_saved_view(&[card], &view).len(), 1);
+    }
 
     #[test]
     fn saved_view_query_supports_quoted_terms_negation_and_project_alias() {
