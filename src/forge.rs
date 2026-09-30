@@ -1159,4 +1159,39 @@ mod tests {
         assert!(observation.change_request_for_branch("feature").is_none());
         assert!(observation.pipeline_for_branch("feature/a").is_some());
     }
+    #[test]
+    fn freshness_ages_and_unavailable_observations_never_look_fresh() {
+        let mut observation = ForgeObservation {
+            thread_id: ThreadId::new("t"),
+            cwd: "/repo".into(),
+            remote_name: Some("origin".into()),
+            remote_url: Some("git@gitlab.example.com:team/repo.git".into()),
+            identity: Some(ForgeIdentity {
+                provider: ForgeProviderKind::GitLab,
+                host: "gitlab.example.com".into(),
+                project_id: "42".into(),
+                path_with_namespace: "team/repo".into(),
+                web_url: "https://gitlab.example.com/team/repo".into(),
+            }),
+            capabilities: default_capabilities(),
+            issues: vec![],
+            change_requests: vec![],
+            pipelines: vec![],
+            review: None,
+            observed_at_unix_ms: 100,
+            freshness: ForgeFreshness::Fresh,
+            error: None,
+        };
+
+        assert_eq!(observation.freshness_at(10_100), ForgeFreshness::Fresh);
+        assert_eq!(observation.freshness_at(10_101), ForgeFreshness::Aging);
+        assert_eq!(observation.freshness_at(60_101), ForgeFreshness::Stale);
+
+        observation.error = Some("offline".into());
+        assert_eq!(
+            observation.freshness_at(101),
+            ForgeFreshness::Unavailable
+        );
+    }
+
 }
