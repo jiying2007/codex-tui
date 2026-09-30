@@ -2,7 +2,7 @@
 
 All notable codex-tui changes are recorded here.
 
-## [1.0.0] - Unreleased
+## [1.0.0] - 2026-09-30
 
 ### Open source
 
@@ -10,7 +10,7 @@ All notable codex-tui changes are recorded here.
 - Cargo package metadata declares SPDX license `Apache-2.0`;
 - release archives include the project LICENSE together with generated third-party notices.
 
-### Release candidate
+### Stable release
 
 - package/version line advanced from 0.7.0 to 1.0.0;
 - non-publishing preview validation uses `v1.0.0-preview.N`;
@@ -20,9 +20,9 @@ All notable codex-tui changes are recorded here.
 
 ### Release status
 
-The 1.0.0 package line is stable-eligible but is not yet declared or published as a stable release.
+1.0.0 was published on 2026-09-30 as the first stable codex-tui release.
 
-Stable publication remains fail-closed until the exact release commit has canonical CI plus retained Linux/macOS/Windows compatibility receipts, terminal-restoration PASS receipts and retained 10k performance evidence.
+Stable publication was gated on the exact release commit by canonical CI, retained Linux Tier 1 READY compatibility and real terminal-restoration evidence, and retained Linux 10k performance evidence. macOS and Windows remained required in canonical CI plus native package/archive smoke as Tier 2 automated-compatibility platforms.
 
 ## [0.7.0] - 2026-09-30
 
