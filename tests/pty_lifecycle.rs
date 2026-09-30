@@ -99,7 +99,6 @@ fn ensure_shell_ready(handle: &PtyHandle) {
     );
 }
 
-
 #[test]
 fn default_shell_starts_accepts_input_and_exits() {
     let root = tempdir().expect("tempdir");
