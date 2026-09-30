@@ -23,7 +23,9 @@ use crate::planning::{
     forge_issue_source_ref, reconcile_forge_issue_card, reconcile_scratch_card_with_local,
     reconcile_thread_card_with_goal_and_forge,
 };
+use crate::pty::TerminalSize;
 use crate::store::LocalStateV1;
+use crate::terminal_drawer::TerminalSnapshot;
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -191,6 +193,11 @@ pub enum Action {
     MoveLaunchPreset(i32),
     SelectLaunchPreset,
     LaunchPlanPrepared(LaunchPlan),
+    ToggleTerminalDrawer,
+    CloseTerminalDrawer,
+    SetTerminalFocus(bool),
+    TerminalSnapshot(TerminalSnapshot),
+    TerminalScroll(i32),
     BeginHotSlotBind,
     UseHotSlot(u8),
     MoveReview(i32),
@@ -285,6 +292,13 @@ pub enum Effect {
         thread_cwd: String,
     },
     ExecuteLaunchPreset(Box<LaunchPlan>),
+    OpenTerminalDrawer {
+        cwd: String,
+    },
+    CloseTerminalDrawer,
+    TerminalInput(Vec<u8>),
+    TerminalResize(TerminalSize),
+    TerminalScroll(i32),
     RefreshGoal(ThreadId),
     SetGoal {
         thread_id: ThreadId,
@@ -365,6 +379,9 @@ pub struct AppState {
     pub launch_thread_cwd: Option<String>,
     pub launch_presets: Vec<LaunchPreset>,
     pub pending_launch_plan: Option<LaunchPlan>,
+    pub terminal_drawer_open: bool,
+    pub terminal_focused: bool,
+    pub terminal_snapshot: Option<TerminalSnapshot>,
     pub recent_forge_operations: Vec<ForgeMutationReceipt>,
     pub mutation_notice: Option<String>,
     pub create_worktree_branch: Option<String>,
@@ -439,6 +456,9 @@ impl AppState {
             launch_thread_cwd: None,
             launch_presets: vec![],
             pending_launch_plan: None,
+            terminal_drawer_open: false,
+            terminal_focused: false,
+            terminal_snapshot: None,
             recent_forge_operations: vec![],
             mutation_notice: None,
             create_worktree_branch: None,
@@ -646,6 +666,26 @@ impl AppState {
                 value: id.clone(),
             }),
         }
+    }
+
+    pub fn terminal_target_cwd(&self) -> Option<String> {
+        let thread_id = match &self.view {
+            View::Registry => self.selected_thread_id(),
+            View::Thread(id)
+            | View::Review(id)
+            | View::Workspace(id)
+            | View::ManagedWorktrees(id) => Some(id.clone()),
+            View::Board => self.selected_planning_card().and_then(|card| {
+                (card.anchor.kind == SourceKind::CodexThread)
+                    .then(|| ThreadId::new(card.anchor.value.clone()))
+            }),
+            View::Scratch(_) => None,
+        }?;
+        self.threads
+            .iter()
+            .find(|thread| thread.id == thread_id)
+            .map(|thread| thread.metadata.cwd.clone())
+            .filter(|cwd| !cwd.trim().is_empty())
     }
 
     fn current_forge_mutation_target(&self) -> Option<ForgeMutationTarget> {
@@ -1695,6 +1735,45 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.pending_local_batch = None;
             state.pending_launch_plan = Some(plan);
             state.mutation_notice = None;
+        }
+        Action::ToggleTerminalDrawer => {
+            if state.terminal_drawer_open {
+                state.terminal_focused = true;
+                return vec![];
+            }
+            let Some(cwd) = state.terminal_target_cwd() else {
+                state.mutation_notice =
+                    Some("terminal drawer requires a selected Codex thread cwd".into());
+                return vec![];
+            };
+            state.terminal_drawer_open = true;
+            state.terminal_focused = true;
+            state.terminal_snapshot = None;
+            return vec![Effect::OpenTerminalDrawer { cwd }];
+        }
+        Action::CloseTerminalDrawer => {
+            let was_open = state.terminal_drawer_open;
+            state.terminal_drawer_open = false;
+            state.terminal_focused = false;
+            state.terminal_snapshot = None;
+            if was_open {
+                return vec![Effect::CloseTerminalDrawer];
+            }
+        }
+        Action::SetTerminalFocus(focused) => {
+            if state.terminal_drawer_open {
+                state.terminal_focused = focused;
+            }
+        }
+        Action::TerminalSnapshot(snapshot) => {
+            if state.terminal_drawer_open {
+                state.terminal_snapshot = Some(snapshot);
+            }
+        }
+        Action::TerminalScroll(delta) => {
+            if state.terminal_drawer_open {
+                return vec![Effect::TerminalScroll(delta)];
+            }
         }
         Action::BeginSnooze => {
             if let Some(target) = state.selected_local_target() {
