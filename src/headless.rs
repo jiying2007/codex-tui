@@ -1,7 +1,7 @@
 use crate::{
     app_server,
-    compat,
     backend::{BackendSnapshot, CodexBackend, FakeBackend},
+    compat,
     domain::{AttentionReason, ThreadSummary},
     planning::{
         Freshness, PlanningSnapshot, ReconcileInput, SourceKind, SourceRef, WorkCardProjection,
