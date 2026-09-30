@@ -76,6 +76,8 @@ impl CompatComponent {
 #[serde(rename_all = "camelCase")]
 pub struct CompatibilityMatrix {
     pub canonical_ci_os: Vec<String>,
+    pub stable_tier1_os: Vec<String>,
+    pub automated_tier2_os: Vec<String>,
     pub required_components: Vec<String>,
     pub optional_components: Vec<String>,
     pub stable_retained_evidence: Vec<String>,
@@ -296,6 +298,8 @@ pub fn build_report(components: Vec<CompatComponent>) -> CompatReport {
         components,
         matrix: CompatibilityMatrix {
             canonical_ci_os: vec!["linux".into(), "macos".into(), "windows".into()],
+            stable_tier1_os: vec!["linux".into()],
+            automated_tier2_os: vec!["macos".into(), "windows".into()],
             required_components: vec![
                 "sqlite".into(),
                 "codex-app-server".into(),
@@ -308,7 +312,7 @@ pub fn build_report(components: Vec<CompatComponent>) -> CompatReport {
         retained_evidence: vec![
             RetainedEvidenceRequirement {
                 id: "terminal-restoration".into(),
-                scope: "per-platform-real-controlling-tty".into(),
+                scope: "linux-tier1-real-controlling-tty".into(),
                 authority: "interactive-smoke-receipt".into(),
                 required_for_stable: true,
                 observable_by_doctor: false,
