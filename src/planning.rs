@@ -1,5 +1,5 @@
 use crate::domain::{AttentionReason, RuntimeStatus, ThreadId, ThreadSummary};
-use crate::forge::{ForgeFreshness, ForgeObservation};
+use crate::forge::{ForgeFreshness, ForgeIssueSummary, ForgeObservation};
 use crate::git::GitContext;
 use crate::goal::{GoalObservation, GoalStatus};
 use serde::{Deserialize, Serialize};
@@ -614,6 +614,99 @@ pub fn reconcile_thread_card_with_goal_and_forge(
     }
 }
 
+pub fn forge_issue_source_ref(
+    observation: &ForgeObservation,
+    issue: &ForgeIssueSummary,
+) -> Option<SourceRef> {
+    let identity = observation.identity.as_ref()?;
+    Some(SourceRef {
+        kind: SourceKind::ForgeWorkItem,
+        value: format!(
+            "{}://{}/projects/{}/issues/{}",
+            identity.provider.label(),
+            identity.host,
+            identity.project_id,
+            issue.iid
+        ),
+    })
+}
+
+pub fn reconcile_forge_issue_card(
+    observation: &ForgeObservation,
+    issue: &ForgeIssueSummary,
+    local: Option<&WorkCardRecord>,
+    now_unix_ms: u64,
+) -> Option<WorkCardProjection> {
+    let identity = observation.identity.as_ref()?;
+    let anchor = forge_issue_source_ref(observation, issue)?;
+    let record = local.cloned().unwrap_or_else(|| WorkCardRecord {
+        local_id: format!(
+            "forge:{}:{}:issue:{}",
+            identity.host, identity.project_id, issue.iid
+        ),
+        anchor: anchor.clone(),
+        links: vec![],
+        overlay: WorkCardOverlay::default(),
+    });
+
+    let (stage, stage_reason) = if record.overlay.done_at_unix_ms.is_some() {
+        (
+            WorkflowStage::Done,
+            "completion explicitly acknowledged locally".into(),
+        )
+    } else if issue.state.eq_ignore_ascii_case("closed") {
+        (
+            WorkflowStage::Done,
+            "GitLab issue is closed".into(),
+        )
+    } else if record.overlay.manual_ready {
+        (
+            WorkflowStage::Ready,
+            "open GitLab issue selected locally as ready".into(),
+        )
+    } else {
+        (
+            WorkflowStage::Inbox,
+            "open GitLab issue projected into personal planning".into(),
+        )
+    };
+
+    let snoozed = record
+        .overlay
+        .snooze_until_unix_ms
+        .is_some_and(|until| until > now_unix_ms);
+
+    Some(WorkCardProjection {
+        local_id: record.local_id,
+        anchor,
+        title: record
+            .overlay
+            .title_override
+            .clone()
+            .unwrap_or_else(|| format!("#{} {}", issue.iid, issue.title)),
+        workspace: Some(identity.path_with_namespace.clone()),
+        stage,
+        stage_reason,
+        attention: BTreeSet::new(),
+        snoozed,
+        overlay: record.overlay,
+        links: record.links,
+        goal: None,
+        provenance: vec![Provenance {
+            source: format!("forge:{}", identity.host),
+            observed_at_unix_ms: Some(observation.observed_at_unix_ms),
+            source_revision: issue.updated_at.clone(),
+            freshness: match observation.freshness {
+                ForgeFreshness::Fresh => Freshness::Fresh,
+                ForgeFreshness::Aging => Freshness::Aging,
+                ForgeFreshness::Stale => Freshness::Stale,
+                ForgeFreshness::Unavailable => Freshness::Unavailable,
+            },
+            degraded_reason: observation.error.clone(),
+        }],
+    })
+}
+
 pub fn reconcile_scratch_card(scratch: &ScratchWork) -> WorkCardProjection {
     reconcile_scratch_card_with_local(scratch, None, scratch.updated_at_unix_ms)
 }
@@ -1161,4 +1254,68 @@ mod tests {
         };
         assert_eq!(apply_saved_view(&[card], &view).len(), 1);
     }
+    #[test]
+    fn forge_issue_projects_as_dedicated_work_item_without_copying_authority() {
+        use crate::forge::{
+            CapabilityState, ForgeCapability, ForgeIdentity, ForgeProviderKind,
+        };
+        use std::collections::BTreeMap;
+
+        let observation = ForgeObservation {
+            thread_id: ThreadId::new("thread"),
+            cwd: "/repo".into(),
+            remote_name: Some("origin".into()),
+            remote_url: Some("git@gitlab.example.com:team/repo.git".into()),
+            identity: Some(ForgeIdentity {
+                provider: ForgeProviderKind::GitLab,
+                host: "gitlab.example.com".into(),
+                project_id: "42".into(),
+                path_with_namespace: "team/repo".into(),
+                web_url: "https://gitlab.example.com/team/repo".into(),
+            }),
+            capabilities: BTreeMap::from([(
+                ForgeCapability::Issues,
+                CapabilityState::Available,
+            )]),
+            issues: vec![],
+            change_requests: vec![],
+            pipelines: vec![],
+            review: None,
+            observed_at_unix_ms: 100,
+            freshness: ForgeFreshness::Fresh,
+            error: None,
+        };
+        let issue = ForgeIssueSummary {
+            iid: 12,
+            title: "Fix wake-word regression".into(),
+            state: "opened".into(),
+            web_url: "https://gitlab.example.com/team/repo/-/issues/12".into(),
+            updated_at: Some("2026-09-30T00:00:00Z".into()),
+        };
+
+        let card = reconcile_forge_issue_card(&observation, &issue, None, 100)
+            .expect("forge issue card");
+        assert_eq!(card.anchor.kind, SourceKind::ForgeWorkItem);
+        assert_eq!(
+            card.anchor.value,
+            "gitlab://gitlab.example.com/projects/42/issues/12"
+        );
+        assert_eq!(card.workspace.as_deref(), Some("team/repo"));
+        assert_eq!(card.stage, WorkflowStage::Inbox);
+        assert_eq!(card.title, "#12 Fix wake-word regression");
+        assert_eq!(card.provenance[0].source, "forge:gitlab.example.com");
+
+        let view = SavedView {
+            id: "forge".into(),
+            name: "Forge".into(),
+            source_scope: "all".into(),
+            filter: "source:forge".into(),
+            group_by: None,
+            order_by: None,
+            layout: SavedViewLayout::List,
+            visible_fields: vec![],
+        };
+        assert_eq!(apply_saved_view(&[card], &view).len(), 1);
+    }
+
 }
