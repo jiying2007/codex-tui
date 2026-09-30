@@ -3192,6 +3192,47 @@ mod tests {
     }
 
     #[test]
+    fn terminal_drawer_open_focus_and_close_are_explicit_effects() {
+        let mut app = app();
+        app.threads[0].metadata.cwd = "/repo".into();
+
+        let effects = reduce(&mut app, Action::ToggleTerminalDrawer);
+        assert_eq!(
+            effects,
+            vec![Effect::OpenTerminalDrawer {
+                cwd: "/repo".into()
+            }]
+        );
+        assert!(app.terminal_drawer_open);
+        assert!(app.terminal_focused);
+
+        assert!(reduce(&mut app, Action::SetTerminalFocus(false)).is_empty());
+        assert!(!app.terminal_focused);
+        assert!(reduce(&mut app, Action::ToggleTerminalDrawer).is_empty());
+        assert!(app.terminal_focused);
+
+        let effects = reduce(&mut app, Action::CloseTerminalDrawer);
+        assert_eq!(effects, vec![Effect::CloseTerminalDrawer]);
+        assert!(!app.terminal_drawer_open);
+        assert!(!app.terminal_focused);
+        assert!(app.terminal_snapshot.is_none());
+    }
+
+    #[test]
+    fn terminal_drawer_rejects_views_without_thread_cwd() {
+        let mut app = app();
+        app.view = View::Scratch("scratch:1".into());
+        let effects = reduce(&mut app, Action::ToggleTerminalDrawer);
+        assert!(effects.is_empty());
+        assert!(!app.terminal_drawer_open);
+        assert!(
+            app.mutation_notice
+                .as_deref()
+                .is_some_and(|notice| notice.contains("selected Codex thread cwd"))
+        );
+    }
+
+    #[test]
     fn goal_actions_are_explicit_app_server_effects() {
         let mut app = app();
         reduce(&mut app, Action::OpenSelected);
