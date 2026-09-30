@@ -9,7 +9,8 @@
   "performance": {
     "fixture": "resident-planning-10k",
     "p95MsMax": 50,
-    "p99MsMax": 100
+    "p99MsMax": 100,
+    "iterationsMin": 200
   },
   "requiredGates": [
     {
@@ -55,7 +56,7 @@
     {
       "id": "performance",
       "authority": "retained benchmark run",
-      "evidence": "resident-planning-10k p95 <= 50 ms and p99 <= 100 ms"
+      "evidence": "resident-planning-10k >= 200 iterations, p95 <= 50 ms and p99 <= 100 ms"
     },
     {
       "id": "third-party-notices",
