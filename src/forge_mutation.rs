@@ -100,6 +100,7 @@ impl ForgeMutationPlan {
             preconditions: vec![
                 precondition("provider", "gitlab"),
                 precondition("project-identity-current", "true"),
+                precondition("default-branch-unchanged", "true"),
                 precondition("source-branch-exists", "true"),
                 precondition("target-branch-exists", "true"),
                 precondition("matching-open-mr-absent", "true"),
@@ -565,6 +566,7 @@ fn validate_request_payload(request: &ForgeMutationRequest) -> Result<()> {
 #[derive(Debug, Deserialize)]
 struct GitLabProjectCheck {
     path_with_namespace: String,
+    default_branch: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -644,6 +646,11 @@ async fn validate_preconditions(plan: &ForgeMutationPlan) -> Result<Preflight> {
                 .target_branch
                 .as_deref()
                 .context("create MR plan missing target branch")?;
+            anyhow::ensure!(
+                project.default_branch.as_deref() == Some(target),
+                "GitLab default branch changed: planned {target:?}, observed {:?}",
+                project.default_branch
+            );
             branch(plan, source).await?;
             branch(plan, target).await?;
             let existing = matching_merge_requests(plan, source, target).await?;
