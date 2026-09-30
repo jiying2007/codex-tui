@@ -461,6 +461,7 @@ async fn execute_with_project_lock(
 #[derive(Clone, Debug)]
 struct Preflight {
     authenticated_user_id: Option<u64>,
+    merge_request_sha: Option<String>,
     already_satisfied: Option<(String, String)>,
 }
 
@@ -584,6 +585,7 @@ struct GitLabMergeRequest {
     source_branch: String,
     target_branch: String,
     web_url: String,
+    sha: Option<String>,
     #[serde(default)]
     draft: bool,
     detailed_merge_status: Option<String>,
@@ -627,6 +629,20 @@ struct GitLabApprovals {
     approvals_left: Option<u64>,
     #[serde(default)]
     approved_by: Vec<GitLabApprovalUser>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GitLabApprovalState {
+    #[serde(default)]
+    rules: Vec<GitLabApprovalRuleState>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GitLabApprovalRuleState {
+    #[serde(default)]
+    approvals_required: u64,
+    #[serde(default)]
+    approved: bool,
 }
 
 async fn validate_preconditions(plan: &ForgeMutationPlan) -> Result<Preflight> {
@@ -777,6 +793,16 @@ async fn validate_exact_open_mr(plan: &ForgeMutationPlan) -> Result<GitLabMergeR
     Ok(mr)
 }
 
+fn required_mr_sha(mr: &GitLabMergeRequest) -> Result<String> {
+    let sha = mr
+        .sha
+        .as_deref()
+        .map(str::trim)
+        .filter(|sha| !sha.is_empty())
+        .context("GitLab merge request response is missing HEAD sha")?;
+    Ok(sha.to_string())
+}
+
 async fn get_mr(plan: &ForgeMutationPlan, iid: u64) -> Result<GitLabMergeRequest> {
     glab_api_json(
         &plan.cwd,
@@ -791,6 +817,18 @@ async fn approvals(plan: &ForgeMutationPlan, iid: u64) -> Result<GitLabApprovals
         &plan.cwd,
         &plan.host,
         &format!("{}/merge_requests/{iid}/approvals", project_endpoint(plan)),
+    )
+    .await
+}
+
+async fn approval_state(plan: &ForgeMutationPlan, iid: u64) -> Result<GitLabApprovalState> {
+    glab_api_json(
+        &plan.cwd,
+        &plan.host,
+        &format!(
+            "{}/merge_requests/{iid}/approval_state",
+            project_endpoint(plan)
+        ),
     )
     .await
 }
