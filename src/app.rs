@@ -2195,10 +2195,7 @@ fn refresh_forge_projections(state: &mut AppState) -> Vec<Effect> {
         let Some(context) = state.git_context(&thread.id) else {
             continue;
         };
-        if !context.is_repository
-            || context.error.is_some()
-            || context.cwd != thread.metadata.cwd
-        {
+        if !context.is_repository || context.error.is_some() || context.cwd != thread.metadata.cwd {
             continue;
         }
         groups
