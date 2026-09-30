@@ -160,6 +160,40 @@ mod tests {
     }
 
     #[test]
+    fn global_keyboard_surfaces_are_reachable_without_pointer_input() {
+        for view in [
+            ViewKind::Registry,
+            ViewKind::Thread,
+            ViewKind::Review,
+            ViewKind::Workspace,
+            ViewKind::ManagedWorktrees,
+            ViewKind::Board,
+            ViewKind::Scratch,
+        ] {
+            assert_eq!(
+                command_for_key(key(KeyCode::Char('?')), view),
+                Some(Command::Help),
+                "help must be keyboard-reachable in {view:?}"
+            );
+            assert_eq!(
+                command_for_key(key(KeyCode::Char('/')), view),
+                Some(Command::Search),
+                "search must be keyboard-reachable in {view:?}"
+            );
+            assert_eq!(
+                command_for_key(key(KeyCode::Char('.')), view),
+                Some(Command::ContextActions),
+                "context actions must be keyboard-reachable in {view:?}"
+            );
+            assert_eq!(
+                command_for_key(key(KeyCode::Esc), view),
+                Some(Command::Back),
+                "back must be keyboard-reachable in {view:?}"
+            );
+        }
+    }
+
+    #[test]
     fn terminal_drawer_bindings_are_explicit_and_not_available_for_scratch() {
         assert_eq!(
             command_for_key(key(KeyCode::Char('t')), ViewKind::Workspace),
