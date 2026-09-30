@@ -523,9 +523,7 @@ impl AppState {
 
     pub fn selected_thread(&self) -> Option<&ThreadSummary> {
         let thread = self.threads.get(self.selected)?;
-        self.visible_indices()
-            .contains(&self.selected)
-            .then_some(thread)
+        self.thread_visible_in_registry(thread).then_some(thread)
     }
 
     fn thread_visible_in_registry(&self, thread: &ThreadSummary) -> bool {
@@ -1083,6 +1081,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state
                 .git_contexts
                 .insert(context.thread_id.0.clone(), context);
+            ensure_selection_visible(state);
         }
         Action::ForgeObservationLoaded(observation) => {
             propagate_forge_observation(state, observation);
@@ -1425,6 +1424,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         }
         Action::ReconcilePlanning { now_unix_ms } => {
             rebuild_planning(state, now_unix_ms);
+            ensure_selection_visible(state);
         }
         Action::OpenBoard => {
             if !matches!(state.view, View::Board) {
@@ -2122,6 +2122,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             if state.user_input_request_id.as_ref() == Some(&request_id) {
                 clear_user_input_editor(state);
             }
+            ensure_selection_visible(state);
         }
         Action::ResolvePending(resolution) => {
             if let Some(request) = state.current_pending_request().cloned() {
@@ -2336,6 +2337,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 && let Some(thread) = state.threads.get_mut(state.selected)
             {
                 thread.pinned = !thread.pinned;
+                ensure_selection_visible(state);
                 return vec![Effect::PersistOperatorState];
             }
         }
@@ -2347,6 +2349,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 thread
                     .attention
                     .retain(|reason| *reason != AttentionReason::MarkedUnread);
+                ensure_selection_visible(state);
                 return vec![Effect::PersistOperatorState];
             }
         }
@@ -3466,6 +3469,12 @@ mod tests {
         assert!(visible.len() < 150);
         assert!(visible.contains(&149));
         assert!(visible.iter().any(|index| *index >= REGISTRY_RECENT_LIMIT));
+
+        app.selected = 149;
+        let effects = reduce(&mut app, Action::TogglePin);
+        assert_eq!(effects, vec![Effect::PersistOperatorState]);
+        assert!(!app.visible_indices().contains(&149));
+        assert_ne!(app.selected, 149);
 
         app.filter = "Synthetic work item 00149".into();
         assert_eq!(app.visible_indices(), vec![149]);
