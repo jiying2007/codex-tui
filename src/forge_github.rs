@@ -56,7 +56,6 @@ impl ForgeProvider for GitHubProvider {
             .await
         })
     }
-    }
 }
 
 #[derive(Debug, Deserialize)]
