@@ -1139,28 +1139,26 @@ fn apply_effects(
             Effect::LoadLaunchPresets {
                 repo_root,
                 thread_cwd,
-            } => {
-                match codex_tui::launch::RepoLaunchConfig::load(Path::new(&repo_root)) {
-                    Ok(config) => {
-                        reduce(
-                            app,
-                            Action::LaunchPresetsLoaded {
-                                repo_root,
-                                thread_cwd,
-                                presets: config.launches,
-                            },
-                        );
-                    }
-                    Err(error) => {
-                        reduce(
-                            app,
-                            Action::MutationNotice(format!(
-                                "launch preset config unavailable: {error:#}"
-                            )),
-                        );
-                    }
+            } => match codex_tui::launch::RepoLaunchConfig::load(Path::new(&repo_root)) {
+                Ok(config) => {
+                    reduce(
+                        app,
+                        Action::LaunchPresetsLoaded {
+                            repo_root,
+                            thread_cwd,
+                            presets: config.launches,
+                        },
+                    );
                 }
-            }
+                Err(error) => {
+                    reduce(
+                        app,
+                        Action::MutationNotice(format!(
+                            "launch preset config unavailable: {error:#}"
+                        )),
+                    );
+                }
+            },
             Effect::PrepareLaunchPreset {
                 preset,
                 repo_root,
@@ -1197,9 +1195,7 @@ fn apply_effects(
                 Err(error) => {
                     reduce(
                         app,
-                        Action::MutationNotice(format!(
-                            "launch preset failed: {error:#}"
-                        )),
+                        Action::MutationNotice(format!("launch preset failed: {error:#}")),
                     );
                 }
             },
