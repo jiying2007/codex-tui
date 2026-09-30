@@ -3,7 +3,7 @@ use crate::forge::{
     CapabilityState, ChangeRequestSummary, ForgeCapability, ForgeFreshness, ForgeFuture,
     ForgeIdentity, ForgeIssueSummary, ForgeObservation, ForgeProvider, ForgeProviderKind,
     ForgeReviewSummary, ForgeReviewTarget, PipelineSummary, RemoteIdentity, default_capabilities,
-    provider_kind_for_host, resolve_git_remote, run_command, trim_error,
+    resolve_git_remote, run_command, trim_error,
 };
 use crate::operation::now_unix_ms;
 use anyhow::{Context, Result, anyhow, bail};
@@ -170,11 +170,6 @@ pub(crate) async fn probe_github_with_remote(
     cwd: String,
     remote: RemoteIdentity,
 ) -> Result<ForgeObservation> {
-    anyhow::ensure!(
-        provider_kind_for_host(&remote.host) == ForgeProviderKind::GitHub,
-        "GitHub provider does not own host {}",
-        remote.host
-    );
     let (owner, repo) = split_repository_path(&remote.path_with_namespace)?;
     let repo_endpoint = format!("/repos/{owner}/{repo}");
 

@@ -312,12 +312,52 @@ pub trait ForgeProvider: Send + Sync {
     -> ForgeFuture<'a, ForgeReviewSummary>;
 }
 
-pub fn provider_kind_for_host(host: &str) -> ForgeProviderKind {
+pub fn canonical_provider_for_host(host: &str) -> Option<ForgeProviderKind> {
     if host.eq_ignore_ascii_case("github.com") {
-        ForgeProviderKind::GitHub
+        Some(ForgeProviderKind::GitHub)
+    } else if host.eq_ignore_ascii_case("gitlab.com") {
+        Some(ForgeProviderKind::GitLab)
     } else {
-        ForgeProviderKind::GitLab
+        None
     }
+}
+
+fn provider_from_auth_state(
+    host: &str,
+    github_authenticated: bool,
+    gitlab_authenticated: bool,
+) -> Result<ForgeProviderKind> {
+    if let Some(provider) = canonical_provider_for_host(host) {
+        return Ok(provider);
+    }
+    match (github_authenticated, gitlab_authenticated) {
+        (true, false) => Ok(ForgeProviderKind::GitHub),
+        (false, true) => Ok(ForgeProviderKind::GitLab),
+        (true, true) => bail!(
+            "forge provider is ambiguous for host {host}: both gh and glab are authenticated"
+        ),
+        (false, false) => bail!(
+            "forge provider not configured for host {host}; authenticate with gh or glab"
+        ),
+    }
+}
+
+async fn detect_provider(cwd: &str, host: &str) -> Result<ForgeProviderKind> {
+    if let Some(provider) = canonical_provider_for_host(host) {
+        return Ok(provider);
+    }
+
+    let gh_args = ["auth", "status", "--hostname", host];
+    let glab_args = ["auth", "status", "--hostname", host];
+    let (gh, glab) = tokio::join!(
+        run_command("gh", &gh_args, Some(Path::new(cwd))),
+        run_command("glab", &glab_args, Some(Path::new(cwd))),
+    );
+    provider_from_auth_state(
+        host,
+        gh.is_ok_and(|output| output.success),
+        glab.is_ok_and(|output| output.success),
+    )
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -332,7 +372,13 @@ impl ForgeProvider for RoutingForgeProvider {
                     return ForgeObservation::unavailable(thread_id, cwd, error.to_string());
                 }
             };
-            let result = match provider_kind_for_host(&remote.host) {
+            let provider = match detect_provider(&cwd, &remote.host).await {
+                Ok(provider) => provider,
+                Err(error) => {
+                    return ForgeObservation::unavailable(thread_id, cwd, error.to_string());
+                }
+            };
+            let result = match provider {
                 ForgeProviderKind::GitHub => {
                     probe_github_with_remote(thread_id.clone(), cwd.clone(), remote).await
                 }
@@ -742,9 +788,10 @@ pub async fn probe_change_request_review(
 
 pub async fn doctor(cwd: String) -> ForgeDoctorSnapshot {
     let remote = resolve_git_remote(Path::new(&cwd)).await.ok();
-    let provider = remote
-        .as_ref()
-        .map(|remote| provider_kind_for_host(&remote.host));
+    let provider = match remote.as_ref() {
+        Some(remote) => detect_provider(&cwd, &remote.host).await.ok(),
+        None => None,
+    };
 
     let client_name = provider.map(|provider| match provider {
         ForgeProviderKind::GitLab => "glab".to_string(),
@@ -1219,23 +1266,31 @@ mod tests {
     use super::*;
 
     #[test]
-    fn provider_routing_keeps_github_com_explicit_and_other_hosts_gitlab_first() {
+    fn provider_routing_is_explicit_and_custom_hosts_use_auth_authority() {
         assert_eq!(
-            provider_kind_for_host("github.com"),
+            canonical_provider_for_host("github.com"),
+            Some(ForgeProviderKind::GitHub)
+        );
+        assert_eq!(
+            canonical_provider_for_host("GITHUB.COM"),
+            Some(ForgeProviderKind::GitHub)
+        );
+        assert_eq!(
+            canonical_provider_for_host("gitlab.com"),
+            Some(ForgeProviderKind::GitLab)
+        );
+        assert_eq!(canonical_provider_for_host("git.internal.example"), None);
+
+        assert_eq!(
+            provider_from_auth_state("git.internal.example", true, false).unwrap(),
             ForgeProviderKind::GitHub
         );
         assert_eq!(
-            provider_kind_for_host("GITHUB.COM"),
-            ForgeProviderKind::GitHub
-        );
-        assert_eq!(
-            provider_kind_for_host("gitlab.internal.example"),
+            provider_from_auth_state("git.internal.example", false, true).unwrap(),
             ForgeProviderKind::GitLab
         );
-        assert_eq!(
-            provider_kind_for_host("github.enterprise.internal"),
-            ForgeProviderKind::GitLab
-        );
+        assert!(provider_from_auth_state("git.internal.example", false, false).is_err());
+        assert!(provider_from_auth_state("git.internal.example", true, true).is_err());
     }
 
     #[test]

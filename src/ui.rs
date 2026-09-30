@@ -534,32 +534,22 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
 
 fn detail_panel(app: &AppState) -> Paragraph<'static> {
     let mut lines = if let Some(thread) = app.selected_thread() {
-        vec![
-            Line::from(format!(
-                "Backend: {} · {}",
-                sanitize_inline(&app.backend_status.source),
-                sanitize_inline(backend_platform_label(app))
-            )),
-            Line::from(format!(
-                "Codex home: {}",
-                sanitize_inline(backend_home_label(app))
-            )),
-            Line::from(""),
+        let attention = if thread.attention.is_empty() {
+            "none".into()
+        } else {
+            thread
+                .attention
+                .iter()
+                .map(|reason| reason.label())
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let mut lines = vec![
             Line::from(format!("Thread: {}", thread.id)),
             Line::from(format!("Workspace: {}", sanitize_inline(&thread.workspace))),
-            Line::from(format!("Runtime: {}", thread.runtime.label())),
             Line::from(format!(
-                "Attention: {}",
-                if thread.attention.is_empty() {
-                    "none".into()
-                } else {
-                    thread
-                        .attention
-                        .iter()
-                        .map(|reason| reason.label())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                }
+                "Runtime: {} · attention: {attention}",
+                thread.runtime.label()
             )),
             Line::from(format!(
                 "Model: {}",
@@ -571,48 +561,24 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
                 sanitize_inline(display_cwd(&thread.metadata.cwd))
             )),
             Line::from(format!(
-                "Source: {}",
-                sanitize_inline(&thread.metadata.source)
-            )),
-            Line::from(format!(
-                "Workspace basis: {}",
-                thread.metadata.workspace_basis
-            )),
-            Line::from(format!(
-                "Loaded: {}",
-                thread
-                    .metadata
-                    .loaded
-                    .map_or("unknown".into(), |value| value.to_string())
-            )),
-            Line::from(format!("Pinned: {}", thread.pinned)),
-            Line::from(format!(
-                "Pending interactive: {}",
-                app.pending_requests
-                    .iter()
-                    .filter(|request| request.thread_id == thread.id)
-                    .count()
-            )),
-            Line::from(format!(
-                "Planning note: {}",
-                app.work_card_for_thread(&thread.id)
-                    .and_then(|card| card.overlay.note.as_deref())
-                    .unwrap_or("<none>")
-            )),
-            Line::from(format!(
-                "Planning stage: {}",
+                "Planning: {}",
                 app.work_card_for_thread(&thread.id)
                     .map(|card| card.stage.label())
                     .unwrap_or("<unprojected>")
             )),
-            Line::from(format!(
-                "Stage reason: {}",
-                app.work_card_for_thread(&thread.id)
-                    .map(|card| card.stage_reason.as_str())
-                    .unwrap_or("<unprojected>")
-            )),
             Line::from(format!("Goal: {}", goal_summary(app, &thread.id.0))),
-        ]
+        ];
+        if let Some(note) = app
+            .work_card_for_thread(&thread.id)
+            .and_then(|card| card.overlay.note.as_deref())
+            .filter(|note| !note.trim().is_empty())
+        {
+            lines.push(Line::from(format!(
+                "Note: {}",
+                truncate_display(&sanitize_inline(note), 54)
+            )));
+        }
+        lines
     } else {
         vec![Line::from("No thread selected")]
     };
@@ -679,11 +645,11 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
 
     if let Some(thread) = app.selected_thread() {
         lines.push(Line::from(""));
-        lines.extend(forge_context_lines(app, &thread.id));
+        lines.extend(forge_context_lines(app, &thread.id, false));
     }
 
     Paragraph::new(lines)
-        .block(Block::bordered().title(" Context "))
+        .block(Block::bordered().title(" Selected "))
         .wrap(Wrap { trim: false })
 }
 
@@ -722,26 +688,31 @@ fn forge_review_label(app: &AppState, thread_id: &str) -> String {
     )
 }
 
-fn forge_context_lines(app: &AppState, thread_id: &crate::domain::ThreadId) -> Vec<Line<'static>> {
+fn forge_context_lines(
+    app: &AppState,
+    thread_id: &crate::domain::ThreadId,
+    diagnostic_hint: bool,
+) -> Vec<Line<'static>> {
     let Some(observation) = app.forge_observation(thread_id) else {
-        return vec![Line::from("Forge: not probed")];
+        return diagnostic_hint
+            .then(|| vec![Line::from("Forge: not probed")])
+            .unwrap_or_default();
     };
 
     if observation.observed_at_unix_ms == 0 {
-        return vec![Line::from("Forge: probing…")];
+        return diagnostic_hint
+            .then(|| vec![Line::from("Forge: probing…")])
+            .unwrap_or_default();
     }
 
     let Some(identity) = &observation.identity else {
-        return vec![Line::from(format!(
-            "Forge: unavailable · {}",
-            truncate_display(
-                observation
-                    .error
-                    .as_deref()
-                    .unwrap_or("identity unresolved"),
-                80
-            )
-        ))];
+        return diagnostic_hint
+            .then(|| {
+                vec![Line::from(
+                    "Forge: unavailable · run codex-tui doctor forge for details",
+                )]
+            })
+            .unwrap_or_default();
     };
 
     let mut lines = vec![Line::from(format!(
@@ -1299,7 +1270,7 @@ fn render_workspace(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area
     }
 
     lines.push(Line::from(""));
-    lines.extend(forge_context_lines(app, &thread.id));
+    lines.extend(forge_context_lines(app, &thread.id, true));
 
     frame.render_widget(
         Paragraph::new(lines)
@@ -1308,7 +1279,7 @@ fn render_workspace(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area
         chunks[0],
     );
     frame.render_widget(
-        Paragraph::new("r review · m managed worktrees · . forge/context actions · Esc back"),
+        Paragraph::new("r review · m managed worktrees · . actions · Esc back"),
         chunks[1],
     );
 }
@@ -1576,7 +1547,7 @@ fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area: R
 
     frame.render_widget(
         Paragraph::new(
-            "j/k file · PageUp/PageDown diff · w word-diff · e editor · . forge/context actions · Esc back",
+            "j/k file · PageUp/PageDown diff · w word-diff · e editor · . actions · Esc back",
         ),
         outer[1],
     );
@@ -1610,7 +1581,7 @@ fn render_context_actions(frame: &mut Frame<'_>, app: &AppState) {
     frame.render_widget(Clear, area);
     frame.render_widget(
         Paragraph::new(lines)
-            .block(Block::bordered().title(" Context Actions "))
+            .block(Block::bordered().title(" Actions "))
             .wrap(Wrap { trim: false }),
         area,
     );

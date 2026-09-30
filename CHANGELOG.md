@@ -16,7 +16,8 @@ All notable codex-tui changes are recorded here.
 - surfaced selected-session Git repository backing in the Mission Control status line before the potentially long Codex Home path;
 - added a persistent Registry repo-backed-only toggle that excludes nonlocal and confirmed non-repository sessions while keeping unresolved/probing/degraded candidates visible until Git projection resolves;
 - ordered Mission Control sessions by newest activity and bounded the default Registry to the recent 100 while retaining pinned/Needs You history, full-history search and an explicit all-history toggle;
-- reserved screen rows for Terminal Drawer instead of overlaying it on Mission Control/Thread/Review/Workspace/Board content, keeping scrollbars, footers and context visible.
+- reserved screen rows for Terminal Drawer instead of overlaying it on Mission Control/Thread/Review/Workspace/Board content, keeping scrollbars, footers and context visible;
+- reduced Mission Control Selected-detail noise, hid unavailable Forge internals from daily UI, and made custom Forge hosts require explicit gh/glab authentication instead of defaulting every non-GitHub host to GitLab.
 
 ## [1.0.0] - 2026-09-30
 
