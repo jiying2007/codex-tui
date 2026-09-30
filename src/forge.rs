@@ -140,6 +140,22 @@ pub struct IssueBoardSummary {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ForgeReviewSummary {
+    pub thread_id: ThreadId,
+    pub cwd: String,
+    pub change_request_iid: u64,
+    pub approvals_required: Option<u64>,
+    pub approvals_left: Option<u64>,
+    pub approved_by_count: usize,
+    pub discussions_total: usize,
+    pub unresolved_discussions: usize,
+    pub approvals_available: bool,
+    pub discussions_available: bool,
+    pub observed_at_unix_ms: u64,
+    pub error: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ForgeObservation {
     pub thread_id: ThreadId,
     pub cwd: String,
@@ -150,6 +166,7 @@ pub struct ForgeObservation {
     pub issues: Vec<ForgeIssueSummary>,
     pub change_requests: Vec<ChangeRequestSummary>,
     pub pipelines: Vec<PipelineSummary>,
+    pub review: Option<ForgeReviewSummary>,
     pub observed_at_unix_ms: u64,
     pub freshness: ForgeFreshness,
     pub error: Option<String>,
@@ -167,6 +184,7 @@ impl ForgeObservation {
             issues: vec![],
             change_requests: vec![],
             pipelines: vec![],
+            review: None,
             observed_at_unix_ms: 0,
             freshness: ForgeFreshness::Unavailable,
             error: None,
@@ -184,6 +202,7 @@ impl ForgeObservation {
             issues: vec![],
             change_requests: vec![],
             pipelines: vec![],
+            review: None,
             observed_at_unix_ms: now_unix_ms(),
             freshness: ForgeFreshness::Unavailable,
             error: Some(error.into()),
@@ -221,12 +240,23 @@ pub struct ForgeDoctorSnapshot {
 
 #[derive(Clone, Debug)]
 pub enum ForgeCommand {
-    Probe { thread_id: ThreadId, cwd: String },
+    Probe {
+        thread_id: ThreadId,
+        cwd: String,
+    },
+    ProbeReview {
+        thread_id: ThreadId,
+        cwd: String,
+        host: String,
+        project_id: String,
+        change_request_iid: u64,
+    },
 }
 
 #[derive(Clone, Debug)]
 pub enum ForgeEvent {
     Observation(ForgeObservation),
+    Review(ForgeReviewSummary),
 }
 
 pub struct ForgeHandle {
@@ -253,6 +283,25 @@ impl ForgeHandle {
             .map_err(|_| anyhow!("Forge actor is not available"))
     }
 
+    pub fn probe_review(
+        &self,
+        thread_id: ThreadId,
+        cwd: String,
+        host: String,
+        project_id: String,
+        change_request_iid: u64,
+    ) -> Result<()> {
+        self.command_tx
+            .send(ForgeCommand::ProbeReview {
+                thread_id,
+                cwd,
+                host,
+                project_id,
+                change_request_iid,
+            })
+            .map_err(|_| anyhow!("Forge actor is not available"))
+    }
+
     pub fn try_recv(&mut self) -> Option<ForgeEvent> {
         self.event_rx.try_recv().ok()
     }
@@ -273,6 +322,23 @@ async fn run_actor(
             ForgeCommand::Probe { thread_id, cwd } => {
                 let observation = probe_thread(thread_id, cwd).await;
                 let _ = event_tx.send(ForgeEvent::Observation(observation));
+            }
+            ForgeCommand::ProbeReview {
+                thread_id,
+                cwd,
+                host,
+                project_id,
+                change_request_iid,
+            } => {
+                let review = probe_change_request_review(
+                    thread_id,
+                    cwd,
+                    host,
+                    project_id,
+                    change_request_iid,
+                )
+                .await;
+                let _ = event_tx.send(ForgeEvent::Review(review));
             }
         }
     }
@@ -323,6 +389,27 @@ struct GitLabPipeline {
 struct GitLabBoard {
     id: u64,
     name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GitLabApprovals {
+    approvals_required: Option<u64>,
+    approvals_left: Option<u64>,
+    #[serde(default)]
+    approved_by: Vec<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GitLabDiscussion {
+    #[serde(default)]
+    notes: Vec<GitLabDiscussionNote>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GitLabDiscussionNote {
+    #[serde(default)]
+    resolvable: bool,
+    resolved: Option<bool>,
 }
 
 pub async fn probe_thread(thread_id: ThreadId, cwd: String) -> ForgeObservation {
@@ -423,6 +510,7 @@ pub async fn probe_gitlab(thread_id: ThreadId, cwd: String) -> Result<ForgeObser
                 updated_at: pipeline.updated_at,
             })
             .collect(),
+        review: None,
         observed_at_unix_ms: now_unix_ms(),
         freshness: ForgeFreshness::Fresh,
         error: None,
@@ -448,6 +536,76 @@ pub async fn probe_issue_boards(cwd: &str) -> Result<Vec<IssueBoardSummary>> {
             name: board.name.unwrap_or_else(|| format!("Board {}", board.id)),
         })
         .collect())
+}
+
+pub async fn probe_change_request_review(
+    thread_id: ThreadId,
+    cwd: String,
+    host: String,
+    project_id: String,
+    change_request_iid: u64,
+) -> ForgeReviewSummary {
+    let encoded_project_id = percent_encode_component(&project_id);
+    let approvals_endpoint = format!(
+        "/projects/{encoded_project_id}/merge_requests/{change_request_iid}/approvals"
+    );
+    let discussions_endpoint = format!(
+        "/projects/{encoded_project_id}/merge_requests/{change_request_iid}/discussions?per_page=100"
+    );
+
+    let (approvals_result, discussions_result) = tokio::join!(
+        glab_api_json::<GitLabApprovals>(&cwd, &host, &approvals_endpoint),
+        glab_api_json::<Vec<GitLabDiscussion>>(&cwd, &host, &discussions_endpoint),
+    );
+
+    let approvals_available = approvals_result.is_ok();
+    let discussions_available = discussions_result.is_ok();
+
+    let (approvals_required, approvals_left, approved_by_count) = approvals_result
+        .as_ref()
+        .map(|approvals| {
+            (
+                approvals.approvals_required,
+                approvals.approvals_left,
+                approvals.approved_by.len(),
+            )
+        })
+        .unwrap_or((None, None, 0));
+
+    let (discussions_total, unresolved_discussions) = discussions_result
+        .as_ref()
+        .map(|discussions| {
+            let unresolved = discussions
+                .iter()
+                .flat_map(|discussion| &discussion.notes)
+                .filter(|note| note.resolvable && note.resolved != Some(true))
+                .count();
+            (discussions.len(), unresolved)
+        })
+        .unwrap_or((0, 0));
+
+    let mut errors = Vec::new();
+    if let Err(error) = approvals_result {
+        errors.push(format!("approvals: {error}"));
+    }
+    if let Err(error) = discussions_result {
+        errors.push(format!("discussions: {error}"));
+    }
+
+    ForgeReviewSummary {
+        thread_id,
+        cwd,
+        change_request_iid,
+        approvals_required,
+        approvals_left,
+        approved_by_count,
+        discussions_total,
+        unresolved_discussions,
+        approvals_available,
+        discussions_available,
+        observed_at_unix_ms: now_unix_ms(),
+        error: (!errors.is_empty()).then(|| errors.join("; ")),
+    }
 }
 
 pub async fn doctor(cwd: String) -> ForgeDoctorSnapshot {
@@ -887,6 +1045,7 @@ mod tests {
                 web_url: "https://example/pipelines/9".into(),
                 updated_at: None,
             }],
+            review: None,
             observed_at_unix_ms: 1,
             freshness: ForgeFreshness::Fresh,
             error: None,
