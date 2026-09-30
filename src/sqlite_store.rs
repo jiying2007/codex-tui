@@ -1,3 +1,4 @@
+use crate::forge_mutation::{ForgeMutationPlan, ForgeMutationReceipt};
 use crate::operation::{ManagedWorktreeRecord, OperationPlan, OperationReceipt, OperationState};
 use crate::planning::{
     Bookmark, HotSlot, LocalNote, PlanningSnapshot, SavedView, ScratchState, ScratchWork,
@@ -13,7 +14,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const DB_SCHEMA_VERSION: i64 = 2;
+const DB_SCHEMA_VERSION: i64 = 3;
 const OPERATOR_STATE_KEY: &str = "operator-state-v1";
 const LEGACY_IMPORT_KEY: &str = "legacy-state-v1-imported";
 
@@ -567,6 +568,88 @@ impl SqliteStore {
         rows.map(|row| row.map_err(Into::into)).collect()
     }
 
+    pub fn save_forge_mutation_receipt(&self, receipt: &ForgeMutationReceipt) -> Result<()> {
+        let conn = self.open_ready()?;
+        let plan_json =
+            serde_json::to_string(&receipt.plan).context("serialize forge mutation plan")?;
+        conn.execute(
+            "INSERT INTO forge_mutation_receipts (
+                operation_id, plan_json, state, started_at_unix_ms, completed_at_unix_ms,
+                result_ref, verification, failure, updated_at_unix_ms
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+             ON CONFLICT(operation_id) DO UPDATE SET
+                plan_json=excluded.plan_json,
+                state=excluded.state,
+                started_at_unix_ms=excluded.started_at_unix_ms,
+                completed_at_unix_ms=excluded.completed_at_unix_ms,
+                result_ref=excluded.result_ref,
+                verification=excluded.verification,
+                failure=excluded.failure,
+                updated_at_unix_ms=excluded.updated_at_unix_ms",
+            params![
+                receipt.operation_id,
+                plan_json,
+                enum_text(&receipt.state)?,
+                receipt.started_at_unix_ms.map(u64_to_i64).transpose()?,
+                receipt.completed_at_unix_ms.map(u64_to_i64).transpose()?,
+                receipt.result_ref,
+                receipt.verification,
+                receipt.failure,
+                u64_to_i64(now_unix_ms())?,
+            ],
+        )
+        .context("save forge mutation receipt")?;
+        Ok(())
+    }
+
+    pub fn forge_mutation_receipt(
+        &self,
+        operation_id: &str,
+    ) -> Result<Option<ForgeMutationReceipt>> {
+        let conn = self.open_ready()?;
+        conn.query_row(
+            "SELECT operation_id, plan_json, state, started_at_unix_ms,
+                    completed_at_unix_ms, result_ref, verification, failure
+             FROM forge_mutation_receipts WHERE operation_id=?1",
+            [operation_id],
+            decode_forge_mutation_receipt,
+        )
+        .optional()
+        .context("load forge mutation receipt")
+    }
+
+    pub fn load_recent_forge_mutation_receipts(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<ForgeMutationReceipt>> {
+        let conn = self.open_ready()?;
+        let limit = i64::try_from(limit).context("forge receipt limit exceeds SQLite range")?;
+        let mut stmt = conn.prepare(
+            "SELECT operation_id, plan_json, state, started_at_unix_ms,
+                    completed_at_unix_ms, result_ref, verification, failure
+             FROM forge_mutation_receipts
+             ORDER BY updated_at_unix_ms DESC, operation_id DESC
+             LIMIT ?1",
+        )?;
+        let rows = stmt.query_map([limit], decode_forge_mutation_receipt)?;
+        rows.map(|row| row.map_err(Into::into)).collect()
+    }
+
+    pub fn load_recoverable_forge_mutation_receipts(
+        &self,
+    ) -> Result<Vec<ForgeMutationReceipt>> {
+        let conn = self.open_ready()?;
+        let mut stmt = conn.prepare(
+            "SELECT operation_id, plan_json, state, started_at_unix_ms,
+                    completed_at_unix_ms, result_ref, verification, failure
+             FROM forge_mutation_receipts
+             WHERE state IN ('planned', 'executing', 'outcome-unknown')
+             ORDER BY updated_at_unix_ms, operation_id",
+        )?;
+        let rows = stmt.query_map([], decode_forge_mutation_receipt)?;
+        rows.map(|row| row.map_err(Into::into)).collect()
+    }
+
     fn open_ready(&self) -> Result<Connection> {
         ensure_private_parent(&self.db_path)?;
         let mut conn = Connection::open(&self.db_path)
@@ -790,6 +873,31 @@ fn ensure_schema(conn: &mut Connection) -> Result<()> {
         )
         .context("upgrade SQLite schema v1 -> v2")?;
         tx.commit().context("commit SQLite schema v2")?;
+        version = 2;
+    }
+
+    if version == 2 {
+        let tx = conn
+            .transaction()
+            .context("begin SQLite schema v3 migration")?;
+        tx.execute_batch(
+            "CREATE TABLE forge_mutation_receipts (
+                operation_id TEXT PRIMARY KEY,
+                plan_json TEXT NOT NULL,
+                state TEXT NOT NULL,
+                started_at_unix_ms INTEGER,
+                completed_at_unix_ms INTEGER,
+                result_ref TEXT,
+                verification TEXT,
+                failure TEXT,
+                updated_at_unix_ms INTEGER NOT NULL
+             );
+             CREATE INDEX forge_mutation_receipts_state_idx
+                 ON forge_mutation_receipts(state, updated_at_unix_ms DESC);
+             PRAGMA user_version = 3;",
+        )
+        .context("upgrade SQLite schema v2 -> v3")?;
+        tx.commit().context("commit SQLite schema v3")?;
     }
 
     Ok(())
@@ -813,6 +921,37 @@ fn decode_operation_receipt(row: &rusqlite::Row<'_>) -> rusqlite::Result<Operati
     })?;
 
     Ok(OperationReceipt {
+        operation_id,
+        plan,
+        state,
+        started_at_unix_ms: started.and_then(|value| u64::try_from(value).ok()),
+        completed_at_unix_ms: completed.and_then(|value| u64::try_from(value).ok()),
+        result_ref,
+        verification,
+        failure,
+    })
+}
+
+fn decode_forge_mutation_receipt(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<ForgeMutationReceipt> {
+    let operation_id: String = row.get(0)?;
+    let plan_json: String = row.get(1)?;
+    let state_text: String = row.get(2)?;
+    let started: Option<i64> = row.get(3)?;
+    let completed: Option<i64> = row.get(4)?;
+    let result_ref: Option<String> = row.get(5)?;
+    let verification: Option<String> = row.get(6)?;
+    let failure: Option<String> = row.get(7)?;
+
+    let plan: ForgeMutationPlan = serde_json::from_str(&plan_json).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Text, Box::new(error))
+    })?;
+    let state: OperationState = enum_from_text(&state_text).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(2, rusqlite::types::Type::Text, error.into())
+    })?;
+
+    Ok(ForgeMutationReceipt {
         operation_id,
         plan,
         state,
