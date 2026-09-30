@@ -128,7 +128,6 @@ impl FakeBackend {
         }
     }
 
-
     pub fn scaled(count: usize) -> Self {
         let mut threads = Vec::with_capacity(count);
         for index in 0..count {
