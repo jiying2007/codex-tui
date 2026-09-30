@@ -31,14 +31,17 @@ pub const fn layout_mode(width: u16) -> LayoutMode {
 }
 
 pub fn render(frame: &mut Frame<'_>, app: &AppState) {
+    let content_area = primary_view_rect(frame.area(), app.terminal_drawer_open);
     match &app.view {
-        View::Registry => render_registry(frame, app),
-        View::Thread(id) => render_thread(frame, app, id.0.as_str()),
-        View::Review(id) => render_review(frame, app, id.0.as_str()),
-        View::Workspace(id) => render_workspace(frame, app, id.0.as_str()),
-        View::ManagedWorktrees(id) => render_managed_worktrees(frame, app, id.0.as_str()),
-        View::Board => render_board(frame, app),
-        View::Scratch(id) => render_scratch(frame, app, id),
+        View::Registry => render_registry(frame, app, content_area),
+        View::Thread(id) => render_thread(frame, app, id.0.as_str(), content_area),
+        View::Review(id) => render_review(frame, app, id.0.as_str(), content_area),
+        View::Workspace(id) => render_workspace(frame, app, id.0.as_str(), content_area),
+        View::ManagedWorktrees(id) => {
+            render_managed_worktrees(frame, app, id.0.as_str(), content_area);
+        }
+        View::Board => render_board(frame, app, content_area),
+        View::Scratch(id) => render_scratch(frame, app, id, content_area),
     }
     if app.terminal_drawer_open {
         render_terminal_drawer(frame, app);
@@ -74,6 +77,19 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
     }
     if app.pending_launch_plan.is_some() {
         render_launch_confirmation(frame, app);
+    }
+}
+
+pub fn primary_view_rect(area: Rect, drawer_open: bool) -> Rect {
+    if !drawer_open {
+        return area;
+    }
+    let drawer = terminal_drawer_rect(area);
+    Rect {
+        x: area.x,
+        y: area.y,
+        width: area.width,
+        height: area.height.saturating_sub(drawer.height),
     }
 }
 
@@ -150,8 +166,7 @@ fn render_terminal_drawer(frame: &mut Frame<'_>, app: &AppState) {
     }
 }
 
-fn render_registry(frame: &mut Frame<'_>, app: &AppState) {
-    let area = frame.area();
+fn render_registry(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(3), Constraint::Length(2)])
@@ -804,8 +819,7 @@ fn goal_summary(app: &AppState, thread_id: &str) -> String {
     "probing…".into()
 }
 
-fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
-    let area = frame.area();
+fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -964,8 +978,7 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
     );
 }
 
-fn render_board(frame: &mut Frame<'_>, app: &AppState) {
-    let area = frame.area();
+fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
     let outer = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(4), Constraint::Length(2)])
@@ -1150,8 +1163,7 @@ fn planning_card_line(card: &crate::planning::WorkCardProjection, selected: bool
     Line::from(Span::styled(text, style))
 }
 
-fn render_scratch(frame: &mut Frame<'_>, app: &AppState, scratch_id: &str) {
-    let area = frame.area();
+fn render_scratch(frame: &mut Frame<'_>, app: &AppState, scratch_id: &str, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(4), Constraint::Length(1)])
@@ -1197,8 +1209,7 @@ fn render_scratch(frame: &mut Frame<'_>, app: &AppState, scratch_id: &str) {
     frame.render_widget(Paragraph::new("Esc back to Board"), chunks[1]);
 }
 
-fn render_workspace(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
-    let area = frame.area();
+fn render_workspace(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area: Rect) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(4), Constraint::Length(1)])
@@ -1302,8 +1313,7 @@ fn render_workspace(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
     );
 }
 
-fn render_managed_worktrees(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
-    let area = frame.area();
+fn render_managed_worktrees(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area: Rect) {
     let outer = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(5), Constraint::Length(2)])
@@ -1450,8 +1460,7 @@ fn render_managed_worktrees(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
     frame.render_widget(Paragraph::new(footer), outer[1]);
 }
 
-fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
-    let area = frame.area();
+fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area: Rect) {
     let outer = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(4), Constraint::Length(1)])
@@ -2262,6 +2271,52 @@ mod tests {
                 "wide glyph {glyph:?} missing from TestBackend buffer"
             );
         }
+    }
+
+    #[test]
+    fn terminal_drawer_reserves_rows_instead_of_covering_main_view() {
+        let full = Rect::new(0, 0, 100, 30);
+        let drawer = terminal_drawer_rect(full);
+        let main = primary_view_rect(full, true);
+        assert_eq!(main.height + drawer.height, full.height);
+        assert_eq!(main.y + main.height, drawer.y);
+
+        let backend = TestBackend::new(100, 30);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        let mut app = AppState::new(FakeBackend::scaled(100).snapshot().threads);
+        app.selected = 99;
+        app.terminal_drawer_open = true;
+        app.terminal_snapshot = Some(crate::terminal_drawer::TerminalSnapshot {
+            cwd: "/repo".into(),
+            size: terminal_drawer_pty_size(100, 30),
+            rows: vec!["drawer row".into()],
+            cursor_row: 0,
+            cursor_col: 0,
+            scrollback: 0,
+            state: crate::terminal_drawer::TerminalProcessState::Running,
+        });
+
+        terminal.draw(|frame| render(frame, &app)).expect("draw");
+        let buffer = terminal.backend().buffer();
+        let mut scrollbar_rows = Vec::new();
+        for y in 0..buffer.area.height {
+            for x in 0..buffer.area.width {
+                if buffer[(x, y)].symbol() == "█" {
+                    scrollbar_rows.push(y);
+                }
+            }
+        }
+        assert!(!scrollbar_rows.is_empty());
+        assert!(
+            scrollbar_rows.iter().all(|row| *row < drawer.y),
+            "Mission Control scrollbar must stay above the Drawer"
+        );
+
+        let drawer_row = (drawer.y..drawer.y + drawer.height)
+            .flat_map(|y| (0..buffer.area.width).map(move |x| buffer[(x, y)].symbol()))
+            .collect::<String>();
+        assert!(drawer_row.contains("Terminal Drawer"));
+        assert!(drawer_row.contains("drawer row"));
     }
 
     #[test]
