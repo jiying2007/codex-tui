@@ -63,7 +63,6 @@ fn planning_workspace_filter_10k() {
     divan::black_box(apply_saved_view(cards_10k(), &view));
 }
 
-
 #[divan::bench]
 fn planning_rich_query_10k() {
     let view = SavedView {
