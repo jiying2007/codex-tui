@@ -39,7 +39,7 @@ fn collect_until_exit(handle: &PtyHandle) -> (Vec<u8>, bool, Option<u32>) {
 }
 
 fn line(value: &str) -> Vec<u8> {
-    format!("{value}\r\n").into_bytes()
+    format!("{value}\r").into_bytes()
 }
 
 #[test]
