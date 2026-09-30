@@ -2,8 +2,11 @@ use crate::domain::ThreadId;
 use anyhow::{Context, Result, anyhow, bail};
 use serde::Deserialize;
 use std::collections::BTreeMap;
+use std::future::Future;
 use std::path::Path;
+use std::pin::Pin;
 use std::process::Stdio;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::Command;
@@ -240,6 +243,66 @@ pub struct ForgeDoctorSnapshot {
     pub boards: Vec<IssueBoardSummary>,
 }
 
+pub type ForgeFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
+pub trait ForgeProvider: Send + Sync {
+    fn kind(&self) -> ForgeProviderKind;
+
+    fn probe<'a>(
+        &'a self,
+        thread_id: ThreadId,
+        cwd: String,
+    ) -> ForgeFuture<'a, ForgeObservation>;
+
+    fn probe_review<'a>(
+        &'a self,
+        thread_id: ThreadId,
+        cwd: String,
+        host: String,
+        project_id: String,
+        change_request_iid: u64,
+    ) -> ForgeFuture<'a, ForgeReviewSummary>;
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct GitLabProvider;
+
+impl ForgeProvider for GitLabProvider {
+    fn kind(&self) -> ForgeProviderKind {
+        ForgeProviderKind::GitLab
+    }
+
+    fn probe<'a>(
+        &'a self,
+        thread_id: ThreadId,
+        cwd: String,
+    ) -> ForgeFuture<'a, ForgeObservation> {
+        Box::pin(async move {
+            match probe_gitlab(thread_id.clone(), cwd.clone()).await {
+                Ok(observation) => observation,
+                Err(error) => ForgeObservation::unavailable(thread_id, cwd, error.to_string()),
+            }
+        })
+    }
+
+    fn probe_review<'a>(
+        &'a self,
+        thread_id: ThreadId,
+        cwd: String,
+        host: String,
+        project_id: String,
+        change_request_iid: u64,
+    ) -> ForgeFuture<'a, ForgeReviewSummary> {
+        Box::pin(probe_change_request_review(
+            thread_id,
+            cwd,
+            host,
+            project_id,
+            change_request_iid,
+        ))
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum ForgeCommand {
     Probe {
@@ -269,9 +332,13 @@ pub struct ForgeHandle {
 
 impl ForgeHandle {
     pub fn start() -> Self {
+        Self::start_with_provider(Arc::new(GitLabProvider))
+    }
+
+    pub fn start_with_provider(provider: Arc<dyn ForgeProvider>) -> Self {
         let (command_tx, command_rx) = mpsc::unbounded_channel();
         let (event_tx, event_rx) = mpsc::unbounded_channel();
-        let task = tokio::spawn(run_actor(command_rx, event_tx));
+        let task = tokio::spawn(run_actor(provider, command_rx, event_tx));
         Self {
             command_tx,
             event_rx,
@@ -316,13 +383,14 @@ impl Drop for ForgeHandle {
 }
 
 async fn run_actor(
+    provider: Arc<dyn ForgeProvider>,
     mut command_rx: mpsc::UnboundedReceiver<ForgeCommand>,
     event_tx: mpsc::UnboundedSender<ForgeEvent>,
 ) {
     while let Some(command) = command_rx.recv().await {
         match command {
             ForgeCommand::Probe { thread_id, cwd } => {
-                let observation = probe_thread(thread_id, cwd).await;
+                let observation = provider.probe(thread_id, cwd).await;
                 let _ = event_tx.send(ForgeEvent::Observation(Box::new(observation)));
             }
             ForgeCommand::ProbeReview {
@@ -332,14 +400,15 @@ async fn run_actor(
                 project_id,
                 change_request_iid,
             } => {
-                let review = probe_change_request_review(
-                    thread_id,
-                    cwd,
-                    host,
-                    project_id,
-                    change_request_iid,
-                )
-                .await;
+                let review = provider
+                    .probe_review(
+                        thread_id,
+                        cwd,
+                        host,
+                        project_id,
+                        change_request_iid,
+                    )
+                    .await;
                 let _ = event_tx.send(ForgeEvent::Review(review));
             }
         }
@@ -420,10 +489,7 @@ struct GitLabDiscussionNote {
 }
 
 pub async fn probe_thread(thread_id: ThreadId, cwd: String) -> ForgeObservation {
-    match probe_gitlab(thread_id.clone(), cwd.clone()).await {
-        Ok(observation) => observation,
-        Err(error) => ForgeObservation::unavailable(thread_id, cwd, error.to_string()),
-    }
+    GitLabProvider.probe(thread_id, cwd).await
 }
 
 pub async fn probe_gitlab(thread_id: ThreadId, cwd: String) -> Result<ForgeObservation> {
