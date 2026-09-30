@@ -3879,7 +3879,10 @@ mod tests {
         }
         assert!(reduce(&mut app, Action::CommitInput).is_empty());
 
-        let plan = app.pending_forge_operation.as_ref().expect("pending forge plan");
+        let plan = app
+            .pending_forge_operation
+            .clone()
+            .expect("pending forge plan");
         assert_eq!(
             plan.kind,
             crate::forge_mutation::ForgeMutationKind::CreateMergeRequest
@@ -3892,7 +3895,7 @@ mod tests {
         let [Effect::ExecuteForgeOperation(request)] = effects.as_slice() else {
             panic!("expected explicit forge execution effect");
         };
-        assert_eq!(request.plan, *plan);
+        assert_eq!(request.plan, plan);
         assert!(request.payload.is_none());
         assert!(app.pending_forge_operation.is_none());
     }
