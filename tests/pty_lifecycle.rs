@@ -39,6 +39,7 @@ fn wait_output_contains(handle: &PtyHandle, marker: &str) -> Vec<u8> {
                         String::from_utf8_lossy(&output)
                     );
                 }
+                PtyEvent::ReaderClosed => {}
                 PtyEvent::Error(error) => panic!("PTY error: {error}"),
                 PtyEvent::Ready { .. } => {}
             }
@@ -52,10 +53,27 @@ fn wait_output_contains(handle: &PtyHandle, marker: &str) -> Vec<u8> {
     }
 }
 
-fn wait_exit(handle: &PtyHandle) -> (bool, Option<u32>) {
-    match wait_event(handle, |event| matches!(event, PtyEvent::Exited { .. })) {
-        PtyEvent::Exited { success, code } => (success, code),
-        _ => unreachable!(),
+fn wait_shutdown(handle: &PtyHandle) -> (bool, Option<u32>) {
+    let deadline = Instant::now() + WAIT;
+    let mut exit = None;
+    let mut reader_closed = false;
+    loop {
+        if let Some(event) = handle.try_recv() {
+            match event {
+                PtyEvent::ReaderClosed => reader_closed = true,
+                PtyEvent::Exited { success, code } => exit = Some((success, code)),
+                PtyEvent::Error(error) => panic!("PTY error during shutdown: {error}"),
+                PtyEvent::Output(_) | PtyEvent::Ready { .. } => {}
+            }
+        }
+        if reader_closed && exit.is_some() {
+            return exit.expect("exit status");
+        }
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for PTY shutdown: reader_closed={reader_closed} exit={exit:?}"
+        );
+        thread::sleep(Duration::from_millis(20));
     }
 }
 
@@ -84,7 +102,7 @@ fn default_shell_starts_accepts_input_and_exits() {
     let output = wait_output_contains(&handle, "CODEX_TUI_PTY_READY");
     assert!(String::from_utf8_lossy(&output).contains("CODEX_TUI_PTY_READY"));
     handle.send(PtyCommand::Terminate).expect("terminate");
-    let _ = wait_exit(&handle);
+    let _ = wait_shutdown(&handle);
 }
 
 #[test]
@@ -106,7 +124,7 @@ fn resize_command_is_accepted_while_shell_is_running() {
     let output = wait_output_contains(&handle, "CODEX_TUI_RESIZED");
     assert!(String::from_utf8_lossy(&output).contains("CODEX_TUI_RESIZED"));
     handle.send(PtyCommand::Terminate).expect("terminate");
-    let _ = wait_exit(&handle);
+    let _ = wait_shutdown(&handle);
 }
 
 #[test]
@@ -128,7 +146,7 @@ fn explicit_terminate_stops_a_long_running_child_promptly() {
 
     let started = Instant::now();
     handle.send(PtyCommand::Terminate).expect("terminate");
-    let _ = wait_exit(&handle);
+    let _ = wait_shutdown(&handle);
     assert!(
         started.elapsed() < Duration::from_secs(5),
         "explicit terminate took too long"
@@ -163,7 +181,7 @@ fn ctrl_c_is_delivered_to_child_and_shell_remains_usable() {
         "shell did not remain usable after Ctrl-C: {text:?}"
     );
     handle.send(PtyCommand::Terminate).expect("terminate");
-    let _ = wait_exit(&handle);
+    let _ = wait_shutdown(&handle);
 }
 
 #[test]
