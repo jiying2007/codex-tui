@@ -595,10 +595,7 @@ async fn doctor(scope: Option<&str>) -> Result<()> {
         println!("default-program: {}", capabilities.default_program);
         println!("resize: {}", capabilities.resize);
         println!("input: {}", capabilities.input);
-        println!(
-            "event-queue-capacity: {}",
-            capabilities.bounded_event_queue
-        );
+        println!("event-queue-capacity: {}", capabilities.bounded_event_queue);
         println!(
             "default-scrollback-bytes: {}",
             capabilities.default_scrollback_bytes
