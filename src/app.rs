@@ -904,7 +904,9 @@ impl AppState {
 
     pub fn visible_indices(&self) -> Vec<usize> {
         let matched = self.registry_matching_indices();
-        if self.show_all_history || !self.filter.is_empty() || matched.len() <= REGISTRY_RECENT_LIMIT
+        if self.show_all_history
+            || !self.filter.is_empty()
+            || matched.len() <= REGISTRY_RECENT_LIMIT
         {
             return matched;
         }

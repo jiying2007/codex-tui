@@ -233,7 +233,11 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState) {
             Span::raw("/ search  "),
             Span::raw("l local-only  "),
             Span::raw("g repo-only  "),
-            Span::raw(if app.show_all_history { "h recent  " } else { "h all-history  " }),
+            Span::raw(if app.show_all_history {
+                "h recent  "
+            } else {
+                "h all-history  "
+            }),
             Span::raw("p pin  "),
             Span::raw("e alias  "),
             Span::raw("x ack  "),
