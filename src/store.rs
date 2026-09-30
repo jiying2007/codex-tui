@@ -44,6 +44,8 @@ pub struct LocalStateV1 {
     pub marked_unread: BTreeSet<String>,
     #[serde(default)]
     pub acknowledged_attention: BTreeSet<String>,
+    #[serde(default)]
+    pub host_local_only: bool,
 }
 
 impl Default for LocalStateV1 {
@@ -55,6 +57,7 @@ impl Default for LocalStateV1 {
             aliases: BTreeMap::new(),
             marked_unread: BTreeSet::new(),
             acknowledged_attention: BTreeSet::new(),
+            host_local_only: false,
         }
     }
 }
@@ -173,6 +176,7 @@ mod tests {
 
         let mut state = LocalStateV1::default();
         state.pins.insert("thread-1".into());
+        state.host_local_only = true;
         store.save_state(&state).expect("save");
         let loaded = store.load_state().expect("load");
         assert_eq!(loaded, state);
@@ -181,6 +185,12 @@ mod tests {
         let state_text = fs::read_to_string(store.state_path()).expect("read state");
         assert!(config_text.contains("[ui]"));
         assert!(state_text.contains("\"schemaVersion\": 1"));
+        assert!(state_text.contains("\"hostLocalOnly\": true"));
+
+        let legacy = r#"{"schemaVersion":1}"#;
+        fs::write(store.state_path(), legacy).expect("write legacy state");
+        let legacy_loaded = store.load_state().expect("load legacy state");
+        assert!(!legacy_loaded.host_local_only);
     }
 
     #[test]

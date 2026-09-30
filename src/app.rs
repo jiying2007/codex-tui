@@ -901,6 +901,7 @@ impl AppState {
     pub fn apply_local_state(&mut self, local: &LocalStateV1) {
         self.thread_ui = local.thread_ui.clone();
         self.acknowledged_attention = local.acknowledged_attention.clone();
+        self.host_local_only = local.host_local_only;
         for thread in &mut self.threads {
             if local.pins.contains(&thread.id.0) {
                 thread.pinned = true;
@@ -948,6 +949,7 @@ impl AppState {
             aliases,
             marked_unread,
             acknowledged_attention: self.acknowledged_attention.clone(),
+            host_local_only: self.host_local_only,
         }
     }
 }
@@ -2295,6 +2297,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::ToggleHostLocalFilter => {
             state.host_local_only = !state.host_local_only;
             ensure_selection_visible(state);
+            return vec![Effect::PersistOperatorState];
         }
         Action::BeginSearch => {
             state.input_original.clone_from(&state.filter);
@@ -4531,13 +4534,23 @@ mod tests {
         }
         reduce(&mut app, Action::CommitInput);
         reduce(&mut app, Action::AcknowledgeAttention);
+        app.threads[0].metadata.cwd = std::env::current_dir()
+            .expect("cwd")
+            .to_string_lossy()
+            .into_owned();
+        app.selected = 0;
+        let effects = reduce(&mut app, Action::ToggleHostLocalFilter);
+        assert_eq!(effects, vec![Effect::PersistOperatorState]);
         let local = app.to_local_state();
 
         let mut restored = AppState::new(FakeBackend::seeded().snapshot().threads);
+        restored.threads[0].metadata.cwd = app.threads[0].metadata.cwd.clone();
         restored.apply_local_state(&local);
         assert!(restored.threads[1].pinned);
         assert_eq!(restored.threads[1].alias.as_deref(), Some("primary"));
         assert!(restored.acknowledged_attention.contains("thread-kws"));
+        assert!(restored.host_local_only);
+        assert_eq!(restored.visible_indices(), vec![0]);
     }
     fn seed_gitlab_mutation_target(app: &mut AppState, with_merge_request: bool) -> ThreadId {
         use crate::forge::{
