@@ -88,7 +88,7 @@ On Linux/macOS/Windows Terminal:
 3. type `echo CODEX_TUI_DRAWER_SMOKE`;
 4. resize the host terminal in both dimensions;
 5. run a long command, press Ctrl-C, then run another echo;
-6. press `Ctrl+]`, confirm codex-tui navigation works while the shell remains alive;
+6. press `F6`, confirm codex-tui navigation works while the shell remains alive; optionally verify `Ctrl+]` as an alternate when the terminal reports it;
 7. press `t` to refocus, then `T` to close the session;
 8. quit codex-tui normally;
 9. verify the parent terminal has a visible cursor, canonical line editing and echo;

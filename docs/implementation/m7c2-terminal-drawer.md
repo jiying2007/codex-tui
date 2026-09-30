@@ -33,7 +33,8 @@ Default bindings:
 
 - `t`: open Terminal Drawer for the selected Codex thread cwd, or focus the existing Drawer
 - `T`: explicitly close/terminate the Drawer session
-- `Ctrl+]`: while Drawer is focused, return keyboard focus to codex-tui without closing the PTY
+- `F6`: while Drawer is focused, return keyboard focus to codex-tui without closing the PTY
+- `Ctrl+]`: alternate focus-release chord when the host terminal/SSH path reports it reliably
 
 Drawer open is unavailable when the current view cannot resolve a selected Codex thread cwd (for example local ScratchWork).
 
@@ -55,7 +56,7 @@ Examples:
 
 Baseline input does not require Kitty/CSI-u.
 
-`Ctrl+]` is reserved as the focus-release chord so ordinary Esc remains usable inside terminal programs.
+`F6` is the canonical focus-release key because it survives Windows Terminal/OpenSSH paths more reliably. `Ctrl+]` remains an alternate chord, and raw ASCII Group Separator (`0x1d`) is accepted for terminals that report Ctrl+] directly as a control character. Ordinary Esc remains usable inside terminal programs.
 
 ## Scrollback
 
