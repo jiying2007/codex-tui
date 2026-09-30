@@ -265,6 +265,16 @@ pub fn builtin_saved_views() -> Vec<SavedView> {
             layout: SavedViewLayout::ReviewQueue,
             visible_fields: vec!["workspace".into(), "attention".into()],
         },
+        SavedView {
+            id: "builtin:forge".into(),
+            name: "Forge Work".into(),
+            source_scope: "all".into(),
+            filter: "source:forge".into(),
+            group_by: Some("workspace".into()),
+            order_by: Some("priority".into()),
+            layout: SavedViewLayout::List,
+            visible_fields: vec!["workspace".into(), "stage".into(), "attention".into()],
+        },
     ]
 }
 
