@@ -2,6 +2,28 @@
 
 All notable codex-tui changes are recorded here.
 
+## [1.0.0] - Unreleased
+
+### Open source
+
+- project licensed under the Apache License 2.0;
+- Cargo package metadata declares SPDX license `Apache-2.0`;
+- release archives include the project LICENSE together with generated third-party notices.
+
+### Release candidate
+
+- package/version line advanced from 0.7.0 to 1.0.0;
+- non-publishing preview validation uses `v1.0.0-preview.N`;
+- added `codex-tui release benchmark` as the canonical retained 10k performance evidence path;
+- stable performance evidence requires at least 200 measured iterations, p95 <= 50 ms and p99 <= 100 ms;
+- added a compatibility-capture helper that saves READY `compat/v2` JSON and its SHA-256.
+
+### Release status
+
+The 1.0.0 package line is stable-eligible but is not yet declared or published as a stable release.
+
+Stable publication remains fail-closed until the exact release commit has canonical CI plus retained Linux/macOS/Windows compatibility receipts, terminal-restoration PASS receipts and retained 10k performance evidence.
+
 ## [0.7.0] - 2026-09-30
 
 ### Added
@@ -29,4 +51,4 @@ All notable codex-tui changes are recorded here.
 
 0.7.0 is the feature-complete M7 preview line. Preview artifacts may be built and retained without publication.
 
-Published binaries are blocked until a project-level LICENSE is explicitly selected. Stable releases additionally require package major version >= 1, canonical CI, three-platform compatibility receipts, terminal-restoration receipts, retained 10k performance evidence, package smoke verification, checksums and third-party notices.
+At the time of the 0.7.0 preview line, stable publication was still blocked pending an explicit project license and v1 release evidence.
