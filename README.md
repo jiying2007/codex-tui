@@ -249,7 +249,9 @@ Mission Control classifies each Codex thread cwd against the current host:
 - `!` / `stale`: native absolute cwd no longer exists.
 - `?`: cwd is empty or relative.
 
-Press `/`, type `local`, then Enter to show only sessions whose cwd exists on the current host.
+Press `l` in Mission Control to toggle **LOCAL ONLY** without changing the text search. The local-only projection composes with `/` search, so you can keep only host-local sessions visible and still filter by project, title or source. Searching for `local` remains supported.
+
+Mission Control also shows the connected App Server platform, active Codex Home, selected cwd locality and whether the Terminal Drawer is ready or blocked before you press `t`.
 
 Codex app-server may normalize a stored Windows cwd while running on Linux, yielding a value such as `/linux/current/dir/C:\\Users\\...`. codex-tui detects the embedded foreign Windows path, displays the Windows portion as foreign, and never uses that value as a Linux PTY cwd.
 
