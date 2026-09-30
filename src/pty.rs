@@ -44,6 +44,7 @@ pub enum PtyCommand {
 pub enum PtyEvent {
     Ready { cwd: PathBuf, size: TerminalSize },
     Output(Vec<u8>),
+    ReaderClosed,
     Exited { success: bool, code: Option<u32> },
     Error(String),
 }
@@ -161,7 +162,10 @@ fn spawn_and_drive_pty(
             let mut buffer = vec![0_u8; OUTPUT_CHUNK_BYTES];
             loop {
                 match reader.read(&mut buffer) {
-                    Ok(0) => break,
+                    Ok(0) => {
+                        let _ = output_tx.send(PtyEvent::ReaderClosed);
+                        break;
+                    },
                     Ok(count) => {
                         if output_tx
                             .send(PtyEvent::Output(buffer[..count].to_vec()))
@@ -340,6 +344,7 @@ mod tests {
         assert_eq!(scrollback.truncated_bytes(), 2);
     }
 
+    #[cfg(not(windows))]
     #[test]
     fn one_shot_child_emits_output_exit_and_reader_eof() {
         use std::sync::mpsc::sync_channel;
@@ -353,14 +358,6 @@ mod tests {
             .openpty(size.portable())
             .expect("open test PTY");
 
-        #[cfg(windows)]
-        let mut command = {
-            let mut command = CommandBuilder::new("cmd.exe");
-            command.arg("/C");
-            command.arg("echo CODEX_TUI_EOF");
-            command
-        };
-        #[cfg(not(windows))]
         let mut command = {
             let mut command = CommandBuilder::new("/bin/sh");
             command.arg("-c");
@@ -379,9 +376,11 @@ mod tests {
         let deadline = Instant::now() + Duration::from_secs(5);
         let mut output = Vec::new();
         let mut exited = false;
-        while Instant::now() < deadline && !exited {
+        let mut reader_closed = false;
+        while Instant::now() < deadline && !(exited && reader_closed) {
             match event_rx.recv_timeout(Duration::from_millis(100)) {
                 Ok(PtyEvent::Output(bytes)) => output.extend(bytes),
+                Ok(PtyEvent::ReaderClosed) => reader_closed = true,
                 Ok(PtyEvent::Exited { .. }) => exited = true,
                 Ok(PtyEvent::Error(error)) => panic!("test PTY error: {error}"),
                 Ok(PtyEvent::Ready { .. }) => {}
@@ -391,6 +390,7 @@ mod tests {
         }
 
         assert!(exited, "one-shot child did not emit Exited");
+        assert!(reader_closed, "one-shot child did not close the PTY reader");
         assert!(
             String::from_utf8_lossy(&output).contains("CODEX_TUI_EOF"),
             "missing child output: {:?}",
