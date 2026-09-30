@@ -626,16 +626,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
         );
     }
     let initial_git_effects = reduce(&mut app, Action::RefreshGitProjections);
-    apply_effects(
-        &mut app,
-        registry.as_ref(),
-        &git,
-        &forge_runtime,
-        &forge_mutations,
-        &mut mutations,
-        &mut store,
-        initial_git_effects,
-    )?;
+    apply_effects(&mut app, registry.as_ref(), &mut services, initial_git_effects)?;
 
     let mut terminal = TerminalSession::enter(config.ui.mouse)?;
     let mut last_fake_tick = Instant::now();
@@ -655,16 +646,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                     app.apply_local_state(&local);
                     registry = Some(started.handle);
                     let effects = reduce(&mut app, Action::RefreshGitProjections);
-                    apply_effects(
-                        &mut app,
-                        registry.as_ref(),
-                        &git,
-                        &forge_runtime,
-                        &forge_mutations,
-                        &mut mutations,
-                        &mut store,
-                        effects,
-                    )?;
+                    apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
                     reduce(
                         &mut app,
                         Action::ReconcilePlanning {
@@ -694,16 +676,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
         needs_render |= registry_changed;
         if registry_changed {
             let effects = reduce(&mut app, Action::RefreshGitProjections);
-            apply_effects(
-                &mut app,
-                registry.as_ref(),
-                &git,
-                &forge_runtime,
-                &forge_mutations,
-                &mut mutations,
-                &mut store,
-                effects,
-            )?;
+            apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
             reduce(
                 &mut app,
                 Action::ReconcilePlanning {
@@ -715,16 +688,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
         needs_render |= git_changed;
         if git_changed {
             let effects = reduce(&mut app, Action::RefreshForgeProjections);
-            apply_effects(
-                &mut app,
-                registry.as_ref(),
-                &git,
-                &forge_runtime,
-                &forge_mutations,
-                &mut mutations,
-                &mut store,
-                effects,
-            )?;
+            apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
             reduce(
                 &mut app,
                 Action::ReconcilePlanning {
@@ -748,16 +712,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
         needs_render |= forge_mutation_changed;
         if forge_mutation_changed {
             let effects = reduce(&mut app, Action::RefreshForgeProjections);
-            apply_effects(
-                &mut app,
-                registry.as_ref(),
-                &git,
-                &forge_runtime,
-                &forge_mutations,
-                &mut mutations,
-                &mut store,
-                effects,
-            )?;
+            apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
             reduce(
                 &mut app,
                 Action::ReconcilePlanning {
@@ -770,16 +725,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
         needs_render |= mutation_changed;
         if mutation_changed {
             let effects = reduce(&mut app, Action::RefreshGitProjections);
-            apply_effects(
-                &mut app,
-                registry.as_ref(),
-                &git,
-                &forge_runtime,
-                &forge_mutations,
-                &mut mutations,
-                &mut store,
-                effects,
-            )?;
+            apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
             reduce(
                 &mut app,
                 Action::ReconcilePlanning {
@@ -790,16 +736,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
 
         if last_forge_reconcile.elapsed() >= Duration::from_secs(15) {
             let effects = reduce(&mut app, Action::RefreshForgeProjections);
-            apply_effects(
-                &mut app,
-                registry.as_ref(),
-                &git,
-                &forge_runtime,
-                &forge_mutations,
-                &mut mutations,
-                &mut store,
-                effects,
-            )?;
+            apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
             reduce(
                 &mut app,
                 Action::ReconcilePlanning {
@@ -817,16 +754,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
             reduce(&mut app, Action::ReplaceThreads(snapshot.threads));
             reduce(&mut app, Action::BackendStatus(snapshot.status));
             let effects = reduce(&mut app, Action::RefreshGitProjections);
-            apply_effects(
-                &mut app,
-                registry.as_ref(),
-                &git,
-                &forge_runtime,
-                &forge_mutations,
-                &mut mutations,
-                &mut store,
-                effects,
-            )?;
+            apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
             reduce(
                 &mut app,
                 Action::ReconcilePlanning {
@@ -853,16 +781,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                     {
                         needs_render = true;
                     }
-                    apply_effects(
-                        &mut app,
-                        registry.as_ref(),
-                        &git,
-                        &forge_runtime,
-                        &forge_mutations,
-                        &mut mutations,
-                        &mut store,
-                        effects,
-                    )?;
+                    apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
                 }
                 Event::Resize(_, _) => needs_render = true,
                 _ => {}
