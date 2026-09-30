@@ -704,8 +704,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
             );
         }
 
-        let forge_mutation_changed =
-            drain_forge_mutations(&mut app, &mut forge_mutations);
+        let forge_mutation_changed = drain_forge_mutations(&mut app, &mut forge_mutations);
         needs_render |= forge_mutation_changed;
         if forge_mutation_changed {
             let effects = reduce(&mut app, Action::RefreshForgeProjections);
@@ -941,10 +940,7 @@ fn drain_forge(app: &mut AppState, forge: &mut ForgeHandle) -> bool {
     changed
 }
 
-fn drain_forge_mutations(
-    app: &mut AppState,
-    mutations: &mut ForgeMutationHandle,
-) -> bool {
+fn drain_forge_mutations(app: &mut AppState, mutations: &mut ForgeMutationHandle) -> bool {
     let mut changed = false;
     while let Some(event) = mutations.try_recv() {
         match event {
