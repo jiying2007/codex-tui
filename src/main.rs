@@ -4,7 +4,7 @@ use codex_tui::{
     app_server::{self, ConversationEvent, RegistryHandle},
     backend::{BackendStatus, CodexBackend, FakeBackend},
     conversation::{InteractiveRequestKind, InteractiveResolution},
-    forge,
+    forge::{self, ForgeEvent, ForgeHandle},
     git::{self, GitEvent, GitHandle},
     goal::GoalStatus,
     keymap::{Command, command_for_key},
@@ -496,7 +496,9 @@ async fn doctor(scope: Option<&str>) -> Result<()> {
             }
         }
     } else {
-        println!("hint: run `codex-tui doctor codex`, `doctor git`, `doctor forge`, or `doctor store`");
+        println!(
+            "hint: run `codex-tui doctor codex`, `doctor git`, `doctor forge`, or `doctor store`"
+        );
     }
     Ok(())
 }
@@ -555,6 +557,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
     );
 
     let mut git = GitHandle::start();
+    let mut forge_runtime = ForgeHandle::start();
     let mut mutations = WorktreeMutationHandle::start(store.sqlite_clone());
     if let Err(error) = mutations.recover() {
         reduce(
@@ -567,6 +570,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
         &mut app,
         registry.as_ref(),
         &git,
+        &forge_runtime,
         &mut mutations,
         &mut store,
         initial_git_effects,
@@ -593,6 +597,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                         &mut app,
                         registry.as_ref(),
                         &git,
+                        &forge_runtime,
                         &mut mutations,
                         &mut store,
                         effects,
@@ -630,6 +635,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                 &mut app,
                 registry.as_ref(),
                 &git,
+                &forge_runtime,
                 &mut mutations,
                 &mut store,
                 effects,
@@ -644,6 +650,27 @@ async fn run_app(fake_mode: bool) -> Result<()> {
         let git_changed = drain_git(&mut app, &mut git);
         needs_render |= git_changed;
         if git_changed {
+            let effects = reduce(&mut app, Action::RefreshForgeProjections);
+            apply_effects(
+                &mut app,
+                registry.as_ref(),
+                &git,
+                &forge_runtime,
+                &mut mutations,
+                &mut store,
+                effects,
+            )?;
+            reduce(
+                &mut app,
+                Action::ReconcilePlanning {
+                    now_unix_ms: now_unix_ms(),
+                },
+            );
+        }
+
+        let forge_changed = drain_forge(&mut app, &mut forge_runtime);
+        needs_render |= forge_changed;
+        if forge_changed {
             reduce(
                 &mut app,
                 Action::ReconcilePlanning {
@@ -660,6 +687,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                 &mut app,
                 registry.as_ref(),
                 &git,
+                &forge_runtime,
                 &mut mutations,
                 &mut store,
                 effects,
@@ -683,6 +711,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                 &mut app,
                 registry.as_ref(),
                 &git,
+                &forge_runtime,
                 &mut mutations,
                 &mut store,
                 effects,
@@ -717,6 +746,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                         &mut app,
                         registry.as_ref(),
                         &git,
+                        &forge_runtime,
                         &mut mutations,
                         &mut store,
                         effects,
@@ -822,6 +852,19 @@ fn drain_git(app: &mut AppState, git: &mut GitHandle) -> bool {
     changed
 }
 
+fn drain_forge(app: &mut AppState, forge: &mut ForgeHandle) -> bool {
+    let mut changed = false;
+    while let Some(event) = forge.try_recv() {
+        match event {
+            ForgeEvent::Observation(observation) => {
+                reduce(app, Action::ForgeObservationLoaded(observation));
+            }
+        }
+        changed = true;
+    }
+    changed
+}
+
 fn drain_mutations(app: &mut AppState, mutations: &mut WorktreeMutationHandle) -> bool {
     let mut changed = false;
     while let Some(event) = mutations.try_recv() {
@@ -845,6 +888,7 @@ fn apply_effects(
     app: &mut AppState,
     registry: Option<&RegistryHandle>,
     git: &GitHandle,
+    forge: &ForgeHandle,
     mutations: &mut WorktreeMutationHandle,
     store: &mut RuntimeStore,
     effects: Vec<Effect>,
@@ -996,6 +1040,18 @@ fn apply_effects(
                     let mut context = codex_tui::git::GitContext::pending(thread_id, cwd);
                     context.error = Some(error.to_string());
                     reduce(app, Action::GitContextLoaded(context));
+                }
+            }
+            Effect::ProbeForge { thread_id, cwd } => {
+                if let Err(error) = forge.probe(thread_id.clone(), cwd.clone()) {
+                    reduce(
+                        app,
+                        Action::ForgeObservationLoaded(forge::ForgeObservation::unavailable(
+                            thread_id,
+                            cwd,
+                            error.to_string(),
+                        )),
+                    );
                 }
             }
             Effect::LoadGitReview { thread_id, cwd } => {
