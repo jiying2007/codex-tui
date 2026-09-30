@@ -101,6 +101,10 @@ def main() -> int:
             stage / "INSTALL-UPGRADE.md",
         )
         copy_file(notices, stage / "THIRD_PARTY_NOTICES.txt")
+        copy_file(
+            root / "release/v1.0-criteria.json",
+            stage / "V1-STABLE-CRITERIA.json",
+        )
 
         for license_name in ("LICENSE", "LICENSE.txt", "LICENSE.md"):
             license_path = root / license_name
