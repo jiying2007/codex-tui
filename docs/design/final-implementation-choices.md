@@ -167,7 +167,7 @@ Version mapping:
 - v0.3.x: M3 — Git + Review
 - v0.4.x: M4 — WorkCard + Board/List + Saved Views + Scratch + relationships; migrate LocalStore to SQLite
 - v0.5.x: M5 — safe managed worktrees
-- v0.6.x: M6 — GitLab Self-Managed forge integration
+- v0.6.x: M6 — normalized forge integration: GitLab Self-Managed + GitHub.com
 - v0.7.x: M7 — scale/polish/headless stabilization
 - v1.0.0: stable product after compatibility/performance hardening
 
@@ -248,6 +248,31 @@ Support policy:
 - also retain fixtures for one older compatible version and current GitLab docs/schema shape where practical;
 - upgrade compatibility is tested by provider contract, not by scattered version checks.
 
+## 7.1 GitHub provider routing
+
+Decision:
+
+M6c adds GitHub.com behind the same normalized `ForgeProvider` contract rather than creating GitHub-specific planning/review state.
+
+Routing baseline:
+
+- exact `github.com` -> `GitHubProvider`;
+- other hosts remain GitLab-first;
+- GitHub Enterprise Server automatic detection is deferred until an explicit retained requirement exists.
+
+Transport:
+
+- `gh api --hostname` owns GitHub REST/GraphQL transport and authentication;
+- normal GitHub refresh is bounded to four subprocesses: repository, Issues, Pull Requests, Actions runs;
+- Review loads reviews + bounded reviewThreads on demand;
+- provider capabilities degrade independently.
+
+Reason for narrow routing:
+
+Internal GitLab is the primary team forge. Automatically probing every non-`github.com` host to discover whether it is GitLab or GHES would add latency and subprocess cost to the existing GitLab path. GHES can later be enabled by explicit provider configuration or another zero-extra-probe authority.
+
+GitHub write mutations are not part of M6c.
+
 ## 8. Terminal Drawer timing
 
 Decision:
@@ -314,5 +339,6 @@ Performance gates become CI/regression gates only after a stable benchmark harne
 - SQLite: v0.4.0 / M4.
 - Native GitLab transport: only after measured glab trigger.
 - GitLab compatibility: runtime capability probing, internal version retained as fixture.
+- GitHub provider: exact github.com routing through authenticated gh; GHES auto-detection deferred.
 - Terminal Drawer: v0.7.x / after M6.
 - Performance: p95 50 ms interaction, p99 100 ms, explicit render/startup/search budgets.

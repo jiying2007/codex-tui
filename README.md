@@ -127,7 +127,8 @@ Requirements:
 
 - Rust stable (MSRV 1.88)
 - a working `codex` executable on `PATH` for live registry mode
-- optional `glab` authenticated to the repository's GitLab host for M6 GitLab integration
+- optional `glab` authenticated to the repository's GitLab host for GitLab integration
+- optional `gh` authenticated to `github.com` for the M6c GitHub read-only provider
 
 Commands:
 
@@ -150,6 +151,8 @@ M6a adds an asynchronous read-only GitLab projection. A normal forge refresh sta
 
 M6b adds explicit GitLab merge-request mutations from Review / Workspace context actions (`.`): create MR, comment, approve, and merge. Every write is plan-first and requires explicit confirmation. Approve/merge revalidate the exact MR HEAD SHA immediately before execution; merge never requests force/policy bypass. Comment bodies remain memory-only and are not stored in SQLite. Uncertain external outcomes remain `OutcomeUnknown` and are never blindly retried.
 
+M6c completes the normalized forge layer with a GitHub.com read-only provider. Exact `github.com` remotes route through authenticated `gh`; other hosts remain GitLab-first so internal GitLab refreshes pay no provider-detection probe. A normal GitHub refresh uses four `gh api` calls (repository, Issues, open Pull Requests, Actions runs), while reviews and bounded GraphQL review threads load only in Review. GitHub capabilities degrade independently and no GitHub write path is introduced.
+
 ## Status
 
 - M0 local control-plane skeleton: implemented and merged.
@@ -160,7 +163,8 @@ M6b adds explicit GitLab merge-request mutations from Review / Workspace context
 - M5 safe managed worktrees: implemented in the v0.5.x line.
 - M6a GitLab Self-Managed read-only forge projection: implemented in the v0.6.x line.
 - M6b safe explicit GitLab MR mutations: implemented in the v0.6.x line.
-- M6c GitHub provider: remaining M6 work.
+- M6c GitHub.com read-only provider: implemented in the v0.6.x line.
+- M6 forge integration: complete; M7 scale/polish is next.
 
 Architecture and product research are archived under `docs/research/`.
 Implementation design lives under `docs/design/`.
@@ -183,3 +187,4 @@ See:
 - `docs/implementation/m5-safe-managed-worktrees.md`
 - `docs/implementation/m6-gitlab-readonly-forge.md`
 - `docs/implementation/m6b-safe-gitlab-mutations.md`
+- `docs/implementation/m6c-github-provider.md`

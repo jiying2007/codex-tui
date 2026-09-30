@@ -376,14 +376,19 @@ fn forge_review_label(app: &AppState, thread_id: &str) -> String {
     } else {
         " · approvals n/a".into()
     };
+    let changes_requested = if review.changes_requested_by_count > 0 {
+        format!(" · changes requested {}", review.changes_requested_by_count)
+    } else {
+        String::new()
+    };
     let discussions = if review.discussions_available {
         format!(" · unresolved {}", review.unresolved_discussions)
     } else {
         " · discussions n/a".into()
     };
     format!(
-        " · MR !{}{}{}",
-        review.change_request_iid, approvals, discussions
+        " · CR {}{}{}{}",
+        review.change_request_iid, approvals, changes_requested, discussions
     )
 }
 
@@ -425,14 +430,14 @@ fn forge_context_lines(app: &AppState, thread_id: &crate::domain::ThreadId) -> V
     if let Some(branch) = branch {
         if let Some(change) = observation.change_request_for_branch(branch) {
             lines.push(Line::from(format!(
-                "MR: !{} · {}{} · {}",
+                "CR: {} · {}{} · {}",
                 change.iid,
                 if change.draft { "draft · " } else { "" },
                 change.state,
                 truncate(&change.title, 58)
             )));
         } else {
-            lines.push(Line::from(format!("MR: none for branch {branch}")));
+            lines.push(Line::from(format!("CR: none for branch {branch}")));
         }
         if let Some(pipeline) = observation.pipeline_for_branch(branch) {
             lines.push(Line::from(format!(
@@ -443,7 +448,7 @@ fn forge_context_lines(app: &AppState, thread_id: &crate::domain::ThreadId) -> V
             lines.push(Line::from("Pipeline: none for current branch"));
         }
     } else {
-        lines.push(Line::from("MR/Pipeline: current branch unavailable"));
+        lines.push(Line::from("CR/Pipeline: current branch unavailable"));
     }
 
     if let Some(notice) = &app.mutation_notice {

@@ -5,6 +5,7 @@ pub mod codex_protocol;
 pub mod conversation;
 pub mod domain;
 pub mod forge;
+pub mod forge_github;
 pub mod forge_mutation;
 pub mod git;
 pub mod goal;

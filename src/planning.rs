@@ -514,7 +514,9 @@ pub fn reconcile_thread_card_with_goal_and_forge(
     }
     if forge
         .and_then(|observation| observation.review.as_ref())
-        .is_some_and(|review| review.unresolved_discussions > 0)
+        .is_some_and(|review| {
+            review.unresolved_discussions > 0 || review.changes_requested_by_count > 0
+        })
     {
         attention.insert(PlanningAttention::ChangeRequested);
     }
@@ -591,13 +593,7 @@ pub fn reconcile_thread_card_with_goal_and_forge(
         if let (Some(identity), Some(change_request)) = (identity, change_request) {
             let source = SourceRef {
                 kind: SourceKind::ChangeRequest,
-                value: format!(
-                    "{}://{}/projects/{}/merge-requests/{}",
-                    identity.provider.label(),
-                    identity.host,
-                    identity.project_id,
-                    change_request.iid
-                ),
+                value: identity.change_request_source_ref(change_request.iid),
             };
             if !links.iter().any(|link| link.source == source) {
                 links.push(WorkCardLink {
@@ -631,13 +627,7 @@ pub fn forge_issue_source_ref(
     let identity = observation.identity.as_ref()?;
     Some(SourceRef {
         kind: SourceKind::ForgeWorkItem,
-        value: format!(
-            "{}://{}/projects/{}/issues/{}",
-            identity.provider.label(),
-            identity.host,
-            identity.project_id,
-            issue.iid
-        ),
+        value: identity.issue_source_ref(issue.iid),
     })
 }
 
@@ -665,16 +655,16 @@ pub fn reconcile_forge_issue_card(
             "completion explicitly acknowledged locally".into(),
         )
     } else if issue.state.eq_ignore_ascii_case("closed") {
-        (WorkflowStage::Done, "GitLab issue is closed".into())
+        (WorkflowStage::Done, "forge issue is closed".into())
     } else if record.overlay.manual_ready {
         (
             WorkflowStage::Ready,
-            "open GitLab issue selected locally as ready".into(),
+            "open forge issue selected locally as ready".into(),
         )
     } else {
         (
             WorkflowStage::Inbox,
-            "open GitLab issue projected into personal planning".into(),
+            "open forge issue projected into personal planning".into(),
         )
     };
 
@@ -1224,6 +1214,7 @@ mod tests {
             approvals_required: Some(2),
             approvals_left: Some(1),
             approved_by_count: 1,
+            changes_requested_by_count: 0,
             discussions_total: 2,
             unresolved_discussions: 1,
             approvals_available: true,

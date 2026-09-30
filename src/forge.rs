@@ -1,4 +1,5 @@
 use crate::domain::ThreadId;
+use crate::forge_github::{GitHubProvider, probe_github_with_remote};
 use anyhow::{Context, Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -43,6 +44,34 @@ pub struct ForgeIdentity {
     pub path_with_namespace: String,
     pub web_url: String,
     pub default_branch: Option<String>,
+}
+
+impl ForgeIdentity {
+    pub fn issue_source_ref(&self, iid: u64) -> String {
+        match self.provider {
+            ForgeProviderKind::GitLab => format!(
+                "gitlab://{}/projects/{}/issues/{iid}",
+                self.host, self.project_id
+            ),
+            ForgeProviderKind::GitHub => format!(
+                "github://{}/repositories/{}/issues/{iid}",
+                self.host, self.project_id
+            ),
+        }
+    }
+
+    pub fn change_request_source_ref(&self, iid: u64) -> String {
+        match self.provider {
+            ForgeProviderKind::GitLab => format!(
+                "gitlab://{}/projects/{}/merge-requests/{iid}",
+                self.host, self.project_id
+            ),
+            ForgeProviderKind::GitHub => format!(
+                "github://{}/repositories/{}/pull-requests/{iid}",
+                self.host, self.project_id
+            ),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -152,6 +181,7 @@ pub struct ForgeReviewSummary {
     pub approvals_required: Option<u64>,
     pub approvals_left: Option<u64>,
     pub approved_by_count: usize,
+    pub changes_requested_by_count: usize,
     pub discussions_total: usize,
     pub unresolved_discussions: usize,
     pub approvals_available: bool,
@@ -251,7 +281,8 @@ pub struct RemoteIdentity {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ForgeDoctorSnapshot {
-    pub glab_version: Option<String>,
+    pub client_name: Option<String>,
+    pub client_version: Option<String>,
     pub authenticated: Option<bool>,
     pub server_version: Option<String>,
     pub remote: Option<RemoteIdentity>,
@@ -259,31 +290,75 @@ pub struct ForgeDoctorSnapshot {
     pub boards: Vec<IssueBoardSummary>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ForgeReviewTarget {
+    pub thread_id: ThreadId,
+    pub cwd: String,
+    pub provider: ForgeProviderKind,
+    pub host: String,
+    pub project_id: String,
+    pub project_path: String,
+    pub change_request_iid: u64,
+}
+
 pub type ForgeFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 pub trait ForgeProvider: Send + Sync {
-    fn kind(&self) -> ForgeProviderKind;
-
     fn probe<'a>(&'a self, thread_id: ThreadId, cwd: String) -> ForgeFuture<'a, ForgeObservation>;
+
+    fn probe_review<'a>(&'a self, target: ForgeReviewTarget)
+    -> ForgeFuture<'a, ForgeReviewSummary>;
+}
+
+pub fn provider_kind_for_host(host: &str) -> ForgeProviderKind {
+    if host.eq_ignore_ascii_case("github.com") {
+        ForgeProviderKind::GitHub
+    } else {
+        ForgeProviderKind::GitLab
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RoutingForgeProvider;
+
+impl ForgeProvider for RoutingForgeProvider {
+    fn probe<'a>(&'a self, thread_id: ThreadId, cwd: String) -> ForgeFuture<'a, ForgeObservation> {
+        Box::pin(async move {
+            let remote = match resolve_git_remote(Path::new(&cwd)).await {
+                Ok(remote) => remote,
+                Err(error) => {
+                    return ForgeObservation::unavailable(thread_id, cwd, error.to_string());
+                }
+            };
+            let result = match provider_kind_for_host(&remote.host) {
+                ForgeProviderKind::GitHub => {
+                    probe_github_with_remote(thread_id.clone(), cwd.clone(), remote).await
+                }
+                ForgeProviderKind::GitLab => {
+                    probe_gitlab_with_remote(thread_id.clone(), cwd.clone(), remote).await
+                }
+            };
+            result.unwrap_or_else(|error| {
+                ForgeObservation::unavailable(thread_id, cwd, error.to_string())
+            })
+        })
+    }
 
     fn probe_review<'a>(
         &'a self,
-        thread_id: ThreadId,
-        cwd: String,
-        host: String,
-        project_id: String,
-        change_request_iid: u64,
-    ) -> ForgeFuture<'a, ForgeReviewSummary>;
+        target: ForgeReviewTarget,
+    ) -> ForgeFuture<'a, ForgeReviewSummary> {
+        match target.provider {
+            ForgeProviderKind::GitHub => GitHubProvider.probe_review(target),
+            ForgeProviderKind::GitLab => GitLabProvider.probe_review(target),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct GitLabProvider;
 
 impl ForgeProvider for GitLabProvider {
-    fn kind(&self) -> ForgeProviderKind {
-        ForgeProviderKind::GitLab
-    }
-
     fn probe<'a>(&'a self, thread_id: ThreadId, cwd: String) -> ForgeFuture<'a, ForgeObservation> {
         Box::pin(async move {
             match probe_gitlab(thread_id.clone(), cwd.clone()).await {
@@ -295,35 +370,22 @@ impl ForgeProvider for GitLabProvider {
 
     fn probe_review<'a>(
         &'a self,
-        thread_id: ThreadId,
-        cwd: String,
-        host: String,
-        project_id: String,
-        change_request_iid: u64,
+        target: ForgeReviewTarget,
     ) -> ForgeFuture<'a, ForgeReviewSummary> {
         Box::pin(probe_change_request_review(
-            thread_id,
-            cwd,
-            host,
-            project_id,
-            change_request_iid,
+            target.thread_id,
+            target.cwd,
+            target.host,
+            target.project_id,
+            target.change_request_iid,
         ))
     }
 }
 
 #[derive(Clone, Debug)]
 pub enum ForgeCommand {
-    Probe {
-        thread_id: ThreadId,
-        cwd: String,
-    },
-    ProbeReview {
-        thread_id: ThreadId,
-        cwd: String,
-        host: String,
-        project_id: String,
-        change_request_iid: u64,
-    },
+    Probe { thread_id: ThreadId, cwd: String },
+    ProbeReview(ForgeReviewTarget),
 }
 
 #[derive(Clone, Debug)]
@@ -340,7 +402,7 @@ pub struct ForgeHandle {
 
 impl ForgeHandle {
     pub fn start() -> Self {
-        Self::start_with_provider(Arc::new(GitLabProvider))
+        Self::start_with_provider(Arc::new(RoutingForgeProvider))
     }
 
     pub fn start_with_provider(provider: Arc<dyn ForgeProvider>) -> Self {
@@ -360,22 +422,9 @@ impl ForgeHandle {
             .map_err(|_| anyhow!("Forge actor is not available"))
     }
 
-    pub fn probe_review(
-        &self,
-        thread_id: ThreadId,
-        cwd: String,
-        host: String,
-        project_id: String,
-        change_request_iid: u64,
-    ) -> Result<()> {
+    pub fn probe_review(&self, target: ForgeReviewTarget) -> Result<()> {
         self.command_tx
-            .send(ForgeCommand::ProbeReview {
-                thread_id,
-                cwd,
-                host,
-                project_id,
-                change_request_iid,
-            })
+            .send(ForgeCommand::ProbeReview(target))
             .map_err(|_| anyhow!("Forge actor is not available"))
     }
 
@@ -401,16 +450,8 @@ async fn run_actor(
                 let observation = provider.probe(thread_id, cwd).await;
                 let _ = event_tx.send(ForgeEvent::Observation(Box::new(observation)));
             }
-            ForgeCommand::ProbeReview {
-                thread_id,
-                cwd,
-                host,
-                project_id,
-                change_request_iid,
-            } => {
-                let review = provider
-                    .probe_review(thread_id, cwd, host, project_id, change_request_iid)
-                    .await;
+            ForgeCommand::ProbeReview(target) => {
+                let review = provider.probe_review(target).await;
                 let _ = event_tx.send(ForgeEvent::Review(review));
             }
         }
@@ -492,11 +533,19 @@ struct GitLabDiscussionNote {
 }
 
 pub async fn probe_thread(thread_id: ThreadId, cwd: String) -> ForgeObservation {
-    GitLabProvider.probe(thread_id, cwd).await
+    RoutingForgeProvider.probe(thread_id, cwd).await
 }
 
 pub async fn probe_gitlab(thread_id: ThreadId, cwd: String) -> Result<ForgeObservation> {
     let remote = resolve_git_remote(Path::new(&cwd)).await?;
+    probe_gitlab_with_remote(thread_id, cwd, remote).await
+}
+
+pub(crate) async fn probe_gitlab_with_remote(
+    thread_id: ThreadId,
+    cwd: String,
+    remote: RemoteIdentity,
+) -> Result<ForgeObservation> {
     let project_path = percent_encode_project_path(&remote.path_with_namespace);
 
     let project: GitLabProject =
@@ -677,6 +726,7 @@ pub async fn probe_change_request_review(
         approvals_required,
         approvals_left,
         approved_by_count,
+        changes_requested_by_count: 0,
         discussions_total,
         unresolved_discussions,
         approvals_available,
@@ -687,32 +737,66 @@ pub async fn probe_change_request_review(
 }
 
 pub async fn doctor(cwd: String) -> ForgeDoctorSnapshot {
-    let glab_version = run_command("glab", &["version"], Some(Path::new(&cwd)))
-        .await
-        .ok()
-        .and_then(|output| {
-            output
-                .success
-                .then(|| first_nonempty_line(&output.stdout).map(ToOwned::to_owned))
-                .flatten()
-        });
-
     let remote = resolve_git_remote(Path::new(&cwd)).await.ok();
-    let (authenticated, server_version) = if let Some(remote) = &remote {
-        let auth_args = ["auth", "status", "--hostname", remote.host.as_str()];
-        let auth = run_command("glab", &auth_args, Some(Path::new(&cwd)));
-        let version = glab_api_json::<GitLabVersion>(&cwd, &remote.host, "/version");
-        let (auth, version) = tokio::join!(auth, version);
-        (
-            auth.ok().map(|output| output.success),
-            version.ok().map(|version| version.version),
-        )
-    } else {
-        (None, None)
+    let provider = remote
+        .as_ref()
+        .map(|remote| provider_kind_for_host(&remote.host));
+
+    let client_name = provider.map(|provider| match provider {
+        ForgeProviderKind::GitLab => "glab".to_string(),
+        ForgeProviderKind::GitHub => "gh".to_string(),
+    });
+    let client_version = match provider {
+        Some(ForgeProviderKind::GitLab) => run_command("glab", &["version"], Some(Path::new(&cwd)))
+            .await
+            .ok()
+            .and_then(|output| {
+                output
+                    .success
+                    .then(|| first_nonempty_line(&output.stdout).map(ToOwned::to_owned))
+                    .flatten()
+            }),
+        Some(ForgeProviderKind::GitHub) => run_command("gh", &["--version"], Some(Path::new(&cwd)))
+            .await
+            .ok()
+            .and_then(|output| {
+                output
+                    .success
+                    .then(|| first_nonempty_line(&output.stdout).map(ToOwned::to_owned))
+                    .flatten()
+            }),
+        None => None,
     };
 
+    let (authenticated, server_version) =
+        if let (Some(remote), Some(provider)) = (&remote, provider) {
+            match provider {
+                ForgeProviderKind::GitLab => {
+                    let auth_args = ["auth", "status", "--hostname", remote.host.as_str()];
+                    let auth = run_command("glab", &auth_args, Some(Path::new(&cwd)));
+                    let version = glab_api_json::<GitLabVersion>(&cwd, &remote.host, "/version");
+                    let (auth, version) = tokio::join!(auth, version);
+                    (
+                        auth.ok().map(|output| output.success),
+                        version.ok().map(|version| version.version),
+                    )
+                }
+                ForgeProviderKind::GitHub => {
+                    let auth_args = ["auth", "status", "--hostname", remote.host.as_str()];
+                    let auth = run_command("gh", &auth_args, Some(Path::new(&cwd))).await;
+                    (auth.ok().map(|output| output.success), None)
+                }
+            }
+        } else {
+            (None, None)
+        };
+
     let mut observation = probe_thread(ThreadId::new("doctor-forge"), cwd.clone()).await;
-    let boards_result = if observation.identity.is_some() {
+    let boards_result = if observation
+        .identity
+        .as_ref()
+        .is_some_and(|identity| identity.provider == ForgeProviderKind::GitLab)
+    {
         Some(probe_issue_boards(&cwd).await)
     } else {
         None
@@ -734,7 +818,8 @@ pub async fn doctor(cwd: String) -> ForgeDoctorSnapshot {
     };
 
     ForgeDoctorSnapshot {
-        glab_version,
+        client_name,
+        client_version,
         authenticated,
         server_version,
         remote,
@@ -743,7 +828,7 @@ pub async fn doctor(cwd: String) -> ForgeDoctorSnapshot {
     }
 }
 
-async fn resolve_git_remote(cwd: &Path) -> Result<RemoteIdentity> {
+pub(crate) async fn resolve_git_remote(cwd: &Path) -> Result<RemoteIdentity> {
     let remotes_output = run_command(
         "git",
         &["-C", cwd.to_string_lossy().as_ref(), "remote", "-v"],
@@ -917,7 +1002,7 @@ fn normalize_remote_parts(host: &str, path: &str) -> Option<(String, String)> {
     Some((host.to_ascii_lowercase(), path.to_string()))
 }
 
-fn default_capabilities() -> BTreeMap<ForgeCapability, CapabilityState> {
+pub(crate) fn default_capabilities() -> BTreeMap<ForgeCapability, CapabilityState> {
     [
         (ForgeCapability::Issues, CapabilityState::Unknown),
         (ForgeCapability::IssueBoards, CapabilityState::Unknown),
@@ -1026,13 +1111,17 @@ const fn hex(value: u8) -> char {
 }
 
 #[derive(Debug)]
-struct CommandOutput {
-    success: bool,
-    stdout: String,
-    stderr: String,
+pub(crate) struct CommandOutput {
+    pub(crate) success: bool,
+    pub(crate) stdout: String,
+    pub(crate) stderr: String,
 }
 
-async fn run_command(program: &str, args: &[&str], cwd: Option<&Path>) -> Result<CommandOutput> {
+pub(crate) async fn run_command(
+    program: &str,
+    args: &[&str],
+    cwd: Option<&Path>,
+) -> Result<CommandOutput> {
     let mut command = Command::new(program);
     command
         .args(args)
@@ -1086,7 +1175,7 @@ where
     Ok(output)
 }
 
-fn trim_error(stderr: &str, fallback: &str) -> String {
+pub(crate) fn trim_error(stderr: &str, fallback: &str) -> String {
     let value = stderr.trim();
     if value.is_empty() {
         fallback.to_string()
@@ -1095,7 +1184,7 @@ fn trim_error(stderr: &str, fallback: &str) -> String {
     }
 }
 
-fn first_nonempty_line(value: &str) -> Option<&str> {
+pub(crate) fn first_nonempty_line(value: &str) -> Option<&str> {
     value.lines().map(str::trim).find(|line| !line.is_empty())
 }
 
@@ -1111,6 +1200,63 @@ fn now_unix_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn provider_routing_keeps_github_com_explicit_and_other_hosts_gitlab_first() {
+        assert_eq!(
+            provider_kind_for_host("github.com"),
+            ForgeProviderKind::GitHub
+        );
+        assert_eq!(
+            provider_kind_for_host("GITHUB.COM"),
+            ForgeProviderKind::GitHub
+        );
+        assert_eq!(
+            provider_kind_for_host("gitlab.internal.example"),
+            ForgeProviderKind::GitLab
+        );
+        assert_eq!(
+            provider_kind_for_host("github.enterprise.internal"),
+            ForgeProviderKind::GitLab
+        );
+    }
+
+    #[test]
+    fn external_refs_are_provider_specific_behind_forge_identity() {
+        let gitlab = ForgeIdentity {
+            provider: ForgeProviderKind::GitLab,
+            host: "gitlab.example.com".into(),
+            project_id: "42".into(),
+            path_with_namespace: "team/repo".into(),
+            web_url: "https://gitlab.example.com/team/repo".into(),
+            default_branch: Some("main".into()),
+        };
+        assert_eq!(
+            gitlab.issue_source_ref(12),
+            "gitlab://gitlab.example.com/projects/42/issues/12"
+        );
+        assert_eq!(
+            gitlab.change_request_source_ref(7),
+            "gitlab://gitlab.example.com/projects/42/merge-requests/7"
+        );
+
+        let github = ForgeIdentity {
+            provider: ForgeProviderKind::GitHub,
+            host: "github.com".into(),
+            project_id: "99".into(),
+            path_with_namespace: "owner/repo".into(),
+            web_url: "https://github.com/owner/repo".into(),
+            default_branch: Some("main".into()),
+        };
+        assert_eq!(
+            github.issue_source_ref(12),
+            "github://github.com/repositories/99/issues/12"
+        );
+        assert_eq!(
+            github.change_request_source_ref(7),
+            "github://github.com/repositories/99/pull-requests/7"
+        );
+    }
 
     #[test]
     fn parses_https_ssh_and_scp_remote_urls() {
