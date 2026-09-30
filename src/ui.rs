@@ -218,16 +218,10 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState) {
                     app.backend_status.source,
                     truncate_display(error, 80)
                 ))
+            } else if !app.backend_status.connected {
+                Line::from(format!("{} · offline", app.backend_status.source))
             } else {
-                Line::from(format!(
-                    "{} · {}",
-                    app.backend_status.source,
-                    if app.backend_status.connected {
-                        "connected"
-                    } else {
-                        "offline"
-                    }
-                ))
+                Line::from(registry_scope_status(app, area.width))
             }
         }
     };
@@ -248,6 +242,54 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState) {
         status_line,
     ]);
     frame.render_widget(footer, chunks[1]);
+}
+
+fn backend_platform_label(app: &AppState) -> &str {
+    app.backend_status
+        .platform
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("<unknown>")
+}
+
+fn backend_home_label(app: &AppState) -> &str {
+    app.backend_status
+        .codex_home
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("<unknown>")
+}
+
+fn registry_title(app: &AppState, width: u16) -> String {
+    let raw = format!(
+        "Mission Control · {} · {}",
+        sanitize_inline(&app.backend_status.source),
+        sanitize_inline(backend_platform_label(app))
+    );
+    let budget = usize::from(width.saturating_sub(4)).max(1);
+    format!(" {} ", truncate_display(&raw, budget))
+}
+
+fn registry_scope_status(app: &AppState, width: u16) -> String {
+    let (locality, terminal) = app
+        .selected_thread()
+        .map(|thread| {
+            let locality = classify_cwd(&thread.metadata.cwd);
+            (
+                locality.label(),
+                if locality.terminal_usable() {
+                    "ready"
+                } else {
+                    "blocked"
+                },
+            )
+        })
+        .unwrap_or(("none", "blocked"));
+    let raw = format!(
+        "Codex home: {} · selected cwd: {locality} · terminal {terminal}",
+        sanitize_inline(backend_home_label(app))
+    );
+    truncate_display(&raw, usize::from(width.saturating_sub(2)).max(1))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -435,9 +477,7 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
     }
 
     (
-        Paragraph::new(lines).block(
-            Block::bordered().title(format!(" Mission Control · {} ", app.backend_status.source)),
-        ),
+        Paragraph::new(lines).block(Block::bordered().title(registry_title(app, area.width))),
         viewport,
     )
 }
@@ -445,6 +485,16 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
 fn detail_panel(app: &AppState) -> Paragraph<'static> {
     let mut lines = if let Some(thread) = app.selected_thread() {
         vec![
+            Line::from(format!(
+                "Backend: {} · {}",
+                sanitize_inline(&app.backend_status.source),
+                sanitize_inline(backend_platform_label(app))
+            )),
+            Line::from(format!(
+                "Codex home: {}",
+                sanitize_inline(backend_home_label(app))
+            )),
+            Line::from(""),
             Line::from(format!("Thread: {}", thread.id)),
             Line::from(format!("Workspace: {}", sanitize_inline(&thread.workspace))),
             Line::from(format!("Runtime: {}", thread.runtime.label())),
@@ -1968,6 +2018,40 @@ mod tests {
             snapshot.contains("t terminal"),
             "Mission Control must expose the Terminal Drawer shortcut"
         );
+    }
+
+    #[test]
+    fn registry_surfaces_backend_provenance_and_terminal_readiness() {
+        let backend = TestBackend::new(160, 16);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+        app.backend_status.source = "codex-app-server".into();
+        app.backend_status.connected = true;
+        app.backend_status.platform = Some("linux/linux".into());
+        app.backend_status.codex_home = Some("/home/jun/.codex".into());
+        app.threads[0].metadata.cwd.clear();
+
+        terminal.draw(|frame| render(frame, &app)).expect("draw");
+        let buffer = terminal.backend().buffer();
+        let mut snapshot = String::new();
+        for y in 0..buffer.area.height {
+            for x in 0..buffer.area.width {
+                snapshot.push_str(buffer[(x, y)].symbol());
+            }
+            snapshot.push('\n');
+        }
+
+        assert!(snapshot.contains("Mission Control · codex-app-server · linux/linux"));
+        assert!(snapshot.contains("Backend: codex-app-server · linux/linux"));
+        assert!(snapshot.contains("Codex home: /home/jun/.codex"));
+        assert!(snapshot.contains("selected cwd: empty · terminal blocked"));
+
+        app.threads[0].metadata.cwd = std::env::current_dir()
+            .expect("cwd")
+            .to_string_lossy()
+            .into_owned();
+        let status = registry_scope_status(&app, 160);
+        assert!(status.contains("selected cwd: local · terminal ready"));
     }
 
     #[test]
