@@ -138,6 +138,13 @@ cargo run -- doctor codex
 cargo run -- doctor git
 cargo run -- doctor forge
 cargo run -- doctor store
+cargo run -- doctor compat
+cargo run -- doctor compat --json
+cargo run -- headless threads
+cargo run -- headless threads --json
+cargo run -- headless work
+cargo run -- headless work --json
+cargo run -- headless threads --fixture-10k
 cargo run -- --fake
 ```
 
@@ -153,6 +160,8 @@ M6b adds explicit GitLab merge-request mutations from Review / Workspace context
 
 M6c completes the normalized forge layer with a GitHub.com read-only provider. Exact `github.com` remotes route through authenticated `gh`; other hosts remain GitLab-first so internal GitLab refreshes pay no provider-detection probe. A normal GitHub refresh uses four `gh api` calls (repository, Issues, open Pull Requests, Actions runs), while reviews and bounded GraphQL review threads load only in Review. GitHub capabilities degrade independently and no GitHub write path is introduced.
 
+M7a establishes a read-only automation and scale baseline. `headless threads` and `headless work` emit stable text or secret-safe JSON snapshots with explicit degraded exit codes. `doctor compat` reports local OS/architecture, SQLite, Codex, Git, `glab`, and `gh` compatibility without remote forge API probes. `--fixture-10k` provides deterministic scale data, while the Divan benchmark target measures resident 10k planning filters without turning noisy hosted-runner timings into release gates.
+
 ## Status
 
 - M0 local control-plane skeleton: implemented and merged.
@@ -164,7 +173,9 @@ M6c completes the normalized forge layer with a GitHub.com read-only provider. E
 - M6a GitLab Self-Managed read-only forge projection: implemented in the v0.6.x line.
 - M6b safe explicit GitLab MR mutations: implemented in the v0.6.x line.
 - M6c GitHub.com read-only provider: implemented in the v0.6.x line.
-- M6 forge integration: complete; M7 scale/polish is next.
+- M6 forge integration: complete.
+- M7a headless read-only CLI + scale baselines: implemented in the v0.7.x line.
+- M7b productivity (richer SavedView queries, safe batch-local actions, launch presets): next.
 
 Architecture and product research are archived under `docs/research/`.
 Implementation design lives under `docs/design/`.
@@ -188,3 +199,4 @@ See:
 - `docs/implementation/m6-gitlab-readonly-forge.md`
 - `docs/implementation/m6b-safe-gitlab-mutations.md`
 - `docs/implementation/m6c-github-provider.md`
+- `docs/implementation/m7a-headless-scale.md`
