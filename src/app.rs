@@ -14,7 +14,8 @@ use crate::operation::{
 use crate::planning::{
     PlanningSnapshot, ReconcileInput, SavedView, SavedViewLayout, SourceKind, SourceRef,
     WorkCardProjection, WorkflowStage, apply_saved_view, builtin_saved_views,
-    reconcile_scratch_card_with_local, reconcile_thread_card_with_goal_and_forge,
+    forge_issue_source_ref, reconcile_forge_issue_card, reconcile_scratch_card_with_local,
+    reconcile_thread_card_with_goal_and_forge,
 };
 use crate::store::LocalStateV1;
 use std::collections::{BTreeMap, BTreeSet};
@@ -2235,6 +2236,36 @@ fn rebuild_planning(state: &mut AppState, now_unix_ms: u64) {
             now_unix_ms,
         )
     }));
+
+    let mut forge_issues = BTreeMap::new();
+    for observation in state.forge_observations.values() {
+        if observation.observed_at_unix_ms == 0 || observation.identity.is_none() {
+            continue;
+        }
+        for issue in &observation.issues {
+            let Some(anchor) = forge_issue_source_ref(observation, issue) else {
+                continue;
+            };
+            let candidate = (observation.observed_at_unix_ms, observation, issue);
+            match forge_issues.get(&anchor) {
+                Some((observed_at, _, _)) if *observed_at >= observation.observed_at_unix_ms => {}
+                _ => {
+                    forge_issues.insert(anchor, candidate);
+                }
+            }
+        }
+    }
+
+    for (anchor, (_, observation, issue)) in forge_issues {
+        if let Some(projection) = reconcile_forge_issue_card(
+            observation,
+            issue,
+            local_by_anchor.get(&anchor).copied(),
+            now_unix_ms,
+        ) {
+            projections.push(projection);
+        }
+    }
 
     for projection in &mut projections {
         if let Some(note) = state
