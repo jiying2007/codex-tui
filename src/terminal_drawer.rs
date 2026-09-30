@@ -149,6 +149,15 @@ impl TerminalDrawerRuntime {
                 }
                 PtyEvent::Output(bytes) => {
                     self.parser.process(&bytes);
+                    let (cursor_row, cursor_col) = self.parser.screen().cursor_position();
+                    for response in vt_query_responses(&bytes, cursor_row, cursor_col) {
+                        if let Err(error) = handle.send(PtyCommand::Input(response)) {
+                            self.state = TerminalProcessState::Error(format!(
+                                "terminal query response failed: {error:#}"
+                            ));
+                            break;
+                        }
+                    }
                 }
                 PtyEvent::ReaderClosed => {}
                 PtyEvent::Exited { success, code } => {
@@ -186,6 +195,36 @@ impl TerminalDrawerRuntime {
     }
 }
 
+pub fn vt_query_responses(
+    bytes: &[u8],
+    cursor_row: u16,
+    cursor_col: u16,
+) -> Vec<Vec<u8>> {
+    let mut responses = Vec::new();
+    let mut offset = 0;
+    while offset < bytes.len() {
+        if bytes[offset..].starts_with(b"\x1b[5n") {
+            responses.push(b"\x1b[0n".to_vec());
+            offset += 4;
+            continue;
+        }
+        if bytes[offset..].starts_with(b"\x1b[6n") {
+            responses.push(
+                format!(
+                    "\x1b[{};{}R",
+                    cursor_row.saturating_add(1),
+                    cursor_col.saturating_add(1)
+                )
+                .into_bytes(),
+            );
+            offset += 4;
+            continue;
+        }
+        offset += 1;
+    }
+    responses
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -198,6 +237,16 @@ mod tests {
         assert!(snapshot.rows.iter().any(|row| row.contains("hello")));
         assert!(snapshot.rows.iter().any(|row| row.contains("RED")));
         assert!(snapshot.rows.iter().all(|row| !row.contains("\x1b")));
+    }
+
+    #[test]
+    fn vt_query_responses_cover_status_and_cursor_reports() {
+        assert_eq!(vt_query_responses(b"\x1b[5n", 0, 0), vec![b"\x1b[0n".to_vec()]);
+        assert_eq!(
+            vt_query_responses(b"prefix\x1b[6nsuffix", 4, 9),
+            vec![b"\x1b[5;10R".to_vec()]
+        );
+        assert!(vt_query_responses(b"plain text", 0, 0).is_empty());
     }
 
     #[test]
