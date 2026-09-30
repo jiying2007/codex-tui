@@ -156,6 +156,23 @@ pub struct ForgeObservation {
 }
 
 impl ForgeObservation {
+    pub fn pending(thread_id: ThreadId, cwd: String) -> Self {
+        Self {
+            thread_id,
+            cwd,
+            remote_name: None,
+            remote_url: None,
+            identity: None,
+            capabilities: default_capabilities(),
+            issues: vec![],
+            change_requests: vec![],
+            pipelines: vec![],
+            observed_at_unix_ms: 0,
+            freshness: ForgeFreshness::Unavailable,
+            error: None,
+        }
+    }
+
     pub fn unavailable(thread_id: ThreadId, cwd: String, error: impl Into<String>) -> Self {
         Self {
             thread_id,
