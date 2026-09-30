@@ -61,42 +61,42 @@ on:
         required: false
         default: ""
       macos_compat_sha256:
-        description: Stable only - SHA-256 of retained macOS doctor compat JSON
+        description: Stable optional Tier 2 - SHA-256 of retained macOS doctor compat JSON
         type: string
         required: false
         default: ""
       macos_compat_observed_at:
-        description: Stable only - macOS compatibility observation timestamp
+        description: Stable optional Tier 2 - macOS compatibility observation timestamp
         type: string
         required: false
         default: ""
       macos_terminal:
-        description: Stable only - macOS terminal used for restoration smoke
+        description: Stable optional Tier 2 - macOS terminal used for restoration smoke
         type: string
         required: false
         default: ""
       macos_terminal_observed_at:
-        description: Stable only - macOS terminal smoke timestamp
+        description: Stable optional Tier 2 - macOS terminal smoke timestamp
         type: string
         required: false
         default: ""
       windows_compat_sha256:
-        description: Stable only - SHA-256 of retained Windows doctor compat JSON
+        description: Stable optional Tier 2 - SHA-256 of retained Windows doctor compat JSON
         type: string
         required: false
         default: ""
       windows_compat_observed_at:
-        description: Stable only - Windows compatibility observation timestamp
+        description: Stable optional Tier 2 - Windows compatibility observation timestamp
         type: string
         required: false
         default: ""
       windows_terminal:
-        description: Stable only - Windows terminal used for restoration smoke
+        description: Stable optional Tier 2 - Windows terminal used for restoration smoke
         type: string
         required: false
         default: ""
       windows_terminal_observed_at:
-        description: Stable only - Windows terminal smoke timestamp
+        description: Stable optional Tier 2 - Windows terminal smoke timestamp
         type: string
         required: false
         default: ""
