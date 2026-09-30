@@ -531,7 +531,7 @@ mod tests {
         assert!(cargo_toml.contains(&format!("rust-version = \"{RUST_MSRV}\"")));
 
         let ci = include_str!("../.github/workflows/ci.yml");
-        for runner in ["ubuntu-latest", "macos-latest", "windows-latest"] {
+        for runner in ["ubuntu-24.04", "macos-latest", "windows-latest"] {
             assert!(
                 ci.contains(runner),
                 "compat matrix drifted from CI: {runner}"
