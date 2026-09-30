@@ -431,8 +431,7 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
     } else {
         format!(" · filter: {}", app.filter)
     };
-    let summary =
-        if app.filter.is_empty() && !app.host_local_only && !app.repo_backed_only {
+    let summary = if app.filter.is_empty() && !app.host_local_only && !app.repo_backed_only {
         format!(
             "{scope}{} threads · {local_count} local · {foreign_count} foreign · {stale_count} stale · {} need attention · {range}",
             app.threads.len(),
