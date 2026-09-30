@@ -32,6 +32,16 @@ The long-running command is platform-specific only where required:
 
 Production and integration-test terminal sessions still come from `portable_pty::CommandBuilder::new_default_prog()`; codex-tui does not pick a shell executable for the Drawer. The deterministic one-shot program exists only inside the private PTY unit test.
 
+## Windows ConPTY terminal queries
+
+Windows ConPTY may emit terminal-device queries before the default shell becomes interactive. In retained CI this surfaced as `ESC[6n` (DSR cursor-position report request). The Drawer now responds as a terminal emulator rather than treating these bytes as display-only output:
+
+- `ESC[5n` -> `ESC[0n`;
+- `ESC[6n` -> `ESC[row;colR` using the current VT cursor position;
+- query recognition keeps a three-byte tail so an escape sequence split across PTY output chunks is still answered.
+
+The Windows PTY integration tests reuse this production response helper, so the CI path validates the same protocol behavior used by the Drawer.
+
 ## EOF
 
 Normal EOF/child exit is observed through the same reader/wait path as production:
