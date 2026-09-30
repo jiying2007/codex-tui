@@ -763,7 +763,10 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 let Some(context) = state.git_context(&thread.id) else {
                     continue;
                 };
-                if !context.is_repository || context.error.is_some() {
+                if !context.is_repository
+                    || context.error.is_some()
+                    || context.cwd != thread.metadata.cwd
+                {
                     continue;
                 }
                 let needs_probe = state
@@ -771,6 +774,10 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     .get(&thread.id.0)
                     .is_none_or(|observation| observation.cwd != thread.metadata.cwd);
                 if needs_probe {
+                    state.forge_observations.insert(
+                        thread.id.0.clone(),
+                        ForgeObservation::pending(thread.id.clone(), thread.metadata.cwd.clone()),
+                    );
                     effects.push(Effect::ProbeForge {
                         thread_id: thread.id.clone(),
                         cwd: thread.metadata.cwd.clone(),
