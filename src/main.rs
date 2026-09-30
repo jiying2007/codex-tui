@@ -1130,30 +1130,15 @@ fn apply_effects(
                     );
                 }
             }
-            Effect::ProbeForgeReview {
-                thread_id,
-                cwd,
-                provider,
-                host,
-                project_id,
-                project_path,
-                change_request_iid,
-            } => {
-                if let Err(error) = forge.probe_review(
-                    thread_id.clone(),
-                    cwd.clone(),
-                    provider,
-                    host,
-                    project_id,
-                    project_path,
-                    change_request_iid,
-                ) {
+            Effect::ProbeForgeReview(target) => {
+                let fallback = target.clone();
+                if let Err(error) = forge.probe_review(target) {
                     reduce(
                         app,
                         Action::ForgeReviewLoaded(forge::ForgeReviewSummary {
-                            thread_id,
-                            cwd,
-                            change_request_iid,
+                            thread_id: fallback.thread_id,
+                            cwd: fallback.cwd,
+                            change_request_iid: fallback.change_request_iid,
                             approvals_required: None,
                             approvals_left: None,
                             approved_by_count: 0,
