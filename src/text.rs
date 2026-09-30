@@ -38,7 +38,7 @@ pub fn truncate_display(value: &str, max_columns: usize) -> String {
 
     let budget = max_columns - ellipsis_width;
     let mut out = String::new();
-    let mut used = 0;
+    let mut used: usize = 0;
     for grapheme in UnicodeSegmentation::graphemes(value.as_str(), true) {
         let width = display_width(grapheme);
         if used.saturating_add(width) > budget {
