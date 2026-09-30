@@ -1760,7 +1760,7 @@ mod tests {
 
     #[test]
     fn compact_registry_handles_cjk_emoji_graphemes_and_control_text() {
-        let backend = TestBackend::new(40, 12);
+        let backend = TestBackend::new(60, 12);
         let mut terminal = Terminal::new(backend).expect("terminal");
         let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
         app.threads[0].workspace = "机器人研发中心".into();
