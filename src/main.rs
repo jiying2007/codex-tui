@@ -588,6 +588,18 @@ async fn doctor(scope: Option<&str>) -> Result<()> {
         if let Some(error) = &observation.error {
             println!("error: {error}");
         }
+    } else if scope == Some("terminal") {
+        let capabilities = codex_tui::pty::capabilities();
+        println!("terminal-backend: {}", capabilities.backend);
+        println!("terminal-platform: {}", capabilities.platform);
+        println!("default-program: {}", capabilities.default_program);
+        println!("resize: {}", capabilities.resize);
+        println!("input: {}", capabilities.input);
+        println!("event-queue-capacity: {}", capabilities.bounded_event_queue);
+        println!(
+            "default-scrollback-bytes: {}",
+            capabilities.default_scrollback_bytes
+        );
     } else if scope == Some("presets") {
         let cwd = std::env::current_dir()?;
         let context = git::probe_context(
@@ -637,7 +649,7 @@ async fn doctor(scope: Option<&str>) -> Result<()> {
         }
     } else {
         println!(
-            "hint: run `codex-tui doctor codex`, `doctor git`, `doctor forge`, `doctor store`, or `doctor presets`"
+            "hint: run `codex-tui doctor codex`, `doctor git`, `doctor forge`, `doctor store`, `doctor presets`, or `doctor terminal`"
         );
     }
     Ok(())

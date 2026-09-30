@@ -141,6 +141,7 @@ cargo run -- doctor store
 cargo run -- doctor compat
 cargo run -- doctor compat --json
 cargo run -- doctor presets
+cargo run -- doctor terminal
 cargo run -- headless threads
 cargo run -- headless threads --json
 cargo run -- headless work
@@ -181,7 +182,8 @@ M7b3 adds repository-shared `.codex-tui.toml` launch presets as a deliberately n
 - M7b1 richer SavedView query language: implemented in the v0.7.x line.
 - M7b2 safe transactional batch-local actions: implemented with frozen targets, explicit confirmation, and one SQLite transaction.
 - M7b3 repository-shared safe launch presets: implemented with argv-only config, explicit plan/confirmation, and no shell/PTY semantics.
-- M7c bounded cross-platform Terminal Drawer: next.
+- M7c1 bounded cross-platform PTY engine + terminal capability doctor: implemented under the v0.7.x line.
+- M7c2 Terminal Drawer UI/input/resize: next; M7c3 lifecycle E2E follows.
 
 Architecture and product research are archived under `docs/research/`.
 Implementation design lives under `docs/design/`.
@@ -209,3 +211,4 @@ See:
 - `docs/implementation/m7b1-saved-view-query.md`
 - `docs/implementation/m7b2-batch-local.md`
 - `docs/implementation/m7b3-launch-presets.md`
+- `docs/implementation/m7c1-pty-engine.md`
