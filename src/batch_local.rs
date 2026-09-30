@@ -173,7 +173,7 @@ mod tests {
             change_request_draft: false,
             stage: WorkflowStage::Inbox,
             stage_reason: "test".into(),
-            attention: Vec::<PlanningAttention>::new(),
+            attention: std::collections::BTreeSet::<PlanningAttention>::new(),
             links: vec![],
             overlay: WorkCardOverlay::default(),
             goal: None,
