@@ -2,6 +2,13 @@
 
 All notable codex-tui changes are recorded here.
 
+## [1.1.0] - Unreleased
+
+### Development
+
+- opened the 1.1 development line after the immutable v1.0.0 stable release;
+- new 1.1 changes are recorded here until the next stable publication.
+
 ## [1.0.0] - 2026-09-30
 
 ### Open source
