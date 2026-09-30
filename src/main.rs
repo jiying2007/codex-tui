@@ -381,6 +381,31 @@ impl RuntimeServices {
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
+
+    if args.first().is_some_and(|arg| arg == "headless") {
+        let code = codex_tui::headless::run(&args[1..]).await?;
+        if code != codex_tui::headless::EXIT_OK {
+            std::process::exit(code);
+        }
+        return Ok(());
+    }
+
+    if args.first().is_some_and(|arg| arg == "doctor")
+        && args.get(1).is_some_and(|arg| arg == "compat")
+    {
+        let flags = &args[2..];
+        if flags.iter().any(|arg| arg != "--json") {
+            eprintln!("usage: codex-tui doctor compat [--json]");
+            std::process::exit(codex_tui::headless::EXIT_USAGE);
+        }
+        let code =
+            codex_tui::headless::doctor_compat(flags.iter().any(|arg| arg == "--json")).await?;
+        if code != codex_tui::headless::EXIT_OK {
+            std::process::exit(code);
+        }
+        return Ok(());
+    }
+
     if args.first().is_some_and(|arg| arg == "doctor") {
         return doctor(args.get(1).map(String::as_str)).await;
     }
