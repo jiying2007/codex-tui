@@ -178,14 +178,16 @@ impl SqliteStore {
         let now = now_unix_ms();
 
         for target in &plan.targets {
-            let mut card = existing.get(&target.anchor).cloned().unwrap_or_else(|| {
-                WorkCardRecord {
-                    local_id: target.local_id.clone(),
-                    anchor: target.anchor.clone(),
-                    links: vec![],
-                    overlay: WorkCardOverlay::default(),
-                }
-            });
+            let mut card =
+                existing
+                    .get(&target.anchor)
+                    .cloned()
+                    .unwrap_or_else(|| WorkCardRecord {
+                        local_id: target.local_id.clone(),
+                        anchor: target.anchor.clone(),
+                        links: vec![],
+                        overlay: WorkCardOverlay::default(),
+                    });
             let mut persist_card = true;
 
             match &plan.action {
@@ -1631,7 +1633,9 @@ mod tests {
             }],
             planned_at_unix_ms: 100,
         };
-        store.apply_local_batch(&scratch_plan).expect("scratch batch");
+        store
+            .apply_local_batch(&scratch_plan)
+            .expect("scratch batch");
 
         let thread_plan = LocalBatchPlan {
             action: LocalBatchAction::AddTag("focus".into()),
