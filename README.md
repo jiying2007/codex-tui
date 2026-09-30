@@ -2,7 +2,7 @@
 
 A local-first terminal workbench for managing multiple Codex projects and conversations.
 
-**License:** Apache-2.0 · **Current package line:** v1.0.0 release candidate (stable not yet published) · **Tier 1:** Linux.
+**License:** Apache-2.0 · **Stable release:** v1.0.0 · **Current development line:** v1.1.0 · **Tier 1:** Linux.
 
 ## Product goal
 
@@ -121,7 +121,7 @@ Codex App Server ───── conversation/runtime authority
       Ratatui
 ```
 
-The first release should remain a single binary with no codex-tui-owned daemon.
+The v1 line remains a single binary with no codex-tui-owned daemon.
 
 ## Running the current implementation
 
@@ -149,7 +149,7 @@ cargo run -- headless threads --json
 cargo run -- headless work
 cargo run -- headless work --json
 cargo run -- headless threads --fixture-10k
-cargo run -- release verify --channel preview --tag v1.0.0-preview.1 --commit "$(git rev-parse HEAD)" --json
+cargo run -- release verify --channel preview --tag v1.1.0-preview.1 --commit "$(git rev-parse HEAD)" --json
 cargo run -- release benchmark --iterations 200 --source retained-runner --json
 cargo run -- --fake
 ```
@@ -170,7 +170,7 @@ M7a establishes a read-only automation and scale baseline. `headless threads` an
 
 M7b3 adds repository-shared `.codex-tui.toml` launch presets as a deliberately narrow argv-only feature. Presets are selected from Workspace/Review context actions, shown as an exact cwd/argv plan, and require explicit confirmation before codex-tui starts the external process. The config has no shell string, env templating, chaining, hooks or scheduler semantics; common shell executables are rejected.
 
-M7d3 adds a fail-closed release path: publication is manually dispatched, while release-pipeline changes on main automatically run a non-publishing preview self-test. Preview and stable identity derive from the Cargo version; Cargo.lock pins candidates; Linux/macOS/Windows build native archives and smoke the extracted binary; runtime dependency licenses/notices and SHA-256 manifests are retained. The project is now Apache-2.0 licensed and the package line is v1.0.0. Stable release keeps canonical CI and native package/archive smoke on Linux/macOS/Windows, but real retained compatibility, terminal-restoration and performance evidence are required only on Linux Tier 1. macOS/Windows are Tier 2 automated-compatibility targets for v1.0. Linux performance evidence requires at least 200 samples, p95 <= 50 ms and p99 <= 100 ms.
+M7d3 adds a fail-closed release path: publication is manually dispatched, while release-pipeline changes on main automatically run a non-publishing preview self-test. Preview and stable identity derive from the Cargo version; Cargo.lock pins candidates; Linux/macOS/Windows build native archives and smoke the extracted binary; runtime dependency licenses/notices and SHA-256 manifests are retained. v1.0.0 was published as the first stable release on 2026-09-30, and main now carries the v1.1.0 development line. Stable releases keep canonical CI and native package/archive smoke on Linux/macOS/Windows, while real retained compatibility, terminal-restoration and performance evidence are required on Linux Tier 1. macOS/Windows remain Tier 2 automated-compatibility targets across the v1 stable line. Linux performance evidence requires at least 200 samples, p95 <= 50 ms and p99 <= 100 ms.
 
 ## Status
 
@@ -194,7 +194,8 @@ M7d3 adds a fail-closed release path: publication is manually dispatched, while 
 - M7d1 accessibility/CJK/grapheme/keyboard-focus hardening: implemented on the v0.7.x line.
 - M7d2 compatibility matrix + Doctor evidence contract: implemented as `compat/v2` with required/optional readiness and retained-evidence metadata.
 - M7d3 stable/preview release hardening: implemented with locked three-platform packaging, archive smoke, notices/checksums, and fail-closed stable evidence gates.
-- v1.0 release candidate: Apache-2.0 license selected; package line advanced to 1.0.0; stable publication still awaits retained cross-platform compatibility, terminal-restoration and performance evidence.
+- v1.0.0 stable release: published on 2026-09-30 with Linux Tier 1 retained evidence and three-platform native package/archive smoke.
+- v1.1.0 development line: active on main; new changes are tracked under the Unreleased changelog section.
 
 Architecture and product research are archived under `docs/research/`.
 Implementation design lives under `docs/design/`.
@@ -258,7 +259,7 @@ Run `codex-tui doctor codex` to see the active Codex home plus local/foreign/sta
 
 Release helper scripts require **Python 3.8+**. Use `python3`; do not rely on a `python` alias.
 
-v1.0 stable prioritizes Linux. macOS and Windows remain in canonical CI and native release packaging, but they do not block v1.0 stable on real-environment retained evidence.
+The v1 stable line prioritizes Linux. macOS and Windows remain in canonical CI and native release packaging, but they do not block v1 stable releases on real-environment retained evidence.
 
 After completing the documented real-TTY Terminal Drawer smoke on Linux:
 
