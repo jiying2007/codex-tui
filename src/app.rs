@@ -1742,10 +1742,12 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 return vec![];
             }
             let Some(cwd) = state.terminal_target_cwd() else {
-                state.mutation_notice =
-                    Some("terminal drawer requires a selected Codex thread cwd".into());
+                state.mutation_notice = Some(
+                    "terminal drawer unavailable: selected Codex thread has no cwd; choose a Mission Control row with a non-empty Cwd".into(),
+                );
                 return vec![];
             };
+            state.mutation_notice = None;
             state.terminal_drawer_open = true;
             state.terminal_focused = true;
             state.terminal_snapshot = None;
@@ -3228,7 +3230,7 @@ mod tests {
         assert!(
             app.mutation_notice
                 .as_deref()
-                .is_some_and(|notice| notice.contains("selected Codex thread cwd"))
+                .is_some_and(|notice| notice.contains("selected Codex thread has no cwd"))
         );
     }
 
