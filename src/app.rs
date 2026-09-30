@@ -8,9 +8,7 @@ use crate::forge::{
     CapabilityState, ChangeRequestSummary, ForgeCapability, ForgeIdentity, ForgeObservation,
     ForgeProviderKind, ForgeReviewSummary,
 };
-use crate::forge_mutation::{
-    ForgeMutationPlan, ForgeMutationReceipt, ForgeMutationRequest,
-};
+use crate::forge_mutation::{ForgeMutationPlan, ForgeMutationReceipt, ForgeMutationRequest};
 use crate::git::{GitContext, GitReview};
 use crate::goal::{GoalObservation, GoalStatus};
 use crate::operation::{
