@@ -127,7 +127,7 @@ Requirements:
 
 - Rust stable (MSRV 1.88)
 - a working `codex` executable on `PATH` for live registry mode
-- optional `glab` authenticated to the repository's GitLab host for M6a forge projection
+- optional `glab` authenticated to the repository's GitLab host for M6 GitLab integration
 
 Commands:
 
