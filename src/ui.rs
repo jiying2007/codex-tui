@@ -404,7 +404,9 @@ fn forge_context_lines(app: &AppState, thread_id: &crate::domain::ThreadId) -> V
         identity.provider.label(),
         identity.host,
         identity.path_with_namespace,
-        observation.freshness.label()
+        observation
+            .freshness_at(crate::operation::now_unix_ms())
+            .label()
     ))];
 
     let branch = app
