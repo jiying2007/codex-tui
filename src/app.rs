@@ -3122,6 +3122,66 @@ mod tests {
     }
 
     #[test]
+    fn planning_deduplicates_same_gitlab_issue_across_threads() {
+        use crate::forge::{
+            CapabilityState, ForgeCapability, ForgeFreshness, ForgeIdentity, ForgeIssueSummary,
+            ForgeProviderKind,
+        };
+
+        let mut app = app();
+        let issue = ForgeIssueSummary {
+            iid: 12,
+            title: "Shared issue".into(),
+            state: "opened".into(),
+            web_url: "https://gitlab.example.com/team/repo/-/issues/12".into(),
+            updated_at: Some("2026-09-30T00:00:00Z".into()),
+        };
+
+        for (index, thread) in app.threads.iter().take(2).enumerate() {
+            app.forge_observations.insert(
+                thread.id.0.clone(),
+                ForgeObservation {
+                    thread_id: thread.id.clone(),
+                    cwd: thread.metadata.cwd.clone(),
+                    remote_name: Some("origin".into()),
+                    remote_url: Some("git@gitlab.example.com:team/repo.git".into()),
+                    identity: Some(ForgeIdentity {
+                        provider: ForgeProviderKind::GitLab,
+                        host: "gitlab.example.com".into(),
+                        project_id: "42".into(),
+                        path_with_namespace: "team/repo".into(),
+                        web_url: "https://gitlab.example.com/team/repo".into(),
+                    }),
+                    capabilities: BTreeMap::from([(
+                        ForgeCapability::Issues,
+                        CapabilityState::Available,
+                    )]),
+                    issues: vec![issue.clone()],
+                    change_requests: vec![],
+                    pipelines: vec![],
+                    review: None,
+                    observed_at_unix_ms: 100 + index as u64,
+                    freshness: ForgeFreshness::Fresh,
+                    error: None,
+                },
+            );
+        }
+
+        reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 102 });
+
+        let issue_cards = app
+            .work_cards
+            .iter()
+            .filter(|card| card.anchor.kind == SourceKind::ForgeWorkItem)
+            .collect::<Vec<_>>();
+        assert_eq!(issue_cards.len(), 1);
+        assert_eq!(
+            issue_cards[0].anchor.value,
+            "gitlab://gitlab.example.com/projects/42/issues/12"
+        );
+    }
+
+    #[test]
     fn forge_projection_probe_is_git_authoritative_and_deduplicated() {
         let mut app = app();
         app.threads[0].metadata.cwd = "/repo".into();
