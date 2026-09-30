@@ -1,6 +1,6 @@
 use crate::app::{AppState, InputMode, View};
 use crate::conversation::{InteractiveRequest, InteractiveRequestKind};
-use crate::domain::ThreadSummary;
+use crate::domain::{CwdLocality, ThreadSummary, classify_cwd, display_cwd};
 use crate::git::presentation_diff_lines;
 use crate::planning::{SavedViewLayout, WorkflowStage, apply_saved_view, saved_view_group_key};
 use crate::pty::TerminalSize;
@@ -236,7 +236,7 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState) {
             Span::raw("j/k move  "),
             Span::raw("t terminal  "),
             Span::raw("Space attention  "),
-            Span::raw("/ search  "),
+            Span::raw("/ search (local/foreign-windows)  "),
             Span::raw("p pin  "),
             Span::raw("e alias  "),
             Span::raw("x ack  "),
@@ -257,15 +257,31 @@ fn thread_list(app: &AppState) -> Paragraph<'static> {
         .filter(|index| app.thread_needs_attention(**index))
         .count();
     let mut lines = Vec::with_capacity(visible.len() + 1);
+    let local_count = visible
+        .iter()
+        .filter(|index| {
+            classify_cwd(&app.threads[**index].metadata.cwd) == CwdLocality::LocalDirectory
+        })
+        .count();
+    let foreign_count = visible
+        .iter()
+        .filter(|index| classify_cwd(&app.threads[**index].metadata.cwd).is_foreign())
+        .count();
+    let stale_count = visible
+        .iter()
+        .filter(|index| {
+            classify_cwd(&app.threads[**index].metadata.cwd) == CwdLocality::NativeMissing
+        })
+        .count();
     let summary = if app.filter.is_empty() {
         format!(
-            "{} threads · {} need attention",
+            "{} threads · {local_count} local · {foreign_count} foreign · {stale_count} stale · {} need attention",
             app.threads.len(),
             attention_count
         )
     } else {
         format!(
-            "{}/{} threads · {} need attention · filter: {}",
+            "{}/{} threads · {local_count} local · {foreign_count} foreign · {stale_count} stale · {} need attention · filter: {}",
             visible.len(),
             app.threads.len(),
             attention_count,
@@ -303,8 +319,14 @@ fn thread_list(app: &AppState) -> Paragraph<'static> {
         } else {
             " "
         };
+        let locality = match classify_cwd(&thread.metadata.cwd) {
+            CwdLocality::LocalDirectory => "L",
+            CwdLocality::ForeignWindows | CwdLocality::ForeignUnix => "F",
+            CwdLocality::NativeMissing => "!",
+            CwdLocality::Relative | CwdLocality::Empty => "?",
+        };
         let text = format!(
-            "{prefix}{pin}{collision} {:7} {} {} {}",
+            "{prefix}{pin}{collision}{locality} {:7} {} {} {}",
             thread.runtime.label(),
             fit_display(&thread.workspace, 18),
             fit_display(&attention, 10),
@@ -348,7 +370,11 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
                 "Model: {}",
                 thread.metadata.model.as_deref().unwrap_or("unknown")
             )),
-            Line::from(format!("Cwd: {}", sanitize_inline(&thread.metadata.cwd))),
+            Line::from(format!(
+                "Cwd [{}]: {}",
+                classify_cwd(&thread.metadata.cwd).label(),
+                sanitize_inline(display_cwd(&thread.metadata.cwd))
+            )),
             Line::from(format!(
                 "Source: {}",
                 sanitize_inline(&thread.metadata.source)
@@ -1629,7 +1655,7 @@ fn centered_fixed(width: u16, height: u16, area: Rect) -> Rect {
 
 const HELP_LINES: &[&str] = &[
     "Global: ? help · Ctrl+K palette · / search · . context · t terminal · T close terminal · Esc back",
-    "Registry: j/k · Enter · Space attention · / search · p pin · e alias · x ack",
+    "Registry: j/k · Enter · Space attention · / search (type local for host sessions) · p pin · e alias · x ack",
     "Thread: a composer · y/n/c approval · i answer · Ctrl+C interrupt · r review",
     "Review: j/k file · w word-diff · e editor · . Forge actions · PageUp/PageDown · Esc",
     "Workspace: Git + Forge · . actions/launch presets · r review · m worktrees · Esc",
@@ -1759,6 +1785,30 @@ mod tests {
             out.push('\n');
         }
         out
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn registry_marks_foreign_windows_cwd_without_linux_prefix() {
+        let backend = TestBackend::new(160, 16);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+        app.threads[0].metadata.cwd =
+            r"/vsdata/repo/C:\Users\jun\repo".into();
+
+        terminal.draw(|frame| render(frame, &app)).expect("draw");
+        let buffer = terminal.backend().buffer();
+        let mut snapshot = String::new();
+        for y in 0..buffer.area.height {
+            for x in 0..buffer.area.width {
+                snapshot.push_str(buffer[(x, y)].symbol());
+            }
+            snapshot.push('\n');
+        }
+
+        assert!(snapshot.contains("foreign-windows"));
+        assert!(snapshot.contains(r"C:\Users\jun\repo"));
+        assert!(!snapshot.contains(r"/vsdata/repo/C:\Users\jun\repo"));
     }
 
     #[test]
