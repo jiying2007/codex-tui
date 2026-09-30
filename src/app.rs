@@ -3031,6 +3031,36 @@ mod tests {
     }
 
     #[test]
+    fn forge_projection_probe_is_git_authoritative_and_deduplicated() {
+        let mut app = app();
+        app.threads[0].metadata.cwd = "/repo".into();
+        let thread_id = app.threads[0].id.clone();
+
+        let mut context = GitContext::pending(thread_id.clone(), "/repo");
+        context.is_repository = true;
+        reduce(&mut app, Action::GitContextLoaded(context));
+
+        let effects = reduce(&mut app, Action::RefreshForgeProjections);
+        assert_eq!(
+            effects,
+            vec![Effect::ProbeForge {
+                thread_id: thread_id.clone(),
+                cwd: "/repo".into(),
+            }]
+        );
+        assert_eq!(
+            app.forge_observation(&thread_id)
+                .expect("pending forge observation")
+                .observed_at_unix_ms,
+            0
+        );
+        assert!(reduce(&mut app, Action::RefreshForgeProjections).is_empty());
+
+        app.threads[0].metadata.cwd = "/new/repo".into();
+        assert!(reduce(&mut app, Action::RefreshForgeProjections).is_empty());
+    }
+
+    #[test]
     fn collision_is_derived_from_active_threads_sharing_one_worktree() {
         let mut app = app();
         app.threads[0].runtime = RuntimeStatus::Working;
