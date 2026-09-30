@@ -262,11 +262,7 @@ pub type ForgeFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 pub trait ForgeProvider: Send + Sync {
     fn kind(&self) -> ForgeProviderKind;
 
-    fn probe<'a>(
-        &'a self,
-        thread_id: ThreadId,
-        cwd: String,
-    ) -> ForgeFuture<'a, ForgeObservation>;
+    fn probe<'a>(&'a self, thread_id: ThreadId, cwd: String) -> ForgeFuture<'a, ForgeObservation>;
 
     fn probe_review<'a>(
         &'a self,
@@ -286,11 +282,7 @@ impl ForgeProvider for GitLabProvider {
         ForgeProviderKind::GitLab
     }
 
-    fn probe<'a>(
-        &'a self,
-        thread_id: ThreadId,
-        cwd: String,
-    ) -> ForgeFuture<'a, ForgeObservation> {
+    fn probe<'a>(&'a self, thread_id: ThreadId, cwd: String) -> ForgeFuture<'a, ForgeObservation> {
         Box::pin(async move {
             match probe_gitlab(thread_id.clone(), cwd.clone()).await {
                 Ok(observation) => observation,
@@ -415,13 +407,7 @@ async fn run_actor(
                 change_request_iid,
             } => {
                 let review = provider
-                    .probe_review(
-                        thread_id,
-                        cwd,
-                        host,
-                        project_id,
-                        change_request_iid,
-                    )
+                    .probe_review(thread_id, cwd, host, project_id, change_request_iid)
                     .await;
                 let _ = event_tx.send(ForgeEvent::Review(review));
             }
