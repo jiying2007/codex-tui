@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 import argparse
 import json
 import pathlib
 import re
+
+from _compat import write_text_lf
 
 HEX64 = re.compile(r"^[0-9a-fA-F]{64}$")
 HEX40 = re.compile(r"^[0-9a-fA-F]{40}$")
@@ -109,11 +113,7 @@ def main() -> int:
 
     output = pathlib.Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(
-        json.dumps(receipt, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-        newline="\n",
-    )
+    write_text_lf(output, json.dumps(receipt, indent=2, sort_keys=True) + "\n")
     print(f"WROTE {output}")
     return 0
 
