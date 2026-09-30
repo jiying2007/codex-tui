@@ -3502,6 +3502,102 @@ mod tests {
     }
 
     #[test]
+    fn batch_plan_freezes_visible_targets_before_confirmation() {
+        let mut app = app();
+        reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 100 });
+        reduce(&mut app, Action::OpenBoard);
+
+        let before = app
+            .visible_planning_cards()
+            .iter()
+            .map(|card| card.local_id.clone())
+            .collect::<Vec<_>>();
+        assert!(!before.is_empty());
+
+        reduce(&mut app, Action::OpenContext);
+        let index = app
+            .context_choices()
+            .iter()
+            .position(|choice| *choice == ContextChoice::BatchMarkDone)
+            .expect("batch mark-done");
+        app.context_selected = index;
+        assert!(reduce(&mut app, Action::ExecuteContext).is_empty());
+
+        let frozen = app.pending_local_batch.clone().expect("frozen batch plan");
+        assert_eq!(
+            frozen
+                .targets
+                .iter()
+                .map(|target| target.local_id.clone())
+                .collect::<Vec<_>>(),
+            before
+        );
+
+        reduce(&mut app, Action::CycleSavedView(1));
+        assert_ne!(
+            app.visible_planning_cards()
+                .iter()
+                .map(|card| card.local_id.clone())
+                .collect::<Vec<_>>(),
+            before
+        );
+
+        let effects = reduce(&mut app, Action::ConfirmPendingOperation);
+        assert!(matches!(
+            effects.as_slice(),
+            [Effect::ApplyLocalBatch(plan)] if plan.targets == frozen.targets
+        ));
+        assert!(app.pending_local_batch.is_none());
+    }
+
+    #[test]
+    fn batch_input_creates_plan_before_any_write_effect() {
+        let mut app = app();
+        reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 100 });
+        reduce(&mut app, Action::OpenBoard);
+        reduce(&mut app, Action::OpenContext);
+        let index = app
+            .context_choices()
+            .iter()
+            .position(|choice| *choice == ContextChoice::BatchAddTag)
+            .expect("batch tag");
+        app.context_selected = index;
+        assert!(reduce(&mut app, Action::ExecuteContext).is_empty());
+        assert_eq!(app.input_mode, InputMode::BatchAddTag);
+
+        for ch in "focus".chars() {
+            reduce(&mut app, Action::InputChar(ch));
+        }
+        assert!(reduce(&mut app, Action::CommitInput).is_empty());
+        let plan = app.pending_local_batch.as_ref().expect("batch preview");
+        assert_eq!(plan.action, LocalBatchAction::AddTag("focus".into()));
+        assert!(!plan.targets.is_empty());
+
+        let effects = reduce(&mut app, Action::ConfirmPendingOperation);
+        assert!(matches!(
+            effects.as_slice(),
+            [Effect::ApplyLocalBatch(plan)] if plan.action == LocalBatchAction::AddTag("focus".into())
+        ));
+    }
+
+    #[test]
+    fn cancelling_batch_preview_emits_no_write_effect() {
+        let mut app = app();
+        reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 100 });
+        reduce(&mut app, Action::OpenBoard);
+        app.freeze_visible_batch(LocalBatchAction::ClearPriority);
+        assert!(app.pending_local_batch.is_some());
+
+        let effects = reduce(&mut app, Action::CancelPendingOperation);
+        assert!(effects.is_empty());
+        assert!(app.pending_local_batch.is_none());
+        assert_eq!(
+            app.mutation_notice.as_deref(),
+            Some("operation cancelled before execution")
+        );
+    }
+
+    #[test]
     fn board_context_can_save_but_not_delete_builtin_views() {
         let mut app = app();
         reduce(&mut app, Action::OpenBoard);
