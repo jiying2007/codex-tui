@@ -66,8 +66,10 @@ fn wait_shutdown(handle: &PtyHandle) -> (bool, Option<u32>) {
                 PtyEvent::Output(_) | PtyEvent::Ready { .. } => {}
             }
         }
-        if reader_closed && exit.is_some() {
-            return exit.expect("exit status");
+        if reader_closed
+            && let Some(exit) = exit
+        {
+            return exit;
         }
         assert!(
             Instant::now() < deadline,
