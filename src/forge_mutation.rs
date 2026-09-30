@@ -249,6 +249,7 @@ fn mr_plan(identity: &ForgeIdentity, cwd: String, spec: MrPlanSpec) -> Result<Fo
             precondition("project-identity-current", "true"),
             precondition("merge-request-open", "true"),
             precondition("source-target-unchanged", "true"),
+            precondition("head-sha-revalidated", "true"),
         ],
         planned_at_unix_ms: spec.planned_at_unix_ms,
     })
@@ -944,12 +945,16 @@ async fn execute_mutation(
             let user_id = preflight
                 .authenticated_user_id
                 .context("approve preflight missing authenticated user")?;
+            let sha = preflight
+                .merge_request_sha
+                .as_deref()
+                .context("approve preflight missing merge request HEAD sha")?;
             let _: serde_json::Value = glab_api_mutation_json(
                 &plan.cwd,
                 &plan.host,
                 "POST",
                 &format!("{}/merge_requests/{iid}/approve", project_endpoint(plan)),
-                &[],
+                &[("sha", sha)],
             )
             .await?;
             Ok(AppliedResult::Approval(user_id))
@@ -958,12 +963,16 @@ async fn execute_mutation(
             let iid = plan
                 .change_request_iid
                 .context("merge plan missing merge request iid")?;
+            let sha = preflight
+                .merge_request_sha
+                .as_deref()
+                .context("merge preflight missing merge request HEAD sha")?;
             let _: serde_json::Value = glab_api_mutation_json(
                 &plan.cwd,
                 &plan.host,
                 "PUT",
                 &format!("{}/merge_requests/{iid}/merge", project_endpoint(plan)),
-                &[],
+                &[("sha", sha)],
             )
             .await?;
             Ok(AppliedResult::Merge(iid))
@@ -1063,7 +1072,6 @@ async fn reconcile_receipt(
             result_ref,
             verification,
         }) => receipt.succeed(now, result_ref, verification),
-        Ok(ReconciledOutcome::Failed(reason)) => receipt.fail(now, reason),
         Ok(ReconciledOutcome::Unknown(reason)) => receipt.outcome_unknown(now, reason),
         Err(error) => receipt.outcome_unknown(now, format!("reconciliation failed: {error:#}")),
     }
@@ -1076,7 +1084,6 @@ enum ReconciledOutcome {
         result_ref: String,
         verification: String,
     },
-    Failed(String),
     Unknown(String),
 }
 
@@ -1105,8 +1112,9 @@ async fn reconcile_outcome(plan: &ForgeMutationPlan) -> Result<ReconciledOutcome
                         mr.iid
                     ),
                 }),
-                [] => Ok(ReconciledOutcome::Failed(
-                    "reconciliation confirms matching open MR is absent".into(),
+                [] => Ok(ReconciledOutcome::Unknown(
+                    "exact matching open MR is not visible after an uncertain create outcome; never retry blindly"
+                        .into(),
                 )),
                 _ => Ok(ReconciledOutcome::Unknown(
                     "multiple exact matching open MRs prevent safe reconciliation".into(),
@@ -1134,8 +1142,9 @@ async fn reconcile_outcome(plan: &ForgeMutationPlan) -> Result<ReconciledOutcome
                         "reconciled after uncertain outcome: authenticated user is approved".into(),
                 })
             } else {
-                Ok(ReconciledOutcome::Failed(
-                    "reconciliation confirms authenticated user is not approved".into(),
+                Ok(ReconciledOutcome::Unknown(
+                    "authenticated user is not visible in approved_by after an uncertain approval outcome; never retry blindly"
+                        .into(),
                 ))
             }
         }
@@ -1148,8 +1157,9 @@ async fn reconcile_outcome(plan: &ForgeMutationPlan) -> Result<ReconciledOutcome
                     verification: "reconciled after uncertain outcome: GitLab reports merged"
                         .into(),
                 }),
-                "opened" => Ok(ReconciledOutcome::Failed(
-                    "reconciliation confirms merge request remains open".into(),
+                "opened" => Ok(ReconciledOutcome::Unknown(
+                    "merge request remains open after an uncertain merge outcome; never retry blindly"
+                        .into(),
                 )),
                 other => Ok(ReconciledOutcome::Unknown(format!(
                     "merge request is in unexpected state {other:?}"
