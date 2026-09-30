@@ -4006,5 +4006,4 @@ mod tests {
         assert_eq!(observation.observed_at_unix_ms, 1);
         assert!(observation.review.is_none());
     }
-
 }
