@@ -1845,3 +1845,83 @@ fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
     };
     reduce(app, action)
 }
+
+
+#[cfg(test)]
+mod accessibility_input_tests {
+    use super::*;
+
+    fn app() -> AppState {
+        AppState::new(FakeBackend::seeded().snapshot().threads)
+    }
+
+    #[test]
+    fn terminal_focus_traps_normal_app_shortcuts() {
+        let mut app = app();
+        app.terminal_drawer_open = true;
+        app.terminal_focused = true;
+
+        let effects = handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE),
+        );
+        assert_eq!(effects, vec![Effect::TerminalInput(vec![b'?'])]);
+        assert!(!app.show_help);
+
+        let effects = handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char(']'), KeyModifiers::CONTROL),
+        );
+        assert!(effects.is_empty());
+        assert!(!app.terminal_focused);
+        assert!(app.terminal_drawer_open);
+    }
+
+    #[test]
+    fn terminal_focus_has_priority_over_other_open_overlays() {
+        let mut app = app();
+        app.terminal_drawer_open = true;
+        app.terminal_focused = true;
+        app.launch_menu_open = true;
+        app.context_open = true;
+
+        let effects = handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE),
+        );
+        assert_eq!(effects, vec![Effect::TerminalInput(vec![b'j'])]);
+        assert_eq!(app.launch_selected, 0);
+        assert_eq!(app.context_selected, 0);
+    }
+
+    #[test]
+    fn context_overlay_traps_unrelated_global_navigation() {
+        let mut app = app();
+        app.context_open = true;
+        let original_view = app.view.clone();
+        let original_selected = app.selected;
+
+        let effects = handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('b'), KeyModifiers::NONE),
+        );
+        assert!(effects.is_empty());
+        assert_eq!(app.view, original_view);
+        assert_eq!(app.selected, original_selected);
+    }
+
+    #[test]
+    fn search_editor_consumes_printable_keys_before_global_commands() {
+        let mut app = app();
+        reduce(&mut app, Action::BeginSearch);
+
+        let effects = handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('b'), KeyModifiers::NONE),
+        );
+        assert!(effects.is_empty());
+        assert_eq!(app.input_mode, InputMode::Search);
+        assert!(app.input_buffer.ends_with('b'));
+        assert_eq!(app.view_kind(), ViewKind::Registry);
+    }
+}
