@@ -2127,10 +2127,8 @@ mod tests {
 
         assert_eq!(selected_git_status(&app), "not-probed");
 
-        let pending = crate::git::GitContext::pending(
-            thread_id.clone(),
-            app.threads[0].metadata.cwd.clone(),
-        );
+        let pending =
+            crate::git::GitContext::pending(thread_id.clone(), app.threads[0].metadata.cwd.clone());
         app.git_contexts.insert(thread_id.0.clone(), pending);
         assert_eq!(selected_git_status(&app), "probing");
 
