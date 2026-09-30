@@ -1775,9 +1775,8 @@ mod tests {
         let backend = TestBackend::new(120, 12);
         let mut terminal = Terminal::new(backend).expect("terminal");
         let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
-        app.mutation_notice = Some(
-            "terminal drawer unavailable: selected Codex thread has no cwd".into(),
-        );
+        app.mutation_notice =
+            Some("terminal drawer unavailable: selected Codex thread has no cwd".into());
 
         terminal.draw(|frame| render(frame, &app)).expect("draw");
         let buffer = terminal.backend().buffer();
