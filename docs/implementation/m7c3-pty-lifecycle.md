@@ -36,11 +36,11 @@ Production and integration-test terminal sessions still come from `portable_pty:
 
 Normal EOF/child exit is observed through the same reader/wait path as production:
 
-- PTY reader exits on `read == 0`;
+- PTY reader emits an explicit `PtyEvent::ReaderClosed` on `read == 0`;
 - child waiter emits `PtyEvent::Exited`;
-- the actor does not treat normal reader EOF as an error.
+- normal reader EOF is not reported as an error.
 
-The deterministic one-shot PTY unit test exercises this normal child-exit/reader-EOF path on every canonical CI platform. The default-shell integration tests intentionally use explicit termination after their behavioral assertion, because shell-specific `exit` parsing is not a portable PTY guarantee.
+All three platform integration suites require both `ReaderClosed` and `Exited` after explicit PTY termination. Unix additionally has a deterministic one-shot native-PTY test that proves natural child exit leads to reader EOF without explicit termination. Windows ConPTY couples natural child completion to pseudoconsole lifetime differently, so its portable authority is the explicit teardown boundary rather than shell-specific `exit` timing.
 
 ## Cleanup guarantees
 
