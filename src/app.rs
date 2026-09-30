@@ -3225,15 +3225,14 @@ mod tests {
     #[test]
     fn terminal_drawer_open_focus_and_close_are_explicit_effects() {
         let mut app = app();
-        app.threads[0].metadata.cwd = "/repo".into();
+        let cwd = std::env::current_dir()
+            .expect("cwd")
+            .to_string_lossy()
+            .into_owned();
+        app.threads[0].metadata.cwd = cwd.clone();
 
         let effects = reduce(&mut app, Action::ToggleTerminalDrawer);
-        assert_eq!(
-            effects,
-            vec![Effect::OpenTerminalDrawer {
-                cwd: "/repo".into()
-            }]
-        );
+        assert_eq!(effects, vec![Effect::OpenTerminalDrawer { cwd }]);
         assert!(app.terminal_drawer_open);
         assert!(app.terminal_focused);
 
@@ -3259,8 +3258,48 @@ mod tests {
         assert!(
             app.mutation_notice
                 .as_deref()
-                .is_some_and(|notice| notice.contains("selected Codex thread has no cwd"))
+                .is_some_and(|notice| notice.contains("no Codex thread is selected"))
         );
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn terminal_drawer_rejects_foreign_windows_session_cwd() {
+        let mut app = app();
+        app.threads[0].metadata.cwd =
+            r"/vsdata/leiwenjun/llm/codex-tui/C:\Users\jun\repo".into();
+
+        let effects = reduce(&mut app, Action::ToggleTerminalDrawer);
+        assert!(effects.is_empty());
+        assert!(!app.terminal_drawer_open);
+        assert!(
+            app.mutation_notice
+                .as_deref()
+                .is_some_and(|notice| notice.contains("Windows cwd"))
+        );
+    }
+
+    #[test]
+    fn registry_search_can_filter_host_local_sessions() {
+        let mut app = app();
+        app.threads[0].metadata.cwd = std::env::current_dir()
+            .expect("cwd")
+            .to_string_lossy()
+            .into_owned();
+        if app.threads.len() > 1 {
+            app.threads[1].metadata.cwd = if cfg!(windows) {
+                "/foreign/unix/repo".into()
+            } else {
+                r"C:\Users\jun\repo".into()
+            };
+        }
+
+        app.filter = "local".into();
+        let visible = app.visible_indices();
+        assert!(visible.contains(&0));
+        if app.threads.len() > 1 {
+            assert!(!visible.contains(&1));
+        }
     }
 
     #[test]
