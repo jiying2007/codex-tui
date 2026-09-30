@@ -3351,9 +3351,10 @@ mod tests {
             }),
         );
 
-        assert!(ids.iter().all(|thread_id| app
-            .forge_observation(thread_id)
-            .is_some_and(|observation| observation.identity.is_some())));
+        assert!(ids.iter().all(|thread_id| {
+            app.forge_observation(thread_id)
+                .is_some_and(|observation| observation.identity.is_some())
+        }));
         assert!(reduce(&mut app, Action::RefreshForgeProjections).is_empty());
 
         for thread_id in &ids {
@@ -3362,10 +3363,7 @@ mod tests {
                 .expect("forge observation")
                 .observed_at_unix_ms = 1;
         }
-        assert_eq!(
-            reduce(&mut app, Action::RefreshForgeProjections).len(),
-            1
-        );
+        assert_eq!(reduce(&mut app, Action::RefreshForgeProjections).len(), 1);
     }
 
     #[test]
