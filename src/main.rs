@@ -502,7 +502,10 @@ async fn doctor(scope: Option<&str>) -> Result<()> {
         );
         println!(
             "forge-client-version: {}",
-            snapshot.client_version.as_deref().unwrap_or("<unavailable>")
+            snapshot
+                .client_version
+                .as_deref()
+                .unwrap_or("<unavailable>")
         );
         println!(
             "forge-authenticated: {}",
