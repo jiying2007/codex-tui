@@ -162,12 +162,14 @@ impl ForgeMutationPlan {
         mr_plan(
             identity,
             cwd,
-            ForgeMutationKind::ApproveMergeRequest,
-            change_request_iid,
-            source_branch,
-            target_branch,
-            "approve exact GitLab merge request as the authenticated user",
-            planned_at_unix_ms,
+            MrPlanSpec {
+                kind: ForgeMutationKind::ApproveMergeRequest,
+                change_request_iid,
+                source_branch,
+                target_branch,
+                expected: "approve exact GitLab merge request as the authenticated user",
+                planned_at_unix_ms,
+            },
         )
     }
 
@@ -182,12 +184,14 @@ impl ForgeMutationPlan {
         let mut plan = mr_plan(
             identity,
             cwd,
-            ForgeMutationKind::MergeMergeRequest,
-            change_request_iid,
-            source_branch,
-            target_branch,
-            "merge exact GitLab merge request without force/bypass options",
-            planned_at_unix_ms,
+            MrPlanSpec {
+                kind: ForgeMutationKind::MergeMergeRequest,
+                change_request_iid,
+                source_branch,
+                target_branch,
+                expected: "merge exact GitLab merge request without force/bypass options",
+                planned_at_unix_ms,
+            },
         )?;
         plan.preconditions.extend([
             precondition("merge-request-not-draft", "true"),
@@ -211,39 +215,49 @@ impl ForgeMutationPlan {
     }
 }
 
-fn mr_plan(
-    identity: &ForgeIdentity,
-    cwd: String,
+struct MrPlanSpec {
     kind: ForgeMutationKind,
     change_request_iid: u64,
     source_branch: String,
     target_branch: String,
-    expected: &str,
+    expected: &'static str,
     planned_at_unix_ms: u64,
+}
+
+fn mr_plan(
+    identity: &ForgeIdentity,
+    cwd: String,
+    spec: MrPlanSpec,
 ) -> Result<ForgeMutationPlan> {
     ensure_identity(identity)?;
-    anyhow::ensure!(change_request_iid > 0, "merge request iid must be positive");
+    anyhow::ensure!(
+        spec.change_request_iid > 0,
+        "merge request iid must be positive"
+    );
     Ok(ForgeMutationPlan {
-        operation_id: new_operation_id(planned_at_unix_ms),
-        kind,
+        operation_id: new_operation_id(spec.planned_at_unix_ms),
+        kind: spec.kind,
         provider: identity.provider,
         cwd,
         host: identity.host.clone(),
         project_id: identity.project_id.clone(),
         project_path: identity.path_with_namespace.clone(),
-        change_request_iid: Some(change_request_iid),
-        source_branch: Some(required_text("source branch", source_branch)?),
-        target_branch: Some(required_text("target branch", target_branch)?),
+        change_request_iid: Some(spec.change_request_iid),
+        source_branch: Some(required_text("source branch", spec.source_branch)?),
+        target_branch: Some(required_text("target branch", spec.target_branch)?),
         title: None,
         payload_bytes: None,
-        expected_side_effect: format!("{expected}: !{change_request_iid}"),
+        expected_side_effect: format!(
+            "{}: !{}",
+            spec.expected, spec.change_request_iid
+        ),
         preconditions: vec![
             precondition("provider", "gitlab"),
             precondition("project-identity-current", "true"),
             precondition("merge-request-open", "true"),
             precondition("source-target-unchanged", "true"),
         ],
-        planned_at_unix_ms,
+        planned_at_unix_ms: spec.planned_at_unix_ms,
     })
 }
 
