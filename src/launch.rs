@@ -91,7 +91,10 @@ impl LaunchPreset {
             name.chars().count() <= 80,
             "launch preset name must be at most 80 characters"
         );
-        anyhow::ensure!(!self.argv.is_empty(), "launch preset argv must not be empty");
+        anyhow::ensure!(
+            !self.argv.is_empty(),
+            "launch preset argv must not be empty"
+        );
         anyhow::ensure!(
             self.argv.len() <= MAX_ARGV,
             "launch preset argv exceeds {MAX_ARGV} items"
@@ -118,8 +121,7 @@ impl LaunchPreset {
         anyhow::ensure!(
             !matches!(
                 executable.as_str(),
-                "sh"
-                    | "bash"
+                "sh" | "bash"
                     | "zsh"
                     | "fish"
                     | "cmd"
@@ -144,11 +146,7 @@ pub struct LaunchPlan {
 }
 
 impl LaunchPlan {
-    pub fn build(
-        preset: &LaunchPreset,
-        repo_root: &Path,
-        thread_cwd: &Path,
-    ) -> Result<Self> {
+    pub fn build(preset: &LaunchPreset, repo_root: &Path, thread_cwd: &Path) -> Result<Self> {
         preset.validate()?;
         let repo_root = canonical_directory(repo_root, "repository root")?;
         let thread_cwd = canonical_directory(thread_cwd, "thread cwd")?;
@@ -200,8 +198,8 @@ impl LaunchPlan {
 }
 
 fn canonical_directory(path: &Path, label: &str) -> Result<PathBuf> {
-    let canonical = fs::canonicalize(path)
-        .with_context(|| format!("resolve {label} {}", path.display()))?;
+    let canonical =
+        fs::canonicalize(path).with_context(|| format!("resolve {label} {}", path.display()))?;
     anyhow::ensure!(
         canonical.is_dir(),
         "{label} is not a directory: {}",
