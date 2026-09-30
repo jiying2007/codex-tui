@@ -4,6 +4,7 @@ use codex_tui::{
     app_server::{self, ConversationEvent, RegistryHandle},
     backend::{BackendStatus, CodexBackend, FakeBackend},
     conversation::{InteractiveRequestKind, InteractiveResolution},
+    forge,
     git::{self, GitEvent, GitHandle},
     goal::GoalStatus,
     keymap::{Command, command_for_key},
@@ -448,6 +449,40 @@ async fn doctor(scope: Option<&str>) -> Result<()> {
         if let Some(error) = context.error {
             println!("error: {error}");
         }
+    } else if scope == Some("forge") {
+        let cwd = std::env::current_dir()?;
+        let snapshot = forge::doctor(cwd.to_string_lossy().into_owned()).await;
+        println!(
+            "glab-version: {}",
+            snapshot.glab_version.as_deref().unwrap_or("<unavailable>")
+        );
+        if let Some(remote) = &snapshot.remote {
+            println!("forge-remote: {}", remote.remote_name);
+            println!("forge-host: {}", remote.host);
+            println!("forge-path: {}", remote.path_with_namespace);
+        } else {
+            println!("forge-remote: <unresolved>");
+        }
+        let observation = &snapshot.observation;
+        if let Some(identity) = &observation.identity {
+            println!("provider: {}", identity.provider.label());
+            println!("project-id: {}", identity.project_id);
+            println!("project-path: {}", identity.path_with_namespace);
+            println!("project-url: {}", identity.web_url);
+        } else {
+            println!("provider: unavailable");
+        }
+        println!("freshness: {}", observation.freshness.label());
+        for (capability, state) in &observation.capabilities {
+            println!("capability.{}: {}", capability.label(), state.label());
+        }
+        println!("open-issues: {}", observation.issues.len());
+        println!("open-merge-requests: {}", observation.change_requests.len());
+        println!("recent-pipelines: {}", observation.pipelines.len());
+        println!("issue-boards: {}", snapshot.boards.len());
+        if let Some(error) = &observation.error {
+            println!("error: {error}");
+        }
     } else if scope == Some("codex") {
         match app_server::probe(None).await {
             Ok(snapshot) => {
@@ -461,7 +496,7 @@ async fn doctor(scope: Option<&str>) -> Result<()> {
             }
         }
     } else {
-        println!("hint: run `codex-tui doctor codex`, `doctor git`, or `doctor store`");
+        println!("hint: run `codex-tui doctor codex`, `doctor git`, `doctor forge`, or `doctor store`");
     }
     Ok(())
 }
