@@ -1776,8 +1776,12 @@ mod tests {
             snapshot.push('\n');
         }
 
-        assert!(snapshot.contains("机器人"));
-        assert!(snapshot.contains("唤醒词"));
+        for glyph in ['机', '器', '人', '唤', '醒', '词'] {
+            assert!(
+                snapshot.contains(glyph),
+                "wide glyph {glyph:?} missing from TestBackend buffer"
+            );
+        }
         assert!(!snapshot.contains('\u{0007}'));
     }
 
@@ -1807,8 +1811,12 @@ mod tests {
             }
             snapshot.push('\n');
         }
-        assert!(snapshot.contains("中文终端"));
-        assert!(snapshot.contains("机器人"));
+        for glyph in ['中', '文', '终', '端', '机', '器', '人'] {
+            assert!(
+                snapshot.contains(glyph),
+                "wide glyph {glyph:?} missing from TestBackend buffer"
+            );
+        }
     }
 
     #[test]
