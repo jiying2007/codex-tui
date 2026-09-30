@@ -355,6 +355,10 @@ fn forge_context_lines(
         return vec![Line::from("Forge: not probed")];
     };
 
+    if observation.observed_at_unix_ms == 0 {
+        return vec![Line::from("Forge: probing…")];
+    }
+
     let Some(identity) = &observation.identity else {
         return vec![Line::from(format!(
             "Forge: unavailable · {}",
