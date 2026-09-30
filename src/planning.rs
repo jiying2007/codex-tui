@@ -655,10 +655,7 @@ pub fn reconcile_forge_issue_card(
             "completion explicitly acknowledged locally".into(),
         )
     } else if issue.state.eq_ignore_ascii_case("closed") {
-        (
-            WorkflowStage::Done,
-            "GitLab issue is closed".into(),
-        )
+        (WorkflowStage::Done, "GitLab issue is closed".into())
     } else if record.overlay.manual_ready {
         (
             WorkflowStage::Ready,
@@ -1256,9 +1253,7 @@ mod tests {
     }
     #[test]
     fn forge_issue_projects_as_dedicated_work_item_without_copying_authority() {
-        use crate::forge::{
-            CapabilityState, ForgeCapability, ForgeIdentity, ForgeProviderKind,
-        };
+        use crate::forge::{CapabilityState, ForgeCapability, ForgeIdentity, ForgeProviderKind};
         use std::collections::BTreeMap;
 
         let observation = ForgeObservation {
@@ -1273,10 +1268,7 @@ mod tests {
                 path_with_namespace: "team/repo".into(),
                 web_url: "https://gitlab.example.com/team/repo".into(),
             }),
-            capabilities: BTreeMap::from([(
-                ForgeCapability::Issues,
-                CapabilityState::Available,
-            )]),
+            capabilities: BTreeMap::from([(ForgeCapability::Issues, CapabilityState::Available)]),
             issues: vec![],
             change_requests: vec![],
             pipelines: vec![],
@@ -1293,8 +1285,8 @@ mod tests {
             updated_at: Some("2026-09-30T00:00:00Z".into()),
         };
 
-        let card = reconcile_forge_issue_card(&observation, &issue, None, 100)
-            .expect("forge issue card");
+        let card =
+            reconcile_forge_issue_card(&observation, &issue, None, 100).expect("forge issue card");
         assert_eq!(card.anchor.kind, SourceKind::ForgeWorkItem);
         assert_eq!(
             card.anchor.value,
@@ -1317,5 +1309,4 @@ mod tests {
         };
         assert_eq!(apply_saved_view(&[card], &view).len(), 1);
     }
-
 }
