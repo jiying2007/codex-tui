@@ -1,21 +1,16 @@
 {
-  "schema": "codex-tui/release-evidence/v1",
+  "schema": "codex-tui/release-evidence/v2",
   "version": "1.0.0",
   "commitSha": "0000000000000000000000000000000000000000",
   "canonicalCiRun": 1,
   "compatSchema": "codex-tui/compat/v2",
+  "primaryPlatform": "linux",
+  "secondaryPlatforms": [
+    "macos",
+    "windows"
+  ],
   "compatibility": {
     "linux": {
-      "status": "ready",
-      "reportSha256": "0000000000000000000000000000000000000000000000000000000000000000",
-      "observedAt": "2026-09-30T00:00:00Z"
-    },
-    "macos": {
-      "status": "ready",
-      "reportSha256": "0000000000000000000000000000000000000000000000000000000000000000",
-      "observedAt": "2026-09-30T00:00:00Z"
-    },
-    "windows": {
       "status": "ready",
       "reportSha256": "0000000000000000000000000000000000000000000000000000000000000000",
       "observedAt": "2026-09-30T00:00:00Z"
@@ -24,26 +19,17 @@
   "terminalRestoration": {
     "linux": {
       "status": "pass",
-      "terminal": "replace-with-real-terminal",
-      "observedAt": "2026-09-30T00:00:00Z"
-    },
-    "macos": {
-      "status": "pass",
-      "terminal": "replace-with-real-terminal",
-      "observedAt": "2026-09-30T00:00:00Z"
-    },
-    "windows": {
-      "status": "pass",
-      "terminal": "replace-with-real-terminal",
+      "terminal": "replace-with-real-linux-terminal",
       "observedAt": "2026-09-30T00:00:00Z"
     }
   },
   "performance": {
+    "platform": "linux",
     "fixture": "resident-planning-10k",
+    "iterations": 200,
     "p95Ms": 40,
     "p99Ms": 80,
-    "source": "replace-with-retained-runner",
-    "observedAt": "2026-09-30T00:00:00Z",
-    "iterations": 200
+    "source": "replace-with-linux-retained-runner",
+    "observedAt": "2026-09-30T00:00:00Z"
   }
 }

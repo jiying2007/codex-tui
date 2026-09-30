@@ -2,7 +2,7 @@
 
 A local-first terminal workbench for managing multiple Codex projects and conversations.
 
-**License:** Apache-2.0 · **Current package line:** v1.0.0 release candidate (stable not yet published).
+**License:** Apache-2.0 · **Current package line:** v1.0.0 release candidate (stable not yet published) · **Tier 1:** Linux.
 
 ## Product goal
 
@@ -170,7 +170,7 @@ M7a establishes a read-only automation and scale baseline. `headless threads` an
 
 M7b3 adds repository-shared `.codex-tui.toml` launch presets as a deliberately narrow argv-only feature. Presets are selected from Workspace/Review context actions, shown as an exact cwd/argv plan, and require explicit confirmation before codex-tui starts the external process. The config has no shell string, env templating, chaining, hooks or scheduler semantics; common shell executables are rejected.
 
-M7d3 adds a fail-closed release path: publication is manually dispatched, while release-pipeline changes on main automatically run a non-publishing preview self-test. Preview and stable identity derive from the Cargo version; Cargo.lock pins candidates; Linux/macOS/Windows build native archives and smoke the extracted binary; runtime dependency licenses/notices and SHA-256 manifests are retained. The project is now Apache-2.0 licensed and the package line is v1.0.0. Stable release still requires canonical CI, three-platform READY compatibility report hashes, three terminal-restoration PASS receipts, and retained 10k performance evidence with at least 200 samples, p95 <= 50 ms and p99 <= 100 ms.
+M7d3 adds a fail-closed release path: publication is manually dispatched, while release-pipeline changes on main automatically run a non-publishing preview self-test. Preview and stable identity derive from the Cargo version; Cargo.lock pins candidates; Linux/macOS/Windows build native archives and smoke the extracted binary; runtime dependency licenses/notices and SHA-256 manifests are retained. The project is now Apache-2.0 licensed and the package line is v1.0.0. Stable release keeps canonical CI and native package/archive smoke on Linux/macOS/Windows, but real retained compatibility, terminal-restoration and performance evidence are required only on Linux Tier 1. macOS/Windows are Tier 2 automated-compatibility targets for v1.0. Linux performance evidence requires at least 200 samples, p95 <= 50 ms and p99 <= 100 ms.
 
 ## Status
 
@@ -237,3 +237,24 @@ See:
 codex-tui is licensed under the Apache License 2.0. See `LICENSE`.
 
 Third-party runtime dependency notices are generated from the locked Cargo dependency graph for release archives.
+
+## Linux Tier 1 stable qualification
+
+v1.0 stable prioritizes Linux. macOS and Windows remain in canonical CI and native release packaging, but they do not block v1.0 stable on real-environment retained evidence.
+
+After completing the documented real-TTY Terminal Drawer smoke on Linux:
+
+```bash
+python scripts/release/create_terminal_receipt.py \
+  --platform linux \
+  --terminal "<your terminal>" \
+  --pass \
+  --output release/evidence/linux/terminal-linux.json
+
+python scripts/release/linux_qualify.py \
+  --canonical-ci-run <exact-main-ci-run-id> \
+  --terminal-receipt release/evidence/linux/terminal-linux.json \
+  --source "<retained-linux-machine-id>"
+```
+
+The second command verifies a clean exact-main SHA, canonical CI, locked release build, READY `compat/v2`, the 200-sample 10k performance SLO, evidence assembly, and local stable verification. It does **not** publish.

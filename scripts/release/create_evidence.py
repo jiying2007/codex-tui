@@ -6,7 +6,9 @@ import re
 
 HEX64 = re.compile(r"^[0-9a-fA-F]{64}$")
 HEX40 = re.compile(r"^[0-9a-fA-F]{40}$")
-PLATFORMS = ("linux", "macos", "windows")
+PRIMARY_PLATFORM = "linux"
+SECONDARY_PLATFORMS = ("macos", "windows")
+PLATFORMS = (PRIMARY_PLATFORM, *SECONDARY_PLATFORMS)
 
 
 def nonempty(value: str, label: str) -> str:
@@ -19,7 +21,7 @@ def nonempty(value: str, label: str) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", required=True)
-    parser.add_argument("--schema", default="codex-tui/release-evidence/v1")
+    parser.add_argument("--schema", default="codex-tui/release-evidence/v2")
     parser.add_argument("--compat-schema", required=True)
     parser.add_argument("--version", required=True)
     parser.add_argument("--commit", required=True)
@@ -30,10 +32,15 @@ def main() -> int:
     parser.add_argument("--performance-source", required=True)
     parser.add_argument("--performance-observed-at", required=True)
     for platform in PLATFORMS:
-        parser.add_argument(f"--{platform}-compat-sha256", required=True)
-        parser.add_argument(f"--{platform}-compat-observed-at", required=True)
-        parser.add_argument(f"--{platform}-terminal", required=True)
-        parser.add_argument(f"--{platform}-terminal-observed-at", required=True)
+        required = platform == PRIMARY_PLATFORM
+        parser.add_argument(f"--{platform}-compat-sha256", required=required, default="")
+        parser.add_argument(
+            f"--{platform}-compat-observed-at", required=required, default=""
+        )
+        parser.add_argument(f"--{platform}-terminal", required=required, default="")
+        parser.add_argument(
+            f"--{platform}-terminal-observed-at", required=required, default=""
+        )
     args = parser.parse_args()
 
     if not HEX40.fullmatch(args.commit):
@@ -44,27 +51,29 @@ def main() -> int:
     compatibility = {}
     terminal = {}
     for platform in PLATFORMS:
-        compat_sha = getattr(args, f"{platform}_compat_sha256")
+        compat_sha = getattr(args, f"{platform}_compat_sha256").strip()
+        compat_at = getattr(args, f"{platform}_compat_observed_at").strip()
+        terminal_name = getattr(args, f"{platform}_terminal").strip()
+        terminal_at = getattr(args, f"{platform}_terminal_observed_at").strip()
+
+        supplied = [bool(compat_sha), bool(compat_at), bool(terminal_name), bool(terminal_at)]
+        if platform != PRIMARY_PLATFORM and not any(supplied):
+            continue
+        if not all(supplied):
+            raise SystemExit(
+                f"{platform} secondary evidence must be either fully omitted or fully provided"
+            )
         if not HEX64.fullmatch(compat_sha):
             raise SystemExit(f"{platform} compatibility SHA-256 must be 64 hex characters")
         compatibility[platform] = {
             "status": "ready",
             "reportSha256": compat_sha.lower(),
-            "observedAt": nonempty(
-                getattr(args, f"{platform}_compat_observed_at"),
-                f"{platform} compatibility observed-at",
-            ),
+            "observedAt": nonempty(compat_at, f"{platform} compatibility observed-at"),
         }
         terminal[platform] = {
             "status": "pass",
-            "terminal": nonempty(
-                getattr(args, f"{platform}_terminal"),
-                f"{platform} terminal",
-            ),
-            "observedAt": nonempty(
-                getattr(args, f"{platform}_terminal_observed_at"),
-                f"{platform} terminal observed-at",
-            ),
+            "terminal": nonempty(terminal_name, f"{platform} terminal"),
+            "observedAt": nonempty(terminal_at, f"{platform} terminal observed-at"),
         }
 
     if args.performance_iterations < 200:
@@ -80,9 +89,12 @@ def main() -> int:
         "commitSha": args.commit.lower(),
         "canonicalCiRun": args.canonical_ci_run,
         "compatSchema": args.compat_schema,
+        "primaryPlatform": PRIMARY_PLATFORM,
+        "secondaryPlatforms": list(SECONDARY_PLATFORMS),
         "compatibility": compatibility,
         "terminalRestoration": terminal,
         "performance": {
+            "platform": PRIMARY_PLATFORM,
             "fixture": "resident-planning-10k",
             "iterations": args.performance_iterations,
             "p95Ms": args.performance_p95_ms,

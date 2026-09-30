@@ -66,9 +66,10 @@ It binds:
 - exact 40-character source SHA;
 - canonical successful CI run ID;
 - compatibility schema version;
-- Linux/macOS/Windows compatibility report SHA-256 values with READY state and observation timestamps;
-- Linux/macOS/Windows terminal-restoration PASS receipts;
-- retained `resident-planning-10k` p95/p99 performance receipt.
+- Linux Tier 1 compatibility report SHA-256 with READY state and observation timestamp;
+- Linux Tier 1 terminal-restoration PASS receipt;
+- Linux retained `resident-planning-10k` p95/p99 performance receipt;
+- optional macOS/Windows Tier 2 retained receipts when available.
 
 The stable verifier requires:
 
@@ -186,3 +187,45 @@ M7d3 does not add:
 - a remote release database;
 - a generic workflow/job engine;
 - a second source of product version truth.
+
+## Linux-first v1.0 support policy
+
+For v1.0, Linux is the Tier 1 stable platform.
+
+Stable-blocking real-world retained evidence:
+
+- Linux `compat/v2` readiness = READY;
+- Linux real controlling-TTY restoration smoke = PASS;
+- Linux retained resident-planning-10k benchmark >= 200 samples, p95 <= 50 ms, p99 <= 100 ms.
+
+macOS and Windows remain Tier 2 automated-compatibility platforms:
+
+- canonical CI remains required on both;
+- native release build, notices, archive construction, Apache-2.0 archive smoke, binary smoke and bundle checks remain required;
+- their real Codex-environment compatibility and real-TTY receipts are optional for v1.0 stable.
+
+The support policy is intentionally asymmetric so Linux stable is not blocked by unavailable macOS/Windows real-environment evidence while cross-platform build regressions still fail the release.
+
+### Linux qualification command
+
+After the real-TTY smoke receipt exists, run from a clean `main` checkout of the exact candidate SHA:
+
+```bash
+python scripts/release/linux_qualify.py \
+  --canonical-ci-run <successful-main-ci-run-id> \
+  --terminal-receipt release/evidence/linux/terminal-linux.json \
+  --source <retained-linux-machine-id>
+```
+
+It performs:
+
+1. clean-main / exact-SHA validation;
+2. canonical GitHub CI run validation;
+3. `cargo build --release --locked`;
+4. Linux READY compatibility capture + SHA-256;
+5. 20 warmup + 200 measured resident-planning-10k samples;
+6. Linux terminal receipt validation;
+7. `release-evidence/v2` assembly;
+8. local `stable v1.0.0` release verification.
+
+The result is retained under `release/evidence/linux/`. The script never publishes.
