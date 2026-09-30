@@ -500,9 +500,9 @@ mod tests {
     }
 
     #[test]
-    fn current_v1_package_is_stable_eligible_but_prerelease_versions_are_not() {
-        assert_eq!(env!("CARGO_PKG_VERSION"), "1.0.0");
+    fn current_package_and_first_stable_line_are_eligible_but_prereleases_are_not() {
         assert!(stable_version_allowed(env!("CARGO_PKG_VERSION")));
+        assert!(stable_version_allowed("1.0.0"));
         assert!(stable_version_allowed("2.3.4"));
         assert!(!stable_version_allowed("1.0.0-rc.1"));
     }
