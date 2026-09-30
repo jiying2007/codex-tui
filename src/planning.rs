@@ -366,7 +366,7 @@ fn parse_query_terms(filter: &str) -> Option<Vec<QueryTerm>> {
         let mut quoted = false;
         let mut escaped = false;
 
-        while let Some(ch) = chars.next() {
+        for ch in chars.by_ref() {
             if escaped {
                 value.push(ch);
                 escaped = false;
