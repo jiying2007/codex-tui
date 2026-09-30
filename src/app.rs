@@ -1989,6 +1989,79 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         },
         Action::CommitInput => {
             let mode = state.input_mode;
+            if mode == InputMode::ForgeMergeRequestTitle {
+                let title = state.input_buffer.trim().to_string();
+                if title.is_empty() {
+                    return vec![];
+                }
+                let Some(target) = state.current_forge_mutation_target() else {
+                    state.mutation_notice = Some("forge mutation target is unavailable".into());
+                    return vec![];
+                };
+                let Some(target_branch) = target.identity.default_branch.clone() else {
+                    state.mutation_notice =
+                        Some("GitLab default branch is unavailable; create-MR plan refused".into());
+                    return vec![];
+                };
+                match ForgeMutationPlan::create_merge_request(
+                    &target.identity,
+                    target.cwd,
+                    target.branch,
+                    target_branch,
+                    title,
+                    now_unix_ms(),
+                ) {
+                    Ok(plan) => {
+                        state.pending_forge_operation = Some(plan);
+                        state.pending_forge_payload = None;
+                        state.input_mode = InputMode::Normal;
+                        state.input_buffer.clear();
+                        state.mutation_notice = None;
+                    }
+                    Err(error) => {
+                        state.mutation_notice =
+                            Some(format!("cannot create forge mutation plan: {error:#}"));
+                    }
+                }
+                return vec![];
+            }
+            if mode == InputMode::ForgeComment {
+                let body = state.input_buffer.trim().to_string();
+                if body.is_empty() {
+                    return vec![];
+                }
+                let Some(target) = state.current_forge_mutation_target() else {
+                    state.mutation_notice = Some("forge mutation target is unavailable".into());
+                    return vec![];
+                };
+                let Some(change) = target.change_request else {
+                    state.mutation_notice =
+                        Some("current branch has no open merge request".into());
+                    return vec![];
+                };
+                match ForgeMutationPlan::comment_merge_request(
+                    &target.identity,
+                    target.cwd,
+                    change.iid,
+                    change.source_branch,
+                    change.target_branch,
+                    body.len(),
+                    now_unix_ms(),
+                ) {
+                    Ok(plan) => {
+                        state.pending_forge_operation = Some(plan);
+                        state.pending_forge_payload = Some(body);
+                        state.input_mode = InputMode::Normal;
+                        state.input_buffer.clear();
+                        state.mutation_notice = None;
+                    }
+                    Err(error) => {
+                        state.mutation_notice =
+                            Some(format!("cannot create forge mutation plan: {error:#}"));
+                    }
+                }
+                return vec![];
+            }
             if mode == InputMode::WorktreeCreateBranch {
                 let branch = state.input_buffer.trim().to_string();
                 if branch.is_empty() {
@@ -2250,6 +2323,14 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.input_original.clear();
         }
         Action::CancelInput => {
+            if matches!(
+                state.input_mode,
+                InputMode::ForgeMergeRequestTitle | InputMode::ForgeComment
+            ) {
+                state.input_mode = InputMode::Normal;
+                state.input_buffer.clear();
+                return vec![];
+            }
             if matches!(
                 state.input_mode,
                 InputMode::WorktreeCreateBranch
