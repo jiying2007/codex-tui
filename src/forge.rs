@@ -1,4 +1,5 @@
 use crate::domain::ThreadId;
+use crate::forge_github::{GitHubProvider, probe_github_with_remote};
 use anyhow::{Context, Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -277,6 +278,73 @@ pub trait ForgeProvider: Send + Sync {
     ) -> ForgeFuture<'a, ForgeReviewSummary>;
 }
 
+pub fn provider_kind_for_host(host: &str) -> ForgeProviderKind {
+    if host.eq_ignore_ascii_case("github.com") {
+        ForgeProviderKind::GitHub
+    } else {
+        ForgeProviderKind::GitLab
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct RoutingForgeProvider;
+
+impl ForgeProvider for RoutingForgeProvider {
+    fn probe<'a>(&'a self, thread_id: ThreadId, cwd: String) -> ForgeFuture<'a, ForgeObservation> {
+        Box::pin(async move {
+            let remote = match resolve_git_remote(Path::new(&cwd)).await {
+                Ok(remote) => remote,
+                Err(error) => {
+                    return ForgeObservation::unavailable(thread_id, cwd, error.to_string());
+                }
+            };
+            let result = match provider_kind_for_host(&remote.host) {
+                ForgeProviderKind::GitHub => {
+                    probe_github_with_remote(thread_id.clone(), cwd.clone(), remote).await
+                }
+                ForgeProviderKind::GitLab => {
+                    probe_gitlab_with_remote(thread_id.clone(), cwd.clone(), remote).await
+                }
+            };
+            result.unwrap_or_else(|error| {
+                ForgeObservation::unavailable(thread_id, cwd, error.to_string())
+            })
+        })
+    }
+
+    fn probe_review<'a>(
+        &'a self,
+        thread_id: ThreadId,
+        cwd: String,
+        provider: ForgeProviderKind,
+        host: String,
+        project_id: String,
+        project_path: String,
+        change_request_iid: u64,
+    ) -> ForgeFuture<'a, ForgeReviewSummary> {
+        match provider {
+            ForgeProviderKind::GitHub => GitHubProvider.probe_review(
+                thread_id,
+                cwd,
+                provider,
+                host,
+                project_id,
+                project_path,
+                change_request_iid,
+            ),
+            ForgeProviderKind::GitLab => GitLabProvider.probe_review(
+                thread_id,
+                cwd,
+                provider,
+                host,
+                project_id,
+                project_path,
+                change_request_iid,
+            ),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Default)]
 pub struct GitLabProvider;
 
@@ -341,7 +409,7 @@ pub struct ForgeHandle {
 
 impl ForgeHandle {
     pub fn start() -> Self {
-        Self::start_with_provider(Arc::new(GitLabProvider))
+        Self::start_with_provider(Arc::new(RoutingForgeProvider))
     }
 
     pub fn start_with_provider(provider: Arc<dyn ForgeProvider>) -> Self {
@@ -507,11 +575,19 @@ struct GitLabDiscussionNote {
 }
 
 pub async fn probe_thread(thread_id: ThreadId, cwd: String) -> ForgeObservation {
-    GitLabProvider.probe(thread_id, cwd).await
+    RoutingForgeProvider.probe(thread_id, cwd).await
 }
 
 pub async fn probe_gitlab(thread_id: ThreadId, cwd: String) -> Result<ForgeObservation> {
     let remote = resolve_git_remote(Path::new(&cwd)).await?;
+    probe_gitlab_with_remote(thread_id, cwd, remote).await
+}
+
+pub(crate) async fn probe_gitlab_with_remote(
+    thread_id: ThreadId,
+    cwd: String,
+    remote: RemoteIdentity,
+) -> Result<ForgeObservation> {
     let project_path = percent_encode_project_path(&remote.path_with_namespace);
 
     let project: GitLabProject =
@@ -759,7 +835,7 @@ pub async fn doctor(cwd: String) -> ForgeDoctorSnapshot {
     }
 }
 
-async fn resolve_git_remote(cwd: &Path) -> Result<RemoteIdentity> {
+pub(crate) async fn resolve_git_remote(cwd: &Path) -> Result<RemoteIdentity> {
     let remotes_output = run_command(
         "git",
         &["-C", cwd.to_string_lossy().as_ref(), "remote", "-v"],
@@ -933,7 +1009,7 @@ fn normalize_remote_parts(host: &str, path: &str) -> Option<(String, String)> {
     Some((host.to_ascii_lowercase(), path.to_string()))
 }
 
-fn default_capabilities() -> BTreeMap<ForgeCapability, CapabilityState> {
+pub(crate) fn default_capabilities() -> BTreeMap<ForgeCapability, CapabilityState> {
     [
         (ForgeCapability::Issues, CapabilityState::Unknown),
         (ForgeCapability::IssueBoards, CapabilityState::Unknown),
@@ -1042,13 +1118,13 @@ const fn hex(value: u8) -> char {
 }
 
 #[derive(Debug)]
-struct CommandOutput {
-    success: bool,
-    stdout: String,
-    stderr: String,
+pub(crate) struct CommandOutput {
+    pub(crate) success: bool,
+    pub(crate) stdout: String,
+    pub(crate) stderr: String,
 }
 
-async fn run_command(program: &str, args: &[&str], cwd: Option<&Path>) -> Result<CommandOutput> {
+pub(crate) async fn run_command(program: &str, args: &[&str], cwd: Option<&Path>) -> Result<CommandOutput> {
     let mut command = Command::new(program);
     command
         .args(args)
@@ -1102,7 +1178,7 @@ where
     Ok(output)
 }
 
-fn trim_error(stderr: &str, fallback: &str) -> String {
+pub(crate) fn trim_error(stderr: &str, fallback: &str) -> String {
     let value = stderr.trim();
     if value.is_empty() {
         fallback.to_string()
@@ -1111,7 +1187,7 @@ fn trim_error(stderr: &str, fallback: &str) -> String {
     }
 }
 
-fn first_nonempty_line(value: &str) -> Option<&str> {
+pub(crate) fn first_nonempty_line(value: &str) -> Option<&str> {
     value.lines().map(str::trim).find(|line| !line.is_empty())
 }
 
