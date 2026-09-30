@@ -564,6 +564,17 @@ async fn doctor(scope: Option<&str>) -> Result<()> {
             "forge-server-version: {}",
             snapshot.server_version.as_deref().unwrap_or("<unknown>")
         );
+        println!(
+            "forge-server-edition: {}",
+            snapshot.server_edition.as_deref().unwrap_or("<unknown>")
+        );
+        println!(
+            "forge-server-tier: {}",
+            snapshot
+                .server_tier
+                .as_deref()
+                .unwrap_or("<unknown/not-discoverable>")
+        );
         if let Some(remote) = &snapshot.remote {
             println!("forge-remote: {}", remote.remote_name);
             println!("forge-host: {}", remote.host);
