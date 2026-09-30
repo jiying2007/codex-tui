@@ -186,7 +186,8 @@ M7b3 adds repository-shared `.codex-tui.toml` launch presets as a deliberately n
 - M7c2 Terminal Drawer UI/input/resize: implemented.
 - M7c3 PTY lifecycle/cleanup E2E: implemented across Ubuntu/macOS/Windows, including Windows ConPTY terminal-query handling.
 - M7d1 accessibility/CJK/grapheme/keyboard-focus hardening: implemented on the v0.7.x line.
-- M7d2 compatibility matrix + Doctor evidence contract: next; M7d3 release hardening follows.
+- M7d2 compatibility matrix + Doctor evidence contract: implemented as `compat/v2` with required/optional readiness and retained-evidence metadata.
+- M7d3 stable/preview release hardening: next.
 
 Architecture and product research are archived under `docs/research/`.
 Implementation design lives under `docs/design/`.
@@ -218,3 +219,4 @@ See:
 - `docs/implementation/m7c2-terminal-drawer.md`
 - `docs/implementation/m7c3-pty-lifecycle.md`
 - `docs/implementation/m7d1-accessibility.md`
+- `docs/implementation/m7d2-compatibility.md`
