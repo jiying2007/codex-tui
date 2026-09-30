@@ -165,7 +165,7 @@ fn spawn_and_drive_pty(
                     Ok(0) => {
                         let _ = output_tx.send(PtyEvent::ReaderClosed);
                         break;
-                    },
+                    }
                     Ok(count) => {
                         if output_tx
                             .send(PtyEvent::Output(buffer[..count].to_vec()))
