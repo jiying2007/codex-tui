@@ -1609,43 +1609,30 @@ fn centered_fixed(width: u16, height: u16, area: Rect) -> Rect {
     }
 }
 
+const HELP_LINES: &[&str] = &[
+    "Global: ? help · Ctrl+K palette · / search · . context · t terminal · T close terminal · Esc back",
+    "Registry: j/k · Enter · Space attention · / search · p pin · e alias · x ack",
+    "Thread: a composer · y/n/c approval · i answer · Ctrl+C interrupt · r review",
+    "Review: j/k file · w word-diff · e editor · . Forge actions · PageUp/PageDown · Esc",
+    "Workspace: Git + Forge · . actions/launch presets · r review · m worktrees · Esc",
+    "Managed Worktrees: n create · a adopt · d remove · x delete branch · y confirm",
+    "Board: h/l stage · j/k item · Space attention · s snooze · = bind · 1–9 hot slot",
+    "Board: Tab Saved View · . batch-local/context · Enter open · a Quick Prompt · n Scratch",
+    "Scratch: local-only detail · Esc Board",
+    "Terminal focus: keys go to PTY · Ctrl+] return to app · Shift+PgUp/PgDn scrollback.",
+    "Authority: Codex/Git/Forge stay canonical; codex-tui stores operator state only.",
+];
+
 fn render_help(frame: &mut Frame<'_>) {
     let area = centered_rect(70, 70, frame.area());
     frame.render_widget(Clear, area);
     frame.render_widget(
-        Paragraph::new(vec![
-            Line::from(
-                "Global: ? help · Ctrl+K palette · / search · . context · t terminal · T close terminal · Esc back",
-            ),
-            Line::from(
-                "Registry: j/k · Enter · Space attention · / search · p pin · e alias · x ack",
-            ),
-            Line::from(
-                "Thread: a composer · y/n/c approval · i answer · Ctrl+C interrupt · r review",
-            ),
-            Line::from(
-                "Review: j/k file · w word-diff · e editor · . Forge actions · PageUp/PageDown · Esc",
-            ),
-            Line::from(
-                "Workspace: Git + Forge · . actions/launch presets · r review · m worktrees · Esc",
-            ),
-            Line::from(
-                "Managed Worktrees: n create · a adopt · d remove · x delete branch · y confirm",
-            ),
-            Line::from(
-                "Board: h/l stage · j/k item · Space attention · s snooze · = bind · 1–9 hot slot",
-            ),
-            Line::from(
-                "Board: Tab Saved View · . batch-local/context · Enter open · a Quick Prompt · n Scratch",
-            ),
-            Line::from("Scratch: local-only detail · Esc Board"),
-            Line::from(
-                "Terminal focus: keys go to PTY · Ctrl+] return to app · Shift+PgUp/PgDn scrollback.",
-            ),
-            Line::from(
-                "Authority: Codex/Git/Forge stay canonical; codex-tui stores operator state only.",
-            ),
-        ])
+        Paragraph::new(
+            HELP_LINES
+                .iter()
+                .map(|line| Line::from(*line))
+                .collect::<Vec<_>>(),
+        )
         .block(Block::bordered().title(" Help "))
         .wrap(Wrap { trim: true }),
         area,
@@ -1849,6 +1836,73 @@ mod tests {
         let small = terminal_drawer_pty_size(20, 8);
         assert!(small.rows > 0);
         assert!(small.cols > 0);
+    }
+
+    #[test]
+    fn help_hints_match_locked_keyboard_commands() {
+        use crate::app::ViewKind;
+        use crate::keymap::{Command, command_for_key};
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let help = HELP_LINES.join("\n");
+        for (needle, key, view, command) in [
+            (
+                "? help",
+                KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE),
+                ViewKind::Registry,
+                Command::Help,
+            ),
+            (
+                "/ search",
+                KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE),
+                ViewKind::Registry,
+                Command::Search,
+            ),
+            (
+                ". context",
+                KeyEvent::new(KeyCode::Char('.'), KeyModifiers::NONE),
+                ViewKind::Registry,
+                Command::ContextActions,
+            ),
+            (
+                "t terminal",
+                KeyEvent::new(KeyCode::Char('t'), KeyModifiers::NONE),
+                ViewKind::Workspace,
+                Command::TerminalDrawer,
+            ),
+            (
+                "T close terminal",
+                KeyEvent::new(KeyCode::Char('T'), KeyModifiers::NONE),
+                ViewKind::Workspace,
+                Command::CloseTerminalDrawer,
+            ),
+        ] {
+            assert!(help.contains(needle), "missing help hint {needle:?}");
+            assert_eq!(command_for_key(key, view), Some(command));
+        }
+    }
+
+    #[test]
+    fn ui_source_does_not_require_private_use_icon_fonts() {
+        fn private_use(ch: char) -> bool {
+            matches!(
+                ch as u32,
+                0xe000..=0xf8ff | 0xf0000..=0xffffd | 0x100000..=0x10fffd
+            )
+        }
+
+        assert!(
+            !include_str!("ui.rs").chars().any(private_use),
+            "UI source must not depend on Nerd Font/private-use glyphs"
+        );
+    }
+
+    #[test]
+    fn very_narrow_registry_layouts_render_without_panicking() {
+        for width in [20, 30, 40] {
+            let snapshot = render_snapshot(width);
+            assert!(!snapshot.is_empty(), "width={width}");
+        }
     }
 
     #[test]
