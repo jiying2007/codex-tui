@@ -19,6 +19,15 @@ pub enum LaunchCwd {
     Thread,
 }
 
+impl LaunchCwd {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Repo => "repo",
+            Self::Thread => "thread",
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LaunchPreset {

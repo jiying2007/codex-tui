@@ -4,6 +4,7 @@ use crate::domain::ThreadSummary;
 use crate::git::presentation_diff_lines;
 use crate::planning::{SavedViewLayout, WorkflowStage, apply_saved_view, saved_view_group_key};
 use crate::pty::TerminalSize;
+use crate::text::{fit_display, sanitize_inline, truncate_display};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -114,8 +115,8 @@ fn render_terminal_drawer(frame: &mut Frame<'_>, app: &AppState) {
     };
     let title = format!(
         " Terminal Drawer · {focus} · {} · {} ",
-        truncate(cwd, 44),
-        truncate(&status, 36)
+        truncate_display(cwd, 44),
+        truncate_display(&status, 36)
     );
 
     let lines = snapshot.map_or_else(
@@ -190,11 +191,11 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState) {
         )),
         InputMode::Note => Line::from(format!(
             "note> {}  · Enter save · Esc cancel",
-            truncate(&app.input_buffer, 60)
+            truncate_display(&app.input_buffer, 60)
         )),
         InputMode::SavedViewName => Line::from(format!(
             "view name> {}  · Enter save · Esc cancel",
-            truncate(&app.input_buffer, 60)
+            truncate_display(&app.input_buffer, 60)
         )),
         InputMode::BatchAddTag
         | InputMode::BatchRemoveTag
@@ -213,7 +214,7 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState) {
                 Line::from(format!(
                     "{} · offline/degraded · {}",
                     app.backend_status.source,
-                    truncate(error, 80)
+                    truncate_display(error, 80)
                 ))
             } else {
                 Line::from(format!(
@@ -300,11 +301,11 @@ fn thread_list(app: &AppState) -> Paragraph<'static> {
             " "
         };
         let text = format!(
-            "{prefix}{pin}{collision} {:7} {:18} {:10} {}",
+            "{prefix}{pin}{collision} {:7} {} {} {}",
             thread.runtime.label(),
-            truncate(&thread.workspace, 18),
-            attention,
-            thread.display_title()
+            fit_display(&thread.workspace, 18),
+            fit_display(&attention, 10),
+            sanitize_inline(thread.display_title())
         );
         let style = if selected {
             Style::default().add_modifier(Modifier::REVERSED)
@@ -325,7 +326,7 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
     let mut lines = if let Some(thread) = app.selected_thread() {
         vec![
             Line::from(format!("Thread: {}", thread.id)),
-            Line::from(format!("Workspace: {}", thread.workspace)),
+            Line::from(format!("Workspace: {}", sanitize_inline(&thread.workspace))),
             Line::from(format!("Runtime: {}", thread.runtime.label())),
             Line::from(format!(
                 "Attention: {}",
@@ -344,8 +345,11 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
                 "Model: {}",
                 thread.metadata.model.as_deref().unwrap_or("unknown")
             )),
-            Line::from(format!("Cwd: {}", thread.metadata.cwd)),
-            Line::from(format!("Source: {}", thread.metadata.source)),
+            Line::from(format!("Cwd: {}", sanitize_inline(&thread.metadata.cwd))),
+            Line::from(format!(
+                "Source: {}",
+                sanitize_inline(&thread.metadata.source)
+            )),
             Line::from(format!(
                 "Workspace basis: {}",
                 thread.metadata.workspace_basis
@@ -422,13 +426,13 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
                 if let Some(worktree) = &context.worktree {
                     lines.push(Line::from(format!(
                         "Worktree: {}",
-                        truncate(&worktree.canonical_path, 42)
+                        truncate_display(&worktree.canonical_path, 42)
                     )));
                 }
                 if let Some(repo) = &context.repo {
                     lines.push(Line::from(format!(
                         "Repo: {}",
-                        truncate(&repo.primary_root, 42)
+                        truncate_display(&repo.primary_root, 42)
                     )));
                 }
                 let collisions = app.worktree_collision_count(&thread.id);
@@ -498,7 +502,7 @@ fn forge_context_lines(app: &AppState, thread_id: &crate::domain::ThreadId) -> V
     let Some(identity) = &observation.identity else {
         return vec![Line::from(format!(
             "Forge: unavailable · {}",
-            truncate(
+            truncate_display(
                 observation
                     .error
                     .as_deref()
@@ -528,7 +532,7 @@ fn forge_context_lines(app: &AppState, thread_id: &crate::domain::ThreadId) -> V
                 change.iid,
                 if change.draft { "draft · " } else { "" },
                 change.state,
-                truncate(&change.title, 58)
+                truncate_display(&change.title, 58)
             )));
         } else {
             lines.push(Line::from(format!("CR: none for branch {branch}")));
@@ -546,7 +550,10 @@ fn forge_context_lines(app: &AppState, thread_id: &crate::domain::ThreadId) -> V
     }
 
     if let Some(notice) = &app.mutation_notice {
-        lines.push(Line::from(format!("Mutation: {}", truncate(notice, 90))));
+        lines.push(Line::from(format!(
+            "Mutation: {}",
+            truncate_display(notice, 90)
+        )));
     }
 
     lines
@@ -561,7 +568,7 @@ fn goal_summary(app: &AppState, thread_id: &str) -> String {
         return format!(
             "{} · {} · tokens={} · {}s",
             goal.status.label(),
-            truncate(&goal.objective, 42),
+            truncate_display(&goal.objective, 42),
             budget,
             goal.time_used_seconds
         );
@@ -780,7 +787,7 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState) {
                             if selected { ">" } else { " " },
                             pin,
                             attention,
-                            truncate(&card.title, 20),
+                            truncate_display(&sanitize_inline(&card.title), 20),
                             goal
                         );
                         let style = if selected {
@@ -865,17 +872,17 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState) {
     } else if app.input_mode == InputMode::Note {
         format!(
             "note> {} · Enter save · Esc cancel",
-            truncate(&app.input_buffer, 80)
+            truncate_display(&app.input_buffer, 80)
         )
     } else if app.input_mode == InputMode::SavedViewName {
         format!(
             "view name> {} · Enter save · Esc cancel",
-            truncate(&app.input_buffer, 80)
+            truncate_display(&app.input_buffer, 80)
         )
     } else if app.hot_slot_bind_pending {
         "bind hot slot: press 1–9 · Esc cancels other input only".into()
     } else if let Some(error) = &app.planning_store_error {
-        format!("LOCAL STORE DEGRADED · {}", truncate(error, 80))
+        format!("LOCAL STORE DEGRADED · {}", truncate_display(error, 80))
     } else {
         format!(
             "h/l stage · j/k item · Tab view · Enter open · Space attention · s snooze · = bind · 1–9 jump · n scratch · view {}/{}",
@@ -910,13 +917,13 @@ fn planning_card_line(card: &crate::planning::WorkCardProjection, selected: bool
         .map(|goal| goal.status.label())
         .unwrap_or("-");
     let text = format!(
-        "{} {:7} {:10} {:12} {:8} {}",
+        "{} {} {} {} {} {}",
         if selected { ">" } else { " " },
-        card.stage.label(),
-        truncate(&attention, 10),
-        truncate(goal, 12),
-        source,
-        card.title
+        fit_display(card.stage.label(), 7),
+        fit_display(&attention, 10),
+        fit_display(goal, 12),
+        fit_display(source, 8),
+        sanitize_inline(&card.title)
     );
     let style = if selected {
         Style::default().add_modifier(Modifier::REVERSED)
@@ -940,7 +947,7 @@ fn render_scratch(frame: &mut Frame<'_>, app: &AppState, scratch_id: &str) {
     {
         vec![
             Line::from(format!("Scratch: {}", scratch.id)),
-            Line::from(format!("Title: {}", scratch.title)),
+            Line::from(format!("Title: {}", sanitize_inline(&scratch.title))),
             Line::from(format!(
                 "State: {:?} · priority={}",
                 scratch.state,
@@ -950,11 +957,11 @@ fn render_scratch(frame: &mut Frame<'_>, app: &AppState, scratch_id: &str) {
             )),
             Line::from(format!(
                 "Workspace: {}",
-                scratch.workspace.as_deref().unwrap_or("<none>")
+                sanitize_inline(scratch.workspace.as_deref().unwrap_or("<none>"))
             )),
             Line::from(format!(
                 "Note: {}",
-                scratch.note.as_deref().unwrap_or("<empty>")
+                sanitize_inline(scratch.note.as_deref().unwrap_or("<empty>"))
             )),
             Line::from(""),
             Line::from(
@@ -1048,7 +1055,11 @@ fn render_workspace(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
             lines.push(Line::from(""));
             lines.push(Line::from("Changed files:"));
             lines.extend(context.changes.iter().take(100).map(|change| {
-                Line::from(format!("  {:2} {}", change.status_label(), change.path))
+                Line::from(format!(
+                    "  {:2} {}",
+                    change.status_label(),
+                    sanitize_inline(&change.path)
+                ))
             }));
             if context.changes.len() > 100 {
                 lines.push(Line::from(format!(
@@ -1108,10 +1119,10 @@ fn render_managed_worktrees(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
             let prefix = if selected { ">" } else { " " };
             let ownership = if record.adopted { "adopted" } else { "managed" };
             let text = format!(
-                "{prefix} {:8} {:18} {}",
-                ownership,
-                record.branch.as_deref().unwrap_or("<detached>"),
-                record.canonical_path
+                "{prefix} {} {} {}",
+                fit_display(ownership, 8),
+                fit_display(record.branch.as_deref().unwrap_or("<detached>"), 18),
+                sanitize_inline(&record.canonical_path)
             );
             let style = if selected {
                 Style::default().add_modifier(Modifier::REVERSED)
@@ -1171,17 +1182,23 @@ fn render_managed_worktrees(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
         if let Some(verification) = &receipt.verification {
             lines.push(Line::from(format!(
                 "Verified: {}",
-                truncate(verification, 90)
+                truncate_display(verification, 90)
             )));
         }
         if let Some(failure) = &receipt.failure {
-            lines.push(Line::from(format!("Failure: {}", truncate(failure, 90))));
+            lines.push(Line::from(format!(
+                "Failure: {}",
+                truncate_display(failure, 90)
+            )));
         }
     }
 
     if let Some(notice) = &app.mutation_notice {
         lines.push(Line::from(""));
-        lines.push(Line::from(format!("Notice: {}", truncate(notice, 100))));
+        lines.push(Line::from(format!(
+            "Notice: {}",
+            truncate_display(notice, 100)
+        )));
     }
 
     frame.render_widget(
@@ -1439,7 +1456,10 @@ fn render_forge_mutation_confirmation(frame: &mut Frame<'_>, app: &AppState) {
         )));
     }
     if let Some(title) = &plan.title {
-        lines.push(Line::from(format!("Title: {}", truncate(title, 88))));
+        lines.push(Line::from(format!(
+            "Title: {}",
+            truncate_display(title, 88)
+        )));
     }
     if let Some(bytes) = plan.payload_bytes {
         lines.push(Line::from(format!(
@@ -1448,7 +1468,7 @@ fn render_forge_mutation_confirmation(frame: &mut Frame<'_>, app: &AppState) {
     }
     lines.push(Line::from(format!(
         "Expected: {}",
-        truncate(&plan.expected_side_effect, 100)
+        truncate_display(&plan.expected_side_effect, 100)
     )));
     lines.push(Line::from(""));
     lines.push(Line::from("Preconditions revalidated at execution time:"));
@@ -1491,7 +1511,7 @@ fn render_local_batch_confirmation(frame: &mut Frame<'_>, app: &AppState) {
         lines.push(Line::from(format!(
             "  {} · {}",
             target.local_id,
-            truncate(&target.title, 48)
+            truncate_display(&target.title, 48)
         )));
     }
     if plan.targets.len() > 8 {
@@ -1543,9 +1563,9 @@ fn render_launch_presets(frame: &mut Frame<'_>, app: &AppState) {
                 format!(
                     "{} {} · cwd={:?} · {}",
                     if selected { ">" } else { " " },
-                    preset.name,
-                    preset.cwd,
-                    truncate(&argv, 72)
+                    sanitize_inline(&preset.name),
+                    preset.cwd.label(),
+                    truncate_display(&argv, 72)
                 ),
                 style,
             )));
@@ -1574,7 +1594,7 @@ fn render_launch_confirmation(frame: &mut Frame<'_>, app: &AppState) {
     };
     let lines = vec![
         Line::from("CONFIRM REQUIRED — process has not started."),
-        Line::from(format!("Preset: {}", plan.name)),
+        Line::from(format!("Preset: {}", sanitize_inline(&plan.name))),
         Line::from(format!("Config: {}", plan.config_path.display())),
         Line::from(format!("Cwd: {}", plan.cwd.display())),
         Line::from(format!("Exact argv: {}", plan.command_preview())),
@@ -1604,43 +1624,30 @@ fn centered_fixed(width: u16, height: u16, area: Rect) -> Rect {
     }
 }
 
+const HELP_LINES: &[&str] = &[
+    "Global: ? help · Ctrl+K palette · / search · . context · t terminal · T close terminal · Esc back",
+    "Registry: j/k · Enter · Space attention · / search · p pin · e alias · x ack",
+    "Thread: a composer · y/n/c approval · i answer · Ctrl+C interrupt · r review",
+    "Review: j/k file · w word-diff · e editor · . Forge actions · PageUp/PageDown · Esc",
+    "Workspace: Git + Forge · . actions/launch presets · r review · m worktrees · Esc",
+    "Managed Worktrees: n create · a adopt · d remove · x delete branch · y confirm",
+    "Board: h/l stage · j/k item · Space attention · s snooze · = bind · 1–9 hot slot",
+    "Board: Tab Saved View · . batch-local/context · Enter open · a Quick Prompt · n Scratch",
+    "Scratch: local-only detail · Esc Board",
+    "Terminal focus: keys go to PTY · Ctrl+] return to app · Shift+PgUp/PgDn scrollback.",
+    "Authority: Codex/Git/Forge stay canonical; codex-tui stores operator state only.",
+];
+
 fn render_help(frame: &mut Frame<'_>) {
     let area = centered_rect(70, 70, frame.area());
     frame.render_widget(Clear, area);
     frame.render_widget(
-        Paragraph::new(vec![
-            Line::from(
-                "Global: ? help · Ctrl+K palette · / search · . context · t terminal · T close terminal · Esc back",
-            ),
-            Line::from(
-                "Registry: j/k · Enter · Space attention · / search · p pin · e alias · x ack",
-            ),
-            Line::from(
-                "Thread: a composer · y/n/c approval · i answer · Ctrl+C interrupt · r review",
-            ),
-            Line::from(
-                "Review: j/k file · w word-diff · e editor · . Forge actions · PageUp/PageDown · Esc",
-            ),
-            Line::from(
-                "Workspace: Git + Forge · . actions/launch presets · r review · m worktrees · Esc",
-            ),
-            Line::from(
-                "Managed Worktrees: n create · a adopt · d remove · x delete branch · y confirm",
-            ),
-            Line::from(
-                "Board: h/l stage · j/k item · Space attention · s snooze · = bind · 1–9 hot slot",
-            ),
-            Line::from(
-                "Board: Tab Saved View · . batch-local/context · Enter open · a Quick Prompt · n Scratch",
-            ),
-            Line::from("Scratch: local-only detail · Esc Board"),
-            Line::from(
-                "Terminal focus: keys go to PTY · Ctrl+] return to app · Shift+PgUp/PgDn scrollback.",
-            ),
-            Line::from(
-                "Authority: Codex/Git/Forge stay canonical; codex-tui stores operator state only.",
-            ),
-        ])
+        Paragraph::new(
+            HELP_LINES
+                .iter()
+                .map(|line| Line::from(*line))
+                .collect::<Vec<_>>(),
+        )
         .block(Block::bordered().title(" Help "))
         .wrap(Wrap { trim: true }),
         area,
@@ -1727,19 +1734,6 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
         .split(vertical[1])[1]
 }
 
-fn truncate(value: &str, max: usize) -> String {
-    let count = value.chars().count();
-    if count <= max {
-        return value.to_string();
-    }
-    let mut out = value
-        .chars()
-        .take(max.saturating_sub(1))
-        .collect::<String>();
-    out.push('…');
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1762,6 +1756,68 @@ mod tests {
             out.push('\n');
         }
         out
+    }
+
+    #[test]
+    fn compact_registry_handles_cjk_emoji_graphemes_and_control_text() {
+        let backend = TestBackend::new(60, 12);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+        app.threads[0].workspace = "机器人研发中心".into();
+        app.threads[0].alias = None;
+        app.threads[0].title = "唤醒词👨‍👩‍👧‍👦 e\u{301} 测试\n控制\u{0007}字符".into();
+
+        terminal.draw(|frame| render(frame, &app)).expect("draw");
+        let buffer = terminal.backend().buffer();
+        let mut snapshot = String::new();
+        for y in 0..buffer.area.height {
+            for x in 0..buffer.area.width {
+                snapshot.push_str(buffer[(x, y)].symbol());
+            }
+            snapshot.push('\n');
+        }
+
+        for glyph in ['机', '器', '人', '唤', '醒', '词'] {
+            assert!(
+                snapshot.contains(glyph),
+                "wide glyph {glyph:?} missing from TestBackend buffer"
+            );
+        }
+        assert!(!snapshot.contains('\u{0007}'));
+    }
+
+    #[test]
+    fn terminal_drawer_preserves_semantic_cjk_rows() {
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+        app.terminal_drawer_open = true;
+        app.terminal_focused = false;
+        app.terminal_snapshot = Some(crate::terminal_drawer::TerminalSnapshot {
+            cwd: "/repo/机器人".into(),
+            size: TerminalSize { rows: 7, cols: 78 },
+            rows: vec!["中文终端 e\u{301} 👩‍💻".into()],
+            cursor_row: 0,
+            cursor_col: 0,
+            scrollback: 0,
+            state: crate::terminal_drawer::TerminalProcessState::Running,
+        });
+
+        terminal.draw(|frame| render(frame, &app)).expect("draw");
+        let buffer = terminal.backend().buffer();
+        let mut snapshot = String::new();
+        for y in 0..buffer.area.height {
+            for x in 0..buffer.area.width {
+                snapshot.push_str(buffer[(x, y)].symbol());
+            }
+            snapshot.push('\n');
+        }
+        for glyph in ['中', '文', '终', '端', '机', '器', '人'] {
+            assert!(
+                snapshot.contains(glyph),
+                "wide glyph {glyph:?} missing from TestBackend buffer"
+            );
+        }
     }
 
     #[test]
@@ -1804,6 +1860,73 @@ mod tests {
         let small = terminal_drawer_pty_size(20, 8);
         assert!(small.rows > 0);
         assert!(small.cols > 0);
+    }
+
+    #[test]
+    fn help_hints_match_locked_keyboard_commands() {
+        use crate::app::ViewKind;
+        use crate::keymap::{Command, command_for_key};
+        use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+        let help = HELP_LINES.join("\n");
+        for (needle, key, view, command) in [
+            (
+                "? help",
+                KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE),
+                ViewKind::Registry,
+                Command::Help,
+            ),
+            (
+                "/ search",
+                KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE),
+                ViewKind::Registry,
+                Command::Search,
+            ),
+            (
+                ". context",
+                KeyEvent::new(KeyCode::Char('.'), KeyModifiers::NONE),
+                ViewKind::Registry,
+                Command::ContextActions,
+            ),
+            (
+                "t terminal",
+                KeyEvent::new(KeyCode::Char('t'), KeyModifiers::NONE),
+                ViewKind::Workspace,
+                Command::TerminalDrawer,
+            ),
+            (
+                "T close terminal",
+                KeyEvent::new(KeyCode::Char('T'), KeyModifiers::NONE),
+                ViewKind::Workspace,
+                Command::CloseTerminalDrawer,
+            ),
+        ] {
+            assert!(help.contains(needle), "missing help hint {needle:?}");
+            assert_eq!(command_for_key(key, view), Some(command));
+        }
+    }
+
+    #[test]
+    fn ui_source_does_not_require_private_use_icon_fonts() {
+        fn private_use(ch: char) -> bool {
+            matches!(
+                ch as u32,
+                0xe000..=0xf8ff | 0xf0000..=0xffffd | 0x100000..=0x10fffd
+            )
+        }
+
+        assert!(
+            !include_str!("ui.rs").chars().any(private_use),
+            "UI source must not depend on Nerd Font/private-use glyphs"
+        );
+    }
+
+    #[test]
+    fn very_narrow_registry_layouts_render_without_panicking() {
+        for width in [20, 30, 40] {
+            let snapshot = render_snapshot(width);
+            assert!(!snapshot.is_empty(), "width={width}");
+        }
     }
 
     #[test]

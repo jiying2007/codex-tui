@@ -183,7 +183,10 @@ M7b3 adds repository-shared `.codex-tui.toml` launch presets as a deliberately n
 - M7b2 safe transactional batch-local actions: implemented with frozen targets, explicit confirmation, and one SQLite transaction.
 - M7b3 repository-shared safe launch presets: implemented with argv-only config, explicit plan/confirmation, and no shell/PTY semantics.
 - M7c1 bounded cross-platform PTY engine + terminal capability doctor: implemented under the v0.7.x line.
-- M7c2 Terminal Drawer UI/input/resize: next; M7c3 lifecycle E2E follows.
+- M7c2 Terminal Drawer UI/input/resize: implemented.
+- M7c3 PTY lifecycle/cleanup E2E: implemented across Ubuntu/macOS/Windows, including Windows ConPTY terminal-query handling.
+- M7d1 accessibility/CJK/grapheme/keyboard-focus hardening: implemented on the v0.7.x line.
+- M7d2 compatibility matrix + Doctor evidence contract: next; M7d3 release hardening follows.
 
 Architecture and product research are archived under `docs/research/`.
 Implementation design lives under `docs/design/`.
@@ -212,3 +215,6 @@ See:
 - `docs/implementation/m7b2-batch-local.md`
 - `docs/implementation/m7b3-launch-presets.md`
 - `docs/implementation/m7c1-pty-engine.md`
+- `docs/implementation/m7c2-terminal-drawer.md`
+- `docs/implementation/m7c3-pty-lifecycle.md`
+- `docs/implementation/m7d1-accessibility.md`
