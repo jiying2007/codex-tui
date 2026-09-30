@@ -2,7 +2,7 @@ use crate::domain::ThreadId;
 use crate::forge::{
     CapabilityState, ChangeRequestSummary, ForgeCapability, ForgeFreshness, ForgeFuture,
     ForgeIdentity, ForgeIssueSummary, ForgeObservation, ForgeProvider, ForgeProviderKind,
-    ForgeReviewSummary, PipelineSummary, RemoteIdentity, default_capabilities,
+    ForgeReviewSummary, ForgeReviewTarget, PipelineSummary, RemoteIdentity, default_capabilities,
     provider_kind_for_host, resolve_git_remote, run_command, trim_error,
 };
 use crate::operation::now_unix_ms;
@@ -35,25 +35,27 @@ impl ForgeProvider for GitHubProvider {
 
     fn probe_review<'a>(
         &'a self,
-        thread_id: ThreadId,
-        cwd: String,
-        provider: ForgeProviderKind,
-        host: String,
-        _project_id: String,
-        project_path: String,
-        change_request_iid: u64,
+        target: ForgeReviewTarget,
     ) -> ForgeFuture<'a, ForgeReviewSummary> {
         Box::pin(async move {
-            if provider != ForgeProviderKind::GitHub {
+            if target.provider != ForgeProviderKind::GitHub {
                 return unavailable_review(
-                    thread_id,
-                    cwd,
-                    change_request_iid,
+                    target.thread_id,
+                    target.cwd,
+                    target.change_request_iid,
                     "GitHub provider received non-GitHub review target".into(),
                 );
             }
-            probe_github_review(thread_id, cwd, host, project_path, change_request_iid).await
+            probe_github_review(
+                target.thread_id,
+                target.cwd,
+                target.host,
+                target.project_path,
+                target.change_request_iid,
+            )
+            .await
         })
+    }
     }
 }
 
