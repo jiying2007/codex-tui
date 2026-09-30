@@ -136,7 +136,7 @@ concurrency:
 jobs:
   gate:
     name: release-gate
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.meta.outputs.version }}
       tag: ${{ steps.meta.outputs.tag }}
@@ -259,7 +259,7 @@ jobs:
             cp release-evidence.json gate/release-evidence.json
           fi
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-gate
           path: gate/
@@ -273,7 +273,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             platform: linux
             binary: target/release/codex-tui
             python: python3
@@ -318,7 +318,7 @@ jobs:
           --tag "${{ needs.gate.outputs.tag }}"
           --commit "${{ github.sha }}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: package-${{ matrix.platform }}
           path: |
@@ -330,17 +330,17 @@ jobs:
   bundle:
     name: release-bundle
     needs: [gate, package]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: package-*
           path: bundle
           merge-multiple: true
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: release-gate
           path: bundle
@@ -376,7 +376,7 @@ jobs:
       - name: Generate checksum manifest
         run: python3 scripts/release/checksums.py bundle --output bundle/SHA256SUMS
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-bundle
           path: bundle/
@@ -387,13 +387,13 @@ jobs:
     name: publish-github-release
     if: inputs.publish == true
     needs: [gate, bundle]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: release-bundle
           path: bundle
