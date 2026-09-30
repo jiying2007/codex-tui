@@ -838,6 +838,10 @@ async fn run_app(fake_mode: bool) -> Result<()> {
             );
         }
 
+        let terminal_changed =
+            drain_terminal_drawer(&mut app, &mut services.terminal_drawer);
+        needs_render |= terminal_changed;
+
         if last_forge_reconcile.elapsed() >= Duration::from_secs(15) {
             let effects = reduce(&mut app, Action::RefreshForgeProjections);
             apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
@@ -887,7 +891,14 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                     }
                     apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
                 }
-                Event::Resize(_, _) => needs_render = true,
+                Event::Resize(cols, rows) => {
+                    needs_render = true;
+                    if app.terminal_drawer_open {
+                        let effects =
+                            vec![Effect::TerminalResize(ui::terminal_drawer_pty_size(cols, rows))];
+                        apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
+                    }
+                },
                 _ => {}
             }
         }
@@ -1036,6 +1047,17 @@ fn drain_mutations(app: &mut AppState, mutations: &mut WorktreeMutationHandle) -
         changed = true;
     }
     changed
+}
+
+fn drain_terminal_drawer(
+    app: &mut AppState,
+    terminal: &mut TerminalDrawerRuntime,
+) -> bool {
+    let Some(snapshot) = terminal.drain() else {
+        return false;
+    };
+    reduce(app, Action::TerminalSnapshot(snapshot));
+    true
 }
 
 fn apply_effects(
