@@ -3183,6 +3183,87 @@ mod tests {
     }
 
     #[test]
+    fn launch_preset_requires_load_select_plan_and_confirmation() {
+        let mut app = app();
+        let thread_id = app.threads[0].id.clone();
+        app.view = View::Workspace(thread_id.clone());
+        app.git_contexts.insert(
+            thread_id.0.clone(),
+            GitContext {
+                thread_id,
+                cwd: "/repo/subdir".into(),
+                is_repository: true,
+                repo: Some(crate::domain::LocalRepoIdentity {
+                    git_common_dir: "/repo/.git".into(),
+                    primary_root: "/repo".into(),
+                }),
+                worktree: None,
+                head: None,
+                branch: Some("main".into()),
+                upstream: None,
+                ahead: 0,
+                behind: 0,
+                dirty: false,
+                changes: vec![],
+                observed_at_unix_ms: 1,
+                error: None,
+            },
+        );
+
+        reduce(&mut app, Action::OpenContext);
+        let launch_index = app
+            .context_choices()
+            .iter()
+            .position(|choice| *choice == ContextChoice::LaunchPreset)
+            .expect("launch context");
+        app.context_selected = launch_index;
+        let effects = reduce(&mut app, Action::ExecuteContext);
+        assert_eq!(
+            effects,
+            vec![Effect::LoadLaunchPresets {
+                repo_root: "/repo".into(),
+                thread_cwd: "/repo/subdir".into(),
+            }]
+        );
+
+        let preset = LaunchPreset {
+            name: "Tests".into(),
+            argv: vec!["cargo".into(), "test".into()],
+            cwd: crate::launch::LaunchCwd::Repo,
+        };
+        reduce(
+            &mut app,
+            Action::LaunchPresetsLoaded {
+                repo_root: "/repo".into(),
+                thread_cwd: "/repo/subdir".into(),
+                presets: vec![preset.clone()],
+            },
+        );
+        assert!(app.launch_menu_open);
+        let effects = reduce(&mut app, Action::SelectLaunchPreset);
+        assert_eq!(
+            effects,
+            vec![Effect::PrepareLaunchPreset {
+                preset,
+                repo_root: "/repo".into(),
+                thread_cwd: "/repo/subdir".into(),
+            }]
+        );
+
+        let plan = LaunchPlan {
+            name: "Tests".into(),
+            argv: vec!["cargo".into(), "test".into()],
+            cwd: std::path::PathBuf::from("/repo"),
+            config_path: std::path::PathBuf::from("/repo/.codex-tui.toml"),
+        };
+        reduce(&mut app, Action::LaunchPlanPrepared(plan.clone()));
+        assert!(app.pending_launch_plan.is_some());
+        let effects = reduce(&mut app, Action::ConfirmPendingOperation);
+        assert_eq!(effects, vec![Effect::ExecuteLaunchPreset(Box::new(plan))]);
+        assert!(app.pending_launch_plan.is_none());
+    }
+
+    #[test]
     fn managed_worktree_plan_requires_explicit_confirmation_before_execution() {
         let mut app = app();
         app.threads[0].metadata.cwd = "/repo".into();
