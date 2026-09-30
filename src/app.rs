@@ -141,9 +141,14 @@ pub enum Action {
     ForgeObservationLoaded(ForgeObservation),
     ForgeReviewLoaded(ForgeReviewSummary),
     GitReviewLoaded(GitReview),
-    ReviewError { thread_id: ThreadId, error: String },
+    ReviewError {
+        thread_id: ThreadId,
+        error: String,
+    },
     PlanningSnapshotLoaded(PlanningSnapshot),
-    ReconcilePlanning { now_unix_ms: u64 },
+    ReconcilePlanning {
+        now_unix_ms: u64,
+    },
     PlanningStoreDegraded(Option<String>),
     GoalObserved(GoalObservation),
     GoalCleared(ThreadId),
@@ -194,10 +199,17 @@ pub enum Action {
     OpenReviewExternalEditor,
     ConversationLoaded(ConversationPage),
     OlderConversationLoaded(ConversationPage),
-    ConversationFailed { thread_id: ThreadId, error: String },
-    PromptSubmitted { thread_id: ThreadId },
+    ConversationFailed {
+        thread_id: ThreadId,
+        error: String,
+    },
+    PromptSubmitted {
+        thread_id: ThreadId,
+    },
     InteractiveRequested(InteractiveRequest),
-    InteractiveResolved { request_id: RpcRequestId },
+    InteractiveResolved {
+        request_id: RpcRequestId,
+    },
     ResolvePending(InteractiveResolution),
     BeginUserInput,
     MoveSelection(i32),
@@ -1465,11 +1477,13 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     return vec![];
                 };
                 let Some(context) = state.git_context(&thread_id) else {
-                    state.mutation_notice = Some("Git context unavailable for launch presets".into());
+                    state.mutation_notice =
+                        Some("Git context unavailable for launch presets".into());
                     return vec![];
                 };
                 let Some(repo) = context.repo.as_ref() else {
-                    state.mutation_notice = Some("repository root unavailable for launch presets".into());
+                    state.mutation_notice =
+                        Some("repository root unavailable for launch presets".into());
                     return vec![];
                 };
                 return vec![Effect::LoadLaunchPresets {
