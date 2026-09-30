@@ -754,11 +754,7 @@ async fn validate_preconditions(plan: &ForgeMutationPlan) -> Result<Preflight> {
 
             match approval_state(plan, mr.iid).await {
                 Ok(state) => {
-                    let unsatisfied = state
-                        .rules
-                        .iter()
-                        .filter(|rule| rule.approvals_required > 0 && !rule.approved)
-                        .count();
+                    let unsatisfied = unsatisfied_required_approval_rules(&state);
                     anyhow::ensure!(
                         unsatisfied == 0,
                         "merge request has {unsatisfied} unsatisfied approval rule(s)"
@@ -859,6 +855,14 @@ async fn approval_state(plan: &ForgeMutationPlan, iid: u64) -> Result<GitLabAppr
         ),
     )
     .await
+}
+
+fn unsatisfied_required_approval_rules(state: &GitLabApprovalState) -> usize {
+    state
+        .rules
+        .iter()
+        .filter(|rule| rule.approvals_required > 0 && !rule.approved)
+        .count()
 }
 
 async fn matching_merge_requests(
@@ -1292,4 +1296,84 @@ mod tests {
             .is_err()
         );
     }
+    #[test]
+    fn gitlab_mr_fixture_requires_exact_head_sha() {
+        let mr: GitLabMergeRequest = serde_json::from_value(serde_json::json!({
+            "iid": 7,
+            "title": "Ship M6b",
+            "state": "opened",
+            "source_branch": "feature/m6b",
+            "target_branch": "main",
+            "web_url": "https://gitlab.example.com/team/repo/-/merge_requests/7",
+            "sha": "0123456789abcdef",
+            "draft": false,
+            "detailed_merge_status": "mergeable",
+            "blocking_discussions_resolved": true,
+            "head_pipeline": { "status": "success" }
+        }))
+        .expect("decode GitLab MR fixture");
+
+        assert_eq!(
+            required_mr_sha(&mr).expect("head sha"),
+            "0123456789abcdef"
+        );
+
+        let missing: GitLabMergeRequest = serde_json::from_value(serde_json::json!({
+            "iid": 8,
+            "title": "Missing head",
+            "state": "opened",
+            "source_branch": "feature/missing",
+            "target_branch": "main",
+            "web_url": "https://gitlab.example.com/team/repo/-/merge_requests/8",
+            "sha": null,
+            "draft": false
+        }))
+        .expect("decode missing-sha fixture");
+        assert!(required_mr_sha(&missing).is_err());
+    }
+
+    #[test]
+    fn approval_state_fixture_counts_only_unsatisfied_required_rules() {
+        let state: GitLabApprovalState = serde_json::from_value(serde_json::json!({
+            "approval_rules_overwritten": true,
+            "rules": [
+                { "approvals_required": 2, "approved": true },
+                { "approvals_required": 1, "approved": false },
+                { "approvals_required": 0, "approved": false }
+            ]
+        }))
+        .expect("decode approval-state fixture");
+
+        assert_eq!(unsatisfied_required_approval_rules(&state), 1);
+    }
+
+    #[test]
+    fn approve_and_merge_plans_advertise_head_sha_revalidation() {
+        for plan in [
+            ForgeMutationPlan::approve_merge_request(
+                &identity(),
+                "/repo".into(),
+                7,
+                "feature".into(),
+                "main".into(),
+                1,
+            )
+            .expect("approve plan"),
+            ForgeMutationPlan::merge_merge_request(
+                &identity(),
+                "/repo".into(),
+                7,
+                "feature".into(),
+                "main".into(),
+                2,
+            )
+            .expect("merge plan"),
+        ] {
+            assert!(plan.preconditions.iter().any(|precondition| {
+                precondition.key == "head-sha-revalidated"
+                    && precondition.expected == "true"
+            }));
+        }
+    }
+
 }
