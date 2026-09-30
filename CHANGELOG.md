@@ -12,7 +12,8 @@ All notable codex-tui changes are recorded here.
 - surfaced Mission Control backend provenance (App Server platform/Codex Home) and selected cwd terminal readiness so local/foreign/stale sessions are explainable before opening the Terminal Drawer;
 - added a dedicated host-local-only Registry toggle that composes with text search instead of overwriting it;
 - persisted the host-local-only Registry preference through the existing operator-state store while keeping text search ephemeral;
-- restricted Git/Forge projection probes to host-local directories and made nonlocal Git probing explicitly skipped in Mission Control.
+- restricted Git/Forge projection probes to host-local directories and made nonlocal Git probing explicitly skipped in Mission Control;
+- surfaced selected-session Git repository backing in the Mission Control status line before the potentially long Codex Home path.
 
 ## [1.0.0] - 2026-09-30
 

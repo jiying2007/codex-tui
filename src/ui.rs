@@ -271,6 +271,22 @@ fn registry_title(app: &AppState, width: u16) -> String {
     format!(" {} ", truncate_display(&raw, budget))
 }
 
+fn selected_git_status(app: &AppState) -> &'static str {
+    let Some(thread) = app.selected_thread() else {
+        return "none";
+    };
+    if !classify_cwd(&thread.metadata.cwd).terminal_usable() {
+        return "skipped";
+    }
+    match app.git_context(&thread.id) {
+        None => "not-probed",
+        Some(context) if context.observed_at_unix_ms == 0 => "probing",
+        Some(context) if context.error.is_some() => "degraded",
+        Some(context) if context.is_repository => "repo",
+        Some(_) => "not-repo",
+    }
+}
+
 fn registry_scope_status(app: &AppState, width: u16) -> String {
     let (locality, terminal) = app
         .selected_thread()
@@ -286,8 +302,9 @@ fn registry_scope_status(app: &AppState, width: u16) -> String {
             )
         })
         .unwrap_or(("none", "blocked"));
+    let git = selected_git_status(app);
     let raw = format!(
-        "Codex home: {} · selected cwd: {locality} · terminal {terminal}",
+        "selected cwd: {locality} · terminal {terminal} · git {git} · Codex home: {}",
         sanitize_inline(backend_home_label(app))
     );
     truncate_display(&raw, usize::from(width.saturating_sub(2)).max(1))
@@ -2089,14 +2106,47 @@ mod tests {
         assert!(snapshot.contains("Mission Control · codex-app-server · linux/linux"));
         assert!(snapshot.contains("Backend: codex-app-server · linux/linux"));
         assert!(snapshot.contains("Codex home: /home/jun/.codex"));
-        assert!(snapshot.contains("selected cwd: empty · terminal blocked"));
+        assert!(snapshot.contains("selected cwd: empty · terminal blocked · git skipped"));
 
         app.threads[0].metadata.cwd = std::env::current_dir()
             .expect("cwd")
             .to_string_lossy()
             .into_owned();
         let status = registry_scope_status(&app, 160);
-        assert!(status.contains("selected cwd: local · terminal ready"));
+        assert!(status.contains("selected cwd: local · terminal ready · git not-probed"));
+    }
+
+    #[test]
+    fn registry_scope_status_distinguishes_repository_backing() {
+        let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+        app.threads[0].metadata.cwd = std::env::current_dir()
+            .expect("cwd")
+            .to_string_lossy()
+            .into_owned();
+        let thread_id = app.threads[0].id.clone();
+
+        assert_eq!(selected_git_status(&app), "not-probed");
+
+        let pending =
+            crate::git::GitContext::pending(thread_id.clone(), app.threads[0].metadata.cwd.clone());
+        app.git_contexts.insert(thread_id.0.clone(), pending);
+        assert_eq!(selected_git_status(&app), "probing");
+
+        let context = app.git_contexts.get_mut(&thread_id.0).expect("git context");
+        context.observed_at_unix_ms = 1;
+        assert_eq!(selected_git_status(&app), "not-repo");
+
+        app.git_contexts
+            .get_mut(&thread_id.0)
+            .expect("git context")
+            .is_repository = true;
+        assert_eq!(selected_git_status(&app), "repo");
+
+        app.git_contexts
+            .get_mut(&thread_id.0)
+            .expect("git context")
+            .error = Some("git unavailable".into());
+        assert_eq!(selected_git_status(&app), "degraded");
     }
 
     #[test]
