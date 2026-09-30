@@ -588,6 +588,41 @@ async fn doctor(scope: Option<&str>) -> Result<()> {
         if let Some(error) = &observation.error {
             println!("error: {error}");
         }
+    } else if scope == Some("presets") {
+        let cwd = std::env::current_dir()?;
+        let context = git::probe_context(
+            codex_tui::domain::ThreadId::new("doctor"),
+            cwd.to_string_lossy().into_owned(),
+        )
+        .await?;
+        let Some(repo) = context.repo else {
+            println!("launch-config: unavailable");
+            println!("error: current directory is not inside a Git repository");
+            return Ok(());
+        };
+        let repo_root = std::path::Path::new(&repo.primary_root);
+        let config_path = repo_root.join(codex_tui::launch::REPO_CONFIG_FILE);
+        println!("launch-config: {}", config_path.display());
+        match codex_tui::launch::RepoLaunchConfig::load(repo_root) {
+            Ok(config) => {
+                println!("launch-config-version: {}", config.version);
+                println!("launch-presets: {}", config.launches.len());
+                for preset in config.launches {
+                    println!(
+                        "preset: {} · cwd={:?} · argv={}",
+                        preset.name,
+                        preset.cwd,
+                        preset
+                            .argv
+                            .iter()
+                            .map(|arg| format!("{arg:?}"))
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    );
+                }
+            }
+            Err(error) => println!("launch-config: DEGRADED · {error:#}"),
+        }
     } else if scope == Some("codex") {
         match app_server::probe(None).await {
             Ok(snapshot) => {
@@ -602,7 +637,7 @@ async fn doctor(scope: Option<&str>) -> Result<()> {
         }
     } else {
         println!(
-            "hint: run `codex-tui doctor codex`, `doctor git`, `doctor forge`, or `doctor store`"
+            "hint: run `codex-tui doctor codex`, `doctor git`, `doctor forge`, `doctor store`, or `doctor presets`"
         );
     }
     Ok(())
@@ -1101,6 +1136,69 @@ fn apply_effects(
                     }
                 }
             }
+            Effect::LoadLaunchPresets {
+                repo_root,
+                thread_cwd,
+            } => match codex_tui::launch::RepoLaunchConfig::load(Path::new(&repo_root)) {
+                Ok(config) => {
+                    reduce(
+                        app,
+                        Action::LaunchPresetsLoaded {
+                            repo_root,
+                            thread_cwd,
+                            presets: config.launches,
+                        },
+                    );
+                }
+                Err(error) => {
+                    reduce(
+                        app,
+                        Action::MutationNotice(format!(
+                            "launch preset config unavailable: {error:#}"
+                        )),
+                    );
+                }
+            },
+            Effect::PrepareLaunchPreset {
+                preset,
+                repo_root,
+                thread_cwd,
+            } => {
+                match codex_tui::launch::LaunchPlan::build(
+                    &preset,
+                    Path::new(&repo_root),
+                    Path::new(&thread_cwd),
+                ) {
+                    Ok(plan) => {
+                        reduce(app, Action::LaunchPlanPrepared(plan));
+                    }
+                    Err(error) => {
+                        reduce(
+                            app,
+                            Action::MutationNotice(format!(
+                                "cannot create launch preset plan: {error:#}"
+                            )),
+                        );
+                    }
+                }
+            }
+            Effect::ExecuteLaunchPreset(plan) => match plan.execute() {
+                Ok(pid) => {
+                    reduce(
+                        app,
+                        Action::MutationNotice(format!(
+                            "launch preset started · {} · pid={pid}",
+                            plan.name
+                        )),
+                    );
+                }
+                Err(error) => {
+                    reduce(
+                        app,
+                        Action::MutationNotice(format!("launch preset failed: {error:#}")),
+                    );
+                }
+            },
             Effect::RefreshGoal(thread_id) => {
                 if let Some(registry) = registry
                     && let Err(error) = registry.refresh_goal(thread_id)
@@ -1409,6 +1507,16 @@ fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
         return vec![];
     }
 
+    if app.launch_menu_open {
+        return match key.code {
+            KeyCode::Esc => reduce(app, Action::CloseLaunchPresets),
+            KeyCode::Char('j') | KeyCode::Down => reduce(app, Action::MoveLaunchPreset(1)),
+            KeyCode::Char('k') | KeyCode::Up => reduce(app, Action::MoveLaunchPreset(-1)),
+            KeyCode::Enter => reduce(app, Action::SelectLaunchPreset),
+            _ => vec![],
+        };
+    }
+
     if app.context_open {
         return match key.code {
             KeyCode::Esc => reduce(app, Action::CloseContext),
@@ -1438,6 +1546,14 @@ fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
             _ => return vec![],
         };
         return reduce(app, action);
+    }
+
+    if app.pending_launch_plan.is_some() {
+        return match key.code {
+            KeyCode::Char('y') => reduce(app, Action::ConfirmPendingOperation),
+            KeyCode::Char('c') | KeyCode::Esc => reduce(app, Action::CancelPendingOperation),
+            _ => vec![],
+        };
     }
 
     if app.pending_local_batch.is_some() {
