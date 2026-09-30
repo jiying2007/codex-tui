@@ -456,6 +456,18 @@ async fn doctor(scope: Option<&str>) -> Result<()> {
             "glab-version: {}",
             snapshot.glab_version.as_deref().unwrap_or("<unavailable>")
         );
+        println!(
+            "glab-authenticated: {}",
+            snapshot
+                .authenticated
+                .map(|value| value.to_string())
+                .as_deref()
+                .unwrap_or("<unknown>")
+        );
+        println!(
+            "gitlab-server-version: {}",
+            snapshot.server_version.as_deref().unwrap_or("<unknown>")
+        );
         if let Some(remote) = &snapshot.remote {
             println!("forge-remote: {}", remote.remote_name);
             println!("forge-host: {}", remote.host);
