@@ -5,6 +5,7 @@ use codex_tui::{
     backend::{BackendStatus, CodexBackend, FakeBackend},
     conversation::{InteractiveRequestKind, InteractiveResolution},
     forge::{self, ForgeEvent, ForgeHandle},
+    forge_mutation::{ForgeMutationEvent, ForgeMutationHandle},
     git::{self, GitEvent, GitHandle},
     goal::GoalStatus,
     keymap::{Command, command_for_key},
@@ -356,6 +357,27 @@ impl RuntimeStore {
     }
 }
 
+struct RuntimeServices {
+    git: GitHandle,
+    forge: ForgeHandle,
+    forge_mutations: ForgeMutationHandle,
+    mutations: WorktreeMutationHandle,
+    store: RuntimeStore,
+}
+
+impl RuntimeServices {
+    fn new(store: RuntimeStore) -> Self {
+        let sqlite = store.sqlite_clone();
+        Self {
+            git: GitHandle::start(),
+            forge: ForgeHandle::start(),
+            forge_mutations: ForgeMutationHandle::start(sqlite.clone()),
+            mutations: WorktreeMutationHandle::start(sqlite),
+            store,
+        }
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
@@ -416,6 +438,28 @@ async fn doctor(scope: Option<&str>) -> Result<()> {
                         }
                     }
                     Err(error) => println!("operation-receipts: DEGRADED · {error:#}"),
+                }
+                match store.load_recent_forge_mutation_receipts(10) {
+                    Ok(receipts) => {
+                        println!("recent-forge-mutation-receipts: {}", receipts.len());
+                        for receipt in receipts {
+                            println!(
+                                "forge-receipt: {} · {} · {:?} · {}/{} · mr={}",
+                                receipt.operation_id,
+                                receipt.plan.kind.label(),
+                                receipt.state,
+                                receipt.plan.host,
+                                receipt.plan.project_path,
+                                receipt
+                                    .plan
+                                    .change_request_iid
+                                    .map_or_else(|| "-".into(), |iid| iid.to_string())
+                            );
+                        }
+                    }
+                    Err(error) => {
+                        println!("forge-mutation-receipts: DEGRADED · {error:#}");
+                    }
                 }
             }
             Err(error) => {
@@ -539,7 +583,7 @@ fn print_backend_status(status: &BackendStatus) {
 }
 
 async fn run_app(fake_mode: bool) -> Result<()> {
-    let (mut store, bootstrap) = RuntimeStore::discover()?;
+    let (store, bootstrap) = RuntimeStore::discover()?;
     let config = bootstrap.config;
     let local = bootstrap.local;
 
@@ -568,23 +612,24 @@ async fn run_app(fake_mode: bool) -> Result<()> {
         },
     );
 
-    let mut git = GitHandle::start();
-    let mut forge_runtime = ForgeHandle::start();
-    let mut mutations = WorktreeMutationHandle::start(store.sqlite_clone());
-    if let Err(error) = mutations.recover() {
+    let mut services = RuntimeServices::new(store);
+    if let Err(error) = services.mutations.recover() {
         reduce(
             &mut app,
             Action::MutationNotice(format!("worktree recovery unavailable: {error}")),
+        );
+    }
+    if let Err(error) = services.forge_mutations.recover() {
+        reduce(
+            &mut app,
+            Action::MutationNotice(format!("forge mutation recovery unavailable: {error}")),
         );
     }
     let initial_git_effects = reduce(&mut app, Action::RefreshGitProjections);
     apply_effects(
         &mut app,
         registry.as_ref(),
-        &git,
-        &forge_runtime,
-        &mut mutations,
-        &mut store,
+        &mut services,
         initial_git_effects,
     )?;
 
@@ -606,15 +651,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                     app.apply_local_state(&local);
                     registry = Some(started.handle);
                     let effects = reduce(&mut app, Action::RefreshGitProjections);
-                    apply_effects(
-                        &mut app,
-                        registry.as_ref(),
-                        &git,
-                        &forge_runtime,
-                        &mut mutations,
-                        &mut store,
-                        effects,
-                    )?;
+                    apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
                     reduce(
                         &mut app,
                         Action::ReconcilePlanning {
@@ -640,19 +677,11 @@ async fn run_app(fake_mode: bool) -> Result<()> {
             needs_render = true;
         }
 
-        let registry_changed = drain_registry(&mut app, registry.as_mut(), &mut store);
+        let registry_changed = drain_registry(&mut app, registry.as_mut(), &mut services.store);
         needs_render |= registry_changed;
         if registry_changed {
             let effects = reduce(&mut app, Action::RefreshGitProjections);
-            apply_effects(
-                &mut app,
-                registry.as_ref(),
-                &git,
-                &forge_runtime,
-                &mut mutations,
-                &mut store,
-                effects,
-            )?;
+            apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
             reduce(
                 &mut app,
                 Action::ReconcilePlanning {
@@ -660,19 +689,11 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                 },
             );
         }
-        let git_changed = drain_git(&mut app, &mut git);
+        let git_changed = drain_git(&mut app, &mut services.git);
         needs_render |= git_changed;
         if git_changed {
             let effects = reduce(&mut app, Action::RefreshForgeProjections);
-            apply_effects(
-                &mut app,
-                registry.as_ref(),
-                &git,
-                &forge_runtime,
-                &mut mutations,
-                &mut store,
-                effects,
-            )?;
+            apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
             reduce(
                 &mut app,
                 Action::ReconcilePlanning {
@@ -681,7 +702,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
             );
         }
 
-        let forge_changed = drain_forge(&mut app, &mut forge_runtime);
+        let forge_changed = drain_forge(&mut app, &mut services.forge);
         needs_render |= forge_changed;
         if forge_changed {
             reduce(
@@ -692,19 +713,24 @@ async fn run_app(fake_mode: bool) -> Result<()> {
             );
         }
 
-        let mutation_changed = drain_mutations(&mut app, &mut mutations);
+        let forge_mutation_changed = drain_forge_mutations(&mut app, &mut services.forge_mutations);
+        needs_render |= forge_mutation_changed;
+        if forge_mutation_changed {
+            let effects = reduce(&mut app, Action::RefreshForgeProjections);
+            apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
+            reduce(
+                &mut app,
+                Action::ReconcilePlanning {
+                    now_unix_ms: now_unix_ms(),
+                },
+            );
+        }
+
+        let mutation_changed = drain_mutations(&mut app, &mut services.mutations);
         needs_render |= mutation_changed;
         if mutation_changed {
             let effects = reduce(&mut app, Action::RefreshGitProjections);
-            apply_effects(
-                &mut app,
-                registry.as_ref(),
-                &git,
-                &forge_runtime,
-                &mut mutations,
-                &mut store,
-                effects,
-            )?;
+            apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
             reduce(
                 &mut app,
                 Action::ReconcilePlanning {
@@ -715,15 +741,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
 
         if last_forge_reconcile.elapsed() >= Duration::from_secs(15) {
             let effects = reduce(&mut app, Action::RefreshForgeProjections);
-            apply_effects(
-                &mut app,
-                registry.as_ref(),
-                &git,
-                &forge_runtime,
-                &mut mutations,
-                &mut store,
-                effects,
-            )?;
+            apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
             reduce(
                 &mut app,
                 Action::ReconcilePlanning {
@@ -741,15 +759,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
             reduce(&mut app, Action::ReplaceThreads(snapshot.threads));
             reduce(&mut app, Action::BackendStatus(snapshot.status));
             let effects = reduce(&mut app, Action::RefreshGitProjections);
-            apply_effects(
-                &mut app,
-                registry.as_ref(),
-                &git,
-                &forge_runtime,
-                &mut mutations,
-                &mut store,
-                effects,
-            )?;
+            apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
             reduce(
                 &mut app,
                 Action::ReconcilePlanning {
@@ -776,15 +786,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                     {
                         needs_render = true;
                     }
-                    apply_effects(
-                        &mut app,
-                        registry.as_ref(),
-                        &git,
-                        &forge_runtime,
-                        &mut mutations,
-                        &mut store,
-                        effects,
-                    )?;
+                    apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
                 }
                 Event::Resize(_, _) => needs_render = true,
                 _ => {}
@@ -797,7 +799,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
     if let Some(task) = connect_task {
         task.abort();
     }
-    if let Some(error) = store.persist_operator_state(&app.to_local_state()) {
+    if let Some(error) = services.store.persist_operator_state(&app.to_local_state()) {
         reduce(&mut app, Action::PlanningStoreDegraded(Some(error)));
     }
     Ok(())
@@ -902,6 +904,22 @@ fn drain_forge(app: &mut AppState, forge: &mut ForgeHandle) -> bool {
     changed
 }
 
+fn drain_forge_mutations(app: &mut AppState, mutations: &mut ForgeMutationHandle) -> bool {
+    let mut changed = false;
+    while let Some(event) = mutations.try_recv() {
+        match event {
+            ForgeMutationEvent::Receipt(receipt) => {
+                reduce(app, Action::ForgeMutationReceipt(receipt));
+            }
+            ForgeMutationEvent::Notice(notice) => {
+                reduce(app, Action::MutationNotice(notice));
+            }
+        }
+        changed = true;
+    }
+    changed
+}
+
 fn drain_mutations(app: &mut AppState, mutations: &mut WorktreeMutationHandle) -> bool {
     let mut changed = false;
     while let Some(event) = mutations.try_recv() {
@@ -924,12 +942,16 @@ fn drain_mutations(app: &mut AppState, mutations: &mut WorktreeMutationHandle) -
 fn apply_effects(
     app: &mut AppState,
     registry: Option<&RegistryHandle>,
-    git: &GitHandle,
-    forge: &ForgeHandle,
-    mutations: &mut WorktreeMutationHandle,
-    store: &mut RuntimeStore,
+    services: &mut RuntimeServices,
     effects: Vec<Effect>,
 ) -> Result<()> {
+    let RuntimeServices {
+        git,
+        forge,
+        forge_mutations,
+        mutations,
+        store,
+    } = services;
     for effect in effects {
         match effect {
             Effect::PersistOperatorState => {
@@ -1068,6 +1090,16 @@ fn apply_effects(
                         app,
                         Action::MutationNotice(format!(
                             "managed-worktree execution dispatch failed: {error}"
+                        )),
+                    );
+                }
+            }
+            Effect::ExecuteForgeOperation(request) => {
+                if let Err(error) = forge_mutations.execute(*request) {
+                    reduce(
+                        app,
+                        Action::MutationNotice(format!(
+                            "forge mutation execution dispatch failed: {error}"
                         )),
                     );
                 }
@@ -1345,6 +1377,14 @@ fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
             _ => return vec![],
         };
         return reduce(app, action);
+    }
+
+    if app.pending_forge_operation.is_some() {
+        return match key.code {
+            KeyCode::Char('y') => reduce(app, Action::ConfirmPendingOperation),
+            KeyCode::Char('c') | KeyCode::Esc => reduce(app, Action::CancelPendingOperation),
+            _ => vec![],
+        };
     }
 
     if app.goal_actions_open {

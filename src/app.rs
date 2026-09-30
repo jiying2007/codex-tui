@@ -4,7 +4,11 @@ use crate::conversation::{
     InteractiveResolution, RpcRequestId, UserInputQuestion,
 };
 use crate::domain::{AttentionReason, RuntimeStatus, ThreadId, ThreadSummary, ThreadUiState};
-use crate::forge::{CapabilityState, ForgeCapability, ForgeObservation, ForgeReviewSummary};
+use crate::forge::{
+    CapabilityState, ChangeRequestSummary, ForgeCapability, ForgeIdentity, ForgeObservation,
+    ForgeProviderKind, ForgeReviewSummary,
+};
+use crate::forge_mutation::{ForgeMutationPlan, ForgeMutationReceipt, ForgeMutationRequest};
 use crate::git::{GitContext, GitReview};
 use crate::goal::{GoalObservation, GoalStatus};
 use crate::operation::{
@@ -58,6 +62,8 @@ pub enum InputMode {
     WorktreeCreatePath,
     WorktreeCreateStartPoint,
     WorktreeDeleteBranch,
+    ForgeMergeRequestTitle,
+    ForgeComment,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -71,6 +77,10 @@ pub enum ContextChoice {
     DeleteScratch,
     SaveCurrentView,
     DeleteCurrentView,
+    ForgeCreateMergeRequest,
+    ForgeComment,
+    ForgeApprove,
+    ForgeMerge,
 }
 
 impl ContextChoice {
@@ -85,6 +95,10 @@ impl ContextChoice {
             Self::DeleteScratch => "Delete local ScratchWork",
             Self::SaveCurrentView => "Save current view as…",
             Self::DeleteCurrentView => "Delete current SavedView",
+            Self::ForgeCreateMergeRequest => "Forge · Create merge request…",
+            Self::ForgeComment => "Forge · Comment on merge request…",
+            Self::ForgeApprove => "Forge · Approve merge request",
+            Self::ForgeMerge => "Forge · Merge merge request",
         }
     }
 }
@@ -110,6 +124,7 @@ pub enum Action {
     OpenManagedWorktrees,
     ManagedWorktreesLoaded(Vec<ManagedWorktreeRecord>),
     MutationReceipt(Box<OperationReceipt>),
+    ForgeMutationReceipt(Box<ForgeMutationReceipt>),
     MutationNotice(String),
     MoveManagedWorktree(i32),
     BeginCreateWorktree,
@@ -219,6 +234,7 @@ pub enum Effect {
     ClearGoal(ThreadId),
     RefreshManagedWorktrees,
     ExecuteOperation(Box<OperationPlan>),
+    ExecuteForgeOperation(Box<ForgeMutationRequest>),
     ProbeGit {
         thread_id: ThreadId,
         cwd: String,
@@ -286,6 +302,9 @@ pub struct AppState {
     pub managed_return_view: Option<View>,
     pub pending_operation: Option<OperationPlan>,
     pub recent_operations: Vec<OperationReceipt>,
+    pub pending_forge_operation: Option<ForgeMutationPlan>,
+    pub pending_forge_payload: Option<String>,
+    pub recent_forge_operations: Vec<ForgeMutationReceipt>,
     pub mutation_notice: Option<String>,
     pub create_worktree_branch: Option<String>,
     pub create_worktree_path: Option<String>,
@@ -320,6 +339,14 @@ pub struct AppState {
     input_original: String,
 }
 
+#[derive(Clone, Debug)]
+struct ForgeMutationTarget {
+    cwd: String,
+    branch: String,
+    identity: ForgeIdentity,
+    change_request: Option<ChangeRequestSummary>,
+}
+
 impl AppState {
     pub fn new(threads: Vec<ThreadSummary>) -> Self {
         Self {
@@ -342,6 +369,9 @@ impl AppState {
             managed_return_view: None,
             pending_operation: None,
             recent_operations: vec![],
+            pending_forge_operation: None,
+            pending_forge_payload: None,
+            recent_forge_operations: vec![],
             mutation_notice: None,
             create_worktree_branch: None,
             create_worktree_path: None,
@@ -530,6 +560,27 @@ impl AppState {
         }
     }
 
+    fn current_forge_mutation_target(&self) -> Option<ForgeMutationTarget> {
+        let thread_id = match &self.view {
+            View::Review(id) | View::Workspace(id) => id,
+            _ => return None,
+        };
+        let context = self.git_context(thread_id)?;
+        let branch = context.branch.clone()?;
+        let observation = self.forge_observation(thread_id)?;
+        let identity = observation.identity.clone()?;
+        if identity.provider != ForgeProviderKind::GitLab {
+            return None;
+        }
+        let change_request = observation.change_request_for_branch(&branch).cloned();
+        Some(ForgeMutationTarget {
+            cwd: context.cwd.clone(),
+            branch,
+            identity,
+            change_request,
+        })
+    }
+
     pub fn context_choices(&self) -> Vec<ContextChoice> {
         let mut choices = Vec::new();
         if let Some(target) = self.selected_local_target() {
@@ -551,6 +602,22 @@ impl AppState {
             choices.push(ContextChoice::SaveCurrentView);
             if self.active_saved_view().id.starts_with("view:") {
                 choices.push(ContextChoice::DeleteCurrentView);
+            }
+        }
+        if let Some(target) = self.current_forge_mutation_target() {
+            if target.change_request.is_some() {
+                choices.extend([
+                    ContextChoice::ForgeComment,
+                    ContextChoice::ForgeApprove,
+                    ContextChoice::ForgeMerge,
+                ]);
+            } else if target
+                .identity
+                .default_branch
+                .as_deref()
+                .is_some_and(|default_branch| default_branch != target.branch)
+            {
+                choices.push(ContextChoice::ForgeCreateMergeRequest);
             }
         }
         choices
@@ -887,6 +954,45 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.recent_operations.insert(0, receipt);
             state.recent_operations.truncate(20);
         }
+        Action::ForgeMutationReceipt(receipt) => {
+            let receipt = *receipt;
+            if state
+                .pending_forge_operation
+                .as_ref()
+                .is_some_and(|plan| plan.operation_id == receipt.operation_id)
+            {
+                state.pending_forge_operation = None;
+                state.pending_forge_payload = None;
+            }
+            state.mutation_notice = Some(format!(
+                "{} · {}",
+                receipt.plan.kind.label(),
+                match receipt.state {
+                    OperationState::Planned => "planned",
+                    OperationState::Executing => "executing",
+                    OperationState::Succeeded => "succeeded",
+                    OperationState::Failed => "failed",
+                    OperationState::OutcomeUnknown => "outcome unknown",
+                }
+            ));
+
+            for observation in state.forge_observations.values_mut() {
+                if observation.identity.as_ref().is_some_and(|identity| {
+                    identity.provider == receipt.plan.provider
+                        && identity.host.eq_ignore_ascii_case(&receipt.plan.host)
+                        && identity.project_id == receipt.plan.project_id
+                }) {
+                    observation.observed_at_unix_ms = 1;
+                    observation.review = None;
+                }
+            }
+
+            state
+                .recent_forge_operations
+                .retain(|item| item.operation_id != receipt.operation_id);
+            state.recent_forge_operations.insert(0, receipt);
+            state.recent_forge_operations.truncate(20);
+        }
         Action::MutationNotice(notice) => {
             state.mutation_notice = Some(notice);
         }
@@ -900,6 +1006,8 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
         }
         Action::BeginCreateWorktree => {
+            state.pending_forge_operation = None;
+            state.pending_forge_payload = None;
             let Some(thread_id) = state.current_thread_id().cloned() else {
                 return vec![];
             };
@@ -977,6 +1085,12 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     Some("local store is degraded; mutation receipts cannot be persisted".into());
                 return vec![];
             }
+            if let Some(plan) = state.pending_forge_operation.take() {
+                let payload = state.pending_forge_payload.take();
+                return vec![Effect::ExecuteForgeOperation(Box::new(
+                    ForgeMutationRequest { plan, payload },
+                ))];
+            }
             let Some(plan) = state.pending_operation.take() else {
                 return vec![];
             };
@@ -984,6 +1098,8 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         }
         Action::CancelPendingOperation => {
             state.pending_operation = None;
+            state.pending_forge_operation = None;
+            state.pending_forge_payload = None;
             state.mutation_notice = Some("operation cancelled before execution".into());
         }
         Action::GoalObserved(goal) => {
@@ -1185,6 +1301,76 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 return vec![];
             }
 
+            if matches!(
+                choice,
+                ContextChoice::ForgeCreateMergeRequest
+                    | ContextChoice::ForgeComment
+                    | ContextChoice::ForgeApprove
+                    | ContextChoice::ForgeMerge
+            ) {
+                let Some(target) = state.current_forge_mutation_target() else {
+                    state.mutation_notice = Some("forge mutation target is unavailable".into());
+                    return vec![];
+                };
+                state.pending_operation = None;
+                match choice {
+                    ContextChoice::ForgeCreateMergeRequest => {
+                        state.pending_forge_operation = None;
+                        state.pending_forge_payload = None;
+                        state.input_buffer.clear();
+                        state.input_mode = InputMode::ForgeMergeRequestTitle;
+                    }
+                    ContextChoice::ForgeComment => {
+                        state.pending_forge_operation = None;
+                        state.pending_forge_payload = None;
+                        state.input_buffer.clear();
+                        state.input_mode = InputMode::ForgeComment;
+                    }
+                    ContextChoice::ForgeApprove | ContextChoice::ForgeMerge => {
+                        let Some(change) = target.change_request else {
+                            state.mutation_notice =
+                                Some("current branch has no open merge request".into());
+                            return vec![];
+                        };
+                        let planned_at = now_unix_ms();
+                        let plan = match choice {
+                            ContextChoice::ForgeApprove => {
+                                ForgeMutationPlan::approve_merge_request(
+                                    &target.identity,
+                                    target.cwd,
+                                    change.iid,
+                                    change.source_branch,
+                                    change.target_branch,
+                                    planned_at,
+                                )
+                            }
+                            ContextChoice::ForgeMerge => ForgeMutationPlan::merge_merge_request(
+                                &target.identity,
+                                target.cwd,
+                                change.iid,
+                                change.source_branch,
+                                change.target_branch,
+                                planned_at,
+                            ),
+                            _ => unreachable!(),
+                        };
+                        match plan {
+                            Ok(plan) => {
+                                state.pending_forge_operation = Some(plan);
+                                state.pending_forge_payload = None;
+                                state.mutation_notice = None;
+                            }
+                            Err(error) => {
+                                state.mutation_notice =
+                                    Some(format!("cannot create forge mutation plan: {error:#}"));
+                            }
+                        }
+                    }
+                    _ => unreachable!(),
+                }
+                return vec![];
+            }
+
             let Some(target) = state.selected_local_target() else {
                 return vec![];
             };
@@ -1247,7 +1433,12 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                         scratch_id: target.value,
                     }];
                 }
-                ContextChoice::SaveCurrentView | ContextChoice::DeleteCurrentView => unreachable!(),
+                ContextChoice::SaveCurrentView
+                | ContextChoice::DeleteCurrentView
+                | ContextChoice::ForgeCreateMergeRequest
+                | ContextChoice::ForgeComment
+                | ContextChoice::ForgeApprove
+                | ContextChoice::ForgeMerge => unreachable!(),
             }
         }
         Action::BeginSnooze => {
@@ -1764,7 +1955,9 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::WorktreeCreateBranch
             | InputMode::WorktreeCreatePath
             | InputMode::WorktreeCreateStartPoint
-            | InputMode::WorktreeDeleteBranch => {
+            | InputMode::WorktreeDeleteBranch
+            | InputMode::ForgeMergeRequestTitle
+            | InputMode::ForgeComment => {
                 state.input_buffer.push(character);
                 if state.input_mode == InputMode::Search {
                     state.filter.clone_from(&state.input_buffer);
@@ -1791,7 +1984,9 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::WorktreeCreateBranch
             | InputMode::WorktreeCreatePath
             | InputMode::WorktreeCreateStartPoint
-            | InputMode::WorktreeDeleteBranch => {
+            | InputMode::WorktreeDeleteBranch
+            | InputMode::ForgeMergeRequestTitle
+            | InputMode::ForgeComment => {
                 state.input_buffer.pop();
                 if state.input_mode == InputMode::Search {
                     state.filter.clone_from(&state.input_buffer);
@@ -1801,6 +1996,78 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         },
         Action::CommitInput => {
             let mode = state.input_mode;
+            if mode == InputMode::ForgeMergeRequestTitle {
+                let title = state.input_buffer.trim().to_string();
+                if title.is_empty() {
+                    return vec![];
+                }
+                let Some(target) = state.current_forge_mutation_target() else {
+                    state.mutation_notice = Some("forge mutation target is unavailable".into());
+                    return vec![];
+                };
+                let Some(target_branch) = target.identity.default_branch.clone() else {
+                    state.mutation_notice =
+                        Some("GitLab default branch is unavailable; create-MR plan refused".into());
+                    return vec![];
+                };
+                match ForgeMutationPlan::create_merge_request(
+                    &target.identity,
+                    target.cwd,
+                    target.branch,
+                    target_branch,
+                    title,
+                    now_unix_ms(),
+                ) {
+                    Ok(plan) => {
+                        state.pending_forge_operation = Some(plan);
+                        state.pending_forge_payload = None;
+                        state.input_mode = InputMode::Normal;
+                        state.input_buffer.clear();
+                        state.mutation_notice = None;
+                    }
+                    Err(error) => {
+                        state.mutation_notice =
+                            Some(format!("cannot create forge mutation plan: {error:#}"));
+                    }
+                }
+                return vec![];
+            }
+            if mode == InputMode::ForgeComment {
+                let body = state.input_buffer.trim().to_string();
+                if body.is_empty() {
+                    return vec![];
+                }
+                let Some(target) = state.current_forge_mutation_target() else {
+                    state.mutation_notice = Some("forge mutation target is unavailable".into());
+                    return vec![];
+                };
+                let Some(change) = target.change_request else {
+                    state.mutation_notice = Some("current branch has no open merge request".into());
+                    return vec![];
+                };
+                match ForgeMutationPlan::comment_merge_request(
+                    &target.identity,
+                    target.cwd,
+                    change.iid,
+                    change.source_branch,
+                    change.target_branch,
+                    body.len(),
+                    now_unix_ms(),
+                ) {
+                    Ok(plan) => {
+                        state.pending_forge_operation = Some(plan);
+                        state.pending_forge_payload = Some(body);
+                        state.input_mode = InputMode::Normal;
+                        state.input_buffer.clear();
+                        state.mutation_notice = None;
+                    }
+                    Err(error) => {
+                        state.mutation_notice =
+                            Some(format!("cannot create forge mutation plan: {error:#}"));
+                    }
+                }
+                return vec![];
+            }
             if mode == InputMode::WorktreeCreateBranch {
                 let branch = state.input_buffer.trim().to_string();
                 if branch.is_empty() {
@@ -2062,6 +2329,14 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.input_original.clear();
         }
         Action::CancelInput => {
+            if matches!(
+                state.input_mode,
+                InputMode::ForgeMergeRequestTitle | InputMode::ForgeComment
+            ) {
+                state.input_mode = InputMode::Normal;
+                state.input_buffer.clear();
+                return vec![];
+            }
             if matches!(
                 state.input_mode,
                 InputMode::WorktreeCreateBranch
@@ -3265,6 +3540,7 @@ mod tests {
                         project_id: "42".into(),
                         path_with_namespace: "team/repo".into(),
                         web_url: "https://gitlab.example.com/team/repo".into(),
+                        default_branch: Some("main".into()),
                     }),
                     capabilities: BTreeMap::from([(
                         ForgeCapability::Issues,
@@ -3339,6 +3615,7 @@ mod tests {
                     project_id: "42".into(),
                     path_with_namespace: "team/repo".into(),
                     web_url: "https://gitlab.example.com/team/repo".into(),
+                    default_branch: Some("main".into()),
                 }),
                 capabilities: BTreeMap::new(),
                 issues: vec![],
@@ -3522,5 +3799,212 @@ mod tests {
         assert!(restored.threads[1].pinned);
         assert_eq!(restored.threads[1].alias.as_deref(), Some("primary"));
         assert!(restored.acknowledged_attention.contains("thread-kws"));
+    }
+    fn seed_gitlab_mutation_target(app: &mut AppState, with_merge_request: bool) -> ThreadId {
+        use crate::forge::{
+            ChangeRequestSummary, ForgeFreshness, ForgeIdentity, ForgeObservation,
+            ForgeProviderKind,
+        };
+
+        let thread_id = app.threads[0].id.clone();
+        app.threads[0].metadata.cwd = "/repo".into();
+        let mut git = GitContext::pending(thread_id.clone(), "/repo");
+        git.is_repository = true;
+        git.branch = Some("feature/m6b".into());
+        git.observed_at_unix_ms = 100;
+        app.git_contexts.insert(thread_id.0.clone(), git);
+
+        let change_requests = with_merge_request
+            .then(|| ChangeRequestSummary {
+                iid: 7,
+                title: "M6b".into(),
+                state: "opened".into(),
+                source_branch: "feature/m6b".into(),
+                target_branch: "main".into(),
+                web_url: "https://gitlab.example.com/team/repo/-/merge_requests/7".into(),
+                updated_at: None,
+                draft: false,
+                detailed_merge_status: Some("mergeable".into()),
+                blocking_discussions_resolved: Some(true),
+            })
+            .into_iter()
+            .collect();
+
+        app.forge_observations.insert(
+            thread_id.0.clone(),
+            ForgeObservation {
+                thread_id: thread_id.clone(),
+                cwd: "/repo".into(),
+                remote_name: Some("origin".into()),
+                remote_url: Some("git@gitlab.example.com:team/repo.git".into()),
+                identity: Some(ForgeIdentity {
+                    provider: ForgeProviderKind::GitLab,
+                    host: "gitlab.example.com".into(),
+                    project_id: "42".into(),
+                    path_with_namespace: "team/repo".into(),
+                    web_url: "https://gitlab.example.com/team/repo".into(),
+                    default_branch: Some("main".into()),
+                }),
+                capabilities: BTreeMap::new(),
+                issues: vec![],
+                change_requests,
+                pipelines: vec![],
+                review: None,
+                observed_at_unix_ms: 100,
+                freshness: ForgeFreshness::Fresh,
+                error: None,
+            },
+        );
+        app.view = View::Workspace(thread_id.clone());
+        thread_id
+    }
+
+    #[test]
+    fn create_merge_request_is_plan_only_until_explicit_confirmation() {
+        let mut app = app();
+        seed_gitlab_mutation_target(&mut app, false);
+
+        let choices = app.context_choices();
+        assert!(choices.contains(&ContextChoice::ForgeCreateMergeRequest));
+        app.context_selected = choices
+            .iter()
+            .position(|choice| *choice == ContextChoice::ForgeCreateMergeRequest)
+            .expect("create MR choice");
+        assert!(reduce(&mut app, Action::ExecuteContext).is_empty());
+        assert_eq!(app.input_mode, InputMode::ForgeMergeRequestTitle);
+
+        for ch in "Ship M6b".chars() {
+            assert!(reduce(&mut app, Action::InputChar(ch)).is_empty());
+        }
+        assert!(reduce(&mut app, Action::CommitInput).is_empty());
+
+        let plan = app
+            .pending_forge_operation
+            .clone()
+            .expect("pending forge plan");
+        assert_eq!(
+            plan.kind,
+            crate::forge_mutation::ForgeMutationKind::CreateMergeRequest
+        );
+        assert_eq!(plan.source_branch.as_deref(), Some("feature/m6b"));
+        assert_eq!(plan.target_branch.as_deref(), Some("main"));
+        assert!(app.pending_forge_payload.is_none());
+
+        let effects = reduce(&mut app, Action::ConfirmPendingOperation);
+        let [Effect::ExecuteForgeOperation(request)] = effects.as_slice() else {
+            panic!("expected explicit forge execution effect");
+        };
+        assert_eq!(request.plan, plan);
+        assert!(request.payload.is_none());
+        assert!(app.pending_forge_operation.is_none());
+    }
+
+    #[test]
+    fn merge_request_comment_body_stays_memory_only_until_confirmation() {
+        let mut app = app();
+        seed_gitlab_mutation_target(&mut app, true);
+
+        let choices = app.context_choices();
+        assert!(choices.contains(&ContextChoice::ForgeComment));
+        assert!(choices.contains(&ContextChoice::ForgeApprove));
+        assert!(choices.contains(&ContextChoice::ForgeMerge));
+        assert!(!choices.contains(&ContextChoice::ForgeCreateMergeRequest));
+
+        app.context_selected = choices
+            .iter()
+            .position(|choice| *choice == ContextChoice::ForgeComment)
+            .expect("comment choice");
+        assert!(reduce(&mut app, Action::ExecuteContext).is_empty());
+        assert_eq!(app.input_mode, InputMode::ForgeComment);
+
+        let body = "please re-run the target DUT check";
+        for ch in body.chars() {
+            reduce(&mut app, Action::InputChar(ch));
+        }
+        assert!(reduce(&mut app, Action::CommitInput).is_empty());
+
+        let plan = app.pending_forge_operation.as_ref().expect("comment plan");
+        assert_eq!(
+            plan.kind,
+            crate::forge_mutation::ForgeMutationKind::CommentMergeRequest
+        );
+        assert_eq!(plan.payload_bytes, Some(body.len()));
+        assert!(
+            !serde_json::to_string(plan)
+                .expect("serialize plan")
+                .contains(body)
+        );
+        assert_eq!(app.pending_forge_payload.as_deref(), Some(body));
+
+        let effects = reduce(&mut app, Action::ConfirmPendingOperation);
+        let [Effect::ExecuteForgeOperation(request)] = effects.as_slice() else {
+            panic!("expected comment execution effect");
+        };
+        assert_eq!(request.payload.as_deref(), Some(body));
+        assert!(app.pending_forge_payload.is_none());
+    }
+
+    #[test]
+    fn approve_and_merge_context_actions_only_create_pending_plans() {
+        let mut app = app();
+        seed_gitlab_mutation_target(&mut app, true);
+
+        for (choice, expected_kind) in [
+            (
+                ContextChoice::ForgeApprove,
+                crate::forge_mutation::ForgeMutationKind::ApproveMergeRequest,
+            ),
+            (
+                ContextChoice::ForgeMerge,
+                crate::forge_mutation::ForgeMutationKind::MergeMergeRequest,
+            ),
+        ] {
+            let choices = app.context_choices();
+            app.context_selected = choices
+                .iter()
+                .position(|candidate| *candidate == choice)
+                .expect("forge action choice");
+            assert!(reduce(&mut app, Action::ExecuteContext).is_empty());
+            assert_eq!(
+                app.pending_forge_operation
+                    .as_ref()
+                    .expect("pending plan")
+                    .kind,
+                expected_kind
+            );
+            assert!(reduce(&mut app, Action::CancelPendingOperation).is_empty());
+            assert!(app.pending_forge_operation.is_none());
+        }
+    }
+
+    #[test]
+    fn forge_mutation_receipt_invalidates_projection_and_enters_recent_audit() {
+        use crate::forge_mutation::{ForgeMutationPlan, ForgeMutationReceipt};
+
+        let mut app = app();
+        let thread_id = seed_gitlab_mutation_target(&mut app, true);
+        let target = app.current_forge_mutation_target().expect("target");
+        let change = target.change_request.expect("MR");
+        let plan = ForgeMutationPlan::approve_merge_request(
+            &target.identity,
+            target.cwd,
+            change.iid,
+            change.source_branch,
+            change.target_branch,
+            10,
+        )
+        .expect("plan");
+        let mut receipt = ForgeMutationReceipt::planned(plan);
+        receipt.start(11);
+        receipt.succeed(12, "mr:7".into(), "verified".into());
+
+        reduce(
+            &mut app,
+            Action::ForgeMutationReceipt(Box::new(receipt.clone())),
+        );
+        assert_eq!(app.recent_forge_operations, vec![receipt]);
+        let observation = app.forge_observation(&thread_id).expect("observation");
+        assert_eq!(observation.observed_at_unix_ms, 1);
+        assert!(observation.review.is_none());
     }
 }

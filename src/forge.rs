@@ -1,6 +1,6 @@
 use crate::domain::ThreadId;
 use anyhow::{Context, Result, anyhow, bail};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::path::Path;
@@ -19,7 +19,8 @@ const MAX_STDOUT_BYTES: usize = 1024 * 1024;
 const MAX_STDERR_BYTES: usize = 64 * 1024;
 const DEFAULT_PAGE_SIZE: usize = 20;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum ForgeProviderKind {
     GitLab,
     GitHub,
@@ -41,6 +42,7 @@ pub struct ForgeIdentity {
     pub project_id: String,
     pub path_with_namespace: String,
     pub web_url: String,
+    pub default_branch: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -420,6 +422,7 @@ struct GitLabProject {
     id: serde_json::Value,
     path_with_namespace: String,
     web_url: String,
+    default_branch: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -510,7 +513,7 @@ pub async fn probe_gitlab(thread_id: ThreadId, cwd: String) -> Result<ForgeObser
         &cwd,
         &remote.host,
         &format!(
-            "/projects/{encoded_id}/issues?state=all&order_by=updated_at&sort=desc&per_page={DEFAULT_PAGE_SIZE}"
+            "/projects/{encoded_id}/issues?scope=all&state=all&order_by=updated_at&sort=desc&per_page={DEFAULT_PAGE_SIZE}"
         ),
     )
     .await
@@ -519,7 +522,7 @@ pub async fn probe_gitlab(thread_id: ThreadId, cwd: String) -> Result<ForgeObser
     let merge_requests: Vec<GitLabMergeRequest> = glab_api_json(
         &cwd,
         &remote.host,
-        &format!("/projects/{encoded_id}/merge_requests?state=opened&per_page={DEFAULT_PAGE_SIZE}"),
+        &format!("/projects/{encoded_id}/merge_requests?scope=all&state=opened&per_page={DEFAULT_PAGE_SIZE}"),
     )
     .await
     .context("load GitLab merge requests")?;
@@ -548,6 +551,7 @@ pub async fn probe_gitlab(thread_id: ThreadId, cwd: String) -> Result<ForgeObser
             project_id,
             path_with_namespace: project.path_with_namespace,
             web_url: project.web_url,
+            default_branch: project.default_branch,
         }),
         capabilities,
         issues: issues
@@ -927,7 +931,7 @@ fn default_capabilities() -> BTreeMap<ForgeCapability, CapabilityState> {
     .collect()
 }
 
-async fn glab_api_json<T>(cwd: &str, host: &str, endpoint: &str) -> Result<T>
+pub(crate) async fn glab_api_json<T>(cwd: &str, host: &str, endpoint: &str) -> Result<T>
 where
     T: for<'de> Deserialize<'de>,
 {
@@ -948,6 +952,43 @@ where
         .with_context(|| format!("decode glab api response for {endpoint}"))
 }
 
+pub(crate) async fn glab_api_mutation_json<T>(
+    cwd: &str,
+    host: &str,
+    method: &str,
+    endpoint: &str,
+    fields: &[(&str, &str)],
+) -> Result<T>
+where
+    T: for<'de> Deserialize<'de>,
+{
+    let mut args = vec![
+        "api".to_string(),
+        "--hostname".to_string(),
+        host.to_string(),
+        "--method".to_string(),
+        method.to_string(),
+        endpoint.to_string(),
+    ];
+    for (key, value) in fields {
+        args.push("-f".to_string());
+        args.push(format!("{key}={value}"));
+    }
+
+    let borrowed = args.iter().map(String::as_str).collect::<Vec<_>>();
+    let output = run_command("glab", &borrowed, Some(Path::new(cwd)))
+        .await
+        .with_context(|| format!("run glab api {method} {endpoint}"))?;
+    if !output.success {
+        bail!(
+            "glab api {method} {endpoint} failed: {}",
+            trim_error(&output.stderr, "unknown glab error")
+        );
+    }
+    serde_json::from_str(&output.stdout)
+        .with_context(|| format!("decode glab api response for {method} {endpoint}"))
+}
+
 fn json_id_to_string(value: &serde_json::Value) -> Result<String> {
     match value {
         serde_json::Value::Number(number) => Ok(number.to_string()),
@@ -960,7 +1001,7 @@ fn percent_encode_project_path(path: &str) -> String {
     percent_encode_component(path)
 }
 
-fn percent_encode_component(value: &str) -> String {
+pub(crate) fn percent_encode_component(value: &str) -> String {
     let mut output = String::with_capacity(value.len());
     for byte in value.as_bytes() {
         match byte {
@@ -1172,6 +1213,7 @@ mod tests {
                 project_id: "42".into(),
                 path_with_namespace: "team/repo".into(),
                 web_url: "https://gitlab.example.com/team/repo".into(),
+                default_branch: Some("main".into()),
             }),
             capabilities: default_capabilities(),
             issues: vec![],
