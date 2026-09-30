@@ -38,13 +38,29 @@ def run_checked(command: list[str]) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--archive", required=True)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--archive")
+    source.add_argument("--archive-dir")
     parser.add_argument("--version", required=True)
     parser.add_argument("--tag", required=True)
     parser.add_argument("--commit", required=True)
     args = parser.parse_args()
 
-    archive = pathlib.Path(args.archive)
+    if args.archive:
+        archive = pathlib.Path(args.archive)
+    else:
+        directory = pathlib.Path(args.archive_dir)
+        archives = sorted(
+            path
+            for path in directory.iterdir()
+            if path.is_file() and (path.name.endswith(".tar.gz") or path.suffix == ".zip")
+        )
+        if len(archives) != 1:
+            raise SystemExit(
+                f"expected exactly one release archive in {directory}, found {len(archives)}"
+            )
+        archive = archives[0]
+
     with tempfile.TemporaryDirectory() as temp:
         root = extract(archive, pathlib.Path(temp))
         binary = root / ("codex-tui.exe" if os.name == "nt" else "codex-tui")
