@@ -148,6 +148,8 @@ Personal planning state is stored locally in SQLite: WorkCard relationships/over
 
 M6a adds an asynchronous read-only GitLab projection. A normal forge refresh stays within four `glab api` calls (project, recent Issues, open MRs, recent Pipelines); approval/discussion details are loaded only when Review is opened. Forge observations remain derived and carry freshness/provenance. GitLab Issues appear as deduplicated WorkCards, while matching MRs/Pipelines enrich the corresponding Codex thread card. Forge failure never blocks Codex/Git operation.
 
+M6b adds explicit GitLab merge-request mutations from Review / Workspace context actions (`.`): create MR, comment, approve, and merge. Every write is plan-first and requires explicit confirmation. Approve/merge revalidate the exact MR HEAD SHA immediately before execution; merge never requests force/policy bypass. Comment bodies remain memory-only and are not stored in SQLite. Uncertain external outcomes remain `OutcomeUnknown` and are never blindly retried.
+
 ## Status
 
 - M0 local control-plane skeleton: implemented and merged.
@@ -157,7 +159,8 @@ M6a adds an asynchronous read-only GitLab projection. A normal forge refresh sta
 - M4 personal planning + SQLite: implemented in the v0.4.x line.
 - M5 safe managed worktrees: implemented in the v0.5.x line.
 - M6a GitLab Self-Managed read-only forge projection: implemented in the v0.6.x line.
-- M6b explicit GitLab mutations and M6c GitHub provider: remaining M6 work.
+- M6b safe explicit GitLab MR mutations: implemented in the v0.6.x line.
+- M6c GitHub provider: remaining M6 work.
 
 Architecture and product research are archived under `docs/research/`.
 Implementation design lives under `docs/design/`.
@@ -179,3 +182,4 @@ See:
 - `docs/implementation/m4-personal-planning-sqlite.md`
 - `docs/implementation/m5-safe-managed-worktrees.md`
 - `docs/implementation/m6-gitlab-readonly-forge.md`
+- `docs/implementation/m6b-safe-gitlab-mutations.md`
