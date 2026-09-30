@@ -15,6 +15,7 @@ pub mod keymap;
 pub mod launch;
 pub mod operation;
 pub mod planning;
+pub mod pty;
 pub mod sqlite_store;
 pub mod store;
 pub mod terminal;
