@@ -403,7 +403,7 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
         )
     };
     let scope = if app.host_local_only {
-        " · host-local only"
+        "LOCAL ONLY · "
     } else {
         ""
     };
@@ -414,13 +414,13 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
     };
     let summary = if app.filter.is_empty() && !app.host_local_only {
         format!(
-            "{} threads · {local_count} local · {foreign_count} foreign · {stale_count} stale · {} need attention · {range}",
+            "{scope}{} threads · {local_count} local · {foreign_count} foreign · {stale_count} stale · {} need attention · {range}",
             app.threads.len(),
             attention_count
         )
     } else {
         format!(
-            "{}/{} threads · {local_count} local · {foreign_count} foreign · {stale_count} stale · {} need attention · {range}{scope}{text_filter}",
+            "{scope}{}/{} threads · {local_count} local · {foreign_count} foreign · {stale_count} stale · {} need attention · {range}{text_filter}",
             visible.len(),
             app.threads.len(),
             attention_count
@@ -2043,7 +2043,7 @@ mod tests {
         }
 
         assert!(snapshot.contains("1/4 threads"));
-        assert!(snapshot.contains("host-local only"));
+        assert!(snapshot.contains("LOCAL ONLY"));
         assert!(snapshot.contains("l local-only"));
     }
 
