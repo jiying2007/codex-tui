@@ -10,9 +10,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{
-        Block, Clear, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap,
-    },
+    widgets::{Block, Clear, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1913,7 +1911,10 @@ mod tests {
         assert!(snapshot.contains("rows 94-100/100"));
         assert!(snapshot.contains("Synthetic work item 00099"));
         assert!(!snapshot.contains("Synthetic work item 00000"));
-        assert!(snapshot.contains('█'), "overflowing registry must render a scrollbar thumb");
+        assert!(
+            snapshot.contains('█'),
+            "overflowing registry must render a scrollbar thumb"
+        );
     }
 
     #[test]
