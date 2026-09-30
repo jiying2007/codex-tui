@@ -79,8 +79,7 @@ mod tests {
         let family = "👨‍👩‍👧‍👦abc";
         let shortened = truncate_display(family, 3);
         assert!(
-            shortened == "👨‍👩‍👧‍👦…"
-                || shortened == "…",
+            shortened == "👨‍👩‍👧‍👦…" || shortened == "…",
             "unexpected grapheme truncation: {shortened:?}"
         );
         assert!(display_width(&shortened) <= 3);
