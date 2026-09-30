@@ -9,6 +9,7 @@ pub mod forge_github;
 pub mod forge_mutation;
 pub mod git;
 pub mod goal;
+pub mod headless;
 pub mod keymap;
 pub mod operation;
 pub mod planning;
