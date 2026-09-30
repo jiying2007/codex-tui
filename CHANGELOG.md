@@ -9,7 +9,8 @@ All notable codex-tui changes are recorded here.
 - opened the 1.1 development line after the immutable v1.0.0 stable release;
 - new 1.1 changes are recorded here until the next stable publication;
 - generalized Linux Tier 1 qualification and the retained v1 stable support policy beyond the original v1.0.0 release;
-- surfaced Mission Control backend provenance (App Server platform/Codex Home) and selected cwd terminal readiness so local/foreign/stale sessions are explainable before opening the Terminal Drawer.
+- surfaced Mission Control backend provenance (App Server platform/Codex Home) and selected cwd terminal readiness so local/foreign/stale sessions are explainable before opening the Terminal Drawer;
+- added a dedicated host-local-only Registry toggle that composes with text search instead of overwriting it.
 
 ## [1.0.0] - 2026-09-30
 

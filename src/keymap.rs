@@ -8,6 +8,7 @@ pub enum Command {
     Help,
     CommandPalette,
     Search,
+    ToggleHostLocalFilter,
     ContextActions,
     Next,
     Previous,
@@ -85,6 +86,7 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
         ) => Some(Command::CloseTerminalDrawer),
         (_, KeyCode::Esc) => Some(Command::Back),
         (ViewKind::Registry, KeyCode::Char('q')) => Some(Command::QuitOrInterrupt),
+        (ViewKind::Registry, KeyCode::Char('l')) => Some(Command::ToggleHostLocalFilter),
         (ViewKind::Registry, KeyCode::Char('j') | KeyCode::Down) => Some(Command::Next),
         (ViewKind::Registry, KeyCode::Char('k') | KeyCode::Up) => Some(Command::Previous),
         (ViewKind::Registry, KeyCode::Enter) => Some(Command::Open),
@@ -258,6 +260,14 @@ mod tests {
         assert_eq!(
             command_for_key(key(KeyCode::Char('a')), ViewKind::Registry),
             Some(Command::QuickPrompt)
+        );
+        assert_eq!(
+            command_for_key(key(KeyCode::Char('l')), ViewKind::Registry),
+            Some(Command::ToggleHostLocalFilter)
+        );
+        assert_eq!(
+            command_for_key(key(KeyCode::Char('l')), ViewKind::Board),
+            Some(Command::BoardRight)
         );
         assert_eq!(
             command_for_key(

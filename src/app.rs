@@ -235,6 +235,7 @@ pub enum Action {
     MarkUnread,
     TogglePin,
     AcknowledgeAttention,
+    ToggleHostLocalFilter,
     BeginSearch,
     BeginAlias,
     InputChar(char),
@@ -415,6 +416,7 @@ pub struct AppState {
     pub backend_status: BackendStatus,
     pub acknowledged_attention: BTreeSet<String>,
     pub filter: String,
+    pub host_local_only: bool,
     pub input_mode: InputMode,
     pub input_buffer: String,
     input_original: String,
@@ -492,6 +494,7 @@ impl AppState {
             backend_status: BackendStatus::starting("unknown"),
             acknowledged_attention: BTreeSet::new(),
             filter: String::new(),
+            host_local_only: false,
             input_mode: InputMode::Normal,
             input_buffer: String::new(),
             input_original: String::new(),
@@ -512,7 +515,13 @@ impl AppState {
 
     pub fn selected_thread(&self) -> Option<&ThreadSummary> {
         let thread = self.threads.get(self.selected)?;
-        matches_filter(thread, &self.filter).then_some(thread)
+        self.thread_visible_in_registry(thread).then_some(thread)
+    }
+
+    fn thread_visible_in_registry(&self, thread: &ThreadSummary) -> bool {
+        matches_filter(thread, &self.filter)
+            && (!self.host_local_only
+                || classify_cwd(&thread.metadata.cwd) == CwdLocality::LocalDirectory)
     }
 
     pub fn selected_thread_id(&self) -> Option<ThreadId> {
@@ -858,7 +867,7 @@ impl AppState {
         self.threads
             .iter()
             .enumerate()
-            .filter_map(|(index, thread)| matches_filter(thread, &self.filter).then_some(index))
+            .filter_map(|(index, thread)| self.thread_visible_in_registry(thread).then_some(index))
             .collect()
     }
 
@@ -2283,6 +2292,10 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 return vec![Effect::PersistOperatorState];
             }
         }
+        Action::ToggleHostLocalFilter => {
+            state.host_local_only = !state.host_local_only;
+            ensure_selection_visible(state);
+        }
         Action::BeginSearch => {
             state.input_original.clone_from(&state.filter);
             state.input_buffer.clone_from(&state.filter);
@@ -3283,6 +3296,40 @@ mod tests {
                 .as_deref()
                 .is_some_and(|notice| notice.contains("Windows cwd"))
         );
+    }
+
+    #[test]
+    fn registry_host_local_toggle_composes_with_text_search() {
+        let mut app = app();
+        app.threads[0].workspace = "focus-repo".into();
+        app.threads[0].metadata.cwd = std::env::current_dir()
+            .expect("cwd")
+            .to_string_lossy()
+            .into_owned();
+        if app.threads.len() > 1 {
+            app.threads[1].workspace = "focus-repo".into();
+            app.threads[1].metadata.cwd = if cfg!(windows) {
+                "/foreign/unix/repo".into()
+            } else {
+                r"C:\Users\jun\repo".into()
+            };
+        }
+        app.filter = "focus-repo".into();
+
+        reduce(&mut app, Action::ToggleHostLocalFilter);
+        assert!(app.host_local_only);
+        let visible = app.visible_indices();
+        assert_eq!(visible, vec![0]);
+        assert_eq!(app.filter, "focus-repo");
+
+        reduce(&mut app, Action::ToggleHostLocalFilter);
+        assert!(!app.host_local_only);
+        let visible = app.visible_indices();
+        assert!(visible.contains(&0));
+        if app.threads.len() > 1 {
+            assert!(visible.contains(&1));
+        }
+        assert_eq!(app.filter, "focus-repo");
     }
 
     #[test]

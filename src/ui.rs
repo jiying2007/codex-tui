@@ -230,7 +230,8 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState) {
             Span::raw("j/k move  "),
             Span::raw("t terminal  "),
             Span::raw("Space attention  "),
-            Span::raw("/ search (local/foreign-windows)  "),
+            Span::raw("/ search  "),
+            Span::raw("l local-only  "),
             Span::raw("p pin  "),
             Span::raw("e alias  "),
             Span::raw("x ack  "),
@@ -401,19 +402,28 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
             viewport.total
         )
     };
-    let summary = if app.filter.is_empty() {
+    let scope = if app.host_local_only {
+        "LOCAL ONLY · "
+    } else {
+        ""
+    };
+    let text_filter = if app.filter.is_empty() {
+        String::new()
+    } else {
+        format!(" · filter: {}", app.filter)
+    };
+    let summary = if app.filter.is_empty() && !app.host_local_only {
         format!(
-            "{} threads · {local_count} local · {foreign_count} foreign · {stale_count} stale · {} need attention · {range}",
+            "{scope}{} threads · {local_count} local · {foreign_count} foreign · {stale_count} stale · {} need attention · {range}",
             app.threads.len(),
             attention_count
         )
     } else {
         format!(
-            "{}/{} threads · {local_count} local · {foreign_count} foreign · {stale_count} stale · {} need attention · {range} · filter: {}",
+            "{scope}{}/{} threads · {local_count} local · {foreign_count} foreign · {stale_count} stale · {} need attention · {range}{text_filter}",
             visible.len(),
             app.threads.len(),
-            attention_count,
-            app.filter
+            attention_count
         )
     };
     lines.push(Line::from(summary));
@@ -1800,7 +1810,7 @@ fn centered_fixed(width: u16, height: u16, area: Rect) -> Rect {
 
 const HELP_LINES: &[&str] = &[
     "Global: ? help · Ctrl+K palette · / search · . context · t terminal · T close terminal · Esc back",
-    "Registry: j/k · Enter · Space attention · / search (type local for host sessions) · p pin · e alias · x ack",
+    "Registry: j/k · Enter · Space attention · / search · l host-local only · p pin · e alias · x ack",
     "Thread: a composer · y/n/c approval · i answer · Ctrl+C interrupt · r review",
     "Review: j/k file · w word-diff · e editor · . Forge actions · PageUp/PageDown · Esc",
     "Workspace: Git + Forge · . actions/launch presets · r review · m worktrees · Esc",
@@ -2009,6 +2019,32 @@ mod tests {
         assert!(snapshot.contains("foreign-windows"));
         assert!(snapshot.contains(r"C:\Users\jun\repo"));
         assert!(!snapshot.contains(r"/vsdata/repo/C:\Users\jun\repo"));
+    }
+
+    #[test]
+    fn registry_summary_surfaces_host_local_mode() {
+        let backend = TestBackend::new(120, 12);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+        app.threads[0].metadata.cwd = std::env::current_dir()
+            .expect("cwd")
+            .to_string_lossy()
+            .into_owned();
+        app.host_local_only = true;
+
+        terminal.draw(|frame| render(frame, &app)).expect("draw");
+        let buffer = terminal.backend().buffer();
+        let mut snapshot = String::new();
+        for y in 0..buffer.area.height {
+            for x in 0..buffer.area.width {
+                snapshot.push_str(buffer[(x, y)].symbol());
+            }
+            snapshot.push('\n');
+        }
+
+        assert!(snapshot.contains("1/4 threads"));
+        assert!(snapshot.contains("LOCAL ONLY"));
+        assert!(snapshot.contains("l local-only"));
     }
 
     #[test]
