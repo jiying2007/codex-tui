@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 import argparse
 import datetime as dt
 import json
 import pathlib
 import sys
+
+from _compat import write_text_lf
 
 SCHEMA = "codex-tui/terminal-restoration/v1"
 
@@ -44,11 +48,7 @@ def main() -> int:
 
     output = pathlib.Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(
-        json.dumps(receipt, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-        newline="\n",
-    )
+    write_text_lf(output, json.dumps(receipt, indent=2, sort_keys=True) + "\n")
     print(json.dumps(receipt, indent=2, sort_keys=True))
     return 0
 
