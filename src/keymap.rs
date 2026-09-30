@@ -43,6 +43,8 @@ pub enum Command {
     ToggleWordDiff,
     ExternalEditor,
     OpenExternal,
+    TerminalDrawer,
+    CloseTerminalDrawer,
     HotSlot(u8),
     BeginHotSlotBind,
 }
@@ -63,6 +65,24 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
         (_, KeyCode::Char('?')) => Some(Command::Help),
         (_, KeyCode::Char('/')) => Some(Command::Search),
         (_, KeyCode::Char('.')) => Some(Command::ContextActions),
+        (
+            ViewKind::Registry
+            | ViewKind::Thread
+            | ViewKind::Review
+            | ViewKind::Workspace
+            | ViewKind::ManagedWorktrees
+            | ViewKind::Board,
+            KeyCode::Char('t'),
+        ) => Some(Command::TerminalDrawer),
+        (
+            ViewKind::Registry
+            | ViewKind::Thread
+            | ViewKind::Review
+            | ViewKind::Workspace
+            | ViewKind::ManagedWorktrees
+            | ViewKind::Board,
+            KeyCode::Char('T'),
+        ) => Some(Command::CloseTerminalDrawer),
         (_, KeyCode::Esc) => Some(Command::Back),
         (ViewKind::Registry, KeyCode::Char('q')) => Some(Command::QuitOrInterrupt),
         (ViewKind::Registry, KeyCode::Char('j') | KeyCode::Down) => Some(Command::Next),
@@ -137,6 +157,22 @@ mod tests {
 
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn terminal_drawer_bindings_are_explicit_and_not_available_for_scratch() {
+        assert_eq!(
+            command_for_key(key(KeyCode::Char('t')), ViewKind::Workspace),
+            Some(Command::TerminalDrawer)
+        );
+        assert_eq!(
+            command_for_key(key(KeyCode::Char('T')), ViewKind::Workspace),
+            Some(Command::CloseTerminalDrawer)
+        );
+        assert_eq!(
+            command_for_key(key(KeyCode::Char('t')), ViewKind::Scratch),
+            None
+        );
     }
 
     #[test]
