@@ -1876,6 +1876,59 @@ mod tests {
         out
     }
 
+    #[test]
+    fn registry_viewport_keeps_selected_row_visible() {
+        let mut app = AppState::new(FakeBackend::scaled(100).snapshot().threads);
+        app.selected = 99;
+
+        let (_visible, viewport) = registry_viewport(&app, 10);
+        assert_eq!(
+            viewport,
+            RegistryViewport {
+                start: 93,
+                end: 100,
+                total: 100,
+                row_capacity: 7,
+            }
+        );
+    }
+
+    #[test]
+    fn registry_renders_scrollbar_and_last_selected_row() {
+        let backend = TestBackend::new(100, 12);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        let mut app = AppState::new(FakeBackend::scaled(100).snapshot().threads);
+        app.selected = 99;
+
+        terminal.draw(|frame| render(frame, &app)).expect("draw");
+        let buffer = terminal.backend().buffer();
+        let mut snapshot = String::new();
+        for y in 0..buffer.area.height {
+            for x in 0..buffer.area.width {
+                snapshot.push_str(buffer[(x, y)].symbol());
+            }
+            snapshot.push('\n');
+        }
+
+        assert!(snapshot.contains("rows 94-100/100"));
+        assert!(snapshot.contains("Synthetic work item 00099"));
+        assert!(!snapshot.contains("Synthetic work item 00000"));
+        assert!(snapshot.contains('█'), "overflowing registry must render a scrollbar thumb");
+    }
+
+    #[test]
+    fn registry_viewport_uses_filtered_thread_count() {
+        let mut app = AppState::new(FakeBackend::scaled(100).snapshot().threads);
+        app.filter = "repo-001".into();
+        let visible = app.visible_indices();
+        app.selected = *visible.last().expect("filtered row");
+
+        let (viewport_visible, viewport) = registry_viewport(&app, 10);
+        assert_eq!(viewport.total, viewport_visible.len());
+        assert_eq!(viewport.end, viewport.total);
+        assert!(viewport.total < 100);
+    }
+
     #[cfg(not(windows))]
     #[test]
     fn registry_marks_foreign_windows_cwd_without_linux_prefix() {
