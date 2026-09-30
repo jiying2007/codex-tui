@@ -1692,12 +1692,7 @@ mod tests {
             git_common_dir: "/repo/.git".into(),
             primary_root: "/repo".into(),
         };
-        let plan = OperationPlan::delete_branch(
-            repo,
-            "/repo".into(),
-            "feature/old".into(),
-            1,
-        );
+        let plan = OperationPlan::delete_branch(repo, "/repo".into(), "feature/old".into(), 1);
         let receipt = OperationReceipt::planned(plan.clone());
         store
             .save_operation_receipt(&receipt)
