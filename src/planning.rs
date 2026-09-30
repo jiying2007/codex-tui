@@ -360,7 +360,7 @@ fn card_matches_filter(card: &WorkCardProjection, filter: &str) -> bool {
                                 SourceKind::ForgeWorkItem | SourceKind::ChangeRequest
                             )
                         })
-                },
+                }
                 _ => false,
             };
         }
@@ -459,9 +459,8 @@ pub fn reconcile_thread_card_with_goal_and_forge(
     let change_request = branch.and_then(|branch| {
         forge.and_then(|observation| observation.change_request_for_branch(branch))
     });
-    let pipeline = branch.and_then(|branch| {
-        forge.and_then(|observation| observation.pipeline_for_branch(branch))
-    });
+    let pipeline = branch
+        .and_then(|branch| forge.and_then(|observation| observation.pipeline_for_branch(branch)));
 
     if change_request.is_some()
         && matches!(stage, WorkflowStage::Inbox | WorkflowStage::Ready)
@@ -1119,5 +1118,4 @@ mod tests {
         };
         assert_eq!(apply_saved_view(&[card], &view).len(), 1);
     }
-
 }
