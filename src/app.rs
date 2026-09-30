@@ -6,7 +6,7 @@ use crate::conversation::{
 use crate::domain::{AttentionReason, RuntimeStatus, ThreadId, ThreadSummary, ThreadUiState};
 use crate::forge::{
     CapabilityState, ChangeRequestSummary, ForgeCapability, ForgeIdentity, ForgeObservation,
-    ForgeProviderKind, ForgeReviewSummary,
+    ForgeProviderKind, ForgeReviewSummary, ForgeReviewTarget,
 };
 use crate::forge_mutation::{ForgeMutationPlan, ForgeMutationReceipt, ForgeMutationRequest};
 use crate::git::{GitContext, GitReview};
@@ -243,15 +243,7 @@ pub enum Effect {
         thread_id: ThreadId,
         cwd: String,
     },
-    ProbeForgeReview {
-        thread_id: ThreadId,
-        cwd: String,
-        provider: ForgeProviderKind,
-        host: String,
-        project_id: String,
-        project_path: String,
-        change_request_iid: u64,
-    },
+    ProbeForgeReview(ForgeReviewTarget),
     LoadGitReview {
         thread_id: ThreadId,
         cwd: String,
@@ -1543,14 +1535,16 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                         let already_loaded = observation.review.as_ref().is_some_and(|review| {
                             review.change_request_iid == change.iid && review.cwd == cwd
                         });
-                        (!already_loaded).then(|| Effect::ProbeForgeReview {
-                            thread_id: thread_id.clone(),
-                            cwd: cwd.clone(),
-                            provider: identity.provider,
-                            host: identity.host.clone(),
-                            project_id: identity.project_id.clone(),
-                            project_path: identity.path_with_namespace.clone(),
-                            change_request_iid: change.iid,
+                        (!already_loaded).then(|| {
+                            Effect::ProbeForgeReview(ForgeReviewTarget {
+                                thread_id: thread_id.clone(),
+                                cwd: cwd.clone(),
+                                provider: identity.provider,
+                                host: identity.host.clone(),
+                                project_id: identity.project_id.clone(),
+                                project_path: identity.path_with_namespace.clone(),
+                                change_request_iid: change.iid,
+                            })
                         })
                     })
                 });
