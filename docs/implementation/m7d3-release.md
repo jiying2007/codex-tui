@@ -229,3 +229,19 @@ It performs:
 8. local `stable v1.0.0` release verification.
 
 The result is retained under `release/evidence/linux/`. The script never publishes.
+
+
+### Mission Control host-local sessions
+
+Mission Control classifies each Codex thread cwd against the current host:
+
+- `L` / `local`: cwd is a directory that exists on this host; Terminal Drawer is allowed.
+- `F` / `foreign-windows` or `foreign-unix`: cwd belongs to another OS; Terminal Drawer is blocked.
+- `!` / `stale`: native absolute cwd no longer exists.
+- `?`: cwd is empty or relative.
+
+Press `/`, type `local`, then Enter to show only sessions whose cwd exists on the current host.
+
+Codex app-server may normalize a stored Windows cwd while running on Linux, yielding a value such as `/linux/current/dir/C:\\Users\\...`. codex-tui detects the embedded foreign Windows path, displays the Windows portion as foreign, and never uses that value as a Linux PTY cwd.
+
+Run `codex-tui doctor codex` to see the active Codex home plus local/foreign/stale session counts and sample cwd values.

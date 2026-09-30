@@ -4,7 +4,10 @@ use crate::conversation::{
     ConversationPage, ConversationState, InteractiveRequest, InteractiveRequestKind,
     InteractiveResolution, RpcRequestId, UserInputQuestion,
 };
-use crate::domain::{AttentionReason, RuntimeStatus, ThreadId, ThreadSummary, ThreadUiState};
+use crate::domain::{
+    AttentionReason, CwdLocality, RuntimeStatus, ThreadId, ThreadSummary, ThreadUiState,
+    classify_cwd,
+};
 use crate::forge::{
     CapabilityState, ChangeRequestSummary, ForgeCapability, ForgeIdentity, ForgeObservation,
     ForgeProviderKind, ForgeReviewSummary, ForgeReviewTarget,
@@ -668,7 +671,7 @@ impl AppState {
         }
     }
 
-    pub fn terminal_target_cwd(&self) -> Option<String> {
+    pub fn terminal_target_cwd(&self) -> Result<String, String> {
         let thread_id = match &self.view {
             View::Registry => self.selected_thread_id(),
             View::Thread(id)
@@ -680,12 +683,35 @@ impl AppState {
                     .then(|| ThreadId::new(card.anchor.value.clone()))
             }),
             View::Scratch(_) => None,
-        }?;
-        self.threads
+        }
+        .ok_or_else(|| "terminal drawer unavailable: no Codex thread is selected".to_string())?;
+
+        let thread = self
+            .threads
             .iter()
             .find(|thread| thread.id == thread_id)
-            .map(|thread| thread.metadata.cwd.clone())
-            .filter(|cwd| !cwd.trim().is_empty())
+            .ok_or_else(|| {
+                "terminal drawer unavailable: selected Codex thread disappeared".to_string()
+            })?;
+        let cwd = thread.metadata.cwd.trim();
+        match classify_cwd(cwd) {
+            CwdLocality::LocalDirectory => Ok(cwd.to_string()),
+            CwdLocality::ForeignWindows => Err(
+                "terminal drawer unavailable: selected session has a Windows cwd and is not local to this Linux host; search local in Mission Control".into(),
+            ),
+            CwdLocality::ForeignUnix => Err(
+                "terminal drawer unavailable: selected session has a Unix cwd and is not local to this Windows host; search local in Mission Control".into(),
+            ),
+            CwdLocality::NativeMissing => Err(format!(
+                "terminal drawer unavailable: selected session cwd does not exist on this host: {cwd}"
+            )),
+            CwdLocality::Relative => Err(format!(
+                "terminal drawer unavailable: selected session cwd is not absolute: {cwd}"
+            )),
+            CwdLocality::Empty => Err(
+                "terminal drawer unavailable: selected Codex thread has no cwd; search local in Mission Control".into(),
+            ),
+        }
     }
 
     fn current_forge_mutation_target(&self) -> Option<ForgeMutationTarget> {
@@ -1741,11 +1767,12 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 state.terminal_focused = true;
                 return vec![];
             }
-            let Some(cwd) = state.terminal_target_cwd() else {
-                state.mutation_notice = Some(
-                    "terminal drawer unavailable: selected Codex thread has no cwd; choose a Mission Control row with a non-empty Cwd".into(),
-                );
-                return vec![];
+            let cwd = match state.terminal_target_cwd() {
+                Ok(cwd) => cwd,
+                Err(error) => {
+                    state.mutation_notice = Some(error);
+                    return vec![];
+                }
             };
             state.mutation_notice = None;
             state.terminal_drawer_open = true;
@@ -3149,6 +3176,7 @@ fn matches_filter(thread: &ThreadSummary, query: &str) -> bool {
         return true;
     }
 
+    let locality = classify_cwd(&thread.metadata.cwd).label();
     let fields = [
         thread.id.0.as_str(),
         thread.display_title(),
@@ -3159,12 +3187,20 @@ fn matches_filter(thread: &ThreadSummary, query: &str) -> bool {
         thread.metadata.workspace_key.as_str(),
         thread.metadata.model.as_deref().unwrap_or_default(),
         thread.metadata.project_id.as_deref().unwrap_or_default(),
+        locality,
     ]
     .map(str::to_lowercase);
 
-    query
-        .split_whitespace()
-        .all(|token| fields.iter().any(|field| fuzzy_subsequence(token, field)))
+    query.split_whitespace().all(|token| {
+        if matches!(
+            token,
+            "local" | "stale" | "foreign-windows" | "foreign-unix" | "relative" | "empty"
+        ) {
+            token == locality
+        } else {
+            fields.iter().any(|field| fuzzy_subsequence(token, field))
+        }
+    })
 }
 
 fn fuzzy_subsequence(needle: &str, haystack: &str) -> bool {
@@ -3196,15 +3232,14 @@ mod tests {
     #[test]
     fn terminal_drawer_open_focus_and_close_are_explicit_effects() {
         let mut app = app();
-        app.threads[0].metadata.cwd = "/repo".into();
+        let cwd = std::env::current_dir()
+            .expect("cwd")
+            .to_string_lossy()
+            .into_owned();
+        app.threads[0].metadata.cwd = cwd.clone();
 
         let effects = reduce(&mut app, Action::ToggleTerminalDrawer);
-        assert_eq!(
-            effects,
-            vec![Effect::OpenTerminalDrawer {
-                cwd: "/repo".into()
-            }]
-        );
+        assert_eq!(effects, vec![Effect::OpenTerminalDrawer { cwd }]);
         assert!(app.terminal_drawer_open);
         assert!(app.terminal_focused);
 
@@ -3230,8 +3265,48 @@ mod tests {
         assert!(
             app.mutation_notice
                 .as_deref()
-                .is_some_and(|notice| notice.contains("selected Codex thread has no cwd"))
+                .is_some_and(|notice| notice.contains("no Codex thread is selected"))
         );
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn terminal_drawer_rejects_foreign_windows_session_cwd() {
+        let mut app = app();
+        app.threads[0].metadata.cwd = r"/vsdata/leiwenjun/llm/codex-tui/C:\Users\jun\repo".into();
+
+        let effects = reduce(&mut app, Action::ToggleTerminalDrawer);
+        assert!(effects.is_empty());
+        assert!(!app.terminal_drawer_open);
+        assert!(
+            app.mutation_notice
+                .as_deref()
+                .is_some_and(|notice| notice.contains("Windows cwd"))
+        );
+    }
+
+    #[test]
+    fn registry_search_can_filter_host_local_sessions() {
+        let mut app = app();
+        app.threads[0].metadata.cwd = std::env::current_dir()
+            .expect("cwd")
+            .to_string_lossy()
+            .into_owned();
+        if app.threads.len() > 1 {
+            app.threads[1].title = "local-looking foreign history".into();
+            app.threads[1].metadata.cwd = if cfg!(windows) {
+                "/foreign/unix/repo".into()
+            } else {
+                r"C:\Users\jun\repo".into()
+            };
+        }
+
+        app.filter = "local".into();
+        let visible = app.visible_indices();
+        assert!(visible.contains(&0));
+        if app.threads.len() > 1 {
+            assert!(!visible.contains(&1));
+        }
     }
 
     #[test]
