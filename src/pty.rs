@@ -3,7 +3,7 @@ use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
+use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::thread::{self, JoinHandle};
 
 const EVENT_QUEUE_CAPACITY: usize = 64;
@@ -49,7 +49,7 @@ pub enum PtyEvent {
 }
 
 pub struct PtyHandle {
-    command_tx: SyncSender<PtyCommand>,
+    command_tx: Option<SyncSender<PtyCommand>>,
     event_rx: Receiver<PtyEvent>,
     actor: Option<JoinHandle<()>>,
 }
@@ -66,16 +66,22 @@ impl PtyHandle {
             .context("spawn PTY actor")?;
 
         Ok(Self {
-            command_tx,
+            command_tx: Some(command_tx),
             event_rx,
             actor: Some(actor),
         })
     }
 
     pub fn send(&self, command: PtyCommand) -> Result<()> {
-        self.command_tx
-            .send(command)
-            .context("PTY command channel closed")
+        let tx = self
+            .command_tx
+            .as_ref()
+            .context("PTY command channel closed")?;
+        match tx.try_send(command) {
+            Ok(()) => Ok(()),
+            Err(TrySendError::Full(_)) => anyhow::bail!("PTY command queue is full"),
+            Err(TrySendError::Disconnected(_)) => anyhow::bail!("PTY command channel closed"),
+        }
     }
 
     pub fn try_recv(&self) -> Option<PtyEvent> {
@@ -85,7 +91,10 @@ impl PtyHandle {
 
 impl Drop for PtyHandle {
     fn drop(&mut self) {
-        let _ = self.command_tx.send(PtyCommand::Terminate);
+        if let Some(tx) = self.command_tx.take() {
+            let _ = tx.try_send(PtyCommand::Terminate);
+            drop(tx);
+        }
         if let Some(actor) = self.actor.take() {
             let _ = actor.join();
         }
