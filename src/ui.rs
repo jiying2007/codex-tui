@@ -347,6 +347,36 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
         .wrap(Wrap { trim: false })
 }
 
+fn forge_review_label(app: &AppState, thread_id: &str) -> String {
+    let Some(review) = app
+        .forge_observations
+        .get(thread_id)
+        .and_then(|observation| observation.review.as_ref())
+    else {
+        return String::new();
+    };
+
+    let approvals = if review.approvals_available {
+        match (review.approvals_required, review.approvals_left) {
+            (Some(required), Some(left)) => {
+                format!(" · approvals {} left/{required}", left)
+            }
+            _ => format!(" · approvals {}", review.approved_by_count),
+        }
+    } else {
+        " · approvals n/a".into()
+    };
+    let discussions = if review.discussions_available {
+        format!(" · unresolved {}", review.unresolved_discussions)
+    } else {
+        " · discussions n/a".into()
+    };
+    format!(
+        " · MR !{}{}{}",
+        review.change_request_iid, approvals, discussions
+    )
+}
+
 fn forge_context_lines(app: &AppState, thread_id: &crate::domain::ThreadId) -> Vec<Line<'static>> {
     let Some(observation) = app.forge_observation(thread_id) else {
         return vec![Line::from("Forge: not probed")];
@@ -1099,6 +1129,7 @@ fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
             outer[0],
         );
     } else {
+        let forge_summary = forge_review_label(app, thread_id);
         let files = review
             .changes
             .iter()
@@ -1135,7 +1166,11 @@ fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
                 Paragraph::new(files)
                     .block(
                         Block::bordered()
-                            .title(format!(" Changed files ({}) ", review.changes.len())),
+                            .title(format!(
+                                " Changed files ({}){} ",
+                                review.changes.len(),
+                                forge_summary
+                            )),
                     )
                     .wrap(Wrap { trim: false }),
                 columns[0],
@@ -1162,7 +1197,10 @@ fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
                 .split(outer[0]);
             frame.render_widget(
                 Paragraph::new(files)
-                    .block(Block::bordered().title(" Changed files "))
+                    .block(Block::bordered().title(format!(
+                        " Changed files{} ",
+                        forge_summary
+                    )))
                     .wrap(Wrap { trim: false }),
                 rows[0],
             );
@@ -1270,7 +1308,7 @@ fn render_help(frame: &mut Frame<'_>) {
             ),
             Line::from("Review: j/k file · w word-diff · e editor · PageUp/PageDown · Esc"),
             Line::from(
-                "Workspace: Git identity/status only · r review · m managed worktrees · Esc",
+                "Workspace: Git + Forge read-only context · r review · m managed worktrees · Esc",
             ),
             Line::from(
                 "Managed Worktrees: n create · a adopt · d remove · x delete branch · y confirm",
