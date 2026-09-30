@@ -12,6 +12,7 @@ pub mod git;
 pub mod goal;
 pub mod headless;
 pub mod keymap;
+pub mod launch;
 pub mod operation;
 pub mod planning;
 pub mod sqlite_store;
