@@ -315,7 +315,8 @@ fn validate_platform_evidence(
         return Ok(());
     }
 
-    let compat = compat.with_context(|| format!("missing compatibility evidence for {platform}"))?;
+    let compat =
+        compat.with_context(|| format!("missing compatibility evidence for {platform}"))?;
     anyhow::ensure!(
         compat.status.eq_ignore_ascii_case("ready"),
         "compatibility evidence for {platform} must be READY"
