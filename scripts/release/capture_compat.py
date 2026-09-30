@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 import argparse
 import hashlib
 import json
 import pathlib
 import subprocess
 import sys
+
+from _compat import write_text_lf
 
 
 def main() -> int:
@@ -40,7 +44,7 @@ def main() -> int:
     output = pathlib.Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     encoded = (json.dumps(report, indent=2, sort_keys=True) + "\n").encode("utf-8")
-    output.write_bytes(encoded)
+    write_text_lf(output, encoded.decode("utf-8"))
 
     digest = hashlib.sha256(encoded).hexdigest()
     summary = {
