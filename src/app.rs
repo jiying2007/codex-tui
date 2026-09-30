@@ -3194,12 +3194,7 @@ fn matches_filter(thread: &ThreadSummary, query: &str) -> bool {
     query.split_whitespace().all(|token| {
         if matches!(
             token,
-            "local"
-                | "stale"
-                | "foreign-windows"
-                | "foreign-unix"
-                | "relative"
-                | "empty"
+            "local" | "stale" | "foreign-windows" | "foreign-unix" | "relative" | "empty"
         ) {
             token == locality
         } else {
@@ -3278,8 +3273,7 @@ mod tests {
     #[test]
     fn terminal_drawer_rejects_foreign_windows_session_cwd() {
         let mut app = app();
-        app.threads[0].metadata.cwd =
-            r"/vsdata/leiwenjun/llm/codex-tui/C:\Users\jun\repo".into();
+        app.threads[0].metadata.cwd = r"/vsdata/leiwenjun/llm/codex-tui/C:\Users\jun\repo".into();
 
         let effects = reduce(&mut app, Action::ToggleTerminalDrawer);
         assert!(effects.is_empty());
