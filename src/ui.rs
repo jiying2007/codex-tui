@@ -232,6 +232,7 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState) {
             Span::raw("Space attention  "),
             Span::raw("/ search  "),
             Span::raw("l local-only  "),
+            Span::raw("g repo-only  "),
             Span::raw("p pin  "),
             Span::raw("e alias  "),
             Span::raw("x ack  "),
@@ -419,17 +420,18 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
             viewport.total
         )
     };
-    let scope = if app.host_local_only {
-        "LOCAL ONLY · "
-    } else {
-        ""
+    let scope = match (app.host_local_only, app.repo_backed_only) {
+        (true, true) => "LOCAL+REPO ONLY · ",
+        (true, false) => "LOCAL ONLY · ",
+        (false, true) => "REPO ONLY · ",
+        (false, false) => "",
     };
     let text_filter = if app.filter.is_empty() {
         String::new()
     } else {
         format!(" · filter: {}", app.filter)
     };
-    let summary = if app.filter.is_empty() && !app.host_local_only {
+    let summary = if app.filter.is_empty() && !app.host_local_only && !app.repo_backed_only {
         format!(
             "{scope}{} threads · {local_count} local · {foreign_count} foreign · {stale_count} stale · {} need attention · {range}",
             app.threads.len(),
@@ -1835,7 +1837,7 @@ fn centered_fixed(width: u16, height: u16, area: Rect) -> Rect {
 
 const HELP_LINES: &[&str] = &[
     "Global: ? help · Ctrl+K palette · / search · . context · t terminal · T close terminal · Esc back",
-    "Registry: j/k · Enter · Space attention · / search · l host-local only · p pin · e alias · x ack",
+    "Registry: j/k · Enter · Space attention · / search · l host-local only · g repo-backed only · p pin · e alias · x ack",
     "Thread: a composer · y/n/c approval · i answer · Ctrl+C interrupt · r review",
     "Review: j/k file · w word-diff · e editor · . Forge actions · PageUp/PageDown · Esc",
     "Workspace: Git + Forge · . actions/launch presets · r review · m worktrees · Esc",
@@ -2071,6 +2073,32 @@ mod tests {
         assert!(snapshot.contains("1/4 threads"));
         assert!(snapshot.contains("LOCAL ONLY"));
         assert!(snapshot.contains("l local-only"));
+    }
+
+    #[test]
+    fn registry_summary_surfaces_repo_only_mode() {
+        let backend = TestBackend::new(120, 12);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+        app.threads[0].metadata.cwd = std::env::current_dir()
+            .expect("cwd")
+            .to_string_lossy()
+            .into_owned();
+        app.repo_backed_only = true;
+
+        terminal.draw(|frame| render(frame, &app)).expect("draw");
+        let buffer = terminal.backend().buffer();
+        let mut snapshot = String::new();
+        for y in 0..buffer.area.height {
+            for x in 0..buffer.area.width {
+                snapshot.push_str(buffer[(x, y)].symbol());
+            }
+            snapshot.push('\n');
+        }
+
+        assert!(snapshot.contains("1/4 threads"));
+        assert!(snapshot.contains("REPO ONLY"));
+        assert!(snapshot.contains("g repo-only"));
     }
 
     #[test]

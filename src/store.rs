@@ -46,6 +46,8 @@ pub struct LocalStateV1 {
     pub acknowledged_attention: BTreeSet<String>,
     #[serde(default)]
     pub host_local_only: bool,
+    #[serde(default)]
+    pub repo_backed_only: bool,
 }
 
 impl Default for LocalStateV1 {
@@ -58,6 +60,7 @@ impl Default for LocalStateV1 {
             marked_unread: BTreeSet::new(),
             acknowledged_attention: BTreeSet::new(),
             host_local_only: false,
+            repo_backed_only: false,
         }
     }
 }
@@ -177,6 +180,7 @@ mod tests {
         let mut state = LocalStateV1::default();
         state.pins.insert("thread-1".into());
         state.host_local_only = true;
+        state.repo_backed_only = true;
         store.save_state(&state).expect("save");
         let loaded = store.load_state().expect("load");
         assert_eq!(loaded, state);
@@ -186,11 +190,13 @@ mod tests {
         assert!(config_text.contains("[ui]"));
         assert!(state_text.contains("\"schemaVersion\": 1"));
         assert!(state_text.contains("\"hostLocalOnly\": true"));
+        assert!(state_text.contains("\"repoBackedOnly\": true"));
 
         let legacy = r#"{"schemaVersion":1}"#;
         fs::write(store.state_path(), legacy).expect("write legacy state");
         let legacy_loaded = store.load_state().expect("load legacy state");
         assert!(!legacy_loaded.host_local_only);
+        assert!(!legacy_loaded.repo_backed_only);
     }
 
     #[test]

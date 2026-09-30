@@ -236,6 +236,7 @@ pub enum Action {
     TogglePin,
     AcknowledgeAttention,
     ToggleHostLocalFilter,
+    ToggleRepoBackedFilter,
     BeginSearch,
     BeginAlias,
     InputChar(char),
@@ -417,6 +418,7 @@ pub struct AppState {
     pub acknowledged_attention: BTreeSet<String>,
     pub filter: String,
     pub host_local_only: bool,
+    pub repo_backed_only: bool,
     pub input_mode: InputMode,
     pub input_buffer: String,
     input_original: String,
@@ -495,6 +497,7 @@ impl AppState {
             acknowledged_attention: BTreeSet::new(),
             filter: String::new(),
             host_local_only: false,
+            repo_backed_only: false,
             input_mode: InputMode::Normal,
             input_buffer: String::new(),
             input_original: String::new(),
@@ -522,6 +525,23 @@ impl AppState {
         matches_filter(thread, &self.filter)
             && (!self.host_local_only
                 || classify_cwd(&thread.metadata.cwd) == CwdLocality::LocalDirectory)
+            && self.thread_matches_repo_scope(thread)
+    }
+
+    fn thread_matches_repo_scope(&self, thread: &ThreadSummary) -> bool {
+        if !self.repo_backed_only {
+            return true;
+        }
+        if classify_cwd(&thread.metadata.cwd) != CwdLocality::LocalDirectory {
+            return false;
+        }
+        match self.git_context(&thread.id) {
+            None => true,
+            Some(context) if context.cwd != thread.metadata.cwd => true,
+            Some(context) if context.observed_at_unix_ms == 0 => true,
+            Some(context) if context.error.is_some() => true,
+            Some(context) => context.is_repository,
+        }
     }
 
     pub fn selected_thread_id(&self) -> Option<ThreadId> {
@@ -902,6 +922,7 @@ impl AppState {
         self.thread_ui = local.thread_ui.clone();
         self.acknowledged_attention = local.acknowledged_attention.clone();
         self.host_local_only = local.host_local_only;
+        self.repo_backed_only = local.repo_backed_only;
         for thread in &mut self.threads {
             if local.pins.contains(&thread.id.0) {
                 thread.pinned = true;
@@ -950,6 +971,7 @@ impl AppState {
             marked_unread,
             acknowledged_attention: self.acknowledged_attention.clone(),
             host_local_only: self.host_local_only,
+            repo_backed_only: self.repo_backed_only,
         }
     }
 }
@@ -2301,6 +2323,11 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             ensure_selection_visible(state);
             return vec![Effect::PersistOperatorState];
         }
+        Action::ToggleRepoBackedFilter => {
+            state.repo_backed_only = !state.repo_backed_only;
+            ensure_selection_visible(state);
+            return vec![Effect::PersistOperatorState];
+        }
         Action::BeginSearch => {
             state.input_original.clone_from(&state.filter);
             state.input_buffer.clone_from(&state.filter);
@@ -3335,6 +3362,62 @@ mod tests {
             assert!(visible.contains(&1));
         }
         assert_eq!(app.filter, "focus-repo");
+    }
+
+    #[test]
+    fn registry_repo_only_filter_keeps_unresolved_and_degraded_candidates() {
+        let cwd = std::env::current_dir()
+            .expect("cwd")
+            .to_string_lossy()
+            .into_owned();
+        let mut app = app();
+        for thread in app.threads.iter_mut().take(3) {
+            thread.metadata.cwd.clone_from(&cwd);
+        }
+        app.threads[3].metadata.cwd = if cfg!(windows) {
+            "/foreign/unix/repo".into()
+        } else {
+            r"C:\Users\jun\repo".into()
+        };
+
+        let repo_id = app.threads[0].id.clone();
+        let mut repo = GitContext::pending(repo_id.clone(), cwd.clone());
+        repo.observed_at_unix_ms = 1;
+        repo.is_repository = true;
+        app.git_contexts.insert(repo_id.0.clone(), repo);
+
+        let nonrepo_id = app.threads[1].id.clone();
+        let mut nonrepo = GitContext::pending(nonrepo_id.clone(), cwd.clone());
+        nonrepo.observed_at_unix_ms = 1;
+        app.git_contexts.insert(nonrepo_id.0.clone(), nonrepo);
+
+        let degraded_id = app.threads[2].id.clone();
+        let mut degraded = GitContext::pending(degraded_id.clone(), cwd.clone());
+        degraded.observed_at_unix_ms = 1;
+        degraded.error = Some("git unavailable".into());
+        app.git_contexts.insert(degraded_id.0.clone(), degraded);
+
+        let effects = reduce(&mut app, Action::ToggleRepoBackedFilter);
+        assert_eq!(effects, vec![Effect::PersistOperatorState]);
+        assert!(app.repo_backed_only);
+        assert_eq!(app.visible_indices(), vec![0, 2]);
+
+        app.git_contexts.remove(&degraded_id.0);
+        assert_eq!(app.visible_indices(), vec![0, 2]);
+
+        app.git_contexts.insert(
+            degraded_id.0.clone(),
+            GitContext::pending(degraded_id.clone(), cwd.clone()),
+        );
+        assert_eq!(app.visible_indices(), vec![0, 2]);
+
+        let context = app.git_contexts.get_mut(&degraded_id.0).expect("context");
+        context.observed_at_unix_ms = 1;
+        assert_eq!(app.visible_indices(), vec![0]);
+
+        reduce(&mut app, Action::ToggleRepoBackedFilter);
+        assert!(!app.repo_backed_only);
+        assert_eq!(app.visible_indices(), vec![0, 1, 2, 3]);
     }
 
     #[test]
@@ -4601,6 +4684,7 @@ mod tests {
         assert_eq!(restored.threads[1].alias.as_deref(), Some("primary"));
         assert!(restored.acknowledged_attention.contains("thread-kws"));
         assert!(restored.host_local_only);
+        assert!(!restored.repo_backed_only);
         assert_eq!(restored.visible_indices(), vec![0]);
     }
     fn seed_gitlab_mutation_target(app: &mut AppState, with_merge_request: bool) -> ThreadId {
