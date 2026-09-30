@@ -14,22 +14,23 @@ cargo test --all-targets --all-features
 
 on Ubuntu, macOS and Windows.
 
-The tests use the real `portable-pty/native` backend and the platform default terminal program. They cover:
+The integration tests use the real `portable-pty/native` backend and the platform default terminal program. They cover:
 
 1. startup emits `Ready` with canonical cwd and requested size;
 2. real input reaches the shell and output returns through the PTY;
-3. normal shell `exit` produces an `Exited` event;
-4. resize is accepted while the shell is live;
-5. explicit `Terminate` stops a long-running child promptly;
-6. ETX / Ctrl-C interrupts a long-running foreground command and leaves the shell usable;
-7. dropping `PtyHandle` terminates and joins the actor without hanging.
+3. resize is accepted while the shell is live;
+4. explicit `Terminate` stops a long-running child promptly;
+5. ETX / Ctrl-C interrupts a long-running foreground command and leaves the shell usable;
+6. dropping `PtyHandle` terminates and joins the actor without hanging.
+
+A separate unit test uses the same native PTY driver with a deterministic one-shot child program and verifies output, natural child exit, reader EOF, and `PtyEvent::Exited`. This avoids treating shell-specific `exit` command syntax as part of the PTY contract.
 
 The long-running command is platform-specific only where required:
 
 - Unix: `sleep 30`
 - Windows: `ping.exe -n 30 127.0.0.1 >NUL`
 
-The actual child program still comes from `portable_pty::CommandBuilder::new_default_prog()`; codex-tui does not pick a shell executable.
+Production and integration-test terminal sessions still come from `portable_pty::CommandBuilder::new_default_prog()`; codex-tui does not pick a shell executable for the Drawer. The deterministic one-shot program exists only inside the private PTY unit test.
 
 ## EOF
 
@@ -39,7 +40,7 @@ Normal EOF/child exit is observed through the same reader/wait path as productio
 - child waiter emits `PtyEvent::Exited`;
 - the actor does not treat normal reader EOF as an error.
 
-The startup/echo/exit E2E exercises this normal child-exit path on all retained CI platforms.
+The deterministic one-shot PTY unit test exercises this normal child-exit/reader-EOF path on every canonical CI platform. The default-shell integration tests intentionally use explicit termination after their behavioral assertion, because shell-specific `exit` parsing is not a portable PTY guarantee.
 
 ## Cleanup guarantees
 
