@@ -140,6 +140,7 @@ pub enum PlanningAttention {
     BudgetLimited,
     ReviewUnseen,
     PipelineFailed,
+    ChangeRequested,
 }
 
 impl PlanningAttention {
@@ -155,6 +156,7 @@ impl PlanningAttention {
             Self::BudgetLimited => "budget-limited",
             Self::ReviewUnseen => "review",
             Self::PipelineFailed => "pipeline-failed",
+            Self::ChangeRequested => "change-requested",
         }
     }
 }
@@ -499,6 +501,12 @@ pub fn reconcile_thread_card_with_goal_and_forge(
     }
     if pipeline.is_some_and(|pipeline| pipeline.status.eq_ignore_ascii_case("failed")) {
         attention.insert(PlanningAttention::PipelineFailed);
+    }
+    if forge
+        .and_then(|observation| observation.review.as_ref())
+        .is_some_and(|review| review.unresolved_discussions > 0)
+    {
+        attention.insert(PlanningAttention::ChangeRequested);
     }
     if stage == WorkflowStage::Review && local.overlay.done_at_unix_ms.is_none() {
         attention.insert(PlanningAttention::ReviewUnseen);
@@ -1073,6 +1081,7 @@ mod tests {
                 web_url: "https://gitlab.example.com/team/repo/-/pipelines/99".into(),
                 updated_at: None,
             }],
+            review: None,
             observed_at_unix_ms: 100,
             freshness: ForgeFreshness::Fresh,
             error: None,
@@ -1104,6 +1113,40 @@ mod tests {
             card.provenance
                 .iter()
                 .any(|provenance| provenance.source == "forge:gitlab.example.com")
+        );
+
+        let mut reviewed_forge = forge.clone();
+        reviewed_forge.review = Some(crate::forge::ForgeReviewSummary {
+            thread_id: thread.id.clone(),
+            cwd: "/repo".into(),
+            change_request_iid: 7,
+            approvals_required: Some(2),
+            approvals_left: Some(1),
+            approved_by_count: 1,
+            discussions_total: 2,
+            unresolved_discussions: 1,
+            approvals_available: true,
+            discussions_available: true,
+            observed_at_unix_ms: 101,
+            error: None,
+        });
+        let reviewed = reconcile_thread_card_with_goal_and_forge(
+            ReconcileInput {
+                thread: &thread,
+                git: Some(&git),
+                local: None,
+                collision_count: 0,
+                backend_observed_at_unix_ms: Some(101),
+                backend_error: None,
+                now_unix_ms: 101,
+            },
+            None,
+            Some(&reviewed_forge),
+        );
+        assert!(
+            reviewed
+                .attention
+                .contains(&PlanningAttention::ChangeRequested)
         );
 
         let view = SavedView {
