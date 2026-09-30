@@ -223,6 +223,20 @@ impl ForgeObservation {
             .iter()
             .find(|pipeline| pipeline.reference == branch)
     }
+
+    pub fn freshness_at(&self, now_unix_ms: u64) -> ForgeFreshness {
+        if self.observed_at_unix_ms == 0 || self.error.is_some() || self.identity.is_none() {
+            return ForgeFreshness::Unavailable;
+        }
+        let age = now_unix_ms.saturating_sub(self.observed_at_unix_ms);
+        if age <= 10_000 {
+            ForgeFreshness::Fresh
+        } else if age <= 60_000 {
+            ForgeFreshness::Aging
+        } else {
+            ForgeFreshness::Stale
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
