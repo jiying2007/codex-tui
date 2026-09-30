@@ -46,6 +46,34 @@ pub struct ForgeIdentity {
     pub default_branch: Option<String>,
 }
 
+impl ForgeIdentity {
+    pub fn issue_source_ref(&self, iid: u64) -> String {
+        match self.provider {
+            ForgeProviderKind::GitLab => format!(
+                "gitlab://{}/projects/{}/issues/{iid}",
+                self.host, self.project_id
+            ),
+            ForgeProviderKind::GitHub => format!(
+                "github://{}/repositories/{}/issues/{iid}",
+                self.host, self.project_id
+            ),
+        }
+    }
+
+    pub fn change_request_source_ref(&self, iid: u64) -> String {
+        match self.provider {
+            ForgeProviderKind::GitLab => format!(
+                "gitlab://{}/projects/{}/merge-requests/{iid}",
+                self.host, self.project_id
+            ),
+            ForgeProviderKind::GitHub => format!(
+                "github://{}/repositories/{}/pull-requests/{iid}",
+                self.host, self.project_id
+            ),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ForgeCapability {
     Issues,
