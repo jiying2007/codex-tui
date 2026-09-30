@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use portable_pty::{CommandBuilder, PtySize, PtySystem, native_pty_system};
+use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -170,7 +170,7 @@ fn run_actor_inner(
             Ok(status) => {
                 let _ = exit_tx.send(PtyEvent::Exited {
                     success: status.success(),
-                    code: status.exit_code(),
+                    code: Some(status.exit_code()),
                 });
             }
             Err(error) => {
