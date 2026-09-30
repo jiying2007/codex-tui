@@ -965,7 +965,7 @@ fn render_workspace(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
 
     frame.render_widget(
         Paragraph::new(lines)
-            .block(Block::bordered().title(" Workspace · Git + Forge read-only "))
+            .block(Block::bordered().title(" Workspace · Git + Forge "))
             .wrap(Wrap { trim: false }),
         chunks[0],
     );
@@ -1386,7 +1386,7 @@ fn render_help(frame: &mut Frame<'_>) {
                 "Review: j/k file · w word-diff · e editor · . Forge actions · PageUp/PageDown · Esc",
             ),
             Line::from(
-                "Workspace: Git + Forge context · . Forge actions · r review · m worktrees · Esc",
+                "Workspace: Git + Forge · . explicit Forge actions · r review · m worktrees · Esc",
             ),
             Line::from(
                 "Managed Worktrees: n create · a adopt · d remove · x delete branch · y confirm",
