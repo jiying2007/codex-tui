@@ -5,6 +5,7 @@ use codex_tui::{
     backend::{BackendStatus, CodexBackend, FakeBackend},
     conversation::{InteractiveRequestKind, InteractiveResolution},
     forge::{self, ForgeEvent, ForgeHandle},
+    forge_mutation::{ForgeMutationEvent, ForgeMutationHandle},
     git::{self, GitEvent, GitHandle},
     goal::GoalStatus,
     keymap::{Command, command_for_key},
@@ -570,11 +571,18 @@ async fn run_app(fake_mode: bool) -> Result<()> {
 
     let mut git = GitHandle::start();
     let mut forge_runtime = ForgeHandle::start();
+    let mut forge_mutations = ForgeMutationHandle::start(store.sqlite_clone());
     let mut mutations = WorktreeMutationHandle::start(store.sqlite_clone());
     if let Err(error) = mutations.recover() {
         reduce(
             &mut app,
             Action::MutationNotice(format!("worktree recovery unavailable: {error}")),
+        );
+    }
+    if let Err(error) = forge_mutations.recover() {
+        reduce(
+            &mut app,
+            Action::MutationNotice(format!("forge mutation recovery unavailable: {error}")),
         );
     }
     let initial_git_effects = reduce(&mut app, Action::RefreshGitProjections);
@@ -583,6 +591,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
         registry.as_ref(),
         &git,
         &forge_runtime,
+        &forge_mutations,
         &mut mutations,
         &mut store,
         initial_git_effects,
@@ -611,6 +620,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                         registry.as_ref(),
                         &git,
                         &forge_runtime,
+                        &forge_mutations,
                         &mut mutations,
                         &mut store,
                         effects,
@@ -649,6 +659,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                 registry.as_ref(),
                 &git,
                 &forge_runtime,
+                &forge_mutations,
                 &mut mutations,
                 &mut store,
                 effects,
@@ -669,6 +680,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                 registry.as_ref(),
                 &git,
                 &forge_runtime,
+                &forge_mutations,
                 &mut mutations,
                 &mut store,
                 effects,
@@ -692,6 +704,29 @@ async fn run_app(fake_mode: bool) -> Result<()> {
             );
         }
 
+        let forge_mutation_changed =
+            drain_forge_mutations(&mut app, &mut forge_mutations);
+        needs_render |= forge_mutation_changed;
+        if forge_mutation_changed {
+            let effects = reduce(&mut app, Action::RefreshForgeProjections);
+            apply_effects(
+                &mut app,
+                registry.as_ref(),
+                &git,
+                &forge_runtime,
+                &forge_mutations,
+                &mut mutations,
+                &mut store,
+                effects,
+            )?;
+            reduce(
+                &mut app,
+                Action::ReconcilePlanning {
+                    now_unix_ms: now_unix_ms(),
+                },
+            );
+        }
+
         let mutation_changed = drain_mutations(&mut app, &mut mutations);
         needs_render |= mutation_changed;
         if mutation_changed {
@@ -701,6 +736,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                 registry.as_ref(),
                 &git,
                 &forge_runtime,
+                &forge_mutations,
                 &mut mutations,
                 &mut store,
                 effects,
@@ -720,6 +756,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                 registry.as_ref(),
                 &git,
                 &forge_runtime,
+                &forge_mutations,
                 &mut mutations,
                 &mut store,
                 effects,
@@ -746,6 +783,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                 registry.as_ref(),
                 &git,
                 &forge_runtime,
+                &forge_mutations,
                 &mut mutations,
                 &mut store,
                 effects,
@@ -781,6 +819,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                         registry.as_ref(),
                         &git,
                         &forge_runtime,
+                        &forge_mutations,
                         &mut mutations,
                         &mut store,
                         effects,
@@ -902,6 +941,25 @@ fn drain_forge(app: &mut AppState, forge: &mut ForgeHandle) -> bool {
     changed
 }
 
+fn drain_forge_mutations(
+    app: &mut AppState,
+    mutations: &mut ForgeMutationHandle,
+) -> bool {
+    let mut changed = false;
+    while let Some(event) = mutations.try_recv() {
+        match event {
+            ForgeMutationEvent::Receipt(receipt) => {
+                reduce(app, Action::ForgeMutationReceipt(receipt));
+            }
+            ForgeMutationEvent::Notice(notice) => {
+                reduce(app, Action::MutationNotice(notice));
+            }
+        }
+        changed = true;
+    }
+    changed
+}
+
 fn drain_mutations(app: &mut AppState, mutations: &mut WorktreeMutationHandle) -> bool {
     let mut changed = false;
     while let Some(event) = mutations.try_recv() {
@@ -926,6 +984,7 @@ fn apply_effects(
     registry: Option<&RegistryHandle>,
     git: &GitHandle,
     forge: &ForgeHandle,
+    forge_mutations: &ForgeMutationHandle,
     mutations: &mut WorktreeMutationHandle,
     store: &mut RuntimeStore,
     effects: Vec<Effect>,
@@ -1068,6 +1127,16 @@ fn apply_effects(
                         app,
                         Action::MutationNotice(format!(
                             "managed-worktree execution dispatch failed: {error}"
+                        )),
+                    );
+                }
+            }
+            Effect::ExecuteForgeOperation(request) => {
+                if let Err(error) = forge_mutations.execute(*request) {
+                    reduce(
+                        app,
+                        Action::MutationNotice(format!(
+                            "forge mutation execution dispatch failed: {error}"
                         )),
                     );
                 }
@@ -1345,6 +1414,14 @@ fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
             _ => return vec![],
         };
         return reduce(app, action);
+    }
+
+    if app.pending_forge_operation.is_some() {
+        return match key.code {
+            KeyCode::Char('y') => reduce(app, Action::ConfirmPendingOperation),
+            KeyCode::Char('c') | KeyCode::Esc => reduce(app, Action::CancelPendingOperation),
+            _ => vec![],
+        };
     }
 
     if app.goal_actions_open {
