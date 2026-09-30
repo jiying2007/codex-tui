@@ -9,7 +9,7 @@ use crate::forge::{
     ForgeProviderKind, ForgeReviewSummary,
 };
 use crate::forge_mutation::{
-    ForgeMutationKind, ForgeMutationPlan, ForgeMutationReceipt, ForgeMutationRequest,
+    ForgeMutationPlan, ForgeMutationReceipt, ForgeMutationRequest,
 };
 use crate::git::{GitContext, GitReview};
 use crate::goal::{GoalObservation, GoalStatus};
@@ -1954,7 +1954,9 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::WorktreeCreateBranch
             | InputMode::WorktreeCreatePath
             | InputMode::WorktreeCreateStartPoint
-            | InputMode::WorktreeDeleteBranch => {
+            | InputMode::WorktreeDeleteBranch
+            | InputMode::ForgeMergeRequestTitle
+            | InputMode::ForgeComment => {
                 state.input_buffer.push(character);
                 if state.input_mode == InputMode::Search {
                     state.filter.clone_from(&state.input_buffer);
@@ -1981,7 +1983,9 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::WorktreeCreateBranch
             | InputMode::WorktreeCreatePath
             | InputMode::WorktreeCreateStartPoint
-            | InputMode::WorktreeDeleteBranch => {
+            | InputMode::WorktreeDeleteBranch
+            | InputMode::ForgeMergeRequestTitle
+            | InputMode::ForgeComment => {
                 state.input_buffer.pop();
                 if state.input_mode == InputMode::Search {
                     state.filter.clone_from(&state.input_buffer);
@@ -3535,6 +3539,7 @@ mod tests {
                         project_id: "42".into(),
                         path_with_namespace: "team/repo".into(),
                         web_url: "https://gitlab.example.com/team/repo".into(),
+                        default_branch: Some("main".into()),
                     }),
                     capabilities: BTreeMap::from([(
                         ForgeCapability::Issues,
