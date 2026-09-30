@@ -2078,6 +2078,10 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::Snooze
             | InputMode::Note
             | InputMode::SavedViewName
+            | InputMode::BatchAddTag
+            | InputMode::BatchRemoveTag
+            | InputMode::BatchPriority
+            | InputMode::BatchSnooze
             | InputMode::GoalObjective
             | InputMode::WorktreeCreateBranch
             | InputMode::WorktreeCreatePath
@@ -2107,6 +2111,10 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::Snooze
             | InputMode::Note
             | InputMode::SavedViewName
+            | InputMode::BatchAddTag
+            | InputMode::BatchRemoveTag
+            | InputMode::BatchPriority
+            | InputMode::BatchSnooze
             | InputMode::GoalObjective
             | InputMode::WorktreeCreateBranch
             | InputMode::WorktreeCreatePath
