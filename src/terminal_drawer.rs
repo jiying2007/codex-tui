@@ -46,6 +46,7 @@ pub struct TerminalDrawerRuntime {
     cwd: Option<PathBuf>,
     size: TerminalSize,
     state: TerminalProcessState,
+    query_tail: Vec<u8>,
 }
 
 impl Default for TerminalDrawerRuntime {
@@ -63,6 +64,7 @@ impl Default for TerminalDrawerRuntime {
                 success: true,
                 code: None,
             },
+            query_tail: Vec::new(),
         }
     }
 }
@@ -85,6 +87,7 @@ impl TerminalDrawerRuntime {
         self.cwd = Some(canonical);
         self.size = size;
         self.state = TerminalProcessState::Starting;
+        self.query_tail.clear();
         Ok(())
     }
 
@@ -99,6 +102,7 @@ impl TerminalDrawerRuntime {
             success: true,
             code: None,
         };
+        self.query_tail.clear();
     }
 
     pub fn send_input(&self, bytes: Vec<u8>) -> Result<()> {
@@ -149,7 +153,19 @@ impl TerminalDrawerRuntime {
                 }
                 PtyEvent::Output(bytes) => {
                     self.parser.process(&bytes);
+                    let (cursor_row, cursor_col) = self.parser.screen().cursor_position();
+                    for response in
+                        vt_query_responses(&mut self.query_tail, &bytes, cursor_row, cursor_col)
+                    {
+                        if let Err(error) = handle.send(PtyCommand::Input(response)) {
+                            self.state = TerminalProcessState::Error(format!(
+                                "terminal query response failed: {error:#}"
+                            ));
+                            break;
+                        }
+                    }
                 }
+                PtyEvent::ReaderClosed => {}
                 PtyEvent::Exited { success, code } => {
                     self.state = TerminalProcessState::Exited { success, code };
                 }
@@ -185,6 +201,45 @@ impl TerminalDrawerRuntime {
     }
 }
 
+pub fn vt_query_responses(
+    tail: &mut Vec<u8>,
+    bytes: &[u8],
+    cursor_row: u16,
+    cursor_col: u16,
+) -> Vec<Vec<u8>> {
+    let mut probe = Vec::with_capacity(tail.len().saturating_add(bytes.len()));
+    probe.extend_from_slice(tail);
+    probe.extend_from_slice(bytes);
+
+    let mut responses = Vec::new();
+    let mut offset = 0;
+    while offset < probe.len() {
+        if probe[offset..].starts_with(b"\x1b[5n") {
+            responses.push(b"\x1b[0n".to_vec());
+            offset += 4;
+            continue;
+        }
+        if probe[offset..].starts_with(b"\x1b[6n") {
+            responses.push(
+                format!(
+                    "\x1b[{};{}R",
+                    cursor_row.saturating_add(1),
+                    cursor_col.saturating_add(1)
+                )
+                .into_bytes(),
+            );
+            offset += 4;
+            continue;
+        }
+        offset += 1;
+    }
+
+    let keep = probe.len().min(3);
+    tail.clear();
+    tail.extend_from_slice(&probe[probe.len().saturating_sub(keep)..]);
+    responses
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -197,6 +252,30 @@ mod tests {
         assert!(snapshot.rows.iter().any(|row| row.contains("hello")));
         assert!(snapshot.rows.iter().any(|row| row.contains("RED")));
         assert!(snapshot.rows.iter().all(|row| !row.contains("\x1b")));
+    }
+
+    #[test]
+    fn vt_query_responses_cover_status_and_cursor_reports() {
+        let mut tail = Vec::new();
+        assert_eq!(
+            vt_query_responses(&mut tail, b"\x1b[5n", 0, 0),
+            vec![b"\x1b[0n".to_vec()]
+        );
+        assert_eq!(
+            vt_query_responses(&mut tail, b"prefix\x1b[6nsuffix", 4, 9),
+            vec![b"\x1b[5;10R".to_vec()]
+        );
+        assert!(vt_query_responses(&mut tail, b"plain text", 0, 0).is_empty());
+    }
+
+    #[test]
+    fn vt_query_response_survives_split_output_chunks() {
+        let mut tail = Vec::new();
+        assert!(vt_query_responses(&mut tail, b"\x1b[", 0, 0).is_empty());
+        assert_eq!(
+            vt_query_responses(&mut tail, b"6n", 2, 3),
+            vec![b"\x1b[3;4R".to_vec()]
+        );
     }
 
     #[test]

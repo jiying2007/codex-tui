@@ -44,6 +44,7 @@ pub enum PtyCommand {
 pub enum PtyEvent {
     Ready { cwd: PathBuf, size: TerminalSize },
     Output(Vec<u8>),
+    ReaderClosed,
     Exited { success: bool, code: Option<u32> },
     Error(String),
 }
@@ -133,10 +134,21 @@ fn run_actor_inner(
 
     let mut command = CommandBuilder::new_default_prog();
     command.cwd(&cwd);
+    spawn_and_drive_pty(pair, command, cwd, size, command_rx, event_tx)
+}
+
+fn spawn_and_drive_pty(
+    pair: portable_pty::PtyPair,
+    command: CommandBuilder,
+    cwd: PathBuf,
+    size: TerminalSize,
+    command_rx: Receiver<PtyCommand>,
+    event_tx: &SyncSender<PtyEvent>,
+) -> Result<()> {
     let mut child = pair
         .slave
         .spawn_command(command)
-        .context("spawn platform default PTY program")?;
+        .context("spawn PTY child program")?;
     let mut killer = child.clone_killer();
     drop(pair.slave);
 
@@ -150,7 +162,10 @@ fn run_actor_inner(
             let mut buffer = vec![0_u8; OUTPUT_CHUNK_BYTES];
             loop {
                 match reader.read(&mut buffer) {
-                    Ok(0) => break,
+                    Ok(0) => {
+                        let _ = output_tx.send(PtyEvent::ReaderClosed);
+                        break;
+                    }
                     Ok(count) => {
                         if output_tx
                             .send(PtyEvent::Output(buffer[..count].to_vec()))
@@ -327,6 +342,63 @@ mod tests {
         scrollback.push(b"123456".to_vec());
         assert_eq!(scrollback.snapshot(), b"3456");
         assert_eq!(scrollback.truncated_bytes(), 2);
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn one_shot_child_emits_output_exit_and_reader_eof() {
+        use std::sync::mpsc::sync_channel;
+        use std::time::{Duration, Instant};
+        use tempfile::tempdir;
+
+        let root = tempdir().expect("tempdir");
+        let cwd = std::fs::canonicalize(root.path()).expect("canonical cwd");
+        let size = TerminalSize { rows: 24, cols: 80 };
+        let pair = native_pty_system()
+            .openpty(size.portable())
+            .expect("open test PTY");
+
+        let mut command = {
+            let mut command = CommandBuilder::new("/bin/sh");
+            command.arg("-c");
+            command.arg("printf CODEX_TUI_EOF");
+            command
+        };
+        command.cwd(&cwd);
+
+        let (command_tx, command_rx) = sync_channel(4);
+        let (event_tx, event_rx) = sync_channel(16);
+        let actor = std::thread::spawn({
+            let cwd = cwd.clone();
+            move || spawn_and_drive_pty(pair, command, cwd, size, command_rx, &event_tx)
+        });
+
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut output = Vec::new();
+        let mut exited = false;
+        let mut reader_closed = false;
+        while Instant::now() < deadline && !(exited && reader_closed) {
+            match event_rx.recv_timeout(Duration::from_millis(100)) {
+                Ok(PtyEvent::Output(bytes)) => output.extend(bytes),
+                Ok(PtyEvent::ReaderClosed) => reader_closed = true,
+                Ok(PtyEvent::Exited { .. }) => exited = true,
+                Ok(PtyEvent::Error(error)) => panic!("test PTY error: {error}"),
+                Ok(PtyEvent::Ready { .. }) => {}
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                Err(error) => panic!("test PTY event channel failed: {error}"),
+            }
+        }
+
+        assert!(exited, "one-shot child did not emit Exited");
+        assert!(reader_closed, "one-shot child did not close the PTY reader");
+        assert!(
+            String::from_utf8_lossy(&output).contains("CODEX_TUI_EOF"),
+            "missing child output: {:?}",
+            String::from_utf8_lossy(&output)
+        );
+
+        drop(command_tx);
+        actor.join().expect("actor join").expect("actor result");
     }
 
     #[test]
