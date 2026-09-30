@@ -635,9 +635,7 @@ impl SqliteStore {
         rows.map(|row| row.map_err(Into::into)).collect()
     }
 
-    pub fn load_recoverable_forge_mutation_receipts(
-        &self,
-    ) -> Result<Vec<ForgeMutationReceipt>> {
+    pub fn load_recoverable_forge_mutation_receipts(&self) -> Result<Vec<ForgeMutationReceipt>> {
         let conn = self.open_ready()?;
         let mut stmt = conn.prepare(
             "SELECT operation_id, plan_json, state, started_at_unix_ms,
