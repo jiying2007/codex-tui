@@ -688,6 +688,7 @@ async fn validate_preconditions(plan: &ForgeMutationPlan) -> Result<Preflight> {
             );
             Ok(Preflight {
                 authenticated_user_id: None,
+                merge_request_sha: None,
                 already_satisfied: None,
             })
         }
@@ -695,11 +696,13 @@ async fn validate_preconditions(plan: &ForgeMutationPlan) -> Result<Preflight> {
             validate_exact_open_mr(plan).await?;
             Ok(Preflight {
                 authenticated_user_id: None,
+                merge_request_sha: None,
                 already_satisfied: None,
             })
         }
         ForgeMutationKind::ApproveMergeRequest => {
             let mr = validate_exact_open_mr(plan).await?;
+            let sha = required_mr_sha(&mr)?;
             let user: GitLabUser = glab_api_json(&plan.cwd, &plan.host, "/user").await?;
             let approvals = approvals(plan, mr.iid).await?;
             if approvals
@@ -709,6 +712,7 @@ async fn validate_preconditions(plan: &ForgeMutationPlan) -> Result<Preflight> {
             {
                 return Ok(Preflight {
                     authenticated_user_id: Some(user.id),
+                    merge_request_sha: Some(sha),
                     already_satisfied: Some((
                         mr_ref(plan, mr.iid),
                         "authenticated GitLab user is already present in approved_by".into(),
@@ -717,11 +721,13 @@ async fn validate_preconditions(plan: &ForgeMutationPlan) -> Result<Preflight> {
             }
             Ok(Preflight {
                 authenticated_user_id: Some(user.id),
+                merge_request_sha: Some(sha),
                 already_satisfied: None,
             })
         }
         ForgeMutationKind::MergeMergeRequest => {
             let mr = validate_exact_open_mr(plan).await?;
+            let sha = required_mr_sha(&mr)?;
             anyhow::ensure!(!mr.draft, "merge request is still a draft");
             anyhow::ensure!(
                 mr.blocking_discussions_resolved != Some(false),
@@ -744,13 +750,34 @@ async fn validate_preconditions(plan: &ForgeMutationPlan) -> Result<Preflight> {
                     pipeline.status
                 );
             }
-            if let Ok(approvals) = approvals(plan, mr.iid).await
-                && let Some(left) = approvals.approvals_left
-            {
-                anyhow::ensure!(left == 0, "merge request still requires {left} approval(s)");
+
+            match approval_state(plan, mr.iid).await {
+                Ok(state) => {
+                    let unsatisfied = state
+                        .rules
+                        .iter()
+                        .filter(|rule| rule.approvals_required > 0 && !rule.approved)
+                        .count();
+                    anyhow::ensure!(
+                        unsatisfied == 0,
+                        "merge request has {unsatisfied} unsatisfied approval rule(s)"
+                    );
+                }
+                Err(_) => {
+                    if let Ok(approvals) = approvals(plan, mr.iid).await
+                        && let Some(left) = approvals.approvals_left
+                    {
+                        anyhow::ensure!(
+                            left == 0,
+                            "merge request still requires {left} approval(s)"
+                        );
+                    }
+                }
             }
+
             Ok(Preflight {
                 authenticated_user_id: None,
+                merge_request_sha: Some(sha),
                 already_satisfied: None,
             })
         }
