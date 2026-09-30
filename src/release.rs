@@ -1,4 +1,7 @@
-use crate::compat::COMPAT_SCHEMA;
+use crate::{
+    compat::COMPAT_SCHEMA,
+    release_benchmark::{PERFORMANCE_FIXTURE, STABLE_MIN_ITERATIONS},
+};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -48,6 +51,7 @@ pub struct PlatformCompatReceipt {
 #[serde(rename_all = "camelCase")]
 pub struct PerformanceReceipt {
     pub fixture: String,
+    pub iterations: usize,
     pub p95_ms: f64,
     pub p99_ms: f64,
     pub source: String,
@@ -262,8 +266,12 @@ pub fn validate_evidence(path: &Path, version: &str, commit_sha: &str) -> Result
     }
 
     anyhow::ensure!(
-        receipt.performance.fixture == "resident-planning-10k",
-        "stable performance fixture must be resident-planning-10k"
+        receipt.performance.fixture == PERFORMANCE_FIXTURE,
+        "stable performance fixture must be {PERFORMANCE_FIXTURE}"
+    );
+    anyhow::ensure!(
+        receipt.performance.iterations >= STABLE_MIN_ITERATIONS,
+        "stable performance evidence requires at least {STABLE_MIN_ITERATIONS} iterations"
     );
     anyhow::ensure!(
         receipt.performance.p95_ms.is_finite() && receipt.performance.p95_ms >= 0.0,
@@ -340,10 +348,14 @@ pub fn print_text(report: &ReleaseVerification) {
 }
 
 pub fn run_cli(args: &[String]) -> Result<i32> {
-    if args.first().map(String::as_str) != Some("verify") {
-        anyhow::bail!(
-            "usage: codex-tui release verify --channel <preview|stable> --tag <tag> --commit <sha> [--evidence <path>] [--publish] [--json]"
-        );
+    match args.first().map(String::as_str) {
+        Some("benchmark") => return crate::release_benchmark::run_cli(&args[1..]),
+        Some("verify") => {}
+        _ => {
+            anyhow::bail!(
+                "usage: codex-tui release <verify|benchmark> ..."
+            );
+        }
     }
 
     let mut channel = None;
@@ -551,7 +563,8 @@ mod tests {
                     },
                 )]),
                 performance: PerformanceReceipt {
-                    fixture: "resident-planning-10k".into(),
+                    fixture: PERFORMANCE_FIXTURE.into(),
+                    iterations: STABLE_MIN_ITERATIONS,
                     p95_ms: 40.0,
                     p99_ms: 80.0,
                     source: "retained-runner".into(),
@@ -573,6 +586,57 @@ mod tests {
         assert!(!valid_commit_sha(
             "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz"
         ));
+    }
+
+    #[test]
+    fn stable_evidence_rejects_too_few_performance_samples() {
+        let root = repo_with_lock_and_changelog();
+        let evidence = root.path().join("evidence.json");
+        let terminal = |name: &str| PlatformTerminalReceipt {
+            status: "pass".into(),
+            terminal: name.into(),
+            observed_at: "2026-09-30T00:00:00Z".into(),
+            notes: None,
+        };
+        let compatibility = |hash: char| PlatformCompatReceipt {
+            status: "ready".into(),
+            report_sha256: hash.to_string().repeat(64),
+            observed_at: "2026-09-30T00:00:00Z".into(),
+        };
+        fs::write(
+            &evidence,
+            serde_json::to_vec_pretty(&ReleaseEvidenceReceipt {
+                schema: RELEASE_EVIDENCE_SCHEMA.into(),
+                version: env!("CARGO_PKG_VERSION").into(),
+                commit_sha: sha(),
+                canonical_ci_run: 123,
+                compat_schema: COMPAT_SCHEMA.into(),
+                compatibility: BTreeMap::from([
+                    ("linux".into(), compatibility('a')),
+                    ("macos".into(), compatibility('b')),
+                    ("windows".into(), compatibility('c')),
+                ]),
+                terminal_restoration: BTreeMap::from([
+                    ("linux".into(), terminal("xterm")),
+                    ("macos".into(), terminal("Terminal.app")),
+                    ("windows".into(), terminal("Windows Terminal")),
+                ]),
+                performance: PerformanceReceipt {
+                    fixture: PERFORMANCE_FIXTURE.into(),
+                    iterations: STABLE_MIN_ITERATIONS - 1,
+                    p95_ms: 1.0,
+                    p99_ms: 2.0,
+                    source: "test".into(),
+                    observed_at: "2026-09-30T00:00:00Z".into(),
+                },
+            })
+            .expect("evidence json"),
+        )
+        .expect("evidence");
+
+        let error = validate_evidence(&evidence, env!("CARGO_PKG_VERSION"), &sha())
+            .expect_err("small performance sample must fail");
+        assert!(format!("{error:#}").contains("at least"));
     }
 
     #[test]
