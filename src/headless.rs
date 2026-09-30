@@ -1,6 +1,7 @@
 use crate::{
     app_server,
     backend::{BackendSnapshot, CodexBackend, FakeBackend},
+    compat,
     domain::{AttentionReason, ThreadSummary},
     planning::{
         Freshness, PlanningSnapshot, ReconcileInput, SourceKind, SourceRef, WorkCardProjection,
@@ -11,10 +12,7 @@ use crate::{
 };
 use anyhow::Result;
 use serde::Serialize;
-use std::process::Stdio;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tokio::process::Command;
-use tokio::time::timeout;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const EXIT_OK: i32 = 0;
 pub const EXIT_USAGE: i32 = 2;
@@ -96,28 +94,6 @@ struct WorkSnapshot {
     work: Vec<WorkRow>,
 }
 
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct CompatComponent {
-    available: bool,
-    detail: String,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct CompatReport {
-    schema: &'static str,
-    version: &'static str,
-    os: &'static str,
-    arch: &'static str,
-    degraded: bool,
-    sqlite: CompatComponent,
-    codex: CompatComponent,
-    git: CompatComponent,
-    glab: CompatComponent,
-    gh: CompatComponent,
-}
-
 pub async fn run(args: &[String]) -> Result<i32> {
     let Some(command) = args.first().map(String::as_str) else {
         print_usage();
@@ -171,72 +147,13 @@ pub async fn run(args: &[String]) -> Result<i32> {
 }
 
 pub async fn doctor_compat(json: bool) -> Result<i32> {
-    let sqlite = match SqliteStore::discover().and_then(|store| store.health()) {
-        Ok(health) => CompatComponent {
-            available: health.integrity.eq_ignore_ascii_case("ok"),
-            detail: format!(
-                "schema={} integrity={}",
-                health.schema_version, health.integrity
-            ),
-        },
-        Err(error) => CompatComponent {
-            available: false,
-            detail: format!("unavailable: {error:#}"),
-        },
-    };
-
-    let codex = match app_server::probe(None).await {
-        Ok(snapshot) => CompatComponent {
-            available: snapshot.status.connected,
-            detail: format!(
-                "connected={} version={} capabilities={}",
-                snapshot.status.connected,
-                snapshot.status.version.as_deref().unwrap_or("unknown"),
-                snapshot.status.capabilities.len()
-            ),
-        },
-        Err(error) => CompatComponent {
-            available: false,
-            detail: format!("unavailable: {error:#}"),
-        },
-    };
-
-    let git = probe_binary("git", &["--version"]).await;
-    let glab = probe_binary("glab", &["--version"]).await;
-    let gh = probe_binary("gh", &["--version"]).await;
-
-    let degraded = !sqlite.available
-        || !codex.available
-        || !git.available
-        || (!glab.available && !gh.available);
-    let report = CompatReport {
-        schema: "codex-tui/compat/v1",
-        version: env!("CARGO_PKG_VERSION"),
-        os: std::env::consts::OS,
-        arch: std::env::consts::ARCH,
-        degraded,
-        sqlite,
-        codex,
-        git,
-        glab,
-        gh,
-    };
-
+    let report = compat::probe().await;
     if json {
         println!("{}", serde_json::to_string_pretty(&report)?);
     } else {
-        println!("schema: {}", report.schema);
-        println!("version: {}", report.version);
-        println!("platform: {}/{}", report.os, report.arch);
-        print_component("sqlite", &report.sqlite);
-        print_component("codex", &report.codex);
-        print_component("git", &report.git);
-        print_component("glab", &report.glab);
-        print_component("gh", &report.gh);
-        println!("degraded: {}", report.degraded);
+        compat::print_text(&report);
     }
-
-    Ok(if report.degraded {
+    Ok(if report.is_blocked() {
         EXIT_DEGRADED
     } else {
         EXIT_OK
@@ -552,62 +469,6 @@ fn print_work_snapshot(snapshot: &WorkSnapshot, format: OutputFormat) -> Result<
         }
     }
     Ok(())
-}
-
-async fn probe_binary(name: &str, args: &[&str]) -> CompatComponent {
-    let mut command = Command::new(name);
-    command
-        .args(args)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true);
-
-    let output = match timeout(Duration::from_secs(3), command.output()).await {
-        Ok(Ok(output)) => output,
-        Ok(Err(error)) => {
-            return CompatComponent {
-                available: false,
-                detail: format!("unavailable: {error}"),
-            };
-        }
-        Err(_) => {
-            return CompatComponent {
-                available: false,
-                detail: "timeout after 3s".into(),
-            };
-        }
-    };
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let detail = stdout
-        .lines()
-        .chain(stderr.lines())
-        .find(|line| !line.trim().is_empty())
-        .unwrap_or(if output.status.success() {
-            "available"
-        } else {
-            "command failed"
-        })
-        .trim();
-    let detail = detail.chars().take(200).collect::<String>();
-
-    CompatComponent {
-        available: output.status.success(),
-        detail,
-    }
-}
-
-fn print_component(name: &str, component: &CompatComponent) {
-    println!(
-        "{name}: {} · {}",
-        if component.available {
-            "available"
-        } else {
-            "unavailable"
-        },
-        component.detail
-    );
 }
 
 fn print_usage() {

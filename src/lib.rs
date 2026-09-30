@@ -3,6 +3,7 @@ pub mod app_server;
 pub mod backend;
 pub mod batch_local;
 pub mod codex_protocol;
+pub mod compat;
 pub mod conversation;
 pub mod domain;
 pub mod forge;

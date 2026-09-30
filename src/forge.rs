@@ -285,6 +285,8 @@ pub struct ForgeDoctorSnapshot {
     pub client_version: Option<String>,
     pub authenticated: Option<bool>,
     pub server_version: Option<String>,
+    pub server_edition: Option<String>,
+    pub server_tier: Option<String>,
     pub remote: Option<RemoteIdentity>,
     pub observation: ForgeObservation,
     pub boards: Vec<IssueBoardSummary>,
@@ -509,6 +511,8 @@ struct GitLabBoard {
 #[derive(Debug, Deserialize)]
 struct GitLabVersion {
     version: String,
+    #[serde(default)]
+    enterprise: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -768,7 +772,7 @@ pub async fn doctor(cwd: String) -> ForgeDoctorSnapshot {
         None => None,
     };
 
-    let (authenticated, server_version) =
+    let (authenticated, server_version, server_edition, server_tier) =
         if let (Some(remote), Some(provider)) = (&remote, provider) {
             match provider {
                 ForgeProviderKind::GitLab => {
@@ -776,19 +780,30 @@ pub async fn doctor(cwd: String) -> ForgeDoctorSnapshot {
                     let auth = run_command("glab", &auth_args, Some(Path::new(&cwd)));
                     let version = glab_api_json::<GitLabVersion>(&cwd, &remote.host, "/version");
                     let (auth, version) = tokio::join!(auth, version);
+                    let version = version.ok();
                     (
                         auth.ok().map(|output| output.success),
-                        version.ok().map(|version| version.version),
+                        version.as_ref().map(|version| version.version.clone()),
+                        version.and_then(|version| {
+                            version.enterprise.map(|enterprise| {
+                                if enterprise {
+                                    "enterprise".to_string()
+                                } else {
+                                    "community".to_string()
+                                }
+                            })
+                        }),
+                        None,
                     )
                 }
                 ForgeProviderKind::GitHub => {
                     let auth_args = ["auth", "status", "--hostname", remote.host.as_str()];
                     let auth = run_command("gh", &auth_args, Some(Path::new(&cwd))).await;
-                    (auth.ok().map(|output| output.success), None)
+                    (auth.ok().map(|output| output.success), None, None, None)
                 }
             }
         } else {
-            (None, None)
+            (None, None, None, None)
         };
 
     let mut observation = probe_thread(ThreadId::new("doctor-forge"), cwd.clone()).await;
@@ -822,6 +837,8 @@ pub async fn doctor(cwd: String) -> ForgeDoctorSnapshot {
         client_version,
         authenticated,
         server_version,
+        server_edition,
+        server_tier,
         remote,
         observation,
         boards,
