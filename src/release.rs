@@ -352,9 +352,7 @@ pub fn run_cli(args: &[String]) -> Result<i32> {
         Some("benchmark") => return crate::release_benchmark::run_cli(&args[1..]),
         Some("verify") => {}
         _ => {
-            anyhow::bail!(
-                "usage: codex-tui release <verify|benchmark> ..."
-            );
+            anyhow::bail!("usage: codex-tui release <verify|benchmark> ...");
         }
     }
 
@@ -481,8 +479,7 @@ mod tests {
     #[test]
     fn apache_license_allows_preview_publish_gate_to_advance() {
         let root = repo_with_lock_and_changelog();
-        fs::write(root.path().join("LICENSE"), "Apache License\nVersion 2.0")
-            .expect("license");
+        fs::write(root.path().join("LICENSE"), "Apache License\nVersion 2.0").expect("license");
         let report = verify(&ReleaseVerifyOptions {
             channel: ReleaseChannel::Preview,
             tag: format!("v{}-preview.1", env!("CARGO_PKG_VERSION")),
