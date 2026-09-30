@@ -447,10 +447,7 @@ fn forge_context_lines(app: &AppState, thread_id: &crate::domain::ThreadId) -> V
     }
 
     if let Some(notice) = &app.mutation_notice {
-        lines.push(Line::from(format!(
-            "Mutation: {}",
-            truncate(notice, 90)
-        )));
+        lines.push(Line::from(format!("Mutation: {}", truncate(notice, 90))));
     }
 
     lines
@@ -1340,9 +1337,12 @@ fn render_forge_mutation_confirmation(frame: &mut Frame<'_>, app: &AppState) {
     )));
     lines.push(Line::from(""));
     lines.push(Line::from("Preconditions revalidated at execution time:"));
-    lines.extend(plan.preconditions.iter().take(8).map(|item| {
-        Line::from(format!("  {} = {}", item.key, item.expected))
-    }));
+    lines.extend(
+        plan.preconditions
+            .iter()
+            .take(8)
+            .map(|item| Line::from(format!("  {} = {}", item.key, item.expected))),
+    );
     lines.push(Line::from(""));
     lines.push(Line::from("y CONFIRM execute · c/Esc cancel"));
 
