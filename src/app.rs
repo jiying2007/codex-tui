@@ -767,33 +767,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             return effects;
         }
         Action::RefreshForgeProjections => {
-            let mut effects = Vec::new();
-            for thread in &state.threads {
-                let Some(context) = state.git_context(&thread.id) else {
-                    continue;
-                };
-                if !context.is_repository
-                    || context.error.is_some()
-                    || context.cwd != thread.metadata.cwd
-                {
-                    continue;
-                }
-                let needs_probe = state
-                    .forge_observations
-                    .get(&thread.id.0)
-                    .is_none_or(|observation| observation.cwd != thread.metadata.cwd);
-                if needs_probe {
-                    state.forge_observations.insert(
-                        thread.id.0.clone(),
-                        ForgeObservation::pending(thread.id.clone(), thread.metadata.cwd.clone()),
-                    );
-                    effects.push(Effect::ProbeForge {
-                        thread_id: thread.id.clone(),
-                        cwd: thread.metadata.cwd.clone(),
-                    });
-                }
-            }
-            return effects;
+            return refresh_forge_projections(state);
         }
         Action::GitContextLoaded(context) => {
             state
@@ -801,9 +775,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 .insert(context.thread_id.0.clone(), context);
         }
         Action::ForgeObservationLoaded(observation) => {
-            state
-                .forge_observations
-                .insert(observation.thread_id.0.clone(), observation);
+            propagate_forge_observation(state, observation);
         }
         Action::ForgeReviewLoaded(review) => {
             if let Some(observation) = state.forge_observations.get_mut(&review.thread_id.0)
@@ -2193,6 +2165,151 @@ fn select_next_planning_attention(state: &mut AppState) {
             .iter()
             .position(|candidate| candidate.local_id == local_id)
             .unwrap_or(0);
+    }
+}
+
+const FORGE_REFRESH_TTL_MS: u64 = 60_000;
+
+fn forge_scope_key(state: &AppState, thread: &ThreadSummary) -> String {
+    if let Some(identity) = state
+        .forge_observations
+        .get(&thread.id.0)
+        .and_then(|observation| observation.identity.as_ref())
+    {
+        format!(
+            "forge:{}:{}:{}",
+            identity.provider.label(),
+            identity.host,
+            identity.project_id
+        )
+    } else {
+        format!("cwd:{}", thread.metadata.cwd)
+    }
+}
+
+fn refresh_forge_projections(state: &mut AppState) -> Vec<Effect> {
+    let now = now_unix_ms();
+    let mut groups = BTreeMap::<String, Vec<(ThreadId, String)>>::new();
+
+    for thread in &state.threads {
+        let Some(context) = state.git_context(&thread.id) else {
+            continue;
+        };
+        if !context.is_repository
+            || context.error.is_some()
+            || context.cwd != thread.metadata.cwd
+        {
+            continue;
+        }
+        groups
+            .entry(forge_scope_key(state, thread))
+            .or_default()
+            .push((thread.id.clone(), thread.metadata.cwd.clone()));
+    }
+
+    let mut effects = Vec::new();
+    for targets in groups.into_values() {
+        let newest = targets
+            .iter()
+            .filter_map(|(thread_id, cwd)| {
+                state
+                    .forge_observations
+                    .get(&thread_id.0)
+                    .filter(|observation| observation.cwd == *cwd)
+            })
+            .max_by_key(|observation| observation.observed_at_unix_ms);
+
+        if newest.is_some_and(|observation| {
+            observation.observed_at_unix_ms == 0
+                || now.saturating_sub(observation.observed_at_unix_ms) <= FORGE_REFRESH_TTL_MS
+        }) {
+            continue;
+        }
+
+        let Some((thread_id, cwd)) = targets.first().cloned() else {
+            continue;
+        };
+        state.forge_observations.insert(
+            thread_id.0.clone(),
+            ForgeObservation::pending(thread_id.clone(), cwd.clone()),
+        );
+        effects.push(Effect::ProbeForge { thread_id, cwd });
+    }
+
+    effects
+}
+
+fn propagate_forge_observation(state: &mut AppState, observation: ForgeObservation) {
+    let source_cwd = observation.cwd.clone();
+    let source_identity = observation.identity.clone();
+    let mut targets = state
+        .threads
+        .iter()
+        .filter(|thread| {
+            let valid_git = state.git_context(&thread.id).is_some_and(|context| {
+                context.is_repository
+                    && context.error.is_none()
+                    && context.cwd == thread.metadata.cwd
+            });
+            if !valid_git {
+                return false;
+            }
+            if thread.metadata.cwd == source_cwd {
+                return true;
+            }
+            source_identity.as_ref().is_some_and(|identity| {
+                state
+                    .forge_observations
+                    .get(&thread.id.0)
+                    .and_then(|existing| existing.identity.as_ref())
+                    == Some(identity)
+            })
+        })
+        .map(|thread| (thread.id.clone(), thread.metadata.cwd.clone()))
+        .collect::<Vec<_>>();
+
+    if targets.is_empty() {
+        targets.push((observation.thread_id.clone(), source_cwd));
+    }
+
+    for (thread_id, cwd) in targets {
+        let existing_review = state
+            .forge_observations
+            .get(&thread_id.0)
+            .and_then(|existing| existing.review.clone())
+            .filter(|review| {
+                review.cwd == cwd
+                    && observation
+                        .change_requests
+                        .iter()
+                        .any(|change| change.iid == review.change_request_iid)
+            });
+
+        let mut projected = observation.clone();
+        projected.thread_id = thread_id.clone();
+        projected.cwd = cwd;
+        projected.review = existing_review;
+        if let Some(review) = &projected.review {
+            projected.capabilities.insert(
+                ForgeCapability::ApprovalSummary,
+                if review.approvals_available {
+                    CapabilityState::Available
+                } else {
+                    CapabilityState::Unavailable
+                },
+            );
+            projected.capabilities.insert(
+                ForgeCapability::Discussions,
+                if review.discussions_available {
+                    CapabilityState::Available
+                } else {
+                    CapabilityState::Unavailable
+                },
+            );
+        }
+        state
+            .forge_observations
+            .insert(thread_id.0.clone(), projected);
     }
 }
 
