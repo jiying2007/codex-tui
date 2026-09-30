@@ -1846,7 +1846,6 @@ fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
     reduce(app, action)
 }
 
-
 #[cfg(test)]
 mod accessibility_input_tests {
     use super::*;
