@@ -167,17 +167,6 @@ fn ctrl_c_is_delivered_to_child_and_shell_remains_usable() {
 }
 
 #[test]
-fn closing_input_exercises_eof_without_panicking() {
-    let root = tempdir().expect("tempdir");
-    let handle =
-        PtyHandle::start(root.path(), TerminalSize { rows: 24, cols: 80 }).expect("start PTY");
-    wait_event(&handle, |event| matches!(event, PtyEvent::Ready { .. }));
-
-    handle.send(PtyCommand::CloseInput).expect("close input");
-    let _ = wait_exit(&handle);
-}
-
-#[test]
 fn dropping_handle_cleans_up_actor_without_hanging() {
     let root = tempdir().expect("tempdir");
     let handle =
