@@ -127,6 +127,40 @@ impl FakeBackend {
             ],
         }
     }
+
+
+    pub fn scaled(count: usize) -> Self {
+        let mut threads = Vec::with_capacity(count);
+        for index in 0..count {
+            let runtime = match index % 5 {
+                0 => RuntimeStatus::Working,
+                1 => RuntimeStatus::WaitingHuman,
+                2 => RuntimeStatus::Ready,
+                3 => RuntimeStatus::SystemError,
+                _ => RuntimeStatus::Inactive,
+            };
+            let attention = match index % 17 {
+                0 => vec![AttentionReason::ApprovalRequired],
+                1 => vec![AttentionReason::UserInputRequired],
+                2 => vec![AttentionReason::ReadyForReview],
+                _ => vec![],
+            };
+            threads.push(ThreadSummary {
+                id: ThreadId::new(format!("thread-scale-{index:05}")),
+                workspace: format!("repo-{:03}", index % 64),
+                title: format!("Synthetic work item {index:05}"),
+                runtime,
+                attention,
+                pinned: index % 97 == 0,
+                alias: None,
+                metadata: ThreadMetadata::default(),
+            });
+        }
+        Self {
+            generation: 0,
+            threads,
+        }
+    }
 }
 
 impl CodexBackend for FakeBackend {
