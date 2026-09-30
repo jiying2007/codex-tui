@@ -1,6 +1,9 @@
 use codex_tui::{
     backend::{CodexBackend, FakeBackend},
-    planning::{ReconcileInput, SavedView, SavedViewLayout, WorkCardProjection, apply_saved_view, reconcile_thread_card},
+    planning::{
+        ReconcileInput, SavedView, SavedViewLayout, WorkCardProjection, apply_saved_view,
+        reconcile_thread_card,
+    },
 };
 use std::sync::OnceLock;
 
