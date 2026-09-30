@@ -12,6 +12,7 @@ use crate::forge::{
 use crate::forge_mutation::{ForgeMutationPlan, ForgeMutationReceipt, ForgeMutationRequest};
 use crate::git::{GitContext, GitReview};
 use crate::goal::{GoalObservation, GoalStatus};
+use crate::launch::{LaunchPlan, LaunchPreset};
 use crate::operation::{
     ManagedWorktreeRecord, MutationScope, OperationPlan, OperationReceipt, OperationState,
     mutation_scope_for_thread, now_unix_ms,
@@ -92,6 +93,7 @@ pub enum ContextChoice {
     BatchReopen,
     BatchSnooze,
     BatchClearSnooze,
+    LaunchPreset,
     ForgeCreateMergeRequest,
     ForgeComment,
     ForgeApprove,
@@ -120,6 +122,7 @@ impl ContextChoice {
             Self::BatchReopen => "Batch visible · Reopen",
             Self::BatchSnooze => "Batch visible · Snooze…",
             Self::BatchClearSnooze => "Batch visible · Clear snooze",
+            Self::LaunchPreset => "Launch repository preset…",
             Self::ForgeCreateMergeRequest => "Forge · Create merge request…",
             Self::ForgeComment => "Forge · Comment on merge request…",
             Self::ForgeApprove => "Forge · Approve merge request",
@@ -174,6 +177,15 @@ pub enum Action {
     CloseContext,
     MoveContext(i32),
     ExecuteContext,
+    LaunchPresetsLoaded {
+        repo_root: String,
+        thread_cwd: String,
+        presets: Vec<LaunchPreset>,
+    },
+    CloseLaunchPresets,
+    MoveLaunchPreset(i32),
+    SelectLaunchPreset,
+    LaunchPlanPrepared(LaunchPlan),
     BeginHotSlotBind,
     UseHotSlot(u8),
     MoveReview(i32),
@@ -251,6 +263,16 @@ pub enum Effect {
         target: SourceRef,
     },
     ApplyLocalBatch(Box<LocalBatchPlan>),
+    LoadLaunchPresets {
+        repo_root: String,
+        thread_cwd: String,
+    },
+    PrepareLaunchPreset {
+        preset: LaunchPreset,
+        repo_root: String,
+        thread_cwd: String,
+    },
+    ExecuteLaunchPreset(Box<LaunchPlan>),
     RefreshGoal(ThreadId),
     SetGoal {
         thread_id: ThreadId,
@@ -325,6 +347,12 @@ pub struct AppState {
     pub pending_forge_operation: Option<ForgeMutationPlan>,
     pub pending_forge_payload: Option<String>,
     pub pending_local_batch: Option<LocalBatchPlan>,
+    pub launch_menu_open: bool,
+    pub launch_selected: usize,
+    pub launch_repo_root: Option<String>,
+    pub launch_thread_cwd: Option<String>,
+    pub launch_presets: Vec<LaunchPreset>,
+    pub pending_launch_plan: Option<LaunchPlan>,
     pub recent_forge_operations: Vec<ForgeMutationReceipt>,
     pub mutation_notice: Option<String>,
     pub create_worktree_branch: Option<String>,
@@ -393,6 +421,12 @@ impl AppState {
             pending_forge_operation: None,
             pending_forge_payload: None,
             pending_local_batch: None,
+            launch_menu_open: false,
+            launch_selected: 0,
+            launch_repo_root: None,
+            launch_thread_cwd: None,
+            launch_presets: vec![],
+            pending_launch_plan: None,
             recent_forge_operations: vec![],
             mutation_notice: None,
             create_worktree_branch: None,
@@ -659,6 +693,14 @@ impl AppState {
             if self.active_saved_view().id.starts_with("view:") {
                 choices.push(ContextChoice::DeleteCurrentView);
             }
+        }
+        if matches!(self.view, View::Workspace(_) | View::Review(_))
+            && self.current_thread_id().is_some_and(|thread_id| {
+                self.git_context(thread_id)
+                    .is_some_and(|context| context.repo.is_some())
+            })
+        {
+            choices.push(ContextChoice::LaunchPreset);
         }
         if let Some(target) = self.current_forge_mutation_target() {
             if target.change_request.is_some() {
@@ -1144,6 +1186,9 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             if let Some(plan) = state.pending_local_batch.take() {
                 return vec![Effect::ApplyLocalBatch(Box::new(plan))];
             }
+            if let Some(plan) = state.pending_launch_plan.take() {
+                return vec![Effect::ExecuteLaunchPreset(Box::new(plan))];
+            }
             if let Some(plan) = state.pending_forge_operation.take() {
                 let payload = state.pending_forge_payload.take();
                 return vec![Effect::ExecuteForgeOperation(Box::new(
@@ -1160,6 +1205,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.pending_forge_operation = None;
             state.pending_forge_payload = None;
             state.pending_local_batch = None;
+            state.pending_launch_plan = None;
             state.mutation_notice = Some("operation cancelled before execution".into());
         }
         Action::GoalObserved(goal) => {
@@ -1414,6 +1460,24 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 return vec![];
             }
 
+            if choice == ContextChoice::LaunchPreset {
+                let Some(thread_id) = state.current_thread_id().cloned() else {
+                    return vec![];
+                };
+                let Some(context) = state.git_context(&thread_id) else {
+                    state.mutation_notice = Some("Git context unavailable for launch presets".into());
+                    return vec![];
+                };
+                let Some(repo) = context.repo.as_ref() else {
+                    state.mutation_notice = Some("repository root unavailable for launch presets".into());
+                    return vec![];
+                };
+                return vec![Effect::LoadLaunchPresets {
+                    repo_root: repo.primary_root.clone(),
+                    thread_cwd: context.cwd.clone(),
+                }];
+            }
+
             if matches!(
                 choice,
                 ContextChoice::ForgeCreateMergeRequest
@@ -1558,11 +1622,65 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 | ContextChoice::BatchReopen
                 | ContextChoice::BatchSnooze
                 | ContextChoice::BatchClearSnooze
+                | ContextChoice::LaunchPreset
                 | ContextChoice::ForgeCreateMergeRequest
                 | ContextChoice::ForgeComment
                 | ContextChoice::ForgeApprove
                 | ContextChoice::ForgeMerge => unreachable!(),
             }
+        }
+        Action::LaunchPresetsLoaded {
+            repo_root,
+            thread_cwd,
+            presets,
+        } => {
+            state.launch_repo_root = Some(repo_root);
+            state.launch_thread_cwd = Some(thread_cwd);
+            state.launch_presets = presets;
+            state.launch_selected = 0;
+            state.launch_menu_open = true;
+            state.mutation_notice = None;
+        }
+        Action::CloseLaunchPresets => {
+            state.launch_menu_open = false;
+            state.launch_selected = 0;
+        }
+        Action::MoveLaunchPreset(delta) => {
+            let len = state.launch_presets.len();
+            if len == 0 {
+                state.launch_selected = 0;
+            } else {
+                state.launch_selected =
+                    (state.launch_selected as i32 + delta).rem_euclid(len as i32) as usize;
+            }
+        }
+        Action::SelectLaunchPreset => {
+            let Some(preset) = state.launch_presets.get(state.launch_selected).cloned() else {
+                state.launch_menu_open = false;
+                return vec![];
+            };
+            let (Some(repo_root), Some(thread_cwd)) = (
+                state.launch_repo_root.clone(),
+                state.launch_thread_cwd.clone(),
+            ) else {
+                state.launch_menu_open = false;
+                state.mutation_notice = Some("launch preset scope is unavailable".into());
+                return vec![];
+            };
+            state.launch_menu_open = false;
+            return vec![Effect::PrepareLaunchPreset {
+                preset,
+                repo_root,
+                thread_cwd,
+            }];
+        }
+        Action::LaunchPlanPrepared(plan) => {
+            state.pending_operation = None;
+            state.pending_forge_operation = None;
+            state.pending_forge_payload = None;
+            state.pending_local_batch = None;
+            state.pending_launch_plan = Some(plan);
+            state.mutation_notice = None;
         }
         Action::BeginSnooze => {
             if let Some(target) = state.selected_local_target() {
