@@ -443,7 +443,9 @@ pub async fn probe_gitlab(thread_id: ThreadId, cwd: String) -> Result<ForgeObser
     let issues: Vec<GitLabIssue> = glab_api_json(
         &cwd,
         &remote.host,
-        &format!("/projects/{encoded_id}/issues?state=opened&per_page={DEFAULT_PAGE_SIZE}"),
+        &format!(
+            "/projects/{encoded_id}/issues?state=all&order_by=updated_at&sort=desc&per_page={DEFAULT_PAGE_SIZE}"
+        ),
     )
     .await
     .context("load GitLab issues")?;
