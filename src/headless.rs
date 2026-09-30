@@ -3,8 +3,8 @@ use crate::{
     backend::{BackendSnapshot, CodexBackend, FakeBackend},
     domain::{AttentionReason, ThreadSummary},
     planning::{
-        Freshness, PlanningSnapshot, SourceKind, SourceRef, WorkCardProjection,
-        reconcile_scratch_card_with_local, reconcile_thread_card, ReconcileInput,
+        Freshness, PlanningSnapshot, ReconcileInput, SourceKind, SourceRef, WorkCardProjection,
+        reconcile_scratch_card_with_local, reconcile_thread_card,
     },
     sqlite_store::SqliteStore,
     store::{LocalStateV1, LocalStore},
@@ -124,12 +124,10 @@ pub async fn run(args: &[String]) -> Result<i32> {
         return Ok(EXIT_USAGE);
     };
     let flags = &args[1..];
-    if flags.iter().any(|arg| {
-        !matches!(
-            arg.as_str(),
-            "--json" | "--fake" | "--fixture-10k"
-        )
-    }) {
+    if flags
+        .iter()
+        .any(|arg| !matches!(arg.as_str(), "--json" | "--fake" | "--fixture-10k"))
+    {
         eprintln!("unknown headless option");
         print_usage();
         return Ok(EXIT_USAGE);
@@ -207,8 +205,10 @@ pub async fn doctor_compat(json: bool) -> Result<i32> {
     let glab = probe_binary("glab", &["--version"]).await;
     let gh = probe_binary("gh", &["--version"]).await;
 
-    let degraded =
-        !sqlite.available || !codex.available || !git.available || (!glab.available && !gh.available);
+    let degraded = !sqlite.available
+        || !codex.available
+        || !git.available
+        || (!glab.available && !gh.available);
     let report = CompatReport {
         schema: "codex-tui/compat/v1",
         version: env!("CARGO_PKG_VERSION"),
@@ -249,11 +249,7 @@ async fn build_thread_snapshot(fake: bool, fixture_10k: bool) -> ThreadSnapshot 
         Ok(snapshot) => {
             let source = source_status(&snapshot);
             let degraded = source.degraded;
-            let mut threads = snapshot
-                .threads
-                .iter()
-                .map(thread_row)
-                .collect::<Vec<_>>();
+            let mut threads = snapshot.threads.iter().map(thread_row).collect::<Vec<_>>();
             threads.sort_by(|left, right| left.id.cmp(&right.id));
             ThreadSnapshot {
                 schema: "codex-tui/headless-threads/v1",
@@ -605,15 +601,17 @@ async fn probe_binary(name: &str, args: &[&str]) -> CompatComponent {
 fn print_component(name: &str, component: &CompatComponent) {
     println!(
         "{name}: {} · {}",
-        if component.available { "available" } else { "unavailable" },
+        if component.available {
+            "available"
+        } else {
+            "unavailable"
+        },
         component.detail
     );
 }
 
 fn print_usage() {
-    eprintln!(
-        "usage: codex-tui headless <threads|work> [--json] [--fake|--fixture-10k]"
-    );
+    eprintln!("usage: codex-tui headless <threads|work> [--json] [--fake|--fixture-10k]");
 }
 
 fn now_unix_ms() -> u64 {
@@ -635,8 +633,14 @@ mod tests {
         assert_eq!(snapshot.schema, "codex-tui/headless-threads/v1");
         assert!(!snapshot.degraded);
         assert_eq!(snapshot.threads.len(), 10_000);
-        assert_eq!(snapshot.threads.first().expect("first").id, "thread-scale-00000");
-        assert_eq!(snapshot.threads.last().expect("last").id, "thread-scale-09999");
+        assert_eq!(
+            snapshot.threads.first().expect("first").id,
+            "thread-scale-00000"
+        );
+        assert_eq!(
+            snapshot.threads.last().expect("last").id,
+            "thread-scale-09999"
+        );
     }
 
     #[tokio::test]
