@@ -1188,10 +1188,6 @@ mod tests {
         assert_eq!(observation.freshness_at(60_101), ForgeFreshness::Stale);
 
         observation.error = Some("offline".into());
-        assert_eq!(
-            observation.freshness_at(101),
-            ForgeFreshness::Unavailable
-        );
+        assert_eq!(observation.freshness_at(101), ForgeFreshness::Unavailable);
     }
-
 }
