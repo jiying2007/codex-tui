@@ -857,7 +857,7 @@ fn drain_forge(app: &mut AppState, forge: &mut ForgeHandle) -> bool {
     while let Some(event) = forge.try_recv() {
         match event {
             ForgeEvent::Observation(observation) => {
-                reduce(app, Action::ForgeObservationLoaded(observation));
+                reduce(app, Action::ForgeObservationLoaded(*observation));
             }
             ForgeEvent::Review(review) => {
                 reduce(app, Action::ForgeReviewLoaded(review));
