@@ -176,7 +176,8 @@ M7a establishes a read-only automation and scale baseline. `headless threads` an
 - M6 forge integration: complete.
 - M7a headless read-only CLI + scale baselines: implemented in the v0.7.x line.
 - M7b1 richer SavedView query language: implemented in the v0.7.x line.
-- M7b2 safe transactional batch-local actions: next; M7b3 repository-shared launch presets follows.
+- M7b2 safe transactional batch-local actions: implemented with frozen targets, explicit confirmation, and one SQLite transaction.
+- M7b3 repository-shared launch presets: next.
 
 Architecture and product research are archived under `docs/research/`.
 Implementation design lives under `docs/design/`.
@@ -202,3 +203,4 @@ See:
 - `docs/implementation/m6c-github-provider.md`
 - `docs/implementation/m7a-headless-scale.md`
 - `docs/implementation/m7b1-saved-view-query.md`
+- `docs/implementation/m7b2-batch-local.md`
