@@ -368,7 +368,11 @@ pub fn run_cli(args: &[String]) -> Result<i32> {
             }
             "--commit" => {
                 index += 1;
-                commit_sha = Some(args.get(index).context("--commit requires a value")?.clone());
+                commit_sha = Some(
+                    args.get(index)
+                        .context("--commit requires a value")?
+                        .clone(),
+                );
             }
             "--evidence" => {
                 index += 1;
