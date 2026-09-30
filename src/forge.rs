@@ -1213,6 +1213,7 @@ mod tests {
                 project_id: "42".into(),
                 path_with_namespace: "team/repo".into(),
                 web_url: "https://gitlab.example.com/team/repo".into(),
+                default_branch: Some("main".into()),
             }),
             capabilities: default_capabilities(),
             issues: vec![],
