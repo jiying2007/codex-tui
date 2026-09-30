@@ -1,3 +1,4 @@
+use crate::batch_local::{LocalBatchAction, LocalBatchPlan};
 use crate::forge_mutation::{ForgeMutationPlan, ForgeMutationReceipt};
 use crate::operation::{ManagedWorktreeRecord, OperationPlan, OperationReceipt, OperationState};
 use crate::planning::{
@@ -9,6 +10,7 @@ use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -160,6 +162,121 @@ impl SqliteStore {
         }
 
         tx.commit().context("commit WorkCard transaction")
+    }
+
+    pub fn apply_local_batch(&self, plan: &LocalBatchPlan) -> Result<usize> {
+        plan.validate().context("validate local batch plan")?;
+
+        let mut conn = self.open_ready()?;
+        let existing = load_cards(&conn)?
+            .into_iter()
+            .map(|card| (card.anchor.clone(), card))
+            .collect::<BTreeMap<_, _>>();
+        let tx = conn
+            .transaction()
+            .context("begin local batch transaction")?;
+        let now = now_unix_ms();
+
+        for target in &plan.targets {
+            let mut card = existing.get(&target.anchor).cloned().unwrap_or_else(|| {
+                WorkCardRecord {
+                    local_id: target.local_id.clone(),
+                    anchor: target.anchor.clone(),
+                    links: vec![],
+                    overlay: WorkCardOverlay::default(),
+                }
+            });
+            let mut persist_card = true;
+
+            match &plan.action {
+                LocalBatchAction::AddTag(tag) => {
+                    card.overlay.tags.insert(tag.trim().to_string());
+                }
+                LocalBatchAction::RemoveTag(tag) => {
+                    card.overlay.tags.remove(tag.trim());
+                }
+                LocalBatchAction::SetPriority(priority)
+                    if target.anchor.kind == SourceKind::ScratchWork =>
+                {
+                    update_scratch_priority_tx(&tx, &target.anchor.value, Some(*priority), now)?;
+                    if existing.contains_key(&target.anchor) {
+                        card.overlay.priority = None;
+                    } else {
+                        persist_card = false;
+                    }
+                }
+                LocalBatchAction::ClearPriority
+                    if target.anchor.kind == SourceKind::ScratchWork =>
+                {
+                    update_scratch_priority_tx(&tx, &target.anchor.value, None, now)?;
+                    if existing.contains_key(&target.anchor) {
+                        card.overlay.priority = None;
+                    } else {
+                        persist_card = false;
+                    }
+                }
+                LocalBatchAction::SetPriority(priority) => {
+                    card.overlay.priority = Some(*priority);
+                }
+                LocalBatchAction::ClearPriority => {
+                    card.overlay.priority = None;
+                }
+                LocalBatchAction::SetReady(ready)
+                    if target.anchor.kind == SourceKind::ScratchWork =>
+                {
+                    update_scratch_state_tx(
+                        &tx,
+                        &target.anchor.value,
+                        if *ready {
+                            ScratchState::Ready
+                        } else {
+                            ScratchState::Inbox
+                        },
+                        now,
+                    )?;
+                    if existing.contains_key(&target.anchor) {
+                        card.overlay.manual_ready = false;
+                    } else {
+                        persist_card = false;
+                    }
+                }
+                LocalBatchAction::SetDone(done)
+                    if target.anchor.kind == SourceKind::ScratchWork =>
+                {
+                    update_scratch_state_tx(
+                        &tx,
+                        &target.anchor.value,
+                        if *done {
+                            ScratchState::Done
+                        } else {
+                            ScratchState::Ready
+                        },
+                        now,
+                    )?;
+                    if existing.contains_key(&target.anchor) {
+                        card.overlay.done_at_unix_ms = None;
+                    } else {
+                        persist_card = false;
+                    }
+                }
+                LocalBatchAction::SetReady(ready) => {
+                    card.overlay.manual_ready = *ready;
+                }
+                LocalBatchAction::SetDone(done) => {
+                    card.overlay.done_at_unix_ms = done.then_some(plan.planned_at_unix_ms);
+                }
+                LocalBatchAction::SnoozeUntil(until) => {
+                    card.overlay.snooze_until_unix_ms = *until;
+                }
+            }
+
+            if persist_card {
+                upsert_work_card_tx(&tx, &card, now)?;
+            }
+        }
+
+        tx.commit().context("commit local batch transaction")?;
+        Ok(plan.targets.len())
     }
 
     pub fn work_card_for_anchor(&self, anchor: &SourceRef) -> Result<Option<WorkCardRecord>> {
@@ -961,6 +1078,96 @@ fn decode_forge_mutation_receipt(
     })
 }
 
+fn upsert_work_card_tx(tx: &Transaction<'_>, card: &WorkCardRecord, now: u64) -> Result<()> {
+    let tags_json = serde_json::to_string(&card.overlay.tags).context("serialize card tags")?;
+    tx.execute(
+        "INSERT INTO work_cards (
+            local_id, anchor_kind, anchor_ref, title_override, note, pinned, tags_json,
+            priority, manual_ready, done_at_unix_ms, snooze_until_unix_ms, updated_at_unix_ms
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+         ON CONFLICT(local_id) DO UPDATE SET
+            anchor_kind=excluded.anchor_kind,
+            anchor_ref=excluded.anchor_ref,
+            title_override=excluded.title_override,
+            note=excluded.note,
+            pinned=excluded.pinned,
+            tags_json=excluded.tags_json,
+            priority=excluded.priority,
+            manual_ready=excluded.manual_ready,
+            done_at_unix_ms=excluded.done_at_unix_ms,
+            snooze_until_unix_ms=excluded.snooze_until_unix_ms,
+            updated_at_unix_ms=excluded.updated_at_unix_ms",
+        params![
+            card.local_id,
+            enum_text(&card.anchor.kind)?,
+            card.anchor.value,
+            card.overlay.title_override,
+            card.overlay.note,
+            bool_i64(card.overlay.pinned),
+            tags_json,
+            card.overlay.priority,
+            bool_i64(card.overlay.manual_ready),
+            card.overlay.done_at_unix_ms.map(u64_to_i64).transpose()?,
+            card.overlay
+                .snooze_until_unix_ms
+                .map(u64_to_i64)
+                .transpose()?,
+            u64_to_i64(now)?,
+        ],
+    )
+    .context("upsert batch WorkCard")?;
+
+    tx.execute(
+        "DELETE FROM work_card_links WHERE work_card_id = ?1",
+        [&card.local_id],
+    )?;
+    for link in &card.links {
+        tx.execute(
+            "INSERT INTO work_card_links (
+                work_card_id, role, source_kind, source_ref
+             ) VALUES (?1, ?2, ?3, ?4)",
+            params![
+                card.local_id,
+                enum_text(&link.role)?,
+                enum_text(&link.source.kind)?,
+                link.source.value,
+            ],
+        )
+        .context("insert batch WorkCard link")?;
+    }
+    Ok(())
+}
+
+fn update_scratch_priority_tx(
+    tx: &Transaction<'_>,
+    scratch_id: &str,
+    priority: Option<i32>,
+    now: u64,
+) -> Result<()> {
+    let rowid = parse_prefixed_id(scratch_id, "scratch:")?;
+    let changed = tx.execute(
+        "UPDATE scratch_work SET priority=?1, updated_at_unix_ms=?2 WHERE id=?3",
+        params![priority, u64_to_i64(now)?, rowid],
+    )?;
+    anyhow::ensure!(changed == 1, "ScratchWork does not exist: {scratch_id}");
+    Ok(())
+}
+
+fn update_scratch_state_tx(
+    tx: &Transaction<'_>,
+    scratch_id: &str,
+    state: ScratchState,
+    now: u64,
+) -> Result<()> {
+    let rowid = parse_prefixed_id(scratch_id, "scratch:")?;
+    let changed = tx.execute(
+        "UPDATE scratch_work SET state=?1, updated_at_unix_ms=?2 WHERE id=?3",
+        params![enum_text(&state)?, u64_to_i64(now)?, rowid],
+    )?;
+    anyhow::ensure!(changed == 1, "ScratchWork does not exist: {scratch_id}");
+    Ok(())
+}
+
 fn save_operator_state_tx(tx: &Transaction<'_>, state: &LocalStateV1) -> Result<()> {
     let json = serde_json::to_string(state).context("serialize operator state")?;
     tx.execute(
@@ -1365,6 +1572,87 @@ mod tests {
     use crate::planning::{LinkRole, SavedViewLayout};
     use std::collections::{BTreeMap, BTreeSet};
     use tempfile::tempdir;
+
+    #[test]
+    fn local_batch_is_atomic_when_a_frozen_target_disappears() {
+        use crate::batch_local::{LocalBatchAction, LocalBatchPlan, LocalBatchTarget};
+
+        let root = tempdir().expect("tempdir");
+        let store = SqliteStore::at(root.path());
+        let scratch = store
+            .create_scratch("one", None, None, None)
+            .expect("scratch");
+        let plan = LocalBatchPlan {
+            action: LocalBatchAction::SetDone(true),
+            targets: vec![
+                LocalBatchTarget {
+                    local_id: scratch.id.clone(),
+                    anchor: SourceRef {
+                        kind: SourceKind::ScratchWork,
+                        value: scratch.id.clone(),
+                    },
+                    title: scratch.title.clone(),
+                },
+                LocalBatchTarget {
+                    local_id: "scratch:999999".into(),
+                    anchor: SourceRef {
+                        kind: SourceKind::ScratchWork,
+                        value: "scratch:999999".into(),
+                    },
+                    title: "gone".into(),
+                },
+            ],
+            planned_at_unix_ms: 100,
+        };
+
+        assert!(store.apply_local_batch(&plan).is_err());
+        let snapshot = store.load_planning_snapshot().expect("snapshot");
+        assert_eq!(snapshot.scratch[0].state, ScratchState::Inbox);
+    }
+
+    #[test]
+    fn local_batch_updates_scratch_authority_and_thread_overlay_in_one_api() {
+        use crate::batch_local::{LocalBatchAction, LocalBatchPlan, LocalBatchTarget};
+
+        let root = tempdir().expect("tempdir");
+        let store = SqliteStore::at(root.path());
+        let scratch = store
+            .create_scratch("scratch", None, None, None)
+            .expect("scratch");
+        let scratch_plan = LocalBatchPlan {
+            action: LocalBatchAction::SetPriority(7),
+            targets: vec![LocalBatchTarget {
+                local_id: scratch.id.clone(),
+                anchor: SourceRef {
+                    kind: SourceKind::ScratchWork,
+                    value: scratch.id.clone(),
+                },
+                title: scratch.title.clone(),
+            }],
+            planned_at_unix_ms: 100,
+        };
+        store.apply_local_batch(&scratch_plan).expect("scratch batch");
+
+        let thread_plan = LocalBatchPlan {
+            action: LocalBatchAction::AddTag("focus".into()),
+            targets: vec![LocalBatchTarget {
+                local_id: "thread:thread-1".into(),
+                anchor: SourceRef::codex_thread(&crate::domain::ThreadId::new("thread-1")),
+                title: "thread".into(),
+            }],
+            planned_at_unix_ms: 100,
+        };
+        store.apply_local_batch(&thread_plan).expect("thread batch");
+
+        let snapshot = store.load_planning_snapshot().expect("snapshot");
+        assert_eq!(snapshot.scratch[0].priority, Some(7));
+        let thread = snapshot
+            .cards
+            .iter()
+            .find(|card| card.anchor == thread_plan.targets[0].anchor)
+            .expect("thread overlay");
+        assert!(thread.overlay.tags.contains("focus"));
+    }
 
     #[test]
     fn imports_legacy_json_transactionally_and_preserves_backup() {
