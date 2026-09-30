@@ -838,8 +838,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
             );
         }
 
-        let terminal_changed =
-            drain_terminal_drawer(&mut app, &mut services.terminal_drawer);
+        let terminal_changed = drain_terminal_drawer(&mut app, &mut services.terminal_drawer);
         needs_render |= terminal_changed;
 
         if last_forge_reconcile.elapsed() >= Duration::from_secs(15) {
@@ -894,11 +893,12 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                 Event::Resize(cols, rows) => {
                     needs_render = true;
                     if app.terminal_drawer_open {
-                        let effects =
-                            vec![Effect::TerminalResize(ui::terminal_drawer_pty_size(cols, rows))];
+                        let effects = vec![Effect::TerminalResize(ui::terminal_drawer_pty_size(
+                            cols, rows,
+                        ))];
                         apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
                     }
-                },
+                }
                 _ => {}
             }
         }
@@ -1049,10 +1049,7 @@ fn drain_mutations(app: &mut AppState, mutations: &mut WorktreeMutationHandle) -
     changed
 }
 
-fn drain_terminal_drawer(
-    app: &mut AppState,
-    terminal: &mut TerminalDrawerRuntime,
-) -> bool {
+fn drain_terminal_drawer(app: &mut AppState, terminal: &mut TerminalDrawerRuntime) -> bool {
     let Some(snapshot) = terminal.drain() else {
         return false;
     };
@@ -1262,9 +1259,7 @@ fn apply_effects(
                 if let Err(error) = terminal_drawer.send_input(bytes) {
                     reduce(
                         app,
-                        Action::MutationNotice(format!(
-                            "terminal input unavailable: {error:#}"
-                        )),
+                        Action::MutationNotice(format!("terminal input unavailable: {error:#}")),
                     );
                 }
             }
@@ -1272,9 +1267,7 @@ fn apply_effects(
                 if let Err(error) = terminal_drawer.resize(size) {
                     reduce(
                         app,
-                        Action::MutationNotice(format!(
-                            "terminal resize unavailable: {error:#}"
-                        )),
+                        Action::MutationNotice(format!("terminal resize unavailable: {error:#}")),
                     );
                 } else {
                     reduce(app, Action::TerminalSnapshot(terminal_drawer.snapshot()));
@@ -1284,9 +1277,7 @@ fn apply_effects(
                 if let Err(error) = terminal_drawer.scroll(delta) {
                     reduce(
                         app,
-                        Action::MutationNotice(format!(
-                            "terminal scroll unavailable: {error:#}"
-                        )),
+                        Action::MutationNotice(format!("terminal scroll unavailable: {error:#}")),
                     );
                 } else {
                     reduce(app, Action::TerminalSnapshot(terminal_drawer.snapshot()));
