@@ -529,10 +529,20 @@ mod tests {
             report.matrix.canonical_ci_os,
             vec!["linux", "macos", "windows"]
         );
-        assert!(report.matrix.required_components.contains(&"terminal-pty".into()));
+        assert!(
+            report
+                .matrix
+                .required_components
+                .contains(&"terminal-pty".into())
+        );
 
         let cargo_toml = include_str!("../Cargo.toml");
         assert!(cargo_toml.contains(&format!("rust-version = \"{RUST_MSRV}\"")));
+
+        let ci = include_str!("../.github/workflows/ci.yml");
+        for runner in ["ubuntu-latest", "macos-latest", "windows-latest"] {
+            assert!(ci.contains(runner), "compat matrix drifted from CI: {runner}");
+        }
     }
 
     #[test]
