@@ -186,6 +186,14 @@ jobs:
             exit 1
           fi
 
+      - name: Validate stable publication notes
+        if: inputs.channel == 'stable' && inputs.publish == true
+        run: >
+          python3 scripts/release/extract_changelog.py
+          --version "${{ steps.meta.outputs.version }}"
+          --require-released
+          --output "$RUNNER_TEMP/RELEASE_NOTES.md"
+
       - name: Verify canonical CI and create stable evidence
         if: inputs.channel == 'stable'
         shell: bash
@@ -349,10 +357,21 @@ jobs:
           PY
 
       - name: Extract release notes
-        run: >
-          python3 scripts/release/extract_changelog.py
-          --version "${{ needs.gate.outputs.version }}"
-          --output bundle/RELEASE_NOTES.md
+        shell: bash
+        env:
+          CHANNEL: ${{ needs.gate.outputs.channel }}
+          PUBLISH: ${{ needs.gate.outputs.publish }}
+          VERSION: ${{ needs.gate.outputs.version }}
+        run: |
+          set -euo pipefail
+          ARGS=(
+            --version "$VERSION"
+            --output bundle/RELEASE_NOTES.md
+          )
+          if [ "$CHANNEL" = "stable" ] && [ "$PUBLISH" = "true" ]; then
+            ARGS+=(--require-released)
+          fi
+          python3 scripts/release/extract_changelog.py "${ARGS[@]}"
 
       - name: Generate checksum manifest
         run: python3 scripts/release/checksums.py bundle --output bundle/SHA256SUMS

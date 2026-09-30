@@ -1,6 +1,6 @@
 # M7d3: stable/preview release and distributable verification
 
-Status: implementation slice under #38 / #41
+Status: shipped in v1.0.0; post-release documentation is maintained on main
 
 M7d3 is the final M7 hardening slice. It creates a bounded release pipeline; it does not create a generalized workflow system or background release service.
 
@@ -54,11 +54,11 @@ Any `publish=true` run is blocked until the repository contains one of:
 - `LICENSE.txt`
 - `LICENSE.md`
 
-This currently prevents accidental publication while still allowing retained preview build validation.
+This gate prevents accidental publication when project license metadata is absent while still allowing retained preview build validation.
 
 ## Stable evidence
 
-Stable evidence is represented by `codex-tui/release-evidence/v1`.
+Stable evidence is represented by `codex-tui/release-evidence/v2`.
 
 It binds:
 
@@ -175,7 +175,7 @@ Terminal-restoration evidence remains an explicit real-controlling-TTY smoke rec
 
 `release/v1.0-criteria.json` is the machine-readable stable gate list and is shipped inside every archive.
 
-The repository is now Apache-2.0 licensed and the Cargo package line is 1.0.0, so the version/license gates are stable-eligible. This still does not constitute a stable release: exact-commit canonical CI, three-platform READY compatibility captures, three terminal-restoration PASS receipts and retained performance evidence must all be present before stable publication.
+The repository is Apache-2.0 licensed and v1.0.0 was published on 2026-09-30. Stable publication is fail-closed on exact-commit canonical CI plus the Linux Tier 1 retained compatibility, real terminal-restoration and performance evidence defined below. macOS and Windows remain required in canonical CI and native package/archive smoke as Tier 2 automated-compatibility platforms; their real-environment retained receipts are optional for v1.0 stable.
 
 ## Non-goals
 

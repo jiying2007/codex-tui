@@ -39,7 +39,35 @@ jobs:
 
           python scripts/release/create_evidence.py             --output "$OUT/evidence.json"             --compat-schema codex-tui/compat/v2             --version 1.0.0             --commit 0123456789abcdef0123456789abcdef01234567             --canonical-ci-run 1             --linux-compat-sha256 "$(printf 'a%.0s' {1..64})"             --linux-compat-observed-at 2026-09-30T00:00:00Z             --linux-terminal ci-python38             --linux-terminal-observed-at 2026-09-30T00:00:00Z             --performance-iterations 200             --performance-p95-ms 1             --performance-p99-ms 2             --performance-source ci-python38             --performance-observed-at 2026-09-30T00:00:00Z
 
-          python scripts/release/extract_changelog.py             --version 1.0.0             --output "$OUT/RELEASE_NOTES.md"
+          python scripts/release/extract_changelog.py             --version 1.0.0             --require-released             --output "$OUT/RELEASE_NOTES.md"
+
+          cat > "$OUT/CHANGELOG-unreleased.md" <<'EOF'
+          # Changelog
+
+          ## [9.9.9] - Unreleased
+
+          ### Release status
+
+          Ready for preview only.
+          EOF
+          if python scripts/release/extract_changelog.py               --version 9.9.9               --changelog "$OUT/CHANGELOG-unreleased.md"               --require-released               --output "$OUT/unreleased-notes.md"; then
+            echo "expected unreleased changelog validation to fail" >&2
+            exit 1
+          fi
+
+          cat > "$OUT/CHANGELOG-stale.md" <<'EOF'
+          # Changelog
+
+          ## [9.9.8] - 2099-01-01
+
+          ### Release status
+
+          This version is not yet published as a stable release.
+          EOF
+          if python scripts/release/extract_changelog.py               --version 9.9.8               --changelog "$OUT/CHANGELOG-stale.md"               --require-released               --output "$OUT/stale-notes.md"; then
+            echo "expected stale publication wording validation to fail" >&2
+            exit 1
+          fi
 
           python scripts/release/checksums.py "$OUT"             --output "$OUT/SHA256SUMS"
 
