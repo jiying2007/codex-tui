@@ -346,7 +346,10 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
                 thread.metadata.model.as_deref().unwrap_or("unknown")
             )),
             Line::from(format!("Cwd: {}", sanitize_inline(&thread.metadata.cwd))),
-            Line::from(format!("Source: {}", sanitize_inline(&thread.metadata.source))),
+            Line::from(format!(
+                "Source: {}",
+                sanitize_inline(&thread.metadata.source)
+            )),
             Line::from(format!(
                 "Workspace basis: {}",
                 thread.metadata.workspace_basis
@@ -547,7 +550,10 @@ fn forge_context_lines(app: &AppState, thread_id: &crate::domain::ThreadId) -> V
     }
 
     if let Some(notice) = &app.mutation_notice {
-        lines.push(Line::from(format!("Mutation: {}", truncate_display(notice, 90))));
+        lines.push(Line::from(format!(
+            "Mutation: {}",
+            truncate_display(notice, 90)
+        )));
     }
 
     lines
@@ -1180,13 +1186,19 @@ fn render_managed_worktrees(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
             )));
         }
         if let Some(failure) = &receipt.failure {
-            lines.push(Line::from(format!("Failure: {}", truncate_display(failure, 90))));
+            lines.push(Line::from(format!(
+                "Failure: {}",
+                truncate_display(failure, 90)
+            )));
         }
     }
 
     if let Some(notice) = &app.mutation_notice {
         lines.push(Line::from(""));
-        lines.push(Line::from(format!("Notice: {}", truncate_display(notice, 100))));
+        lines.push(Line::from(format!(
+            "Notice: {}",
+            truncate_display(notice, 100)
+        )));
     }
 
     frame.render_widget(
@@ -1444,7 +1456,10 @@ fn render_forge_mutation_confirmation(frame: &mut Frame<'_>, app: &AppState) {
         )));
     }
     if let Some(title) = &plan.title {
-        lines.push(Line::from(format!("Title: {}", truncate_display(title, 88))));
+        lines.push(Line::from(format!(
+            "Title: {}",
+            truncate_display(title, 88)
+        )));
     }
     if let Some(bytes) = plan.payload_bytes {
         lines.push(Line::from(format!(
