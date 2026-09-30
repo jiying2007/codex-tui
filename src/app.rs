@@ -1333,14 +1333,16 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                         };
                         let planned_at = now_unix_ms();
                         let plan = match choice {
-                            ContextChoice::ForgeApprove => ForgeMutationPlan::approve_merge_request(
-                                &target.identity,
-                                target.cwd,
-                                change.iid,
-                                change.source_branch,
-                                change.target_branch,
-                                planned_at,
-                            ),
+                            ContextChoice::ForgeApprove => {
+                                ForgeMutationPlan::approve_merge_request(
+                                    &target.identity,
+                                    target.cwd,
+                                    change.iid,
+                                    change.source_branch,
+                                    change.target_branch,
+                                    planned_at,
+                                )
+                            }
                             ContextChoice::ForgeMerge => ForgeMutationPlan::merge_merge_request(
                                 &target.identity,
                                 target.cwd,
@@ -2035,8 +2037,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     return vec![];
                 };
                 let Some(change) = target.change_request else {
-                    state.mutation_notice =
-                        Some("current branch has no open merge request".into());
+                    state.mutation_notice = Some("current branch has no open merge request".into());
                     return vec![];
                 };
                 match ForgeMutationPlan::comment_merge_request(
