@@ -189,7 +189,7 @@ impl ForgeMutationPlan {
                 change_request_iid,
                 source_branch,
                 target_branch,
-                expected: "merge exact GitLab merge request without force/bypass options",
+                expected: "merge exact GitLab merge request under standard project policy",
                 planned_at_unix_ms,
             },
         )?;
