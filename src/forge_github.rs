@@ -62,7 +62,7 @@ struct GitHubRepository {
     id: u64,
     full_name: String,
     html_url: String,
-    default_branch: String,
+    default_branch: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -94,7 +94,7 @@ struct GitHubPullRef {
     reference: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 struct GitHubWorkflowRuns {
     #[serde(default)]
     workflow_runs: Vec<GitHubWorkflowRun>,
@@ -194,21 +194,43 @@ pub(crate) async fn probe_github_with_remote(
     let pulls_endpoint = format!("{repo_endpoint}/pulls?state=open&per_page={DEFAULT_PAGE_SIZE}");
     let runs_endpoint = format!("{repo_endpoint}/actions/runs?per_page={DEFAULT_PAGE_SIZE}");
 
-    let (issues, pulls, runs) = tokio::join!(
+    let (issues_result, pulls_result, runs_result) = tokio::join!(
         gh_api_json::<Vec<GitHubIssue>>(&cwd, &remote.host, &issues_endpoint),
         gh_api_json::<Vec<GitHubPullRequest>>(&cwd, &remote.host, &pulls_endpoint),
         gh_api_json::<GitHubWorkflowRuns>(&cwd, &remote.host, &runs_endpoint),
     );
-    let issues = issues.context("load GitHub issues")?;
-    let pulls = pulls.context("load GitHub pull requests")?;
-    let runs = runs.context("load GitHub Actions runs")?;
 
     let mut capabilities = default_capabilities();
-    capabilities.insert(ForgeCapability::Issues, CapabilityState::Available);
-    capabilities.insert(ForgeCapability::MergeRequests, CapabilityState::Available);
-    capabilities.insert(ForgeCapability::Pipelines, CapabilityState::Available);
+    capabilities.insert(
+        ForgeCapability::Issues,
+        if issues_result.is_ok() {
+            CapabilityState::Available
+        } else {
+            CapabilityState::Unavailable
+        },
+    );
+    capabilities.insert(
+        ForgeCapability::MergeRequests,
+        if pulls_result.is_ok() {
+            CapabilityState::Available
+        } else {
+            CapabilityState::Unavailable
+        },
+    );
+    capabilities.insert(
+        ForgeCapability::Pipelines,
+        if runs_result.is_ok() {
+            CapabilityState::Available
+        } else {
+            CapabilityState::Unavailable
+        },
+    );
     capabilities.insert(ForgeCapability::IssueBoards, CapabilityState::Unavailable);
     capabilities.insert(ForgeCapability::WorkItems, CapabilityState::Unavailable);
+
+    let issues = issues_result.unwrap_or_default();
+    let pulls = pulls_result.unwrap_or_default();
+    let runs = runs_result.unwrap_or_default();
 
     Ok(ForgeObservation {
         thread_id,
@@ -221,7 +243,7 @@ pub(crate) async fn probe_github_with_remote(
             project_id: repository.id.to_string(),
             path_with_namespace: repository.full_name,
             web_url: repository.html_url,
-            default_branch: Some(repository.default_branch),
+            default_branch: repository.default_branch,
         }),
         capabilities,
         issues: issues
