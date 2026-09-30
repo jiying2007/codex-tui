@@ -3,7 +3,7 @@ use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
-use std::sync::mpsc::{Receiver, SyncSender, TryRecvError, sync_channel};
+use std::sync::mpsc::{Receiver, SyncSender, sync_channel};
 use std::thread::{self, JoinHandle};
 
 const EVENT_QUEUE_CAPACITY: usize = 64;
@@ -79,10 +79,7 @@ impl PtyHandle {
     }
 
     pub fn try_recv(&self) -> Option<PtyEvent> {
-        match self.event_rx.try_recv() {
-            Ok(event) => Some(event),
-            Err(TryRecvError::Empty | TryRecvError::Disconnected) => None,
-        }
+        self.event_rx.try_recv().ok()
     }
 }
 
