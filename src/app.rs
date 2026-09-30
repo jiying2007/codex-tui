@@ -1,4 +1,5 @@
 use crate::backend::BackendStatus;
+use crate::batch_local::{LocalBatchAction, LocalBatchPlan, parse_priority};
 use crate::conversation::{
     ConversationPage, ConversationState, InteractiveRequest, InteractiveRequestKind,
     InteractiveResolution, RpcRequestId, UserInputQuestion,
@@ -57,6 +58,10 @@ pub enum InputMode {
     Snooze,
     Note,
     SavedViewName,
+    BatchAddTag,
+    BatchRemoveTag,
+    BatchPriority,
+    BatchSnooze,
     GoalObjective,
     WorktreeCreateBranch,
     WorktreeCreatePath,
@@ -77,6 +82,16 @@ pub enum ContextChoice {
     DeleteScratch,
     SaveCurrentView,
     DeleteCurrentView,
+    BatchAddTag,
+    BatchRemoveTag,
+    BatchSetPriority,
+    BatchClearPriority,
+    BatchMarkReady,
+    BatchClearReady,
+    BatchMarkDone,
+    BatchReopen,
+    BatchSnooze,
+    BatchClearSnooze,
     ForgeCreateMergeRequest,
     ForgeComment,
     ForgeApprove,
@@ -95,6 +110,16 @@ impl ContextChoice {
             Self::DeleteScratch => "Delete local ScratchWork",
             Self::SaveCurrentView => "Save current view as…",
             Self::DeleteCurrentView => "Delete current SavedView",
+            Self::BatchAddTag => "Batch visible · Add tag…",
+            Self::BatchRemoveTag => "Batch visible · Remove tag…",
+            Self::BatchSetPriority => "Batch visible · Set priority…",
+            Self::BatchClearPriority => "Batch visible · Clear priority",
+            Self::BatchMarkReady => "Batch visible · Mark ready",
+            Self::BatchClearReady => "Batch visible · Clear ready",
+            Self::BatchMarkDone => "Batch visible · Acknowledge done",
+            Self::BatchReopen => "Batch visible · Reopen",
+            Self::BatchSnooze => "Batch visible · Snooze…",
+            Self::BatchClearSnooze => "Batch visible · Clear snooze",
             Self::ForgeCreateMergeRequest => "Forge · Create merge request…",
             Self::ForgeComment => "Forge · Comment on merge request…",
             Self::ForgeApprove => "Forge · Approve merge request",
@@ -225,6 +250,7 @@ pub enum Effect {
         slot: u8,
         target: SourceRef,
     },
+    ApplyLocalBatch(Box<LocalBatchPlan>),
     RefreshGoal(ThreadId),
     SetGoal {
         thread_id: ThreadId,
@@ -298,6 +324,7 @@ pub struct AppState {
     pub recent_operations: Vec<OperationReceipt>,
     pub pending_forge_operation: Option<ForgeMutationPlan>,
     pub pending_forge_payload: Option<String>,
+    pub pending_local_batch: Option<LocalBatchPlan>,
     pub recent_forge_operations: Vec<ForgeMutationReceipt>,
     pub mutation_notice: Option<String>,
     pub create_worktree_branch: Option<String>,
@@ -365,6 +392,7 @@ impl AppState {
             recent_operations: vec![],
             pending_forge_operation: None,
             pending_forge_payload: None,
+            pending_local_batch: None,
             recent_forge_operations: vec![],
             mutation_notice: None,
             create_worktree_branch: None,
@@ -529,6 +557,26 @@ impl AppState {
         cards
     }
 
+    fn freeze_visible_batch(&mut self, action: LocalBatchAction) {
+        let plan = {
+            let cards = self.visible_planning_cards();
+            LocalBatchPlan::freeze(&cards, action, now_unix_ms())
+        };
+        match plan {
+            Ok(plan) => {
+                self.pending_operation = None;
+                self.pending_forge_operation = None;
+                self.pending_forge_payload = None;
+                self.pending_local_batch = Some(plan);
+                self.mutation_notice = None;
+            }
+            Err(error) => {
+                self.pending_local_batch = None;
+                self.mutation_notice = Some(format!("cannot create local batch plan: {error:#}"));
+            }
+        }
+    }
+
     pub fn selected_planning_card(&self) -> Option<&WorkCardProjection> {
         self.visible_planning_cards()
             .get(self.board_selected)
@@ -593,6 +641,20 @@ impl AppState {
             }
         }
         if matches!(self.view, View::Board) {
+            if !self.visible_planning_cards().is_empty() {
+                choices.extend([
+                    ContextChoice::BatchAddTag,
+                    ContextChoice::BatchRemoveTag,
+                    ContextChoice::BatchSetPriority,
+                    ContextChoice::BatchClearPriority,
+                    ContextChoice::BatchMarkReady,
+                    ContextChoice::BatchClearReady,
+                    ContextChoice::BatchMarkDone,
+                    ContextChoice::BatchReopen,
+                    ContextChoice::BatchSnooze,
+                    ContextChoice::BatchClearSnooze,
+                ]);
+            }
             choices.push(ContextChoice::SaveCurrentView);
             if self.active_saved_view().id.starts_with("view:") {
                 choices.push(ContextChoice::DeleteCurrentView);
@@ -1079,6 +1141,9 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     Some("local store is degraded; mutation receipts cannot be persisted".into());
                 return vec![];
             }
+            if let Some(plan) = state.pending_local_batch.take() {
+                return vec![Effect::ApplyLocalBatch(Box::new(plan))];
+            }
             if let Some(plan) = state.pending_forge_operation.take() {
                 let payload = state.pending_forge_payload.take();
                 return vec![Effect::ExecuteForgeOperation(Box::new(
@@ -1094,6 +1159,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.pending_operation = None;
             state.pending_forge_operation = None;
             state.pending_forge_payload = None;
+            state.pending_local_batch = None;
             state.mutation_notice = Some("operation cancelled before execution".into());
         }
         Action::GoalObserved(goal) => {
@@ -1297,6 +1363,59 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
 
             if matches!(
                 choice,
+                ContextChoice::BatchAddTag
+                    | ContextChoice::BatchRemoveTag
+                    | ContextChoice::BatchSetPriority
+                    | ContextChoice::BatchClearPriority
+                    | ContextChoice::BatchMarkReady
+                    | ContextChoice::BatchClearReady
+                    | ContextChoice::BatchMarkDone
+                    | ContextChoice::BatchReopen
+                    | ContextChoice::BatchSnooze
+                    | ContextChoice::BatchClearSnooze
+            ) {
+                match choice {
+                    ContextChoice::BatchAddTag => {
+                        state.input_buffer.clear();
+                        state.input_mode = InputMode::BatchAddTag;
+                    }
+                    ContextChoice::BatchRemoveTag => {
+                        state.input_buffer.clear();
+                        state.input_mode = InputMode::BatchRemoveTag;
+                    }
+                    ContextChoice::BatchSetPriority => {
+                        state.input_buffer = "0".into();
+                        state.input_mode = InputMode::BatchPriority;
+                    }
+                    ContextChoice::BatchSnooze => {
+                        state.input_buffer = "1h".into();
+                        state.input_mode = InputMode::BatchSnooze;
+                    }
+                    ContextChoice::BatchClearPriority => {
+                        state.freeze_visible_batch(LocalBatchAction::ClearPriority);
+                    }
+                    ContextChoice::BatchMarkReady => {
+                        state.freeze_visible_batch(LocalBatchAction::SetReady(true));
+                    }
+                    ContextChoice::BatchClearReady => {
+                        state.freeze_visible_batch(LocalBatchAction::SetReady(false));
+                    }
+                    ContextChoice::BatchMarkDone => {
+                        state.freeze_visible_batch(LocalBatchAction::SetDone(true));
+                    }
+                    ContextChoice::BatchReopen => {
+                        state.freeze_visible_batch(LocalBatchAction::SetDone(false));
+                    }
+                    ContextChoice::BatchClearSnooze => {
+                        state.freeze_visible_batch(LocalBatchAction::SnoozeUntil(None));
+                    }
+                    _ => unreachable!(),
+                }
+                return vec![];
+            }
+
+            if matches!(
+                choice,
                 ContextChoice::ForgeCreateMergeRequest
                     | ContextChoice::ForgeComment
                     | ContextChoice::ForgeApprove
@@ -1429,6 +1548,16 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 }
                 ContextChoice::SaveCurrentView
                 | ContextChoice::DeleteCurrentView
+                | ContextChoice::BatchAddTag
+                | ContextChoice::BatchRemoveTag
+                | ContextChoice::BatchSetPriority
+                | ContextChoice::BatchClearPriority
+                | ContextChoice::BatchMarkReady
+                | ContextChoice::BatchClearReady
+                | ContextChoice::BatchMarkDone
+                | ContextChoice::BatchReopen
+                | ContextChoice::BatchSnooze
+                | ContextChoice::BatchClearSnooze
                 | ContextChoice::ForgeCreateMergeRequest
                 | ContextChoice::ForgeComment
                 | ContextChoice::ForgeApprove
@@ -1949,6 +2078,10 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::Snooze
             | InputMode::Note
             | InputMode::SavedViewName
+            | InputMode::BatchAddTag
+            | InputMode::BatchRemoveTag
+            | InputMode::BatchPriority
+            | InputMode::BatchSnooze
             | InputMode::GoalObjective
             | InputMode::WorktreeCreateBranch
             | InputMode::WorktreeCreatePath
@@ -1978,6 +2111,10 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::Snooze
             | InputMode::Note
             | InputMode::SavedViewName
+            | InputMode::BatchAddTag
+            | InputMode::BatchRemoveTag
+            | InputMode::BatchPriority
+            | InputMode::BatchSnooze
             | InputMode::GoalObjective
             | InputMode::WorktreeCreateBranch
             | InputMode::WorktreeCreatePath
@@ -2145,6 +2282,46 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 ));
                 state.input_mode = InputMode::Normal;
                 state.input_buffer.clear();
+                return vec![];
+            }
+            if matches!(
+                mode,
+                InputMode::BatchAddTag
+                    | InputMode::BatchRemoveTag
+                    | InputMode::BatchPriority
+                    | InputMode::BatchSnooze
+            ) {
+                let raw = state.input_buffer.trim().to_string();
+                if raw.is_empty() {
+                    return vec![];
+                }
+                let action = match mode {
+                    InputMode::BatchAddTag => LocalBatchAction::AddTag(raw),
+                    InputMode::BatchRemoveTag => LocalBatchAction::RemoveTag(raw),
+                    InputMode::BatchPriority => match parse_priority(&raw) {
+                        Ok(priority) => LocalBatchAction::SetPriority(priority),
+                        Err(error) => {
+                            state.mutation_notice =
+                                Some(format!("invalid local batch priority: {error:#}"));
+                            return vec![];
+                        }
+                    },
+                    InputMode::BatchSnooze => {
+                        let Some(duration_ms) = parse_snooze_duration(&raw) else {
+                            state.mutation_notice = Some(
+                                "invalid batch snooze; use examples such as 15m, 1h, 1d".into(),
+                            );
+                            return vec![];
+                        };
+                        LocalBatchAction::SnoozeUntil(Some(
+                            now_unix_ms().saturating_add(duration_ms),
+                        ))
+                    }
+                    _ => unreachable!(),
+                };
+                state.input_mode = InputMode::Normal;
+                state.input_buffer.clear();
+                state.freeze_visible_batch(action);
                 return vec![];
             }
             if mode == InputMode::GoalObjective {
@@ -2327,6 +2504,17 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.input_original.clear();
         }
         Action::CancelInput => {
+            if matches!(
+                state.input_mode,
+                InputMode::BatchAddTag
+                    | InputMode::BatchRemoveTag
+                    | InputMode::BatchPriority
+                    | InputMode::BatchSnooze
+            ) {
+                state.input_mode = InputMode::Normal;
+                state.input_buffer.clear();
+                return vec![];
+            }
             if matches!(
                 state.input_mode,
                 InputMode::ForgeMergeRequestTitle | InputMode::ForgeComment
@@ -3320,6 +3508,102 @@ mod tests {
             [Effect::CreateScratch { title, .. }] if title == "Investigate wake miss"
         ));
         assert_eq!(app.input_mode, InputMode::Normal);
+    }
+
+    #[test]
+    fn batch_plan_freezes_visible_targets_before_confirmation() {
+        let mut app = app();
+        reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 100 });
+        reduce(&mut app, Action::OpenBoard);
+
+        let before = app
+            .visible_planning_cards()
+            .iter()
+            .map(|card| card.local_id.clone())
+            .collect::<Vec<_>>();
+        assert!(!before.is_empty());
+
+        reduce(&mut app, Action::OpenContext);
+        let index = app
+            .context_choices()
+            .iter()
+            .position(|choice| *choice == ContextChoice::BatchMarkDone)
+            .expect("batch mark-done");
+        app.context_selected = index;
+        assert!(reduce(&mut app, Action::ExecuteContext).is_empty());
+
+        let frozen = app.pending_local_batch.clone().expect("frozen batch plan");
+        assert_eq!(
+            frozen
+                .targets
+                .iter()
+                .map(|target| target.local_id.clone())
+                .collect::<Vec<_>>(),
+            before
+        );
+
+        reduce(&mut app, Action::CycleSavedView(1));
+        assert_ne!(
+            app.visible_planning_cards()
+                .iter()
+                .map(|card| card.local_id.clone())
+                .collect::<Vec<_>>(),
+            before
+        );
+
+        let effects = reduce(&mut app, Action::ConfirmPendingOperation);
+        assert!(matches!(
+            effects.as_slice(),
+            [Effect::ApplyLocalBatch(plan)] if plan.targets == frozen.targets
+        ));
+        assert!(app.pending_local_batch.is_none());
+    }
+
+    #[test]
+    fn batch_input_creates_plan_before_any_write_effect() {
+        let mut app = app();
+        reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 100 });
+        reduce(&mut app, Action::OpenBoard);
+        reduce(&mut app, Action::OpenContext);
+        let index = app
+            .context_choices()
+            .iter()
+            .position(|choice| *choice == ContextChoice::BatchAddTag)
+            .expect("batch tag");
+        app.context_selected = index;
+        assert!(reduce(&mut app, Action::ExecuteContext).is_empty());
+        assert_eq!(app.input_mode, InputMode::BatchAddTag);
+
+        for ch in "focus".chars() {
+            reduce(&mut app, Action::InputChar(ch));
+        }
+        assert!(reduce(&mut app, Action::CommitInput).is_empty());
+        let plan = app.pending_local_batch.as_ref().expect("batch preview");
+        assert_eq!(plan.action, LocalBatchAction::AddTag("focus".into()));
+        assert!(!plan.targets.is_empty());
+
+        let effects = reduce(&mut app, Action::ConfirmPendingOperation);
+        assert!(matches!(
+            effects.as_slice(),
+            [Effect::ApplyLocalBatch(plan)] if plan.action == LocalBatchAction::AddTag("focus".into())
+        ));
+    }
+
+    #[test]
+    fn cancelling_batch_preview_emits_no_write_effect() {
+        let mut app = app();
+        reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 100 });
+        reduce(&mut app, Action::OpenBoard);
+        app.freeze_visible_batch(LocalBatchAction::ClearPriority);
+        assert!(app.pending_local_batch.is_some());
+
+        let effects = reduce(&mut app, Action::CancelPendingOperation);
+        assert!(effects.is_empty());
+        assert!(app.pending_local_batch.is_none());
+        assert_eq!(
+            app.mutation_notice.as_deref(),
+            Some("operation cancelled before execution")
+        );
     }
 
     #[test]

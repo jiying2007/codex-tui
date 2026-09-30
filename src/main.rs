@@ -158,6 +158,23 @@ impl RuntimeStore {
         })
     }
 
+    fn apply_local_batch(
+        &mut self,
+        plan: &codex_tui::batch_local::LocalBatchPlan,
+    ) -> Result<PlanningSnapshot, String> {
+        if !self.writable {
+            return Err(self
+                .error
+                .clone()
+                .unwrap_or_else(|| "SQLite planning store is read-only".into()));
+        }
+        let result = self
+            .sqlite
+            .apply_local_batch(plan)
+            .and_then(|_| self.sqlite.load_planning_snapshot());
+        self.finish_planning_write(result, "local batch")
+    }
+
     fn save_source_note(
         &mut self,
         owner: SourceRef,
@@ -1062,6 +1079,28 @@ fn apply_effects(
                     reduce(app, Action::PlanningStoreDegraded(Some(error)));
                 }
             },
+            Effect::ApplyLocalBatch(plan) => {
+                let preview = plan.preview();
+                match store.apply_local_batch(&plan) {
+                    Ok(snapshot) => {
+                        reduce(app, Action::PlanningSnapshotLoaded(snapshot));
+                        reduce(
+                            app,
+                            Action::ReconcilePlanning {
+                                now_unix_ms: now_unix_ms(),
+                            },
+                        );
+                        reduce(app, Action::PlanningStoreDegraded(None));
+                        reduce(
+                            app,
+                            Action::MutationNotice(format!("local batch applied · {preview}")),
+                        );
+                    }
+                    Err(error) => {
+                        reduce(app, Action::PlanningStoreDegraded(Some(error)));
+                    }
+                }
+            }
             Effect::RefreshGoal(thread_id) => {
                 if let Some(registry) = registry
                     && let Err(error) = registry.refresh_goal(thread_id)
@@ -1399,6 +1438,14 @@ fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
             _ => return vec![],
         };
         return reduce(app, action);
+    }
+
+    if app.pending_local_batch.is_some() {
+        return match key.code {
+            KeyCode::Char('y') => reduce(app, Action::ConfirmPendingOperation),
+            KeyCode::Char('c') | KeyCode::Esc => reduce(app, Action::CancelPendingOperation),
+            _ => vec![],
+        };
     }
 
     if app.pending_forge_operation.is_some() {

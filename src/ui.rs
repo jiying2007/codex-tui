@@ -49,6 +49,10 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
         InputMode::Note
             | InputMode::Snooze
             | InputMode::SavedViewName
+            | InputMode::BatchAddTag
+            | InputMode::BatchRemoveTag
+            | InputMode::BatchPriority
+            | InputMode::BatchSnooze
             | InputMode::ForgeMergeRequestTitle
             | InputMode::ForgeComment
     ) {
@@ -56,6 +60,9 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
     }
     if app.pending_forge_operation.is_some() {
         render_forge_mutation_confirmation(frame, app);
+    }
+    if app.pending_local_batch.is_some() {
+        render_local_batch_confirmation(frame, app);
     }
 }
 
@@ -106,6 +113,10 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState) {
             "view name> {}  · Enter save · Esc cancel",
             truncate(&app.input_buffer, 60)
         )),
+        InputMode::BatchAddTag
+        | InputMode::BatchRemoveTag
+        | InputMode::BatchPriority
+        | InputMode::BatchSnooze => Line::from("batch-local input active in Board"),
         InputMode::GoalObjective => Line::from("Goal objective editor active in Thread view"),
         InputMode::ForgeMergeRequestTitle | InputMode::ForgeComment => {
             Line::from("forge mutation input active in Review/Workspace")
@@ -1267,9 +1278,9 @@ fn render_context_actions(frame: &mut Frame<'_>, app: &AppState) {
         )))
         .collect::<Vec<_>>();
     let height = u16::try_from(lines.len().saturating_add(2))
-        .unwrap_or(12)
-        .clamp(6, 14);
-    let area = centered_fixed(58, height, frame.area());
+        .unwrap_or(18)
+        .clamp(6, 24);
+    let area = centered_fixed(64, height, frame.area());
     frame.render_widget(Clear, area);
     frame.render_widget(
         Paragraph::new(lines)
@@ -1284,6 +1295,22 @@ fn render_local_input_overlay(frame: &mut Frame<'_>, app: &AppState) {
         InputMode::Note => (" Local note ", "Enter save · Esc cancel"),
         InputMode::Snooze => (" Snooze ", "15m / 1h / 1d · Enter apply · Esc cancel"),
         InputMode::SavedViewName => (" Save current view ", "Enter save · Esc cancel"),
+        InputMode::BatchAddTag => (
+            " Batch visible · Add tag ",
+            "Enter creates frozen plan · Esc cancel",
+        ),
+        InputMode::BatchRemoveTag => (
+            " Batch visible · Remove tag ",
+            "Enter creates frozen plan · Esc cancel",
+        ),
+        InputMode::BatchPriority => (
+            " Batch visible · Set priority ",
+            "integer · Enter creates frozen plan · Esc cancel",
+        ),
+        InputMode::BatchSnooze => (
+            " Batch visible · Snooze ",
+            "15m / 1h / 1d · Enter creates frozen plan · Esc cancel",
+        ),
         InputMode::ForgeMergeRequestTitle => (
             " Create GitLab merge request ",
             "Enter creates a plan only · Esc cancel",
@@ -1364,6 +1391,53 @@ fn render_forge_mutation_confirmation(frame: &mut Frame<'_>, app: &AppState) {
     );
 }
 
+fn render_local_batch_confirmation(frame: &mut Frame<'_>, app: &AppState) {
+    let Some(plan) = &app.pending_local_batch else {
+        return;
+    };
+
+    let mut lines = vec![
+        Line::from("CONFIRM REQUIRED — no local write has executed yet."),
+        Line::from(format!("Operation: {}", plan.action.label())),
+        Line::from(format!("Frozen targets: {}", plan.targets.len())),
+        Line::from("Target set will NOT be recomputed before execution."),
+        Line::from(""),
+    ];
+
+    for target in plan.targets.iter().take(8) {
+        lines.push(Line::from(format!(
+            "  {} · {}",
+            target.local_id,
+            truncate(&target.title, 48)
+        )));
+    }
+    if plan.targets.len() > 8 {
+        lines.push(Line::from(format!(
+            "  … and {} more frozen target(s)",
+            plan.targets.len() - 8
+        )));
+    }
+
+    lines.extend([
+        Line::from(""),
+        Line::from("SQLite: one transaction; any failure rolls the whole batch back."),
+        Line::from("Authority: local overlays / ScratchWork only; no Codex/Git/Forge write."),
+        Line::from("y CONFIRM execute · c/Esc cancel"),
+    ]);
+
+    let height = u16::try_from(lines.len().saturating_add(2))
+        .unwrap_or(18)
+        .clamp(12, 24);
+    let area = centered_fixed(86, height, frame.area());
+    frame.render_widget(Clear, area);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(Block::bordered().title(" Local Batch Plan "))
+            .wrap(Wrap { trim: false }),
+        area,
+    );
+}
+
 fn centered_fixed(width: u16, height: u16, area: Rect) -> Rect {
     let width = width.min(area.width.saturating_sub(2)).max(1);
     let height = height.min(area.height.saturating_sub(2)).max(1);
@@ -1399,7 +1473,9 @@ fn render_help(frame: &mut Frame<'_>) {
             Line::from(
                 "Board: h/l stage · j/k item · Space attention · s snooze · = bind · 1–9 hot slot",
             ),
-            Line::from("Board: Tab Saved View · Enter open · a Quick Prompt · n Scratch"),
+            Line::from(
+                "Board: Tab Saved View · . batch-local/context · Enter open · a Quick Prompt · n Scratch",
+            ),
             Line::from("Scratch: local-only detail · Esc Board"),
             Line::from(
                 "Authority: Codex/Git/Forge stay canonical; codex-tui stores operator state only.",
