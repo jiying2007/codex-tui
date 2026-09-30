@@ -4,7 +4,13 @@ use crate::conversation::{
     InteractiveResolution, RpcRequestId, UserInputQuestion,
 };
 use crate::domain::{AttentionReason, RuntimeStatus, ThreadId, ThreadSummary, ThreadUiState};
-use crate::forge::{CapabilityState, ForgeCapability, ForgeObservation, ForgeReviewSummary};
+use crate::forge::{
+    CapabilityState, ChangeRequestSummary, ForgeCapability, ForgeIdentity, ForgeObservation,
+    ForgeProviderKind, ForgeReviewSummary,
+};
+use crate::forge_mutation::{
+    ForgeMutationKind, ForgeMutationPlan, ForgeMutationReceipt, ForgeMutationRequest,
+};
 use crate::git::{GitContext, GitReview};
 use crate::goal::{GoalObservation, GoalStatus};
 use crate::operation::{
@@ -58,6 +64,8 @@ pub enum InputMode {
     WorktreeCreatePath,
     WorktreeCreateStartPoint,
     WorktreeDeleteBranch,
+    ForgeMergeRequestTitle,
+    ForgeComment,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -71,6 +79,10 @@ pub enum ContextChoice {
     DeleteScratch,
     SaveCurrentView,
     DeleteCurrentView,
+    ForgeCreateMergeRequest,
+    ForgeComment,
+    ForgeApprove,
+    ForgeMerge,
 }
 
 impl ContextChoice {
@@ -85,6 +97,10 @@ impl ContextChoice {
             Self::DeleteScratch => "Delete local ScratchWork",
             Self::SaveCurrentView => "Save current view as…",
             Self::DeleteCurrentView => "Delete current SavedView",
+            Self::ForgeCreateMergeRequest => "Forge · Create merge request…",
+            Self::ForgeComment => "Forge · Comment on merge request…",
+            Self::ForgeApprove => "Forge · Approve merge request",
+            Self::ForgeMerge => "Forge · Merge merge request",
         }
     }
 }
@@ -110,6 +126,7 @@ pub enum Action {
     OpenManagedWorktrees,
     ManagedWorktreesLoaded(Vec<ManagedWorktreeRecord>),
     MutationReceipt(Box<OperationReceipt>),
+    ForgeMutationReceipt(Box<ForgeMutationReceipt>),
     MutationNotice(String),
     MoveManagedWorktree(i32),
     BeginCreateWorktree,
@@ -219,6 +236,7 @@ pub enum Effect {
     ClearGoal(ThreadId),
     RefreshManagedWorktrees,
     ExecuteOperation(Box<OperationPlan>),
+    ExecuteForgeOperation(Box<ForgeMutationRequest>),
     ProbeGit {
         thread_id: ThreadId,
         cwd: String,
@@ -286,6 +304,9 @@ pub struct AppState {
     pub managed_return_view: Option<View>,
     pub pending_operation: Option<OperationPlan>,
     pub recent_operations: Vec<OperationReceipt>,
+    pub pending_forge_operation: Option<ForgeMutationPlan>,
+    pub pending_forge_payload: Option<String>,
+    pub recent_forge_operations: Vec<ForgeMutationReceipt>,
     pub mutation_notice: Option<String>,
     pub create_worktree_branch: Option<String>,
     pub create_worktree_path: Option<String>,
@@ -320,6 +341,14 @@ pub struct AppState {
     input_original: String,
 }
 
+#[derive(Clone, Debug)]
+struct ForgeMutationTarget {
+    cwd: String,
+    branch: String,
+    identity: ForgeIdentity,
+    change_request: Option<ChangeRequestSummary>,
+}
+
 impl AppState {
     pub fn new(threads: Vec<ThreadSummary>) -> Self {
         Self {
@@ -342,6 +371,9 @@ impl AppState {
             managed_return_view: None,
             pending_operation: None,
             recent_operations: vec![],
+            pending_forge_operation: None,
+            pending_forge_payload: None,
+            recent_forge_operations: vec![],
             mutation_notice: None,
             create_worktree_branch: None,
             create_worktree_path: None,
@@ -530,6 +562,27 @@ impl AppState {
         }
     }
 
+    fn current_forge_mutation_target(&self) -> Option<ForgeMutationTarget> {
+        let thread_id = match &self.view {
+            View::Review(id) | View::Workspace(id) => id,
+            _ => return None,
+        };
+        let context = self.git_context(thread_id)?;
+        let branch = context.branch.clone()?;
+        let observation = self.forge_observation(thread_id)?;
+        let identity = observation.identity.clone()?;
+        if identity.provider != ForgeProviderKind::GitLab {
+            return None;
+        }
+        let change_request = observation.change_request_for_branch(&branch).cloned();
+        Some(ForgeMutationTarget {
+            cwd: context.cwd.clone(),
+            branch,
+            identity,
+            change_request,
+        })
+    }
+
     pub fn context_choices(&self) -> Vec<ContextChoice> {
         let mut choices = Vec::new();
         if let Some(target) = self.selected_local_target() {
@@ -551,6 +604,22 @@ impl AppState {
             choices.push(ContextChoice::SaveCurrentView);
             if self.active_saved_view().id.starts_with("view:") {
                 choices.push(ContextChoice::DeleteCurrentView);
+            }
+        }
+        if let Some(target) = self.current_forge_mutation_target() {
+            if target.change_request.is_some() {
+                choices.extend([
+                    ContextChoice::ForgeComment,
+                    ContextChoice::ForgeApprove,
+                    ContextChoice::ForgeMerge,
+                ]);
+            } else if target
+                .identity
+                .default_branch
+                .as_deref()
+                .is_some_and(|default_branch| default_branch != target.branch)
+            {
+                choices.push(ContextChoice::ForgeCreateMergeRequest);
             }
         }
         choices
