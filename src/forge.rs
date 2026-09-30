@@ -7,6 +7,8 @@ use std::process::Stdio;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::Command;
+use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 use tokio::time::timeout;
 
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
@@ -200,6 +202,65 @@ pub struct ForgeDoctorSnapshot {
     pub boards: Vec<IssueBoardSummary>,
 }
 
+#[derive(Clone, Debug)]
+pub enum ForgeCommand {
+    Probe { thread_id: ThreadId, cwd: String },
+}
+
+#[derive(Clone, Debug)]
+pub enum ForgeEvent {
+    Observation(ForgeObservation),
+}
+
+pub struct ForgeHandle {
+    command_tx: mpsc::UnboundedSender<ForgeCommand>,
+    event_rx: mpsc::UnboundedReceiver<ForgeEvent>,
+    task: JoinHandle<()>,
+}
+
+impl ForgeHandle {
+    pub fn start() -> Self {
+        let (command_tx, command_rx) = mpsc::unbounded_channel();
+        let (event_tx, event_rx) = mpsc::unbounded_channel();
+        let task = tokio::spawn(run_actor(command_rx, event_tx));
+        Self {
+            command_tx,
+            event_rx,
+            task,
+        }
+    }
+
+    pub fn probe(&self, thread_id: ThreadId, cwd: String) -> Result<()> {
+        self.command_tx
+            .send(ForgeCommand::Probe { thread_id, cwd })
+            .map_err(|_| anyhow!("Forge actor is not available"))
+    }
+
+    pub fn try_recv(&mut self) -> Option<ForgeEvent> {
+        self.event_rx.try_recv().ok()
+    }
+}
+
+impl Drop for ForgeHandle {
+    fn drop(&mut self) {
+        self.task.abort();
+    }
+}
+
+async fn run_actor(
+    mut command_rx: mpsc::UnboundedReceiver<ForgeCommand>,
+    event_tx: mpsc::UnboundedSender<ForgeEvent>,
+) {
+    while let Some(command) = command_rx.recv().await {
+        match command {
+            ForgeCommand::Probe { thread_id, cwd } => {
+                let observation = probe_thread(thread_id, cwd).await;
+                let _ = event_tx.send(ForgeEvent::Observation(observation));
+            }
+        }
+    }
+}
+
 #[derive(Debug, Deserialize)]
 struct GitLabProject {
     id: serde_json::Value,
@@ -258,13 +319,10 @@ pub async fn probe_gitlab(thread_id: ThreadId, cwd: String) -> Result<ForgeObser
     let remote = resolve_git_remote(Path::new(&cwd)).await?;
     let project_path = percent_encode_project_path(&remote.path_with_namespace);
 
-    let project: GitLabProject = glab_api_json(
-        &cwd,
-        &remote.host,
-        &format!("/projects/{project_path}"),
-    )
-    .await
-    .context("resolve GitLab project")?;
+    let project: GitLabProject =
+        glab_api_json(&cwd, &remote.host, &format!("/projects/{project_path}"))
+            .await
+            .context("resolve GitLab project")?;
 
     let project_id = json_id_to_string(&project.id)?;
     let encoded_id = percent_encode_component(&project_id);
@@ -282,9 +340,7 @@ pub async fn probe_gitlab(thread_id: ThreadId, cwd: String) -> Result<ForgeObser
     let merge_requests: Vec<GitLabMergeRequest> = glab_api_json(
         &cwd,
         &remote.host,
-        &format!(
-            "/projects/{encoded_id}/merge_requests?state=opened&per_page={DEFAULT_PAGE_SIZE}"
-        ),
+        &format!("/projects/{encoded_id}/merge_requests?state=opened&per_page={DEFAULT_PAGE_SIZE}"),
     )
     .await
     .context("load GitLab merge requests")?;
@@ -557,10 +613,7 @@ pub fn parse_git_remote_url(url: &str) -> Option<(String, String)> {
     if let Some((left, path)) = trimmed.split_once(':')
         && !left.contains('/')
     {
-        let host = left
-            .rsplit_once('@')
-            .map_or(left, |(_, tail)| tail)
-            .trim();
+        let host = left.rsplit_once('@').map_or(left, |(_, tail)| tail).trim();
         return normalize_remote_parts(host, path);
     }
 
@@ -743,10 +796,7 @@ mod tests {
     fn parses_https_ssh_and_scp_remote_urls() {
         assert_eq!(
             parse_git_remote_url("https://gitlab.example.com/group/sub/project.git"),
-            Some((
-                "gitlab.example.com".into(),
-                "group/sub/project".into()
-            ))
+            Some(("gitlab.example.com".into(), "group/sub/project".into()))
         );
         assert_eq!(
             parse_git_remote_url("ssh://git@gitlab.example.com:2222/group/project.git"),
