@@ -1301,6 +1301,73 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 return vec![];
             }
 
+            if matches!(
+                choice,
+                ContextChoice::ForgeCreateMergeRequest
+                    | ContextChoice::ForgeComment
+                    | ContextChoice::ForgeApprove
+                    | ContextChoice::ForgeMerge
+            ) {
+                let Some(target) = state.current_forge_mutation_target() else {
+                    state.mutation_notice = Some("forge mutation target is unavailable".into());
+                    return vec![];
+                };
+                match choice {
+                    ContextChoice::ForgeCreateMergeRequest => {
+                        state.pending_forge_operation = None;
+                        state.pending_forge_payload = None;
+                        state.input_buffer.clear();
+                        state.input_mode = InputMode::ForgeMergeRequestTitle;
+                    }
+                    ContextChoice::ForgeComment => {
+                        state.pending_forge_operation = None;
+                        state.pending_forge_payload = None;
+                        state.input_buffer.clear();
+                        state.input_mode = InputMode::ForgeComment;
+                    }
+                    ContextChoice::ForgeApprove | ContextChoice::ForgeMerge => {
+                        let Some(change) = target.change_request else {
+                            state.mutation_notice =
+                                Some("current branch has no open merge request".into());
+                            return vec![];
+                        };
+                        let planned_at = now_unix_ms();
+                        let plan = match choice {
+                            ContextChoice::ForgeApprove => ForgeMutationPlan::approve_merge_request(
+                                &target.identity,
+                                target.cwd,
+                                change.iid,
+                                change.source_branch,
+                                change.target_branch,
+                                planned_at,
+                            ),
+                            ContextChoice::ForgeMerge => ForgeMutationPlan::merge_merge_request(
+                                &target.identity,
+                                target.cwd,
+                                change.iid,
+                                change.source_branch,
+                                change.target_branch,
+                                planned_at,
+                            ),
+                            _ => unreachable!(),
+                        };
+                        match plan {
+                            Ok(plan) => {
+                                state.pending_forge_operation = Some(plan);
+                                state.pending_forge_payload = None;
+                                state.mutation_notice = None;
+                            }
+                            Err(error) => {
+                                state.mutation_notice =
+                                    Some(format!("cannot create forge mutation plan: {error:#}"));
+                            }
+                        }
+                    }
+                    _ => unreachable!(),
+                }
+                return vec![];
+            }
+
             let Some(target) = state.selected_local_target() else {
                 return vec![];
             };
@@ -1363,7 +1430,12 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                         scratch_id: target.value,
                     }];
                 }
-                ContextChoice::SaveCurrentView | ContextChoice::DeleteCurrentView => unreachable!(),
+                ContextChoice::SaveCurrentView
+                | ContextChoice::DeleteCurrentView
+                | ContextChoice::ForgeCreateMergeRequest
+                | ContextChoice::ForgeComment
+                | ContextChoice::ForgeApprove
+                | ContextChoice::ForgeMerge => unreachable!(),
             }
         }
         Action::BeginSnooze => {
