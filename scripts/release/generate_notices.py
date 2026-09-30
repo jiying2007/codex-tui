@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 import argparse
 import json
 import pathlib
 import subprocess
 import sys
+
+from _compat import write_text_lf
 
 LICENSE_PREFIXES = ("license", "copying", "notice", "unlicense", "copyright")
 MAX_LICENSE_BYTES = 1024 * 1024
@@ -160,7 +164,7 @@ def main() -> int:
             )
         parts.append("")
 
-    output.write_text("\n".join(parts).rstrip() + "\n", encoding="utf-8", newline="\n")
+    write_text_lf(output, "\n".join(parts).rstrip() + "\n")
     print(f"WROTE {output} ({len(rows)} runtime dependency packages)")
     return 0
 
