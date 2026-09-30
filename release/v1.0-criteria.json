@@ -16,7 +16,7 @@
     {
       "id": "project-license",
       "authority": "repository",
-      "evidence": "LICENSE, LICENSE.txt or LICENSE.md"
+      "evidence": "Cargo.toml license=Apache-2.0, root LICENSE, and archive metadata/license smoke"
     },
     {
       "id": "cargo-lock",
@@ -66,12 +66,16 @@
     {
       "id": "archive-smoke",
       "authority": "release packaging",
-      "evidence": "extracted binary version and 10k headless fixture smoke pass on each platform"
+      "evidence": "extracted Apache-2.0 LICENSE, release metadata, binary version and 10k headless fixture smoke pass on each platform"
     },
     {
       "id": "checksums",
       "authority": "release aggregation",
       "evidence": "SHA256SUMS for all release bundle files"
     }
-  ]
+  ],
+  "license": {
+    "spdx": "Apache-2.0",
+    "file": "LICENSE"
+  }
 }
