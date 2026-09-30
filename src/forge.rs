@@ -1273,6 +1273,63 @@ mod tests {
     use super::*;
 
     #[test]
+    fn provider_routing_keeps_github_com_explicit_and_other_hosts_gitlab_first() {
+        assert_eq!(
+            provider_kind_for_host("github.com"),
+            ForgeProviderKind::GitHub
+        );
+        assert_eq!(
+            provider_kind_for_host("GITHUB.COM"),
+            ForgeProviderKind::GitHub
+        );
+        assert_eq!(
+            provider_kind_for_host("gitlab.internal.example"),
+            ForgeProviderKind::GitLab
+        );
+        assert_eq!(
+            provider_kind_for_host("github.enterprise.internal"),
+            ForgeProviderKind::GitLab
+        );
+    }
+
+    #[test]
+    fn external_refs_are_provider_specific_behind_forge_identity() {
+        let gitlab = ForgeIdentity {
+            provider: ForgeProviderKind::GitLab,
+            host: "gitlab.example.com".into(),
+            project_id: "42".into(),
+            path_with_namespace: "team/repo".into(),
+            web_url: "https://gitlab.example.com/team/repo".into(),
+            default_branch: Some("main".into()),
+        };
+        assert_eq!(
+            gitlab.issue_source_ref(12),
+            "gitlab://gitlab.example.com/projects/42/issues/12"
+        );
+        assert_eq!(
+            gitlab.change_request_source_ref(7),
+            "gitlab://gitlab.example.com/projects/42/merge-requests/7"
+        );
+
+        let github = ForgeIdentity {
+            provider: ForgeProviderKind::GitHub,
+            host: "github.com".into(),
+            project_id: "99".into(),
+            path_with_namespace: "owner/repo".into(),
+            web_url: "https://github.com/owner/repo".into(),
+            default_branch: Some("main".into()),
+        };
+        assert_eq!(
+            github.issue_source_ref(12),
+            "github://github.com/repositories/99/issues/12"
+        );
+        assert_eq!(
+            github.change_request_source_ref(7),
+            "github://github.com/repositories/99/pull-requests/7"
+        );
+    }
+
+    #[test]
     fn parses_https_ssh_and_scp_remote_urls() {
         assert_eq!(
             parse_git_remote_url("https://gitlab.example.com/group/sub/project.git"),
