@@ -21,6 +21,8 @@ M6a introduces a forge boundary with:
 - observation timestamp/freshness;
 - degraded/unavailable reason.
 
+The runtime exposes a `ForgeProvider` contract. `GitLabProvider` is the M6a implementation and the actor accepts an injected provider, so M6c GitHub can reuse the same reducer/planning/actor boundary instead of cloning it.
+
 The GitLab implementation uses `glab` / `glab api`. It does not add native REST/GraphQL transport and does not pin behavior to a compile-time GitLab version matrix.
 
 Remote selection is deterministic:
@@ -42,6 +44,8 @@ A normal user-visible forge refresh is bounded to four `glab api` subprocesses:
 4. recent Pipelines.
 
 Subprocesses are shell-free, have a five-second timeout, use bounded captured output, and are isolated behind an async actor so GitLab latency never blocks the TUI event loop.
+
+Probes are coalesced conservatively: threads sharing one checkout share the initial probe; once a numeric forge identity is known, observations with the same provider/host/project identity share later refreshes even across worktrees. A successful or failed observation has a 60-second refresh TTL, while the TUI reconciles freshness every 15 seconds without issuing extra API calls. This prevents per-thread `glab` amplification and retry storms.
 
 This preserves ADR-011's decision to stay on `glab` unless a measured hard trigger justifies native transport.
 
@@ -105,6 +109,7 @@ Raw authentication output and tokens are never printed.
 Forge observations carry freshness/provenance separately from Codex and Git.
 
 - a pending probe is explicit;
+- Fresh/Aging/Stale is derived from observation age rather than frozen at fetch time;
 - missing `glab`, auth failure, unsupported remote, timeout, or API failure becomes an unavailable/degraded observation;
 - Codex and Git remain usable when Forge is unavailable;
 - capability-specific probes can fail without declaring unrelated capabilities unavailable.
@@ -133,4 +138,4 @@ Required CI remains the repository's three-platform matrix:
 
 on Linux, macOS, and Windows.
 
-Focused tests cover remote parsing/selection, fail-closed ambiguity, project-path encoding, exact branch matching, actor projection, Git-authoritative probe deduplication, MR/Pipeline planning behavior, review-discussion attention, Issue WorkCard projection, and cross-thread Issue deduplication.
+Focused tests cover remote parsing/selection, fail-closed ambiguity, project-path encoding, exact branch matching, actor projection, Git-authoritative probe deduplication, checkout coalescing/TTL refresh, freshness aging, MR/Pipeline planning behavior, review-discussion attention, Issue WorkCard projection, and cross-thread Issue deduplication.
