@@ -233,6 +233,8 @@ pub struct RemoteIdentity {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ForgeDoctorSnapshot {
     pub glab_version: Option<String>,
+    pub authenticated: Option<bool>,
+    pub server_version: Option<String>,
     pub remote: Option<RemoteIdentity>,
     pub observation: ForgeObservation,
     pub boards: Vec<IssueBoardSummary>,
@@ -389,6 +391,11 @@ struct GitLabPipeline {
 struct GitLabBoard {
     id: u64,
     name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GitLabVersion {
+    version: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -619,15 +626,48 @@ pub async fn doctor(cwd: String) -> ForgeDoctorSnapshot {
         });
 
     let remote = resolve_git_remote(Path::new(&cwd)).await.ok();
-    let observation = probe_thread(ThreadId::new("doctor-forge"), cwd.clone()).await;
-    let boards = if observation.identity.is_some() {
-        probe_issue_boards(&cwd).await.unwrap_or_default()
+    let (authenticated, server_version) = if let Some(remote) = &remote {
+        let auth = run_command(
+            "glab",
+            &["auth", "status", "--hostname", &remote.host],
+            Some(Path::new(&cwd)),
+        );
+        let version = glab_api_json::<GitLabVersion>(&cwd, &remote.host, "/version");
+        let (auth, version) = tokio::join!(auth, version);
+        (
+            auth.ok().map(|output| output.success),
+            version.ok().map(|version| version.version),
+        )
     } else {
-        vec![]
+        (None, None)
+    };
+
+    let mut observation = probe_thread(ThreadId::new("doctor-forge"), cwd.clone()).await;
+    let boards_result = if observation.identity.is_some() {
+        Some(probe_issue_boards(&cwd).await)
+    } else {
+        None
+    };
+    let boards = match boards_result {
+        Some(Ok(boards)) => {
+            observation
+                .capabilities
+                .insert(ForgeCapability::IssueBoards, CapabilityState::Available);
+            boards
+        }
+        Some(Err(_)) => {
+            observation
+                .capabilities
+                .insert(ForgeCapability::IssueBoards, CapabilityState::Unavailable);
+            vec![]
+        }
+        None => vec![],
     };
 
     ForgeDoctorSnapshot {
         glab_version,
+        authenticated,
+        server_version,
         remote,
         observation,
         boards,
