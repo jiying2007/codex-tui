@@ -1,4 +1,5 @@
 use crate::domain::{AttentionReason, RuntimeStatus, ThreadId, ThreadSummary};
+use crate::forge::{ForgeFreshness, ForgeObservation};
 use crate::git::GitContext;
 use crate::goal::{GoalObservation, GoalStatus};
 use serde::{Deserialize, Serialize};
@@ -138,6 +139,7 @@ pub enum PlanningAttention {
     UsageLimited,
     BudgetLimited,
     ReviewUnseen,
+    PipelineFailed,
 }
 
 impl PlanningAttention {
@@ -152,6 +154,7 @@ impl PlanningAttention {
             Self::UsageLimited => "usage-limited",
             Self::BudgetLimited => "budget-limited",
             Self::ReviewUnseen => "review",
+            Self::PipelineFailed => "pipeline-failed",
         }
     }
 }
@@ -349,7 +352,15 @@ fn card_matches_filter(card: &WorkCardProjection, filter: &str) -> bool {
             return match source {
                 "scratch" => card.anchor.kind == SourceKind::ScratchWork,
                 "thread" | "codex" => card.anchor.kind == SourceKind::CodexThread,
-                "forge" => card.anchor.kind == SourceKind::ForgeWorkItem,
+                "forge" => {
+                    card.anchor.kind == SourceKind::ForgeWorkItem
+                        || card.links.iter().any(|link| {
+                            matches!(
+                                link.source.kind,
+                                SourceKind::ForgeWorkItem | SourceKind::ChangeRequest
+                            )
+                        })
+                },
                 _ => false,
             };
         }
@@ -426,6 +437,14 @@ pub fn reconcile_thread_card_with_goal(
     input: ReconcileInput<'_>,
     goal: Option<&GoalObservation>,
 ) -> WorkCardProjection {
+    reconcile_thread_card_with_goal_and_forge(input, goal, None)
+}
+
+pub fn reconcile_thread_card_with_goal_and_forge(
+    input: ReconcileInput<'_>,
+    goal: Option<&GoalObservation>,
+    forge: Option<&ForgeObservation>,
+) -> WorkCardProjection {
     let thread = input.thread;
     let local = input
         .local
@@ -433,7 +452,24 @@ pub fn reconcile_thread_card_with_goal(
         .unwrap_or_else(|| WorkCardRecord::implicit_thread(&thread.id));
 
     let git_dirty = input.git.is_some_and(|git| git.is_repository && git.dirty);
-    let (stage, stage_reason) = derive_stage(&thread.runtime, git_dirty, &local.overlay, goal);
+    let (mut stage, mut stage_reason) =
+        derive_stage(&thread.runtime, git_dirty, &local.overlay, goal);
+
+    let branch = input.git.and_then(|git| git.branch.as_deref());
+    let change_request = branch.and_then(|branch| {
+        forge.and_then(|observation| observation.change_request_for_branch(branch))
+    });
+    let pipeline = branch.and_then(|branch| {
+        forge.and_then(|observation| observation.pipeline_for_branch(branch))
+    });
+
+    if change_request.is_some()
+        && matches!(stage, WorkflowStage::Inbox | WorkflowStage::Ready)
+        && local.overlay.done_at_unix_ms.is_none()
+    {
+        stage = WorkflowStage::Review;
+        stage_reason = "open forge change request awaits review/delivery".into();
+    }
 
     let mut attention = thread
         .attention
@@ -461,6 +497,9 @@ pub fn reconcile_thread_card_with_goal(
             }
             GoalStatus::Active | GoalStatus::Paused => {}
         }
+    }
+    if pipeline.is_some_and(|pipeline| pipeline.status.eq_ignore_ascii_case("failed")) {
+        attention.insert(PlanningAttention::PipelineFailed);
     }
     if stage == WorkflowStage::Review && local.overlay.done_at_unix_ms.is_none() {
         attention.insert(PlanningAttention::ReviewUnseen);
@@ -513,6 +552,45 @@ pub fn reconcile_thread_card_with_goal(
         });
     }
 
+    let mut links = local.links;
+    if let Some(forge) = forge {
+        let identity = forge.identity.as_ref();
+        provenance.push(Provenance {
+            source: identity.map_or_else(
+                || "forge".into(),
+                |identity| format!("forge:{}", identity.host),
+            ),
+            observed_at_unix_ms: Some(forge.observed_at_unix_ms),
+            source_revision: identity.map(|identity| identity.project_id.clone()),
+            freshness: match forge.freshness {
+                ForgeFreshness::Fresh => Freshness::Fresh,
+                ForgeFreshness::Aging => Freshness::Aging,
+                ForgeFreshness::Stale => Freshness::Stale,
+                ForgeFreshness::Unavailable => Freshness::Unavailable,
+            },
+            degraded_reason: forge.error.clone(),
+        });
+
+        if let (Some(identity), Some(change_request)) = (identity, change_request) {
+            let source = SourceRef {
+                kind: SourceKind::ChangeRequest,
+                value: format!(
+                    "{}://{}/projects/{}/merge-requests/{}",
+                    identity.provider.label(),
+                    identity.host,
+                    identity.project_id,
+                    change_request.iid
+                ),
+            };
+            if !links.iter().any(|link| link.source == source) {
+                links.push(WorkCardLink {
+                    role: LinkRole::ChangeRequest,
+                    source,
+                });
+            }
+        }
+    }
+
     WorkCardProjection {
         local_id: local.local_id,
         anchor: local.anchor,
@@ -523,7 +601,7 @@ pub fn reconcile_thread_card_with_goal(
         attention,
         snoozed,
         overlay: local.overlay,
-        links: local.links,
+        links,
         goal: goal.cloned(),
         provenance,
     }
