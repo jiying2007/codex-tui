@@ -839,33 +839,35 @@ pub async fn doctor(cwd: String) -> ForgeDoctorSnapshot {
         None => None,
     };
 
-    let (authenticated, server_version) = if let (Some(remote), Some(provider)) = (&remote, provider)
-    {
-        match provider {
-            ForgeProviderKind::GitLab => {
-                let auth_args = ["auth", "status", "--hostname", remote.host.as_str()];
-                let auth = run_command("glab", &auth_args, Some(Path::new(&cwd)));
-                let version = glab_api_json::<GitLabVersion>(&cwd, &remote.host, "/version");
-                let (auth, version) = tokio::join!(auth, version);
-                (
-                    auth.ok().map(|output| output.success),
-                    version.ok().map(|version| version.version),
-                )
+    let (authenticated, server_version) =
+        if let (Some(remote), Some(provider)) = (&remote, provider) {
+            match provider {
+                ForgeProviderKind::GitLab => {
+                    let auth_args = ["auth", "status", "--hostname", remote.host.as_str()];
+                    let auth = run_command("glab", &auth_args, Some(Path::new(&cwd)));
+                    let version = glab_api_json::<GitLabVersion>(&cwd, &remote.host, "/version");
+                    let (auth, version) = tokio::join!(auth, version);
+                    (
+                        auth.ok().map(|output| output.success),
+                        version.ok().map(|version| version.version),
+                    )
+                }
+                ForgeProviderKind::GitHub => {
+                    let auth_args = ["auth", "status", "--hostname", remote.host.as_str()];
+                    let auth = run_command("gh", &auth_args, Some(Path::new(&cwd))).await;
+                    (auth.ok().map(|output| output.success), None)
+                }
             }
-            ForgeProviderKind::GitHub => {
-                let auth_args = ["auth", "status", "--hostname", remote.host.as_str()];
-                let auth = run_command("gh", &auth_args, Some(Path::new(&cwd))).await;
-                (auth.ok().map(|output| output.success), None)
-            }
-        }
-    } else {
-        (None, None)
-    };
+        } else {
+            (None, None)
+        };
 
     let mut observation = probe_thread(ThreadId::new("doctor-forge"), cwd.clone()).await;
-    let boards_result = if observation.identity.as_ref().is_some_and(|identity| {
-        identity.provider == ForgeProviderKind::GitLab
-    }) {
+    let boards_result = if observation
+        .identity
+        .as_ref()
+        .is_some_and(|identity| identity.provider == ForgeProviderKind::GitLab)
+    {
         Some(probe_issue_boards(&cwd).await)
     } else {
         None
@@ -1186,7 +1188,11 @@ pub(crate) struct CommandOutput {
     pub(crate) stderr: String,
 }
 
-pub(crate) async fn run_command(program: &str, args: &[&str], cwd: Option<&Path>) -> Result<CommandOutput> {
+pub(crate) async fn run_command(
+    program: &str,
+    args: &[&str],
+    cwd: Option<&Path>,
+) -> Result<CommandOutput> {
     let mut command = Command::new(program);
     command
         .args(args)
