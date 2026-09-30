@@ -355,7 +355,6 @@ impl ForgeProvider for RoutingForgeProvider {
             ForgeProviderKind::GitLab => GitLabProvider.probe_review(target),
         }
     }
-    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -382,7 +381,6 @@ impl ForgeProvider for GitLabProvider {
             target.project_id,
             target.change_request_iid,
         ))
-    }
     }
 }
 
