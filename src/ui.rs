@@ -10,7 +10,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Clear, Paragraph, Wrap},
+    widgets::{Block, Clear, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -159,14 +159,14 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState) {
 
     match layout_mode(area.width) {
         LayoutMode::Compact | LayoutMode::Standard => {
-            frame.render_widget(thread_list(app), chunks[0]);
+            render_thread_list(frame, app, chunks[0]);
         }
         LayoutMode::Wide => {
             let columns = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Percentage(65), Constraint::Percentage(35)])
                 .split(chunks[0]);
-            frame.render_widget(thread_list(app), columns[0]);
+            render_thread_list(frame, app, columns[0]);
             frame.render_widget(detail_panel(app), columns[1]);
         }
     }
@@ -250,13 +250,89 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState) {
     frame.render_widget(footer, chunks[1]);
 }
 
-fn thread_list(app: &AppState) -> Paragraph<'static> {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct RegistryViewport {
+    start: usize,
+    end: usize,
+    total: usize,
+    row_capacity: usize,
+}
+
+fn registry_viewport(app: &AppState, area_height: u16) -> (Vec<usize>, RegistryViewport) {
     let visible = app.visible_indices();
+    let total = visible.len();
+    let row_capacity = usize::from(area_height.saturating_sub(3));
+    if total == 0 || row_capacity == 0 {
+        return (
+            visible,
+            RegistryViewport {
+                start: 0,
+                end: 0,
+                total,
+                row_capacity,
+            },
+        );
+    }
+
+    let selected_position = visible
+        .iter()
+        .position(|index| *index == app.selected)
+        .unwrap_or(0);
+    let start = selected_position
+        .saturating_sub(row_capacity.saturating_sub(1))
+        .min(total.saturating_sub(row_capacity));
+    let end = (start + row_capacity).min(total);
+
+    (
+        visible,
+        RegistryViewport {
+            start,
+            end,
+            total,
+            row_capacity,
+        },
+    )
+}
+
+fn render_thread_list(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
+    let (paragraph, viewport) = thread_list(app, area);
+    frame.render_widget(paragraph, area);
+
+    if viewport.total <= viewport.row_capacity || viewport.row_capacity == 0 || area.width == 0 {
+        return;
+    }
+
+    let scrollbar_area = Rect {
+        x: area.x.saturating_add(area.width.saturating_sub(1)),
+        y: area.y.saturating_add(2),
+        width: 1,
+        height: area.height.saturating_sub(3),
+    };
+    if scrollbar_area.height == 0 {
+        return;
+    }
+
+    let mut scrollbar_state = ScrollbarState::new(viewport.total)
+        .position(viewport.start)
+        .viewport_content_length(viewport.row_capacity);
+    frame.render_stateful_widget(
+        Scrollbar::new(ScrollbarOrientation::VerticalRight)
+            .begin_symbol(None)
+            .end_symbol(None)
+            .thumb_symbol("█")
+            .track_symbol(Some("│")),
+        scrollbar_area,
+        &mut scrollbar_state,
+    );
+}
+
+fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewport) {
+    let (visible, viewport) = registry_viewport(app, area.height);
     let attention_count = visible
         .iter()
         .filter(|index| app.thread_needs_attention(**index))
         .count();
-    let mut lines = Vec::with_capacity(visible.len() + 1);
+    let mut lines = Vec::with_capacity(viewport.row_capacity.saturating_add(1));
     let local_count = visible
         .iter()
         .filter(|index| {
@@ -273,15 +349,25 @@ fn thread_list(app: &AppState) -> Paragraph<'static> {
             classify_cwd(&app.threads[**index].metadata.cwd) == CwdLocality::NativeMissing
         })
         .count();
+    let range = if viewport.total == 0 {
+        "rows 0/0".to_string()
+    } else {
+        format!(
+            "rows {}-{}/{}",
+            viewport.start + 1,
+            viewport.end,
+            viewport.total
+        )
+    };
     let summary = if app.filter.is_empty() {
         format!(
-            "{} threads · {local_count} local · {foreign_count} foreign · {stale_count} stale · {} need attention",
+            "{} threads · {local_count} local · {foreign_count} foreign · {stale_count} stale · {} need attention · {range}",
             app.threads.len(),
             attention_count
         )
     } else {
         format!(
-            "{}/{} threads · {local_count} local · {foreign_count} foreign · {stale_count} stale · {} need attention · filter: {}",
+            "{}/{} threads · {local_count} local · {foreign_count} foreign · {stale_count} stale · {} need attention · {range} · filter: {}",
             visible.len(),
             app.threads.len(),
             attention_count,
@@ -290,7 +376,7 @@ fn thread_list(app: &AppState) -> Paragraph<'static> {
     };
     lines.push(Line::from(summary));
 
-    for index in visible {
+    for index in visible[viewport.start..viewport.end].iter().copied() {
         let thread = &app.threads[index];
         let selected = index == app.selected;
         let prefix = if selected { ">" } else { " " };
@@ -325,13 +411,21 @@ fn thread_list(app: &AppState) -> Paragraph<'static> {
             CwdLocality::NativeMissing => "!",
             CwdLocality::Relative | CwdLocality::Empty => "?",
         };
-        let text = format!(
-            "{prefix}{pin}{collision}{locality} {:7} {} {} {}",
-            thread.runtime.label(),
-            fit_display(&thread.workspace, 18),
-            fit_display(&attention, 10),
-            sanitize_inline(thread.display_title())
-        );
+        let text = match layout_mode(area.width) {
+            LayoutMode::Compact => format!(
+                "{prefix}{pin}{collision}{locality} {:7} {} {}",
+                thread.runtime.label(),
+                fit_display(&thread.workspace, 12),
+                sanitize_inline(thread.display_title())
+            ),
+            LayoutMode::Standard | LayoutMode::Wide => format!(
+                "{prefix}{pin}{collision}{locality} {:7} {} {} {}",
+                thread.runtime.label(),
+                fit_display(&thread.workspace, 18),
+                fit_display(&attention, 10),
+                sanitize_inline(thread.display_title())
+            ),
+        };
         let style = if selected {
             Style::default().add_modifier(Modifier::REVERSED)
         } else {
@@ -340,11 +434,12 @@ fn thread_list(app: &AppState) -> Paragraph<'static> {
         lines.push(Line::from(Span::styled(text, style)));
     }
 
-    Paragraph::new(lines)
-        .block(
+    (
+        Paragraph::new(lines).block(
             Block::bordered().title(format!(" Mission Control · {} ", app.backend_status.source)),
-        )
-        .wrap(Wrap { trim: false })
+        ),
+        viewport,
+    )
 }
 
 fn detail_panel(app: &AppState) -> Paragraph<'static> {
@@ -1785,6 +1880,62 @@ mod tests {
             out.push('\n');
         }
         out
+    }
+
+    #[test]
+    fn registry_viewport_keeps_selected_row_visible() {
+        let mut app = AppState::new(FakeBackend::scaled(100).snapshot().threads);
+        app.selected = 99;
+
+        let (_visible, viewport) = registry_viewport(&app, 10);
+        assert_eq!(
+            viewport,
+            RegistryViewport {
+                start: 93,
+                end: 100,
+                total: 100,
+                row_capacity: 7,
+            }
+        );
+    }
+
+    #[test]
+    fn registry_renders_scrollbar_and_last_selected_row() {
+        let backend = TestBackend::new(100, 12);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        let mut app = AppState::new(FakeBackend::scaled(100).snapshot().threads);
+        app.selected = 99;
+
+        terminal.draw(|frame| render(frame, &app)).expect("draw");
+        let buffer = terminal.backend().buffer();
+        let mut snapshot = String::new();
+        for y in 0..buffer.area.height {
+            for x in 0..buffer.area.width {
+                snapshot.push_str(buffer[(x, y)].symbol());
+            }
+            snapshot.push('\n');
+        }
+
+        assert!(snapshot.contains("rows 94-100/100"));
+        assert!(snapshot.contains("Synthetic work item 00099"));
+        assert!(!snapshot.contains("Synthetic work item 00000"));
+        assert!(
+            snapshot.contains('█'),
+            "overflowing registry must render a scrollbar thumb"
+        );
+    }
+
+    #[test]
+    fn registry_viewport_uses_filtered_thread_count() {
+        let mut app = AppState::new(FakeBackend::scaled(100).snapshot().threads);
+        app.filter = "repo-001".into();
+        let visible = app.visible_indices();
+        app.selected = *visible.last().expect("filtered row");
+
+        let (viewport_visible, viewport) = registry_viewport(&app, 10);
+        assert_eq!(viewport.total, viewport_visible.len());
+        assert_eq!(viewport.end, viewport.total);
+        assert!(viewport.total < 100);
     }
 
     #[cfg(not(windows))]
