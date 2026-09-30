@@ -62,3 +62,19 @@ fn planning_workspace_filter_10k() {
     };
     divan::black_box(apply_saved_view(cards_10k(), &view));
 }
+
+
+#[divan::bench]
+fn planning_rich_query_10k() {
+    let view = SavedView {
+        id: "bench:rich-query".into(),
+        name: "Rich Query".into(),
+        source_scope: "all".into(),
+        filter: "status:needs-you -stage:done project:repo".into(),
+        group_by: Some("workspace".into()),
+        order_by: Some("priority".into()),
+        layout: SavedViewLayout::List,
+        visible_fields: vec![],
+    };
+    divan::black_box(apply_saved_view(cards_10k(), &view));
+}
