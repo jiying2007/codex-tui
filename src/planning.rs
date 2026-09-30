@@ -579,7 +579,7 @@ pub fn reconcile_thread_card_with_goal_and_forge(
             ),
             observed_at_unix_ms: Some(forge.observed_at_unix_ms),
             source_revision: identity.map(|identity| identity.project_id.clone()),
-            freshness: match forge.freshness {
+            freshness: match forge.freshness_at(input.now_unix_ms) {
                 ForgeFreshness::Fresh => Freshness::Fresh,
                 ForgeFreshness::Aging => Freshness::Aging,
                 ForgeFreshness::Stale => Freshness::Stale,
@@ -703,7 +703,7 @@ pub fn reconcile_forge_issue_card(
             source: format!("forge:{}", identity.host),
             observed_at_unix_ms: Some(observation.observed_at_unix_ms),
             source_revision: issue.updated_at.clone(),
-            freshness: match observation.freshness {
+            freshness: match observation.freshness_at(now_unix_ms) {
                 ForgeFreshness::Fresh => Freshness::Fresh,
                 ForgeFreshness::Aging => Freshness::Aging,
                 ForgeFreshness::Stale => Freshness::Stale,
