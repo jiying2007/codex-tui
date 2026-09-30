@@ -197,9 +197,9 @@ jobs:
           }
 
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CI_RUN" > canonical-ci.json
-          python3 scripts/release/validate_ci_run.py             --run-json canonical-ci.json             --commit "$GITHUB_SHA"
+          python3 scripts/release/validate_ci_run.py             --run-json canonical-ci.json             --commit "${{ github.sha }}"
 
-          python3 scripts/release/create_evidence.py             --output release-evidence.json             --compat-schema codex-tui/compat/v2             --version "$VERSION"             --commit "$GITHUB_SHA"             --canonical-ci-run "$CI_RUN"             --linux-compat-sha256 "$LINUX_COMPAT_SHA"             --linux-compat-observed-at "$LINUX_COMPAT_AT"             --linux-terminal "$LINUX_TERMINAL"             --linux-terminal-observed-at "$LINUX_TERMINAL_AT"             --macos-compat-sha256 "$MACOS_COMPAT_SHA"             --macos-compat-observed-at "$MACOS_COMPAT_AT"             --macos-terminal "$MACOS_TERMINAL"             --macos-terminal-observed-at "$MACOS_TERMINAL_AT"             --windows-compat-sha256 "$WINDOWS_COMPAT_SHA"             --windows-compat-observed-at "$WINDOWS_COMPAT_AT"             --windows-terminal "$WINDOWS_TERMINAL"             --windows-terminal-observed-at "$WINDOWS_TERMINAL_AT"             --performance-p95-ms "$PERF_P95"             --performance-p99-ms "$PERF_P99"             --performance-source "$PERF_SOURCE"             --performance-observed-at "$PERF_AT"
+          python3 scripts/release/create_evidence.py             --output release-evidence.json             --compat-schema codex-tui/compat/v2             --version "$VERSION"             --commit "${{ github.sha }}"             --canonical-ci-run "$CI_RUN"             --linux-compat-sha256 "$LINUX_COMPAT_SHA"             --linux-compat-observed-at "$LINUX_COMPAT_AT"             --linux-terminal "$LINUX_TERMINAL"             --linux-terminal-observed-at "$LINUX_TERMINAL_AT"             --macos-compat-sha256 "$MACOS_COMPAT_SHA"             --macos-compat-observed-at "$MACOS_COMPAT_AT"             --macos-terminal "$MACOS_TERMINAL"             --macos-terminal-observed-at "$MACOS_TERMINAL_AT"             --windows-compat-sha256 "$WINDOWS_COMPAT_SHA"             --windows-compat-observed-at "$WINDOWS_COMPAT_AT"             --windows-terminal "$WINDOWS_TERMINAL"             --windows-terminal-observed-at "$WINDOWS_TERMINAL_AT"             --performance-p95-ms "$PERF_P95"             --performance-p99-ms "$PERF_P99"             --performance-source "$PERF_SOURCE"             --performance-observed-at "$PERF_AT"
 
       - name: Verify release contract
         shell: bash
@@ -213,7 +213,7 @@ jobs:
             release verify
             --channel "$CHANNEL"
             --tag "$TAG"
-            --commit "$GITHUB_SHA"
+            --commit "${{ github.sha }}"
             --json
           )
           if [ "$CHANNEL" = "stable" ]; then
@@ -277,7 +277,7 @@ jobs:
           --binary "${{ matrix.binary }}"
           --version "${{ needs.gate.outputs.version }}"
           --tag "${{ needs.gate.outputs.tag }}"
-          --commit "$GITHUB_SHA"
+          --commit "${{ github.sha }}"
           --platform "${{ matrix.platform }}"
           --notices dist/THIRD_PARTY_NOTICES.txt
           --output-dir dist
@@ -288,7 +288,7 @@ jobs:
           --archive-dir dist
           --version "${{ needs.gate.outputs.version }}"
           --tag "${{ needs.gate.outputs.tag }}"
-          --commit "$GITHUB_SHA"
+          --commit "${{ github.sha }}"
 
       - uses: actions/upload-artifact@v4
         with:
