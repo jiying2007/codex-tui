@@ -2009,7 +2009,7 @@ mod tests {
     #[cfg(not(windows))]
     #[test]
     fn registry_marks_foreign_windows_cwd_without_linux_prefix() {
-        let backend = TestBackend::new(160, 16);
+        let backend = TestBackend::new(160, 28);
         let mut terminal = Terminal::new(backend).expect("terminal");
         let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
         app.threads[0].metadata.cwd = r"/vsdata/repo/C:\Users\jun\repo".into();
