@@ -224,11 +224,7 @@ struct MrPlanSpec {
     planned_at_unix_ms: u64,
 }
 
-fn mr_plan(
-    identity: &ForgeIdentity,
-    cwd: String,
-    spec: MrPlanSpec,
-) -> Result<ForgeMutationPlan> {
+fn mr_plan(identity: &ForgeIdentity, cwd: String, spec: MrPlanSpec) -> Result<ForgeMutationPlan> {
     ensure_identity(identity)?;
     anyhow::ensure!(
         spec.change_request_iid > 0,
@@ -247,10 +243,7 @@ fn mr_plan(
         target_branch: Some(required_text("target branch", spec.target_branch)?),
         title: None,
         payload_bytes: None,
-        expected_side_effect: format!(
-            "{}: !{}",
-            spec.expected, spec.change_request_iid
-        ),
+        expected_side_effect: format!("{}: !{}", spec.expected, spec.change_request_iid),
         preconditions: vec![
             precondition("provider", "gitlab"),
             precondition("project-identity-current", "true"),
