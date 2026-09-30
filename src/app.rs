@@ -31,6 +31,8 @@ use crate::store::LocalStateV1;
 use crate::terminal_drawer::TerminalSnapshot;
 use std::collections::{BTreeMap, BTreeSet};
 
+const REGISTRY_RECENT_LIMIT: usize = 100;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum View {
     Registry,
@@ -237,6 +239,7 @@ pub enum Action {
     AcknowledgeAttention,
     ToggleHostLocalFilter,
     ToggleRepoBackedFilter,
+    ToggleAllHistory,
     BeginSearch,
     BeginAlias,
     InputChar(char),
@@ -419,6 +422,7 @@ pub struct AppState {
     pub filter: String,
     pub host_local_only: bool,
     pub repo_backed_only: bool,
+    pub show_all_history: bool,
     pub input_mode: InputMode,
     pub input_buffer: String,
     input_original: String,
@@ -498,6 +502,7 @@ impl AppState {
             filter: String::new(),
             host_local_only: false,
             repo_backed_only: false,
+            show_all_history: false,
             input_mode: InputMode::Normal,
             input_buffer: String::new(),
             input_original: String::new(),
@@ -518,7 +523,9 @@ impl AppState {
 
     pub fn selected_thread(&self) -> Option<&ThreadSummary> {
         let thread = self.threads.get(self.selected)?;
-        self.thread_visible_in_registry(thread).then_some(thread)
+        self.visible_indices()
+            .contains(&self.selected)
+            .then_some(thread)
     }
 
     fn thread_visible_in_registry(&self, thread: &ThreadSummary) -> bool {
@@ -883,11 +890,34 @@ impl AppState {
         questions.get(self.user_input_question_index)
     }
 
-    pub fn visible_indices(&self) -> Vec<usize> {
+    fn registry_matching_indices(&self) -> Vec<usize> {
         self.threads
             .iter()
             .enumerate()
             .filter_map(|(index, thread)| self.thread_visible_in_registry(thread).then_some(index))
+            .collect()
+    }
+
+    pub fn registry_match_count(&self) -> usize {
+        self.registry_matching_indices().len()
+    }
+
+    pub fn visible_indices(&self) -> Vec<usize> {
+        let matched = self.registry_matching_indices();
+        if self.show_all_history || !self.filter.is_empty() || matched.len() <= REGISTRY_RECENT_LIMIT
+        {
+            return matched;
+        }
+
+        matched
+            .into_iter()
+            .enumerate()
+            .filter_map(|(position, index)| {
+                (position < REGISTRY_RECENT_LIMIT
+                    || self.threads[index].pinned
+                    || self.thread_needs_attention(index))
+                .then_some(index)
+            })
             .collect()
     }
 
@@ -2328,6 +2358,10 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             ensure_selection_visible(state);
             return vec![Effect::PersistOperatorState];
         }
+        Action::ToggleAllHistory => {
+            state.show_all_history = !state.show_all_history;
+            ensure_selection_visible(state);
+        }
         Action::BeginSearch => {
             state.input_original.clone_from(&state.filter);
             state.input_buffer.clone_from(&state.filter);
@@ -3418,6 +3452,24 @@ mod tests {
         reduce(&mut app, Action::ToggleRepoBackedFilter);
         assert!(!app.repo_backed_only);
         assert_eq!(app.visible_indices(), vec![0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn registry_recent_window_is_bounded_but_search_and_pins_reach_full_history() {
+        let mut app = AppState::new(FakeBackend::scaled(150).snapshot().threads);
+        app.threads[149].pinned = true;
+
+        let visible = app.visible_indices();
+        assert_eq!(visible.len(), 101);
+        assert!(visible.contains(&149));
+
+        app.filter = "Synthetic work item 00149".into();
+        assert_eq!(app.visible_indices(), vec![149]);
+
+        app.filter.clear();
+        reduce(&mut app, Action::ToggleAllHistory);
+        assert!(app.show_all_history);
+        assert_eq!(app.visible_indices().len(), 150);
     }
 
     #[test]

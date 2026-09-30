@@ -10,6 +10,7 @@ pub enum Command {
     Search,
     ToggleHostLocalFilter,
     ToggleRepoBackedFilter,
+    ToggleAllHistory,
     ContextActions,
     Next,
     Previous,
@@ -89,6 +90,7 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
         (ViewKind::Registry, KeyCode::Char('q')) => Some(Command::QuitOrInterrupt),
         (ViewKind::Registry, KeyCode::Char('l')) => Some(Command::ToggleHostLocalFilter),
         (ViewKind::Registry, KeyCode::Char('g')) => Some(Command::ToggleRepoBackedFilter),
+        (ViewKind::Registry, KeyCode::Char('h')) => Some(Command::ToggleAllHistory),
         (ViewKind::Registry, KeyCode::Char('j') | KeyCode::Down) => Some(Command::Next),
         (ViewKind::Registry, KeyCode::Char('k') | KeyCode::Up) => Some(Command::Previous),
         (ViewKind::Registry, KeyCode::Enter) => Some(Command::Open),
@@ -278,6 +280,14 @@ mod tests {
         assert_eq!(
             command_for_key(key(KeyCode::Char('g')), ViewKind::Thread),
             Some(Command::Goal)
+        );
+        assert_eq!(
+            command_for_key(key(KeyCode::Char('h')), ViewKind::Registry),
+            Some(Command::ToggleAllHistory)
+        );
+        assert_eq!(
+            command_for_key(key(KeyCode::Char('h')), ViewKind::Board),
+            Some(Command::BoardLeft)
         );
         assert_eq!(
             command_for_key(

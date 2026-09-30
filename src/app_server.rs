@@ -649,9 +649,17 @@ fn snapshot(
     threads: &BTreeMap<String, ThreadSummary>,
     status: &BackendStatus,
 ) -> BackendSnapshot {
+    let mut ordered = threads.values().cloned().collect::<Vec<_>>();
+    ordered.sort_by(|left, right| {
+        right
+            .metadata
+            .updated_at
+            .cmp(&left.metadata.updated_at)
+            .then_with(|| right.id.0.cmp(&left.id.0))
+    });
     BackendSnapshot {
         generation,
-        threads: threads.values().cloned().collect(),
+        threads: ordered,
         status: status.clone(),
     }
 }
@@ -1502,6 +1510,32 @@ mod tests {
             message: "database unavailable".into(),
         });
         assert!(!is_goal_unsupported(&ordinary_failure));
+    }
+
+    #[test]
+    fn registry_snapshot_orders_newest_threads_first() {
+        let mut threads = BTreeMap::new();
+        for (id, updated_at) in [("thread-old", 10), ("thread-new", 30), ("thread-mid", 20)] {
+            let mut thread = crate::backend::FakeBackend::seeded()
+                .snapshot()
+                .threads
+                .into_iter()
+                .next()
+                .expect("thread");
+            thread.id = ThreadId::new(id);
+            thread.metadata.updated_at = updated_at;
+            threads.insert(id.to_string(), thread);
+        }
+
+        let snapshot = snapshot(1, &threads, &BackendStatus::fake());
+        assert_eq!(
+            snapshot
+                .threads
+                .iter()
+                .map(|thread| thread.id.0.as_str())
+                .collect::<Vec<_>>(),
+            vec!["thread-new", "thread-mid", "thread-old"]
+        );
     }
 
     #[test]
