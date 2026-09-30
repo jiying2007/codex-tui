@@ -44,7 +44,17 @@ pub struct PlatformCompatReceipt {
     pub observed_at: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PerformanceReceipt {
+    pub fixture: String,
+    pub p95_ms: f64,
+    pub p99_ms: f64,
+    pub source: String,
+    pub observed_at: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReleaseEvidenceReceipt {
     pub schema: String,
@@ -54,6 +64,7 @@ pub struct ReleaseEvidenceReceipt {
     pub compat_schema: String,
     pub compatibility: BTreeMap<String, PlatformCompatReceipt>,
     pub terminal_restoration: BTreeMap<String, PlatformTerminalReceipt>,
+    pub performance: PerformanceReceipt,
 }
 
 #[derive(Clone, Debug)]
@@ -249,6 +260,35 @@ pub fn validate_evidence(path: &Path, version: &str, commit_sha: &str) -> Result
             "observation timestamp for {platform} must not be empty"
         );
     }
+
+    anyhow::ensure!(
+        receipt.performance.fixture == "resident-planning-10k",
+        "stable performance fixture must be resident-planning-10k"
+    );
+    anyhow::ensure!(
+        receipt.performance.p95_ms.is_finite() && receipt.performance.p95_ms >= 0.0,
+        "performance p95 must be a finite nonnegative number"
+    );
+    anyhow::ensure!(
+        receipt.performance.p99_ms.is_finite() && receipt.performance.p99_ms >= 0.0,
+        "performance p99 must be a finite nonnegative number"
+    );
+    anyhow::ensure!(
+        receipt.performance.p95_ms <= 50.0,
+        "stable performance p95 exceeds 50 ms"
+    );
+    anyhow::ensure!(
+        receipt.performance.p99_ms <= 100.0,
+        "stable performance p99 exceeds 100 ms"
+    );
+    anyhow::ensure!(
+        !receipt.performance.source.trim().is_empty(),
+        "performance source must not be empty"
+    );
+    anyhow::ensure!(
+        !receipt.performance.observed_at.trim().is_empty(),
+        "performance observation timestamp must not be empty"
+    );
 
     Ok(())
 }
@@ -489,6 +529,13 @@ mod tests {
                         notes: None,
                     },
                 )]),
+                performance: PerformanceReceipt {
+                    fixture: "resident-planning-10k".into(),
+                    p95_ms: 40.0,
+                    p99_ms: 80.0,
+                    source: "retained-runner".into(),
+                    observed_at: "2026-09-30T00:00:00Z".into(),
+                },
             })
             .expect("evidence json"),
         )
