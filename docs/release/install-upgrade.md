@@ -24,7 +24,7 @@ Each platform archive contains:
 - `THIRD_PARTY_NOTICES.txt`;
 - `V1-STABLE-CRITERIA.json`;
 - `RELEASE-METADATA.json`;
-- the project LICENSE when the repository declares one.
+- `LICENSE` with the Apache License 2.0.
 
 ## Install
 
@@ -89,8 +89,6 @@ vX.Y.Z
 
 The first permitted stable product line is v1.0.0. Stable publication fails closed if any required evidence is absent.
 
-## Project license gate
+## Project license
 
-The repository currently treats an explicit project-level LICENSE as a publication requirement. The release tooling does not choose a license on behalf of the project owner.
-
-Until a LICENSE file is deliberately added, release validation/builds may run with `publish=false`, but GitHub Release publication is blocked.
+codex-tui is licensed under Apache-2.0. Release packaging requires both `Cargo.toml license = "Apache-2.0"` and the root `LICENSE`; extracted archive smoke verifies that the license is present and identified as Apache License 2.0.
