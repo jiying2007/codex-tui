@@ -103,7 +103,10 @@ impl TerminalDrawerRuntime {
     }
 
     pub fn send_input(&self, bytes: Vec<u8>) -> Result<()> {
-        let handle = self.handle.as_ref().context("terminal drawer is not open")?;
+        let handle = self
+            .handle
+            .as_ref()
+            .context("terminal drawer is not open")?;
         handle.send(PtyCommand::Input(bytes))
     }
 
@@ -112,7 +115,10 @@ impl TerminalDrawerRuntime {
         if size == self.size {
             return Ok(());
         }
-        let handle = self.handle.as_ref().context("terminal drawer is not open")?;
+        let handle = self
+            .handle
+            .as_ref()
+            .context("terminal drawer is not open")?;
         handle.send(PtyCommand::Resize(size))?;
         self.parser.screen_mut().set_size(
             NonZeroU16::new(size.rows).context("terminal rows became zero")?,
