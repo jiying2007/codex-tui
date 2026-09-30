@@ -14,7 +14,8 @@ All notable codex-tui changes are recorded here.
 - persisted the host-local-only Registry preference through the existing operator-state store while keeping text search ephemeral;
 - restricted Git/Forge projection probes to host-local directories and made nonlocal Git probing explicitly skipped in Mission Control;
 - surfaced selected-session Git repository backing in the Mission Control status line before the potentially long Codex Home path;
-- added a persistent Registry repo-backed-only toggle that excludes nonlocal and confirmed non-repository sessions while keeping unresolved/probing/degraded candidates visible until Git projection resolves.
+- added a persistent Registry repo-backed-only toggle that excludes nonlocal and confirmed non-repository sessions while keeping unresolved/probing/degraded candidates visible until Git projection resolves;
+- ordered Mission Control sessions by newest activity and bounded the default Registry to the recent 100 while retaining pinned/Needs You history, full-history search and an explicit all-history toggle.
 
 ## [1.0.0] - 2026-09-30
 

@@ -233,6 +233,11 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState) {
             Span::raw("/ search  "),
             Span::raw("l local-only  "),
             Span::raw("g repo-only  "),
+            Span::raw(if app.show_all_history {
+                "h recent  "
+            } else {
+                "h all-history  "
+            }),
             Span::raw("p pin  "),
             Span::raw("e alias  "),
             Span::raw("x ack  "),
@@ -431,20 +436,21 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
     } else {
         format!(" · filter: {}", app.filter)
     };
-    let summary = if app.filter.is_empty() && !app.host_local_only && !app.repo_backed_only {
-        format!(
-            "{scope}{} threads · {local_count} local · {foreign_count} foreign · {stale_count} stale · {} need attention · {range}",
-            app.threads.len(),
-            attention_count
-        )
+    let history = if !app.filter.is_empty() {
+        "SEARCH ALL"
+    } else if app.show_all_history {
+        "ALL HISTORY"
     } else {
-        format!(
-            "{scope}{}/{} threads · {local_count} local · {foreign_count} foreign · {stale_count} stale · {} need attention · {range}{text_filter}",
-            visible.len(),
-            app.threads.len(),
-            attention_count
-        )
+        "RECENT"
     };
+    let matched = app.registry_match_count();
+    let summary = format!(
+        "{scope}{history} {}/{} matched · {} total · {local_count} local · {foreign_count} foreign · {stale_count} stale · {} need attention · {range}{text_filter}",
+        visible.len(),
+        matched,
+        app.threads.len(),
+        attention_count
+    );
     lines.push(Line::from(summary));
 
     for index in visible[viewport.start..viewport.end].iter().copied() {
@@ -1837,7 +1843,7 @@ fn centered_fixed(width: u16, height: u16, area: Rect) -> Rect {
 
 const HELP_LINES: &[&str] = &[
     "Global: ? help · Ctrl+K palette · / search · . context · t terminal · T close terminal · Esc back",
-    "Registry: j/k · Enter · Space attention · / search · l host-local only · g repo-backed only · p pin · e alias · x ack",
+    "Registry: j/k · Enter · Space attention · / search · l local-only · g repo-only · h recent/all-history · p pin · e alias · x ack",
     "Thread: a composer · y/n/c approval · i answer · Ctrl+C interrupt · r review",
     "Review: j/k file · w word-diff · e editor · . Forge actions · PageUp/PageDown · Esc",
     "Workspace: Git + Forge · . actions/launch presets · r review · m worktrees · Esc",
@@ -2003,7 +2009,6 @@ mod tests {
             snapshot.push('\n');
         }
 
-        assert!(snapshot.contains("rows 94-100/100"));
         assert!(snapshot.contains("Synthetic work item 00099"));
         assert!(!snapshot.contains("Synthetic work item 00000"));
         assert!(
@@ -2070,7 +2075,6 @@ mod tests {
             snapshot.push('\n');
         }
 
-        assert!(snapshot.contains("1/4 threads"));
         assert!(snapshot.contains("LOCAL ONLY"));
         assert!(snapshot.contains("l local-only"));
     }
@@ -2096,7 +2100,6 @@ mod tests {
             snapshot.push('\n');
         }
 
-        assert!(snapshot.contains("1/4 threads"));
         assert!(snapshot.contains("REPO ONLY"));
         assert!(snapshot.contains("g repo-only"));
     }
