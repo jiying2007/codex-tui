@@ -514,7 +514,9 @@ pub fn reconcile_thread_card_with_goal_and_forge(
     }
     if forge
         .and_then(|observation| observation.review.as_ref())
-        .is_some_and(|review| review.unresolved_discussions > 0)
+        .is_some_and(|review| {
+            review.unresolved_discussions > 0 || review.changes_requested_by_count > 0
+        })
     {
         attention.insert(PlanningAttention::ChangeRequested);
     }
@@ -1224,6 +1226,7 @@ mod tests {
             approvals_required: Some(2),
             approvals_left: Some(1),
             approved_by_count: 1,
+            changes_requested_by_count: 0,
             discussions_total: 2,
             unresolved_discussions: 1,
             approvals_available: true,
