@@ -1463,6 +1463,7 @@ impl RpcSession {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::backend::{CodexBackend, FakeBackend};
 
     #[test]
     fn history_compatibility_matches_official_error_semantics() {
@@ -1516,7 +1517,7 @@ mod tests {
     fn registry_snapshot_orders_newest_threads_first() {
         let mut threads = BTreeMap::new();
         for (id, updated_at) in [("thread-old", 10), ("thread-new", 30), ("thread-mid", 20)] {
-            let mut thread = crate::backend::FakeBackend::seeded()
+            let mut thread = FakeBackend::seeded()
                 .snapshot()
                 .threads
                 .into_iter()
