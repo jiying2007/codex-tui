@@ -70,6 +70,7 @@ def main() -> int:
             binary.chmod(binary.stat().st_mode | 0o111)
 
         required = [
+            "LICENSE",
             "README.md",
             "CHANGELOG.md",
             "INSTALL-UPGRADE.md",
@@ -81,11 +82,16 @@ def main() -> int:
         if missing:
             raise SystemExit("archive missing required files: " + ", ".join(missing))
 
+        license_text = (root / "LICENSE").read_text(encoding="utf-8")
+        if "Apache License" not in license_text or "Version 2.0" not in license_text:
+            raise SystemExit("archive LICENSE is not Apache License 2.0")
+
         metadata = json.loads((root / "RELEASE-METADATA.json").read_text(encoding="utf-8"))
         expected = {
             "version": args.version,
             "tag": args.tag,
             "commitSha": args.commit,
+            "license": "Apache-2.0",
         }
         for key, value in expected.items():
             if metadata.get(key) != value:

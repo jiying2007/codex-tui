@@ -125,7 +125,7 @@ Linux/macOS use deterministic tar+gzip metadata:
 
 Windows zip entries use a fixed timestamp and deterministic ordering.
 
-Each archive contains the native binary, README, CHANGELOG, install/upgrade guidance, third-party notices, v1 stable criteria and release metadata. The project license is included when declared.
+Each archive contains the native binary, Apache-2.0 LICENSE, README, CHANGELOG, install/upgrade guidance, third-party notices, v1 stable criteria and release metadata. Packaging fails closed unless Cargo metadata declares `Apache-2.0` and the root `LICENSE` is present; archive smoke revalidates both the license text and release metadata SPDX value.
 
 ## Archive smoke
 
