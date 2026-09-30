@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+from __future__ import annotations
+
 import argparse
 import gzip
 import json
@@ -8,8 +10,9 @@ import shutil
 import subprocess
 import tarfile
 import tempfile
-import tomllib
 import zipfile
+
+from _compat import cargo_package, write_text_lf
 
 
 def host_triple() -> str:
@@ -78,9 +81,8 @@ def main() -> int:
     args = parser.parse_args()
 
     root = pathlib.Path.cwd()
-    with (root / "Cargo.toml").open("rb") as handle:
-        cargo_package = tomllib.load(handle)["package"]
-    license_spdx = cargo_package.get("license")
+    package = cargo_package(root)
+    license_spdx = package.get("license")
     if license_spdx != "Apache-2.0":
         raise SystemExit(
             f"release packaging requires Cargo license Apache-2.0; got {license_spdx!r}"
@@ -130,10 +132,9 @@ def main() -> int:
             "binary": binary_name,
             "license": license_spdx,
         }
-        (stage / "RELEASE-METADATA.json").write_text(
+        write_text_lf(
+            stage / "RELEASE-METADATA.json",
             json.dumps(metadata, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-            newline="\n",
         )
 
         if args.platform == "windows":
