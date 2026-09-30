@@ -2300,8 +2300,9 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     },
                     InputMode::BatchSnooze => {
                         let Some(duration_ms) = parse_snooze_duration(&raw) else {
-                            state.mutation_notice =
-                                Some("invalid batch snooze; use examples such as 15m, 1h, 1d".into());
+                            state.mutation_notice = Some(
+                                "invalid batch snooze; use examples such as 15m, 1h, 1d".into(),
+                            );
                             return vec![];
                         };
                         LocalBatchAction::SnoozeUntil(Some(
