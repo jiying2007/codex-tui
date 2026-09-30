@@ -1764,6 +1764,7 @@ mod tests {
         let mut terminal = Terminal::new(backend).expect("terminal");
         let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
         app.threads[0].workspace = "机器人研发中心".into();
+        app.threads[0].alias = None;
         app.threads[0].title = "唤醒词👨‍👩‍👧‍👦 e\u{301} 测试\n控制\u{0007}字符".into();
 
         terminal.draw(|frame| render(frame, &app)).expect("draw");
