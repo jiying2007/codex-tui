@@ -21,20 +21,41 @@ fn wait_event(handle: &PtyHandle, predicate: impl Fn(&PtyEvent) -> bool) -> PtyE
     }
 }
 
-fn collect_until_exit(handle: &PtyHandle) -> (Vec<u8>, bool, Option<u32>) {
+fn wait_output_contains(handle: &PtyHandle, marker: &str) -> Vec<u8> {
     let deadline = Instant::now() + WAIT;
     let mut output = Vec::new();
     loop {
         if let Some(event) = handle.try_recv() {
             match event {
-                PtyEvent::Output(bytes) => output.extend(bytes),
-                PtyEvent::Exited { success, code } => return (output, success, code),
+                PtyEvent::Output(bytes) => {
+                    output.extend(bytes);
+                    if String::from_utf8_lossy(&output).contains(marker) {
+                        return output;
+                    }
+                }
+                PtyEvent::Exited { success, code } => {
+                    panic!(
+                        "PTY exited before marker {marker:?}: success={success} code={code:?} output={:?}",
+                        String::from_utf8_lossy(&output)
+                    );
+                }
                 PtyEvent::Error(error) => panic!("PTY error: {error}"),
                 PtyEvent::Ready { .. } => {}
             }
         }
-        assert!(Instant::now() < deadline, "timed out waiting for PTY exit");
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for marker {marker:?}; output={:?}",
+            String::from_utf8_lossy(&output)
+        );
         thread::sleep(Duration::from_millis(20));
+    }
+}
+
+fn wait_exit(handle: &PtyHandle) -> (bool, Option<u32>) {
+    match wait_event(handle, |event| matches!(event, PtyEvent::Exited { .. })) {
+        PtyEvent::Exited { success, code } => (success, code),
+        _ => unreachable!(),
     }
 }
 
@@ -60,14 +81,10 @@ fn default_shell_starts_accepts_input_and_exits() {
     handle
         .send(PtyCommand::Input(line("echo CODEX_TUI_PTY_READY")))
         .expect("echo");
-    handle.send(PtyCommand::Input(line("exit"))).expect("exit");
-
-    let (output, _, _) = collect_until_exit(&handle);
-    let text = String::from_utf8_lossy(&output);
-    assert!(
-        text.contains("CODEX_TUI_PTY_READY"),
-        "missing marker in PTY output: {text:?}"
-    );
+    let output = wait_output_contains(&handle, "CODEX_TUI_PTY_READY");
+    assert!(String::from_utf8_lossy(&output).contains("CODEX_TUI_PTY_READY"));
+    handle.send(PtyCommand::Terminate).expect("terminate");
+    let _ = wait_exit(&handle);
 }
 
 #[test]
@@ -86,10 +103,10 @@ fn resize_command_is_accepted_while_shell_is_running() {
     handle
         .send(PtyCommand::Input(line("echo CODEX_TUI_RESIZED")))
         .expect("echo");
-    handle.send(PtyCommand::Input(line("exit"))).expect("exit");
-
-    let (output, _, _) = collect_until_exit(&handle);
+    let output = wait_output_contains(&handle, "CODEX_TUI_RESIZED");
     assert!(String::from_utf8_lossy(&output).contains("CODEX_TUI_RESIZED"));
+    handle.send(PtyCommand::Terminate).expect("terminate");
+    let _ = wait_exit(&handle);
 }
 
 #[test]
@@ -111,7 +128,7 @@ fn explicit_terminate_stops_a_long_running_child_promptly() {
 
     let started = Instant::now();
     handle.send(PtyCommand::Terminate).expect("terminate");
-    let _ = wait_event(&handle, |event| matches!(event, PtyEvent::Exited { .. }));
+    let _ = wait_exit(&handle);
     assert!(
         started.elapsed() < Duration::from_secs(5),
         "explicit terminate took too long"
@@ -139,14 +156,25 @@ fn ctrl_c_is_delivered_to_child_and_shell_remains_usable() {
     handle
         .send(PtyCommand::Input(line("echo CODEX_TUI_AFTER_CTRL_C")))
         .expect("post Ctrl-C echo");
-    handle.send(PtyCommand::Input(line("exit"))).expect("exit");
-
-    let (output, _, _) = collect_until_exit(&handle);
+    let output = wait_output_contains(&handle, "CODEX_TUI_AFTER_CTRL_C");
     let text = String::from_utf8_lossy(&output);
     assert!(
         text.contains("CODEX_TUI_AFTER_CTRL_C"),
         "shell did not remain usable after Ctrl-C: {text:?}"
     );
+    handle.send(PtyCommand::Terminate).expect("terminate");
+    let _ = wait_exit(&handle);
+}
+
+#[test]
+fn closing_input_exercises_eof_without_panicking() {
+    let root = tempdir().expect("tempdir");
+    let handle =
+        PtyHandle::start(root.path(), TerminalSize { rows: 24, cols: 80 }).expect("start PTY");
+    wait_event(&handle, |event| matches!(event, PtyEvent::Ready { .. }));
+
+    handle.send(PtyCommand::CloseInput).expect("close input");
+    let _ = wait_exit(&handle);
 }
 
 #[test]
