@@ -398,7 +398,8 @@ async fn main() -> Result<()> {
             eprintln!("usage: codex-tui doctor compat [--json]");
             std::process::exit(codex_tui::headless::EXIT_USAGE);
         }
-        let code = codex_tui::headless::doctor_compat(flags.iter().any(|arg| arg == "--json")).await?;
+        let code =
+            codex_tui::headless::doctor_compat(flags.iter().any(|arg| arg == "--json")).await?;
         if code != codex_tui::headless::EXIT_OK {
             std::process::exit(code);
         }
