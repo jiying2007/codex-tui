@@ -1663,13 +1663,19 @@ fn open_external_editor(cwd: &str, relative_path: &str) -> Result<()> {
         .map_err(Into::into)
 }
 
+fn is_terminal_release_key(key: KeyEvent) -> bool {
+    matches!(key.code, KeyCode::F(6))
+        || (key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char(']'))
+        || key.code == KeyCode::Char('\u{001d}')
+}
+
 fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
     if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
         return vec![];
     }
 
     if app.terminal_focused {
-        if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char(']') {
+        if is_terminal_release_key(key) {
             return reduce(app, Action::SetTerminalFocus(false));
         }
         if key.modifiers.contains(KeyModifiers::SHIFT) && key.code == KeyCode::PageUp {
@@ -1951,6 +1957,24 @@ mod accessibility_input_tests {
         assert!(effects.is_empty());
         assert!(!app.terminal_focused);
         assert!(app.terminal_drawer_open);
+    }
+
+    #[test]
+    fn terminal_focus_release_accepts_f6_ctrl_bracket_and_raw_group_separator() {
+        for release_key in [
+            KeyEvent::new(KeyCode::F(6), KeyModifiers::NONE),
+            KeyEvent::new(KeyCode::Char(']'), KeyModifiers::CONTROL),
+            KeyEvent::new(KeyCode::Char('\u{001d}'), KeyModifiers::NONE),
+        ] {
+            let mut app = app();
+            app.terminal_drawer_open = true;
+            app.terminal_focused = true;
+
+            let effects = handle_key(&mut app, release_key);
+            assert!(effects.is_empty());
+            assert!(!app.terminal_focused);
+            assert!(app.terminal_drawer_open);
+        }
     }
 
     #[test]
