@@ -45,8 +45,8 @@ fn line(value: &str) -> Vec<u8> {
 #[test]
 fn default_shell_starts_accepts_input_and_exits() {
     let root = tempdir().expect("tempdir");
-    let handle = PtyHandle::start(root.path(), TerminalSize { rows: 24, cols: 80 })
-        .expect("start PTY");
+    let handle =
+        PtyHandle::start(root.path(), TerminalSize { rows: 24, cols: 80 }).expect("start PTY");
 
     let ready = wait_event(&handle, |event| matches!(event, PtyEvent::Ready { .. }));
     match ready {
@@ -60,9 +60,7 @@ fn default_shell_starts_accepts_input_and_exits() {
     handle
         .send(PtyCommand::Input(line("echo CODEX_TUI_PTY_READY")))
         .expect("echo");
-    handle
-        .send(PtyCommand::Input(line("exit")))
-        .expect("exit");
+    handle.send(PtyCommand::Input(line("exit"))).expect("exit");
 
     let (output, _, _) = collect_until_exit(&handle);
     let text = String::from_utf8_lossy(&output);
@@ -75,19 +73,20 @@ fn default_shell_starts_accepts_input_and_exits() {
 #[test]
 fn resize_command_is_accepted_while_shell_is_running() {
     let root = tempdir().expect("tempdir");
-    let handle = PtyHandle::start(root.path(), TerminalSize { rows: 12, cols: 40 })
-        .expect("start PTY");
+    let handle =
+        PtyHandle::start(root.path(), TerminalSize { rows: 12, cols: 40 }).expect("start PTY");
     wait_event(&handle, |event| matches!(event, PtyEvent::Ready { .. }));
 
     handle
-        .send(PtyCommand::Resize(TerminalSize { rows: 30, cols: 120 }))
+        .send(PtyCommand::Resize(TerminalSize {
+            rows: 30,
+            cols: 120,
+        }))
         .expect("resize");
     handle
         .send(PtyCommand::Input(line("echo CODEX_TUI_RESIZED")))
         .expect("echo");
-    handle
-        .send(PtyCommand::Input(line("exit")))
-        .expect("exit");
+    handle.send(PtyCommand::Input(line("exit"))).expect("exit");
 
     let (output, _, _) = collect_until_exit(&handle);
     assert!(String::from_utf8_lossy(&output).contains("CODEX_TUI_RESIZED"));
@@ -96,8 +95,8 @@ fn resize_command_is_accepted_while_shell_is_running() {
 #[test]
 fn explicit_terminate_stops_a_long_running_child_promptly() {
     let root = tempdir().expect("tempdir");
-    let handle = PtyHandle::start(root.path(), TerminalSize { rows: 24, cols: 80 })
-        .expect("start PTY");
+    let handle =
+        PtyHandle::start(root.path(), TerminalSize { rows: 24, cols: 80 }).expect("start PTY");
     wait_event(&handle, |event| matches!(event, PtyEvent::Ready { .. }));
 
     #[cfg(windows)]
@@ -122,8 +121,8 @@ fn explicit_terminate_stops_a_long_running_child_promptly() {
 #[test]
 fn ctrl_c_is_delivered_to_child_and_shell_remains_usable() {
     let root = tempdir().expect("tempdir");
-    let handle = PtyHandle::start(root.path(), TerminalSize { rows: 24, cols: 80 })
-        .expect("start PTY");
+    let handle =
+        PtyHandle::start(root.path(), TerminalSize { rows: 24, cols: 80 }).expect("start PTY");
     wait_event(&handle, |event| matches!(event, PtyEvent::Ready { .. }));
 
     #[cfg(windows)]
@@ -135,16 +134,12 @@ fn ctrl_c_is_delivered_to_child_and_shell_remains_usable() {
         .send(PtyCommand::Input(line(long_command)))
         .expect("long command");
     thread::sleep(Duration::from_millis(200));
-    handle
-        .send(PtyCommand::Input(vec![0x03]))
-        .expect("Ctrl-C");
+    handle.send(PtyCommand::Input(vec![0x03])).expect("Ctrl-C");
     thread::sleep(Duration::from_millis(100));
     handle
         .send(PtyCommand::Input(line("echo CODEX_TUI_AFTER_CTRL_C")))
         .expect("post Ctrl-C echo");
-    handle
-        .send(PtyCommand::Input(line("exit")))
-        .expect("exit");
+    handle.send(PtyCommand::Input(line("exit"))).expect("exit");
 
     let (output, _, _) = collect_until_exit(&handle);
     let text = String::from_utf8_lossy(&output);
@@ -157,8 +152,8 @@ fn ctrl_c_is_delivered_to_child_and_shell_remains_usable() {
 #[test]
 fn dropping_handle_cleans_up_actor_without_hanging() {
     let root = tempdir().expect("tempdir");
-    let handle = PtyHandle::start(root.path(), TerminalSize { rows: 24, cols: 80 })
-        .expect("start PTY");
+    let handle =
+        PtyHandle::start(root.path(), TerminalSize { rows: 24, cols: 80 }).expect("start PTY");
     wait_event(&handle, |event| matches!(event, PtyEvent::Ready { .. }));
 
     #[cfg(windows)]
