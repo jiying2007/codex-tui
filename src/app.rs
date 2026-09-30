@@ -956,6 +956,45 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.recent_operations.insert(0, receipt);
             state.recent_operations.truncate(20);
         }
+        Action::ForgeMutationReceipt(receipt) => {
+            let receipt = *receipt;
+            if state
+                .pending_forge_operation
+                .as_ref()
+                .is_some_and(|plan| plan.operation_id == receipt.operation_id)
+            {
+                state.pending_forge_operation = None;
+                state.pending_forge_payload = None;
+            }
+            state.mutation_notice = Some(format!(
+                "{} · {}",
+                receipt.plan.kind.label(),
+                match receipt.state {
+                    OperationState::Planned => "planned",
+                    OperationState::Executing => "executing",
+                    OperationState::Succeeded => "succeeded",
+                    OperationState::Failed => "failed",
+                    OperationState::OutcomeUnknown => "outcome unknown",
+                }
+            ));
+
+            for observation in state.forge_observations.values_mut() {
+                if observation.identity.as_ref().is_some_and(|identity| {
+                    identity.provider == receipt.plan.provider
+                        && identity.host.eq_ignore_ascii_case(&receipt.plan.host)
+                        && identity.project_id == receipt.plan.project_id
+                }) {
+                    observation.observed_at_unix_ms = 1;
+                    observation.review = None;
+                }
+            }
+
+            state
+                .recent_forge_operations
+                .retain(|item| item.operation_id != receipt.operation_id);
+            state.recent_forge_operations.insert(0, receipt);
+            state.recent_forge_operations.truncate(20);
+        }
         Action::MutationNotice(notice) => {
             state.mutation_notice = Some(notice);
         }
@@ -1046,6 +1085,12 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     Some("local store is degraded; mutation receipts cannot be persisted".into());
                 return vec![];
             }
+            if let Some(plan) = state.pending_forge_operation.take() {
+                let payload = state.pending_forge_payload.take();
+                return vec![Effect::ExecuteForgeOperation(Box::new(
+                    ForgeMutationRequest { plan, payload },
+                ))];
+            }
             let Some(plan) = state.pending_operation.take() else {
                 return vec![];
             };
@@ -1053,6 +1098,8 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         }
         Action::CancelPendingOperation => {
             state.pending_operation = None;
+            state.pending_forge_operation = None;
+            state.pending_forge_payload = None;
             state.mutation_notice = Some("operation cancelled before execution".into());
         }
         Action::GoalObserved(goal) => {
