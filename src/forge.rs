@@ -546,9 +546,8 @@ pub async fn probe_change_request_review(
     change_request_iid: u64,
 ) -> ForgeReviewSummary {
     let encoded_project_id = percent_encode_component(&project_id);
-    let approvals_endpoint = format!(
-        "/projects/{encoded_project_id}/merge_requests/{change_request_iid}/approvals"
-    );
+    let approvals_endpoint =
+        format!("/projects/{encoded_project_id}/merge_requests/{change_request_iid}/approvals");
     let discussions_endpoint = format!(
         "/projects/{encoded_project_id}/merge_requests/{change_request_iid}/discussions?per_page=100"
     );
