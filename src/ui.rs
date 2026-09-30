@@ -347,10 +347,7 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
         .wrap(Wrap { trim: false })
 }
 
-fn forge_context_lines(
-    app: &AppState,
-    thread_id: &crate::domain::ThreadId,
-) -> Vec<Line<'static>> {
+fn forge_context_lines(app: &AppState, thread_id: &crate::domain::ThreadId) -> Vec<Line<'static>> {
     let Some(observation) = app.forge_observation(thread_id) else {
         return vec![Line::from("Forge: not probed")];
     };
@@ -363,7 +360,10 @@ fn forge_context_lines(
         return vec![Line::from(format!(
             "Forge: unavailable · {}",
             truncate(
-                observation.error.as_deref().unwrap_or("identity unresolved"),
+                observation
+                    .error
+                    .as_deref()
+                    .unwrap_or("identity unresolved"),
                 80
             )
         ))];
@@ -837,10 +837,7 @@ fn render_workspace(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
 
     let thread = app.threads.iter().find(|thread| thread.id.0 == thread_id);
     let Some(thread) = thread else {
-        lines.push(Line::from(""));
-    lines.extend(forge_context_lines(app, &thread.id));
-
-    frame.render_widget(
+        frame.render_widget(
             Paragraph::new("Thread no longer exists.")
                 .block(Block::bordered().title(" Workspace ")),
             chunks[0],
@@ -917,9 +914,12 @@ fn render_workspace(frame: &mut Frame<'_>, app: &AppState, thread_id: &str) {
         }
     }
 
+    lines.push(Line::from(""));
+    lines.extend(forge_context_lines(app, &thread.id));
+
     frame.render_widget(
         Paragraph::new(lines)
-            .block(Block::bordered().title(" Workspace · Git read-only "))
+            .block(Block::bordered().title(" Workspace · Git + Forge read-only "))
             .wrap(Wrap { trim: false }),
         chunks[0],
     );
