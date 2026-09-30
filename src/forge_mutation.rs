@@ -1313,10 +1313,7 @@ mod tests {
         }))
         .expect("decode GitLab MR fixture");
 
-        assert_eq!(
-            required_mr_sha(&mr).expect("head sha"),
-            "0123456789abcdef"
-        );
+        assert_eq!(required_mr_sha(&mr).expect("head sha"), "0123456789abcdef");
 
         let missing: GitLabMergeRequest = serde_json::from_value(serde_json::json!({
             "iid": 8,
@@ -1370,10 +1367,8 @@ mod tests {
             .expect("merge plan"),
         ] {
             assert!(plan.preconditions.iter().any(|precondition| {
-                precondition.key == "head-sha-revalidated"
-                    && precondition.expected == "true"
+                precondition.key == "head-sha-revalidated" && precondition.expected == "true"
             }));
         }
     }
-
 }
