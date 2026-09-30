@@ -629,11 +629,8 @@ pub async fn doctor(cwd: String) -> ForgeDoctorSnapshot {
 
     let remote = resolve_git_remote(Path::new(&cwd)).await.ok();
     let (authenticated, server_version) = if let Some(remote) = &remote {
-        let auth = run_command(
-            "glab",
-            &["auth", "status", "--hostname", &remote.host],
-            Some(Path::new(&cwd)),
-        );
+        let auth_args = ["auth", "status", "--hostname", remote.host.as_str()];
+        let auth = run_command("glab", &auth_args, Some(Path::new(&cwd)));
         let version = glab_api_json::<GitLabVersion>(&cwd, &remote.host, "/version");
         let (auth, version) = tokio::join!(auth, version);
         (
