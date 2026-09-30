@@ -40,9 +40,10 @@
   },
   "performance": {
     "fixture": "resident-planning-10k",
-    "p95Ms": 40.0,
-    "p99Ms": 80.0,
+    "p95Ms": 40,
+    "p99Ms": 80,
     "source": "replace-with-retained-runner",
-    "observedAt": "2026-09-30T00:00:00Z"
+    "observedAt": "2026-09-30T00:00:00Z",
+    "iterations": 200
   }
 }
