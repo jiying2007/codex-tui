@@ -42,15 +42,9 @@ pub enum PtyCommand {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum PtyEvent {
-    Ready {
-        cwd: PathBuf,
-        size: TerminalSize,
-    },
+    Ready { cwd: PathBuf, size: TerminalSize },
     Output(Vec<u8>),
-    Exited {
-        success: bool,
-        code: Option<u32>,
-    },
+    Exited { success: bool, code: Option<u32> },
     Error(String),
 }
 
@@ -118,9 +112,13 @@ fn run_actor_inner(
     command_rx: Receiver<PtyCommand>,
     event_tx: &SyncSender<PtyEvent>,
 ) -> Result<()> {
-    let cwd = std::fs::canonicalize(cwd)
-        .with_context(|| format!("resolve PTY cwd {}", cwd.display()))?;
-    anyhow::ensure!(cwd.is_dir(), "PTY cwd is not a directory: {}", cwd.display());
+    let cwd =
+        std::fs::canonicalize(cwd).with_context(|| format!("resolve PTY cwd {}", cwd.display()))?;
+    anyhow::ensure!(
+        cwd.is_dir(),
+        "PTY cwd is not a directory: {}",
+        cwd.display()
+    );
 
     let pty_system = native_pty_system();
     let pair = pty_system
@@ -136,10 +134,7 @@ fn run_actor_inner(
     let mut killer = child.clone_killer();
     drop(pair.slave);
 
-    let mut reader = pair
-        .master
-        .try_clone_reader()
-        .context("clone PTY reader")?;
+    let mut reader = pair.master.try_clone_reader().context("clone PTY reader")?;
     let mut writer = pair.master.take_writer().context("take PTY writer")?;
 
     let output_tx = event_tx.clone();
@@ -159,9 +154,8 @@ fn run_actor_inner(
                         }
                     }
                     Err(error) => {
-                        let _ = output_tx.send(PtyEvent::Error(format!(
-                            "PTY reader failed: {error}"
-                        )));
+                        let _ =
+                            output_tx.send(PtyEvent::Error(format!("PTY reader failed: {error}")));
                         break;
                     }
                 }
@@ -180,9 +174,7 @@ fn run_actor_inner(
                 });
             }
             Err(error) => {
-                let _ = exit_tx.send(PtyEvent::Error(format!(
-                    "PTY child wait failed: {error}"
-                )));
+                let _ = exit_tx.send(PtyEvent::Error(format!("PTY child wait failed: {error}")));
             }
         })
         .context("spawn PTY waiter")?;
@@ -202,9 +194,7 @@ fn run_actor_inner(
             }
             PtyCommand::Resize(size) => {
                 let size = size.validate()?;
-                pair.master
-                    .resize(size.portable())
-                    .context("resize PTY")?;
+                pair.master.resize(size.portable()).context("resize PTY")?;
             }
             PtyCommand::Terminate => {
                 let _ = killer.kill();
@@ -227,7 +217,10 @@ pub struct BoundedScrollback {
 
 impl BoundedScrollback {
     pub fn new(max_bytes: usize) -> Result<Self> {
-        anyhow::ensure!(max_bytes > 0, "scrollback max_bytes must be greater than zero");
+        anyhow::ensure!(
+            max_bytes > 0,
+            "scrollback max_bytes must be greater than zero"
+        );
         Ok(Self {
             chunks: VecDeque::new(),
             bytes: 0,
