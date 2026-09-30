@@ -210,7 +210,9 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState) {
         | InputMode::WorktreeCreateStartPoint
         | InputMode::WorktreeDeleteBranch => Line::from("managed-worktree input active"),
         InputMode::Normal => {
-            if let Some(error) = &app.backend_status.error {
+            if let Some(notice) = &app.mutation_notice {
+                Line::from(format!("notice · {}", truncate_display(notice, 100)))
+            } else if let Some(error) = &app.backend_status.error {
                 Line::from(format!(
                     "{} · offline/degraded · {}",
                     app.backend_status.source,
@@ -232,6 +234,7 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState) {
     let footer = Paragraph::new(vec![
         Line::from(vec![
             Span::raw("j/k move  "),
+            Span::raw("t terminal  "),
             Span::raw("Space attention  "),
             Span::raw("/ search  "),
             Span::raw("p pin  "),
@@ -1756,6 +1759,37 @@ mod tests {
             out.push('\n');
         }
         out
+    }
+
+    #[test]
+    fn registry_footer_exposes_terminal_shortcut() {
+        let snapshot = render_snapshot(100);
+        assert!(
+            snapshot.contains("t terminal"),
+            "Mission Control must expose the Terminal Drawer shortcut"
+        );
+    }
+
+    #[test]
+    fn registry_status_surfaces_terminal_failure_notice() {
+        let backend = TestBackend::new(120, 12);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+        app.mutation_notice =
+            Some("terminal drawer unavailable: selected Codex thread has no cwd".into());
+
+        terminal.draw(|frame| render(frame, &app)).expect("draw");
+        let buffer = terminal.backend().buffer();
+        let mut snapshot = String::new();
+        for y in 0..buffer.area.height {
+            for x in 0..buffer.area.width {
+                snapshot.push_str(buffer[(x, y)].symbol());
+            }
+            snapshot.push('\n');
+        }
+
+        assert!(snapshot.contains("notice"));
+        assert!(snapshot.contains("terminal drawer unavailable"));
     }
 
     #[test]
