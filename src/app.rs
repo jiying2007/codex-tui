@@ -57,7 +57,6 @@ fn operation_state_text(state: OperationState, language: UiLanguage) -> &'static
     }
 }
 
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum View {
     Registry,
@@ -1380,15 +1379,14 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         }
         Action::ConfirmPendingOperation => {
             if state.planning_store_error.is_some() {
-                state.mutation_notice =
-                    Some(
-                        local_text(
-                            state.language,
-                            "local store is degraded; mutation receipts cannot be persisted",
-                            "本地存储已降级；无法持久化变更回执",
-                        )
-                        .into(),
-                    );
+                state.mutation_notice = Some(
+                    local_text(
+                        state.language,
+                        "local store is degraded; mutation receipts cannot be persisted",
+                        "本地存储已降级；无法持久化变更回执",
+                    )
+                    .into(),
+                );
                 return vec![];
             }
             if let Some(plan) = state.pending_local_batch.take() {
@@ -1672,15 +1670,14 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                         state.freeze_visible_batch(LocalBatchAction::SnoozeUntil(None));
                     }
                     _ => {
-                        state.mutation_notice =
-                            Some(
-                                local_text(
-                                    state.language,
-                                    "context action routing mismatch; no operation executed",
-                                    "上下文操作路由不匹配；未执行任何操作",
-                                )
-                                .into(),
-                            );
+                        state.mutation_notice = Some(
+                            local_text(
+                                state.language,
+                                "context action routing mismatch; no operation executed",
+                                "上下文操作路由不匹配；未执行任何操作",
+                            )
+                            .into(),
+                        );
                         return vec![];
                     }
                 }
@@ -1692,27 +1689,25 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     return vec![];
                 };
                 let Some(context) = state.git_context(&thread_id) else {
-                    state.mutation_notice =
-                        Some(
-                            local_text(
-                                state.language,
-                                "Git context unavailable for launch presets",
-                                "启动预设所需的 Git 上下文不可用",
-                            )
-                            .into(),
-                        );
+                    state.mutation_notice = Some(
+                        local_text(
+                            state.language,
+                            "Git context unavailable for launch presets",
+                            "启动预设所需的 Git 上下文不可用",
+                        )
+                        .into(),
+                    );
                     return vec![];
                 };
                 let Some(repo) = context.repo.as_ref() else {
-                    state.mutation_notice =
-                        Some(
-                            local_text(
-                                state.language,
-                                "repository root unavailable for launch presets",
-                                "启动预设所需的仓库根目录不可用",
-                            )
-                            .into(),
-                        );
+                    state.mutation_notice = Some(
+                        local_text(
+                            state.language,
+                            "repository root unavailable for launch presets",
+                            "启动预设所需的仓库根目录不可用",
+                        )
+                        .into(),
+                    );
                     return vec![];
                 };
                 return vec![Effect::LoadLaunchPresets {
@@ -1730,13 +1725,13 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             ) {
                 let Some(target) = state.current_forge_mutation_target() else {
                     state.mutation_notice = Some(
-                    local_text(
-                        state.language,
-                        "forge mutation target is unavailable",
-                        "Forge 变更目标不可用",
-                    )
-                    .into(),
-                );
+                        local_text(
+                            state.language,
+                            "forge mutation target is unavailable",
+                            "Forge 变更目标不可用",
+                        )
+                        .into(),
+                    );
                     return vec![];
                 };
                 state.pending_operation = None;
@@ -1755,15 +1750,14 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     }
                     ContextChoice::ForgeApprove | ContextChoice::ForgeMerge => {
                         let Some(change) = target.change_request else {
-                            state.mutation_notice =
-                                Some(
-                                    local_text(
-                                        state.language,
-                                        "current branch has no open merge request",
-                                        "当前分支没有打开的合并请求",
-                                    )
-                                    .into(),
-                                );
+                            state.mutation_notice = Some(
+                                local_text(
+                                    state.language,
+                                    "current branch has no open merge request",
+                                    "当前分支没有打开的合并请求",
+                                )
+                                .into(),
+                            );
                             return vec![];
                         };
                         let planned_at = now_unix_ms();
@@ -1805,28 +1799,26 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                                 state.mutation_notice = None;
                             }
                             Err(error) => {
-                                state.mutation_notice =
-                                    Some(format!(
-                                        "{}: {error:#}",
-                                        local_text(
-                                            state.language,
-                                            "cannot create forge mutation plan",
-                                            "无法创建 Forge 变更计划",
-                                        )
-                                    ));
+                                state.mutation_notice = Some(format!(
+                                    "{}: {error:#}",
+                                    local_text(
+                                        state.language,
+                                        "cannot create forge mutation plan",
+                                        "无法创建 Forge 变更计划",
+                                    )
+                                ));
                             }
                         }
                     }
                     _ => {
-                        state.mutation_notice =
-                            Some(
-                                local_text(
-                                    state.language,
-                                    "forge action routing mismatch; no mutation executed",
-                                    "Forge 操作路由不匹配；未执行变更",
-                                )
-                                .into(),
-                            );
+                        state.mutation_notice = Some(
+                            local_text(
+                                state.language,
+                                "forge action routing mismatch; no mutation executed",
+                                "Forge 操作路由不匹配；未执行变更",
+                            )
+                            .into(),
+                        );
                         return vec![];
                     }
                 }
@@ -1881,15 +1873,14 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                         ContextChoice::ScratchReady => crate::planning::ScratchState::Ready,
                         ContextChoice::ScratchDone => crate::planning::ScratchState::Done,
                         _ => {
-                            state.mutation_notice =
-                                Some(
-                                    local_text(
-                                        state.language,
-                                        "scratch action routing mismatch; no write executed",
-                                        "Scratch 操作路由不匹配；未执行写入",
-                                    )
-                                    .into(),
-                                );
+                            state.mutation_notice = Some(
+                                local_text(
+                                    state.language,
+                                    "scratch action routing mismatch; no write executed",
+                                    "Scratch 操作路由不匹配；未执行写入",
+                                )
+                                .into(),
+                            );
                             return vec![];
                         }
                     };
@@ -1923,15 +1914,14 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 | ContextChoice::ForgeComment
                 | ContextChoice::ForgeApprove
                 | ContextChoice::ForgeMerge => {
-                    state.mutation_notice =
-                        Some(
-                            local_text(
-                                state.language,
-                                "context action is unavailable in the current state",
-                                "当前状态下此上下文操作不可用",
-                            )
-                            .into(),
-                        );
+                    state.mutation_notice = Some(
+                        local_text(
+                            state.language,
+                            "context action is unavailable in the current state",
+                            "当前状态下此上下文操作不可用",
+                        )
+                        .into(),
+                    );
                 }
             }
         }
@@ -2385,13 +2375,13 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             if state.pending_operation.is_some() {
                 state.pending_operation = None;
                 state.mutation_notice = Some(
-                local_text(
-                    state.language,
-                    "operation cancelled before execution",
-                    "操作已在执行前取消",
-                )
-                .into(),
-            );
+                    local_text(
+                        state.language,
+                        "operation cancelled before execution",
+                        "操作已在执行前取消",
+                    )
+                    .into(),
+                );
                 return vec![];
             }
             if matches!(state.view, View::ManagedWorktrees(_)) {
@@ -2635,25 +2625,24 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 }
                 let Some(target) = state.current_forge_mutation_target() else {
                     state.mutation_notice = Some(
-                    local_text(
-                        state.language,
-                        "forge mutation target is unavailable",
-                        "Forge 变更目标不可用",
-                    )
-                    .into(),
-                );
+                        local_text(
+                            state.language,
+                            "forge mutation target is unavailable",
+                            "Forge 变更目标不可用",
+                        )
+                        .into(),
+                    );
                     return vec![];
                 };
                 let Some(target_branch) = target.identity.default_branch.clone() else {
-                    state.mutation_notice =
-                        Some(
-                            local_text(
-                                state.language,
-                                "GitLab default branch is unavailable; create-MR plan refused",
-                                "GitLab 默认分支不可用；已拒绝创建合并请求计划",
-                            )
-                            .into(),
-                        );
+                    state.mutation_notice = Some(
+                        local_text(
+                            state.language,
+                            "GitLab default branch is unavailable; create-MR plan refused",
+                            "GitLab 默认分支不可用；已拒绝创建合并请求计划",
+                        )
+                        .into(),
+                    );
                     return vec![];
                 };
                 match ForgeMutationPlan::create_merge_request(
@@ -2685,13 +2674,13 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 }
                 let Some(target) = state.current_forge_mutation_target() else {
                     state.mutation_notice = Some(
-                    local_text(
-                        state.language,
-                        "forge mutation target is unavailable",
-                        "Forge 变更目标不可用",
-                    )
-                    .into(),
-                );
+                        local_text(
+                            state.language,
+                            "forge mutation target is unavailable",
+                            "Forge 变更目标不可用",
+                        )
+                        .into(),
+                    );
                     return vec![];
                 };
                 let Some(change) = target.change_request else {
@@ -2744,15 +2733,14 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     return vec![];
                 }
                 if !std::path::Path::new(&path).is_absolute() {
-                    state.mutation_notice =
-                        Some(
-                            local_text(
-                                state.language,
-                                "worktree path must be absolute before a plan can be created",
-                                "创建计划前 worktree 路径必须是绝对路径",
-                            )
-                            .into(),
-                        );
+                    state.mutation_notice = Some(
+                        local_text(
+                            state.language,
+                            "worktree path must be absolute before a plan can be created",
+                            "创建计划前 worktree 路径必须是绝对路径",
+                        )
+                        .into(),
+                    );
                     return vec![];
                 }
                 state.create_worktree_path = Some(path);
@@ -2833,15 +2821,14 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     InputMode::BatchPriority => match parse_priority(&raw) {
                         Ok(priority) => LocalBatchAction::SetPriority(priority),
                         Err(error) => {
-                            state.mutation_notice =
-                                Some(format!(
-                                    "{}: {error:#}",
-                                    local_text(
-                                        state.language,
-                                        "invalid local batch priority",
-                                        "本地批量优先级无效",
-                                    )
-                                ));
+                            state.mutation_notice = Some(format!(
+                                "{}: {error:#}",
+                                local_text(
+                                    state.language,
+                                    "invalid local batch priority",
+                                    "本地批量优先级无效",
+                                )
+                            ));
                             return vec![];
                         }
                     },
@@ -2862,15 +2849,14 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                         ))
                     }
                     _ => {
-                        state.mutation_notice =
-                            Some(
-                                local_text(
-                                    state.language,
-                                    "batch input routing mismatch; no write executed",
-                                    "批量输入路由不匹配；未执行写入",
-                                )
-                                .into(),
-                            );
+                        state.mutation_notice = Some(
+                            local_text(
+                                state.language,
+                                "batch input routing mismatch; no write executed",
+                                "批量输入路由不匹配；未执行写入",
+                            )
+                            .into(),
+                        );
                         return vec![];
                     }
                 };
@@ -3847,10 +3833,7 @@ mod tests {
         }
         let thread_id = app.current_thread_id().expect("thread");
         assert_eq!(
-            app.thread_ui
-                .get(&thread_id.0)
-                .expect("thread ui")
-                .draft,
+            app.thread_ui.get(&thread_id.0).expect("thread ui").draft,
             "继续检查"
         );
     }
