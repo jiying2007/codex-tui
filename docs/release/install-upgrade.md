@@ -10,7 +10,7 @@ Every release bundle contains:
 - `SHA256SUMS`;
 - `RELEASE_NOTES.md`;
 - `release-verification.json`;
-- `release/v1.0-criteria.json`;
+- `STABLE-CRITERIA.json` for the release's current major.minor qualification policy;
 - stable evidence receipt when the channel is stable.
 
 Verify the checksum for the archive you plan to install before extracting it.
@@ -22,7 +22,7 @@ Each platform archive contains:
 - `CHANGELOG.md`;
 - `INSTALL-UPGRADE.md`;
 - `THIRD_PARTY_NOTICES.txt`;
-- `V1-STABLE-CRITERIA.json`;
+- `STABLE-CRITERIA.json`;
 - `RELEASE-METADATA.json`;
 - `LICENSE` with the Apache License 2.0.
 
@@ -54,7 +54,8 @@ Before replacing an existing binary:
 2. retain a backup of the codex-tui local application/state directory if the installation is important;
 3. replace only the binary;
 4. run `codex-tui doctor store` and `codex-tui doctor compat`;
-5. open the normal Registry and one representative repository before deleting the previous binary.
+5. if diagnostics are degraded, capture `codex-tui doctor bundle --output <empty-dir>` before changing state;
+6. open the normal Registry and one representative repository before deleting the previous binary.
 
 Canonical Codex, Git and Forge data remain owned by those systems. codex-tui local state is operator metadata and planning state.
 
