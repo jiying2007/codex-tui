@@ -375,6 +375,17 @@ def main() -> int:
     )
 
     if args.dispatch:
+        remote_main = run(
+            ["git", "ls-remote", "origin", "refs/heads/main"],
+            cwd=root,
+        ).stdout.strip()
+        remote_sha = remote_main.split()[0] if remote_main else ""
+        if remote_sha != commit_sha:
+            raise SystemExit(
+                "refusing stable dispatch because origin/main drifted: "
+                f"local={commit_sha} remote={remote_sha or '<missing>'}"
+            )
+
         command = [
             "gh",
             "workflow",
