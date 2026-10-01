@@ -1,4 +1,5 @@
 use codex_tui::{
+    app::{Action, AppState, reduce},
     backend::{CodexBackend, FakeBackend},
     planning::{
         ReconcileInput, SavedView, SavedViewLayout, WorkCardProjection, apply_saved_view,
@@ -9,6 +10,27 @@ use std::sync::OnceLock;
 
 fn main() {
     divan::main();
+}
+
+fn registry_10k() -> &'static AppState {
+    static APP: OnceLock<AppState> = OnceLock::new();
+    APP.get_or_init(|| {
+        let snapshot = FakeBackend::scaled(10_000).snapshot();
+        let mut app = AppState::new(snapshot.threads);
+        reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 1 });
+        app
+    })
+}
+
+fn registry_search_10k() -> &'static AppState {
+    static APP: OnceLock<AppState> = OnceLock::new();
+    APP.get_or_init(|| {
+        let snapshot = FakeBackend::scaled(10_000).snapshot();
+        let mut app = AppState::new(snapshot.threads);
+        reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 1 });
+        app.filter = "repo-031 synthetic 099".into();
+        app
+    })
 }
 
 fn cards_10k() -> &'static Vec<WorkCardProjection> {
@@ -76,4 +98,14 @@ fn planning_rich_query_10k() {
         visible_fields: vec![],
     };
     divan::black_box(apply_saved_view(cards_10k(), &view));
+}
+
+#[divan::bench]
+fn registry_recent_projection_10k() {
+    divan::black_box(registry_10k().visible_indices_with_match_count());
+}
+
+#[divan::bench]
+fn registry_search_projection_10k() {
+    divan::black_box(registry_search_10k().visible_indices_with_match_count());
 }
