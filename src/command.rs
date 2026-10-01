@@ -51,55 +51,39 @@ pub enum Command {
 
 impl Command {
     pub const fn palette_label(self, simplified_chinese: bool) -> Option<&'static str> {
-        let label = match self {
-            Self::Search => {
-                if simplified_chinese { "搜索" } else { "Search" }
-            }
-            Self::NextAttention => {
-                if simplified_chinese { "下一个待处理" } else { "Next attention" }
-            }
-            Self::QuickPrompt => {
-                if simplified_chinese { "快速消息" } else { "Quick Prompt" }
-            }
-            Self::Board => {
-                if simplified_chinese { "打开看板" } else { "Open Board" }
-            }
-            Self::Review => {
-                if simplified_chinese { "打开评审" } else { "Open Review" }
-            }
-            Self::Workspace => {
-                if simplified_chinese { "打开工作区" } else { "Open Workspace" }
-            }
-            Self::ManagedWorktrees => {
-                if simplified_chinese { "受管 Worktrees" } else { "Managed Worktrees" }
-            }
-            Self::New => {
-                if simplified_chinese { "新建 Scratch" } else { "New Scratch" }
-            }
-            Self::Goal => {
-                if simplified_chinese { "Goal 操作" } else { "Goal actions" }
-            }
-            Self::TogglePin => {
-                if simplified_chinese { "切换固定" } else { "Toggle pin" }
-            }
-            Self::Snooze => {
-                if simplified_chinese { "稍后提醒" } else { "Snooze" }
-            }
-            Self::ContextActions => {
-                if simplified_chinese { "上下文操作" } else { "Context actions" }
-            }
-            Self::TerminalDrawer => {
-                if simplified_chinese { "打开终端抽屉" } else { "Open Terminal Drawer" }
-            }
-            Self::CloseTerminalDrawer => {
-                if simplified_chinese { "关闭终端抽屉" } else { "Close Terminal Drawer" }
-            }
-            Self::Help => {
-                if simplified_chinese { "帮助" } else { "Help" }
-            }
+        Some(match (self, simplified_chinese) {
+            (Self::Search, false) => "Search",
+            (Self::Search, true) => "搜索",
+            (Self::NextAttention, false) => "Next attention",
+            (Self::NextAttention, true) => "下一个待处理",
+            (Self::QuickPrompt, false) => "Quick Prompt",
+            (Self::QuickPrompt, true) => "快速消息",
+            (Self::Board, false) => "Open Board",
+            (Self::Board, true) => "打开看板",
+            (Self::Review, false) => "Open Review",
+            (Self::Review, true) => "打开评审",
+            (Self::Workspace, false) => "Open Workspace",
+            (Self::Workspace, true) => "打开工作区",
+            (Self::ManagedWorktrees, false) => "Managed Worktrees",
+            (Self::ManagedWorktrees, true) => "受管 Worktrees",
+            (Self::New, false) => "New Scratch",
+            (Self::New, true) => "新建 Scratch",
+            (Self::Goal, false) => "Goal actions",
+            (Self::Goal, true) => "Goal 操作",
+            (Self::TogglePin, false) => "Toggle pin",
+            (Self::TogglePin, true) => "切换固定",
+            (Self::Snooze, false) => "Snooze",
+            (Self::Snooze, true) => "稍后提醒",
+            (Self::ContextActions, false) => "Context actions",
+            (Self::ContextActions, true) => "上下文操作",
+            (Self::TerminalDrawer, false) => "Open Terminal Drawer",
+            (Self::TerminalDrawer, true) => "打开终端抽屉",
+            (Self::CloseTerminalDrawer, false) => "Close Terminal Drawer",
+            (Self::CloseTerminalDrawer, true) => "关闭终端抽屉",
+            (Self::Help, false) => "Help",
+            (Self::Help, true) => "帮助",
             _ => return None,
-        };
-        Some(label)
+        })
     }
 
     pub const fn palette_capable(self) -> bool {
