@@ -2511,10 +2511,7 @@ mod tests {
         let hydration = LoadedIdHydration {
             cursor: None,
             ids: BTreeSet::from([first.clone(), second.clone()]),
-            live_overrides: BTreeMap::from([
-                (first.clone(), false),
-                (third.clone(), true),
-            ]),
+            live_overrides: BTreeMap::from([(first.clone(), false), (third.clone(), true)]),
         };
         let mut status = BackendStatus::fake();
 
