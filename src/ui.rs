@@ -1,10 +1,14 @@
 use crate::app::{AppState, ContextChoice, InputMode, View};
 use crate::conversation::{InteractiveRequest, InteractiveRequestKind};
-use crate::domain::{CwdLocality, ThreadSummary, classify_cwd, display_cwd};
+use crate::domain::{
+    AttentionReason, CwdLocality, RuntimeStatus, ThreadSummary, classify_cwd, display_cwd,
+};
 use crate::git::presentation_diff_lines;
+use crate::goal::GoalStatus;
 use crate::i18n::{UiLanguage, pick};
 use crate::planning::{
-    SavedView, SavedViewLayout, WorkflowStage, apply_saved_view, saved_view_group_key,
+    PlanningAttention, SavedView, SavedViewLayout, WorkflowStage, apply_saved_view,
+    saved_view_group_key,
 };
 use crate::pty::TerminalSize;
 use crate::text::{fit_display, sanitize_inline, truncate_display};
@@ -43,6 +47,69 @@ fn tr_language(
     simplified_chinese: &'static str,
 ) -> &'static str {
     pick(language, english, simplified_chinese)
+}
+
+fn runtime_status_label(status: &RuntimeStatus, language: UiLanguage) -> &'static str {
+    match (status, language) {
+        (RuntimeStatus::Working, UiLanguage::SimplifiedChinese) => "运行中",
+        (RuntimeStatus::WaitingHuman, UiLanguage::SimplifiedChinese) => "等待人工",
+        (RuntimeStatus::Ready, UiLanguage::SimplifiedChinese) => "就绪",
+        (RuntimeStatus::SystemError, UiLanguage::SimplifiedChinese) => "错误",
+        (RuntimeStatus::Inactive, UiLanguage::SimplifiedChinese) => "空闲",
+        _ => status.label(),
+    }
+}
+
+fn attention_reason_label(reason: &AttentionReason, language: UiLanguage) -> &'static str {
+    match (reason, language) {
+        (AttentionReason::ApprovalRequired, UiLanguage::SimplifiedChinese) => "审批",
+        (AttentionReason::UserInputRequired, UiLanguage::SimplifiedChinese) => "输入",
+        (AttentionReason::ReadyForReview, UiLanguage::SimplifiedChinese) => "评审",
+        (AttentionReason::SystemError, UiLanguage::SimplifiedChinese) => "错误",
+        (AttentionReason::MarkedUnread, UiLanguage::SimplifiedChinese) => "未读",
+        _ => reason.label(),
+    }
+}
+
+fn planning_attention_label(reason: &PlanningAttention, language: UiLanguage) -> &'static str {
+    match (reason, language) {
+        (PlanningAttention::ApprovalRequired, UiLanguage::SimplifiedChinese) => "审批",
+        (PlanningAttention::UserInputRequired, UiLanguage::SimplifiedChinese) => "输入",
+        (PlanningAttention::SystemError, UiLanguage::SimplifiedChinese) => "错误",
+        (PlanningAttention::MarkedUnread, UiLanguage::SimplifiedChinese) => "未读",
+        (PlanningAttention::ConflictRisk, UiLanguage::SimplifiedChinese) => "冲突",
+        (PlanningAttention::GoalBlocked, UiLanguage::SimplifiedChinese) => "目标受阻",
+        (PlanningAttention::UsageLimited, UiLanguage::SimplifiedChinese) => "用量受限",
+        (PlanningAttention::BudgetLimited, UiLanguage::SimplifiedChinese) => "预算受限",
+        (PlanningAttention::ReviewUnseen, UiLanguage::SimplifiedChinese) => "评审",
+        (PlanningAttention::PipelineFailed, UiLanguage::SimplifiedChinese) => "流水线失败",
+        (PlanningAttention::ChangeRequested, UiLanguage::SimplifiedChinese) => "请求修改",
+        _ => reason.label(),
+    }
+}
+
+fn cwd_locality_label(locality: CwdLocality, language: UiLanguage) -> &'static str {
+    match (locality, language) {
+        (CwdLocality::LocalDirectory, UiLanguage::SimplifiedChinese) => "本机",
+        (CwdLocality::NativeMissing, UiLanguage::SimplifiedChinese) => "失效",
+        (CwdLocality::ForeignWindows, UiLanguage::SimplifiedChinese) => "外部-Windows",
+        (CwdLocality::ForeignUnix, UiLanguage::SimplifiedChinese) => "外部-Unix",
+        (CwdLocality::Relative, UiLanguage::SimplifiedChinese) => "相对路径",
+        (CwdLocality::Empty, UiLanguage::SimplifiedChinese) => "空",
+        _ => locality.label(),
+    }
+}
+
+fn goal_status_label(status: GoalStatus, language: UiLanguage) -> &'static str {
+    match (status, language) {
+        (GoalStatus::Active, UiLanguage::SimplifiedChinese) => "进行中",
+        (GoalStatus::Paused, UiLanguage::SimplifiedChinese) => "已暂停",
+        (GoalStatus::Blocked, UiLanguage::SimplifiedChinese) => "受阻",
+        (GoalStatus::UsageLimited, UiLanguage::SimplifiedChinese) => "用量受限",
+        (GoalStatus::BudgetLimited, UiLanguage::SimplifiedChinese) => "预算受限",
+        (GoalStatus::Complete, UiLanguage::SimplifiedChinese) => "完成",
+        _ => status.label(),
+    }
 }
 
 fn workflow_stage_label(stage: WorkflowStage, language: UiLanguage) -> &'static str {
@@ -452,7 +519,7 @@ fn registry_scope_status(app: &AppState, width: u16) -> String {
         .map(|thread| {
             let locality = classify_cwd(&thread.metadata.cwd);
             (
-                locality.label(),
+                cwd_locality_label(locality, app.language),
                 if locality.terminal_usable() {
                     tr(app, "ready", "就绪")
                 } else {
@@ -661,16 +728,16 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
             let mut reasons = thread
                 .attention
                 .iter()
-                .map(|reason| reason.label())
+                .map(|reason| attention_reason_label(reason, app.language))
                 .collect::<Vec<_>>();
             if pending_interactive {
-                reasons.push("interactive");
+                reasons.push(tr(app, "interactive", "交互"));
             }
             reasons.join(",")
         } else if thread.attention.is_empty() {
             "-".into()
         } else {
-            "ack".into()
+            tr(app, "ack", "已处理").into()
         };
         let collision = if app.worktree_collision_count(&thread.id) > 0 {
             "!"
@@ -685,14 +752,14 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
         };
         let text = match layout_mode(area.width) {
             LayoutMode::Compact => format!(
-                "{prefix}{pin}{collision}{locality} {:7} {} {}",
-                thread.runtime.label(),
+                "{prefix}{pin}{collision}{locality} {} {} {}",
+                fit_display(runtime_status_label(&thread.runtime, app.language), 8),
                 fit_display(&thread.workspace, 12),
                 sanitize_inline(thread.display_title())
             ),
             LayoutMode::Standard | LayoutMode::Wide => format!(
-                "{prefix}{pin}{collision}{locality} {:7} {} {} {}",
-                thread.runtime.label(),
+                "{prefix}{pin}{collision}{locality} {} {} {} {}",
+                fit_display(runtime_status_label(&thread.runtime, app.language), 8),
                 fit_display(&thread.workspace, 18),
                 fit_display(&attention, 10),
                 sanitize_inline(thread.display_title())
@@ -734,7 +801,7 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
                 Line::from(format!("工作区: {}", sanitize_inline(&thread.workspace))),
                 Line::from(format!(
                     "运行状态: {} · 待处理: {attention}",
-                    thread.runtime.label()
+                    runtime_status_label(&thread.runtime, app.language)
                 )),
                 Line::from(format!(
                     "模型: {}",
@@ -742,7 +809,7 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
                 )),
                 Line::from(format!(
                     "Cwd [{}]: {}",
-                    classify_cwd(&thread.metadata.cwd).label(),
+                    cwd_locality_label(classify_cwd(&thread.metadata.cwd), app.language),
                     sanitize_inline(display_cwd(&thread.metadata.cwd))
                 )),
                 Line::from(format!("计划状态: {planning}")),
@@ -754,7 +821,7 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
                 Line::from(format!("Workspace: {}", sanitize_inline(&thread.workspace))),
                 Line::from(format!(
                     "Runtime: {} · attention: {attention}",
-                    thread.runtime.label()
+                    runtime_status_label(&thread.runtime, app.language)
                 )),
                 Line::from(format!(
                     "Model: {}",
@@ -762,7 +829,7 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
                 )),
                 Line::from(format!(
                     "Cwd [{}]: {}",
-                    classify_cwd(&thread.metadata.cwd).label(),
+                    cwd_locality_label(classify_cwd(&thread.metadata.cwd), app.language),
                     sanitize_inline(display_cwd(&thread.metadata.cwd))
                 )),
                 Line::from(format!("Planning: {planning}")),
@@ -790,9 +857,15 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
         let locality = classify_cwd(&thread.metadata.cwd);
         if !locality.terminal_usable() {
             lines.push(Line::from(if app.language.is_simplified_chinese() {
-                format!("Git: 已跳过 · cwd {} 不属于本机", locality.label())
+                format!(
+                    "Git: 已跳过 · cwd {} 不属于本机",
+                    cwd_locality_label(locality, app.language)
+                )
             } else {
-                format!("Git: skipped · cwd {} on this host", locality.label())
+                format!(
+                    "Git: skipped · cwd {} on this host",
+                    cwd_locality_label(locality, app.language)
+                )
             }));
         } else {
             match app.git_context(&thread.id) {
@@ -1027,7 +1100,7 @@ fn goal_summary(app: &AppState, thread_id: &str) -> String {
         return if app.language.is_simplified_chinese() {
             format!(
                 "{} · {} · token={} · {}秒",
-                goal.status.label(),
+                goal_status_label(goal.status, app.language),
                 truncate_display(&goal.objective, 42),
                 budget,
                 goal.time_used_seconds
@@ -1035,7 +1108,7 @@ fn goal_summary(app: &AppState, thread_id: &str) -> String {
         } else {
             format!(
                 "{} · {} · tokens={} · {}s",
-                goal.status.label(),
+                goal_status_label(goal.status, app.language),
                 truncate_display(&goal.objective, 42),
                 budget,
                 goal.time_used_seconds
@@ -1187,7 +1260,7 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area: R
                     format!(
                         "{}\n状态={} · token={}{} · 已用={}秒",
                         goal.objective,
-                        goal.status.label(),
+                        goal_status_label(goal.status, app.language),
                         goal.tokens_used,
                         goal.token_budget
                             .map(|budget| format!("/{budget}"))
@@ -1198,7 +1271,7 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area: R
                     format!(
                         "{}\nstatus={} · tokens={}{} · elapsed={}s",
                         goal.objective,
-                        goal.status.label(),
+                        goal_status_label(goal.status, app.language),
                         goal.tokens_used,
                         goal.token_budget
                             .map(|budget| format!("/{budget}"))
@@ -1307,7 +1380,7 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
                         let goal = card
                             .goal
                             .as_ref()
-                            .map(|goal| format!(" [{}]", goal.status.label()))
+                            .map(|goal| format!(" [{}]", goal_status_label(goal.status, app.language)))
                             .unwrap_or_default();
                         let text = format!(
                             "{}{}{} {}{}",
@@ -1461,7 +1534,7 @@ fn planning_card_line(
     let attention = if card.needs_you() {
         card.attention
             .iter()
-            .map(crate::planning::PlanningAttention::label)
+            .map(|reason| planning_attention_label(reason, language))
             .collect::<Vec<_>>()
             .join(",")
     } else if card.snoozed && !card.attention.is_empty() {
@@ -1481,7 +1554,7 @@ fn planning_card_line(
     let goal = card
         .goal
         .as_ref()
-        .map(|goal| goal.status.label())
+        .map(|goal| goal_status_label(goal.status, language))
         .unwrap_or("-");
     let text = format!(
         "{} {} {} {} {} {}",
