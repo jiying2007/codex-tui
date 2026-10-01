@@ -16,6 +16,7 @@ pub struct BackendStatus {
     pub codex_home: Option<String>,
     pub capabilities: Vec<String>,
     pub optional_capabilities_missing: Vec<String>,
+    pub registry_complete: bool,
     pub last_refresh_unix_ms: Option<u64>,
     pub error: Option<String>,
 }
@@ -30,6 +31,7 @@ impl BackendStatus {
             codex_home: None,
             capabilities: vec![],
             optional_capabilities_missing: vec![],
+            registry_complete: false,
             last_refresh_unix_ms: None,
             error: None,
         }
@@ -48,6 +50,7 @@ impl BackendStatus {
                 "attention-fixtures".into(),
             ],
             optional_capabilities_missing: vec![],
+            registry_complete: true,
             last_refresh_unix_ms: None,
             error: None,
         }
