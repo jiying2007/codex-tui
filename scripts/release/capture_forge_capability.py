@@ -9,6 +9,8 @@ import subprocess
 import tempfile
 from typing import Optional
 
+from _compat import write_text_lf
+
 HEX40 = re.compile(r"^[0-9a-fA-F]{40}$")
 SCHEMA = "codex-tui/forge-capability-fixture/v1"
 
@@ -158,11 +160,7 @@ def main() -> int:
     }
 
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text(
-        json.dumps(fixture, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-        newline="\n",
-    )
+    write_text_lf(output, json.dumps(fixture, indent=2, sort_keys=True) + "\n")
     print(json.dumps(fixture, indent=2, sort_keys=True))
     return 0 if fixture["qualified"] else 3
 
