@@ -26,6 +26,14 @@ pub enum UiLanguage {
 }
 
 impl LanguagePreference {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Auto => "auto",
+            Self::English => "en",
+            Self::SimplifiedChinese => "zh-CN",
+        }
+    }
+
     pub fn resolve(self) -> UiLanguage {
         match self {
             Self::English => UiLanguage::English,
@@ -51,6 +59,13 @@ impl LanguagePreference {
 }
 
 impl UiLanguage {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::English => "en",
+            Self::SimplifiedChinese => "zh-CN",
+        }
+    }
+
     pub const fn is_simplified_chinese(self) -> bool {
         matches!(self, Self::SimplifiedChinese)
     }
