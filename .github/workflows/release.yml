@@ -232,7 +232,8 @@ jobs:
             --failure-matrix qualification/failure-matrix.json \
             --scale qualification/scale-evidence.json \
             --soak qualification/soak-evidence.json \
-            --support-manifest qualification/support-bundle/manifest.json
+            --support-manifest qualification/support-bundle/manifest.json \
+            --support-snapshot qualification/support-bundle/snapshot.json
 
       - name: Validate stable publication notes
         if: inputs.channel == 'stable' && inputs.publish == true
@@ -311,6 +312,7 @@ jobs:
           cp qualification/scale-evidence.json gate/scale-evidence.json
           cp qualification/soak-evidence.json gate/soak-evidence.json
           cp qualification/support-bundle/manifest.json gate/support-bundle-manifest.json
+          cp qualification/support-bundle/snapshot.json gate/support-bundle-snapshot.json
           if [ -f release-evidence.json ]; then
             cp release-evidence.json gate/release-evidence.json
           fi
