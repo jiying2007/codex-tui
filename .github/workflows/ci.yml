@@ -9,6 +9,18 @@ permissions:
   contents: read
 
 jobs:
+  msrv:
+    name: rust-1.88-msrv
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.88.0
+      - uses: Swatinem/rust-cache@v2
+      - name: Check declared Rust 1.88 MSRV
+        run: cargo check --locked --all-targets --all-features
+
   test:
     name: ${{ matrix.os }}
     strategy:
