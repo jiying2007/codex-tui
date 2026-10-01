@@ -30,9 +30,10 @@ use crate::planning::{
 use crate::pty::TerminalSize;
 use crate::store::LocalStateV1;
 use crate::terminal_drawer::TerminalSnapshot;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
 const REGISTRY_RECENT_LIMIT: usize = 100;
+const CONVERSATION_CACHE_LIMIT: usize = 16;
 
 fn local_text(
     language: UiLanguage,
@@ -407,6 +408,7 @@ pub struct AppState {
     pub previous_target: Option<ThreadId>,
     pub thread_ui: BTreeMap<String, ThreadUiState>,
     pub conversations: BTreeMap<String, ConversationState>,
+    conversation_cache_order: VecDeque<String>,
     pub git_contexts: BTreeMap<String, GitContext>,
     cwd_localities: BTreeMap<String, CwdLocality>,
     pub forge_observations: BTreeMap<String, ForgeObservation>,
@@ -494,6 +496,7 @@ impl AppState {
             previous_target: None,
             thread_ui: BTreeMap::new(),
             conversations: BTreeMap::new(),
+            conversation_cache_order: VecDeque::new(),
             git_contexts: BTreeMap::new(),
             cwd_localities: BTreeMap::new(),
             forge_observations: BTreeMap::new(),
@@ -559,6 +562,35 @@ impl AppState {
             input_mode: InputMode::Normal,
             input_buffer: String::new(),
             input_original: String::new(),
+        }
+    }
+
+    fn prepare_conversation(&mut self, thread_id: &ThreadId) {
+        self.conversations
+            .entry(thread_id.0.clone())
+            .or_insert_with(|| ConversationState::loading(thread_id.clone()))
+            .loading = true;
+        self.touch_conversation_cache(thread_id);
+    }
+
+    fn touch_conversation_cache(&mut self, thread_id: &ThreadId) {
+        self.conversation_cache_order
+            .retain(|candidate| candidate != &thread_id.0);
+        self.conversation_cache_order
+            .push_back(thread_id.0.clone());
+
+        while self.conversation_cache_order.len() > CONVERSATION_CACHE_LIMIT {
+            let Some(evicted) = self.conversation_cache_order.pop_front() else {
+                break;
+            };
+            if self
+                .current_thread_id()
+                .is_some_and(|current| current.0 == evicted)
+            {
+                self.conversation_cache_order.push_back(evicted);
+                continue;
+            }
+            self.conversations.remove(&evicted);
         }
     }
 
@@ -1700,11 +1732,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     if state.threads.iter().any(|thread| thread.id == id) {
                         state.previous_target = state.current_thread_id().cloned();
                         state.thread_ui.entry(id.0.clone()).or_default();
-                        state
-                            .conversations
-                            .entry(id.0.clone())
-                            .or_insert_with(|| ConversationState::loading(id.clone()))
-                            .loading = true;
+                        state.prepare_conversation(&id);
                         state.view = View::Thread(id.clone());
                         return vec![Effect::LoadConversation(id)];
                     }
@@ -2390,29 +2418,34 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             }];
         }
         Action::ConversationLoaded(page) => {
-            let key = page.thread_id.0.clone();
+            let thread_id = page.thread_id.clone();
+            let key = thread_id.0.clone();
             state
                 .conversations
                 .entry(key)
-                .or_insert_with(|| ConversationState::loading(page.thread_id.clone()))
+                .or_insert_with(|| ConversationState::loading(thread_id.clone()))
                 .replace_page(page);
+            state.touch_conversation_cache(&thread_id);
         }
         Action::OlderConversationLoaded(page) => {
-            let key = page.thread_id.0.clone();
+            let thread_id = page.thread_id.clone();
+            let key = thread_id.0.clone();
             state
                 .conversations
                 .entry(key)
-                .or_insert_with(|| ConversationState::loading(page.thread_id.clone()))
+                .or_insert_with(|| ConversationState::loading(thread_id.clone()))
                 .prepend_page(page);
+            state.touch_conversation_cache(&thread_id);
         }
         Action::ConversationFailed { thread_id, error } => {
             let conversation = state
                 .conversations
                 .entry(thread_id.0.clone())
-                .or_insert_with(|| ConversationState::loading(thread_id));
+                .or_insert_with(|| ConversationState::loading(thread_id.clone()));
             conversation.loading = false;
             conversation.loading_older = false;
             conversation.error = Some(error);
+            state.touch_conversation_cache(&thread_id);
         }
         Action::PromptSubmitted { thread_id } => {
             if let Some(ui) = state.thread_ui.get_mut(&thread_id.0) {
@@ -2476,11 +2509,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             if let Some(id) = state.selected_thread_id() {
                 state.previous_target = state.current_thread_id().cloned();
                 state.thread_ui.entry(id.0.clone()).or_default();
-                state
-                    .conversations
-                    .entry(id.0.clone())
-                    .or_insert_with(|| ConversationState::loading(id.clone()))
-                    .loading = true;
+                state.prepare_conversation(&id);
                 state.view = View::Thread(id.clone());
                 return vec![Effect::LoadConversation(id)];
             }
@@ -2502,16 +2531,12 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                         return vec![];
                     };
                     state.previous_target = None;
-                    state
-                        .conversations
-                        .entry(id.0.clone())
-                        .or_insert_with(|| ConversationState::loading(id.clone()))
-                        .loading = true;
                     state.view = View::Thread(id.clone());
                     id
                 }
             };
             state.thread_ui.entry(id.0.clone()).or_default();
+            state.prepare_conversation(&id);
             state.input_mode = InputMode::Composer;
             return vec![Effect::LoadConversation(id)];
         }
@@ -5314,6 +5339,51 @@ mod tests {
             assert_eq!(projected.cwd, shared_cwd);
             assert_eq!(projected.branch.as_deref(), Some("main"));
         }
+    }
+
+    #[test]
+    fn conversation_cache_is_lru_bounded_without_evicting_thread_ui() {
+        let mut app = AppState::new(
+            FakeBackend::scaled(CONVERSATION_CACHE_LIMIT + 1)
+                .snapshot()
+                .threads,
+        );
+        let ids = app
+            .threads
+            .iter()
+            .map(|thread| thread.id.clone())
+            .collect::<Vec<_>>();
+
+        for index in 0..CONVERSATION_CACHE_LIMIT {
+            app.view = View::Registry;
+            app.selected = index;
+            assert!(matches!(
+                reduce(&mut app, Action::OpenSelected).as_slice(),
+                [Effect::LoadConversation(_)]
+            ));
+        }
+        assert_eq!(app.conversations.len(), CONVERSATION_CACHE_LIMIT);
+
+        app.view = View::Registry;
+        app.selected = 0;
+        reduce(&mut app, Action::OpenSelected);
+
+        app.view = View::Registry;
+        app.selected = CONVERSATION_CACHE_LIMIT;
+        reduce(&mut app, Action::OpenSelected);
+
+        assert_eq!(app.conversations.len(), CONVERSATION_CACHE_LIMIT);
+        assert!(app.conversations.contains_key(&ids[0].0));
+        assert!(!app.conversations.contains_key(&ids[1].0));
+        assert!(
+            app.conversations
+                .contains_key(&ids[CONVERSATION_CACHE_LIMIT].0)
+        );
+        assert_eq!(
+            app.thread_ui.len(),
+            CONVERSATION_CACHE_LIMIT + 1,
+            "resident conversation eviction must not discard per-thread local UI state"
+        );
     }
 
     #[test]
