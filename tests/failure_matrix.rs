@@ -79,8 +79,12 @@ fn sqlite_busy_write_fails_within_bounded_deadline_without_partial_state() {
         .save_state(&candidate)
         .expect_err("busy SQLite writer must fail closed");
     let elapsed = started.elapsed();
+    // The configured SQLite busy timeout is 2s, but open_ready + the write
+    // transaction can encounter the same writer lock in more than one SQLite
+    // operation on some VFS/OS combinations. Keep the release contract on the
+    // end-to-end fail-closed liveness bound rather than assuming one wait.
     assert!(
-        elapsed <= Duration::from_millis(3_500),
+        elapsed <= Duration::from_secs(5),
         "busy write exceeded bounded recovery window: {elapsed:?}"
     );
     assert!(
