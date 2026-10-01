@@ -1,8 +1,6 @@
 use crate::app::{AppState, ContextChoice, InputMode, View};
 use crate::conversation::{InteractiveRequest, InteractiveRequestKind};
-use crate::domain::{
-    AttentionReason, CwdLocality, RuntimeStatus, ThreadSummary, classify_cwd, display_cwd,
-};
+use crate::domain::{AttentionReason, CwdLocality, RuntimeStatus, ThreadSummary, display_cwd};
 use crate::forge::ForgeFreshness;
 use crate::git::presentation_diff_lines;
 use crate::goal::GoalStatus;
@@ -558,7 +556,7 @@ fn selected_git_status(app: &AppState) -> &'static str {
     let Some(thread) = app.selected_thread() else {
         return tr(app, "none", "无");
     };
-    if !classify_cwd(&thread.metadata.cwd).terminal_usable() {
+    if !app.cwd_locality(&thread.metadata.cwd).terminal_usable() {
         return tr(app, "skipped", "已跳过");
     }
     match app.git_context(&thread.id) {
@@ -574,7 +572,7 @@ fn registry_scope_status(app: &AppState, width: u16) -> String {
     let (locality, terminal) = app
         .selected_thread()
         .map(|thread| {
-            let locality = classify_cwd(&thread.metadata.cwd);
+            let locality = app.cwd_locality(&thread.metadata.cwd);
             (
                 cwd_locality_label(locality, app.language),
                 if locality.terminal_usable() {
@@ -801,7 +799,7 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
         } else {
             " "
         };
-        let locality = match classify_cwd(&thread.metadata.cwd) {
+        let locality = match app.cwd_locality(&thread.metadata.cwd) {
             CwdLocality::LocalDirectory => "L",
             CwdLocality::ForeignWindows | CwdLocality::ForeignUnix => "F",
             CwdLocality::NativeMissing => "!",
@@ -866,7 +864,7 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
                 )),
                 Line::from(format!(
                     "Cwd [{}]: {}",
-                    cwd_locality_label(classify_cwd(&thread.metadata.cwd), app.language),
+                    cwd_locality_label(app.cwd_locality(&thread.metadata.cwd), app.language),
                     sanitize_inline(display_cwd(&thread.metadata.cwd))
                 )),
                 Line::from(format!("计划状态: {planning}")),
@@ -886,7 +884,7 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
                 )),
                 Line::from(format!(
                     "Cwd [{}]: {}",
-                    cwd_locality_label(classify_cwd(&thread.metadata.cwd), app.language),
+                    cwd_locality_label(app.cwd_locality(&thread.metadata.cwd), app.language),
                     sanitize_inline(display_cwd(&thread.metadata.cwd))
                 )),
                 Line::from(format!("Planning: {planning}")),
@@ -911,7 +909,7 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
 
     if let Some(thread) = app.selected_thread() {
         lines.push(Line::from(""));
-        let locality = classify_cwd(&thread.metadata.cwd);
+        let locality = app.cwd_locality(&thread.metadata.cwd);
         if !locality.terminal_usable() {
             lines.push(Line::from(if app.language.is_simplified_chinese() {
                 format!(
