@@ -5009,10 +5009,7 @@ mod tests {
         assert_eq!(app.git_reviews.len(), GIT_REVIEW_CACHE_LIMIT);
         assert!(app.git_reviews.contains_key(&ids[0].0));
         assert!(!app.git_reviews.contains_key(&ids[1].0));
-        assert!(
-            app.git_reviews
-                .contains_key(&ids[GIT_REVIEW_CACHE_LIMIT].0)
-        );
+        assert!(app.git_reviews.contains_key(&ids[GIT_REVIEW_CACHE_LIMIT].0));
     }
 
     #[test]
@@ -5047,10 +5044,7 @@ mod tests {
 
         assert_eq!(app.git_reviews.len(), GIT_REVIEW_CACHE_LIMIT);
         assert!(app.git_reviews.contains_key(&ids[0].0));
-        assert!(
-            app.git_reviews
-                .contains_key(&ids[GIT_REVIEW_CACHE_LIMIT].0)
-        );
+        assert!(app.git_reviews.contains_key(&ids[GIT_REVIEW_CACHE_LIMIT].0));
     }
 
     #[test]
