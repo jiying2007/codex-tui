@@ -1053,11 +1053,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
     Ok(())
 }
 
-fn reconcile_planning_if_dirty(
-    app: &mut AppState,
-    planning_dirty: bool,
-    now_unix_ms: u64,
-) -> bool {
+fn reconcile_planning_if_dirty(app: &mut AppState, planning_dirty: bool, now_unix_ms: u64) -> bool {
     if !planning_dirty {
         return false;
     }
