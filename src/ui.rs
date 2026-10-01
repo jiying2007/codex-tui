@@ -2758,7 +2758,7 @@ const HELP_LINES: &[&str] = &[
     "Registry: j/k · Enter · Space attention · l local-only · g repo-only · h recent/all-history · p pin · e alias · x ack",
     "Thread: a composer · y/n/c approval · i answer · Ctrl+C interrupt · r review",
     "Review: j/k file · w word-diff · e editor · . Forge actions · PageUp/PageDown · Esc",
-    "Workspace: Git + Forge · . actions/launch presets · r review · m worktrees · Esc",
+    "Workspace: . actions/launch presets · r review · m worktrees · Esc",
     "Managed Worktrees: n create · a adopt · d remove · x delete branch · y confirm",
     "Board: h/l stage · j/k item · Space attention · s snooze · = bind · 1–9 hot slot",
     "Board: Tab Saved View · . batch-local/context · Enter open · a Quick Prompt · n Scratch",
