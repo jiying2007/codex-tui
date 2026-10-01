@@ -190,10 +190,12 @@ impl GitHandle {
     }
 
     fn queue_command(&self, command: GitCommand) -> Result<()> {
-        self.command_tx.try_send(command).map_err(|error| match error {
-            mpsc::error::TrySendError::Full(_) => anyhow!("Git actor queue is full"),
-            mpsc::error::TrySendError::Closed(_) => anyhow!("Git actor is not available"),
-        })
+        self.command_tx
+            .try_send(command)
+            .map_err(|error| match error {
+                mpsc::error::TrySendError::Full(_) => anyhow!("Git actor queue is full"),
+                mpsc::error::TrySendError::Closed(_) => anyhow!("Git actor is not available"),
+            })
     }
 
     pub fn try_recv(&mut self) -> Option<GitEvent> {
