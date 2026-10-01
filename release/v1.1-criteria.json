@@ -7,10 +7,11 @@
     "windows"
   ],
   "automatedQualification": {
-    "schema": "codex-tui/automated-qualification/v1",
+    "schema": "codex-tui/automated-qualification/v2",
     "exactSourceSha": true,
     "requiredGates": [
       "failureMatrix",
+      "scaleEvidence",
       "soakStructural",
       "uiContract",
       "stateMigrationRecovery",
@@ -20,6 +21,13 @@
       "rows": 50000,
       "cyclesMin": 256,
       "policy": "structural invariants are release-blocking; hosted-runner RSS, CPU and wall-clock samples are retained diagnostics until a stable distribution justifies thresholds"
+    },
+    "scale": {
+      "schema": "codex-tui/scale-evidence/v4",
+      "rows": 50000,
+      "warmupIterationsMin": 5,
+      "iterationsMin": 50,
+      "policy": "registry construction plus planning/recent/all-history/search/host-local distributions are retained as startup/interaction/scale diagnostics; shape/sample completeness is release-blocking, hosted-runner milliseconds are not"
     }
   },
   "performance": {
@@ -49,6 +57,11 @@
       "evidence": "fault-injection suite passes on exact source SHA"
     },
     {
+      "id": "scale-evidence",
+      "authority": "retained automated qualification",
+      "evidence": "50k scale/v4 captures registry construction plus planning/recent/all-history/search/host-local distributions with >=5 warmups and >=50 samples; no hosted-runner latency threshold"
+    },
+    {
       "id": "soak-structural",
       "authority": "retained automated qualification",
       "evidence": "50k/256-cycle soak structuralPass=true; LRU/reconcile/publication invariants are bounded"
@@ -61,7 +74,7 @@
     {
       "id": "state-migration-recovery",
       "authority": "retained automated qualification",
-      "evidence": "v1.0 state import, SQLite migration, idempotent restart, backup/restore and corrupt-source refusal pass"
+      "evidence": "v1.0 config/operator state import, SQLite migration, idempotent restart, backup/restore, forward refusal and corrupt-live recovery pass"
     },
     {
       "id": "support-bundle-redaction",

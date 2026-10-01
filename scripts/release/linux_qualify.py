@@ -16,7 +16,7 @@ STABLE_VERSION = re.compile(
 )
 TERMINAL_SCHEMA = "codex-tui/terminal-restoration/v1"
 COMPAT_SCHEMA = "codex-tui/compat/v2"
-PERFORMANCE_SCHEMA = "codex-tui/performance/v1"
+PERFORMANCE_SCHEMA = "codex-tui/performance/v2"
 
 
 def run(
@@ -69,6 +69,11 @@ def main() -> int:
     parser.add_argument("--output-dir", default="release/evidence/linux")
     parser.add_argument("--source", default="")
     parser.add_argument("--github-repo", default="")
+    parser.add_argument(
+        "--dispatch",
+        action="store_true",
+        help="dispatch the stable publish=false GitHub workflow after local qualification passes",
+    )
     args = parser.parse_args()
 
     if not sys.platform.startswith("linux"):
@@ -130,6 +135,11 @@ def main() -> int:
         capture=False,
     )
 
+    run(
+        ["cargo", "test", "--locked", "--all-targets", "--all-features"],
+        cwd=root,
+        capture=False,
+    )
     run(["cargo", "build", "--release", "--locked"], cwd=root, capture=False)
     binary = root / "target/release/codex-tui"
     if not binary.is_file():
@@ -152,6 +162,81 @@ def main() -> int:
         raise SystemExit("compat summary schema mismatch")
     if compat_summary.get("readiness") != "ready":
         raise SystemExit("Linux compatibility is not ready")
+
+    scale_path = output_dir / "scale-evidence.json"
+    scale = run(
+        [
+            str(binary),
+            "release",
+            "scale",
+            "--rows",
+            "50000",
+            "--warmup",
+            "5",
+            "--iterations",
+            "50",
+            "--source",
+            args.source.strip() or f"linux:{commit_sha[:12]}",
+            "--json",
+        ],
+        cwd=root,
+    )
+    write_text_lf(scale_path, scale.stdout)
+
+    soak_path = output_dir / "soak-evidence.json"
+    soak = run(
+        [
+            str(binary),
+            "soak",
+            "--rows",
+            "50000",
+            "--cycles",
+            "256",
+            "--json",
+        ],
+        cwd=root,
+    )
+    write_text_lf(soak_path, soak.stdout)
+
+    support_dir = output_dir / "support-bundle"
+    if support_dir.exists():
+        raise SystemExit(
+            f"support bundle destination already exists; remove the previous generated bundle: {support_dir}"
+        )
+    run(
+        [
+            str(binary),
+            "doctor",
+            "bundle",
+            "--output",
+            str(support_dir),
+        ],
+        cwd=root,
+        capture=False,
+    )
+    support_manifest = support_dir / "manifest.json"
+    if not support_manifest.is_file():
+        raise SystemExit("doctor bundle did not produce manifest.json")
+
+    automated_path = output_dir / "automated-qualification.json"
+    run(
+        [
+            sys.executable,
+            "scripts/release/create_automated_qualification.py",
+            "--output",
+            str(automated_path),
+            "--commit",
+            commit_sha,
+            "--scale",
+            str(scale_path),
+            "--soak",
+            str(soak_path),
+            "--support-manifest",
+            str(support_manifest),
+        ],
+        cwd=root,
+        capture=False,
+    )
 
     source = args.source.strip() or f"linux:{commit_sha[:12]}"
     perf_path = output_dir / "performance-linux.json"
@@ -178,10 +263,10 @@ def main() -> int:
         raise SystemExit("performance fixture mismatch")
     if performance.get("iterations", 0) < 200:
         raise SystemExit("performance sample count is below 200")
-    if performance.get("stableSloPass") is not True:
+    if performance.get("sampleQualified") is not True:
         raise SystemExit(
-            f"Linux performance SLO failed: p95={performance.get('p95Ms')} "
-            f"p99={performance.get('p99Ms')}"
+            "Linux performance diagnostic sample is invalid or too small: "
+            f"iterations={performance.get('iterations')}"
         )
 
     terminal_path = pathlib.Path(args.terminal_receipt).resolve()
@@ -212,6 +297,8 @@ def main() -> int:
             commit_sha,
             "--canonical-ci-run",
             str(args.canonical_ci_run),
+            "--automated-qualification",
+            str(automated_path),
             "--linux-compat-sha256",
             compat_summary["reportSha256"],
             "--linux-compat-observed-at",
@@ -261,16 +348,35 @@ def main() -> int:
             + ", ".join(verification.get("blockers", []))
         )
 
+    workflow_inputs = {
+        "channel": "stable",
+        "publish": "false",
+        "canonical_ci_run": str(args.canonical_ci_run),
+        "linux_compat_sha256": compat_summary["reportSha256"],
+        "linux_compat_observed_at": compat_summary["observedAt"],
+        "linux_terminal": terminal["terminal"],
+        "linux_terminal_observed_at": terminal["observedAt"],
+        "performance_iterations": str(performance["iterations"]),
+        "performance_p95_ms": str(performance["p95Ms"]),
+        "performance_p99_ms": str(performance["p99Ms"]),
+        "performance_source": performance["source"],
+        "performance_observed_at": performance["observedAt"],
+    }
+
     summary = {
-        "schema": "codex-tui/linux-qualification/v1",
+        "schema": "codex-tui/linux-qualification/v2",
         "version": version,
         "commitSha": commit_sha,
         "canonicalCiRun": args.canonical_ci_run,
         "compatReport": str(compat_path),
         "compatReportSha256": compat_summary["reportSha256"],
         "terminalReceipt": str(terminal_path),
+        "scaleEvidence": str(scale_path),
+        "soakEvidence": str(soak_path),
+        "supportBundleManifest": str(support_manifest),
+        "automatedQualification": str(automated_path),
         "performanceReport": str(perf_path),
-        "performance": {
+        "performanceDiagnostics": {
             "iterations": performance["iterations"],
             "p95Ms": performance["p95Ms"],
             "p99Ms": performance["p99Ms"],
@@ -278,13 +384,45 @@ def main() -> int:
         "releaseEvidence": str(evidence_path),
         "releaseVerification": str(verify_path),
         "localStableVerify": "pass",
-        "next": "Run GitHub release workflow: stable + publish=false on this exact SHA.",
+        "workflowInputs": workflow_inputs,
+        "next": (
+            "stable publish=false workflow dispatched"
+            if args.dispatch
+            else "use workflowInputs for stable publish=false, or run a fresh qualification with --dispatch"
+        ),
     }
     summary_path = output_dir / "qualification-summary.json"
     write_text_lf(
         summary_path,
         json.dumps(summary, indent=2, sort_keys=True) + "\n",
     )
+
+    if args.dispatch:
+        remote_main = run(
+            ["git", "ls-remote", "origin", "refs/heads/main"],
+            cwd=root,
+        ).stdout.strip()
+        remote_sha = remote_main.split()[0] if remote_main else ""
+        if remote_sha != commit_sha:
+            raise SystemExit(
+                "refusing stable dispatch because origin/main drifted: "
+                f"local={commit_sha} remote={remote_sha or '<missing>'}"
+            )
+
+        command = [
+            "gh",
+            "workflow",
+            "run",
+            "release.yml",
+            "--repo",
+            github_repo,
+            "--ref",
+            "main",
+        ]
+        for key, value in workflow_inputs.items():
+            command.extend(["-f", f"{key}={value}"])
+        run(command, cwd=root, capture=False)
+
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0
 

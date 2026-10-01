@@ -1,6 +1,6 @@
 use crate::{
     compat::COMPAT_SCHEMA,
-    release_benchmark::{PERFORMANCE_FIXTURE, STABLE_MIN_ITERATIONS},
+    release_benchmark::{PERFORMANCE_FIXTURE, RETAINED_MIN_ITERATIONS},
 };
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -10,7 +10,8 @@ use std::path::{Path, PathBuf};
 
 pub const RELEASE_VERIFY_SCHEMA: &str = "codex-tui/release-verification/v1";
 pub const RELEASE_EVIDENCE_SCHEMA: &str = "codex-tui/release-evidence/v3";
-pub const AUTOMATED_QUALIFICATION_SCHEMA: &str = "codex-tui/automated-qualification/v1";
+pub const AUTOMATED_QUALIFICATION_SCHEMA: &str = "codex-tui/automated-qualification/v2";
+pub const STABLE_CRITERIA_SCHEMA: &str = "codex-tui/stable-criteria/v2";
 pub const PRIMARY_STABLE_PLATFORM: &str = "linux";
 pub const SECONDARY_PLATFORMS: [&str; 2] = ["macos", "windows"];
 pub const EXIT_RELEASE_BLOCKED: i32 = 4;
@@ -54,6 +55,7 @@ pub struct PlatformCompatReceipt {
 #[serde(rename_all = "camelCase")]
 pub struct AutomatedQualificationGates {
     pub failure_matrix: String,
+    pub scale_evidence: String,
     pub soak_structural: String,
     pub ui_contract: String,
     pub state_migration_recovery: String,
@@ -63,6 +65,7 @@ pub struct AutomatedQualificationGates {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AutomatedQualificationArtifacts {
+    pub scale_evidence_sha256: String,
     pub soak_evidence_sha256: String,
     pub support_manifest_sha256: String,
 }
@@ -185,11 +188,14 @@ pub fn verify(options: &ReleaseVerifyOptions) -> ReleaseVerification {
     }
 
     let criteria_file = stable_criteria_filename(&version);
-    let stable_criteria_present = options.repo_root.join(&criteria_file).is_file();
+    let criteria_path = options.repo_root.join(&criteria_file);
+    let stable_criteria_present = criteria_path.is_file();
     if !stable_criteria_present {
         blockers.push(format!(
             "{criteria_file} is required for release candidates"
         ));
+    } else if let Err(error) = validate_stable_criteria(&criteria_path, &version) {
+        blockers.push(format!("{criteria_file} is invalid: {error:#}"));
     }
 
     let evidence_status = if options.channel == ReleaseChannel::Stable {
@@ -302,8 +308,8 @@ pub fn validate_evidence(path: &Path, version: &str, commit_sha: &str) -> Result
         "stable performance fixture must be {PERFORMANCE_FIXTURE}"
     );
     anyhow::ensure!(
-        receipt.performance.iterations >= STABLE_MIN_ITERATIONS,
-        "stable performance evidence requires at least {STABLE_MIN_ITERATIONS} iterations"
+        receipt.performance.iterations >= RETAINED_MIN_ITERATIONS,
+        "stable performance evidence requires at least {RETAINED_MIN_ITERATIONS} iterations"
     );
     anyhow::ensure!(
         receipt.performance.p95_ms.is_finite() && receipt.performance.p95_ms >= 0.0,
@@ -343,6 +349,7 @@ fn validate_automated_qualification(
     );
     for (name, status) in [
         ("failure-matrix", receipt.gates.failure_matrix.as_str()),
+        ("scale-evidence", receipt.gates.scale_evidence.as_str()),
         ("soak-structural", receipt.gates.soak_structural.as_str()),
         ("ui-contract", receipt.gates.ui_contract.as_str()),
         (
@@ -359,6 +366,10 @@ fn validate_automated_qualification(
             "automated qualification gate {name} must PASS"
         );
     }
+    anyhow::ensure!(
+        valid_sha256(&receipt.artifacts.scale_evidence_sha256),
+        "scale evidence SHA-256 must be 64 hexadecimal characters"
+    );
     anyhow::ensure!(
         valid_sha256(&receipt.artifacts.soak_evidence_sha256),
         "soak evidence SHA-256 must be 64 hexadecimal characters"
@@ -411,6 +422,25 @@ fn validate_platform_evidence(
     anyhow::ensure!(
         !terminal.observed_at.trim().is_empty(),
         "observation timestamp for {platform} must not be empty"
+    );
+    Ok(())
+}
+
+fn validate_stable_criteria(path: &Path, version: &str) -> Result<()> {
+    let bytes =
+        fs::read(path).with_context(|| format!("read stable criteria {}", path.display()))?;
+    let value: serde_json::Value = serde_json::from_slice(&bytes)
+        .with_context(|| format!("decode stable criteria {}", path.display()))?;
+    anyhow::ensure!(
+        value.get("schema").and_then(serde_json::Value::as_str) == Some(STABLE_CRITERIA_SCHEMA),
+        "criteria schema must be {STABLE_CRITERIA_SCHEMA}"
+    );
+    anyhow::ensure!(
+        value
+            .get("stableVersion")
+            .and_then(serde_json::Value::as_str)
+            == Some(version),
+        "criteria stableVersion must be {version}"
     );
     Ok(())
 }
@@ -557,12 +587,14 @@ mod tests {
             observed_at: "2026-10-01T00:00:00Z".into(),
             gates: AutomatedQualificationGates {
                 failure_matrix: "pass".into(),
+                scale_evidence: "pass".into(),
                 soak_structural: "pass".into(),
                 ui_contract: "pass".into(),
                 state_migration_recovery: "pass".into(),
                 support_bundle_redaction: "pass".into(),
             },
             artifacts: AutomatedQualificationArtifacts {
+                scale_evidence_sha256: "b".repeat(64),
                 soak_evidence_sha256: "c".repeat(64),
                 support_manifest_sha256: "d".repeat(64),
             },
@@ -581,10 +613,44 @@ mod tests {
         fs::write(
             root.path()
                 .join(stable_criteria_filename(env!("CARGO_PKG_VERSION"))),
-            "{}",
+            format!(
+                r#"{{"schema":"{}","stableVersion":"{}"}}"#,
+                STABLE_CRITERIA_SCHEMA,
+                env!("CARGO_PKG_VERSION")
+            ),
         )
         .expect("criteria");
         root
+    }
+
+    #[test]
+    fn release_contract_rejects_mismatched_stable_criteria_version() {
+        let root = repo_with_lock_and_changelog();
+        fs::write(
+            root.path()
+                .join(stable_criteria_filename(env!("CARGO_PKG_VERSION"))),
+            format!(
+                r#"{{"schema":"{}","stableVersion":"9.9.9"}}"#,
+                STABLE_CRITERIA_SCHEMA
+            ),
+        )
+        .expect("criteria");
+
+        let report = verify(&ReleaseVerifyOptions {
+            channel: ReleaseChannel::Preview,
+            tag: format!("v{}-preview.1", env!("CARGO_PKG_VERSION")),
+            commit_sha: sha(),
+            evidence_path: None,
+            publish: false,
+            repo_root: root.path().to_path_buf(),
+        });
+        assert!(!report.valid);
+        assert!(
+            report
+                .blockers
+                .iter()
+                .any(|blocker| blocker.contains("criteria stableVersion"))
+        );
     }
 
     #[test]
@@ -696,7 +762,7 @@ mod tests {
                 performance: PerformanceReceipt {
                     platform: PRIMARY_STABLE_PLATFORM.into(),
                     fixture: PERFORMANCE_FIXTURE.into(),
-                    iterations: STABLE_MIN_ITERATIONS,
+                    iterations: RETAINED_MIN_ITERATIONS,
                     p95_ms: 40.0,
                     p99_ms: 80.0,
                     source: "retained-linux".into(),
@@ -759,7 +825,7 @@ mod tests {
                 performance: PerformanceReceipt {
                     platform: PRIMARY_STABLE_PLATFORM.into(),
                     fixture: PERFORMANCE_FIXTURE.into(),
-                    iterations: STABLE_MIN_ITERATIONS,
+                    iterations: RETAINED_MIN_ITERATIONS,
                     p95_ms: 40.0,
                     p99_ms: 80.0,
                     source: "retained-linux".into(),
@@ -818,7 +884,7 @@ mod tests {
                 performance: PerformanceReceipt {
                     platform: PRIMARY_STABLE_PLATFORM.into(),
                     fixture: PERFORMANCE_FIXTURE.into(),
-                    iterations: STABLE_MIN_ITERATIONS - 1,
+                    iterations: RETAINED_MIN_ITERATIONS - 1,
                     p95_ms: 1.0,
                     p99_ms: 2.0,
                     source: "test".into(),

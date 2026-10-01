@@ -144,6 +144,7 @@ cargo run -- doctor compat
 cargo run -- doctor compat --json
 cargo run -- doctor presets
 cargo run -- doctor terminal
+cargo run -- doctor bundle --output ./codex-tui-support
 cargo run -- headless threads
 cargo run -- headless threads --json
 cargo run -- headless work
@@ -151,6 +152,7 @@ cargo run -- headless work --json
 cargo run -- headless threads --fixture-10k
 cargo run -- release verify --channel preview --tag v1.1.0-preview.1 --commit "$(git rev-parse HEAD)" --json
 cargo run -- release benchmark --iterations 200 --source retained-runner --json
+cargo run -- soak --rows 50000 --cycles 256 --json
 cargo run -- --fake
 ```
 
@@ -182,7 +184,7 @@ M7a establishes a read-only automation and scale baseline. `headless threads` an
 
 M7b3 adds repository-shared `.codex-tui.toml` launch presets as a deliberately narrow argv-only feature. Presets are selected from Workspace/Review context actions, shown as an exact cwd/argv plan, and require explicit confirmation before codex-tui starts the external process. The config has no shell string, env templating, chaining, hooks or scheduler semantics; common shell executables are rejected.
 
-M7d3 adds a fail-closed release path: publication is manually dispatched, while release-pipeline changes on main automatically run a non-publishing preview self-test. Preview and stable identity derive from the Cargo version; Cargo.lock pins candidates; Linux/macOS/Windows build native archives and smoke the extracted binary; runtime dependency licenses/notices and SHA-256 manifests are retained. v1.0.0 was published as the first stable release on 2026-09-30, and main now carries the v1.1.0 development line. Stable releases keep canonical CI and native package/archive smoke on Linux/macOS/Windows, while real retained compatibility, terminal-restoration and performance evidence are required on Linux Tier 1. macOS/Windows remain Tier 2 automated-compatibility targets across the v1 stable line. Linux performance evidence requires at least 200 samples, p95 <= 50 ms and p99 <= 100 ms.
+M7d3 adds a fail-closed release path: publication is manually dispatched, while release-pipeline changes on main automatically run a non-publishing preview self-test. Preview and stable identity derive from the Cargo version; Cargo.lock pins candidates; Linux/macOS/Windows build native archives and smoke the extracted binary; runtime dependency licenses/notices and SHA-256 manifests are retained. v1.0.0 was published as the first stable release on 2026-09-30, and main now carries the v1.1.0 development line. v1.1 preview and stable qualification are bound to the exact source SHA and require the Failure Matrix, 50k scale-v4 evidence, 50k structural soak, UI command contract, state migration/recovery and support-bundle redaction gates. Stable publication additionally requires canonical CI plus real Linux Tier 1 compatibility and controlling-TTY restoration evidence. The retained 10k p95/p99 benchmark uses at least 200 samples as diagnostic evidence; hosted-runner latency thresholds do not block v1.1. macOS/Windows remain Tier 2 automated-compatibility targets across the v1 stable line.
 
 ## Status
 
@@ -242,7 +244,8 @@ See:
 - `docs/implementation/m7d2-compatibility.md`
 - `docs/implementation/m7d3-release.md`
 - `docs/release/install-upgrade.md`
-- `release/v1.0-criteria.json`
+- `release/v1.1-criteria.json` — current v1.1 qualification authority
+- `release/v1.0-criteria.json` — historical v1.0 release record
 - `CHANGELOG.md`
 
 ## License
@@ -288,6 +291,8 @@ python3 scripts/release/linux_qualify.py \
   --canonical-ci-run <exact-main-ci-run-id> \
   --terminal-receipt release/evidence/linux/terminal-linux.json \
   --source "<retained-linux-machine-id>"
+
+# Add --dispatch to trigger stable + publish=false automatically after local PASS.
 ```
 
-The second command verifies a clean exact-main SHA, canonical CI, locked release build, READY `compat/v2`, the 200-sample 10k performance SLO, evidence assembly, and local stable verification. It does **not** publish.
+The second command verifies a clean exact-main SHA, canonical CI, locked tests/build, READY `compat/v2`, the exact-SHA 50k scale-v4 startup/interaction distributions, 50k structural soak, support-bundle privacy manifest, state/UI/failure gates, a 200-sample 10k performance diagnostic, evidence assembly, and local stable verification. It does **not** publish.

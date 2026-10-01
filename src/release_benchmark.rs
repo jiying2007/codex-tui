@@ -12,11 +12,9 @@ use std::{
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
-pub const PERFORMANCE_SCHEMA: &str = "codex-tui/performance/v1";
+pub const PERFORMANCE_SCHEMA: &str = "codex-tui/performance/v2";
 pub const PERFORMANCE_FIXTURE: &str = "resident-planning-10k";
-pub const STABLE_MIN_ITERATIONS: usize = 200;
-pub const STABLE_P95_MS_MAX: f64 = 50.0;
-pub const STABLE_P99_MS_MAX: f64 = 100.0;
+pub const RETAINED_MIN_ITERATIONS: usize = 200;
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -32,7 +30,7 @@ pub struct PerformanceBenchmarkReport {
     pub max_ms: f64,
     pub source: String,
     pub observed_at: String,
-    pub stable_slo_pass: bool,
+    pub sample_qualified: bool,
 }
 
 pub fn run(
@@ -59,9 +57,10 @@ pub fn run(
     let p95_ms = percentile(&samples, 0.95);
     let p99_ms = percentile(&samples, 0.99);
     let max_ms = samples.last().copied().unwrap_or(0.0);
-    let stable_slo_pass = iterations >= STABLE_MIN_ITERATIONS
-        && p95_ms <= STABLE_P95_MS_MAX
-        && p99_ms <= STABLE_P99_MS_MAX;
+    let sample_qualified = iterations >= RETAINED_MIN_ITERATIONS
+        && [p50_ms, p95_ms, p99_ms, max_ms]
+            .into_iter()
+            .all(|value| value.is_finite() && value >= 0.0);
 
     PerformanceBenchmarkReport {
         schema: PERFORMANCE_SCHEMA,
@@ -75,13 +74,13 @@ pub fn run(
         max_ms,
         source,
         observed_at: observed_at(),
-        stable_slo_pass,
+        sample_qualified,
     }
 }
 
 pub fn run_cli(args: &[String]) -> Result<i32> {
     let mut warmup_iterations = 20usize;
-    let mut iterations = STABLE_MIN_ITERATIONS;
+    let mut iterations = RETAINED_MIN_ITERATIONS;
     let mut source = "local-retained-runner".to_string();
     let mut json = false;
 
@@ -137,9 +136,9 @@ pub fn run_cli(args: &[String]) -> Result<i32> {
         println!("max-ms: {:.3}", report.max_ms);
         println!("source: {}", report.source);
         println!("observed-at: {}", report.observed_at);
-        println!("stable-slo-pass: {}", report.stable_slo_pass);
+        println!("sample-qualified: {}", report.sample_qualified);
     }
-    Ok(if report.stable_slo_pass { 0 } else { 5 })
+    Ok(if report.sample_qualified { 0 } else { 5 })
 }
 
 fn cards_10k() -> Vec<WorkCardProjection> {
@@ -212,6 +211,6 @@ mod tests {
         assert!(report.p50_ms >= 0.0);
         assert!(report.p95_ms >= report.p50_ms);
         assert!(report.p99_ms >= report.p95_ms);
-        assert!(!report.stable_slo_pass);
+        assert!(!report.sample_qualified);
     }
 }

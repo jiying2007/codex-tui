@@ -98,6 +98,13 @@ def main() -> int:
     if not notices.is_file():
         raise SystemExit(f"notices do not exist: {notices}")
 
+    version_parts = args.version.split(".")
+    if len(version_parts) != 3 or not all(part.isdigit() for part in version_parts):
+        raise SystemExit(f"release version must be X.Y.Z; got {args.version!r}")
+    criteria = root / "release" / f"v{version_parts[0]}.{version_parts[1]}-criteria.json"
+    if not criteria.is_file():
+        raise SystemExit(f"release criteria file is missing: {criteria}")
+
     triple = host_triple()
     package_name = f"codex-tui-{args.version}-{triple}"
     output_dir = pathlib.Path(args.output_dir)
@@ -115,10 +122,7 @@ def main() -> int:
             stage / "INSTALL-UPGRADE.md",
         )
         copy_file(notices, stage / "THIRD_PARTY_NOTICES.txt")
-        copy_file(
-            root / "release/v1.0-criteria.json",
-            stage / "V1-STABLE-CRITERIA.json",
-        )
+        copy_file(criteria, stage / "STABLE-CRITERIA.json")
 
         copy_file(project_license, stage / "LICENSE")
 

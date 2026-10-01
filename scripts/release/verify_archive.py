@@ -79,7 +79,7 @@ def main() -> int:
             "CHANGELOG.md",
             "INSTALL-UPGRADE.md",
             "THIRD_PARTY_NOTICES.txt",
-            "V1-STABLE-CRITERIA.json",
+            "STABLE-CRITERIA.json",
             "RELEASE-METADATA.json",
         ]
         missing = [name for name in required if not (root / name).is_file()]
@@ -89,6 +89,14 @@ def main() -> int:
         license_text = (root / "LICENSE").read_text(encoding="utf-8")
         if "Apache License" not in license_text or "Version 2.0" not in license_text:
             raise SystemExit("archive LICENSE is not Apache License 2.0")
+
+        criteria = json.loads((root / "STABLE-CRITERIA.json").read_text(encoding="utf-8"))
+        if criteria.get("schema") != "codex-tui/stable-criteria/v2":
+            raise SystemExit("archive stable criteria schema mismatch")
+        if criteria.get("stableVersion") != args.version:
+            raise SystemExit(
+                f"archive stable criteria version mismatch: {criteria.get('stableVersion')!r} != {args.version!r}"
+            )
 
         metadata = json.loads((root / "RELEASE-METADATA.json").read_text(encoding="utf-8"))
         expected = {
