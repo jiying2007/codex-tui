@@ -676,7 +676,7 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
 fn detail_panel(app: &AppState) -> Paragraph<'static> {
     let mut lines = if let Some(thread) = app.selected_thread() {
         let attention = if thread.attention.is_empty() {
-            "none".into()
+            tr(app, "none", "无").into()
         } else {
             thread
                 .attention
@@ -685,67 +685,95 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
                 .collect::<Vec<_>>()
                 .join(", ")
         };
-        let mut lines = vec![
-            Line::from(format!("Thread: {}", thread.id)),
-            Line::from(format!("Workspace: {}", sanitize_inline(&thread.workspace))),
-            Line::from(format!(
-                "Runtime: {} · attention: {attention}",
-                thread.runtime.label()
-            )),
-            Line::from(format!(
-                "Model: {}",
-                thread.metadata.model.as_deref().unwrap_or("unknown")
-            )),
-            Line::from(format!(
-                "Cwd [{}]: {}",
-                classify_cwd(&thread.metadata.cwd).label(),
-                sanitize_inline(display_cwd(&thread.metadata.cwd))
-            )),
-            Line::from(format!(
-                "Planning: {}",
-                app.work_card_for_thread(&thread.id)
-                    .map(|card| card.stage.label())
-                    .unwrap_or("<unprojected>")
-            )),
-            Line::from(format!("Goal: {}", goal_summary(app, &thread.id.0))),
-        ];
+        let planning = app
+            .work_card_for_thread(&thread.id)
+            .map(|card| workflow_stage_label(card.stage, app.language))
+            .unwrap_or_else(|| tr(app, "<unprojected>", "<未投影>"));
+        let mut lines = if app.language.is_simplified_chinese() {
+            vec![
+                Line::from(format!("会话: {}", thread.id)),
+                Line::from(format!("工作区: {}", sanitize_inline(&thread.workspace))),
+                Line::from(format!(
+                    "运行状态: {} · 待处理: {attention}",
+                    thread.runtime.label()
+                )),
+                Line::from(format!(
+                    "模型: {}",
+                    thread.metadata.model.as_deref().unwrap_or("unknown")
+                )),
+                Line::from(format!(
+                    "Cwd [{}]: {}",
+                    classify_cwd(&thread.metadata.cwd).label(),
+                    sanitize_inline(display_cwd(&thread.metadata.cwd))
+                )),
+                Line::from(format!("计划状态: {planning}")),
+                Line::from(format!("Goal: {}", goal_summary(app, &thread.id.0))),
+            ]
+        } else {
+            vec![
+                Line::from(format!("Thread: {}", thread.id)),
+                Line::from(format!("Workspace: {}", sanitize_inline(&thread.workspace))),
+                Line::from(format!(
+                    "Runtime: {} · attention: {attention}",
+                    thread.runtime.label()
+                )),
+                Line::from(format!(
+                    "Model: {}",
+                    thread.metadata.model.as_deref().unwrap_or("unknown")
+                )),
+                Line::from(format!(
+                    "Cwd [{}]: {}",
+                    classify_cwd(&thread.metadata.cwd).label(),
+                    sanitize_inline(display_cwd(&thread.metadata.cwd))
+                )),
+                Line::from(format!("Planning: {planning}")),
+                Line::from(format!("Goal: {}", goal_summary(app, &thread.id.0))),
+            ]
+        };
         if let Some(note) = app
             .work_card_for_thread(&thread.id)
             .and_then(|card| card.overlay.note.as_deref())
             .filter(|note| !note.trim().is_empty())
         {
             lines.push(Line::from(format!(
-                "Note: {}",
+                "{}: {}",
+                tr(app, "Note", "备注"),
                 truncate_display(&sanitize_inline(note), 54)
             )));
         }
         lines
     } else {
-        vec![Line::from("No thread selected")]
+        vec![Line::from(tr(app, "No thread selected", "未选择会话"))]
     };
 
     if let Some(thread) = app.selected_thread() {
         lines.push(Line::from(""));
         let locality = classify_cwd(&thread.metadata.cwd);
         if !locality.terminal_usable() {
-            lines.push(Line::from(format!(
-                "Git: skipped · cwd {} on this host",
-                locality.label()
-            )));
+            lines.push(Line::from(if app.language.is_simplified_chinese() {
+                format!("Git: 已跳过 · cwd {} 不属于本机", locality.label())
+            } else {
+                format!("Git: skipped · cwd {} on this host", locality.label())
+            }));
         } else {
             match app.git_context(&thread.id) {
-                None => lines.push(Line::from("Git: not probed")),
+                None => lines.push(Line::from(tr(app, "Git: not probed", "Git: 未探测"))),
                 Some(context) if context.observed_at_unix_ms == 0 => {
-                    lines.push(Line::from("Git: probing…"));
+                    lines.push(Line::from(tr(app, "Git: probing…", "Git: 探测中…")));
                 }
                 Some(context) if context.error.is_some() => {
                     lines.push(Line::from(format!(
-                        "Git: degraded · {}",
+                        "{} · {}",
+                        tr(app, "Git: degraded", "Git: 已降级"),
                         context.error.as_deref().unwrap_or("unknown error")
                     )));
                 }
                 Some(context) if !context.is_repository => {
-                    lines.push(Line::from("Git: not a repository"));
+                    lines.push(Line::from(tr(
+                        app,
+                        "Git: not a repository",
+                        "Git: 不是仓库",
+                    )));
                 }
                 Some(context) => {
                     let branch = context
@@ -754,13 +782,23 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
                         .or(context.head.as_deref())
                         .unwrap_or("unknown");
                     lines.push(Line::from(format!("Git: {branch}")));
-                    lines.push(Line::from(format!(
-                        "Dirty: {} · files={} · +{} -{}",
-                        context.dirty,
-                        context.changes.len(),
-                        context.ahead,
-                        context.behind
-                    )));
+                    lines.push(Line::from(if app.language.is_simplified_chinese() {
+                        format!(
+                            "脏状态: {} · 文件={} · +{} -{}",
+                            context.dirty,
+                            context.changes.len(),
+                            context.ahead,
+                            context.behind
+                        )
+                    } else {
+                        format!(
+                            "Dirty: {} · files={} · +{} -{}",
+                            context.dirty,
+                            context.changes.len(),
+                            context.ahead,
+                            context.behind
+                        )
+                    }));
                     if let Some(worktree) = &context.worktree {
                         lines.push(Line::from(format!(
                             "Worktree: {}",
@@ -769,15 +807,20 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
                     }
                     if let Some(repo) = &context.repo {
                         lines.push(Line::from(format!(
-                            "Repo: {}",
+                            "{}: {}",
+                            tr(app, "Repo", "仓库"),
                             truncate_display(&repo.primary_root, 42)
                         )));
                     }
                     let collisions = app.worktree_collision_count(&thread.id);
                     if collisions > 0 {
-                        lines.push(Line::from(format!(
-                            "WARNING: shared mutable checkout with {collisions} active thread(s)"
-                        )));
+                        lines.push(Line::from(if app.language.is_simplified_chinese() {
+                            format!("警告: 与 {collisions} 个活跃会话共享可变 checkout")
+                        } else {
+                            format!(
+                                "WARNING: shared mutable checkout with {collisions} active thread(s)"
+                            )
+                        }));
                     }
                 }
             }
@@ -790,7 +833,7 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
     }
 
     Paragraph::new(lines)
-        .block(Block::bordered().title(" Selected "))
+        .block(Block::bordered().title(tr(app, " Selected ", " 已选择 ")))
         .wrap(Wrap { trim: false })
 }
 
@@ -805,23 +848,35 @@ fn forge_review_label(app: &AppState, thread_id: &str) -> String {
 
     let approvals = if review.approvals_available {
         match (review.approvals_required, review.approvals_left) {
-            (Some(required), Some(left)) => {
-                format!(" · approvals {} left/{required}", left)
+            (Some(required), Some(left)) if app.language.is_simplified_chinese() => {
+                format!(" · 批准 剩余 {left}/{required}")
+            }
+            (Some(required), Some(left)) => format!(" · approvals {left} left/{required}"),
+            _ if app.language.is_simplified_chinese() => {
+                format!(" · 批准 {}", review.approved_by_count)
             }
             _ => format!(" · approvals {}", review.approved_by_count),
         }
     } else {
-        " · approvals n/a".into()
+        tr(app, " · approvals n/a", " · 批准 n/a").into()
     };
     let changes_requested = if review.changes_requested_by_count > 0 {
-        format!(" · changes requested {}", review.changes_requested_by_count)
+        if app.language.is_simplified_chinese() {
+            format!(" · 请求修改 {}", review.changes_requested_by_count)
+        } else {
+            format!(" · changes requested {}", review.changes_requested_by_count)
+        }
     } else {
         String::new()
     };
     let discussions = if review.discussions_available {
-        format!(" · unresolved {}", review.unresolved_discussions)
+        if app.language.is_simplified_chinese() {
+            format!(" · 未解决讨论 {}", review.unresolved_discussions)
+        } else {
+            format!(" · unresolved {}", review.unresolved_discussions)
+        }
     } else {
-        " · discussions n/a".into()
+        tr(app, " · discussions n/a", " · 讨论 n/a").into()
     };
     format!(
         " · CR {}{}{}{}",
@@ -836,7 +891,7 @@ fn forge_context_lines(
 ) -> Vec<Line<'static>> {
     let Some(observation) = app.forge_observation(thread_id) else {
         return if diagnostic_hint {
-            vec![Line::from("Forge: not probed")]
+            vec![Line::from(tr(app, "Forge: not probed", "Forge: 未探测"))]
         } else {
             vec![]
         };
@@ -844,7 +899,7 @@ fn forge_context_lines(
 
     if observation.observed_at_unix_ms == 0 {
         return if diagnostic_hint {
-            vec![Line::from("Forge: probing…")]
+            vec![Line::from(tr(app, "Forge: probing…", "Forge: 探测中…"))]
         } else {
             vec![]
         };
@@ -852,9 +907,11 @@ fn forge_context_lines(
 
     let Some(identity) = &observation.identity else {
         return if diagnostic_hint {
-            vec![Line::from(
+            vec![Line::from(tr(
+                app,
                 "Forge: unavailable · run codex-tui doctor forge for details",
-            )]
+                "Forge: 不可用 · 运行 codex-tui doctor forge 查看详情",
+            ))]
         } else {
             vec![]
         };
@@ -878,10 +935,16 @@ fn forge_context_lines(
             lines.push(Line::from(format!(
                 "CR: {} · {}{} · {}",
                 change.iid,
-                if change.draft { "draft · " } else { "" },
+                if change.draft {
+                    tr(app, "draft · ", "草稿 · ")
+                } else {
+                    ""
+                },
                 change.state,
                 truncate_display(&change.title, 58)
             )));
+        } else if app.language.is_simplified_chinese() {
+            lines.push(Line::from(format!("CR: 分支 {branch} 没有合并请求")));
         } else {
             lines.push(Line::from(format!("CR: none for branch {branch}")));
         }
@@ -891,15 +954,24 @@ fn forge_context_lines(
                 pipeline.id, pipeline.status
             )));
         } else {
-            lines.push(Line::from("Pipeline: none for current branch"));
+            lines.push(Line::from(tr(
+                app,
+                "Pipeline: none for current branch",
+                "Pipeline: 当前分支没有流水线",
+            )));
         }
     } else {
-        lines.push(Line::from("CR/Pipeline: current branch unavailable"));
+        lines.push(Line::from(tr(
+            app,
+            "CR/Pipeline: current branch unavailable",
+            "CR/Pipeline: 当前分支不可用",
+        )));
     }
 
     if let Some(notice) = &app.mutation_notice {
         lines.push(Line::from(format!(
-            "Mutation: {}",
+            "{}: {}",
+            tr(app, "Mutation", "变更"),
             truncate_display(notice, 90)
         )));
     }
@@ -913,13 +985,23 @@ fn goal_summary(app: &AppState, thread_id: &str) -> String {
             .token_budget
             .map(|budget| format!("{}/{budget}", goal.tokens_used))
             .unwrap_or_else(|| goal.tokens_used.to_string());
-        return format!(
-            "{} · {} · tokens={} · {}s",
-            goal.status.label(),
-            truncate_display(&goal.objective, 42),
-            budget,
-            goal.time_used_seconds
-        );
+        return if app.language.is_simplified_chinese() {
+            format!(
+                "{} · {} · token={} · {}秒",
+                goal.status.label(),
+                truncate_display(&goal.objective, 42),
+                budget,
+                goal.time_used_seconds
+            )
+        } else {
+            format!(
+                "{} · {} · tokens={} · {}s",
+                goal.status.label(),
+                truncate_display(&goal.objective, 42),
+                budget,
+                goal.time_used_seconds
+            )
+        };
     }
     if app
         .backend_status
@@ -927,12 +1009,17 @@ fn goal_summary(app: &AppState, thread_id: &str) -> String {
         .iter()
         .any(|capability| capability == "thread/goal/get")
     {
-        return "unavailable on this App Server".into();
+        return tr(
+            app,
+            "unavailable on this App Server",
+            "当前 App Server 不支持",
+        )
+        .into();
     }
     if app.goal_checked.contains(thread_id) {
-        return "none".into();
+        return tr(app, "none", "无").into();
     }
-    "probing…".into()
+    tr(app, "probing…", "探测中…").into()
 }
 
 fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area: Rect) {
