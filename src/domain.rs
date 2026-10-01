@@ -303,7 +303,10 @@ mod identity_tests {
         assert_eq!(classify_cwd_without_io(""), Some(CwdLocality::Empty));
 
         if cfg!(windows) {
-            assert_eq!(classify_cwd_without_io("/home/user/repo"), Some(CwdLocality::ForeignUnix));
+            assert_eq!(
+                classify_cwd_without_io("/home/user/repo"),
+                Some(CwdLocality::ForeignUnix)
+            );
             assert_eq!(classify_cwd_without_io(r"C:\repo"), None);
         } else {
             assert_eq!(
