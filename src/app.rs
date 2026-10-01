@@ -1288,8 +1288,14 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 return vec![];
             };
             let Some(context) = state.git_context(&thread_id) else {
-                state.mutation_notice =
-                    Some(local_text(state.language, "Git context is unavailable", "Git 上下文不可用").into());
+                state.mutation_notice = Some(
+                    local_text(
+                        state.language,
+                        "Git context is unavailable",
+                        "Git 上下文不可用",
+                    )
+                    .into(),
+                );
                 return vec![];
             };
             if context.repo.is_none() {
