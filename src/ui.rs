@@ -101,10 +101,7 @@ fn cwd_locality_label(locality: CwdLocality, language: UiLanguage) -> &'static s
     }
 }
 
-fn cwd_locality_display_label(
-    locality: Option<CwdLocality>,
-    language: UiLanguage,
-) -> &'static str {
+fn cwd_locality_display_label(locality: Option<CwdLocality>, language: UiLanguage) -> &'static str {
     locality.map_or_else(
         || tr_language(language, "unprobed", "未探测"),
         |locality| cwd_locality_label(locality, language),
@@ -697,19 +694,19 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
         .filter(|index| app.thread_needs_attention(**index))
         .count();
     let mut lines = Vec::with_capacity(viewport.row_capacity.saturating_add(1));
-    let (local_count, foreign_count, stale_count, unprobed_count) = visible.iter().fold(
-        (0_usize, 0_usize, 0_usize, 0_usize),
-        |mut counts, index| {
-            match app.cwd_locality_for_display(&app.threads[*index].metadata.cwd) {
-                Some(CwdLocality::LocalDirectory) => counts.0 += 1,
-                Some(CwdLocality::ForeignWindows | CwdLocality::ForeignUnix) => counts.1 += 1,
-                Some(CwdLocality::NativeMissing) => counts.2 += 1,
-                Some(CwdLocality::Relative | CwdLocality::Empty) => {}
-                None => counts.3 += 1,
-            }
-            counts
-        },
-    );
+    let (local_count, foreign_count, stale_count, unprobed_count) =
+        visible
+            .iter()
+            .fold((0_usize, 0_usize, 0_usize, 0_usize), |mut counts, index| {
+                match app.cwd_locality_for_display(&app.threads[*index].metadata.cwd) {
+                    Some(CwdLocality::LocalDirectory) => counts.0 += 1,
+                    Some(CwdLocality::ForeignWindows | CwdLocality::ForeignUnix) => counts.1 += 1,
+                    Some(CwdLocality::NativeMissing) => counts.2 += 1,
+                    Some(CwdLocality::Relative | CwdLocality::Empty) => {}
+                    None => counts.3 += 1,
+                }
+                counts
+            });
     let range = if viewport.total == 0 {
         tr(app, "rows 0/0", "行 0/0").to_string()
     } else if app.language.is_simplified_chinese() {
@@ -3065,7 +3062,7 @@ mod tests {
             .expect("cwd")
             .to_string_lossy()
             .into_owned();
-        reduce(&mut app, crate::app::Action::ToggleHostLocalFilter);
+        crate::app::reduce(&mut app, crate::app::Action::ToggleHostLocalFilter);
 
         terminal.draw(|frame| render(frame, &app)).expect("draw");
         let buffer = terminal.backend().buffer();
@@ -3090,7 +3087,7 @@ mod tests {
             .expect("cwd")
             .to_string_lossy()
             .into_owned();
-        reduce(&mut app, crate::app::Action::ToggleRepoBackedFilter);
+        crate::app::reduce(&mut app, crate::app::Action::ToggleRepoBackedFilter);
 
         terminal.draw(|frame| render(frame, &app)).expect("draw");
         let buffer = terminal.backend().buffer();
@@ -3149,7 +3146,7 @@ mod tests {
         let status = registry_scope_status(&app, 160);
         assert!(status.contains("selected cwd: unprobed · terminal unchecked · git not-probed"));
 
-        let effects = reduce(&mut app, crate::app::Action::RefreshGitProjections);
+        let effects = crate::app::reduce(&mut app, crate::app::Action::RefreshGitProjections);
         assert!(!effects.is_empty());
         let status = registry_scope_status(&app, 160);
         assert!(status.contains("selected cwd: local · terminal ready · git probing"));
