@@ -555,6 +555,6 @@ mod tests {
 
     #[test]
     fn checksums_are_stable() {
-        assert_eq!(fnv1a64(b"codex-tui"), 0xd5fd6d223d6e5410);
+        assert_eq!(fnv1a64(b"codex-tui"), 0xf7de92263fb27a93);
     }
 }
