@@ -19,6 +19,8 @@ on:
       - "release/**"
       - "CHANGELOG.md"
       - "docs/release/**"
+      - "docs/team-quickstart.md"
+      - "docs/qualification/provider.md"
       - "docs/implementation/m7d3-release.md"
       - "Cargo.lock"
       - "Cargo.toml"
