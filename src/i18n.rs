@@ -146,19 +146,28 @@ mod tests {
 
     #[test]
     fn serde_contract_uses_stable_config_spellings_and_aliases() {
+        #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+        struct Fixture {
+            language: LanguagePreference,
+        }
+
+        let encoded = toml::to_string(&Fixture {
+            language: LanguagePreference::Auto,
+        })
+        .expect("serialize");
+        assert!(encoded.contains("language = \"auto\""));
+
         assert_eq!(
-            toml::to_string(&LanguagePreference::Auto)
-                .expect("serialize")
-                .trim(),
-            "\"auto\""
+            toml::from_str::<Fixture>("language = \"zh_CN\"").expect("alias"),
+            Fixture {
+                language: LanguagePreference::SimplifiedChinese,
+            }
         );
         assert_eq!(
-            toml::from_str::<LanguagePreference>("\"zh_CN\"").expect("alias"),
-            LanguagePreference::SimplifiedChinese
-        );
-        assert_eq!(
-            toml::from_str::<LanguagePreference>("\"en\"").expect("english"),
-            LanguagePreference::English
+            toml::from_str::<Fixture>("language = \"en\"").expect("english"),
+            Fixture {
+                language: LanguagePreference::English,
+            }
         );
     }
 }
