@@ -336,11 +336,12 @@ struct RegistryViewport {
     start: usize,
     end: usize,
     total: usize,
+    matched: usize,
     row_capacity: usize,
 }
 
 fn registry_viewport(app: &AppState, area_height: u16) -> (Vec<usize>, RegistryViewport) {
-    let visible = app.visible_indices();
+    let (visible, matched) = app.visible_indices_with_match_count();
     let total = visible.len();
     let row_capacity = usize::from(area_height.saturating_sub(3));
     if total == 0 || row_capacity == 0 {
@@ -350,6 +351,7 @@ fn registry_viewport(app: &AppState, area_height: u16) -> (Vec<usize>, RegistryV
                 start: 0,
                 end: 0,
                 total,
+                matched,
                 row_capacity,
             },
         );
@@ -370,6 +372,7 @@ fn registry_viewport(app: &AppState, area_height: u16) -> (Vec<usize>, RegistryV
             start,
             end,
             total,
+            matched,
             row_capacity,
         },
     )
@@ -414,22 +417,18 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
         .filter(|index| app.thread_needs_attention(**index))
         .count();
     let mut lines = Vec::with_capacity(viewport.row_capacity.saturating_add(1));
-    let local_count = visible
-        .iter()
-        .filter(|index| {
-            classify_cwd(&app.threads[**index].metadata.cwd) == CwdLocality::LocalDirectory
-        })
-        .count();
-    let foreign_count = visible
-        .iter()
-        .filter(|index| classify_cwd(&app.threads[**index].metadata.cwd).is_foreign())
-        .count();
-    let stale_count = visible
-        .iter()
-        .filter(|index| {
-            classify_cwd(&app.threads[**index].metadata.cwd) == CwdLocality::NativeMissing
-        })
-        .count();
+    let (local_count, foreign_count, stale_count) =
+        visible
+            .iter()
+            .fold((0_usize, 0_usize, 0_usize), |mut counts, index| {
+                match classify_cwd(&app.threads[*index].metadata.cwd) {
+                    CwdLocality::LocalDirectory => counts.0 += 1,
+                    locality if locality.is_foreign() => counts.1 += 1,
+                    CwdLocality::NativeMissing => counts.2 += 1,
+                    CwdLocality::Relative | CwdLocality::Empty => {}
+                }
+                counts
+            });
     let range = if viewport.total == 0 {
         "rows 0/0".to_string()
     } else {
@@ -458,7 +457,7 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
     } else {
         "RECENT"
     };
-    let matched = app.registry_match_count();
+    let matched = viewport.matched;
     let summary = format!(
         "{scope}{history} {}/{} matched · {} total · {local_count} local · {foreign_count} foreign · {stale_count} stale · {} need attention · {range}{text_filter}",
         visible.len(),
@@ -1971,6 +1970,7 @@ mod tests {
                 start: 93,
                 end: 100,
                 total: 100,
+                matched: 100,
                 row_capacity: 7,
             }
         );
