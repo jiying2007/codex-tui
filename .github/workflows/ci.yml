@@ -119,6 +119,25 @@ jobs:
             --support-manifest "$OUT/support-manifest.json" \
             --support-snapshot "$OUT/support-snapshot.json"
 
+          python - "$OUT/automated-qualification.json" <<'PY'
+          import json
+          import re
+          import sys
+          receipt = json.load(open(sys.argv[1], encoding="utf-8"))
+          assert receipt["schema"] == "codex-tui/automated-qualification/v3"
+          assert receipt["sourceSha"] == "0123456789abcdef0123456789abcdef01234567"
+          assert all(value == "pass" for value in receipt["gates"].values())
+          expected = {
+              "failureMatrixSha256",
+              "scaleEvidenceSha256",
+              "soakEvidenceSha256",
+              "supportManifestSha256",
+              "supportSnapshotSha256",
+          }
+          assert set(receipt["artifacts"]) == expected
+          assert all(re.fullmatch(r"[0-9a-f]{64}", value) for value in receipt["artifacts"].values())
+          PY
+
           python scripts/release/create_evidence.py             --output "$OUT/evidence.json"             --compat-schema codex-tui/compat/v2             --version 1.0.0             --commit 0123456789abcdef0123456789abcdef01234567             --canonical-ci-run 1             --automated-qualification "$OUT/automated-qualification.json"             --linux-compat-sha256 "$(printf 'a%.0s' {1..64})"             --linux-compat-observed-at 2026-09-30T00:00:00Z             --linux-terminal ci-python38             --linux-terminal-observed-at 2026-09-30T00:00:00Z             --performance-iterations 200             --performance-p95-ms 1             --performance-p99-ms 2             --performance-source ci-python38             --performance-observed-at 2026-09-30T00:00:00Z
 
           python scripts/release/extract_changelog.py             --version 1.0.0             --require-released             --output "$OUT/RELEASE_NOTES.md"
