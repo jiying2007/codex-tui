@@ -88,7 +88,7 @@ def main() -> int:
 
     automated_path = pathlib.Path(args.automated_qualification)
     automated = json.loads(automated_path.read_text(encoding="utf-8"))
-    if automated.get("schema") != "codex-tui/automated-qualification/v2":
+    if automated.get("schema") != "codex-tui/automated-qualification/v3":
         raise SystemExit("unexpected automated qualification schema")
     if str(automated.get("sourceSha", "")).lower() != args.commit.lower():
         raise SystemExit("automated qualification source SHA mismatch")
