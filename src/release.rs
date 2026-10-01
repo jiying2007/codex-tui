@@ -187,7 +187,9 @@ pub fn verify(options: &ReleaseVerifyOptions) -> ReleaseVerification {
     let criteria_file = stable_criteria_filename(&version);
     let stable_criteria_present = options.repo_root.join(&criteria_file).is_file();
     if !stable_criteria_present {
-        blockers.push(format!("{criteria_file} is required for release candidates"));
+        blockers.push(format!(
+            "{criteria_file} is required for release candidates"
+        ));
     }
 
     let evidence_status = if options.channel == ReleaseChannel::Stable {
