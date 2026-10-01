@@ -315,7 +315,6 @@ fn try_recv_latest_snapshot(
 #[derive(Debug)]
 struct RegistryHydration {
     cursor: String,
-    loaded_ids: Option<BTreeSet<String>>,
     use_state_db_only: bool,
     optimized_query: bool,
     tombstones: BTreeSet<String>,
@@ -325,16 +324,21 @@ struct RegistryHydration {
 struct RegistryReconcile {
     hydration: RegistryHydration,
     candidate: BTreeMap<String, ThreadSummary>,
-    loaded_supported: bool,
     live_overrides: BTreeSet<String>,
 }
 
 #[derive(Debug)]
 struct RegistryLoad {
     threads: Vec<ThreadSummary>,
-    loaded_supported: bool,
     registry_complete: bool,
     hydration: Option<RegistryHydration>,
+}
+
+#[derive(Debug, Default)]
+struct LoadedIdHydration {
+    cursor: Option<String>,
+    ids: BTreeSet<String>,
+    live_overrides: BTreeMap<String, bool>,
 }
 
 #[derive(Debug)]
@@ -353,13 +357,6 @@ async fn bootstrap_registry(
     let load = load_registry_with_page_limit(rpc, false, max_pages).await?;
     status.capabilities.push("thread/list".into());
     status.capabilities.push("thread/status/changed".into());
-    if load.loaded_supported {
-        status.capabilities.push("thread/loaded/list".into());
-    } else {
-        status
-            .optional_capabilities_missing
-            .push("thread/loaded/list".into());
-    }
     status.connected = true;
     status.registry_complete = load.registry_complete;
     status.last_refresh_unix_ms = Some(now_unix_ms());
@@ -402,8 +399,17 @@ pub async fn start(codex_bin: Option<OsString>) -> Result<StartedRegistry> {
 
 pub async fn probe(codex_bin: Option<OsString>) -> Result<BackendSnapshot> {
     let mut rpc = RpcSession::spawn(codex_bin).await?;
-    let (threads, status, hydration) = bootstrap_registry(&mut rpc, None).await?;
+    let (mut threads, mut status, hydration) = bootstrap_registry(&mut rpc, None).await?;
     debug_assert!(hydration.is_none());
+
+    match load_all_loaded_ids(&mut rpc).await {
+        Ok(loaded_ids) => {
+            apply_loaded_ids(threads.iter_mut(), &loaded_ids);
+            mark_loaded_supported(&mut status);
+        }
+        Err(_) => mark_loaded_unsupported(&mut status),
+    }
+
     Ok(BackendSnapshot {
         generation: 0,
         threads,
@@ -444,9 +450,59 @@ fn reset_eager_goal_queue(
         .collect();
 }
 
+fn mark_loaded_supported(status: &mut BackendStatus) {
+    if !status
+        .capabilities
+        .iter()
+        .any(|value| value == "thread/loaded/list")
+    {
+        status.capabilities.push("thread/loaded/list".into());
+    }
+    status
+        .optional_capabilities_missing
+        .retain(|value| value != "thread/loaded/list");
+}
+
+fn mark_loaded_unsupported(status: &mut BackendStatus) {
+    status
+        .capabilities
+        .retain(|value| value != "thread/loaded/list");
+    if !status
+        .optional_capabilities_missing
+        .iter()
+        .any(|value| value == "thread/loaded/list")
+    {
+        status
+            .optional_capabilities_missing
+            .push("thread/loaded/list".into());
+    }
+}
+
+fn apply_loaded_ids<'a>(
+    threads: impl IntoIterator<Item = &'a mut ThreadSummary>,
+    loaded_ids: &BTreeSet<String>,
+) {
+    for thread in threads {
+        thread.metadata.loaded = Some(loaded_ids.contains(&thread.id.0));
+    }
+}
+
+fn finish_loaded_id_hydration(
+    hydration: LoadedIdHydration,
+    threads: &mut BTreeMap<String, ThreadSummary>,
+    status: &mut BackendStatus,
+) {
+    apply_loaded_ids(threads.values_mut(), &hydration.ids);
+    for (thread_id, loaded) in hydration.live_overrides {
+        if let Some(thread) = threads.get_mut(&thread_id) {
+            thread.metadata.loaded = Some(loaded);
+        }
+    }
+    mark_loaded_supported(status);
+}
+
 fn apply_full_registry_refresh(
     fresh: Vec<ThreadSummary>,
-    loaded_supported: bool,
     threads: &mut BTreeMap<String, ThreadSummary>,
     status: &mut BackendStatus,
 ) {
@@ -455,17 +511,6 @@ fn apply_full_registry_refresh(
     status.registry_complete = true;
     status.error = None;
     status.last_refresh_unix_ms = Some(now_unix_ms());
-    if loaded_supported
-        && !status
-            .capabilities
-            .iter()
-            .any(|value| value == "thread/loaded/list")
-    {
-        status.capabilities.push("thread/loaded/list".into());
-        status
-            .optional_capabilities_missing
-            .retain(|value| value != "thread/loaded/list");
-    }
 }
 
 fn merge_registry_hydration_page(
@@ -505,6 +550,45 @@ fn observe_registry_hydration_message(hydration: &mut RegistryHydration, message
             if let Some(thread_id) = message.pointer("/params/thread/id").and_then(Value::as_str) {
                 hydration.tombstones.remove(thread_id);
             }
+        }
+        _ => {}
+    }
+}
+
+fn observe_loaded_hydration_message(hydration: &mut LoadedIdHydration, message: &Value) {
+    let Some(method) = message.get("method").and_then(Value::as_str) else {
+        return;
+    };
+    let thread_id = if method == "thread/started" {
+        message.pointer("/params/thread/id").and_then(Value::as_str)
+    } else {
+        message.pointer("/params/threadId").and_then(Value::as_str)
+    };
+    let Some(thread_id) = thread_id else {
+        return;
+    };
+
+    match method {
+        "thread/started" => {
+            hydration.live_overrides.insert(thread_id.to_string(), true);
+        }
+        "thread/status/changed" => {
+            let loaded = match message
+                .pointer("/params/status/type")
+                .and_then(Value::as_str)
+            {
+                Some("notLoaded") => Some(false),
+                Some("active" | "idle") => Some(true),
+                _ => None,
+            };
+            if let Some(loaded) = loaded {
+                hydration
+                    .live_overrides
+                    .insert(thread_id.to_string(), loaded);
+            }
+        }
+        "thread/archived" | "thread/deleted" => {
+            hydration.live_overrides.remove(thread_id);
         }
         _ => {}
     }
@@ -555,12 +639,7 @@ fn finish_registry_reconcile(
                 .insert(thread_id.clone(), thread.clone());
         }
     }
-    apply_full_registry_refresh(
-        reconcile.candidate.into_values().collect(),
-        reconcile.loaded_supported,
-        threads,
-        status,
-    );
+    apply_full_registry_refresh(reconcile.candidate.into_values().collect(), threads, status);
 }
 
 async fn run_registry_actor(
@@ -595,6 +674,7 @@ async fn run_registry_actor(
     hydration_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut hydration_pending_publish = false;
     let mut reconcile: Option<RegistryReconcile> = None;
+    let mut loaded_hydration = Some(LoadedIdHydration::default());
 
     let mut goal_probe = tokio::time::interval(GOAL_PROBE_INTERVAL);
     goal_probe.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -602,7 +682,8 @@ async fn run_registry_actor(
 
     loop {
         let registry_page_can_advance =
-            (hydration.is_some() || reconcile.is_some()) && !rpc.has_queued_messages();
+            (hydration.is_some() || reconcile.is_some() || loaded_hydration.is_some())
+                && !rpc.has_queued_messages();
         tokio::select! {
             biased;
             command = command_rx.recv() => {
@@ -838,7 +919,6 @@ async fn run_registry_actor(
                         Some(state.cursor.clone()),
                         state.use_state_db_only,
                         state.optimized_query,
-                        state.loaded_ids.as_ref(),
                     )
                     .await
                     {
@@ -882,7 +962,6 @@ async fn run_registry_actor(
                         Some(state.cursor.clone()),
                         state.use_state_db_only,
                         state.optimized_query,
-                        state.loaded_ids.as_ref(),
                     )
                     .await
                     {
@@ -900,6 +979,7 @@ async fn run_registry_actor(
                             } else {
                                 let finished = reconcile.take().expect("reconcile state");
                                 finish_registry_reconcile(finished, &mut threads, &mut status);
+                                loaded_hydration = Some(LoadedIdHydration::default());
                                 if goal_supported != Some(false) {
                                     reset_eager_goal_queue(
                                         &threads,
@@ -915,6 +995,25 @@ async fn run_registry_actor(
                         Err(error) => {
                             status.error = Some(format!("Registry reconcile failed: {error}"));
                             reconcile = None;
+                            hydration_pending_publish = true;
+                        }
+                    }
+                } else if loaded_hydration.is_some() {
+                    let mut state = loaded_hydration.take().expect("loaded hydration state");
+                    match load_loaded_ids_page(&mut rpc, state.cursor.clone()).await {
+                        Ok((ids, next_cursor)) => {
+                            state.ids.extend(ids);
+                            if let Some(next_cursor) = next_cursor {
+                                state.cursor = Some(next_cursor);
+                                loaded_hydration = Some(state);
+                            } else {
+                                finish_loaded_id_hydration(state, &mut threads, &mut status);
+                                hydration_pending_publish = true;
+                            }
+                            hydration_tick.reset();
+                        }
+                        Err(_) => {
+                            mark_loaded_unsupported(&mut status);
                             hydration_pending_publish = true;
                         }
                     }
@@ -960,15 +1059,12 @@ async fn run_registry_actor(
                     }
                 }
             }
-            _ = refresh.tick(), if hydration.is_none() && reconcile.is_none() => {
+            _ = refresh.tick(), if hydration.is_none() && reconcile.is_none() && loaded_hydration.is_none() => {
                 match load_registry_with_page_limit(&mut rpc, true, Some(1)).await {
                     Ok(load) if load.registry_complete => {
-                        apply_full_registry_refresh(
-                            load.threads,
-                            load.loaded_supported,
-                            &mut threads,
-                            &mut status,
-                        );
+                        apply_full_registry_refresh(load.threads, &mut threads, &mut status);
+                        loaded_hydration = Some(LoadedIdHydration::default());
+                        hydration_tick.reset();
                         if goal_supported != Some(false) {
                             reset_eager_goal_queue(
                                 &threads,
@@ -984,7 +1080,6 @@ async fn run_registry_actor(
                         reconcile = Some(RegistryReconcile {
                             hydration: load.hydration.expect("incomplete Registry load"),
                             candidate: by_id(load.threads),
-                            loaded_supported: load.loaded_supported,
                             live_overrides: BTreeSet::new(),
                         });
                         hydration_tick.reset();
@@ -999,6 +1094,9 @@ async fn run_registry_actor(
             message = rpc.read_message() => {
                 match message {
                     Ok(Some(message)) => {
+                        if let Some(loaded_hydration) = loaded_hydration.as_mut() {
+                            observe_loaded_hydration_message(loaded_hydration, &message);
+                        }
                         if let Some(hydration) = hydration.as_mut() {
                             observe_registry_hydration_message(hydration, &message);
                         }
@@ -1147,7 +1245,6 @@ async fn load_registry_page(
     cursor: Option<String>,
     use_state_db_only: bool,
     mut optimized_query: bool,
-    loaded_ids: Option<&BTreeSet<String>>,
 ) -> Result<RegistryPage> {
     let optimized_params = json!({
         "cursor": cursor,
@@ -1179,7 +1276,7 @@ async fn load_registry_page(
         threads: page
             .data
             .into_iter()
-            .map(|thread| normalize_thread(thread, loaded_ids))
+            .map(|thread| normalize_thread(thread, None))
             .collect(),
         next_cursor: page.next_cursor,
         optimized_query,
@@ -1191,26 +1288,13 @@ async fn load_registry_with_page_limit(
     use_state_db_only: bool,
     max_pages: Option<usize>,
 ) -> Result<RegistryLoad> {
-    let loaded = load_all_loaded_ids(rpc).await;
-    let (loaded_ids, loaded_supported) = match loaded {
-        Ok(ids) => (Some(ids), true),
-        Err(_) => (None, false),
-    };
-
     let mut cursor: Option<String> = None;
     let mut threads = Vec::new();
     let mut optimized_query = true;
     let mut pages = 0_usize;
 
     loop {
-        let page = load_registry_page(
-            rpc,
-            cursor,
-            use_state_db_only,
-            optimized_query,
-            loaded_ids.as_ref(),
-        )
-        .await?;
+        let page = load_registry_page(rpc, cursor, use_state_db_only, optimized_query).await?;
         optimized_query = page.optimized_query;
         threads.extend(page.threads);
         pages = pages.saturating_add(1);
@@ -1218,7 +1302,6 @@ async fn load_registry_with_page_limit(
         let Some(next_cursor) = page.next_cursor else {
             return Ok(RegistryLoad {
                 threads,
-                loaded_supported,
                 registry_complete: true,
                 hydration: None,
             });
@@ -1227,11 +1310,9 @@ async fn load_registry_with_page_limit(
         if max_pages.is_some_and(|limit| pages >= limit) {
             return Ok(RegistryLoad {
                 threads,
-                loaded_supported,
                 registry_complete: false,
                 hydration: Some(RegistryHydration {
                     cursor: next_cursor,
-                    loaded_ids,
                     use_state_db_only,
                     optimized_query,
                     tombstones: BTreeSet::new(),
@@ -1242,22 +1323,30 @@ async fn load_registry_with_page_limit(
     }
 }
 
+async fn load_loaded_ids_page(
+    rpc: &mut RpcSession,
+    cursor: Option<String>,
+) -> Result<(Vec<String>, Option<String>)> {
+    let result = rpc
+        .request(
+            "thread/loaded/list",
+            json!({
+                "cursor": cursor,
+                "limit": PAGE_SIZE
+            }),
+        )
+        .await?;
+    let page = parse_loaded_list(result)?;
+    Ok((page.data, page.next_cursor))
+}
+
 async fn load_all_loaded_ids(rpc: &mut RpcSession) -> Result<BTreeSet<String>> {
     let mut cursor: Option<String> = None;
     let mut loaded = BTreeSet::new();
     loop {
-        let result = rpc
-            .request(
-                "thread/loaded/list",
-                json!({
-                    "cursor": cursor,
-                    "limit": PAGE_SIZE
-                }),
-            )
-            .await?;
-        let page = parse_loaded_list(result)?;
-        loaded.extend(page.data);
-        cursor = page.next_cursor;
+        let (ids, next_cursor) = load_loaded_ids_page(rpc, cursor).await?;
+        loaded.extend(ids);
+        cursor = next_cursor;
         if cursor.is_none() {
             break;
         }
@@ -1635,6 +1724,11 @@ fn apply_registry_notification(
                 return Ok(Some(false));
             };
             apply_status(thread, status);
+            thread.metadata.loaded = match status.get("type").and_then(Value::as_str) {
+                Some("notLoaded") => Some(false),
+                Some("active" | "idle") => Some(true),
+                _ => thread.metadata.loaded,
+            };
             if let Some(updated_at) = emitted_at_seconds {
                 thread.metadata.updated_at = thread.metadata.updated_at.max(updated_at);
             }
@@ -2333,9 +2427,18 @@ mod tests {
                 .contains("bootstrap_registry(&mut rpc, Some(STARTUP_REGISTRY_PAGE_LIMIT)).await?")
         );
         assert!(production.contains("bootstrap_registry(&mut rpc, None).await?"));
+        let bootstrap = production
+            .split("async fn bootstrap_registry")
+            .nth(1)
+            .and_then(|tail| tail.split("pub async fn start").next())
+            .expect("bootstrap body");
+
         assert!(actor.contains("biased;"));
         assert!(command < hydration);
         assert!(actor.contains("hydration_tick.reset();"));
+        assert!(!bootstrap.contains("load_all_loaded_ids"));
+        assert!(actor.contains("loaded_hydration = Some(LoadedIdHydration::default())"));
+        assert!(actor.contains("load_loaded_ids_page(&mut rpc, state.cursor.clone()).await"));
     }
 
     #[test]
@@ -2376,7 +2479,6 @@ mod tests {
     fn hydration_tombstones_follow_archive_and_reappearance_notifications() {
         let mut hydration = RegistryHydration {
             cursor: "next".into(),
-            loaded_ids: None,
             use_state_db_only: false,
             optimized_query: true,
             tombstones: BTreeSet::new(),
@@ -2399,6 +2501,40 @@ mod tests {
     }
 
     #[test]
+    fn loaded_metadata_hydration_overlays_live_status_on_snapshot() {
+        let mut threads = by_id(FakeBackend::scaled(3).snapshot().threads);
+        let ids = threads.keys().cloned().collect::<Vec<_>>();
+        let first = ids[0].clone();
+        let second = ids[1].clone();
+        let third = ids[2].clone();
+
+        let hydration = LoadedIdHydration {
+            cursor: None,
+            ids: BTreeSet::from([first.clone(), second.clone()]),
+            live_overrides: BTreeMap::from([(first.clone(), false), (third.clone(), true)]),
+        };
+        let mut status = BackendStatus::fake();
+
+        finish_loaded_id_hydration(hydration, &mut threads, &mut status);
+
+        assert_eq!(threads[&first].metadata.loaded, Some(false));
+        assert_eq!(threads[&second].metadata.loaded, Some(true));
+        assert_eq!(threads[&third].metadata.loaded, Some(true));
+        assert!(
+            status
+                .capabilities
+                .iter()
+                .any(|capability| capability == "thread/loaded/list")
+        );
+        assert!(
+            !status
+                .optional_capabilities_missing
+                .iter()
+                .any(|capability| capability == "thread/loaded/list")
+        );
+    }
+
+    #[test]
     fn periodic_registry_reconcile_is_pagewise() {
         let source = include_str!("app_server.rs");
         let production = source
@@ -2409,6 +2545,7 @@ mod tests {
             production.contains("load_registry_with_page_limit(&mut rpc, true, Some(1)).await")
         );
         assert!(production.contains("reconcile: Option<RegistryReconcile>"));
+        assert!(production.contains("loaded_hydration.is_none()"));
         assert!(!production.contains("_ = refresh.tick(), if hydration.is_none() =>"));
     }
 
@@ -2435,13 +2572,11 @@ mod tests {
         let reconcile = RegistryReconcile {
             hydration: RegistryHydration {
                 cursor: "done".into(),
-                loaded_ids: None,
                 use_state_db_only: true,
                 optimized_query: true,
                 tombstones: BTreeSet::from(["removed".to_string()]),
             },
             candidate,
-            loaded_supported: true,
             live_overrides: BTreeSet::from(["live".to_string()]),
         };
 
