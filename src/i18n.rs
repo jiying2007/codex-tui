@@ -82,8 +82,13 @@ pub const fn pick<'a>(
     }
 }
 
-fn resolve_auto_locale<'a>(values: impl IntoIterator<Item = &'a str>) -> UiLanguage {
+fn resolve_auto_locale<I, S>(values: I) -> UiLanguage
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
     for value in values {
+        let value = value.as_ref();
         let value = value.trim();
         if value.is_empty() {
             continue;
