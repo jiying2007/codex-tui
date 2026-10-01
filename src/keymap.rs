@@ -1,56 +1,5 @@
-use crate::app::ViewKind;
+use crate::{app::ViewKind, command::Command};
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Command {
-    QuitOrInterrupt,
-    Back,
-    Help,
-    CommandPalette,
-    Search,
-    ToggleHostLocalFilter,
-    ToggleRepoBackedFilter,
-    ToggleAllHistory,
-    ContextActions,
-    Next,
-    Previous,
-    Open,
-    NextAttention,
-    QuickPrompt,
-    Board,
-    BoardLeft,
-    BoardRight,
-    CycleSavedView,
-    Review,
-    Workspace,
-    ManagedWorktrees,
-    CreateWorktree,
-    AdoptWorktree,
-    RemoveWorktree,
-    DeleteBranch,
-    ConfirmOperation,
-    CancelOperation,
-    Snooze,
-    MarkUnread,
-    TogglePin,
-    EditAlias,
-    AcknowledgeAttention,
-    ApprovePending,
-    DeclinePending,
-    CancelPending,
-    AnswerPending,
-    New,
-    Goal,
-    PageUp,
-    PageDown,
-    ToggleWordDiff,
-    ExternalEditor,
-    OpenExternal,
-    TerminalDrawer,
-    CloseTerminalDrawer,
-    HotSlot(u8),
-    BeginHotSlotBind,
-}
 
 pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
     if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
