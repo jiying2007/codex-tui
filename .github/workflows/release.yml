@@ -51,6 +51,11 @@ on:
         type: string
         required: false
         default: "0"
+      linux_source_sha:
+        description: Stable only - exact candidate source SHA for paired real-environment evidence
+        type: string
+        required: false
+        default: ""
       linux_compat_sha256:
         description: Stable only - SHA-256 of retained Linux doctor compat JSON
         type: string
@@ -71,6 +76,11 @@ on:
         type: string
         required: false
         default: ""
+      macos_source_sha:
+        description: Stable optional Tier 2 - exact candidate source SHA for paired real-environment evidence
+        type: string
+        required: false
+        default: ""
       macos_compat_sha256:
         description: Stable optional Tier 2 - SHA-256 of retained macOS doctor compat JSON
         type: string
@@ -88,6 +98,11 @@ on:
         default: ""
       macos_terminal_observed_at:
         description: Stable optional Tier 2 - macOS terminal smoke timestamp
+        type: string
+        required: false
+        default: ""
+      windows_source_sha:
+        description: Stable optional Tier 2 - exact candidate source SHA for paired real-environment evidence
         type: string
         required: false
         default: ""
@@ -263,14 +278,17 @@ jobs:
         env:
           CI_RUN: ${{ inputs.canonical_ci_run }}
           VERSION: ${{ steps.meta.outputs.version }}
+          LINUX_SOURCE_SHA: ${{ inputs.linux_source_sha }}
           LINUX_COMPAT_SHA: ${{ inputs.linux_compat_sha256 }}
           LINUX_COMPAT_AT: ${{ inputs.linux_compat_observed_at }}
           LINUX_TERMINAL: ${{ inputs.linux_terminal }}
           LINUX_TERMINAL_AT: ${{ inputs.linux_terminal_observed_at }}
+          MACOS_SOURCE_SHA: ${{ inputs.macos_source_sha }}
           MACOS_COMPAT_SHA: ${{ inputs.macos_compat_sha256 }}
           MACOS_COMPAT_AT: ${{ inputs.macos_compat_observed_at }}
           MACOS_TERMINAL: ${{ inputs.macos_terminal }}
           MACOS_TERMINAL_AT: ${{ inputs.macos_terminal_observed_at }}
+          WINDOWS_SOURCE_SHA: ${{ inputs.windows_source_sha }}
           WINDOWS_COMPAT_SHA: ${{ inputs.windows_compat_sha256 }}
           WINDOWS_COMPAT_AT: ${{ inputs.windows_compat_observed_at }}
           WINDOWS_TERMINAL: ${{ inputs.windows_terminal }}
@@ -290,7 +308,7 @@ jobs:
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CI_RUN" > canonical-ci.json
           python3 scripts/release/validate_ci_run.py             --run-json canonical-ci.json             --commit "${{ github.sha }}"
 
-          python3 scripts/release/create_evidence.py             --output release-evidence.json             --compat-schema codex-tui/compat/v2             --version "$VERSION"             --commit "${{ github.sha }}"             --canonical-ci-run "$CI_RUN"             --automated-qualification qualification/automated-qualification.json             --linux-compat-sha256 "$LINUX_COMPAT_SHA"             --linux-compat-observed-at "$LINUX_COMPAT_AT"             --linux-terminal "$LINUX_TERMINAL"             --linux-terminal-observed-at "$LINUX_TERMINAL_AT"             --macos-compat-sha256 "$MACOS_COMPAT_SHA"             --macos-compat-observed-at "$MACOS_COMPAT_AT"             --macos-terminal "$MACOS_TERMINAL"             --macos-terminal-observed-at "$MACOS_TERMINAL_AT"             --windows-compat-sha256 "$WINDOWS_COMPAT_SHA"             --windows-compat-observed-at "$WINDOWS_COMPAT_AT"             --windows-terminal "$WINDOWS_TERMINAL"             --windows-terminal-observed-at "$WINDOWS_TERMINAL_AT"             --performance-iterations "$PERF_ITERATIONS"             --performance-p95-ms "$PERF_P95"             --performance-p99-ms "$PERF_P99"             --performance-source "$PERF_SOURCE"             --performance-observed-at "$PERF_AT"
+          python3 scripts/release/create_evidence.py             --output release-evidence.json             --compat-schema codex-tui/compat/v2             --version "$VERSION"             --commit "${{ github.sha }}"             --canonical-ci-run "$CI_RUN"             --automated-qualification qualification/automated-qualification.json             --linux-source-sha "$LINUX_SOURCE_SHA"             --linux-compat-sha256 "$LINUX_COMPAT_SHA"             --linux-compat-observed-at "$LINUX_COMPAT_AT"             --linux-terminal "$LINUX_TERMINAL"             --linux-terminal-observed-at "$LINUX_TERMINAL_AT"             --macos-source-sha "$MACOS_SOURCE_SHA"             --macos-compat-sha256 "$MACOS_COMPAT_SHA"             --macos-compat-observed-at "$MACOS_COMPAT_AT"             --macos-terminal "$MACOS_TERMINAL"             --macos-terminal-observed-at "$MACOS_TERMINAL_AT"             --windows-source-sha "$WINDOWS_SOURCE_SHA"             --windows-compat-sha256 "$WINDOWS_COMPAT_SHA"             --windows-compat-observed-at "$WINDOWS_COMPAT_AT"             --windows-terminal "$WINDOWS_TERMINAL"             --windows-terminal-observed-at "$WINDOWS_TERMINAL_AT"             --performance-iterations "$PERF_ITERATIONS"             --performance-p95-ms "$PERF_P95"             --performance-p99-ms "$PERF_P99"             --performance-source "$PERF_SOURCE"             --performance-observed-at "$PERF_AT"
 
       - name: Verify release contract
         shell: bash
