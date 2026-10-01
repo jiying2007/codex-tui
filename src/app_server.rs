@@ -275,7 +275,6 @@ fn try_recv_latest_snapshot(
     }
 }
 
-
 pub async fn start(codex_bin: Option<OsString>) -> Result<StartedRegistry> {
     let mut rpc = RpcSession::spawn(codex_bin).await?;
     let init = initialize(&mut rpc).await?;
