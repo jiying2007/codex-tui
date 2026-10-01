@@ -494,6 +494,25 @@ struct ForgeMutationTarget {
 impl AppState {
     pub fn new(threads: Vec<ThreadSummary>) -> Self {
         let (thread_index_by_id, thread_indices_by_cwd) = build_thread_indexes(&threads);
+        let local_pins = threads
+            .iter()
+            .filter(|thread| thread.pinned)
+            .map(|thread| thread.id.0.clone())
+            .collect();
+        let local_aliases = threads
+            .iter()
+            .filter_map(|thread| {
+                thread
+                    .alias
+                    .as_ref()
+                    .map(|alias| (thread.id.0.clone(), alias.clone()))
+            })
+            .collect();
+        let local_marked_unread = threads
+            .iter()
+            .filter(|thread| thread.attention.contains(&AttentionReason::MarkedUnread))
+            .map(|thread| thread.id.0.clone())
+            .collect();
         Self {
             threads,
             thread_index_by_id,
@@ -502,9 +521,9 @@ impl AppState {
             view: View::Registry,
             previous_target: None,
             thread_ui: BTreeMap::new(),
-            local_pins: BTreeSet::new(),
-            local_aliases: BTreeMap::new(),
-            local_marked_unread: BTreeSet::new(),
+            local_pins,
+            local_aliases,
+            local_marked_unread,
             conversations: BTreeMap::new(),
             conversation_cache_order: VecDeque::new(),
             git_contexts: BTreeMap::new(),
