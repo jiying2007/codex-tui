@@ -7,7 +7,7 @@
     "windows"
   ],
   "automatedQualification": {
-    "schema": "codex-tui/automated-qualification/v2",
+    "schema": "codex-tui/automated-qualification/v3",
     "exactSourceSha": true,
     "requiredGates": [
       "failureMatrix",
@@ -32,6 +32,11 @@
     "failureMatrix": {
       "schema": "codex-tui/failure-matrix/v2",
       "evidencePolicy": "every case names executable retained tests; release qualification verifies those identifiers against cargo test -- --list and binds the matrix SHA-256"
+    },
+    "supportBundle": {
+      "schema": "codex-tui/support-bundle/v1",
+      "exactSourceSha": true,
+      "policy": "manifest privacy plus snapshot build.sourceSha are validated; both manifest and snapshot are SHA-256 bound into automated qualification"
     }
   },
   "performance": {
@@ -83,7 +88,7 @@
     {
       "id": "support-bundle-redaction",
       "authority": "retained automated qualification",
-      "evidence": "doctor bundle metadata/privacy/checksum tests pass and an exact-SHA bundle manifest is retained"
+      "evidence": "doctor bundle privacy/checksum contract passes; support snapshot build.sourceSha equals candidate SHA; manifest and snapshot are retained and SHA-256 bound"
     },
     {
       "id": "compatibility",
