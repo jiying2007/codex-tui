@@ -57,6 +57,7 @@ All notable codex-tui changes are recorded here.
 - stopped the 15-second Forge refresh timer from rebuilding the entire planning projection when no Forge probe was scheduled; pending-probe reconciliation remains unchanged, while fresh/pending Forge state no longer causes a periodic no-op WorkCard rebuild/render.
 - classified Registry drain changes by responsibility: conversation/history/interactive UI events no longer trigger Git projection refresh plus full planning reconciliation, while Registry snapshots still refresh Git + planning and Goal observations still reconcile planning.
 - extended drain classification to Git and mutation actors: Git review payloads, managed-worktree inventory updates and mutation notices render normally without triggering unrelated Forge/Git refresh plus full planning reconciliation; Git contexts and mutation receipts retain existing projection refresh semantics.
+- coalesced automatic background planning invalidations across Registry, Git, Forge, mutation drains, periodic Forge refresh and fake ticks so one UI loop performs at most one full planning reconciliation before rendering, while explicit user-driven planning writes remain immediate.
 
 ## [1.0.0] - 2026-09-30
 
