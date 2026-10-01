@@ -26,6 +26,7 @@ use tokio::task::JoinHandle;
 
 const PAGE_SIZE: u32 = 200;
 const STARTUP_REGISTRY_PAGE_LIMIT: usize = 1;
+const REGISTRY_HYDRATION_YIELD_INTERVAL: Duration = Duration::from_millis(10);
 const REFRESH_INTERVAL: Duration = Duration::from_secs(5 * 60);
 const GOAL_PROBE_INTERVAL: Duration = Duration::from_millis(250);
 const GOAL_EAGER_PROBE_LIMIT: usize = 100;
@@ -311,17 +312,40 @@ fn try_recv_latest_snapshot(
     }
 }
 
+#[derive(Debug)]
+struct RegistryHydration {
+    cursor: String,
+    loaded_ids: Option<BTreeSet<String>>,
+    loaded_supported: bool,
+    optimized_query: bool,
+    tombstones: BTreeSet<String>,
+}
+
+#[derive(Debug)]
+struct RegistryLoad {
+    threads: Vec<ThreadSummary>,
+    loaded_supported: bool,
+    registry_complete: bool,
+    hydration: Option<RegistryHydration>,
+}
+
+#[derive(Debug)]
+struct RegistryPage {
+    threads: Vec<ThreadSummary>,
+    next_cursor: Option<String>,
+    optimized_query: bool,
+}
+
 async fn bootstrap_registry(
     rpc: &mut RpcSession,
     max_pages: Option<usize>,
-) -> Result<(Vec<ThreadSummary>, BackendStatus)> {
+) -> Result<(Vec<ThreadSummary>, BackendStatus, Option<RegistryHydration>)> {
     let init = initialize(rpc).await?;
     let mut status = status_from_initialize(&init);
-    let (threads, loaded_supported, registry_complete) =
-        load_registry_with_page_limit(rpc, false, max_pages).await?;
+    let load = load_registry_with_page_limit(rpc, false, max_pages).await?;
     status.capabilities.push("thread/list".into());
     status.capabilities.push("thread/status/changed".into());
-    if loaded_supported {
+    if load.loaded_supported {
         status.capabilities.push("thread/loaded/list".into());
     } else {
         status
@@ -329,14 +353,15 @@ async fn bootstrap_registry(
             .push("thread/loaded/list".into());
     }
     status.connected = true;
-    status.registry_complete = registry_complete;
+    status.registry_complete = load.registry_complete;
     status.last_refresh_unix_ms = Some(now_unix_ms());
-    Ok((threads, status))
+    Ok((load.threads, status, load.hydration))
 }
 
 pub async fn start(codex_bin: Option<OsString>) -> Result<StartedRegistry> {
     let mut rpc = RpcSession::spawn(codex_bin).await?;
-    let (threads, status) = bootstrap_registry(&mut rpc, Some(STARTUP_REGISTRY_PAGE_LIMIT)).await?;
+    let (threads, status, hydration) =
+        bootstrap_registry(&mut rpc, Some(STARTUP_REGISTRY_PAGE_LIMIT)).await?;
 
     let initial = BackendSnapshot {
         generation: 0,
@@ -353,6 +378,7 @@ pub async fn start(codex_bin: Option<OsString>) -> Result<StartedRegistry> {
         tx,
         conversation_tx,
         command_rx,
+        hydration,
     ));
 
     Ok(StartedRegistry {
@@ -368,7 +394,8 @@ pub async fn start(codex_bin: Option<OsString>) -> Result<StartedRegistry> {
 
 pub async fn probe(codex_bin: Option<OsString>) -> Result<BackendSnapshot> {
     let mut rpc = RpcSession::spawn(codex_bin).await?;
-    let (threads, status) = bootstrap_registry(&mut rpc, None).await?;
+    let (threads, status, hydration) = bootstrap_registry(&mut rpc, None).await?;
+    debug_assert!(hydration.is_none());
     Ok(BackendSnapshot {
         generation: 0,
         threads,
@@ -440,6 +467,7 @@ async fn run_registry_actor(
     tx: watch::Sender<BackendSnapshot>,
     conversation_tx: mpsc::Sender<ConversationEvent>,
     mut command_rx: mpsc::Receiver<BackendCommand>,
+    mut hydration: Option<RegistryHydration>,
 ) {
     let mut generation = 0_u64;
     let mut threads = by_id(initial_threads);
@@ -460,24 +488,9 @@ async fn run_registry_actor(
     refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     refresh.tick().await;
 
-    match load_registry(&mut rpc, true).await {
-        Ok((fresh, loaded_supported)) => {
-            apply_full_registry_refresh(fresh, loaded_supported, &mut threads, &mut status);
-            if goal_supported != Some(false) {
-                reset_eager_goal_queue(
-                    &threads,
-                    &goal_probed,
-                    &mut goal_queued,
-                    &mut goal_probe_queue,
-                );
-            }
-        }
-        Err(error) => {
-            status.error = Some(error.to_string());
-        }
-    }
-    generation = generation.saturating_add(1);
-    let _ = tx.send(snapshot(generation, &threads, &status));
+    let mut hydration_tick = tokio::time::interval(REGISTRY_HYDRATION_YIELD_INTERVAL);
+    hydration_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut hydration_pending_publish = false;
 
     let mut goal_probe = tokio::time::interval(GOAL_PROBE_INTERVAL);
     goal_probe.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -912,17 +925,61 @@ async fn load_registry(
     rpc: &mut RpcSession,
     use_state_db_only: bool,
 ) -> Result<(Vec<ThreadSummary>, bool)> {
-    let (threads, loaded_supported, registry_complete) =
-        load_registry_with_page_limit(rpc, use_state_db_only, None).await?;
-    debug_assert!(registry_complete);
-    Ok((threads, loaded_supported))
+    let load = load_registry_with_page_limit(rpc, use_state_db_only, None).await?;
+    debug_assert!(load.registry_complete);
+    debug_assert!(load.hydration.is_none());
+    Ok((load.threads, load.loaded_supported))
+}
+
+async fn load_registry_page(
+    rpc: &mut RpcSession,
+    cursor: Option<String>,
+    use_state_db_only: bool,
+    mut optimized_query: bool,
+    loaded_ids: Option<&BTreeSet<String>>,
+) -> Result<RegistryPage> {
+    let optimized_params = json!({
+        "cursor": cursor,
+        "limit": PAGE_SIZE,
+        "sortKey": "recency_at",
+        "sortDirection": "desc",
+        "useStateDbOnly": use_state_db_only
+    });
+    let legacy_params = json!({
+        "cursor": cursor,
+        "limit": PAGE_SIZE
+    });
+
+    let result = if optimized_query {
+        match rpc.request("thread/list", optimized_params).await {
+            Ok(result) => result,
+            Err(error) if is_registry_query_optimization_unsupported(&error) => {
+                optimized_query = false;
+                rpc.request("thread/list", legacy_params).await?
+            }
+            Err(error) => return Err(error),
+        }
+    } else {
+        rpc.request("thread/list", legacy_params).await?
+    };
+
+    let page = parse_thread_list(result)?;
+    Ok(RegistryPage {
+        threads: page
+            .data
+            .into_iter()
+            .map(|thread| normalize_thread(thread, loaded_ids))
+            .collect(),
+        next_cursor: page.next_cursor,
+        optimized_query,
+    })
 }
 
 async fn load_registry_with_page_limit(
     rpc: &mut RpcSession,
     use_state_db_only: bool,
     max_pages: Option<usize>,
-) -> Result<(Vec<ThreadSummary>, bool, bool)> {
+) -> Result<RegistryLoad> {
     let loaded = load_all_loaded_ids(rpc).await;
     let (loaded_ids, loaded_supported) = match loaded {
         Ok(ids) => (Some(ids), true),
@@ -930,57 +987,48 @@ async fn load_registry_with_page_limit(
     };
 
     let mut cursor: Option<String> = None;
-    let mut raw_threads: Vec<ThreadWire> = Vec::new();
+    let mut threads = Vec::new();
     let mut optimized_query = true;
     let mut pages = 0_usize;
-    let mut registry_complete = false;
-    loop {
-        let optimized_params = json!({
-            "cursor": cursor,
-            "limit": PAGE_SIZE,
-            "sortKey": "recency_at",
-            "sortDirection": "desc",
-            "useStateDbOnly": use_state_db_only
-        });
-        let legacy_params = json!({
-            "cursor": cursor,
-            "limit": PAGE_SIZE
-        });
 
-        let result = if optimized_query {
-            match rpc.request("thread/list", optimized_params).await {
-                Ok(result) => result,
-                Err(error) if is_registry_query_optimization_unsupported(&error) => {
-                    optimized_query = false;
-                    rpc.request("thread/list", legacy_params).await?
-                }
-                Err(error) => return Err(error),
-            }
-        } else {
-            rpc.request("thread/list", legacy_params).await?
+    loop {
+        let page = load_registry_page(
+            rpc,
+            cursor,
+            use_state_db_only,
+            optimized_query,
+            loaded_ids.as_ref(),
+        )
+        .await?;
+        optimized_query = page.optimized_query;
+        threads.extend(page.threads);
+        pages = pages.saturating_add(1);
+
+        let Some(next_cursor) = page.next_cursor else {
+            return Ok(RegistryLoad {
+                threads,
+                loaded_supported,
+                registry_complete: true,
+                hydration: None,
+            });
         };
 
-        let page = parse_thread_list(result)?;
-        raw_threads.extend(page.data);
-        cursor = page.next_cursor;
-        pages = pages.saturating_add(1);
-        if cursor.is_none() {
-            registry_complete = true;
-            break;
-        }
         if max_pages.is_some_and(|limit| pages >= limit) {
-            break;
+            return Ok(RegistryLoad {
+                threads,
+                loaded_supported,
+                registry_complete: false,
+                hydration: Some(RegistryHydration {
+                    cursor: next_cursor,
+                    loaded_ids,
+                    loaded_supported,
+                    optimized_query,
+                    tombstones: BTreeSet::new(),
+                }),
+            });
         }
+        cursor = Some(next_cursor);
     }
-
-    Ok((
-        raw_threads
-            .into_iter()
-            .map(|thread| normalize_thread(thread, loaded_ids.as_ref()))
-            .collect(),
-        loaded_supported,
-        registry_complete,
-    ))
 }
 
 async fn load_all_loaded_ids(rpc: &mut RpcSession) -> Result<BTreeSet<String>> {
