@@ -112,7 +112,8 @@ impl Drop for PtyHandle {
             drop(tx);
         }
 
-        self.actor.take();
+        // Dropping the JoinHandle detaches the actor so drawer close never blocks the UI.
+        drop(self.actor.take());
     }
 }
 
