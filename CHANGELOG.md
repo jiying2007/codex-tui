@@ -63,6 +63,7 @@ All notable codex-tui changes are recorded here.
 - stabilized Command Palette intent across asynchronous Registry/Git updates by snapshotting contextual entries on open; render, navigation and Enter now use the same frozen list so background eligibility changes cannot silently retarget the highlighted command.
 - aligned Command Palette thread targeting with Mission Control/Board keyboard semantics: selected thread-backed items now expose Quick Prompt, Review and Workspace from Registry and Board instead of requiring an already-open Thread view.
 - made the advertised global `/` search semantics explicit: invoking Search from Thread/Review/Workspace/Board/Scratch enters Mission Control metadata search, Esc restores the exact origin view and prior filter when that target still exists (otherwise safely remains in Registry), while Enter commits the filter and remains in Registry results.
+- closed the global-search conversation-watch lifecycle: transient Search keeps the origin watch so Esc can resume instantly, while committed Search or fail-closed cancel releases the origin thread watch when the UI remains in Registry.
 
 ## [1.0.0] - 2026-09-30
 
