@@ -11,6 +11,7 @@ pub mod forge_github;
 pub mod forge_mutation;
 pub mod git;
 pub mod goal;
+pub mod hardening;
 pub mod headless;
 pub mod i18n;
 pub mod keymap;
