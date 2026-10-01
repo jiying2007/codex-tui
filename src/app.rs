@@ -5215,6 +5215,53 @@ mod tests {
     }
 
     #[test]
+    fn thread_projection_indexes_rebuild_for_10k_registry_replacement() {
+        let mut app = AppState::new(FakeBackend::scaled(10_000).snapshot().threads);
+        assert_eq!(app.thread_index_by_id.len(), 10_000);
+
+        let shared_cwd = "/shared/indexed/repo";
+        let mut fresh = FakeBackend::scaled(10_000).snapshot().threads;
+        for thread in fresh.iter_mut().take(1_000) {
+            thread.metadata.cwd = shared_cwd.into();
+        }
+        let tail_id = fresh.last().expect("tail").id.clone();
+
+        reduce(&mut app, Action::ReplaceThreads(fresh));
+
+        assert_eq!(app.thread_index_by_id.len(), 10_000);
+        assert_eq!(app.thread_ids_for_cwd(shared_cwd).len(), 1_000);
+        assert_eq!(
+            app.thread_by_id(&tail_id).map(|thread| &thread.id),
+            Some(&tail_id)
+        );
+    }
+
+    #[test]
+    fn indexed_cwd_fanout_preserves_git_projection_semantics() {
+        let mut app = app();
+        let shared_cwd = "/shared/fanout";
+        let mut fresh = app.threads.clone();
+        fresh[0].metadata.cwd = shared_cwd.into();
+        fresh[1].metadata.cwd = shared_cwd.into();
+        reduce(&mut app, Action::ReplaceThreads(fresh));
+
+        let source = app.threads[0].id.clone();
+        let peer = app.threads[1].id.clone();
+        let mut context = GitContext::pending(source, shared_cwd);
+        context.observed_at_unix_ms = 1;
+        context.is_repository = true;
+        context.branch = Some("main".into());
+
+        reduce(&mut app, Action::GitContextLoaded(context));
+
+        for thread_id in [peer, app.threads[0].id.clone()] {
+            let projected = app.git_context(&thread_id).expect("projected git context");
+            assert_eq!(projected.cwd, shared_cwd);
+            assert_eq!(projected.branch.as_deref(), Some("main"));
+        }
+    }
+
+    #[test]
     fn reconciled_10k_registry_keeps_recent_projection_bounded() {
         let mut app = AppState::new(FakeBackend::scaled(10_000).snapshot().threads);
         reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 1 });
