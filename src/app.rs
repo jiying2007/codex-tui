@@ -4502,6 +4502,51 @@ mod tests {
     }
 
     #[test]
+    fn git_projection_deduplicates_shared_cwd_and_fans_out_result() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let cwd = root.path().join("shared-repo");
+        std::fs::create_dir_all(&cwd).expect("create cwd");
+        let cwd = cwd.to_string_lossy().into_owned();
+
+        let mut app = app();
+        for thread in &mut app.threads {
+            thread.metadata.cwd.clone_from(&cwd);
+        }
+
+        let effects = reduce(&mut app, Action::RefreshGitProjections);
+        assert_eq!(effects.len(), 1);
+        let Effect::ProbeGit {
+            thread_id: leader,
+            cwd: probed_cwd,
+        } = effects[0].clone()
+        else {
+            panic!("expected one git probe");
+        };
+        assert_eq!(probed_cwd, cwd);
+        assert_eq!(app.git_contexts.len(), app.threads.len());
+        assert!(
+            app.git_contexts
+                .values()
+                .all(|context| context.observed_at_unix_ms == 0)
+        );
+
+        let mut loaded = GitContext::pending(leader, cwd.clone());
+        loaded.observed_at_unix_ms = 1;
+        loaded.is_repository = true;
+        loaded.branch = Some("main".into());
+        reduce(&mut app, Action::GitContextLoaded(loaded));
+
+        for thread in &app.threads {
+            let context = app.git_context(&thread.id).expect("projected git context");
+            assert_eq!(context.thread_id, thread.id);
+            assert_eq!(context.cwd, cwd);
+            assert_eq!(context.branch.as_deref(), Some("main"));
+            assert_eq!(context.observed_at_unix_ms, 1);
+        }
+        assert!(reduce(&mut app, Action::RefreshGitProjections).is_empty());
+    }
+
+    #[test]
     fn git_projection_skips_nonlocal_cwds_and_drops_old_projection() {
         let root = tempfile::tempdir().expect("tempdir");
         let local = root.path().join("local");
