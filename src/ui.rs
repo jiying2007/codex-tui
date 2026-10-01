@@ -1036,30 +1036,36 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area: R
     let thread = app.threads.iter().find(|thread| thread.id.0 == thread_id);
     let title = thread
         .map(ThreadSummary::display_title)
-        .unwrap_or("Unknown thread");
+        .unwrap_or_else(|| tr(app, "Unknown thread", "未知会话"));
     frame.render_widget(
         Paragraph::new(format!(
-            "{title}\n{thread_id}\nGoal: {}",
+            "{title}\n{thread_id}\n{}: {}",
+            tr(app, "Goal", "目标"),
             goal_summary(app, thread_id)
         ))
-        .block(Block::bordered().title(" Thread ")),
+        .block(Block::bordered().title(tr(app, " Thread ", " 会话 "))),
         chunks[0],
     );
 
     let ui = app.thread_ui.get(thread_id).cloned().unwrap_or_default();
     let mut conversation_lines = match app.conversations.get(thread_id) {
-        Some(conversation) if conversation.loading => {
-            vec![Line::from("Loading recent Codex history…")]
-        }
+        Some(conversation) if conversation.loading => vec![Line::from(tr(
+            app,
+            "Loading recent Codex history…",
+            "正在加载最近的 Codex 历史…",
+        ))],
         Some(conversation) if conversation.error.is_some() => {
             vec![Line::from(format!(
-                "Conversation unavailable: {}",
+                "{}: {}",
+                tr(app, "Conversation unavailable", "会话不可用"),
                 conversation.error.as_deref().unwrap_or("unknown error")
             ))]
         }
-        Some(conversation) if conversation.items.is_empty() => {
-            vec![Line::from("No visible items in the loaded history page.")]
-        }
+        Some(conversation) if conversation.items.is_empty() => vec![Line::from(tr(
+            app,
+            "No visible items in the loaded history page.",
+            "已加载的历史页中没有可见内容。",
+        ))],
         Some(conversation) => conversation
             .items
             .iter()
@@ -1076,7 +1082,11 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area: R
                 ))
             })
             .collect(),
-        None => vec![Line::from("Conversation has not been loaded yet.")],
+        None => vec![Line::from(tr(
+            app,
+            "Conversation has not been loaded yet.",
+            "会话尚未加载。",
+        ))],
     };
     if let Some(request) = app.current_pending_request() {
         let mut request_lines = interactive_request_lines(request, app.language);
@@ -1094,9 +1104,13 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area: R
     frame.render_widget(
         Paragraph::new(conversation_lines)
             .block(Block::bordered().title(if page_hint {
-                " Conversation · older history available "
+                tr(
+                    app,
+                    " Conversation · older history available ",
+                    " 会话 · 可加载更早历史 ",
+                )
             } else {
-                " Conversation "
+                tr(app, " Conversation ", " 会话 ")
             }))
             .wrap(Wrap { trim: false })
             .scroll((
@@ -1112,27 +1126,55 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area: R
 
     let (composer_title, composer_text) = if app.input_mode == InputMode::GoalObjective {
         (
-            " Goal objective · Enter set · Esc cancel ",
-            format!("objective> {}", app.input_buffer),
+            tr(
+                app,
+                " Goal objective · Enter set · Esc cancel ",
+                " Goal 目标 · Enter 设置 · Esc 取消 ",
+            ),
+            format!("{}> {}", tr(app, "objective", "目标"), app.input_buffer),
         )
     } else if app.goal_actions_open {
         let text = app.current_goal().map_or_else(
-            || "No Goal observed. e/Enter creates one with ACTIVE status.".into(),
-            |goal| {
-                format!(
-                    "{}\nstatus={} · tokens={}{} · elapsed={}s",
-                    goal.objective,
-                    goal.status.label(),
-                    goal.tokens_used,
-                    goal.token_budget
-                        .map(|budget| format!("/{budget}"))
-                        .unwrap_or_default(),
-                    goal.time_used_seconds
+            || {
+                tr(
+                    app,
+                    "No Goal observed. e/Enter creates one with ACTIVE status.",
+                    "尚未发现 Goal。按 e/Enter 创建并设为 ACTIVE。",
                 )
+                .into()
+            },
+            |goal| {
+                if app.language.is_simplified_chinese() {
+                    format!(
+                        "{}\n状态={} · token={}{} · 已用={}秒",
+                        goal.objective,
+                        goal.status.label(),
+                        goal.tokens_used,
+                        goal.token_budget
+                            .map(|budget| format!("/{budget}"))
+                            .unwrap_or_default(),
+                        goal.time_used_seconds
+                    )
+                } else {
+                    format!(
+                        "{}\nstatus={} · tokens={}{} · elapsed={}s",
+                        goal.objective,
+                        goal.status.label(),
+                        goal.tokens_used,
+                        goal.token_budget
+                            .map(|budget| format!("/{budget}"))
+                            .unwrap_or_default(),
+                        goal.time_used_seconds
+                    )
+                }
             },
         );
         (
-            " Goal actions · e objective · p pause · r resume · c clear · Esc close ",
+            tr(
+                app,
+                " Goal actions · e objective · p pause · r resume · c clear · Esc close ",
+                " Goal 操作 · e 目标 · p 暂停 · r 恢复 · c 清除 · Esc 关闭 ",
+            ),
             text,
         )
     } else if app.input_mode == InputMode::UserInput {
@@ -1143,30 +1185,41 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area: R
             app.input_buffer.clone()
         };
         (
-            " User input · Enter next/send · Esc cancel editor ",
+            tr(
+                app,
+                " User input · Enter next/send · Esc cancel editor ",
+                " 用户输入 · Enter 下一项/发送 · Esc 取消编辑 ",
+            ),
             format!(
-                "{}\nanswer> {}",
+                "{}\n{}> {}",
                 question
                     .map(|question| question.question.as_str())
-                    .unwrap_or("Question unavailable"),
+                    .unwrap_or_else(|| tr(app, "Question unavailable", "问题不可用")),
+                tr(app, "answer", "回答"),
                 displayed_answer
             ),
         )
     } else {
         (
             if app.input_mode == InputMode::Composer {
-                " Composer · Enter send · Esc keep draft "
+                tr(
+                    app,
+                    " Composer · Enter send · Esc keep draft ",
+                    " 编辑消息 · Enter 发送 · Esc 保留草稿 ",
+                )
             } else {
-                " Draft · a edit "
+                tr(app, " Draft · a edit ", " 草稿 · a 编辑 ")
             },
             format!(
-                "{}\nscroll={} follow={}",
+                "{}\n{}={} {}={}",
                 if ui.draft.is_empty() {
-                    "<empty>"
+                    tr(app, "<empty>", "<空>")
                 } else {
                     &ui.draft
                 },
+                tr(app, "scroll", "滚动"),
                 ui.scroll,
+                tr(app, "follow", "跟随"),
                 ui.follow
             ),
         )
@@ -1174,9 +1227,11 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area: R
     let composer = Paragraph::new(composer_text).block(Block::bordered().title(composer_title));
     frame.render_widget(composer, chunks[2]);
     frame.render_widget(
-        Paragraph::new(
+        Paragraph::new(tr(
+            app,
             "a composer · g goal · m worktrees · y accept · n decline · c cancel · i answer · Ctrl+C interrupt",
-        ),
+            "a 编辑 · g 目标 · m worktree · y 接受 · n 拒绝 · c 取消 · i 回答 · Ctrl+C 中断",
+        )),
         chunks[3],
     );
 }
