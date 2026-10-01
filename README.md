@@ -291,6 +291,8 @@ python3 scripts/release/linux_qualify.py \
   --canonical-ci-run <exact-main-ci-run-id> \
   --terminal-receipt release/evidence/linux/terminal-linux.json \
   --source "<retained-linux-machine-id>"
+
+# Add --dispatch to trigger stable + publish=false automatically after local PASS.
 ```
 
 The second command verifies a clean exact-main SHA, canonical CI, locked tests/build, READY `compat/v2`, the exact-SHA 50k structural soak, support-bundle privacy manifest, state/UI/failure gates, a 200-sample 10k performance diagnostic, evidence assembly, and local stable verification. It does **not** publish.
