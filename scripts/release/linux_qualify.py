@@ -317,6 +317,8 @@ def main() -> int:
         raise SystemExit("performance schema mismatch")
     if performance.get("fixture") != "resident-planning-10k":
         raise SystemExit("performance fixture mismatch")
+    if str(performance.get("sourceSha", "")).lower() != commit_sha.lower():
+        raise SystemExit("performance source SHA mismatch")
     if performance.get("iterations", 0) < 200:
         raise SystemExit("performance sample count is below 200")
     if performance.get("sampleQualified") is not True:
@@ -367,6 +369,8 @@ def main() -> int:
             terminal["terminal"],
             "--linux-terminal-observed-at",
             terminal["observedAt"],
+            "--performance-source-sha",
+            commit_sha,
             "--performance-iterations",
             str(performance["iterations"]),
             "--performance-p95-ms",
@@ -417,6 +421,7 @@ def main() -> int:
         "linux_compat_observed_at": compat_summary["observedAt"],
         "linux_terminal": terminal["terminal"],
         "linux_terminal_observed_at": terminal["observedAt"],
+        "performance_source_sha": commit_sha,
         "performance_iterations": str(performance["iterations"]),
         "performance_p95_ms": str(performance["p95Ms"]),
         "performance_p99_ms": str(performance["p99Ms"]),
