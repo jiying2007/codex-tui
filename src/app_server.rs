@@ -316,7 +316,6 @@ fn try_recv_latest_snapshot(
 struct RegistryHydration {
     cursor: String,
     loaded_ids: Option<BTreeSet<String>>,
-    loaded_supported: bool,
     optimized_query: bool,
     tombstones: BTreeSet<String>,
 }
@@ -460,6 +459,57 @@ fn apply_full_registry_refresh(
     }
 }
 
+fn merge_registry_hydration_page(
+    threads: &mut BTreeMap<String, ThreadSummary>,
+    page: Vec<ThreadSummary>,
+    tombstones: &BTreeSet<String>,
+) {
+    for incoming in page {
+        if tombstones.contains(&incoming.id.0) {
+            continue;
+        }
+        let replace = threads
+            .get(&incoming.id.0)
+            .is_none_or(|current| current.metadata.updated_at < incoming.metadata.updated_at);
+        if replace {
+            threads.insert(incoming.id.0.clone(), incoming);
+        }
+    }
+}
+
+fn observe_registry_hydration_message(hydration: &mut RegistryHydration, message: &Value) {
+    let Some(method) = message.get("method").and_then(Value::as_str) else {
+        return;
+    };
+    match method {
+        "thread/archived" | "thread/deleted" => {
+            if let Some(thread_id) = message
+                .pointer("/params/threadId")
+                .and_then(Value::as_str)
+            {
+                hydration.tombstones.insert(thread_id.to_string());
+            }
+        }
+        "thread/unarchived" => {
+            if let Some(thread_id) = message
+                .pointer("/params/threadId")
+                .and_then(Value::as_str)
+            {
+                hydration.tombstones.remove(thread_id);
+            }
+        }
+        "thread/started" => {
+            if let Some(thread_id) = message
+                .pointer("/params/thread/id")
+                .and_then(Value::as_str)
+            {
+                hydration.tombstones.remove(thread_id);
+            }
+        }
+        _ => {}
+    }
+}
+
 async fn run_registry_actor(
     mut rpc: RpcSession,
     initial_threads: Vec<ThreadSummary>,
@@ -498,6 +548,7 @@ async fn run_registry_actor(
 
     loop {
         tokio::select! {
+            biased;
             command = command_rx.recv() => {
                 let Some(command) = command else {
                     return;
@@ -724,6 +775,53 @@ async fn run_registry_actor(
                     }
                 }
             }
+            _ = hydration_tick.tick(), if hydration.is_some() => {
+                let page_result = {
+                    let state = hydration.as_ref().expect("hydration state");
+                    load_registry_page(
+                        &mut rpc,
+                        Some(state.cursor.clone()),
+                        false,
+                        state.optimized_query,
+                        state.loaded_ids.as_ref(),
+                    )
+                    .await
+                };
+
+                match page_result {
+                    Ok(page) => {
+                        let next_cursor = page.next_cursor;
+                        let optimized_query = page.optimized_query;
+                        let tombstones = &hydration.as_ref().expect("hydration state").tombstones;
+                        merge_registry_hydration_page(&mut threads, page.threads, tombstones);
+                        status.last_refresh_unix_ms = Some(now_unix_ms());
+
+                        if let Some(next_cursor) = next_cursor {
+                            let state = hydration.as_mut().expect("hydration state");
+                            state.cursor = next_cursor;
+                            state.optimized_query = optimized_query;
+                        } else {
+                            hydration = None;
+                            status.registry_complete = true;
+                            if goal_supported != Some(false) {
+                                reset_eager_goal_queue(
+                                    &threads,
+                                    &goal_probed,
+                                    &mut goal_queued,
+                                    &mut goal_probe_queue,
+                                );
+                            }
+                        }
+                        hydration_pending_publish = true;
+                        hydration_tick.reset();
+                    }
+                    Err(error) => {
+                        status.error = Some(format!("Registry hydration failed: {error}"));
+                        hydration = None;
+                        hydration_pending_publish = true;
+                    }
+                }
+            }
             _ = goal_probe.tick() => {
                 if goal_supported != Some(false)
                     && let Some(thread_id) = goal_probe_queue.pop_front()
@@ -764,7 +862,7 @@ async fn run_registry_actor(
                     }
                 }
             }
-            _ = refresh.tick() => {
+            _ = refresh.tick(), if hydration.is_none() => {
                 match load_registry(&mut rpc, true).await {
                     Ok((fresh, loaded_supported)) => {
                         apply_full_registry_refresh(
@@ -792,6 +890,9 @@ async fn run_registry_actor(
             message = rpc.read_message() => {
                 match message {
                     Ok(Some(message)) => {
+                        if let Some(hydration) = hydration.as_mut() {
+                            observe_registry_hydration_message(hydration, &message);
+                        }
                         let registry_changed = match handle_unsolicited(
                             &mut rpc,
                             message,
@@ -811,6 +912,7 @@ async fn run_registry_actor(
                         if registry_changed {
                             generation = generation.saturating_add(1);
                             let _ = tx.send(snapshot(generation, &threads, &status));
+                            hydration_pending_publish = false;
                         }
                     }
                     Ok(None) => {
@@ -829,6 +931,12 @@ async fn run_registry_actor(
                     }
                 }
             }
+        }
+
+        if hydration_pending_publish && !rpc.has_queued_messages() {
+            generation = generation.saturating_add(1);
+            let _ = tx.send(snapshot(generation, &threads, &status));
+            hydration_pending_publish = false;
         }
     }
 }
@@ -1021,7 +1129,6 @@ async fn load_registry_with_page_limit(
                 hydration: Some(RegistryHydration {
                     cursor: next_cursor,
                     loaded_ids,
-                    loaded_supported,
                     optimized_query,
                     tombstones: BTreeSet::new(),
                 }),
@@ -1800,6 +1907,10 @@ impl RpcSession {
                 enqueue_rpc_message(&mut self.queued_messages, message)?;
             }
         }
+    }
+
+    fn has_queued_messages(&self) -> bool {
+        !self.queued_messages.is_empty()
     }
 
     async fn notify(&mut self, method: &str, params: Option<Value>) -> Result<()> {
