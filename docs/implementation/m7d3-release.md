@@ -58,7 +58,7 @@ This gate prevents accidental publication when project license metadata is absen
 
 ## Stable evidence
 
-Stable evidence is represented by `codex-tui/release-evidence/v3`.
+Stable evidence is represented by `codex-tui/release-evidence/v4`.
 
 It binds:
 
@@ -66,8 +66,8 @@ It binds:
 - exact 40-character source SHA;
 - canonical successful CI run ID;
 - compatibility schema version;
-- Linux Tier 1 compatibility report SHA-256 with READY state and observation timestamp;
-- Linux Tier 1 terminal-restoration PASS receipt;
+- Linux Tier 1 compatibility report SHA-256 with READY state, observation timestamp and `sourceSha` equal to the release commit;
+- Linux Tier 1 terminal-restoration PASS receipt with `sourceSha` equal to the release commit;
 - an exact-SHA `codex-tui/automated-qualification/v3` receipt covering Failure Matrix, 50k scale-v4 evidence, 50k structural soak, UI contract, state migration/recovery and support-bundle redaction;
 - Linux retained `resident-planning-10k` p95/p99 diagnostic receipt;
 - optional macOS/Windows Tier 2 retained receipts when available.
@@ -160,10 +160,11 @@ Canonical compatibility capture on each supported platform:
 ```bash
 python3 scripts/release/capture_compat.py \
   --binary <path-to-v1-candidate-binary> \
-  --output compat-<platform>.json
+  --output compat-<platform>.json \
+  --expected-source-sha "$(git rev-parse HEAD)"
 ```
 
-The compatibility helper refuses anything other than `readiness=ready` and prints the report SHA-256 and observation timestamp used by stable evidence.
+The compatibility helper refuses anything other than `readiness=ready`, requires the report `sourceSha` to equal the expected candidate SHA, and prints the report SHA-256 and observation timestamp used by stable evidence.
 
 Terminal-restoration evidence remains an explicit real-controlling-TTY smoke receipt; it is not synthesized by CI.
 
@@ -227,8 +228,8 @@ It performs:
 6. exact-SHA 50k/256 structural soak and secret-safe Doctor Bundle capture;
 7. `automated-qualification/v3` assembly with SHA-256 bindings for Failure Matrix, scale, soak, support manifest and support snapshot; the support snapshot source SHA must equal the candidate SHA;
 8. 20 warmup + 200 measured resident-planning-10k diagnostic samples;
-9. Linux terminal receipt validation;
-10. `release-evidence/v3` assembly;
+9. Linux terminal receipt validation including exact candidate `sourceSha`;
+10. `release-evidence/v4` assembly with source-bound compat and terminal receipts;
 11. local stable release verification for the current Cargo package version.
 
 The result is retained under `release/evidence/linux/` and includes a complete `workflowInputs` object. `--dispatch` submits those exact values to the GitHub `release.yml` workflow with `channel=stable` and `publish=false`; it never publishes a release.
