@@ -420,8 +420,8 @@ fn validate_platform_evidence(
 }
 
 fn validate_stable_criteria(path: &Path, version: &str) -> Result<()> {
-    let bytes = fs::read(path)
-        .with_context(|| format!("read stable criteria {}", path.display()))?;
+    let bytes =
+        fs::read(path).with_context(|| format!("read stable criteria {}", path.display()))?;
     let value: serde_json::Value = serde_json::from_slice(&bytes)
         .with_context(|| format!("decode stable criteria {}", path.display()))?;
     anyhow::ensure!(
@@ -429,7 +429,10 @@ fn validate_stable_criteria(path: &Path, version: &str) -> Result<()> {
         "criteria schema must be {STABLE_CRITERIA_SCHEMA}"
     );
     anyhow::ensure!(
-        value.get("stableVersion").and_then(serde_json::Value::as_str) == Some(version),
+        value
+            .get("stableVersion")
+            .and_then(serde_json::Value::as_str)
+            == Some(version),
         "criteria stableVersion must be {version}"
     );
     Ok(())
