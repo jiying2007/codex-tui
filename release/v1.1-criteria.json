@@ -93,12 +93,12 @@
     {
       "id": "compatibility",
       "authority": "codex-tui doctor compat --json",
-      "evidence": "Linux READY retained compat/v2 report SHA-256 is required; macOS/Windows remain optional Tier 2 real-environment evidence"
+      "evidence": "Linux READY retained compat/v2 report SHA-256 is required and its sourceSha must equal the exact release commit; macOS/Windows remain optional Tier 2 real-environment evidence"
     },
     {
       "id": "terminal-restoration",
       "authority": "retained real interaction smoke",
-      "evidence": "Linux real controlling-TTY PASS receipt is required; this evidence cannot be synthesized by repository CI"
+      "evidence": "Linux real controlling-TTY PASS receipt is required and its sourceSha must equal the exact release commit; this evidence cannot be synthesized by repository CI"
     },
     {
       "id": "performance-diagnostics",
@@ -123,5 +123,10 @@
     "generic-plugin-system",
     "generic-multi-agent-framework",
     "terminal-drawer-as-tmux-replacement"
-  ]
+  ],
+  "realEnvironmentEvidence": {
+    "schema": "codex-tui/real-environment-evidence/v1",
+    "exactSourceSha": true,
+    "policy": "compatibility and terminal-restoration receipts must each carry sourceSha equal to the exact release commit; old candidate receipts cannot be replayed onto a new SHA"
+  }
 }
