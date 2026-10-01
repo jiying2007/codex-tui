@@ -5016,6 +5016,44 @@ mod tests {
     }
 
     #[test]
+    fn git_review_cache_never_evicts_current_review_on_background_load() {
+        let mut app = AppState::new(
+            FakeBackend::scaled(GIT_REVIEW_CACHE_LIMIT + 1)
+                .snapshot()
+                .threads,
+        );
+        let ids = app
+            .threads
+            .iter()
+            .map(|thread| thread.id.clone())
+            .collect::<Vec<_>>();
+
+        for thread_id in ids.iter().take(GIT_REVIEW_CACHE_LIMIT) {
+            app.git_reviews.insert(
+                thread_id.0.clone(),
+                GitReview::pending(thread_id.clone(), "/repo"),
+            );
+            app.touch_git_review_cache(thread_id);
+        }
+        app.view = View::Review(ids[0].clone());
+
+        reduce(
+            &mut app,
+            Action::GitReviewLoaded(GitReview::pending(
+                ids[GIT_REVIEW_CACHE_LIMIT].clone(),
+                "/repo/new",
+            )),
+        );
+
+        assert_eq!(app.git_reviews.len(), GIT_REVIEW_CACHE_LIMIT);
+        assert!(app.git_reviews.contains_key(&ids[0].0));
+        assert!(
+            app.git_reviews
+                .contains_key(&ids[GIT_REVIEW_CACHE_LIMIT].0)
+        );
+    }
+
+    #[test]
     fn review_returns_to_originating_view_and_selects_changed_files() {
         let mut app = app();
         app.threads[0].metadata.cwd = "/repo".into();
