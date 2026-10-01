@@ -707,6 +707,27 @@ impl AppState {
         }
     }
 
+    fn thread_id_for_view(view: &View) -> Option<ThreadId> {
+        match view {
+            View::Thread(thread_id)
+            | View::Review(thread_id)
+            | View::Workspace(thread_id)
+            | View::ManagedWorktrees(thread_id) => Some(thread_id.clone()),
+            View::Registry | View::Board | View::Scratch(_) => None,
+        }
+    }
+
+    fn search_origin_thread_id(&self) -> Option<ThreadId> {
+        let return_view = self.search_return_view.as_ref()?;
+        match return_view {
+            View::Board | View::Scratch(_) => self
+                .board_return_view
+                .as_ref()
+                .and_then(Self::thread_id_for_view),
+            _ => Self::thread_id_for_view(return_view),
+        }
+    }
+
     fn thread_ids_for_cwd(&self, cwd: &str) -> Vec<ThreadId> {
         if let Some(indices) = self.thread_indices_by_cwd.get(cwd) {
             let indexed = indices
@@ -3499,11 +3520,17 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.input_buffer.clear();
             state.input_original.clear();
             if was_search {
+                let origin_thread_id = state.search_origin_thread_id();
                 state.search_return_view = None;
-                return refresh_git_projections(state);
+                let mut effects = refresh_git_projections(state);
+                if let Some(thread_id) = origin_thread_id {
+                    effects.push(Effect::StopWatchingConversation(thread_id));
+                }
+                return effects;
             }
         }
         Action::CancelInput => {
+            let mut search_watch_to_release = None;
             if matches!(
                 state.input_mode,
                 InputMode::BatchAddTag
@@ -3554,12 +3581,15 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 state.saved_view_template = None;
             }
             if state.input_mode == InputMode::Search {
+                let origin_thread_id = state.search_origin_thread_id();
                 state.filter.clone_from(&state.input_original);
                 ensure_selection_visible(state);
-                if let Some(return_view) = state.search_return_view.take()
-                    && state.search_return_view_is_valid(&return_view)
-                {
-                    state.view = return_view;
+                if let Some(return_view) = state.search_return_view.take() {
+                    if state.search_return_view_is_valid(&return_view) {
+                        state.view = return_view;
+                    } else {
+                        search_watch_to_release = origin_thread_id;
+                    }
                 }
             }
             if state.input_mode == InputMode::UserInput {
@@ -3568,6 +3598,9 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 state.input_mode = InputMode::Normal;
                 state.input_buffer.clear();
                 state.input_original.clear();
+            }
+            if let Some(thread_id) = search_watch_to_release {
+                return vec![Effect::StopWatchingConversation(thread_id)];
             }
         }
         Action::Quit => state.should_quit = true,
@@ -4463,18 +4496,19 @@ mod tests {
             .collect();
         reduce(&mut app, Action::ReplaceThreads(remaining));
 
-        reduce(&mut app, Action::CancelInput);
+        let effects = reduce(&mut app, Action::CancelInput);
         assert_eq!(app.view, View::Registry);
         assert_eq!(app.filter, "existing");
         assert_eq!(app.input_mode, InputMode::Normal);
         assert!(app.search_return_view.is_none());
+        assert_eq!(effects, vec![Effect::StopWatchingConversation(thread_id)]);
     }
 
     #[test]
-    fn committed_global_search_stays_in_registry_with_filter() {
+    fn committed_global_search_stays_in_registry_with_filter_and_releases_watch() {
         let mut app = app();
         let thread_id = app.threads[0].id.clone();
-        app.view = View::Review(thread_id);
+        app.view = View::Thread(thread_id.clone());
 
         reduce(&mut app, Action::BeginSearch);
         reduce(&mut app, Action::InputText("audio".into()));
@@ -4487,8 +4521,14 @@ mod tests {
         assert!(
             effects
                 .iter()
-                .all(|effect| matches!(effect, Effect::ProbeGit { .. }))
+                .any(|effect| effect == &Effect::StopWatchingConversation(thread_id.clone()))
         );
+        assert!(effects.iter().all(|effect| {
+            matches!(
+                effect,
+                Effect::ProbeGit { .. } | Effect::StopWatchingConversation(_)
+            )
+        }));
     }
 
     #[test]
