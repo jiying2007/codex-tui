@@ -4601,7 +4601,7 @@ mod tests {
         app.filter = "00149".into();
         let effects = reduce(&mut app, Action::RefreshGitProjections);
         assert_eq!(effects.len(), 1);
-        assert!(app.git_contexts.contains_key("synthetic-thread-00149"));
+        assert!(app.git_contexts.contains_key("thread-scale-00149"));
     }
 
     #[test]
