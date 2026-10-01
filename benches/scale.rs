@@ -33,6 +33,24 @@ fn registry_search_10k() -> &'static AppState {
     })
 }
 
+fn registry_local_10k() -> &'static AppState {
+    static APP: OnceLock<AppState> = OnceLock::new();
+    APP.get_or_init(|| {
+        let snapshot = FakeBackend::scaled(10_000).snapshot();
+        let mut app = AppState::new(snapshot.threads);
+        let cwd = std::env::current_dir()
+            .expect("current directory")
+            .to_string_lossy()
+            .into_owned();
+        for thread in &mut app.threads {
+            thread.metadata.cwd.clone_from(&cwd);
+        }
+        reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 1 });
+        reduce(&mut app, Action::ToggleHostLocalFilter);
+        app
+    })
+}
+
 fn cards_10k() -> &'static Vec<WorkCardProjection> {
     static CARDS: OnceLock<Vec<WorkCardProjection>> = OnceLock::new();
     CARDS.get_or_init(|| {
@@ -108,4 +126,9 @@ fn registry_recent_projection_10k() {
 #[divan::bench]
 fn registry_search_projection_10k() {
     divan::black_box(registry_search_10k().visible_indices_with_match_count());
+}
+
+#[divan::bench]
+fn registry_local_projection_10k() {
+    divan::black_box(registry_local_10k().visible_indices_with_match_count());
 }

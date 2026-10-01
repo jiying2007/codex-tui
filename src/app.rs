@@ -391,6 +391,7 @@ pub struct AppState {
     pub thread_ui: BTreeMap<String, ThreadUiState>,
     pub conversations: BTreeMap<String, ConversationState>,
     pub git_contexts: BTreeMap<String, GitContext>,
+    cwd_localities: BTreeMap<String, CwdLocality>,
     pub forge_observations: BTreeMap<String, ForgeObservation>,
     pub git_reviews: BTreeMap<String, GitReview>,
     pub planning_snapshot: PlanningSnapshot,
@@ -474,6 +475,7 @@ impl AppState {
             thread_ui: BTreeMap::new(),
             conversations: BTreeMap::new(),
             git_contexts: BTreeMap::new(),
+            cwd_localities: BTreeMap::new(),
             forge_observations: BTreeMap::new(),
             git_reviews: BTreeMap::new(),
             planning_snapshot: PlanningSnapshot::default(),
@@ -552,6 +554,37 @@ impl AppState {
         }
     }
 
+    pub fn cwd_locality(&self, cwd: &str) -> CwdLocality {
+        self.cwd_localities
+            .get(cwd)
+            .copied()
+            .unwrap_or_else(|| classify_cwd(cwd))
+    }
+
+    fn refresh_cwd_locality(&mut self, cwd: &str) -> CwdLocality {
+        let locality = classify_cwd(cwd);
+        self.cwd_localities.insert(cwd.to_string(), locality);
+        locality
+    }
+
+    fn reconcile_cwd_locality_cache(&mut self, fill_missing: bool) {
+        let current_cwds = self
+            .threads
+            .iter()
+            .map(|thread| thread.metadata.cwd.clone())
+            .collect::<BTreeSet<_>>();
+        self.cwd_localities
+            .retain(|cwd, _| current_cwds.contains(cwd));
+
+        if fill_missing {
+            for cwd in current_cwds {
+                self.cwd_localities
+                    .entry(cwd.clone())
+                    .or_insert_with(|| classify_cwd(&cwd));
+            }
+        }
+    }
+
     pub fn selected_thread(&self) -> Option<&ThreadSummary> {
         let thread = self.threads.get(self.selected)?;
         self.thread_visible_in_registry(thread).then_some(thread)
@@ -567,9 +600,11 @@ impl AppState {
         thread: &ThreadSummary,
         normalized_query: &str,
     ) -> bool {
-        matches_filter_normalized(thread, normalized_query)
+        let locality = filter_requires_locality(normalized_query)
+            .then(|| self.cwd_locality(&thread.metadata.cwd));
+        matches_filter_normalized(thread, normalized_query, locality)
             && (!self.host_local_only
-                || classify_cwd(&thread.metadata.cwd) == CwdLocality::LocalDirectory)
+                || self.cwd_locality(&thread.metadata.cwd) == CwdLocality::LocalDirectory)
             && self.thread_matches_repo_scope(thread)
     }
 
@@ -577,7 +612,7 @@ impl AppState {
         if !self.repo_backed_only {
             return true;
         }
-        if classify_cwd(&thread.metadata.cwd) != CwdLocality::LocalDirectory {
+        if self.cwd_locality(&thread.metadata.cwd) != CwdLocality::LocalDirectory {
             return false;
         }
         match self.git_context(&thread.id) {
@@ -1054,6 +1089,9 @@ impl AppState {
         self.acknowledged_attention = local.acknowledged_attention.clone();
         self.host_local_only = local.host_local_only;
         self.repo_backed_only = local.repo_backed_only;
+        if self.host_local_only || self.repo_backed_only {
+            self.reconcile_cwd_locality_cache(true);
+        }
         for thread in &mut self.threads {
             if local.pins.contains(&thread.id.0) {
                 thread.pinned = true;
@@ -1131,6 +1169,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 }
             }
             state.threads = threads;
+            state.reconcile_cwd_locality_cache(state.host_local_only || state.repo_backed_only);
             if state.threads.is_empty() {
                 state.selected = 0;
             } else if let Some(id) = selected_id {
@@ -2561,11 +2600,19 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         }
         Action::ToggleHostLocalFilter => {
             state.host_local_only = !state.host_local_only;
+            if state.host_local_only {
+                state.cwd_localities.clear();
+                state.reconcile_cwd_locality_cache(true);
+            }
             ensure_selection_visible(state);
             return vec![Effect::PersistOperatorState];
         }
         Action::ToggleRepoBackedFilter => {
             state.repo_backed_only = !state.repo_backed_only;
+            if state.repo_backed_only {
+                state.cwd_localities.clear();
+                state.reconcile_cwd_locality_cache(true);
+            }
             ensure_selection_visible(state);
             return vec![Effect::PersistOperatorState];
         }
@@ -2622,6 +2669,9 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 state.input_buffer.push(character);
                 if state.input_mode == InputMode::Search {
                     state.filter.clone_from(&state.input_buffer);
+                    if filter_requires_locality(&state.filter) {
+                        state.reconcile_cwd_locality_cache(true);
+                    }
                     ensure_selection_visible(state);
                 }
             }
@@ -2655,6 +2705,9 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 state.input_buffer.pop();
                 if state.input_mode == InputMode::Search {
                     state.filter.clone_from(&state.input_buffer);
+                    if filter_requires_locality(&state.filter) {
+                        state.reconcile_cwd_locality_cache(true);
+                    }
                     ensure_selection_visible(state);
                 }
             }
@@ -3340,18 +3393,23 @@ fn git_projection_target_ids(state: &AppState) -> Vec<ThreadId> {
 }
 
 fn refresh_git_projections(state: &mut AppState) -> Vec<Effect> {
-    let host_local_thread_ids = state
+    state.reconcile_cwd_locality_cache(state.host_local_only || state.repo_backed_only);
+
+    let thread_cwds = state
         .threads
         .iter()
-        .filter(|thread| classify_cwd(&thread.metadata.cwd).terminal_usable())
-        .map(|thread| thread.id.0.clone())
-        .collect::<BTreeSet<_>>();
-    state
-        .git_contexts
-        .retain(|thread_id, _| host_local_thread_ids.contains(thread_id));
-    state
-        .forge_observations
-        .retain(|thread_id, _| host_local_thread_ids.contains(thread_id));
+        .map(|thread| (thread.id.0.clone(), thread.metadata.cwd.clone()))
+        .collect::<BTreeMap<_, _>>();
+    state.git_contexts.retain(|thread_id, context| {
+        thread_cwds
+            .get(thread_id)
+            .is_some_and(|cwd| *cwd == context.cwd)
+    });
+    state.forge_observations.retain(|thread_id, observation| {
+        thread_cwds
+            .get(thread_id)
+            .is_some_and(|cwd| *cwd == observation.cwd)
+    });
 
     let target_ids = git_projection_target_ids(state);
     let mut threads_by_cwd = BTreeMap::<String, Vec<ThreadId>>::new();
@@ -3359,9 +3417,6 @@ fn refresh_git_projections(state: &mut AppState) -> Vec<Effect> {
         let Some(thread) = state.threads.iter().find(|thread| thread.id == thread_id) else {
             continue;
         };
-        if !classify_cwd(&thread.metadata.cwd).terminal_usable() {
-            continue;
-        }
         threads_by_cwd
             .entry(thread.metadata.cwd.clone())
             .or_default()
@@ -3370,6 +3425,14 @@ fn refresh_git_projections(state: &mut AppState) -> Vec<Effect> {
 
     let mut effects = Vec::new();
     for (cwd, thread_ids) in threads_by_cwd {
+        if !state.refresh_cwd_locality(&cwd).terminal_usable() {
+            for thread_id in &thread_ids {
+                state.git_contexts.remove(&thread_id.0);
+                state.forge_observations.remove(&thread_id.0);
+            }
+            continue;
+        }
+
         let existing = thread_ids.iter().find_map(|thread_id| {
             state
                 .git_contexts
@@ -3411,7 +3474,7 @@ fn refresh_git_projections(state: &mut AppState) -> Vec<Effect> {
     effects
 }
 
-fn refresh_active_git_projections(state: &AppState) -> Vec<Effect> {
+fn refresh_active_git_projections(state: &mut AppState) -> Vec<Effect> {
     let selected_thread_id = match &state.view {
         View::Registry => state.selected_thread_id(),
         View::Thread(id) | View::Review(id) | View::Workspace(id) | View::ManagedWorktrees(id) => {
@@ -3424,35 +3487,45 @@ fn refresh_active_git_projections(state: &AppState) -> Vec<Effect> {
         View::Scratch(_) => None,
     };
 
-    let mut effects = Vec::new();
     let mut seen_ids = BTreeSet::new();
-    let mut seen_cwds = BTreeSet::new();
-
-    let mut push_thread = |thread: &ThreadSummary| {
-        if !seen_ids.insert(thread.id.0.clone()) {
-            return;
-        }
-        let cwd = thread.metadata.cwd.clone();
-        if classify_cwd(&cwd).terminal_usable() && seen_cwds.insert(cwd.clone()) {
-            effects.push(Effect::ProbeGit {
-                thread_id: thread.id.clone(),
-                cwd,
-            });
-        }
-    };
-
+    let mut threads_by_cwd = BTreeMap::<String, Vec<ThreadId>>::new();
     if let Some(thread_id) = selected_thread_id
         && let Some(thread) = state.threads.iter().find(|thread| thread.id == thread_id)
+        && seen_ids.insert(thread.id.0.clone())
     {
-        push_thread(thread);
+        threads_by_cwd
+            .entry(thread.metadata.cwd.clone())
+            .or_default()
+            .push(thread.id.clone());
     }
 
     for thread in &state.threads {
         if matches!(
             thread.runtime,
             RuntimeStatus::Working | RuntimeStatus::WaitingHuman
-        ) {
-            push_thread(thread);
+        ) && seen_ids.insert(thread.id.0.clone())
+        {
+            threads_by_cwd
+                .entry(thread.metadata.cwd.clone())
+                .or_default()
+                .push(thread.id.clone());
+        }
+    }
+
+    let mut effects = Vec::new();
+    for (cwd, thread_ids) in threads_by_cwd {
+        if state.refresh_cwd_locality(&cwd).terminal_usable() {
+            if let Some(thread_id) = thread_ids.first() {
+                effects.push(Effect::ProbeGit {
+                    thread_id: thread_id.clone(),
+                    cwd,
+                });
+            }
+        } else {
+            for thread_id in thread_ids {
+                state.git_contexts.remove(&thread_id.0);
+                state.forge_observations.remove(&thread_id.0);
+            }
         }
     }
 
@@ -3776,12 +3849,26 @@ fn ensure_selection_visible(state: &mut AppState) {
     }
 }
 
-fn matches_filter_normalized(thread: &ThreadSummary, query: &str) -> bool {
+fn is_locality_filter_token(token: &str) -> bool {
+    matches!(
+        token,
+        "local" | "stale" | "foreign-windows" | "foreign-unix" | "relative" | "empty"
+    )
+}
+
+fn filter_requires_locality(query: &str) -> bool {
+    query.split_whitespace().any(is_locality_filter_token)
+}
+
+fn matches_filter_normalized(
+    thread: &ThreadSummary,
+    query: &str,
+    locality: Option<CwdLocality>,
+) -> bool {
     if query.is_empty() {
         return true;
     }
 
-    let locality = classify_cwd(&thread.metadata.cwd).label();
     let fields = [
         thread.id.0.as_str(),
         thread.display_title(),
@@ -3792,16 +3879,12 @@ fn matches_filter_normalized(thread: &ThreadSummary, query: &str) -> bool {
         thread.metadata.workspace_key.as_str(),
         thread.metadata.model.as_deref().unwrap_or_default(),
         thread.metadata.project_id.as_deref().unwrap_or_default(),
-        locality,
     ]
     .map(str::to_lowercase);
 
     query.split_whitespace().all(|token| {
-        if matches!(
-            token,
-            "local" | "stale" | "foreign-windows" | "foreign-unix" | "relative" | "empty"
-        ) {
-            token == locality
+        if is_locality_filter_token(token) {
+            locality.is_some_and(|locality| token == locality.label())
         } else {
             fields.iter().any(|field| fuzzy_subsequence(token, field))
         }
@@ -3963,6 +4046,19 @@ mod tests {
     }
 
     #[test]
+    fn ordinary_registry_search_does_not_probe_filesystem_locality() {
+        let mut app = AppState::new(FakeBackend::scaled(10_000).snapshot().threads);
+        app.filter = "repo-031 synthetic 099".into();
+
+        let _ = app.visible_indices_with_match_count();
+
+        assert!(
+            app.cwd_localities.is_empty(),
+            "ordinary text search must not populate cwd filesystem locality"
+        );
+    }
+
+    #[test]
     fn registry_host_local_toggle_composes_with_text_search() {
         let mut app = app();
         app.threads[0].workspace = "focus-repo".into();
@@ -3994,6 +4090,33 @@ mod tests {
             assert!(visible.contains(&1));
         }
         assert_eq!(app.filter, "focus-repo");
+    }
+
+    #[test]
+    fn registry_locality_cache_is_refreshed_by_active_git_reconcile() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let cwd = root.path().join("repo");
+        std::fs::create_dir_all(&cwd).expect("create cwd");
+        let cwd = cwd.to_string_lossy().into_owned();
+
+        let mut app = app();
+        app.threads[0].metadata.cwd.clone_from(&cwd);
+        app.selected = 0;
+
+        reduce(&mut app, Action::ToggleHostLocalFilter);
+        assert_eq!(app.cwd_locality(&cwd), CwdLocality::LocalDirectory);
+        assert!(app.visible_indices().contains(&0));
+
+        std::fs::remove_dir(&cwd).expect("remove cwd");
+        assert_eq!(
+            app.cwd_locality(&cwd),
+            CwdLocality::LocalDirectory,
+            "render-time lookup must reuse the cached filesystem classification"
+        );
+
+        reduce(&mut app, Action::RefreshActiveGitProjections);
+        assert_eq!(app.cwd_locality(&cwd), CwdLocality::NativeMissing);
+        assert!(!app.visible_indices().contains(&0));
     }
 
     #[test]
@@ -5036,6 +5159,11 @@ mod tests {
         let effects = reduce(&mut app, Action::RefreshGitProjections);
         assert_eq!(effects.len(), REGISTRY_RECENT_LIMIT);
         assert_eq!(app.git_contexts.len(), REGISTRY_RECENT_LIMIT);
+        assert_eq!(
+            app.cwd_localities.len(),
+            REGISTRY_RECENT_LIMIT,
+            "Git projection must not stat every historical cwd"
+        );
 
         app.filter = "00149".into();
         let effects = reduce(&mut app, Action::RefreshGitProjections);
