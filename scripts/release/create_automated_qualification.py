@@ -30,6 +30,7 @@ def main() -> int:
     parser.add_argument("--scale", required=True)
     parser.add_argument("--soak", required=True)
     parser.add_argument("--support-manifest", required=True)
+    parser.add_argument("--support-snapshot", required=True)
     args = parser.parse_args()
 
     if not HEX40.fullmatch(args.commit):
@@ -93,6 +94,18 @@ def main() -> int:
 
     if support.get("schema") != "codex-tui/support-bundle/v1":
         raise SystemExit("unexpected support bundle schema")
+    if support_snapshot.get("schema") != "codex-tui/support-bundle/v1":
+        raise SystemExit("unexpected support snapshot schema")
+    build = support_snapshot.get("build")
+    if not isinstance(build, dict):
+        raise SystemExit("support snapshot is missing build metadata")
+    if str(build.get("sourceSha", "")).lower() != args.commit.lower():
+        raise SystemExit(
+            "support snapshot source SHA mismatch: "
+            f"{build.get('sourceSha')!r} != {args.commit.lower()!r}"
+        )
+    if not str(build.get("productVersion", "")).strip():
+        raise SystemExit("support snapshot productVersion is empty")
     privacy = set(support.get("privacy", []))
     required_privacy = {
         "no-environment-variables",
@@ -107,7 +120,7 @@ def main() -> int:
         raise SystemExit("support bundle privacy contract missing: " + ", ".join(missing))
 
     receipt = {
-        "schema": "codex-tui/automated-qualification/v2",
+        "schema": "codex-tui/automated-qualification/v3",
         "sourceSha": args.commit.lower(),
         "observedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "gates": {
@@ -123,6 +136,7 @@ def main() -> int:
             "scaleEvidenceSha256": sha256(scale_path),
             "soakEvidenceSha256": sha256(soak_path),
             "supportManifestSha256": sha256(support_path),
+            "supportSnapshotSha256": sha256(support_snapshot_path),
         },
     }
 
