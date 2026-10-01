@@ -942,9 +942,9 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                 },
             );
         }
-        let git_changed = drain_git(&mut app, &mut services.git);
-        needs_render |= git_changed;
-        if git_changed {
+        let git_changes = drain_git(&mut app, &mut services.git);
+        needs_render |= git_changes.any;
+        if git_changes.planning_projection {
             let effects = reduce(&mut app, Action::RefreshForgeProjections);
             apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
             reduce(
@@ -966,9 +966,10 @@ async fn run_app(fake_mode: bool) -> Result<()> {
             );
         }
 
-        let forge_mutation_changed = drain_forge_mutations(&mut app, &mut services.forge_mutations);
-        needs_render |= forge_mutation_changed;
-        if forge_mutation_changed {
+        let forge_mutation_changes =
+            drain_forge_mutations(&mut app, &mut services.forge_mutations);
+        needs_render |= forge_mutation_changes.any;
+        if forge_mutation_changes.planning_projection {
             let effects = reduce(&mut app, Action::RefreshForgeProjections);
             apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
             reduce(
@@ -979,9 +980,9 @@ async fn run_app(fake_mode: bool) -> Result<()> {
             );
         }
 
-        let mutation_changed = drain_mutations(&mut app, &mut services.mutations);
-        needs_render |= mutation_changed;
-        if mutation_changed {
+        let mutation_changes = drain_mutations(&mut app, &mut services.mutations);
+        needs_render |= mutation_changes.any;
+        if mutation_changes.planning_projection {
             let effects = reduce(&mut app, Action::RefreshGitProjections);
             apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
             reduce(
@@ -1213,9 +1214,23 @@ mod registry_drain_classification_tests {
     }
 }
 
-fn drain_git(app: &mut AppState, git: &mut GitHandle) -> bool {
-    let mut changed = false;
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct ProjectionDrainChanges {
+    any: bool,
+    planning_projection: bool,
+}
+
+fn git_event_changes_planning(event: &GitEvent) -> bool {
+    match event {
+        GitEvent::Context(_) => true,
+        GitEvent::Review(_) => false,
+    }
+}
+
+fn drain_git(app: &mut AppState, git: &mut GitHandle) -> ProjectionDrainChanges {
+    let mut changes = ProjectionDrainChanges::default();
     while let Some(event) = git.try_recv() {
+        changes.planning_projection |= git_event_changes_planning(&event);
         match event {
             GitEvent::Context(context) => {
                 reduce(app, Action::GitContextLoaded(context));
@@ -1224,9 +1239,39 @@ fn drain_git(app: &mut AppState, git: &mut GitHandle) -> bool {
                 reduce(app, Action::GitReviewLoaded(review));
             }
         }
-        changed = true;
+        changes.any = true;
     }
-    changed
+    changes
+}
+
+#[cfg(test)]
+mod projection_drain_classification_tests {
+    use super::*;
+
+    #[test]
+    fn only_projection_changing_events_require_planning_work() {
+        assert!(git_event_changes_planning(&GitEvent::Context(
+            codex_tui::git::GitContext::pending(
+                codex_tui::domain::ThreadId::new("thread"),
+                "/repo",
+            )
+        )));
+        assert!(!git_event_changes_planning(&GitEvent::Review(
+            codex_tui::git::GitReview::pending(
+                codex_tui::domain::ThreadId::new("thread"),
+                "/repo",
+            )
+        )));
+        assert!(!forge_mutation_event_changes_planning(
+            &ForgeMutationEvent::Notice("fixture".into())
+        ));
+        assert!(!mutation_event_changes_planning(
+            &MutationEvent::ManagedWorktrees(vec![])
+        ));
+        assert!(!mutation_event_changes_planning(
+            &MutationEvent::Notice("fixture".into())
+        ));
+    }
 }
 
 fn drain_forge(app: &mut AppState, forge: &mut ForgeHandle) -> bool {
@@ -1245,9 +1290,20 @@ fn drain_forge(app: &mut AppState, forge: &mut ForgeHandle) -> bool {
     changed
 }
 
-fn drain_forge_mutations(app: &mut AppState, mutations: &mut ForgeMutationHandle) -> bool {
-    let mut changed = false;
+fn forge_mutation_event_changes_planning(event: &ForgeMutationEvent) -> bool {
+    match event {
+        ForgeMutationEvent::Receipt(_) => true,
+        ForgeMutationEvent::Notice(_) => false,
+    }
+}
+
+fn drain_forge_mutations(
+    app: &mut AppState,
+    mutations: &mut ForgeMutationHandle,
+) -> ProjectionDrainChanges {
+    let mut changes = ProjectionDrainChanges::default();
     while let Some(event) = mutations.try_recv() {
+        changes.planning_projection |= forge_mutation_event_changes_planning(&event);
         match event {
             ForgeMutationEvent::Receipt(receipt) => {
                 reduce(app, Action::ForgeMutationReceipt(receipt));
@@ -1256,14 +1312,25 @@ fn drain_forge_mutations(app: &mut AppState, mutations: &mut ForgeMutationHandle
                 reduce(app, Action::MutationNotice(notice));
             }
         }
-        changed = true;
+        changes.any = true;
     }
-    changed
+    changes
 }
 
-fn drain_mutations(app: &mut AppState, mutations: &mut WorktreeMutationHandle) -> bool {
-    let mut changed = false;
+fn mutation_event_changes_planning(event: &MutationEvent) -> bool {
+    match event {
+        MutationEvent::Receipt(_) => true,
+        MutationEvent::ManagedWorktrees(_) | MutationEvent::Notice(_) => false,
+    }
+}
+
+fn drain_mutations(
+    app: &mut AppState,
+    mutations: &mut WorktreeMutationHandle,
+) -> ProjectionDrainChanges {
+    let mut changes = ProjectionDrainChanges::default();
     while let Some(event) = mutations.try_recv() {
+        changes.planning_projection |= mutation_event_changes_planning(&event);
         match event {
             MutationEvent::Receipt(receipt) => {
                 reduce(app, Action::MutationReceipt(receipt));
@@ -1275,9 +1342,9 @@ fn drain_mutations(app: &mut AppState, mutations: &mut WorktreeMutationHandle) -
                 reduce(app, Action::MutationNotice(notice));
             }
         }
-        changed = true;
+        changes.any = true;
     }
-    changed
+    changes
 }
 
 fn drain_terminal_drawer(app: &mut AppState, terminal: &mut TerminalDrawerRuntime) -> bool {
