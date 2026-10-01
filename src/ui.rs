@@ -1,4 +1,5 @@
-use crate::app::{AppState, CommandPaletteChoice, ContextChoice, InputMode, View};
+use crate::app::{AppState, ContextChoice, InputMode, View};
+use crate::command::Command;
 use crate::conversation::{InteractiveRequest, InteractiveRequestKind};
 use crate::domain::{AttentionReason, CwdLocality, RuntimeStatus, ThreadSummary, display_cwd};
 use crate::forge::ForgeFreshness;
@@ -185,44 +186,10 @@ fn terminal_process_state_label(state: &TerminalProcessState, language: UiLangua
     }
 }
 
-fn command_palette_choice_label(
-    choice: CommandPaletteChoice,
-    language: UiLanguage,
-) -> &'static str {
-    match (choice, language) {
-        (CommandPaletteChoice::Search, UiLanguage::SimplifiedChinese) => "搜索",
-        (CommandPaletteChoice::NextAttention, UiLanguage::SimplifiedChinese) => "下一个待处理",
-        (CommandPaletteChoice::QuickPrompt, UiLanguage::SimplifiedChinese) => "快速消息",
-        (CommandPaletteChoice::Board, UiLanguage::SimplifiedChinese) => "打开看板",
-        (CommandPaletteChoice::Review, UiLanguage::SimplifiedChinese) => "打开评审",
-        (CommandPaletteChoice::Workspace, UiLanguage::SimplifiedChinese) => "打开工作区",
-        (CommandPaletteChoice::ManagedWorktrees, UiLanguage::SimplifiedChinese) => "受管 Worktrees",
-        (CommandPaletteChoice::NewScratch, UiLanguage::SimplifiedChinese) => "新建 Scratch",
-        (CommandPaletteChoice::Goal, UiLanguage::SimplifiedChinese) => "Goal 操作",
-        (CommandPaletteChoice::TogglePin, UiLanguage::SimplifiedChinese) => "切换固定",
-        (CommandPaletteChoice::Snooze, UiLanguage::SimplifiedChinese) => "稍后提醒",
-        (CommandPaletteChoice::ContextActions, UiLanguage::SimplifiedChinese) => "上下文操作",
-        (CommandPaletteChoice::TerminalDrawer, UiLanguage::SimplifiedChinese) => "打开终端抽屉",
-        (CommandPaletteChoice::CloseTerminalDrawer, UiLanguage::SimplifiedChinese) => {
-            "关闭终端抽屉"
-        }
-        (CommandPaletteChoice::Help, UiLanguage::SimplifiedChinese) => "帮助",
-        (CommandPaletteChoice::Search, UiLanguage::English) => "Search",
-        (CommandPaletteChoice::NextAttention, UiLanguage::English) => "Next attention",
-        (CommandPaletteChoice::QuickPrompt, UiLanguage::English) => "Quick Prompt",
-        (CommandPaletteChoice::Board, UiLanguage::English) => "Open Board",
-        (CommandPaletteChoice::Review, UiLanguage::English) => "Open Review",
-        (CommandPaletteChoice::Workspace, UiLanguage::English) => "Open Workspace",
-        (CommandPaletteChoice::ManagedWorktrees, UiLanguage::English) => "Managed Worktrees",
-        (CommandPaletteChoice::NewScratch, UiLanguage::English) => "New Scratch",
-        (CommandPaletteChoice::Goal, UiLanguage::English) => "Goal actions",
-        (CommandPaletteChoice::TogglePin, UiLanguage::English) => "Toggle pin",
-        (CommandPaletteChoice::Snooze, UiLanguage::English) => "Snooze",
-        (CommandPaletteChoice::ContextActions, UiLanguage::English) => "Context actions",
-        (CommandPaletteChoice::TerminalDrawer, UiLanguage::English) => "Open Terminal Drawer",
-        (CommandPaletteChoice::CloseTerminalDrawer, UiLanguage::English) => "Close Terminal Drawer",
-        (CommandPaletteChoice::Help, UiLanguage::English) => "Help",
-    }
+fn command_palette_choice_label(choice: Command, language: UiLanguage) -> &'static str {
+    choice
+        .palette_label(language.is_simplified_chinese())
+        .expect("command palette must only contain palette-capable commands")
 }
 
 fn context_choice_label(choice: ContextChoice, language: UiLanguage) -> &'static str {
