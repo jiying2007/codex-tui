@@ -530,7 +530,7 @@ fn backend_platform_label(app: &AppState) -> &str {
         .platform
         .as_deref()
         .filter(|value| !value.trim().is_empty())
-        .unwrap_or("<unknown>")
+        .unwrap_or_else(|| tr(app, "<unknown>", "<未知>"))
 }
 
 fn backend_home_label(app: &AppState) -> &str {
@@ -538,7 +538,7 @@ fn backend_home_label(app: &AppState) -> &str {
         .codex_home
         .as_deref()
         .filter(|value| !value.trim().is_empty())
-        .unwrap_or("<unknown>")
+        .unwrap_or_else(|| tr(app, "<unknown>", "<未知>"))
 }
 
 fn registry_title(app: &AppState, width: u16) -> String {
@@ -860,7 +860,11 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
                 )),
                 Line::from(format!(
                     "模型: {}",
-                    thread.metadata.model.as_deref().unwrap_or("unknown")
+                    thread
+                        .metadata
+                        .model
+                        .as_deref()
+                        .unwrap_or_else(|| tr(app, "unknown", "未知"))
                 )),
                 Line::from(format!(
                     "Cwd [{}]: {}",
@@ -868,7 +872,11 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
                     sanitize_inline(display_cwd(&thread.metadata.cwd))
                 )),
                 Line::from(format!("计划状态: {planning}")),
-                Line::from(format!("Goal: {}", goal_summary(app, &thread.id.0))),
+                Line::from(format!(
+                    "{}: {}",
+                    tr(app, "Goal", "目标"),
+                    goal_summary(app, &thread.id.0)
+                )),
             ]
         } else {
             vec![
@@ -880,7 +888,11 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
                 )),
                 Line::from(format!(
                     "Model: {}",
-                    thread.metadata.model.as_deref().unwrap_or("unknown")
+                    thread
+                        .metadata
+                        .model
+                        .as_deref()
+                        .unwrap_or_else(|| tr(app, "unknown", "未知"))
                 )),
                 Line::from(format!(
                     "Cwd [{}]: {}",
@@ -888,7 +900,11 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
                     sanitize_inline(display_cwd(&thread.metadata.cwd))
                 )),
                 Line::from(format!("Planning: {planning}")),
-                Line::from(format!("Goal: {}", goal_summary(app, &thread.id.0))),
+                Line::from(format!(
+                    "{}: {}",
+                    tr(app, "Goal", "目标"),
+                    goal_summary(app, &thread.id.0)
+                )),
             ]
         };
         if let Some(note) = app
@@ -932,7 +948,10 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
                     lines.push(Line::from(format!(
                         "{} · {}",
                         tr(app, "Git: degraded", "Git: 已降级"),
-                        context.error.as_deref().unwrap_or("unknown error")
+                        context
+                            .error
+                            .as_deref()
+                            .unwrap_or_else(|| tr(app, "unknown error", "未知错误"))
                     )));
                 }
                 Some(context) if !context.is_repository => {
@@ -947,7 +966,7 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
                         .branch
                         .as_deref()
                         .or(context.head.as_deref())
-                        .unwrap_or("unknown");
+                        .unwrap_or_else(|| tr(app, "unknown", "未知"));
                     lines.push(Line::from(format!("Git: {branch}")));
                     lines.push(Line::from(if app.language.is_simplified_chinese() {
                         format!(
@@ -1226,7 +1245,10 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area: R
             vec![Line::from(format!(
                 "{}: {}",
                 tr(app, "Conversation unavailable", "会话不可用"),
-                conversation.error.as_deref().unwrap_or("unknown error")
+                conversation
+                    .error
+                    .as_deref()
+                    .unwrap_or_else(|| tr(app, "unknown error", "未知错误"))
             ))]
         }
         Some(conversation) if conversation.items.is_empty() => vec![Line::from(tr(
@@ -1694,7 +1716,11 @@ fn render_scratch(frame: &mut Frame<'_>, app: &AppState, scratch_id: &str, area:
     };
     frame.render_widget(
         Paragraph::new(lines)
-            .block(Block::bordered().title(" ScratchWork "))
+            .block(Block::bordered().title(tr(
+                app,
+                " ScratchWork ",
+                " 本地 ScratchWork ",
+            )))
             .wrap(Wrap { trim: false }),
         chunks[0],
     );
@@ -1734,7 +1760,10 @@ fn render_workspace(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area
             lines.push(Line::from(format!(
                 "{} · {}",
                 tr(app, "Git: degraded", "Git: 已降级"),
-                context.error.as_deref().unwrap_or("unknown error")
+                context
+                            .error
+                            .as_deref()
+                            .unwrap_or_else(|| tr(app, "unknown error", "未知错误"))
             )));
         }
         Some(context) if !context.is_repository => {
@@ -1766,19 +1795,25 @@ fn render_workspace(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area
                     .branch
                     .as_deref()
                     .or(context.head.as_deref())
-                    .unwrap_or("<unknown>")
+                    .unwrap_or_else(|| tr(app, "<unknown>", "<未知>"))
             )));
             lines.push(Line::from(if app.language.is_simplified_chinese() {
                 format!(
                     "上游: {} · 领先={} 落后={}",
-                    context.upstream.as_deref().unwrap_or("<none>"),
+                    context
+                        .upstream
+                        .as_deref()
+                        .unwrap_or_else(|| tr(app, "<none>", "<无>")),
                     context.ahead,
                     context.behind
                 )
             } else {
                 format!(
                     "Upstream: {} · ahead={} behind={}",
-                    context.upstream.as_deref().unwrap_or("<none>"),
+                    context
+                        .upstream
+                        .as_deref()
+                        .unwrap_or_else(|| tr(app, "<none>", "<无>")),
                     context.ahead,
                     context.behind
                 )
@@ -1889,7 +1924,10 @@ fn render_managed_worktrees(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
             let text = format!(
                 "{prefix} {} {} {}",
                 fit_display(ownership, 8),
-                fit_display(record.branch.as_deref().unwrap_or("<detached>"), 18),
+                fit_display(record
+                    .branch
+                    .as_deref()
+                    .unwrap_or_else(|| tr(app, "<detached>", "<分离 HEAD>")), 18),
                 sanitize_inline(&record.canonical_path)
             );
             let style = if selected {
@@ -2363,8 +2401,12 @@ fn render_forge_mutation_confirmation(frame: &mut Frame<'_>, app: &AppState) {
         lines.push(Line::from(format!(
             "{}: {} -> {}",
             tr(app, "Branches", "分支"),
-            plan.source_branch.as_deref().unwrap_or("<none>"),
-            plan.target_branch.as_deref().unwrap_or("<none>")
+            plan.source_branch
+                .as_deref()
+                .unwrap_or_else(|| tr(app, "<none>", "<无>")),
+            plan.target_branch
+                .as_deref()
+                .unwrap_or_else(|| tr(app, "<none>", "<无>"))
         )));
     }
     if let Some(title) = &plan.title {
@@ -2824,7 +2866,8 @@ mod tests {
         app.language = UiLanguage::SimplifiedChinese;
         app.backend_status.connected = true;
         app.backend_status.source = "codex-app-server".into();
-        app.backend_status.platform = Some("linux/linux".into());
+        app.backend_status.platform = None;
+        app.threads[0].metadata.model = None;
 
         terminal.draw(|frame| render(frame, &app)).expect("draw");
         let mut snapshot = String::new();
@@ -2835,7 +2878,7 @@ mod tests {
             }
             snapshot.push('\n');
         }
-        for glyph in ['任', '务', '中', '心', '已', '选', '择', '搜', '索'] {
+        for glyph in ['任', '务', '中', '心', '已', '选', '择', '搜', '索', '未', '知'] {
             assert!(
                 snapshot.contains(glyph),
                 "missing localized glyph {glyph:?}"
