@@ -121,6 +121,10 @@ def main() -> int:
             root / "docs/release/install-upgrade.md",
             stage / "INSTALL-UPGRADE.md",
         )
+        copy_file(
+            root / "docs/team-quickstart.md",
+            stage / "TEAM-QUICKSTART.md",
+        )
         copy_file(notices, stage / "THIRD_PARTY_NOTICES.txt")
         copy_file(criteria, stage / "STABLE-CRITERIA.json")
 

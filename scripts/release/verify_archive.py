@@ -78,6 +78,7 @@ def main() -> int:
             "README.md",
             "CHANGELOG.md",
             "INSTALL-UPGRADE.md",
+            "TEAM-QUICKSTART.md",
             "THIRD_PARTY_NOTICES.txt",
             "STABLE-CRITERIA.json",
             "RELEASE-METADATA.json",
