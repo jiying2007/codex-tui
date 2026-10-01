@@ -212,20 +212,29 @@ python3 scripts/release/linux_qualify.py \
   --canonical-ci-run <successful-main-ci-run-id> \
   --terminal-receipt release/evidence/linux/terminal-linux.json \
   --source <retained-linux-machine-id>
+
+# Optional after local qualification succeeds:
+python3 scripts/release/linux_qualify.py \
+  --canonical-ci-run <successful-main-ci-run-id> \
+  --terminal-receipt release/evidence/linux/terminal-linux.json \
+  --source <retained-linux-machine-id> \
+  --dispatch
 ```
 
 It performs:
 
 1. clean-main / exact-SHA validation;
 2. canonical GitHub CI run validation;
-3. `cargo build --release --locked`;
+3. locked all-target tests plus release build;
 4. Linux READY compatibility capture + SHA-256;
-5. 20 warmup + 200 measured resident-planning-10k samples;
-6. Linux terminal receipt validation;
-7. `release-evidence/v2` assembly;
-8. local stable release verification for the current Cargo package version.
+5. exact-SHA 50k/256 structural soak and secret-safe Doctor Bundle capture;
+6. `automated-qualification/v1` assembly;
+7. 20 warmup + 200 measured resident-planning-10k diagnostic samples;
+8. Linux terminal receipt validation;
+9. `release-evidence/v3` assembly;
+10. local stable release verification for the current Cargo package version.
 
-The result is retained under `release/evidence/linux/`. The script never publishes.
+The result is retained under `release/evidence/linux/` and includes a complete `workflowInputs` object. `--dispatch` submits those exact values to the GitHub `release.yml` workflow with `channel=stable` and `publish=false`; it never publishes a release.
 
 
 ### Mission Control host-local sessions
