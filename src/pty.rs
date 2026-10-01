@@ -420,7 +420,10 @@ mod tests {
         let send_unblocked_in_actor = Arc::clone(&send_unblocked);
         let actor = std::thread::spawn(move || {
             let result = event_tx.send(PtyEvent::Error("blocked".into()));
-            assert!(result.is_err(), "receiver should be dropped during handle teardown");
+            assert!(
+                result.is_err(),
+                "receiver should be dropped during handle teardown"
+            );
             send_unblocked_in_actor.store(true, Ordering::SeqCst);
         });
 
