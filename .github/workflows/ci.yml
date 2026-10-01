@@ -49,6 +49,18 @@ jobs:
 
           python scripts/release/create_terminal_receipt.py             --platform linux             --terminal ci-python38             --pass             --output "$OUT/terminal.json"
 
+          cat > "$OUT/failure-matrix.json" <<'EOF'
+          {
+            "schema": "codex-tui/failure-matrix/v1",
+            "cases": [
+              {
+                "id": "fixture",
+                "evidence": ["fixture::test"]
+              }
+            ]
+          }
+          EOF
+
           cat > "$OUT/scale.json" <<'EOF'
           {
             "schema": "codex-tui/scale-evidence/v4",
@@ -91,6 +103,7 @@ jobs:
           python scripts/release/create_automated_qualification.py \
             --output "$OUT/automated-qualification.json" \
             --commit 0123456789abcdef0123456789abcdef01234567 \
+            --failure-matrix "$OUT/failure-matrix.json" \
             --scale "$OUT/scale.json" \
             --soak "$OUT/soak.json" \
             --support-manifest "$OUT/support-manifest.json"
