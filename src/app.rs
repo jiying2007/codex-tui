@@ -3903,13 +3903,13 @@ fn rebuild_planning(state: &mut AppState, now_unix_ms: u64) {
     let mut projections =
         Vec::with_capacity(state.threads.len() + state.planning_snapshot.scratch.len());
     let active_worktrees = active_worktree_counts(state);
-    let mut worktree_collision_counts = BTreeMap::new();
+    let mut worktree_collision_counts = Vec::with_capacity(state.threads.len());
 
     for thread in &state.threads {
         let anchor = SourceRef::codex_thread(&thread.id);
         let collision_count =
             collision_count_from_active_worktrees(state, thread, &active_worktrees);
-        worktree_collision_counts.insert(thread.id.0.clone(), collision_count);
+        worktree_collision_counts.push((thread.id.0.clone(), collision_count));
         let projection = reconcile_thread_card_with_goal_and_forge(
             ReconcileInput {
                 thread,
@@ -3990,7 +3990,7 @@ fn rebuild_planning(state: &mut AppState, now_unix_ms: u64) {
             .then_with(|| left.local_id.cmp(&right.local_id))
     });
 
-    state.worktree_collision_counts = worktree_collision_counts;
+    state.worktree_collision_counts = worktree_collision_counts.into_iter().collect();
     state.work_card_by_thread = projections
         .iter()
         .enumerate()
