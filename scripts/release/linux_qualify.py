@@ -446,12 +446,6 @@ def main() -> int:
             else "use workflowInputs for stable publish=false, or run a fresh qualification with --dispatch"
         ),
     }
-    summary_path = output_dir / "qualification-summary.json"
-    write_text_lf(
-        summary_path,
-        json.dumps(summary, indent=2, sort_keys=True) + "\n",
-    )
-
     if args.dispatch:
         remote_main = run(
             ["git", "ls-remote", "origin", "refs/heads/main"],
@@ -477,6 +471,13 @@ def main() -> int:
         for key, value in workflow_inputs.items():
             command.extend(["-f", f"{key}={value}"])
         run(command, cwd=root, capture=False)
+        summary["next"] = "stable publish=false workflow dispatched"
+
+    summary_path = output_dir / "qualification-summary.json"
+    write_text_lf(
+        summary_path,
+        json.dumps(summary, indent=2, sort_keys=True) + "\n",
+    )
 
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0
