@@ -401,7 +401,9 @@ fn queue_mutation_command(
 ) -> Result<()> {
     tx.try_send(command).map_err(|error| match error {
         mpsc::error::TrySendError::Full(_) => anyhow!("forge mutation coordinator queue is full"),
-        mpsc::error::TrySendError::Closed(_) => anyhow!("forge mutation coordinator is unavailable"),
+        mpsc::error::TrySendError::Closed(_) => {
+            anyhow!("forge mutation coordinator is unavailable")
+        }
     })
 }
 
