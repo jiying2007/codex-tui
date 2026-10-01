@@ -82,10 +82,17 @@ impl WorktreeMutationHandle {
     }
 }
 
-fn queue_mutation_command(tx: &mpsc::Sender<MutationCommand>, command: MutationCommand) -> Result<()> {
+fn queue_mutation_command(
+    tx: &mpsc::Sender<MutationCommand>,
+    command: MutationCommand,
+) -> Result<()> {
     tx.try_send(command).map_err(|error| match error {
-        mpsc::error::TrySendError::Full(_) => anyhow!("worktree mutation coordinator queue is full"),
-        mpsc::error::TrySendError::Closed(_) => anyhow!("worktree mutation coordinator is unavailable"),
+        mpsc::error::TrySendError::Full(_) => {
+            anyhow!("worktree mutation coordinator queue is full")
+        }
+        mpsc::error::TrySendError::Closed(_) => {
+            anyhow!("worktree mutation coordinator is unavailable")
+        }
     })
 }
 
@@ -1151,7 +1158,7 @@ branch refs/heads/feature
             .save_operation_receipt(&receipt)
             .expect("save executing");
 
-        let (tx, mut rx) = mpsc::unbounded_channel();
+        let (tx, mut rx) = mpsc::channel(MUTATION_EVENT_QUEUE_CAPACITY);
         recover_incomplete(&store, &Arc::new(Mutex::new(BTreeMap::new())), &tx)
             .await
             .expect("recover");
