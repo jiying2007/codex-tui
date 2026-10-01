@@ -449,7 +449,7 @@ mod tests {
     }
 
     #[test]
-    fn drop_releases_event_receiver_before_joining_backpressured_actor() {
+    fn drop_releases_event_receiver_for_backpressured_actor() {
         use std::sync::{
             Arc,
             atomic::{AtomicBool, Ordering},
