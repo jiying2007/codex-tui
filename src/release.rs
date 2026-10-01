@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 pub const RELEASE_VERIFY_SCHEMA: &str = "codex-tui/release-verification/v1";
 pub const RELEASE_EVIDENCE_SCHEMA: &str = "codex-tui/release-evidence/v3";
-pub const AUTOMATED_QUALIFICATION_SCHEMA: &str = "codex-tui/automated-qualification/v1";
+pub const AUTOMATED_QUALIFICATION_SCHEMA: &str = "codex-tui/automated-qualification/v2";
 pub const STABLE_CRITERIA_SCHEMA: &str = "codex-tui/stable-criteria/v2";
 pub const PRIMARY_STABLE_PLATFORM: &str = "linux";
 pub const SECONDARY_PLATFORMS: [&str; 2] = ["macos", "windows"];
@@ -55,6 +55,7 @@ pub struct PlatformCompatReceipt {
 #[serde(rename_all = "camelCase")]
 pub struct AutomatedQualificationGates {
     pub failure_matrix: String,
+    pub scale_evidence: String,
     pub soak_structural: String,
     pub ui_contract: String,
     pub state_migration_recovery: String,
@@ -64,6 +65,7 @@ pub struct AutomatedQualificationGates {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AutomatedQualificationArtifacts {
+    pub scale_evidence_sha256: String,
     pub soak_evidence_sha256: String,
     pub support_manifest_sha256: String,
 }
@@ -347,6 +349,7 @@ fn validate_automated_qualification(
     );
     for (name, status) in [
         ("failure-matrix", receipt.gates.failure_matrix.as_str()),
+        ("scale-evidence", receipt.gates.scale_evidence.as_str()),
         ("soak-structural", receipt.gates.soak_structural.as_str()),
         ("ui-contract", receipt.gates.ui_contract.as_str()),
         (
@@ -363,6 +366,10 @@ fn validate_automated_qualification(
             "automated qualification gate {name} must PASS"
         );
     }
+    anyhow::ensure!(
+        valid_sha256(&receipt.artifacts.scale_evidence_sha256),
+        "scale evidence SHA-256 must be 64 hexadecimal characters"
+    );
     anyhow::ensure!(
         valid_sha256(&receipt.artifacts.soak_evidence_sha256),
         "soak evidence SHA-256 must be 64 hexadecimal characters"
@@ -580,12 +587,14 @@ mod tests {
             observed_at: "2026-10-01T00:00:00Z".into(),
             gates: AutomatedQualificationGates {
                 failure_matrix: "pass".into(),
+                scale_evidence: "pass".into(),
                 soak_structural: "pass".into(),
                 ui_contract: "pass".into(),
                 state_migration_recovery: "pass".into(),
                 support_bundle_redaction: "pass".into(),
             },
             artifacts: AutomatedQualificationArtifacts {
+                scale_evidence_sha256: "b".repeat(64),
                 soak_evidence_sha256: "c".repeat(64),
                 support_manifest_sha256: "d".repeat(64),
             },
