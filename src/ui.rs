@@ -88,7 +88,7 @@ fn context_choice_label(choice: ContextChoice, language: UiLanguage) -> &'static
     }
 }
 
-fn saved_view_name<'a>(view: &'a SavedView, language: UiLanguage) -> &'a str {
+fn saved_view_name(view: &SavedView, language: UiLanguage) -> &str {
     if language == UiLanguage::English {
         return &view.name;
     }
