@@ -25,6 +25,7 @@ All notable codex-tui changes are recorded here.
 - removed Registry/planning O(N²) hot paths by indexing thread WorkCards, precomputing active-worktree collision counts, and added 10k recent/search Registry projection benchmarks.
 - changed App Server Registry synchronization to event-driven thread lifecycle/status updates, suppressing full snapshot work for unrelated streaming notifications, reducing complete registry reconciliation from 2s to a 30s fallback, using canonical `recency_at` plus the state-DB fast path with legacy fallback for recurring reconciliation, and bounding eager Goal probing to the most recent 100 threads.
 - completed the second i18n hardening pass for Terminal Drawer target/status errors, Forge freshness and planning errors, Selected attention labels and operation receipt states; locale auto-detection no longer misclassifies known Traditional Chinese locales as Simplified Chinese.
+- cached cwd locality for Registry rendering and scope filters, removed all-history filesystem probing from Git projection cleanup, and added a 10k host-local Registry benchmark so LOCAL ONLY / REPO ONLY scale paths are covered explicitly.
 
 ## [1.0.0] - 2026-09-30
 
