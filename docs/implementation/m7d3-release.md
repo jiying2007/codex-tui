@@ -68,7 +68,7 @@ It binds:
 - compatibility schema version;
 - Linux Tier 1 compatibility report SHA-256 with READY state and observation timestamp;
 - Linux Tier 1 terminal-restoration PASS receipt;
-- an exact-SHA `codex-tui/automated-qualification/v2` receipt covering Failure Matrix, 50k scale-v4 evidence, 50k structural soak, UI contract, state migration/recovery and support-bundle redaction;
+- an exact-SHA `codex-tui/automated-qualification/v3` receipt covering Failure Matrix, 50k scale-v4 evidence, 50k structural soak, UI contract, state migration/recovery and support-bundle redaction;
 - Linux retained `resident-planning-10k` p95/p99 diagnostic receipt;
 - optional macOS/Windows Tier 2 retained receipts when available.
 
@@ -225,7 +225,7 @@ It performs:
 4. Linux READY compatibility capture + SHA-256;
 5. exact-SHA 50k scale-v4 capture with registry construction, planning reconcile and recent/all-history/search/host-local distributions;
 6. exact-SHA 50k/256 structural soak and secret-safe Doctor Bundle capture;
-7. `automated-qualification/v2` assembly with SHA-256 bindings for scale, soak and support manifest;
+7. `automated-qualification/v3` assembly with SHA-256 bindings for Failure Matrix, scale, soak, support manifest and support snapshot; the support snapshot source SHA must equal the candidate SHA;
 8. 20 warmup + 200 measured resident-planning-10k diagnostic samples;
 9. Linux terminal receipt validation;
 10. `release-evidence/v3` assembly;
