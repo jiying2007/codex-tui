@@ -3053,7 +3053,7 @@ mod tests {
         let backend = TestBackend::new(140, 14);
         let mut terminal = Terminal::new(backend).expect("terminal");
         let mut app = AppState::new(FakeBackend::scaled(150).snapshot().threads);
-        app.backend_status = BackendStatus::fake();
+        app.backend_status = FakeBackend::seeded().snapshot().status;
         let cwd = std::env::current_dir()
             .expect("cwd")
             .to_string_lossy()
