@@ -3,12 +3,14 @@ name: scale-evidence
 on:
   pull_request:
     paths:
+      - "src/app.rs"
       - "src/scale_evidence.rs"
       - "src/release.rs"
       - ".github/workflows/scale-evidence.yml"
   push:
     branches: [main]
     paths:
+      - "src/app.rs"
       - "src/scale_evidence.rs"
       - "src/release.rs"
       - ".github/workflows/scale-evidence.yml"
