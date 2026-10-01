@@ -2780,7 +2780,10 @@ mod tests {
             snapshot.push('\n');
         }
         for glyph in ['任', '务', '中', '心', '已', '选', '择', '搜', '索'] {
-            assert!(snapshot.contains(glyph), "missing localized glyph {glyph:?}");
+            assert!(
+                snapshot.contains(glyph),
+                "missing localized glyph {glyph:?}"
+            );
         }
 
         app.show_help = true;
