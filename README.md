@@ -154,6 +154,18 @@ cargo run -- release benchmark --iterations 200 --source retained-runner --json
 cargo run -- --fake
 ```
 
+### Language / 语言
+
+The TUI supports English and Simplified Chinese. The language is selected in the local config printed by `codex-tui doctor`:
+
+```toml
+[ui]
+mouse = true
+language = "auto" # auto | en | zh-CN
+```
+
+`auto` is the default and follows the process locale in standard precedence order: `LC_ALL`, then `LC_MESSAGES`, then `LANG`. Chinese locales such as `zh_CN.UTF-8` or `zh-CN` select Simplified Chinese; other or unavailable locales select English. Use `en` or `zh-CN` to pin the UI language explicitly. Technical identifiers and upstream error text remain unchanged so terminal output still matches Codex/Git/Forge diagnostics.
+
 Normal startup launches a local `codex app-server --listen stdio://` connection after the first UI frame. Mission Control stays metadata-first; opening a thread loads only the recent conversation page. Thread View supports paginated history, persistent local drafts, turn start/steer/interrupt, approvals, user-input requests, and stable Codex Goal projection when the connected App Server supports it.
 
 Personal planning state is stored locally in SQLite: WorkCard relationships/overlays, ScratchWork, Saved Views, notes, bookmarks, snooze and hot slots. Canonical Codex conversations/Goals and Git state are never copied into SQLite.
@@ -164,7 +176,7 @@ M6a adds an asynchronous read-only GitLab projection. A normal forge refresh sta
 
 M6b adds explicit GitLab merge-request mutations from Review / Workspace context actions (`.`): create MR, comment, approve, and merge. Every write is plan-first and requires explicit confirmation. Approve/merge revalidate the exact MR HEAD SHA immediately before execution; merge never requests force/policy bypass. Comment bodies remain memory-only and are not stored in SQLite. Uncertain external outcomes remain `OutcomeUnknown` and are never blindly retried.
 
-M6c completes the normalized forge layer with a GitHub.com read-only provider. Exact `github.com` remotes route through authenticated `gh`; other hosts remain GitLab-first so internal GitLab refreshes pay no provider-detection probe. A normal GitHub refresh uses four `gh api` calls (repository, Issues, open Pull Requests, Actions runs), while reviews and bounded GraphQL review threads load only in Review. GitHub capabilities degrade independently and no GitHub write path is introduced.
+M6c completes the normalized forge layer with a GitHub.com read-only provider. Exact `github.com` and `gitlab.com` remotes use their canonical providers; custom forge hosts are resolved from explicit `gh`/`glab` authentication instead of assuming every non-GitHub host is GitLab. A normal GitHub refresh uses four `gh api` calls (repository, Issues, open Pull Requests, Actions runs), while reviews and bounded GraphQL review threads load only in Review. GitHub capabilities degrade independently and no GitHub write path is introduced.
 
 M7a establishes a read-only automation and scale baseline. `headless threads` and `headless work` emit stable text or secret-safe JSON snapshots with explicit degraded exit codes. `doctor compat` reports local OS/architecture, SQLite, Codex, Git, `glab`, and `gh` compatibility without remote forge API probes. `--fixture-10k` provides deterministic scale data, while the Divan benchmark target measures resident 10k planning filters without turning noisy hosted-runner timings into release gates.
 
