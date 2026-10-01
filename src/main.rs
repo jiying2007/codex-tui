@@ -1,8 +1,9 @@
 use anyhow::Result;
 use codex_tui::{
-    app::{Action, AppState, CommandPaletteChoice, Effect, InputMode, ViewKind, reduce},
+    app::{Action, AppState, Effect, InputMode, ViewKind, reduce},
     app_server::{self, ConversationEvent, RegistryHandle},
     backend::{BackendStatus, CodexBackend, FakeBackend},
+    command::Command,
     conversation::{InteractiveRequestKind, InteractiveResolution},
     domain::{CwdLocality, classify_cwd, display_cwd},
     forge::{self, ForgeEvent, ForgeHandle},
@@ -10,7 +11,7 @@ use codex_tui::{
     git::{self, GitEvent, GitHandle},
     goal::GoalStatus,
     i18n::{UiLanguage, pick},
-    keymap::{Command, command_for_key},
+    keymap::command_for_key,
     planning::{
         LocalNote, PlanningSnapshot, SavedView, ScratchState, SourceKind, SourceRef, WorkCardRecord,
     },
@@ -2185,24 +2186,7 @@ fn terminal_key_bytes(key: KeyEvent) -> Option<Vec<u8>> {
     Some(bytes)
 }
 
-fn handle_palette_choice(app: &mut AppState, choice: CommandPaletteChoice) -> Vec<Effect> {
-    let command = match choice {
-        CommandPaletteChoice::Search => Command::Search,
-        CommandPaletteChoice::NextAttention => Command::NextAttention,
-        CommandPaletteChoice::QuickPrompt => Command::QuickPrompt,
-        CommandPaletteChoice::Board => Command::Board,
-        CommandPaletteChoice::Review => Command::Review,
-        CommandPaletteChoice::Workspace => Command::Workspace,
-        CommandPaletteChoice::ManagedWorktrees => Command::ManagedWorktrees,
-        CommandPaletteChoice::NewScratch => Command::New,
-        CommandPaletteChoice::Goal => Command::Goal,
-        CommandPaletteChoice::TogglePin => Command::TogglePin,
-        CommandPaletteChoice::Snooze => Command::Snooze,
-        CommandPaletteChoice::ContextActions => Command::ContextActions,
-        CommandPaletteChoice::TerminalDrawer => Command::TerminalDrawer,
-        CommandPaletteChoice::CloseTerminalDrawer => Command::CloseTerminalDrawer,
-        CommandPaletteChoice::Help => Command::Help,
-    };
+fn handle_palette_choice(app: &mut AppState, command: Command) -> Vec<Effect> {
     handle_command(app, command)
 }
 
@@ -2322,7 +2306,7 @@ mod command_palette_input_tests {
         let board_index = app
             .command_palette_choices()
             .iter()
-            .position(|choice| *choice == CommandPaletteChoice::Board)
+            .position(|choice| *choice == Command::Board)
             .expect("Board palette entry");
         app.command_palette_selected = board_index;
 
