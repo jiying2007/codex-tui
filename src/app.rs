@@ -3903,19 +3903,19 @@ fn rebuild_planning(state: &mut AppState, now_unix_ms: u64) {
     let mut projections =
         Vec::with_capacity(state.threads.len() + state.planning_snapshot.scratch.len());
     let active_worktrees = active_worktree_counts(state);
+    let mut worktree_collision_counts = BTreeMap::new();
 
     for thread in &state.threads {
         let anchor = SourceRef::codex_thread(&thread.id);
+        let collision_count =
+            collision_count_from_active_worktrees(state, thread, &active_worktrees);
+        worktree_collision_counts.insert(thread.id.0.clone(), collision_count);
         let projection = reconcile_thread_card_with_goal_and_forge(
             ReconcileInput {
                 thread,
                 git: state.git_context(&thread.id),
                 local: local_by_anchor.get(&anchor).copied(),
-                collision_count: collision_count_from_active_worktrees(
-                    state,
-                    thread,
-                    &active_worktrees,
-                ),
+                collision_count,
                 backend_observed_at_unix_ms: state.backend_status.last_refresh_unix_ms,
                 backend_error: state.backend_status.error.as_deref(),
                 now_unix_ms,
@@ -3990,16 +3990,7 @@ fn rebuild_planning(state: &mut AppState, now_unix_ms: u64) {
             .then_with(|| left.local_id.cmp(&right.local_id))
     });
 
-    state.worktree_collision_counts = state
-        .threads
-        .iter()
-        .map(|thread| {
-            (
-                thread.id.0.clone(),
-                collision_count_from_active_worktrees(state, thread, &active_worktrees),
-            )
-        })
-        .collect();
+    state.worktree_collision_counts = worktree_collision_counts;
     state.work_card_by_thread = projections
         .iter()
         .enumerate()
