@@ -1,10 +1,13 @@
 use anyhow::{Context, Result};
-use portable_pty::{CommandBuilder, PtySize, native_pty_system};
+use portable_pty::{ChildKiller, CommandBuilder, PtySize, native_pty_system};
 use std::collections::VecDeque;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
+use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
+
+type SharedChildKiller = Arc<Mutex<Option<Box<dyn ChildKiller + Send + Sync>>>>;
 
 const EVENT_QUEUE_CAPACITY: usize = 64;
 const OUTPUT_CHUNK_BYTES: usize = 8 * 1024;
@@ -53,6 +56,7 @@ pub struct PtyHandle {
     command_tx: Option<SyncSender<PtyCommand>>,
     event_rx: Option<Receiver<PtyEvent>>,
     actor: Option<JoinHandle<()>>,
+    child_killer: SharedChildKiller,
 }
 
 impl PtyHandle {
@@ -61,15 +65,18 @@ impl PtyHandle {
         size.validate()?;
         let (command_tx, command_rx) = sync_channel(64);
         let (event_tx, event_rx) = sync_channel(EVENT_QUEUE_CAPACITY);
+        let child_killer = Arc::new(Mutex::new(None));
+        let actor_child_killer = Arc::clone(&child_killer);
         let actor = thread::Builder::new()
             .name("codex-tui-pty".into())
-            .spawn(move || run_actor(cwd, size, command_rx, event_tx))
+            .spawn(move || run_actor(cwd, size, command_rx, event_tx, actor_child_killer))
             .context("spawn PTY actor")?;
 
         Ok(Self {
             command_tx: Some(command_tx),
             event_rx: Some(event_rx),
             actor: Some(actor),
+            child_killer,
         })
     }
 
@@ -92,14 +99,21 @@ impl PtyHandle {
 
 impl Drop for PtyHandle {
     fn drop(&mut self) {
+        self.event_rx.take();
+
+        if let Ok(mut child_killer) = self.child_killer.lock()
+            && let Some(child_killer) = child_killer.as_mut()
+        {
+            let _ = child_killer.kill();
+        }
+
         if let Some(tx) = self.command_tx.take() {
             let _ = tx.try_send(PtyCommand::Terminate);
             drop(tx);
         }
-        self.event_rx.take();
-        if let Some(actor) = self.actor.take() {
-            let _ = actor.join();
-        }
+
+        // Dropping the JoinHandle detaches the actor so drawer close never blocks the UI.
+        drop(self.actor.take());
     }
 }
 
@@ -108,8 +122,9 @@ fn run_actor(
     size: TerminalSize,
     command_rx: Receiver<PtyCommand>,
     event_tx: SyncSender<PtyEvent>,
+    child_killer: SharedChildKiller,
 ) {
-    if let Err(error) = run_actor_inner(&cwd, size, command_rx, &event_tx) {
+    if let Err(error) = run_actor_inner(&cwd, size, command_rx, &event_tx, &child_killer) {
         let _ = event_tx.send(PtyEvent::Error(format!("{error:#}")));
     }
 }
@@ -119,6 +134,7 @@ fn run_actor_inner(
     size: TerminalSize,
     command_rx: Receiver<PtyCommand>,
     event_tx: &SyncSender<PtyEvent>,
+    child_killer: &SharedChildKiller,
 ) -> Result<()> {
     let cwd =
         std::fs::canonicalize(cwd).with_context(|| format!("resolve PTY cwd {}", cwd.display()))?;
@@ -135,7 +151,7 @@ fn run_actor_inner(
 
     let mut command = CommandBuilder::new_default_prog();
     command.cwd(&cwd);
-    spawn_and_drive_pty(pair, command, cwd, size, command_rx, event_tx)
+    spawn_and_drive_pty(pair, command, cwd, size, command_rx, event_tx, child_killer)
 }
 
 fn spawn_and_drive_pty(
@@ -145,12 +161,16 @@ fn spawn_and_drive_pty(
     size: TerminalSize,
     command_rx: Receiver<PtyCommand>,
     event_tx: &SyncSender<PtyEvent>,
+    child_killer: &SharedChildKiller,
 ) -> Result<()> {
     let mut child = pair
         .slave
         .spawn_command(command)
         .context("spawn PTY child program")?;
     let mut killer = child.clone_killer();
+    if let Ok(mut shared) = child_killer.lock() {
+        *shared = Some(killer.clone_killer());
+    }
     drop(pair.slave);
 
     let mut reader = pair.master.try_clone_reader().context("clone PTY reader")?;
@@ -193,17 +213,25 @@ fn spawn_and_drive_pty(
         .context("spawn PTY reader")?;
 
     let exit_tx = event_tx.clone();
+    let exit_child_killer = Arc::clone(child_killer);
     thread::Builder::new()
         .name("codex-tui-pty-wait".into())
-        .spawn(move || match child.wait() {
-            Ok(status) => {
-                let _ = exit_tx.send(PtyEvent::Exited {
-                    success: status.success(),
-                    code: Some(status.exit_code()),
-                });
+        .spawn(move || {
+            let result = child.wait();
+            if let Ok(mut shared) = exit_child_killer.lock() {
+                shared.take();
             }
-            Err(error) => {
-                let _ = exit_tx.send(PtyEvent::Error(format!("PTY child wait failed: {error}")));
+            match result {
+                Ok(status) => {
+                    let _ = exit_tx.send(PtyEvent::Exited {
+                        success: status.success(),
+                        code: Some(status.exit_code()),
+                    });
+                }
+                Err(error) => {
+                    let _ =
+                        exit_tx.send(PtyEvent::Error(format!("PTY child wait failed: {error}")));
+                }
             }
         })
         .context("spawn PTY waiter")?;
@@ -371,7 +399,18 @@ mod tests {
         let (event_tx, event_rx) = sync_channel(16);
         let actor = std::thread::spawn({
             let cwd = cwd.clone();
-            move || spawn_and_drive_pty(pair, command, cwd, size, command_rx, &event_tx)
+            let child_killer = Arc::new(Mutex::new(None));
+            move || {
+                spawn_and_drive_pty(
+                    pair,
+                    command,
+                    cwd,
+                    size,
+                    command_rx,
+                    &event_tx,
+                    &child_killer,
+                )
+            }
         });
 
         let deadline = Instant::now() + Duration::from_secs(5);
@@ -403,7 +442,7 @@ mod tests {
     }
 
     #[test]
-    fn drop_releases_event_receiver_before_joining_backpressured_actor() {
+    fn drop_releases_event_receiver_for_backpressured_actor() {
         use std::sync::{
             Arc,
             atomic::{AtomicBool, Ordering},
@@ -418,23 +457,80 @@ mod tests {
 
         let send_unblocked = Arc::new(AtomicBool::new(false));
         let send_unblocked_in_actor = Arc::clone(&send_unblocked);
+        let (done_tx, done_rx) = std::sync::mpsc::channel();
         let actor = std::thread::spawn(move || {
             let result = event_tx.send(PtyEvent::Error("blocked".into()));
-            assert!(
-                result.is_err(),
-                "receiver should be dropped during handle teardown"
-            );
-            send_unblocked_in_actor.store(true, Ordering::SeqCst);
+            send_unblocked_in_actor.store(result.is_err(), Ordering::SeqCst);
+            let _ = done_tx.send(());
         });
 
         let handle = PtyHandle {
             command_tx: Some(command_tx),
             event_rx: Some(event_rx),
             actor: Some(actor),
+            child_killer: Arc::new(Mutex::new(None)),
         };
 
         drop(handle);
+        done_rx
+            .recv_timeout(std::time::Duration::from_secs(1))
+            .expect("backpressured actor should observe receiver teardown");
         assert!(send_unblocked.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn drop_is_nonblocking_and_kills_out_of_band_when_command_queue_is_full() {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+            mpsc::{channel, sync_channel},
+        };
+        use std::time::Duration;
+
+        #[derive(Debug)]
+        struct FlagKiller(Arc<AtomicBool>);
+
+        impl ChildKiller for FlagKiller {
+            fn kill(&mut self) -> std::io::Result<()> {
+                self.0.store(true, Ordering::SeqCst);
+                Ok(())
+            }
+
+            fn clone_killer(&self) -> Box<dyn ChildKiller + Send + Sync> {
+                Box::new(Self(Arc::clone(&self.0)))
+            }
+        }
+
+        let (command_tx, _command_rx) = sync_channel(1);
+        command_tx
+            .send(PtyCommand::Input(vec![b'x']))
+            .expect("fill command queue");
+        let (_event_tx, event_rx) = sync_channel(1);
+
+        let killed = Arc::new(AtomicBool::new(false));
+        let child_killer: SharedChildKiller =
+            Arc::new(Mutex::new(Some(Box::new(FlagKiller(Arc::clone(&killed))))));
+
+        let (release_tx, release_rx) = channel();
+        let (done_tx, done_rx) = channel();
+        let actor = std::thread::spawn(move || {
+            let _ = release_rx.recv();
+            let _ = done_tx.send(());
+        });
+
+        let handle = PtyHandle {
+            command_tx: Some(command_tx),
+            event_rx: Some(event_rx),
+            actor: Some(actor),
+            child_killer,
+        };
+
+        drop(handle);
+        assert!(killed.load(Ordering::SeqCst));
+        release_tx.send(()).expect("release synthetic actor");
+        done_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("detached actor should remain independently releasable");
     }
 
     #[test]
