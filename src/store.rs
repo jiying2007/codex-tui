@@ -212,7 +212,7 @@ mod tests {
         let root = tempdir().expect("tempdir");
         let store = FileStore::at(root.path());
 
-        fs::create_dir_all(root.path()).expect("mkdir");
+        store.load_config().expect("create default config");
         fs::write(
             store.config_path(),
             "[ui]\nmouse = true\nlanguage = \"zh-CN\"\n",
