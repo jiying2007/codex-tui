@@ -71,6 +71,8 @@ All notable codex-tui changes are recorded here.
 - added `codex-tui doctor bundle` as a secret-safe support entrypoint with bounded metadata, degraded reason codes and checksums while excluding environment variables, authentication tokens, prompts/transcripts, comment bodies, repository/file paths and raw errors.
 - upgraded preview/stable release qualification to exact-SHA automated hardening evidence v3: Failure Matrix, 50k scale-v4 evidence, 50k structural soak, UI contract, state migration/recovery and support-bundle redaction and support-snapshot source-SHA validation run before packaging; Linux/macOS/Windows archive smoke remains required and stable still requires real Linux compatibility plus controlling-TTY evidence.
 - retired the historical v1.0 hosted-runner 50/100 ms latency SLO as a v1.1 release authority; retained 10k p95/p99 stays as >=200-sample diagnostic evidence, while current major.minor criteria are selected dynamically and packaged as `STABLE-CRITERIA.json`.
+- added observation-driven Forge provider qualification that captures secret-safe GitLab/GitHub client/server/auth/capability fixtures from the exact candidate instead of inferring support from server versions.
+- added and packaged a personal-first team quickstart covering install, AGENTS/.codex authority, safe `.codex-tui.toml` launch presets, Forge setup, daily controls and Doctor Bundle troubleshooting without introducing a team server/RBAC layer.
 
 ## [1.0.0] - 2026-09-30
 
