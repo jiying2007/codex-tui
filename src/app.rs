@@ -409,6 +409,9 @@ pub struct AppState {
     pub view: View,
     pub previous_target: Option<ThreadId>,
     pub thread_ui: BTreeMap<String, ThreadUiState>,
+    local_pins: BTreeSet<String>,
+    local_aliases: BTreeMap<String, String>,
+    local_marked_unread: BTreeSet<String>,
     pub conversations: BTreeMap<String, ConversationState>,
     conversation_cache_order: VecDeque<String>,
     pub git_contexts: BTreeMap<String, GitContext>,
@@ -491,6 +494,25 @@ struct ForgeMutationTarget {
 impl AppState {
     pub fn new(threads: Vec<ThreadSummary>) -> Self {
         let (thread_index_by_id, thread_indices_by_cwd) = build_thread_indexes(&threads);
+        let local_pins = threads
+            .iter()
+            .filter(|thread| thread.pinned)
+            .map(|thread| thread.id.0.clone())
+            .collect();
+        let local_aliases = threads
+            .iter()
+            .filter_map(|thread| {
+                thread
+                    .alias
+                    .as_ref()
+                    .map(|alias| (thread.id.0.clone(), alias.clone()))
+            })
+            .collect();
+        let local_marked_unread = threads
+            .iter()
+            .filter(|thread| thread.attention.contains(&AttentionReason::MarkedUnread))
+            .map(|thread| thread.id.0.clone())
+            .collect();
         Self {
             threads,
             thread_index_by_id,
@@ -499,6 +521,9 @@ impl AppState {
             view: View::Registry,
             previous_target: None,
             thread_ui: BTreeMap::new(),
+            local_pins,
+            local_aliases,
+            local_marked_unread,
             conversations: BTreeMap::new(),
             conversation_cache_order: VecDeque::new(),
             git_contexts: BTreeMap::new(),
@@ -1214,6 +1239,9 @@ impl AppState {
 
     pub fn apply_local_state(&mut self, local: &LocalStateV1) {
         self.thread_ui = local.thread_ui.clone();
+        self.local_pins = local.pins.clone();
+        self.local_aliases = local.aliases.clone();
+        self.local_marked_unread = local.marked_unread.clone();
         self.acknowledged_attention = local.acknowledged_attention.clone();
         self.host_local_only = local.host_local_only;
         self.repo_backed_only = local.repo_backed_only;
@@ -1221,15 +1249,12 @@ impl AppState {
             self.reconcile_cwd_locality_cache(true);
         }
         for thread in &mut self.threads {
-            if local.pins.contains(&thread.id.0) {
-                thread.pinned = true;
-            }
-            if let Some(alias) = local.aliases.get(&thread.id.0) {
-                thread.alias = Some(alias.clone());
-            }
-            if local.marked_unread.contains(&thread.id.0)
-                && !thread.attention.contains(&AttentionReason::MarkedUnread)
-            {
+            thread.pinned = self.local_pins.contains(&thread.id.0);
+            thread.alias = self.local_aliases.get(&thread.id.0).cloned();
+            thread
+                .attention
+                .retain(|reason| *reason != AttentionReason::MarkedUnread);
+            if self.local_marked_unread.contains(&thread.id.0) {
                 thread.attention.push(AttentionReason::MarkedUnread);
             }
         }
@@ -1237,35 +1262,12 @@ impl AppState {
     }
 
     pub fn to_local_state(&self) -> LocalStateV1 {
-        let pins = self
-            .threads
-            .iter()
-            .filter(|thread| thread.pinned)
-            .map(|thread| thread.id.0.clone())
-            .collect();
-        let aliases = self
-            .threads
-            .iter()
-            .filter_map(|thread| {
-                thread
-                    .alias
-                    .as_ref()
-                    .map(|alias| (thread.id.0.clone(), alias.clone()))
-            })
-            .collect();
-        let marked_unread = self
-            .threads
-            .iter()
-            .filter(|thread| thread.attention.contains(&AttentionReason::MarkedUnread))
-            .map(|thread| thread.id.0.clone())
-            .collect();
-
         LocalStateV1 {
             schema_version: 1,
             thread_ui: self.thread_ui.clone(),
-            pins,
-            aliases,
-            marked_unread,
+            pins: self.local_pins.clone(),
+            aliases: self.local_aliases.clone(),
+            marked_unread: self.local_marked_unread.clone(),
             acknowledged_attention: self.acknowledged_attention.clone(),
             host_local_only: self.host_local_only,
             repo_backed_only: self.repo_backed_only,
@@ -1278,36 +1280,26 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::ReplaceThreads(mut threads) => {
             state.worktree_collision_counts.clear();
             let selected_id = state.selected_thread_id();
-            let existing_by_id = state
+            let existing_remote_by_id = state
                 .threads
                 .iter()
-                .map(|thread| {
-                    (
-                        thread.id.0.clone(),
-                        (
-                            thread.pinned,
-                            thread.alias.clone(),
-                            remote_attention(thread),
-                            thread.attention.contains(&AttentionReason::MarkedUnread),
-                        ),
-                    )
-                })
+                .map(|thread| (thread.id.0.clone(), remote_attention(thread)))
                 .collect::<HashMap<_, _>>();
             for fresh in &mut threads {
-                if let Some((pinned, alias, existing_remote, marked_unread)) =
-                    existing_by_id.get(&fresh.id.0)
-                {
-                    fresh.pinned = *pinned;
-                    fresh.alias.clone_from(alias);
-
+                if let Some(existing_remote) = existing_remote_by_id.get(&fresh.id.0) {
                     let fresh_remote = remote_attention(fresh);
                     if existing_remote != &fresh_remote && !fresh_remote.is_empty() {
                         state.acknowledged_attention.remove(&fresh.id.0);
                     }
+                }
 
-                    if *marked_unread && !fresh.attention.contains(&AttentionReason::MarkedUnread) {
-                        fresh.attention.push(AttentionReason::MarkedUnread);
-                    }
+                fresh.pinned = state.local_pins.contains(&fresh.id.0);
+                fresh.alias = state.local_aliases.get(&fresh.id.0).cloned();
+                fresh
+                    .attention
+                    .retain(|reason| *reason != AttentionReason::MarkedUnread);
+                if state.local_marked_unread.contains(&fresh.id.0) {
+                    fresh.attention.push(AttentionReason::MarkedUnread);
                 }
             }
             state.threads = threads;
@@ -2714,6 +2706,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 && let Some(thread) = state.threads.get_mut(state.selected)
             {
                 state.acknowledged_attention.remove(&thread.id.0);
+                state.local_marked_unread.insert(thread.id.0.clone());
                 if !thread.attention.contains(&AttentionReason::MarkedUnread) {
                     thread.attention.push(AttentionReason::MarkedUnread);
                 }
@@ -2725,6 +2718,11 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 && let Some(thread) = state.threads.get_mut(state.selected)
             {
                 thread.pinned = !thread.pinned;
+                if thread.pinned {
+                    state.local_pins.insert(thread.id.0.clone());
+                } else {
+                    state.local_pins.remove(&thread.id.0);
+                }
                 ensure_selection_visible(state);
                 return vec![Effect::PersistOperatorState];
             }
@@ -2734,6 +2732,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 && let Some(thread) = state.threads.get_mut(state.selected)
             {
                 state.acknowledged_attention.insert(thread.id.0.clone());
+                state.local_marked_unread.remove(&thread.id.0);
                 thread
                     .attention
                     .retain(|reason| *reason != AttentionReason::MarkedUnread);
@@ -3285,6 +3284,11 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 let alias = state.input_buffer.trim().to_string();
                 if let Some(thread) = state.threads.get_mut(state.selected) {
                     thread.alias = (!alias.is_empty()).then_some(alias);
+                    if let Some(alias) = thread.alias.clone() {
+                        state.local_aliases.insert(thread.id.0.clone(), alias);
+                    } else {
+                        state.local_aliases.remove(&thread.id.0);
+                    }
                     state.input_mode = InputMode::Normal;
                     state.input_buffer.clear();
                     state.input_original.clear();
@@ -4483,10 +4487,12 @@ mod tests {
     fn replace_threads_preserves_local_overlays_and_invalidates_changed_attention() {
         let mut app = app();
         let thread_id = app.threads[0].id.clone();
-        app.threads[0].pinned = true;
-        app.threads[0].alias = Some("primary".into());
-        app.threads[0].attention = vec![AttentionReason::MarkedUnread];
-        app.acknowledged_attention.insert(thread_id.0.clone());
+        let mut local = LocalStateV1::default();
+        local.pins.insert(thread_id.0.clone());
+        local.aliases.insert(thread_id.0.clone(), "primary".into());
+        local.marked_unread.insert(thread_id.0.clone());
+        local.acknowledged_attention.insert(thread_id.0.clone());
+        app.apply_local_state(&local);
 
         let mut fresh = app.threads.clone();
         let refreshed = fresh
@@ -4516,12 +4522,38 @@ mod tests {
     }
 
     #[test]
+    fn durable_local_overlays_survive_partial_then_full_registry_hydration() {
+        let full = FakeBackend::scaled(3).snapshot().threads;
+        let late = full[2].id.clone();
+        let mut app = AppState::new(full[..1].to_vec());
+
+        let mut local = LocalStateV1::default();
+        local.pins.insert(late.0.clone());
+        local.aliases.insert(late.0.clone(), "late-history".into());
+        local.marked_unread.insert(late.0.clone());
+        app.apply_local_state(&local);
+
+        assert!(app.to_local_state().pins.contains(&late.0));
+        reduce(&mut app, Action::ReplaceThreads(full));
+
+        let hydrated = app
+            .threads
+            .iter()
+            .find(|thread| thread.id == late)
+            .expect("hydrated thread");
+        assert!(hydrated.pinned);
+        assert_eq!(hydrated.alias.as_deref(), Some("late-history"));
+        assert!(hydrated.attention.contains(&AttentionReason::MarkedUnread));
+    }
+
+    #[test]
     fn replace_threads_scales_to_10k_and_preserves_tail_overlay() {
         let mut app = AppState::new(FakeBackend::scaled(10_000).snapshot().threads);
-        let tail = app.threads.last_mut().expect("tail thread");
-        let tail_id = tail.id.clone();
-        tail.pinned = true;
-        tail.alias = Some("tail".into());
+        let tail_id = app.threads.last().expect("tail thread").id.clone();
+        let mut local = LocalStateV1::default();
+        local.pins.insert(tail_id.0.clone());
+        local.aliases.insert(tail_id.0.clone(), "tail".into());
+        app.apply_local_state(&local);
 
         let fresh = FakeBackend::scaled(10_000).snapshot().threads;
         reduce(&mut app, Action::ReplaceThreads(fresh));
