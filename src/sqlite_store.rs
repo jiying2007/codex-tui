@@ -176,17 +176,10 @@ impl SqliteStore {
         fs::create_dir_all(parent)
             .with_context(|| format!("create SQLite state directory {}", parent.display()))?;
 
-        // A healthy live database gets a best-effort WAL checkpoint before preservation.
-        // A corrupt/forward-incompatible database must not block disaster recovery: preserve its
-        // raw database + sidecars and continue with the already validated recovery image.
-        if self.db_path.exists()
-            && let Ok(conn) = self.open_ready()
-        {
-            conn.execute_batch("PRAGMA wal_checkpoint(FULL);")
-                .context("checkpoint live SQLite before restore")?;
-            drop(conn);
-        }
-
+        // Disaster recovery must not open or mutate the live database before preservation.
+        // A corrupt/forward-incompatible image can cause SQLite to consume or remove WAL/SHM
+        // sidecars while merely probing it. Preserve the raw main+sidecar set first; the recovery
+        // source is validated independently below.
         let temporary = NamedTempFile::new_in(parent)
             .with_context(|| format!("create restore staging file in {}", parent.display()))?;
         fs::copy(source, temporary.path()).with_context(|| {
