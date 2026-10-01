@@ -411,15 +411,8 @@ fn apply_full_registry_refresh(
     loaded_supported: bool,
     threads: &mut BTreeMap<String, ThreadSummary>,
     status: &mut BackendStatus,
-    goal_supported: Option<bool>,
-    goal_probed: &BTreeSet<String>,
-    goal_queued: &mut BTreeSet<String>,
-    goal_probe_queue: &mut VecDeque<ThreadId>,
 ) {
     *threads = by_id(fresh);
-    if goal_supported != Some(false) {
-        reset_eager_goal_queue(threads, goal_probed, goal_queued, goal_probe_queue);
-    }
     status.connected = true;
     status.error = None;
     status.last_refresh_unix_ms = Some(now_unix_ms());
@@ -465,16 +458,15 @@ async fn run_registry_actor(
 
     match load_registry(&mut rpc, true).await {
         Ok((fresh, loaded_supported)) => {
-            apply_full_registry_refresh(
-                fresh,
-                loaded_supported,
-                &mut threads,
-                &mut status,
-                goal_supported,
-                &goal_probed,
-                &mut goal_queued,
-                &mut goal_probe_queue,
-            );
+            apply_full_registry_refresh(fresh, loaded_supported, &mut threads, &mut status);
+            if goal_supported != Some(false) {
+                reset_eager_goal_queue(
+                    &threads,
+                    &goal_probed,
+                    &mut goal_queued,
+                    &mut goal_probe_queue,
+                );
+            }
         }
         Err(error) => {
             status.error = Some(error.to_string());
