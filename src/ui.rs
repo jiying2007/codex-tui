@@ -2685,6 +2685,43 @@ mod tests {
     }
 
     #[test]
+    fn simplified_chinese_ui_localizes_daily_chrome_and_help() {
+        let backend = TestBackend::new(160, 28);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+        app.language = UiLanguage::SimplifiedChinese;
+        app.backend_status.connected = true;
+        app.backend_status.source = "codex-app-server".into();
+        app.backend_status.platform = Some("linux/linux".into());
+
+        terminal.draw(|frame| render(frame, &app)).expect("draw");
+        let mut snapshot = String::new();
+        let buffer = terminal.backend().buffer();
+        for y in 0..buffer.area.height {
+            for x in 0..buffer.area.width {
+                snapshot.push_str(buffer[(x, y)].symbol());
+            }
+            snapshot.push('\n');
+        }
+        assert!(snapshot.contains("任务中心"));
+        assert!(snapshot.contains("已选择"));
+        assert!(snapshot.contains("搜索"));
+
+        app.show_help = true;
+        terminal.draw(|frame| render(frame, &app)).expect("draw help");
+        let mut help_snapshot = String::new();
+        let buffer = terminal.backend().buffer();
+        for y in 0..buffer.area.height {
+            for x in 0..buffer.area.width {
+                help_snapshot.push_str(buffer[(x, y)].symbol());
+            }
+            help_snapshot.push('\n');
+        }
+        assert!(help_snapshot.contains("帮助"));
+        assert!(help_snapshot.contains("权限边界"));
+    }
+
+    #[test]
     fn registry_viewport_keeps_selected_row_visible() {
         let mut app = AppState::new(FakeBackend::scaled(100).snapshot().threads);
         app.selected = 99;
