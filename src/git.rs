@@ -8,9 +8,12 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::Command;
 use tokio::sync::mpsc;
-use tokio::task::JoinHandle;
+use tokio::task::{JoinHandle, JoinSet};
 
 const GIT_PROBE_TIMEOUT: Duration = Duration::from_secs(3);
+const GIT_COMMAND_QUEUE_CAPACITY: usize = 128;
+const GIT_EVENT_QUEUE_CAPACITY: usize = 128;
+const GIT_MAX_CONCURRENCY: usize = 8;
 const MAX_REVIEW_DIFF_BYTES: usize = 2 * 1024 * 1024;
 const MAX_GIT_STDERR_BYTES: usize = 64 * 1024;
 
@@ -161,15 +164,15 @@ pub enum GitEvent {
 }
 
 pub struct GitHandle {
-    command_tx: mpsc::UnboundedSender<GitCommand>,
-    event_rx: mpsc::UnboundedReceiver<GitEvent>,
+    command_tx: mpsc::Sender<GitCommand>,
+    event_rx: mpsc::Receiver<GitEvent>,
     task: JoinHandle<()>,
 }
 
 impl GitHandle {
     pub fn start() -> Self {
-        let (command_tx, command_rx) = mpsc::unbounded_channel();
-        let (event_tx, event_rx) = mpsc::unbounded_channel();
+        let (command_tx, command_rx) = mpsc::channel(GIT_COMMAND_QUEUE_CAPACITY);
+        let (event_tx, event_rx) = mpsc::channel(GIT_EVENT_QUEUE_CAPACITY);
         let task = tokio::spawn(run_actor(command_rx, event_tx));
         Self {
             command_tx,
@@ -179,15 +182,18 @@ impl GitHandle {
     }
 
     pub fn probe(&self, thread_id: ThreadId, cwd: String) -> Result<()> {
-        self.command_tx
-            .send(GitCommand::Probe { thread_id, cwd })
-            .map_err(|_| anyhow!("Git actor is not available"))
+        self.queue_command(GitCommand::Probe { thread_id, cwd })
     }
 
     pub fn load_review(&self, thread_id: ThreadId, cwd: String) -> Result<()> {
-        self.command_tx
-            .send(GitCommand::LoadReview { thread_id, cwd })
-            .map_err(|_| anyhow!("Git actor is not available"))
+        self.queue_command(GitCommand::LoadReview { thread_id, cwd })
+    }
+
+    fn queue_command(&self, command: GitCommand) -> Result<()> {
+        self.command_tx.try_send(command).map_err(|error| match error {
+            mpsc::error::TrySendError::Full(_) => anyhow!("Git actor queue is full"),
+            mpsc::error::TrySendError::Closed(_) => anyhow!("Git actor is not available"),
+        })
     }
 
     pub fn try_recv(&mut self) -> Option<GitEvent> {
@@ -201,25 +207,46 @@ impl Drop for GitHandle {
     }
 }
 
-async fn run_actor(
-    mut command_rx: mpsc::UnboundedReceiver<GitCommand>,
-    event_tx: mpsc::UnboundedSender<GitEvent>,
-) {
-    while let Some(command) = command_rx.recv().await {
-        match command {
-            GitCommand::Probe { thread_id, cwd } => {
-                let context = match probe_context(thread_id.clone(), cwd.clone()).await {
-                    Ok(context) => context,
-                    Err(error) => GitContext::failed(thread_id, cwd, error.to_string()),
-                };
-                let _ = event_tx.send(GitEvent::Context(context));
+async fn run_actor(mut command_rx: mpsc::Receiver<GitCommand>, event_tx: mpsc::Sender<GitEvent>) {
+    let mut tasks = JoinSet::new();
+    let mut command_open = true;
+
+    loop {
+        tokio::select! {
+            joined = tasks.join_next(), if !tasks.is_empty() => {
+                let _ = joined;
             }
-            GitCommand::LoadReview { thread_id, cwd } => {
-                let review = match load_review(thread_id.clone(), cwd.clone()).await {
-                    Ok(review) => review,
-                    Err(error) => GitReview::failed(thread_id, cwd, error.to_string()),
-                };
-                let _ = event_tx.send(GitEvent::Review(review));
+            command = command_rx.recv(), if command_open && tasks.len() < GIT_MAX_CONCURRENCY => {
+                match command {
+                    Some(command) => {
+                        let event_tx = event_tx.clone();
+                        tasks.spawn(async move {
+                            let event = match command {
+                                GitCommand::Probe { thread_id, cwd } => {
+                                    let context = match probe_context(thread_id.clone(), cwd.clone()).await {
+                                        Ok(context) => context,
+                                        Err(error) => GitContext::failed(thread_id, cwd, error.to_string()),
+                                    };
+                                    GitEvent::Context(context)
+                                }
+                                GitCommand::LoadReview { thread_id, cwd } => {
+                                    let review = match load_review(thread_id.clone(), cwd.clone()).await {
+                                        Ok(review) => review,
+                                        Err(error) => GitReview::failed(thread_id, cwd, error.to_string()),
+                                    };
+                                    GitEvent::Review(review)
+                                }
+                            };
+                            let _ = event_tx.send(event).await;
+                        });
+                    }
+                    None => command_open = false,
+                }
+            }
+            else => {
+                if !command_open && tasks.is_empty() {
+                    break;
+                }
             }
         }
     }
