@@ -1,0 +1,105 @@
+{
+  "schema": "codex-tui/stable-criteria/v2",
+  "stableVersion": "1.1.0",
+  "canonicalPlatforms": [
+    "linux",
+    "macos",
+    "windows"
+  ],
+  "automatedQualification": {
+    "schema": "codex-tui/automated-qualification/v1",
+    "exactSourceSha": true,
+    "requiredGates": [
+      "failureMatrix",
+      "soakStructural",
+      "uiContract",
+      "stateMigrationRecovery",
+      "supportBundleRedaction"
+    ],
+    "soak": {
+      "rows": 50000,
+      "cyclesMin": 256,
+      "policy": "structural invariants are release-blocking; hosted-runner RSS, CPU and wall-clock samples are retained diagnostics until a stable distribution justifies thresholds"
+    }
+  },
+  "performance": {
+    "fixture": "resident-planning-10k",
+    "iterationsMin": 200,
+    "policy": "retain p95/p99 as diagnostic evidence; v1.1 does not fail stable solely on hosted-runner wall-clock thresholds"
+  },
+  "requiredGates": [
+    {
+      "id": "project-license",
+      "authority": "repository",
+      "evidence": "Apache-2.0 root license and package metadata"
+    },
+    {
+      "id": "cargo-lock",
+      "authority": "repository",
+      "evidence": "Cargo.lock"
+    },
+    {
+      "id": "canonical-ci",
+      "authority": "GitHub Actions ci workflow",
+      "evidence": "successful main run bound to the exact release commit"
+    },
+    {
+      "id": "failure-matrix",
+      "authority": "retained automated qualification",
+      "evidence": "fault-injection suite passes on exact source SHA"
+    },
+    {
+      "id": "soak-structural",
+      "authority": "retained automated qualification",
+      "evidence": "50k/256-cycle soak structuralPass=true; LRU/reconcile/publication invariants are bounded"
+    },
+    {
+      "id": "ui-contract",
+      "authority": "retained automated qualification",
+      "evidence": "Help -> keymap -> Command -> reducer contract tests pass"
+    },
+    {
+      "id": "state-migration-recovery",
+      "authority": "retained automated qualification",
+      "evidence": "v1.0 state import, SQLite migration, idempotent restart, backup/restore and corrupt-source refusal pass"
+    },
+    {
+      "id": "support-bundle-redaction",
+      "authority": "retained automated qualification",
+      "evidence": "doctor bundle metadata/privacy/checksum tests pass and an exact-SHA bundle manifest is retained"
+    },
+    {
+      "id": "compatibility",
+      "authority": "codex-tui doctor compat --json",
+      "evidence": "Linux READY retained compat/v2 report SHA-256 is required; macOS/Windows remain optional Tier 2 real-environment evidence"
+    },
+    {
+      "id": "terminal-restoration",
+      "authority": "retained real interaction smoke",
+      "evidence": "Linux real controlling-TTY PASS receipt is required; this evidence cannot be synthesized by repository CI"
+    },
+    {
+      "id": "performance-diagnostics",
+      "authority": "retained benchmark run",
+      "evidence": "Linux resident-planning-10k >= 200 iterations with finite p95/p99 retained for comparison, not a hosted-runner latency threshold"
+    },
+    {
+      "id": "archive-smoke",
+      "authority": "release packaging",
+      "evidence": "extracted license/metadata/version/headless fixture smoke passes on Linux/macOS/Windows"
+    },
+    {
+      "id": "checksums",
+      "authority": "release aggregation",
+      "evidence": "SHA256SUMS covers release bundle files"
+    }
+  ],
+  "frozenNonGoals": [
+    "registry-paging-or-registry-sqlite-index",
+    "native-gitlab-rest-graphql",
+    "team-server-rbac",
+    "generic-plugin-system",
+    "generic-multi-agent-framework",
+    "terminal-drawer-as-tmux-replacement"
+  ]
+}

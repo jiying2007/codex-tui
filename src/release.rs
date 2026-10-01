@@ -9,7 +9,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 pub const RELEASE_VERIFY_SCHEMA: &str = "codex-tui/release-verification/v1";
-pub const RELEASE_EVIDENCE_SCHEMA: &str = "codex-tui/release-evidence/v2";
+pub const RELEASE_EVIDENCE_SCHEMA: &str = "codex-tui/release-evidence/v3";
+pub const AUTOMATED_QUALIFICATION_SCHEMA: &str = "codex-tui/automated-qualification/v1";
 pub const PRIMARY_STABLE_PLATFORM: &str = "linux";
 pub const SECONDARY_PLATFORMS: [&str; 2] = ["macos", "windows"];
 pub const EXIT_RELEASE_BLOCKED: i32 = 4;
@@ -49,6 +50,33 @@ pub struct PlatformCompatReceipt {
     pub observed_at: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomatedQualificationGates {
+    pub failure_matrix: String,
+    pub soak_structural: String,
+    pub ui_contract: String,
+    pub state_migration_recovery: String,
+    pub support_bundle_redaction: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomatedQualificationArtifacts {
+    pub soak_evidence_sha256: String,
+    pub support_manifest_sha256: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AutomatedQualificationReceipt {
+    pub schema: String,
+    pub source_sha: String,
+    pub observed_at: String,
+    pub gates: AutomatedQualificationGates,
+    pub artifacts: AutomatedQualificationArtifacts,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PerformanceReceipt {
@@ -73,6 +101,7 @@ pub struct ReleaseEvidenceReceipt {
     pub secondary_platforms: Vec<String>,
     pub compatibility: BTreeMap<String, PlatformCompatReceipt>,
     pub terminal_restoration: BTreeMap<String, PlatformTerminalReceipt>,
+    pub automated_qualification: AutomatedQualificationReceipt,
     pub performance: PerformanceReceipt,
 }
 
@@ -155,12 +184,12 @@ pub fn verify(options: &ReleaseVerifyOptions) -> ReleaseVerification {
         );
     }
 
-    let stable_criteria_present = options
-        .repo_root
-        .join("release/v1.0-criteria.json")
-        .is_file();
+    let criteria_file = stable_criteria_filename(&version);
+    let stable_criteria_present = options.repo_root.join(&criteria_file).is_file();
     if !stable_criteria_present {
-        blockers.push("release/v1.0-criteria.json is required for release candidates".into());
+        blockers.push(format!(
+            "{criteria_file} is required for release candidates"
+        ));
     }
 
     let evidence_status = if options.channel == ReleaseChannel::Stable {
@@ -247,6 +276,8 @@ pub fn validate_evidence(path: &Path, version: &str, commit_sha: &str) -> Result
         "secondary platform policy mismatch"
     );
 
+    validate_automated_qualification(&receipt.automated_qualification, commit_sha)?;
+
     validate_platform_evidence(
         PRIMARY_STABLE_PLATFORM,
         &receipt.compatibility,
@@ -283,14 +314,6 @@ pub fn validate_evidence(path: &Path, version: &str, commit_sha: &str) -> Result
         "performance p99 must be a finite nonnegative number"
     );
     anyhow::ensure!(
-        receipt.performance.p95_ms <= 50.0,
-        "stable performance p95 exceeds 50 ms"
-    );
-    anyhow::ensure!(
-        receipt.performance.p99_ms <= 100.0,
-        "stable performance p99 exceeds 100 ms"
-    );
-    anyhow::ensure!(
         !receipt.performance.source.trim().is_empty(),
         "performance source must not be empty"
     );
@@ -299,6 +322,51 @@ pub fn validate_evidence(path: &Path, version: &str, commit_sha: &str) -> Result
         "performance observation timestamp must not be empty"
     );
 
+    Ok(())
+}
+
+fn validate_automated_qualification(
+    receipt: &AutomatedQualificationReceipt,
+    commit_sha: &str,
+) -> Result<()> {
+    anyhow::ensure!(
+        receipt.schema == AUTOMATED_QUALIFICATION_SCHEMA,
+        "automated qualification schema must be {AUTOMATED_QUALIFICATION_SCHEMA}"
+    );
+    anyhow::ensure!(
+        receipt.source_sha.eq_ignore_ascii_case(commit_sha),
+        "automated qualification source SHA mismatch"
+    );
+    anyhow::ensure!(
+        !receipt.observed_at.trim().is_empty(),
+        "automated qualification timestamp must not be empty"
+    );
+    for (name, status) in [
+        ("failure-matrix", receipt.gates.failure_matrix.as_str()),
+        ("soak-structural", receipt.gates.soak_structural.as_str()),
+        ("ui-contract", receipt.gates.ui_contract.as_str()),
+        (
+            "state-migration-recovery",
+            receipt.gates.state_migration_recovery.as_str(),
+        ),
+        (
+            "support-bundle-redaction",
+            receipt.gates.support_bundle_redaction.as_str(),
+        ),
+    ] {
+        anyhow::ensure!(
+            status.eq_ignore_ascii_case("pass"),
+            "automated qualification gate {name} must PASS"
+        );
+    }
+    anyhow::ensure!(
+        valid_sha256(&receipt.artifacts.soak_evidence_sha256),
+        "soak evidence SHA-256 must be 64 hexadecimal characters"
+    );
+    anyhow::ensure!(
+        valid_sha256(&receipt.artifacts.support_manifest_sha256),
+        "support manifest SHA-256 must be 64 hexadecimal characters"
+    );
     Ok(())
 }
 
@@ -345,6 +413,13 @@ fn validate_platform_evidence(
         "observation timestamp for {platform} must not be empty"
     );
     Ok(())
+}
+
+pub fn stable_criteria_filename(version: &str) -> String {
+    let mut parts = version.split('.');
+    let major = parts.next().unwrap_or("0");
+    let minor = parts.next().unwrap_or("0");
+    format!("release/v{major}.{minor}-criteria.json")
 }
 
 pub fn valid_preview_tag(tag: &str, version: &str) -> bool {
@@ -475,6 +550,25 @@ mod tests {
         "0123456789abcdef0123456789abcdef01234567".into()
     }
 
+    fn automated_receipt() -> AutomatedQualificationReceipt {
+        AutomatedQualificationReceipt {
+            schema: AUTOMATED_QUALIFICATION_SCHEMA.into(),
+            source_sha: sha(),
+            observed_at: "2026-10-01T00:00:00Z".into(),
+            gates: AutomatedQualificationGates {
+                failure_matrix: "pass".into(),
+                soak_structural: "pass".into(),
+                ui_contract: "pass".into(),
+                state_migration_recovery: "pass".into(),
+                support_bundle_redaction: "pass".into(),
+            },
+            artifacts: AutomatedQualificationArtifacts {
+                soak_evidence_sha256: "c".repeat(64),
+                support_manifest_sha256: "d".repeat(64),
+            },
+        }
+    }
+
     fn repo_with_lock_and_changelog() -> tempfile::TempDir {
         let root = tempdir().expect("tempdir");
         fs::write(root.path().join("Cargo.lock"), "# lock").expect("lock");
@@ -484,7 +578,12 @@ mod tests {
         )
         .expect("changelog");
         fs::create_dir_all(root.path().join("release")).expect("release dir");
-        fs::write(root.path().join("release/v1.0-criteria.json"), "{}").expect("criteria");
+        fs::write(
+            root.path()
+                .join(stable_criteria_filename(env!("CARGO_PKG_VERSION"))),
+            "{}",
+        )
+        .expect("criteria");
         root
     }
 
@@ -593,6 +692,7 @@ mod tests {
                         notes: None,
                     },
                 )]),
+                automated_qualification: automated_receipt(),
                 performance: PerformanceReceipt {
                     platform: PRIMARY_STABLE_PLATFORM.into(),
                     fixture: PERFORMANCE_FIXTURE.into(),
@@ -655,6 +755,7 @@ mod tests {
                         notes: None,
                     },
                 )]),
+                automated_qualification: automated_receipt(),
                 performance: PerformanceReceipt {
                     platform: PRIMARY_STABLE_PLATFORM.into(),
                     fixture: PERFORMANCE_FIXTURE.into(),
@@ -713,6 +814,7 @@ mod tests {
                     .collect(),
                 compatibility: BTreeMap::from([("linux".into(), compatibility('a'))]),
                 terminal_restoration: BTreeMap::from([("linux".into(), terminal("xterm"))]),
+                automated_qualification: automated_receipt(),
                 performance: PerformanceReceipt {
                     platform: PRIMARY_STABLE_PLATFORM.into(),
                     fixture: PERFORMANCE_FIXTURE.into(),

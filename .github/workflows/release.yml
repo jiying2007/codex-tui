@@ -7,6 +7,14 @@ on:
       - ".github/workflows/release.yml"
       - "scripts/release/**"
       - "src/release.rs"
+      - "src/hardening.rs"
+      - "src/soak.rs"
+      - "src/support_bundle.rs"
+      - "src/sqlite_store.rs"
+      - "src/command.rs"
+      - "src/keymap.rs"
+      - "tests/failure_matrix.rs"
+      - "tests/state_migration_qualification.rs"
       - "release/**"
       - "CHANGELOG.md"
       - "docs/release/**"
@@ -101,17 +109,17 @@ on:
         required: false
         default: ""
       performance_iterations:
-        description: Stable only - retained resident-planning-10k sample count (>=200)
+        description: Stable diagnostic - retained resident-planning-10k sample count (>=200)
         type: string
         required: false
         default: ""
       performance_p95_ms:
-        description: Stable only - retained resident-planning-10k p95 milliseconds
+        description: Stable diagnostic - retained p95 milliseconds (recorded, not a hosted-runner gate)
         type: string
         required: false
         default: ""
       performance_p99_ms:
-        description: Stable only - retained resident-planning-10k p99 milliseconds
+        description: Stable diagnostic - retained p99 milliseconds (recorded, not a hosted-runner gate)
         type: string
         required: false
         default: ""
@@ -186,6 +194,30 @@ jobs:
             exit 1
           fi
 
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Run exact-SHA automated hardening qualification
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --all-targets --all-features
+          cargo build --locked --release
+
+          mkdir -p qualification
+          ./target/release/codex-tui soak \
+            --rows 50000 \
+            --cycles 256 \
+            --json > qualification/soak-evidence.json
+
+          ./target/release/codex-tui doctor bundle \
+            --output qualification/support-bundle
+
+          python3 scripts/release/create_automated_qualification.py \
+            --output qualification/automated-qualification.json \
+            --commit "${{ github.sha }}" \
+            --soak qualification/soak-evidence.json \
+            --support-manifest qualification/support-bundle/manifest.json
+
       - name: Validate stable publication notes
         if: inputs.channel == 'stable' && inputs.publish == true
         run: >
@@ -227,7 +259,7 @@ jobs:
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CI_RUN" > canonical-ci.json
           python3 scripts/release/validate_ci_run.py             --run-json canonical-ci.json             --commit "${{ github.sha }}"
 
-          python3 scripts/release/create_evidence.py             --output release-evidence.json             --compat-schema codex-tui/compat/v2             --version "$VERSION"             --commit "${{ github.sha }}"             --canonical-ci-run "$CI_RUN"             --linux-compat-sha256 "$LINUX_COMPAT_SHA"             --linux-compat-observed-at "$LINUX_COMPAT_AT"             --linux-terminal "$LINUX_TERMINAL"             --linux-terminal-observed-at "$LINUX_TERMINAL_AT"             --macos-compat-sha256 "$MACOS_COMPAT_SHA"             --macos-compat-observed-at "$MACOS_COMPAT_AT"             --macos-terminal "$MACOS_TERMINAL"             --macos-terminal-observed-at "$MACOS_TERMINAL_AT"             --windows-compat-sha256 "$WINDOWS_COMPAT_SHA"             --windows-compat-observed-at "$WINDOWS_COMPAT_AT"             --windows-terminal "$WINDOWS_TERMINAL"             --windows-terminal-observed-at "$WINDOWS_TERMINAL_AT"             --performance-iterations "$PERF_ITERATIONS"             --performance-p95-ms "$PERF_P95"             --performance-p99-ms "$PERF_P99"             --performance-source "$PERF_SOURCE"             --performance-observed-at "$PERF_AT"
+          python3 scripts/release/create_evidence.py             --output release-evidence.json             --compat-schema codex-tui/compat/v2             --version "$VERSION"             --commit "${{ github.sha }}"             --canonical-ci-run "$CI_RUN"             --automated-qualification qualification/automated-qualification.json             --linux-compat-sha256 "$LINUX_COMPAT_SHA"             --linux-compat-observed-at "$LINUX_COMPAT_AT"             --linux-terminal "$LINUX_TERMINAL"             --linux-terminal-observed-at "$LINUX_TERMINAL_AT"             --macos-compat-sha256 "$MACOS_COMPAT_SHA"             --macos-compat-observed-at "$MACOS_COMPAT_AT"             --macos-terminal "$MACOS_TERMINAL"             --macos-terminal-observed-at "$MACOS_TERMINAL_AT"             --windows-compat-sha256 "$WINDOWS_COMPAT_SHA"             --windows-compat-observed-at "$WINDOWS_COMPAT_AT"             --windows-terminal "$WINDOWS_TERMINAL"             --windows-terminal-observed-at "$WINDOWS_TERMINAL_AT"             --performance-iterations "$PERF_ITERATIONS"             --performance-p95-ms "$PERF_P95"             --performance-p99-ms "$PERF_P99"             --performance-source "$PERF_SOURCE"             --performance-observed-at "$PERF_AT"
 
       - name: Verify release contract
         shell: bash
@@ -254,7 +286,12 @@ jobs:
 
           mkdir -p gate
           cp release-verification.json gate/release-verification.json
-          cp release/v1.0-criteria.json gate/V1-STABLE-CRITERIA.json
+          SERIES="${{ steps.meta.outputs.version }}"
+          SERIES="${SERIES%.*}"
+          cp "release/v${SERIES}-criteria.json" gate/STABLE-CRITERIA.json
+          cp qualification/automated-qualification.json gate/automated-qualification.json
+          cp qualification/soak-evidence.json gate/soak-evidence.json
+          cp qualification/support-bundle/manifest.json gate/support-bundle-manifest.json
           if [ -f release-evidence.json ]; then
             cp release-evidence.json gate/release-evidence.json
           fi
