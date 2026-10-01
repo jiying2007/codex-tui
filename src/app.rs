@@ -4501,10 +4501,7 @@ mod tests {
         assert_eq!(app.filter, "existing");
         assert_eq!(app.input_mode, InputMode::Normal);
         assert!(app.search_return_view.is_none());
-        assert_eq!(
-            effects,
-            vec![Effect::StopWatchingConversation(thread_id)]
-        );
+        assert_eq!(effects, vec![Effect::StopWatchingConversation(thread_id)]);
     }
 
     #[test]
@@ -4524,7 +4521,7 @@ mod tests {
         assert!(
             effects
                 .iter()
-                .any(|effect| effect == &Effect::StopWatchingConversation(thread_id))
+                .any(|effect| effect == &Effect::StopWatchingConversation(thread_id.clone()))
         );
         assert!(effects.iter().all(|effect| {
             matches!(
