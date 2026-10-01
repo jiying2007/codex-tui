@@ -2442,7 +2442,9 @@ mod operator_state_write_behind_tests {
             .flush_operator_state_on_exit(&LocalStateV1::default())
             .expect_err("final flush failure must not be silently ignored");
         assert!(
-            error.to_string().contains("final SQLite operator-state flush"),
+            error
+                .to_string()
+                .contains("final SQLite operator-state flush"),
             "unexpected final flush error: {error:#}"
         );
     }
