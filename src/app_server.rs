@@ -2037,6 +2037,20 @@ fn enqueue_rpc_message(queue: &mut VecDeque<Value>, message: Value) -> Result<()
     Ok(())
 }
 
+async fn with_rpc_deadline<T>(
+    method: &str,
+    deadline: Duration,
+    future: impl std::future::Future<Output = Result<T>>,
+) -> Result<T> {
+    tokio::time::timeout(deadline, future)
+        .await
+        .with_context(|| format!("{method} timed out after {}ms", deadline.as_millis()))?
+}
+
+fn rpc_message_or_closed(message: Option<Value>, method: &str) -> Result<Value> {
+    message.ok_or_else(|| anyhow!("codex app-server closed while waiting for {method}"))
+}
+
 fn decode_wire_line(line: &str) -> Result<Value> {
     serde_json::from_str(line)
         .with_context(|| format!("decode app-server JSON line ({} bytes)", line.len()))
@@ -2085,17 +2099,12 @@ impl RpcSession {
     }
 
     async fn request(&mut self, method: &str, params: Value) -> Result<Value> {
-        tokio::time::timeout(
+        with_rpc_deadline(
+            method,
             RPC_REQUEST_TIMEOUT,
             self.request_without_timeout(method, params),
         )
         .await
-        .with_context(|| {
-            format!(
-                "{method} timed out after {}s",
-                RPC_REQUEST_TIMEOUT.as_secs()
-            )
-        })?
     }
 
     async fn request_without_timeout(&mut self, method: &str, params: Value) -> Result<Value> {
@@ -2109,10 +2118,7 @@ impl RpcSession {
         .await?;
 
         loop {
-            let message = self
-                .read_wire_message()
-                .await?
-                .ok_or_else(|| anyhow!("codex app-server closed while waiting for {method}"))?;
+            let message = rpc_message_or_closed(self.read_wire_message().await?, method)?;
             if message.get("id").and_then(Value::as_u64) == Some(id)
                 && message.get("method").is_none()
             {
@@ -2272,6 +2278,32 @@ mod tests {
             rx.recv().await,
             Some(ConversationEvent::GoalCleared(thread_id)) if thread_id.0 == "second"
         ));
+    }
+
+    #[tokio::test]
+    async fn rpc_deadline_fails_closed_without_waiting_forever() {
+        let error = with_rpc_deadline::<Value>(
+            "fixture/request",
+            Duration::from_millis(5),
+            std::future::pending(),
+        )
+        .await
+        .expect_err("pending RPC must hit its deadline");
+        assert!(
+            error.to_string().contains("fixture/request timed out"),
+            "timeout must retain method context: {error:#}"
+        );
+    }
+
+    #[test]
+    fn rpc_eof_is_reported_as_closed_during_request() {
+        let error = rpc_message_or_closed(None, "thread/list")
+            .expect_err("EOF must fail the active request");
+        assert!(
+            error
+                .to_string()
+                .contains("codex app-server closed while waiting for thread/list")
+        );
     }
 
     #[test]

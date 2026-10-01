@@ -1205,6 +1205,16 @@ const fn hex(value: u8) -> char {
     }
 }
 
+async fn with_command_deadline<T>(
+    program: &str,
+    deadline: Duration,
+    future: impl Future<Output = Result<T>>,
+) -> Result<T> {
+    timeout(deadline, future)
+        .await
+        .map_err(|_| anyhow!("{program} timed out after {}ms", deadline.as_millis()))?
+}
+
 #[derive(Debug)]
 pub(crate) struct CommandOutput {
     pub(crate) success: bool,
@@ -1233,7 +1243,7 @@ pub(crate) async fn run_command(
     let stdout = child.stdout.take().context("capture stdout")?;
     let stderr = child.stderr.take().context("capture stderr")?;
 
-    let result = timeout(COMMAND_TIMEOUT, async move {
+    let result = with_command_deadline(program, COMMAND_TIMEOUT, async move {
         let stdout_task = tokio::spawn(read_capped(stdout, MAX_STDOUT_BYTES));
         let stderr_task = tokio::spawn(read_capped(stderr, MAX_STDERR_BYTES));
         let status = child.wait().await.context("wait for subprocess")?;
@@ -1241,8 +1251,7 @@ pub(crate) async fn run_command(
         let stderr = stderr_task.await.context("join stderr reader")??;
         Ok::<_, anyhow::Error>((status.success(), stdout, stderr))
     })
-    .await
-    .map_err(|_| anyhow!("{program} timed out after {}s", COMMAND_TIMEOUT.as_secs()))??;
+    .await?;
 
     Ok(CommandOutput {
         success: result.0,
@@ -1352,6 +1361,28 @@ mod tests {
                 }
             })
         }
+    }
+
+    #[tokio::test]
+    async fn forge_command_deadline_fails_closed_without_hanging() {
+        let error = with_command_deadline::<()>(
+            "fixture-forge",
+            Duration::from_millis(5),
+            std::future::pending(),
+        )
+        .await
+        .expect_err("pending forge command must time out");
+        assert!(
+            error.to_string().contains("fixture-forge timed out"),
+            "timeout must retain command context: {error:#}"
+        );
+    }
+
+    #[test]
+    fn unauthenticated_custom_forge_host_fails_closed() {
+        let error = provider_from_auth_state("git.internal.example", false, false)
+            .expect_err("custom host without auth must be unavailable");
+        assert!(error.to_string().contains("authenticate with gh or glab"));
     }
 
     #[tokio::test]

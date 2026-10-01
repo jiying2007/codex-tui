@@ -7,7 +7,7 @@
     "windows"
   ],
   "automatedQualification": {
-    "schema": "codex-tui/automated-qualification/v2",
+    "schema": "codex-tui/automated-qualification/v3",
     "exactSourceSha": true,
     "requiredGates": [
       "failureMatrix",
@@ -28,6 +28,15 @@
       "warmupIterationsMin": 5,
       "iterationsMin": 50,
       "policy": "registry construction plus planning/recent/all-history/search/host-local distributions are retained as startup/interaction/scale diagnostics; shape/sample completeness is release-blocking, hosted-runner milliseconds are not"
+    },
+    "failureMatrix": {
+      "schema": "codex-tui/failure-matrix/v2",
+      "evidencePolicy": "every case names executable retained tests; release qualification verifies those identifiers against cargo test -- --list and binds the matrix SHA-256"
+    },
+    "supportBundle": {
+      "schema": "codex-tui/support-bundle/v1",
+      "exactSourceSha": true,
+      "policy": "manifest privacy plus snapshot build.sourceSha are validated; both manifest and snapshot are SHA-256 bound into automated qualification"
     }
   },
   "performance": {
@@ -54,7 +63,7 @@
     {
       "id": "failure-matrix",
       "authority": "retained automated qualification",
-      "evidence": "fault-injection suite passes on exact source SHA"
+      "evidence": "failure-matrix/v2 has 13 cases with executable evidence identifiers verified against cargo test -- --list; exact matrix JSON is SHA-256 bound into automated qualification"
     },
     {
       "id": "scale-evidence",
@@ -79,7 +88,7 @@
     {
       "id": "support-bundle-redaction",
       "authority": "retained automated qualification",
-      "evidence": "doctor bundle metadata/privacy/checksum tests pass and an exact-SHA bundle manifest is retained"
+      "evidence": "doctor bundle privacy/checksum contract passes; support snapshot build.sourceSha equals candidate SHA; manifest and snapshot are retained and SHA-256 bound"
     },
     {
       "id": "compatibility",
