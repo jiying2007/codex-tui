@@ -259,11 +259,11 @@ Mission Control classifies each Codex thread cwd against the current host:
 - `L` / `local`: cwd is a directory that exists on this host; Terminal Drawer is allowed.
 - `F` / `foreign-windows` or `foreign-unix`: cwd belongs to another OS; Terminal Drawer is blocked.
 - `!` / `stale`: native absolute cwd no longer exists.
-- `?`: cwd is empty or relative.
+- `?`: cwd is empty/relative, or is a native absolute path whose filesystem locality has not been probed yet.
 
 Press `l` in Mission Control to toggle **LOCAL ONLY** without changing the text search. The local-only projection composes with `/` search, so you can keep only host-local sessions visible and still filter by project, title or source. Searching for `local` remains supported.
 
-Mission Control also shows the connected App Server platform, active Codex Home, selected cwd locality and whether the Terminal Drawer is ready or blocked before you press `t`.
+Mission Control also shows the connected App Server platform, active Codex Home, selected cwd locality and whether the Terminal Drawer is ready, blocked or not yet checked before you press `t`. Normal rendering never performs filesystem probes: native absolute paths outside the locality cache remain `unprobed` until Git/locality reconciliation checks them. Terminal open still performs a fresh fail-closed cwd check.
 
 Codex app-server may normalize a stored Windows cwd while running on Linux, yielding a value such as `/linux/current/dir/C:\\Users\\...`. codex-tui detects the embedded foreign Windows path, displays the Windows portion as foreign, and never uses that value as a Linux PTY cwd.
 

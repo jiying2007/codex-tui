@@ -6,7 +6,7 @@ use crate::conversation::{
 };
 use crate::domain::{
     AttentionReason, CwdLocality, LocalRepoIdentity, RuntimeStatus, ThreadId, ThreadSummary,
-    ThreadUiState, classify_cwd,
+    ThreadUiState, classify_cwd, classify_cwd_without_io,
 };
 use crate::forge::{
     CapabilityState, ChangeRequestSummary, ForgeCapability, ForgeIdentity, ForgeObservation,
@@ -613,6 +613,13 @@ impl AppState {
             .get(cwd)
             .copied()
             .unwrap_or_else(|| classify_cwd(cwd))
+    }
+
+    pub fn cwd_locality_for_display(&self, cwd: &str) -> Option<CwdLocality> {
+        self.cwd_localities
+            .get(cwd)
+            .copied()
+            .or_else(|| classify_cwd_without_io(cwd))
     }
 
     fn refresh_cwd_locality(&mut self, cwd: &str) -> CwdLocality {
@@ -1264,6 +1271,11 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         }
         Action::GitContextLoaded(context) => {
             state.worktree_collision_counts.clear();
+            if context.observed_at_unix_ms > 0 && context.error.is_none() {
+                state
+                    .cwd_localities
+                    .insert(context.cwd.clone(), CwdLocality::LocalDirectory);
+            }
             propagate_git_context(state, context);
             ensure_selection_visible(state);
         }
@@ -4177,6 +4189,27 @@ mod tests {
             assert!(visible.contains(&1));
         }
         assert_eq!(app.filter, "focus-repo");
+    }
+
+    #[test]
+    fn successful_git_context_backfills_display_locality_without_render_io() {
+        let mut app = app();
+        let cwd = std::env::current_dir()
+            .expect("cwd")
+            .to_string_lossy()
+            .into_owned();
+        app.threads[0].metadata.cwd.clone_from(&cwd);
+        assert_eq!(app.cwd_locality_for_display(&cwd), None);
+
+        let thread_id = app.threads[0].id.clone();
+        let mut context = GitContext::pending(thread_id, cwd.clone());
+        context.observed_at_unix_ms = 1;
+        reduce(&mut app, Action::GitContextLoaded(context));
+
+        assert_eq!(
+            app.cwd_locality_for_display(&cwd),
+            Some(CwdLocality::LocalDirectory)
+        );
     }
 
     #[test]

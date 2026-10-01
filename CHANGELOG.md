@@ -31,6 +31,7 @@ All notable codex-tui changes are recorded here.
 - added lightweight thread-id and cwd indexes for projection fan-out, removing repeated full-history scans from Git result propagation, Forge periodic refresh/propagation and active-worktree counting while keeping Registry snapshots as the source of index truth.
 - bounded Git/Forge actor command and event queues, added finite projection concurrency, and suppressed duplicate pending active-Git refreshes so large multi-project refreshes cannot grow unbounded queues or serialize all probes behind one worker.
 - added a canonical Linux Rust 1.88 MSRV compile gate so the `rust-version = "1.88"` package contract is continuously verified against the locked dependency graph.
+- removed filesystem probing from Mission Control rendering itself: uncached native absolute cwd values render as unprobed until controlled locality/Git reconciliation checks them, while Terminal Drawer open keeps its fresh fail-closed cwd validation.
 
 ## [1.0.0] - 2026-09-30
 

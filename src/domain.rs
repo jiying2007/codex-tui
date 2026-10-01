@@ -34,10 +34,10 @@ impl CwdLocality {
     }
 }
 
-pub fn classify_cwd(cwd: &str) -> CwdLocality {
+pub fn classify_cwd_without_io(cwd: &str) -> Option<CwdLocality> {
     let cwd = cwd.trim();
     if cwd.is_empty() {
-        return CwdLocality::Empty;
+        return Some(CwdLocality::Empty);
     }
 
     let direct_windows = windows_absolute_path(cwd);
@@ -45,32 +45,37 @@ pub fn classify_cwd(cwd: &str) -> CwdLocality {
 
     if cfg!(windows) {
         if direct_windows {
-            return if Path::new(cwd).is_dir() {
-                CwdLocality::LocalDirectory
-            } else {
-                CwdLocality::NativeMissing
-            };
+            return None;
         }
         if embedded_windows.is_some() {
-            return CwdLocality::ForeignWindows;
+            return Some(CwdLocality::ForeignWindows);
         }
         if cwd.starts_with('/') {
-            return CwdLocality::ForeignUnix;
+            return Some(CwdLocality::ForeignUnix);
         }
     } else {
         if embedded_windows.is_some() {
-            return CwdLocality::ForeignWindows;
+            return Some(CwdLocality::ForeignWindows);
         }
         if cwd.starts_with('/') {
-            return if Path::new(cwd).is_dir() {
-                CwdLocality::LocalDirectory
-            } else {
-                CwdLocality::NativeMissing
-            };
+            return None;
         }
     }
 
-    CwdLocality::Relative
+    Some(CwdLocality::Relative)
+}
+
+pub fn classify_cwd(cwd: &str) -> CwdLocality {
+    let cwd = cwd.trim();
+    if let Some(locality) = classify_cwd_without_io(cwd) {
+        return locality;
+    }
+
+    if Path::new(cwd).is_dir() {
+        CwdLocality::LocalDirectory
+    } else {
+        CwdLocality::NativeMissing
+    }
 }
 
 pub fn display_cwd(cwd: &str) -> &str {
@@ -287,6 +292,29 @@ mod identity_tests {
 
         assert_eq!(classify_cwd("relative/repo"), CwdLocality::Relative);
         assert_eq!(classify_cwd(""), CwdLocality::Empty);
+    }
+
+    #[test]
+    fn cwd_locality_without_io_only_resolves_structural_cases() {
+        assert_eq!(
+            classify_cwd_without_io("relative/repo"),
+            Some(CwdLocality::Relative)
+        );
+        assert_eq!(classify_cwd_without_io(""), Some(CwdLocality::Empty));
+
+        if cfg!(windows) {
+            assert_eq!(
+                classify_cwd_without_io("/home/user/repo"),
+                Some(CwdLocality::ForeignUnix)
+            );
+            assert_eq!(classify_cwd_without_io(r"C:\repo"), None);
+        } else {
+            assert_eq!(
+                classify_cwd_without_io(r"C:\repo"),
+                Some(CwdLocality::ForeignWindows)
+            );
+            assert_eq!(classify_cwd_without_io("/tmp/repo"), None);
+        }
     }
 
     #[test]

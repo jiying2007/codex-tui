@@ -101,6 +101,13 @@ fn cwd_locality_label(locality: CwdLocality, language: UiLanguage) -> &'static s
     }
 }
 
+fn cwd_locality_display_label(locality: Option<CwdLocality>, language: UiLanguage) -> &'static str {
+    locality.map_or_else(
+        || tr_language(language, "unprobed", "未探测"),
+        |locality| cwd_locality_label(locality, language),
+    )
+}
+
 fn goal_status_label(status: GoalStatus, language: UiLanguage) -> &'static str {
     match (status, language) {
         (GoalStatus::Active, UiLanguage::SimplifiedChinese) => "进行中",
@@ -556,7 +563,10 @@ fn selected_git_status(app: &AppState) -> &'static str {
     let Some(thread) = app.selected_thread() else {
         return tr(app, "none", "无");
     };
-    if !app.cwd_locality(&thread.metadata.cwd).terminal_usable() {
+    if app
+        .cwd_locality_for_display(&thread.metadata.cwd)
+        .is_some_and(|locality| !locality.terminal_usable())
+    {
         return tr(app, "skipped", "已跳过");
     }
     match app.git_context(&thread.id) {
@@ -572,13 +582,13 @@ fn registry_scope_status(app: &AppState, width: u16) -> String {
     let (locality, terminal) = app
         .selected_thread()
         .map(|thread| {
-            let locality = app.cwd_locality(&thread.metadata.cwd);
+            let locality = app.cwd_locality_for_display(&thread.metadata.cwd);
             (
-                cwd_locality_label(locality, app.language),
-                if locality.terminal_usable() {
-                    tr(app, "ready", "就绪")
-                } else {
-                    tr(app, "blocked", "不可用")
+                cwd_locality_display_label(locality, app.language),
+                match locality {
+                    Some(CwdLocality::LocalDirectory) => tr(app, "ready", "就绪"),
+                    Some(_) => tr(app, "blocked", "不可用"),
+                    None => tr(app, "unchecked", "未检查"),
                 },
             )
         })
@@ -684,15 +694,16 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
         .filter(|index| app.thread_needs_attention(**index))
         .count();
     let mut lines = Vec::with_capacity(viewport.row_capacity.saturating_add(1));
-    let (local_count, foreign_count, stale_count) =
+    let (local_count, foreign_count, stale_count, unprobed_count) =
         visible
             .iter()
-            .fold((0_usize, 0_usize, 0_usize), |mut counts, index| {
-                match app.cwd_locality(&app.threads[*index].metadata.cwd) {
-                    CwdLocality::LocalDirectory => counts.0 += 1,
-                    CwdLocality::ForeignWindows | CwdLocality::ForeignUnix => counts.1 += 1,
-                    CwdLocality::NativeMissing => counts.2 += 1,
-                    CwdLocality::Relative | CwdLocality::Empty => {}
+            .fold((0_usize, 0_usize, 0_usize, 0_usize), |mut counts, index| {
+                match app.cwd_locality_for_display(&app.threads[*index].metadata.cwd) {
+                    Some(CwdLocality::LocalDirectory) => counts.0 += 1,
+                    Some(CwdLocality::ForeignWindows | CwdLocality::ForeignUnix) => counts.1 += 1,
+                    Some(CwdLocality::NativeMissing) => counts.2 += 1,
+                    Some(CwdLocality::Relative | CwdLocality::Empty) => {}
+                    None => counts.3 += 1,
                 }
                 counts
             });
@@ -753,7 +764,7 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
     let matched = viewport.matched;
     let summary = if app.language.is_simplified_chinese() {
         format!(
-            "{scope}{history} · 显示 {}/{} 匹配 · 共 {} · 本机 {local_count} · 外部 {foreign_count} · 失效 {stale_count} · 待处理 {} · {range}{text_filter}",
+            "{scope}{history} · 显示 {}/{} 匹配 · 共 {} · 本机 {local_count} · 外部 {foreign_count} · 失效 {stale_count} · 未探测 {unprobed_count} · 待处理 {} · {range}{text_filter}",
             visible.len(),
             matched,
             app.threads.len(),
@@ -761,7 +772,7 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
         )
     } else {
         format!(
-            "{scope}{history} {}/{} matched · {} total · {local_count} local · {foreign_count} foreign · {stale_count} stale · {} need attention · {range}{text_filter}",
+            "{scope}{history} {}/{} matched · {} total · {local_count} local · {foreign_count} foreign · {stale_count} stale · {unprobed_count} unprobed · {} need attention · {range}{text_filter}",
             visible.len(),
             matched,
             app.threads.len(),
@@ -799,11 +810,11 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
         } else {
             " "
         };
-        let locality = match app.cwd_locality(&thread.metadata.cwd) {
-            CwdLocality::LocalDirectory => "L",
-            CwdLocality::ForeignWindows | CwdLocality::ForeignUnix => "F",
-            CwdLocality::NativeMissing => "!",
-            CwdLocality::Relative | CwdLocality::Empty => "?",
+        let locality = match app.cwd_locality_for_display(&thread.metadata.cwd) {
+            Some(CwdLocality::LocalDirectory) => "L",
+            Some(CwdLocality::ForeignWindows | CwdLocality::ForeignUnix) => "F",
+            Some(CwdLocality::NativeMissing) => "!",
+            Some(CwdLocality::Relative | CwdLocality::Empty) | None => "?",
         };
         let text = match layout_mode(area.width) {
             LayoutMode::Compact => format!(
@@ -868,7 +879,10 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
                 )),
                 Line::from(format!(
                     "Cwd [{}]: {}",
-                    cwd_locality_label(app.cwd_locality(&thread.metadata.cwd), app.language),
+                    cwd_locality_display_label(
+                        app.cwd_locality_for_display(&thread.metadata.cwd),
+                        app.language,
+                    ),
                     sanitize_inline(display_cwd(&thread.metadata.cwd))
                 )),
                 Line::from(format!("计划状态: {planning}")),
@@ -896,7 +910,10 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
                 )),
                 Line::from(format!(
                     "Cwd [{}]: {}",
-                    cwd_locality_label(app.cwd_locality(&thread.metadata.cwd), app.language),
+                    cwd_locality_display_label(
+                        app.cwd_locality_for_display(&thread.metadata.cwd),
+                        app.language,
+                    ),
                     sanitize_inline(display_cwd(&thread.metadata.cwd))
                 )),
                 Line::from(format!("Planning: {planning}")),
@@ -925,17 +942,17 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
 
     if let Some(thread) = app.selected_thread() {
         lines.push(Line::from(""));
-        let locality = app.cwd_locality(&thread.metadata.cwd);
-        if !locality.terminal_usable() {
+        let locality = app.cwd_locality_for_display(&thread.metadata.cwd);
+        if locality.is_some_and(|locality| !locality.terminal_usable()) {
             lines.push(Line::from(if app.language.is_simplified_chinese() {
                 format!(
                     "Git: 已跳过 · cwd {} 不属于本机",
-                    cwd_locality_label(locality, app.language)
+                    cwd_locality_display_label(locality, app.language)
                 )
             } else {
                 format!(
                     "Git: skipped · cwd {} on this host",
-                    cwd_locality_label(locality, app.language)
+                    cwd_locality_display_label(locality, app.language)
                 )
             }));
         } else {
@@ -2861,6 +2878,23 @@ mod tests {
     }
 
     #[test]
+    fn production_ui_never_performs_authoritative_cwd_filesystem_classification() {
+        let source = include_str!("ui.rs");
+        let production = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("production ui source");
+        assert!(
+            !production.contains(".cwd_locality("),
+            "rendering must not call the filesystem-backed AppState cwd locality API"
+        );
+        assert!(
+            !production.contains("classify_cwd("),
+            "rendering must not call the filesystem-backed cwd classifier"
+        );
+    }
+
+    #[test]
     fn simplified_chinese_ui_localizes_daily_chrome_and_help() {
         let backend = TestBackend::new(160, 28);
         let mut terminal = Terminal::new(backend).expect("terminal");
@@ -2965,6 +2999,36 @@ mod tests {
         assert!(viewport.total < 100);
     }
 
+    #[test]
+    fn ordinary_registry_search_renders_unprobed_native_cwds_without_locality_cache() {
+        let backend = TestBackend::new(140, 14);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        let mut app = AppState::new(FakeBackend::scaled(150).snapshot().threads);
+        let cwd = std::env::current_dir()
+            .expect("cwd")
+            .to_string_lossy()
+            .into_owned();
+        for thread in &mut app.threads {
+            thread.metadata.cwd.clone_from(&cwd);
+        }
+        app.filter = "Synthetic".into();
+
+        assert_eq!(app.cwd_locality_for_display(&cwd), None);
+        terminal.draw(|frame| render(frame, &app)).expect("draw");
+
+        let buffer = terminal.backend().buffer();
+        let mut snapshot = String::new();
+        for y in 0..buffer.area.height {
+            for x in 0..buffer.area.width {
+                snapshot.push_str(buffer[(x, y)].symbol());
+            }
+            snapshot.push('\n');
+        }
+
+        assert!(snapshot.contains("150 unprobed"));
+        assert_eq!(app.cwd_locality_for_display(&cwd), None);
+    }
+
     #[cfg(not(windows))]
     #[test]
     fn registry_marks_foreign_windows_cwd_without_linux_prefix() {
@@ -2998,7 +3062,7 @@ mod tests {
             .expect("cwd")
             .to_string_lossy()
             .into_owned();
-        app.host_local_only = true;
+        crate::app::reduce(&mut app, crate::app::Action::ToggleHostLocalFilter);
 
         terminal.draw(|frame| render(frame, &app)).expect("draw");
         let buffer = terminal.backend().buffer();
@@ -3023,7 +3087,7 @@ mod tests {
             .expect("cwd")
             .to_string_lossy()
             .into_owned();
-        app.repo_backed_only = true;
+        crate::app::reduce(&mut app, crate::app::Action::ToggleRepoBackedFilter);
 
         terminal.draw(|frame| render(frame, &app)).expect("draw");
         let buffer = terminal.backend().buffer();
@@ -3080,7 +3144,12 @@ mod tests {
             .to_string_lossy()
             .into_owned();
         let status = registry_scope_status(&app, 160);
-        assert!(status.contains("selected cwd: local · terminal ready · git not-probed"));
+        assert!(status.contains("selected cwd: unprobed · terminal unchecked · git not-probed"));
+
+        let effects = crate::app::reduce(&mut app, crate::app::Action::RefreshGitProjections);
+        assert!(!effects.is_empty());
+        let status = registry_scope_status(&app, 160);
+        assert!(status.contains("selected cwd: local · terminal ready · git probing"));
     }
 
     #[test]
