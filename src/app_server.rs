@@ -317,7 +317,8 @@ async fn bootstrap_registry(
 ) -> Result<(Vec<ThreadSummary>, BackendStatus)> {
     let init = initialize(rpc).await?;
     let mut status = status_from_initialize(&init);
-    let (threads, loaded_supported) = load_registry_with_page_limit(rpc, false, max_pages).await?;
+    let (threads, loaded_supported, registry_complete) =
+        load_registry_with_page_limit(rpc, false, max_pages).await?;
     status.capabilities.push("thread/list".into());
     status.capabilities.push("thread/status/changed".into());
     if loaded_supported {
@@ -328,7 +329,7 @@ async fn bootstrap_registry(
             .push("thread/loaded/list".into());
     }
     status.connected = true;
-    status.registry_complete = max_pages.is_none();
+    status.registry_complete = registry_complete;
     status.last_refresh_unix_ms = Some(now_unix_ms());
     Ok((threads, status))
 }
@@ -911,14 +912,17 @@ async fn load_registry(
     rpc: &mut RpcSession,
     use_state_db_only: bool,
 ) -> Result<(Vec<ThreadSummary>, bool)> {
-    load_registry_with_page_limit(rpc, use_state_db_only, None).await
+    let (threads, loaded_supported, registry_complete) =
+        load_registry_with_page_limit(rpc, use_state_db_only, None).await?;
+    debug_assert!(registry_complete);
+    Ok((threads, loaded_supported))
 }
 
 async fn load_registry_with_page_limit(
     rpc: &mut RpcSession,
     use_state_db_only: bool,
     max_pages: Option<usize>,
-) -> Result<(Vec<ThreadSummary>, bool)> {
+) -> Result<(Vec<ThreadSummary>, bool, bool)> {
     let loaded = load_all_loaded_ids(rpc).await;
     let (loaded_ids, loaded_supported) = match loaded {
         Ok(ids) => (Some(ids), true),
@@ -929,6 +933,7 @@ async fn load_registry_with_page_limit(
     let mut raw_threads: Vec<ThreadWire> = Vec::new();
     let mut optimized_query = true;
     let mut pages = 0_usize;
+    let mut registry_complete = false;
     loop {
         let optimized_params = json!({
             "cursor": cursor,
@@ -959,7 +964,11 @@ async fn load_registry_with_page_limit(
         raw_threads.extend(page.data);
         cursor = page.next_cursor;
         pages = pages.saturating_add(1);
-        if cursor.is_none() || max_pages.is_some_and(|limit| pages >= limit) {
+        if cursor.is_none() {
+            registry_complete = true;
+            break;
+        }
+        if max_pages.is_some_and(|limit| pages >= limit) {
             break;
         }
     }
@@ -970,6 +979,7 @@ async fn load_registry_with_page_limit(
             .map(|thread| normalize_thread(thread, loaded_ids.as_ref()))
             .collect(),
         loaded_supported,
+        registry_complete,
     ))
 }
 
@@ -2029,7 +2039,8 @@ mod tests {
             .split("#[cfg(test)]")
             .next()
             .expect("production source");
-        assert!(production.contains("status.registry_complete = max_pages.is_none();"));
+        assert!(production.contains("status.registry_complete = registry_complete;"));
+        assert!(production.contains("registry_complete = true;"));
         assert!(production.contains("status.registry_complete = true;"));
     }
 
