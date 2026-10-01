@@ -2978,7 +2978,7 @@ mod tests {
                         .unwrap_or_default()
                         .split('·')
                 })
-                .filter_map(|segment| segment.trim().split_whitespace().next())
+                .filter_map(|segment| segment.split_whitespace().next())
                 .collect::<BTreeSet<_>>();
             assert_eq!(
                 advertised, expected,
