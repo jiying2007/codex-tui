@@ -316,8 +316,7 @@ async fn bootstrap_registry(
 ) -> Result<(Vec<ThreadSummary>, BackendStatus)> {
     let init = initialize(rpc).await?;
     let mut status = status_from_initialize(&init);
-    let (threads, loaded_supported) =
-        load_registry_with_page_limit(rpc, false, max_pages).await?;
+    let (threads, loaded_supported) = load_registry_with_page_limit(rpc, false, max_pages).await?;
     status.capabilities.push("thread/list".into());
     status.capabilities.push("thread/status/changed".into());
     if loaded_supported {
@@ -334,8 +333,7 @@ async fn bootstrap_registry(
 
 pub async fn start(codex_bin: Option<OsString>) -> Result<StartedRegistry> {
     let mut rpc = RpcSession::spawn(codex_bin).await?;
-    let (threads, status) =
-        bootstrap_registry(&mut rpc, Some(STARTUP_REGISTRY_PAGE_LIMIT)).await?;
+    let (threads, status) = bootstrap_registry(&mut rpc, Some(STARTUP_REGISTRY_PAGE_LIMIT)).await?;
 
     let initial = BackendSnapshot {
         generation: 0,
@@ -1937,9 +1935,10 @@ mod tests {
             .split("#[cfg(test)]")
             .next()
             .expect("production source");
-        assert!(production.contains(
-            "bootstrap_registry(&mut rpc, Some(STARTUP_REGISTRY_PAGE_LIMIT)).await?"
-        ));
+        assert!(
+            production
+                .contains("bootstrap_registry(&mut rpc, Some(STARTUP_REGISTRY_PAGE_LIMIT)).await?")
+        );
         assert!(production.contains("bootstrap_registry(&mut rpc, None).await?"));
         assert!(production.contains("match load_registry(&mut rpc, true).await"));
     }
