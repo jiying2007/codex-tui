@@ -31,6 +31,10 @@ def main() -> int:
     if plan.get("targetVersion") != criteria.get("stableVersion"):
         raise SystemExit("RC targetVersion does not match stable criteria")
 
+    real_evidence = criteria.get("realEnvironmentEvidence")
+    if not isinstance(real_evidence, dict) or real_evidence.get("exactSourceSha") is not True:
+        raise SystemExit("stable criteria must require exact-SHA real-environment evidence")
+
     candidate = plan.get("candidatePolicy")
     if not isinstance(candidate, dict) or candidate.get("codeFreeze") is not True:
         raise SystemExit("RC plan must explicitly freeze product code")
