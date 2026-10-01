@@ -882,6 +882,8 @@ async fn run_app(fake_mode: bool) -> Result<()> {
     let mut needs_render = true;
 
     while !app.should_quit {
+        let mut planning_dirty = false;
+
         if connect_task
             .as_ref()
             .is_some_and(tokio::task::JoinHandle::is_finished)
@@ -897,12 +899,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                     registry = Some(started.handle);
                     let effects = reduce(&mut app, Action::RefreshGitProjections);
                     apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
-                    reduce(
-                        &mut app,
-                        Action::ReconcilePlanning {
-                            now_unix_ms: now_unix_ms(),
-                        },
-                    );
+                    planning_dirty = true;
                 }
                 Ok(Err(error)) => {
                     reduce(
@@ -934,49 +931,25 @@ async fn run_app(fake_mode: bool) -> Result<()> {
             let effects = reduce(&mut app, Action::RefreshGitProjections);
             apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
         }
-        if registry_changes.planning {
-            reduce(
-                &mut app,
-                Action::ReconcilePlanning {
-                    now_unix_ms: now_unix_ms(),
-                },
-            );
-        }
+        planning_dirty |= registry_changes.planning;
         let git_changes = drain_git(&mut app, &mut services.git);
         needs_render |= git_changes.any;
         if git_changes.planning_projection {
             let effects = reduce(&mut app, Action::RefreshForgeProjections);
             apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
-            reduce(
-                &mut app,
-                Action::ReconcilePlanning {
-                    now_unix_ms: now_unix_ms(),
-                },
-            );
+            planning_dirty = true;
         }
 
         let forge_changed = drain_forge(&mut app, &mut services.forge);
         needs_render |= forge_changed;
-        if forge_changed {
-            reduce(
-                &mut app,
-                Action::ReconcilePlanning {
-                    now_unix_ms: now_unix_ms(),
-                },
-            );
-        }
+        planning_dirty |= forge_changed;
 
         let forge_mutation_changes = drain_forge_mutations(&mut app, &mut services.forge_mutations);
         needs_render |= forge_mutation_changes.any;
         if forge_mutation_changes.planning_projection {
             let effects = reduce(&mut app, Action::RefreshForgeProjections);
             apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
-            reduce(
-                &mut app,
-                Action::ReconcilePlanning {
-                    now_unix_ms: now_unix_ms(),
-                },
-            );
+            planning_dirty = true;
         }
 
         let mutation_changes = drain_mutations(&mut app, &mut services.mutations);
@@ -984,12 +957,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
         if mutation_changes.planning_projection {
             let effects = reduce(&mut app, Action::RefreshGitProjections);
             apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
-            reduce(
-                &mut app,
-                Action::ReconcilePlanning {
-                    now_unix_ms: now_unix_ms(),
-                },
-            );
+            planning_dirty = true;
         }
 
         let terminal_changed = drain_terminal_drawer(&mut app, &mut services.terminal_drawer);
@@ -1012,12 +980,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
             let forge_projection_changed = !effects.is_empty();
             apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
             if forge_projection_changed {
-                reduce(
-                    &mut app,
-                    Action::ReconcilePlanning {
-                        now_unix_ms: now_unix_ms(),
-                    },
-                );
+                planning_dirty = true;
                 needs_render = true;
             }
             last_forge_reconcile = Instant::now();
@@ -1031,13 +994,12 @@ async fn run_app(fake_mode: bool) -> Result<()> {
             reduce(&mut app, Action::BackendStatus(snapshot.status));
             let effects = reduce(&mut app, Action::RefreshGitProjections);
             apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
-            reduce(
-                &mut app,
-                Action::ReconcilePlanning {
-                    now_unix_ms: now_unix_ms(),
-                },
-            );
+            planning_dirty = true;
             last_fake_tick = Instant::now();
+            needs_render = true;
+        }
+
+        if reconcile_planning_if_dirty(&mut app, planning_dirty, now_unix_ms()) {
             needs_render = true;
         }
 
@@ -1089,6 +1051,18 @@ async fn run_app(fake_mode: bool) -> Result<()> {
         reduce(&mut app, Action::PlanningStoreDegraded(Some(error)));
     }
     Ok(())
+}
+
+fn reconcile_planning_if_dirty(
+    app: &mut AppState,
+    planning_dirty: bool,
+    now_unix_ms: u64,
+) -> bool {
+    if !planning_dirty {
+        return false;
+    }
+    reduce(app, Action::ReconcilePlanning { now_unix_ms });
+    true
 }
 
 fn runtime_text(
@@ -2276,6 +2250,23 @@ fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
         Command::CommandPalette | Command::OpenExternal => return vec![],
     };
     reduce(app, action)
+}
+
+#[cfg(test)]
+mod background_planning_coalescing_tests {
+    use super::*;
+
+    #[test]
+    fn background_planning_reconciles_only_when_marked_dirty() {
+        let mut app = AppState::new(FakeBackend::scaled(8).snapshot().threads);
+        assert!(app.work_cards.is_empty());
+
+        assert!(!reconcile_planning_if_dirty(&mut app, false, 1));
+        assert!(app.work_cards.is_empty());
+
+        assert!(reconcile_planning_if_dirty(&mut app, true, 1));
+        assert_eq!(app.work_cards.len(), 8);
+    }
 }
 
 #[cfg(test)]
