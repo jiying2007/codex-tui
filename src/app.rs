@@ -6086,6 +6086,8 @@ mod tests {
     fn high_frequency_thread_ui_edits_use_deferred_persistence() {
         let mut app = app();
         reduce(&mut app, Action::OpenSelected);
+        reduce(&mut app, Action::QuickPrompt);
+        assert_eq!(app.input_mode, InputMode::Composer);
 
         assert_eq!(
             reduce(&mut app, Action::InputChar('x')),
