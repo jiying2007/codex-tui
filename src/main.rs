@@ -1054,6 +1054,13 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                     }
                     apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
                 }
+                Event::Paste(text) => {
+                    let effects = handle_paste(&mut app, text);
+                    if !effects.is_empty() {
+                        needs_render = true;
+                    }
+                    apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
+                }
                 Event::Resize(cols, rows) => {
                     needs_render = true;
                     if app.terminal_drawer_open {
@@ -1471,6 +1478,21 @@ fn apply_effects(
                     );
                 }
             }
+            Effect::TerminalPaste(text) => {
+                if let Err(error) = terminal_drawer.send_paste(text) {
+                    reduce(
+                        app,
+                        Action::MutationNotice(format!(
+                            "{}: {error:#}",
+                            runtime_text(
+                                app.language,
+                                "terminal paste unavailable",
+                                "终端粘贴不可用",
+                            )
+                        )),
+                    );
+                }
+            }
             Effect::TerminalResize(size) => {
                 if let Err(error) = terminal_drawer.resize(size) {
                     reduce(
@@ -1859,6 +1881,19 @@ fn open_external_editor(cwd: &str, relative_path: &str) -> Result<()> {
         .map_err(Into::into)
 }
 
+fn handle_paste(app: &mut AppState, text: String) -> Vec<Effect> {
+    if text.is_empty() {
+        return vec![];
+    }
+    if app.terminal_focused {
+        return vec![Effect::TerminalPaste(text)];
+    }
+    if app.input_mode != InputMode::Normal {
+        return reduce(app, Action::InputText(text));
+    }
+    vec![]
+}
+
 fn is_terminal_release_key(key: KeyEvent) -> bool {
     matches!(key.code, KeyCode::F(6))
         || (key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char(']'))
@@ -2211,6 +2246,33 @@ mod accessibility_input_tests {
         assert_eq!(effects, vec![Effect::TerminalInput(vec![b'j'])]);
         assert_eq!(app.launch_selected, 0);
         assert_eq!(app.context_selected, 0);
+    }
+
+    #[test]
+    fn bracketed_paste_routes_to_terminal_or_active_editor_only() {
+        let mut app = app();
+        app.terminal_drawer_open = true;
+        app.terminal_focused = true;
+        assert_eq!(
+            handle_paste(&mut app, "echo hi\n".into()),
+            vec![Effect::TerminalPaste("echo hi\n".into())]
+        );
+
+        app.terminal_focused = false;
+        reduce(&mut app, Action::OpenSelected);
+        reduce(&mut app, Action::QuickPrompt);
+        assert_eq!(
+            handle_paste(&mut app, "hello\nworld".into()),
+            vec![Effect::PersistOperatorStateDeferred]
+        );
+        let thread_id = app.current_thread_id().expect("thread");
+        assert_eq!(
+            app.thread_ui.get(&thread_id.0).expect("thread ui").draft,
+            "hello\nworld"
+        );
+
+        reduce(&mut app, Action::CancelInput);
+        assert!(handle_paste(&mut app, "ignored".into()).is_empty());
     }
 
     #[test]
