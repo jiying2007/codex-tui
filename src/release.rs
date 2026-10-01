@@ -502,9 +502,12 @@ pub fn run_cli(args: &[String]) -> Result<i32> {
     match args.first().map(String::as_str) {
         Some("benchmark") => return crate::release_benchmark::run_cli(&args[1..]),
         Some("scale") => return crate::scale_evidence::run_cli(&args[1..]),
+        Some("failure-matrix") => return crate::hardening::run_cli(&args[1..]),
         Some("verify") => {}
         _ => {
-            anyhow::bail!("usage: codex-tui release <verify|benchmark|scale> ...");
+            anyhow::bail!(
+                "usage: codex-tui release <verify|benchmark|scale|failure-matrix> ..."
+            );
         }
     }
 
