@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 pub const RELEASE_VERIFY_SCHEMA: &str = "codex-tui/release-verification/v1";
 pub const RELEASE_EVIDENCE_SCHEMA: &str = "codex-tui/release-evidence/v3";
 pub const AUTOMATED_QUALIFICATION_SCHEMA: &str = "codex-tui/automated-qualification/v1";
+pub const STABLE_CRITERIA_SCHEMA: &str = "codex-tui/stable-criteria/v2";
 pub const PRIMARY_STABLE_PLATFORM: &str = "linux";
 pub const SECONDARY_PLATFORMS: [&str; 2] = ["macos", "windows"];
 pub const EXIT_RELEASE_BLOCKED: i32 = 4;
@@ -185,11 +186,14 @@ pub fn verify(options: &ReleaseVerifyOptions) -> ReleaseVerification {
     }
 
     let criteria_file = stable_criteria_filename(&version);
-    let stable_criteria_present = options.repo_root.join(&criteria_file).is_file();
+    let criteria_path = options.repo_root.join(&criteria_file);
+    let stable_criteria_present = criteria_path.is_file();
     if !stable_criteria_present {
         blockers.push(format!(
             "{criteria_file} is required for release candidates"
         ));
+    } else if let Err(error) = validate_stable_criteria(&criteria_path, &version) {
+        blockers.push(format!("{criteria_file} is invalid: {error:#}"));
     }
 
     let evidence_status = if options.channel == ReleaseChannel::Stable {
@@ -415,6 +419,22 @@ fn validate_platform_evidence(
     Ok(())
 }
 
+fn validate_stable_criteria(path: &Path, version: &str) -> Result<()> {
+    let bytes = fs::read(path)
+        .with_context(|| format!("read stable criteria {}", path.display()))?;
+    let value: serde_json::Value = serde_json::from_slice(&bytes)
+        .with_context(|| format!("decode stable criteria {}", path.display()))?;
+    anyhow::ensure!(
+        value.get("schema").and_then(serde_json::Value::as_str) == Some(STABLE_CRITERIA_SCHEMA),
+        "criteria schema must be {STABLE_CRITERIA_SCHEMA}"
+    );
+    anyhow::ensure!(
+        value.get("stableVersion").and_then(serde_json::Value::as_str) == Some(version),
+        "criteria stableVersion must be {version}"
+    );
+    Ok(())
+}
+
 pub fn stable_criteria_filename(version: &str) -> String {
     let mut parts = version.split('.');
     let major = parts.next().unwrap_or("0");
@@ -581,10 +601,44 @@ mod tests {
         fs::write(
             root.path()
                 .join(stable_criteria_filename(env!("CARGO_PKG_VERSION"))),
-            "{}",
+            format!(
+                r#"{{"schema":"{}","stableVersion":"{}"}}"#,
+                STABLE_CRITERIA_SCHEMA,
+                env!("CARGO_PKG_VERSION")
+            ),
         )
         .expect("criteria");
         root
+    }
+
+    #[test]
+    fn release_contract_rejects_mismatched_stable_criteria_version() {
+        let root = repo_with_lock_and_changelog();
+        fs::write(
+            root.path()
+                .join(stable_criteria_filename(env!("CARGO_PKG_VERSION"))),
+            format!(
+                r#"{{"schema":"{}","stableVersion":"9.9.9"}}"#,
+                STABLE_CRITERIA_SCHEMA
+            ),
+        )
+        .expect("criteria");
+
+        let report = verify(&ReleaseVerifyOptions {
+            channel: ReleaseChannel::Preview,
+            tag: format!("v{}-preview.1", env!("CARGO_PKG_VERSION")),
+            commit_sha: sha(),
+            evidence_path: None,
+            publish: false,
+            repo_root: root.path().to_path_buf(),
+        });
+        assert!(!report.valid);
+        assert!(
+            report
+                .blockers
+                .iter()
+                .any(|blocker| blocker.contains("criteria stableVersion"))
+        );
     }
 
     #[test]
