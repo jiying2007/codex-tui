@@ -2501,6 +2501,43 @@ mod tests {
     }
 
     #[test]
+    fn loaded_metadata_hydration_overlays_live_status_on_snapshot() {
+        let mut threads = by_id(FakeBackend::scaled(3).snapshot().threads);
+        let ids = threads.keys().cloned().collect::<Vec<_>>();
+        let first = ids[0].clone();
+        let second = ids[1].clone();
+        let third = ids[2].clone();
+
+        let hydration = LoadedIdHydration {
+            cursor: None,
+            ids: BTreeSet::from([first.clone(), second.clone()]),
+            live_overrides: BTreeMap::from([
+                (first.clone(), false),
+                (third.clone(), true),
+            ]),
+        };
+        let mut status = BackendStatus::fake();
+
+        finish_loaded_id_hydration(hydration, &mut threads, &mut status);
+
+        assert_eq!(threads[&first].metadata.loaded, Some(false));
+        assert_eq!(threads[&second].metadata.loaded, Some(true));
+        assert_eq!(threads[&third].metadata.loaded, Some(true));
+        assert!(
+            status
+                .capabilities
+                .iter()
+                .any(|capability| capability == "thread/loaded/list")
+        );
+        assert!(
+            !status
+                .optional_capabilities_missing
+                .iter()
+                .any(|capability| capability == "thread/loaded/list")
+        );
+    }
+
+    #[test]
     fn periodic_registry_reconcile_is_pagewise() {
         let source = include_str!("app_server.rs");
         let production = source
