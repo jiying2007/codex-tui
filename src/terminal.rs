@@ -102,11 +102,12 @@ mod tests {
     #[test]
     fn production_enter_arms_rollback_before_fallible_terminal_setup() {
         let source = include_str!("terminal.rs");
-        let production = source.split("#[cfg(test)]").next().expect("production source");
+        let production = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("production source");
         let raw = production.find("enable_raw_mode()?;").expect("raw mode");
-        let guard = production
-            .find("RestoreGuard::new")
-            .expect("restore guard");
+        let guard = production.find("RestoreGuard::new").expect("restore guard");
         let alternate = production
             .find("execute!(out, EnterAlternateScreen, cursor::Hide)?;")
             .expect("alternate screen setup");
