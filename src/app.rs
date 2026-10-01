@@ -4314,6 +4314,66 @@ mod tests {
     }
 
     #[test]
+    fn replace_threads_preserves_local_overlays_and_invalidates_changed_attention() {
+        let mut app = app();
+        let thread_id = app.threads[0].id.clone();
+        app.threads[0].pinned = true;
+        app.threads[0].alias = Some("primary".into());
+        app.threads[0].attention = vec![AttentionReason::MarkedUnread];
+        app.acknowledged_attention.insert(thread_id.0.clone());
+
+        let mut fresh = app.threads.clone();
+        let refreshed = fresh
+            .iter_mut()
+            .find(|thread| thread.id == thread_id)
+            .expect("fresh thread");
+        refreshed.pinned = false;
+        refreshed.alias = None;
+        refreshed.attention = vec![AttentionReason::ApprovalRequired];
+
+        reduce(&mut app, Action::ReplaceThreads(fresh));
+
+        let refreshed = app
+            .threads
+            .iter()
+            .find(|thread| thread.id == thread_id)
+            .expect("refreshed thread");
+        assert!(refreshed.pinned);
+        assert_eq!(refreshed.alias.as_deref(), Some("primary"));
+        assert!(
+            refreshed
+                .attention
+                .contains(&AttentionReason::ApprovalRequired)
+        );
+        assert!(
+            refreshed
+                .attention
+                .contains(&AttentionReason::MarkedUnread)
+        );
+        assert!(!app.acknowledged_attention.contains(&thread_id.0));
+    }
+
+    #[test]
+    fn replace_threads_scales_to_10k_and_preserves_tail_overlay() {
+        let mut app = AppState::new(FakeBackend::scaled(10_000).snapshot().threads);
+        let tail = app.threads.last_mut().expect("tail thread");
+        let tail_id = tail.id.clone();
+        tail.pinned = true;
+        tail.alias = Some("tail".into());
+
+        let fresh = FakeBackend::scaled(10_000).snapshot().threads;
+        reduce(&mut app, Action::ReplaceThreads(fresh));
+
+        let tail = app
+            .threads
+            .iter()
+            .find(|thread| thread.id == tail_id)
+            .expect("tail after replacement");
+        assert!(tail.pinned);
+        assert_eq!(tail.alias.as_deref(), Some("tail"));
+    }
+
+    #[test]
     fn refresh_never_steals_manual_selection() {
         let mut app = app();
         reduce(&mut app, Action::MoveSelection(2));
