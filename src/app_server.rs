@@ -483,26 +483,17 @@ fn observe_registry_hydration_message(hydration: &mut RegistryHydration, message
     };
     match method {
         "thread/archived" | "thread/deleted" => {
-            if let Some(thread_id) = message
-                .pointer("/params/threadId")
-                .and_then(Value::as_str)
-            {
+            if let Some(thread_id) = message.pointer("/params/threadId").and_then(Value::as_str) {
                 hydration.tombstones.insert(thread_id.to_string());
             }
         }
         "thread/unarchived" => {
-            if let Some(thread_id) = message
-                .pointer("/params/threadId")
-                .and_then(Value::as_str)
-            {
+            if let Some(thread_id) = message.pointer("/params/threadId").and_then(Value::as_str) {
                 hydration.tombstones.remove(thread_id);
             }
         }
         "thread/started" => {
-            if let Some(thread_id) = message
-                .pointer("/params/thread/id")
-                .and_then(Value::as_str)
-            {
+            if let Some(thread_id) = message.pointer("/params/thread/id").and_then(Value::as_str) {
                 hydration.tombstones.remove(thread_id);
             }
         }
@@ -2218,14 +2209,17 @@ mod tests {
             .split("async fn run_registry_actor")
             .nth(1)
             .expect("registry actor");
-        let command = actor.find("command = command_rx.recv()").expect("command branch");
+        let command = actor
+            .find("command = command_rx.recv()")
+            .expect("command branch");
         let hydration = actor
-            .find("_ = hydration_tick.tick(), if hydration.is_some()")
+            .find("_ = hydration_tick.tick(), if hydration_can_advance")
             .expect("hydration branch");
 
-        assert!(production.contains(
-            "bootstrap_registry(&mut rpc, Some(STARTUP_REGISTRY_PAGE_LIMIT)).await?"
-        ));
+        assert!(
+            production
+                .contains("bootstrap_registry(&mut rpc, Some(STARTUP_REGISTRY_PAGE_LIMIT)).await?")
+        );
         assert!(production.contains("bootstrap_registry(&mut rpc, None).await?"));
         assert!(actor.contains("biased;"));
         assert!(command < hydration);
@@ -2259,11 +2253,7 @@ mod tests {
 
         let mut threads = BTreeMap::from([(current.id.0.clone(), current)]);
         let tombstones = BTreeSet::from(["gone".to_string()]);
-        merge_registry_hydration_page(
-            &mut threads,
-            vec![stale, fresh, tombstoned],
-            &tombstones,
-        );
+        merge_registry_hydration_page(&mut threads, vec![stale, fresh, tombstoned], &tombstones);
 
         assert_eq!(threads["same"].title, "live-newer");
         assert_eq!(threads["fresh"].title, "fresh-page");
