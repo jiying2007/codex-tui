@@ -2204,19 +2204,94 @@ mod tests {
     }
 
     #[test]
-    fn startup_registry_is_one_page_before_full_actor_hydration() {
+    fn startup_registry_hydration_is_pagewise_and_command_priority() {
         assert_eq!(STARTUP_REGISTRY_PAGE_LIMIT, 1);
+        assert!(REGISTRY_HYDRATION_YIELD_INTERVAL <= Duration::from_millis(50));
+
         let source = include_str!("app_server.rs");
         let production = source
             .split("#[cfg(test)]")
             .next()
             .expect("production source");
-        assert!(
-            production
-                .contains("bootstrap_registry(&mut rpc, Some(STARTUP_REGISTRY_PAGE_LIMIT)).await?")
-        );
+        let actor = production
+            .split("async fn run_registry_actor")
+            .nth(1)
+            .expect("registry actor");
+        let command = actor.find("command = command_rx.recv()").expect("command branch");
+        let hydration = actor
+            .find("_ = hydration_tick.tick(), if hydration.is_some()")
+            .expect("hydration branch");
+
+        assert!(production.contains(
+            "bootstrap_registry(&mut rpc, Some(STARTUP_REGISTRY_PAGE_LIMIT)).await?"
+        ));
         assert!(production.contains("bootstrap_registry(&mut rpc, None).await?"));
-        assert!(production.contains("match load_registry(&mut rpc, true).await"));
+        assert!(actor.contains("biased;"));
+        assert!(command < hydration);
+        assert!(actor.contains("hydration_tick.reset();"));
+    }
+
+    #[test]
+    fn hydration_merge_preserves_newer_live_state_and_tombstones() {
+        let mut current = FakeBackend::scaled(1)
+            .snapshot()
+            .threads
+            .into_iter()
+            .next()
+            .expect("current");
+        current.id = ThreadId::new("same");
+        current.title = "live-newer".into();
+        current.metadata.updated_at = 20;
+
+        let mut stale = current.clone();
+        stale.title = "stale-page".into();
+        stale.metadata.updated_at = 10;
+
+        let mut fresh = current.clone();
+        fresh.id = ThreadId::new("fresh");
+        fresh.title = "fresh-page".into();
+        fresh.metadata.updated_at = 30;
+
+        let mut tombstoned = current.clone();
+        tombstoned.id = ThreadId::new("gone");
+        tombstoned.metadata.updated_at = 30;
+
+        let mut threads = BTreeMap::from([(current.id.0.clone(), current)]);
+        let tombstones = BTreeSet::from(["gone".to_string()]);
+        merge_registry_hydration_page(
+            &mut threads,
+            vec![stale, fresh, tombstoned],
+            &tombstones,
+        );
+
+        assert_eq!(threads["same"].title, "live-newer");
+        assert_eq!(threads["fresh"].title, "fresh-page");
+        assert!(!threads.contains_key("gone"));
+    }
+
+    #[test]
+    fn hydration_tombstones_follow_archive_and_reappearance_notifications() {
+        let mut hydration = RegistryHydration {
+            cursor: "next".into(),
+            loaded_ids: None,
+            optimized_query: true,
+            tombstones: BTreeSet::new(),
+        };
+
+        observe_registry_hydration_message(
+            &mut hydration,
+            &json!({"method": "thread/archived", "params": {"threadId": "thread-1"}}),
+        );
+        assert!(hydration.tombstones.contains("thread-1"));
+
+        observe_registry_hydration_message(
+            &mut hydration,
+            &json!({
+                "method": "thread/started",
+                "params": {"thread": {"id": "thread-1"}}
+            }),
+        );
+        assert!(!hydration.tombstones.contains("thread-1"));
     }
 
     #[test]
