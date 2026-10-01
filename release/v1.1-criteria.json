@@ -28,6 +28,10 @@
       "warmupIterationsMin": 5,
       "iterationsMin": 50,
       "policy": "registry construction plus planning/recent/all-history/search/host-local distributions are retained as startup/interaction/scale diagnostics; shape/sample completeness is release-blocking, hosted-runner milliseconds are not"
+    },
+    "failureMatrix": {
+      "schema": "codex-tui/failure-matrix/v2",
+      "evidencePolicy": "every case names executable retained tests; release qualification verifies those identifiers against cargo test -- --list and binds the matrix SHA-256"
     }
   },
   "performance": {
@@ -54,7 +58,7 @@
     {
       "id": "failure-matrix",
       "authority": "retained automated qualification",
-      "evidence": "fault-injection suite passes on exact source SHA"
+      "evidence": "failure-matrix/v2 has 13 cases with executable evidence identifiers verified against cargo test -- --list; exact matrix JSON is SHA-256 bound into automated qualification"
     },
     {
       "id": "scale-evidence",
