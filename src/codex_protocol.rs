@@ -31,6 +31,8 @@ pub struct ThreadWire {
     #[serde(default)]
     pub updated_at: i64,
     #[serde(default)]
+    pub recency_at: Option<i64>,
+    #[serde(default)]
     pub status: Value,
     #[serde(default)]
     pub cwd: String,
@@ -76,7 +78,7 @@ pub fn normalize_thread(thread: ThreadWire, loaded: Option<&BTreeSet<String>>) -
             model: thread.model,
             project_id: thread.project_id,
             source,
-            updated_at: thread.updated_at,
+            updated_at: thread.recency_at.unwrap_or(thread.updated_at),
             loaded: is_loaded,
             workspace_key,
             workspace_basis,
@@ -219,6 +221,7 @@ mod tests {
             project_id: None,
             model: Some("gpt-5.6".into()),
             updated_at: 42,
+            recency_at: None,
             status,
             cwd: "/work/audio-pipeline".into(),
             source: json!("cli"),
@@ -246,6 +249,15 @@ mod tests {
                 AttentionReason::UserInputRequired
             ]
         );
+    }
+
+    #[test]
+    fn recency_at_is_preferred_for_registry_ordering_timestamp() {
+        let mut thread = wire(json!({"type": "idle"}));
+        thread.updated_at = 10;
+        thread.recency_at = Some(25);
+        let summary = normalize_thread(thread, None);
+        assert_eq!(summary.metadata.updated_at, 25);
     }
 
     #[test]
