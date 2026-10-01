@@ -3095,10 +3095,9 @@ fn refresh_active_git_projections(state: &AppState) -> Vec<Effect> {
 
     let selected_thread_id = match &state.view {
         View::Registry => state.selected_thread_id(),
-        View::Thread(id)
-        | View::Review(id)
-        | View::Workspace(id)
-        | View::ManagedWorktrees(id) => Some(id.clone()),
+        View::Thread(id) | View::Review(id) | View::Workspace(id) | View::ManagedWorktrees(id) => {
+            Some(id.clone())
+        }
         View::Board => state.selected_planning_card().and_then(|card| {
             (card.anchor.kind == SourceKind::CodexThread)
                 .then(|| ThreadId::new(card.anchor.value.clone()))
@@ -3127,12 +3126,8 @@ fn refresh_active_git_projections(state: &AppState) -> Vec<Effect> {
         .filter_map(|thread_id| {
             let thread = state.threads.iter().find(|thread| thread.id == thread_id)?;
             let cwd = thread.metadata.cwd.clone();
-            (classify_cwd(&cwd).terminal_usable() && seen_cwds.insert(cwd.clone())).then_some(
-                Effect::ProbeGit {
-                    thread_id,
-                    cwd,
-                },
-            )
+            (classify_cwd(&cwd).terminal_usable() && seen_cwds.insert(cwd.clone()))
+                .then_some(Effect::ProbeGit { thread_id, cwd })
         })
         .collect()
 }
