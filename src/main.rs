@@ -1207,7 +1207,7 @@ mod registry_drain_classification_tests {
         assert!(!conversation_event_changes_planning(
             &ConversationEvent::PromptSubmitted {
                 thread_id: codex_tui::domain::ThreadId::new("thread"),
-                prompt: "fixture".into(),
+                turn_id: "turn".into(),
             }
         ));
     }
