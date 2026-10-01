@@ -18,6 +18,7 @@ pub struct HelpBinding {
     pub command: Command,
 }
 
+#[rustfmt::skip]
 pub const HELP_BINDINGS: &[HelpBinding] = &[
     HelpBinding { surface: "Global", scope: HelpScope::AllViews, token: "?", code: KeyCode::Char('?'), modifiers: KeyModifiers::NONE, command: Command::Help },
     HelpBinding { surface: "Global", scope: HelpScope::AllViews, token: "Ctrl+K", code: KeyCode::Char('k'), modifiers: KeyModifiers::CONTROL, command: Command::CommandPalette },
