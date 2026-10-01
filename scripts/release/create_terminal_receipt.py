@@ -5,11 +5,13 @@ import argparse
 import datetime as dt
 import json
 import pathlib
+import re
 import sys
 
 from _compat import write_text_lf
 
 SCHEMA = "codex-tui/terminal-restoration/v1"
+HEX40 = re.compile(r"^[0-9a-fA-F]{40}$")
 
 
 def main() -> int:
@@ -18,6 +20,7 @@ def main() -> int:
     )
     parser.add_argument("--platform", choices=["linux", "macos", "windows"], required=True)
     parser.add_argument("--terminal", required=True)
+    parser.add_argument("--source-sha", required=True)
     parser.add_argument("--output", required=True)
     parser.add_argument("--notes", default="")
     parser.add_argument(
@@ -35,12 +38,16 @@ def main() -> int:
     terminal = args.terminal.strip()
     if not terminal:
         raise SystemExit("--terminal must not be empty")
+    source_sha = args.source_sha.strip().lower()
+    if not HEX40.fullmatch(source_sha):
+        raise SystemExit("--source-sha must be exactly 40 hexadecimal characters")
 
     observed_at = dt.datetime.now(dt.timezone.utc).isoformat().replace("+00:00", "Z")
     receipt = {
         "schema": SCHEMA,
         "platform": args.platform,
         "status": "pass",
+        "sourceSha": source_sha,
         "terminal": terminal,
         "observedAt": observed_at,
         "notes": args.notes.strip() or None,
