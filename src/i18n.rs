@@ -71,7 +71,11 @@ impl UiLanguage {
     }
 }
 
-pub const fn pick<'a>(language: UiLanguage, english: &'a str, simplified_chinese: &'a str) -> &'a str {
+pub const fn pick<'a>(
+    language: UiLanguage,
+    english: &'a str,
+    simplified_chinese: &'a str,
+) -> &'a str {
     match language {
         UiLanguage::English => english,
         UiLanguage::SimplifiedChinese => simplified_chinese,
@@ -94,10 +98,7 @@ fn resolve_auto_locale<'a>(values: impl IntoIterator<Item = &'a str>) -> UiLangu
 }
 
 fn locale_is_chinese(value: &str) -> bool {
-    let normalized = value
-        .trim()
-        .replace('_', "-")
-        .to_ascii_lowercase();
+    let normalized = value.trim().replace('_', "-").to_ascii_lowercase();
     normalized == "zh" || normalized.starts_with("zh-")
 }
 
