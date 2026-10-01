@@ -30,7 +30,7 @@ use crate::planning::{
 use crate::pty::TerminalSize;
 use crate::store::LocalStateV1;
 use crate::terminal_drawer::TerminalSnapshot;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 const REGISTRY_RECENT_LIMIT: usize = 100;
 
@@ -1150,20 +1150,34 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::ReplaceThreads(mut threads) => {
             state.worktree_collision_counts.clear();
             let selected_id = state.selected_thread_id();
+            let existing_by_id = state
+                .threads
+                .iter()
+                .map(|thread| {
+                    (
+                        thread.id.0.clone(),
+                        (
+                            thread.pinned,
+                            thread.alias.clone(),
+                            remote_attention(thread),
+                            thread.attention.contains(&AttentionReason::MarkedUnread),
+                        ),
+                    )
+                })
+                .collect::<HashMap<_, _>>();
             for fresh in &mut threads {
-                if let Some(existing) = state.threads.iter().find(|old| old.id == fresh.id) {
-                    fresh.pinned = existing.pinned;
-                    fresh.alias.clone_from(&existing.alias);
+                if let Some((pinned, alias, existing_remote, marked_unread)) =
+                    existing_by_id.get(&fresh.id.0)
+                {
+                    fresh.pinned = *pinned;
+                    fresh.alias.clone_from(alias);
 
-                    let existing_remote = remote_attention(existing);
                     let fresh_remote = remote_attention(fresh);
-                    if existing_remote != fresh_remote && !fresh_remote.is_empty() {
+                    if existing_remote != &fresh_remote && !fresh_remote.is_empty() {
                         state.acknowledged_attention.remove(&fresh.id.0);
                     }
 
-                    if existing.attention.contains(&AttentionReason::MarkedUnread)
-                        && !fresh.attention.contains(&AttentionReason::MarkedUnread)
-                    {
+                    if *marked_unread && !fresh.attention.contains(&AttentionReason::MarkedUnread) {
                         fresh.attention.push(AttentionReason::MarkedUnread);
                     }
                 }
@@ -4295,6 +4309,62 @@ mod tests {
                 .expect("serialize")
                 .contains("Ship M4")
         );
+    }
+
+    #[test]
+    fn replace_threads_preserves_local_overlays_and_invalidates_changed_attention() {
+        let mut app = app();
+        let thread_id = app.threads[0].id.clone();
+        app.threads[0].pinned = true;
+        app.threads[0].alias = Some("primary".into());
+        app.threads[0].attention = vec![AttentionReason::MarkedUnread];
+        app.acknowledged_attention.insert(thread_id.0.clone());
+
+        let mut fresh = app.threads.clone();
+        let refreshed = fresh
+            .iter_mut()
+            .find(|thread| thread.id == thread_id)
+            .expect("fresh thread");
+        refreshed.pinned = false;
+        refreshed.alias = None;
+        refreshed.attention = vec![AttentionReason::ApprovalRequired];
+
+        reduce(&mut app, Action::ReplaceThreads(fresh));
+
+        let refreshed = app
+            .threads
+            .iter()
+            .find(|thread| thread.id == thread_id)
+            .expect("refreshed thread");
+        assert!(refreshed.pinned);
+        assert_eq!(refreshed.alias.as_deref(), Some("primary"));
+        assert!(
+            refreshed
+                .attention
+                .contains(&AttentionReason::ApprovalRequired)
+        );
+        assert!(refreshed.attention.contains(&AttentionReason::MarkedUnread));
+        assert!(!app.acknowledged_attention.contains(&thread_id.0));
+    }
+
+    #[test]
+    fn replace_threads_scales_to_10k_and_preserves_tail_overlay() {
+        let mut app = AppState::new(FakeBackend::scaled(10_000).snapshot().threads);
+        let tail = app.threads.last_mut().expect("tail thread");
+        let tail_id = tail.id.clone();
+        tail.pinned = true;
+        tail.alias = Some("tail".into());
+
+        let fresh = FakeBackend::scaled(10_000).snapshot().threads;
+        reduce(&mut app, Action::ReplaceThreads(fresh));
+
+        let tail = app
+            .threads
+            .iter()
+            .find(|thread| thread.id == tail_id)
+            .expect("tail after replacement");
+        assert!(tail.pinned);
+        assert_eq!(tail.alias.as_deref(), Some("tail"));
     }
 
     #[test]
