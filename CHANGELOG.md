@@ -41,6 +41,7 @@ All notable codex-tui changes are recorded here.
 - made PTY handle teardown non-blocking even when the actor is stuck in synchronous terminal I/O: the handle now owns an out-of-band child killer, drops event backpressure first, signals termination independently of the bounded command queue, and detaches the actor instead of joining it on the UI thread.
 - made terminal startup transactional: once raw mode is enabled, an armed rollback guard restores raw mode, mouse capture, alternate screen and cursor state on every subsequent setup error before a `TerminalSession` can exist.
 - coalesced high-frequency thread draft and scroll persistence behind a 250ms bounded write-behind window, while keeping pin/alias/attention/filter changes and submitted-draft clearing immediately durable and preserving the final shutdown flush.
+- staged App Server Registry hydration for large histories: interactive startup now loads only the newest 200 threads for first paint, the Registry actor immediately hydrates the complete history afterward, `doctor codex` still performs a full probe, and full reconciliation fallback is reduced from every 30 seconds to every 5 minutes because lifecycle/status notifications remain the real-time authority.
 
 ## [1.0.0] - 2026-09-30
 

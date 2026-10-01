@@ -25,7 +25,8 @@ use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 
 const PAGE_SIZE: u32 = 200;
-const REFRESH_INTERVAL: Duration = Duration::from_secs(30);
+const STARTUP_REGISTRY_PAGE_LIMIT: usize = 1;
+const REFRESH_INTERVAL: Duration = Duration::from_secs(5 * 60);
 const GOAL_PROBE_INTERVAL: Duration = Duration::from_millis(250);
 const GOAL_EAGER_PROBE_LIMIT: usize = 100;
 const APP_SERVER_COMMAND_QUEUE_CAPACITY: usize = 64;
@@ -309,11 +310,13 @@ fn try_recv_latest_snapshot(
     }
 }
 
-pub async fn start(codex_bin: Option<OsString>) -> Result<StartedRegistry> {
-    let mut rpc = RpcSession::spawn(codex_bin).await?;
-    let init = initialize(&mut rpc).await?;
+async fn bootstrap_registry(
+    rpc: &mut RpcSession,
+    max_pages: Option<usize>,
+) -> Result<(Vec<ThreadSummary>, BackendStatus)> {
+    let init = initialize(rpc).await?;
     let mut status = status_from_initialize(&init);
-    let (threads, loaded_supported) = load_registry(&mut rpc, false).await?;
+    let (threads, loaded_supported) = load_registry_with_page_limit(rpc, false, max_pages).await?;
     status.capabilities.push("thread/list".into());
     status.capabilities.push("thread/status/changed".into());
     if loaded_supported {
@@ -325,6 +328,12 @@ pub async fn start(codex_bin: Option<OsString>) -> Result<StartedRegistry> {
     }
     status.connected = true;
     status.last_refresh_unix_ms = Some(now_unix_ms());
+    Ok((threads, status))
+}
+
+pub async fn start(codex_bin: Option<OsString>) -> Result<StartedRegistry> {
+    let mut rpc = RpcSession::spawn(codex_bin).await?;
+    let (threads, status) = bootstrap_registry(&mut rpc, Some(STARTUP_REGISTRY_PAGE_LIMIT)).await?;
 
     let initial = BackendSnapshot {
         generation: 0,
@@ -355,7 +364,13 @@ pub async fn start(codex_bin: Option<OsString>) -> Result<StartedRegistry> {
 }
 
 pub async fn probe(codex_bin: Option<OsString>) -> Result<BackendSnapshot> {
-    Ok(start(codex_bin).await?.initial)
+    let mut rpc = RpcSession::spawn(codex_bin).await?;
+    let (threads, status) = bootstrap_registry(&mut rpc, None).await?;
+    Ok(BackendSnapshot {
+        generation: 0,
+        threads,
+        status,
+    })
 }
 
 fn eager_goal_probe_queue(
@@ -391,6 +406,29 @@ fn reset_eager_goal_queue(
         .collect();
 }
 
+fn apply_full_registry_refresh(
+    fresh: Vec<ThreadSummary>,
+    loaded_supported: bool,
+    threads: &mut BTreeMap<String, ThreadSummary>,
+    status: &mut BackendStatus,
+) {
+    *threads = by_id(fresh);
+    status.connected = true;
+    status.error = None;
+    status.last_refresh_unix_ms = Some(now_unix_ms());
+    if loaded_supported
+        && !status
+            .capabilities
+            .iter()
+            .any(|value| value == "thread/loaded/list")
+    {
+        status.capabilities.push("thread/loaded/list".into());
+        status
+            .optional_capabilities_missing
+            .retain(|value| value != "thread/loaded/list");
+    }
+}
+
 async fn run_registry_actor(
     mut rpc: RpcSession,
     initial_threads: Vec<ThreadSummary>,
@@ -417,6 +455,25 @@ async fn run_registry_actor(
     let mut refresh = tokio::time::interval(REFRESH_INTERVAL);
     refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     refresh.tick().await;
+
+    match load_registry(&mut rpc, true).await {
+        Ok((fresh, loaded_supported)) => {
+            apply_full_registry_refresh(fresh, loaded_supported, &mut threads, &mut status);
+            if goal_supported != Some(false) {
+                reset_eager_goal_queue(
+                    &threads,
+                    &goal_probed,
+                    &mut goal_queued,
+                    &mut goal_probe_queue,
+                );
+            }
+        }
+        Err(error) => {
+            status.error = Some(error.to_string());
+        }
+    }
+    generation = generation.saturating_add(1);
+    let _ = tx.send(snapshot(generation, &threads, &status));
 
     let mut goal_probe = tokio::time::interval(GOAL_PROBE_INTERVAL);
     goal_probe.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -693,7 +750,12 @@ async fn run_registry_actor(
             _ = refresh.tick() => {
                 match load_registry(&mut rpc, true).await {
                     Ok((fresh, loaded_supported)) => {
-                        threads = by_id(fresh);
+                        apply_full_registry_refresh(
+                            fresh,
+                            loaded_supported,
+                            &mut threads,
+                            &mut status,
+                        );
                         if goal_supported != Some(false) {
                             reset_eager_goal_queue(
                                 &threads,
@@ -701,16 +763,6 @@ async fn run_registry_actor(
                                 &mut goal_queued,
                                 &mut goal_probe_queue,
                             );
-                        }
-                        status.connected = true;
-                        status.error = None;
-                        status.last_refresh_unix_ms = Some(now_unix_ms());
-                        if loaded_supported
-                            && !status.capabilities.iter().any(|value| value == "thread/loaded/list")
-                        {
-                            status.capabilities.push("thread/loaded/list".into());
-                            status.optional_capabilities_missing
-                                .retain(|value| value != "thread/loaded/list");
                         }
                     }
                     Err(error) => {
@@ -855,6 +907,14 @@ async fn load_registry(
     rpc: &mut RpcSession,
     use_state_db_only: bool,
 ) -> Result<(Vec<ThreadSummary>, bool)> {
+    load_registry_with_page_limit(rpc, use_state_db_only, None).await
+}
+
+async fn load_registry_with_page_limit(
+    rpc: &mut RpcSession,
+    use_state_db_only: bool,
+    max_pages: Option<usize>,
+) -> Result<(Vec<ThreadSummary>, bool)> {
     let loaded = load_all_loaded_ids(rpc).await;
     let (loaded_ids, loaded_supported) = match loaded {
         Ok(ids) => (Some(ids), true),
@@ -864,6 +924,7 @@ async fn load_registry(
     let mut cursor: Option<String> = None;
     let mut raw_threads: Vec<ThreadWire> = Vec::new();
     let mut optimized_query = true;
+    let mut pages = 0_usize;
     loop {
         let optimized_params = json!({
             "cursor": cursor,
@@ -893,7 +954,8 @@ async fn load_registry(
         let page = parse_thread_list(result)?;
         raw_threads.extend(page.data);
         cursor = page.next_cursor;
-        if cursor.is_none() {
+        pages = pages.saturating_add(1);
+        if cursor.is_none() || max_pages.is_some_and(|limit| pages >= limit) {
             break;
         }
     }
@@ -1858,7 +1920,23 @@ mod tests {
 
     #[test]
     fn registry_full_reconcile_is_low_frequency_fallback() {
-        assert!(REFRESH_INTERVAL >= Duration::from_secs(30));
+        assert!(REFRESH_INTERVAL >= Duration::from_secs(5 * 60));
+    }
+
+    #[test]
+    fn startup_registry_is_one_page_before_full_actor_hydration() {
+        assert_eq!(STARTUP_REGISTRY_PAGE_LIMIT, 1);
+        let source = include_str!("app_server.rs");
+        let production = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("production source");
+        assert!(
+            production
+                .contains("bootstrap_registry(&mut rpc, Some(STARTUP_REGISTRY_PAGE_LIMIT)).await?")
+        );
+        assert!(production.contains("bootstrap_registry(&mut rpc, None).await?"));
+        assert!(production.contains("match load_registry(&mut rpc, true).await"));
     }
 
     #[test]
