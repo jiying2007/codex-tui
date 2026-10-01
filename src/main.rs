@@ -26,10 +26,42 @@ use std::path::Path;
 use std::process::Stdio;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+const OPERATOR_STATE_WRITE_BEHIND_INTERVAL: Duration = Duration::from_millis(250);
+
+#[derive(Default)]
+struct OperatorStateWriteBehind {
+    dirty_since: Option<Instant>,
+}
+
+impl OperatorStateWriteBehind {
+    fn mark(&mut self) {
+        self.mark_at(Instant::now());
+    }
+
+    fn mark_at(&mut self, now: Instant) {
+        self.dirty_since.get_or_insert(now);
+    }
+
+    fn is_due(&self) -> bool {
+        self.is_due_at(Instant::now())
+    }
+
+    fn is_due_at(&self, now: Instant) -> bool {
+        self.dirty_since.is_some_and(|dirty_since| {
+            now.saturating_duration_since(dirty_since) >= OPERATOR_STATE_WRITE_BEHIND_INTERVAL
+        })
+    }
+
+    fn clear(&mut self) {
+        self.dirty_since = None;
+    }
+}
+
 struct RuntimeStore {
     sqlite: SqliteStore,
     writable: bool,
     error: Option<String>,
+    operator_state_write_behind: OperatorStateWriteBehind,
 }
 
 struct StoreBootstrap {
@@ -71,6 +103,7 @@ impl RuntimeStore {
                 sqlite,
                 writable,
                 error,
+                operator_state_write_behind: OperatorStateWriteBehind::default(),
             },
             StoreBootstrap {
                 config,
@@ -80,7 +113,18 @@ impl RuntimeStore {
         ))
     }
 
+    fn defer_operator_state(&mut self) {
+        if self.writable {
+            self.operator_state_write_behind.mark();
+        }
+    }
+
+    fn operator_state_flush_due(&self) -> bool {
+        self.writable && self.operator_state_write_behind.is_due()
+    }
+
     fn persist_operator_state(&mut self, state: &LocalStateV1) -> Option<String> {
+        self.operator_state_write_behind.clear();
         if !self.writable {
             return None;
         }
@@ -949,6 +993,12 @@ async fn run_app(fake_mode: bool) -> Result<()> {
         let terminal_changed = drain_terminal_drawer(&mut app, &mut services.terminal_drawer);
         needs_render |= terminal_changed;
 
+        if services.store.operator_state_flush_due()
+            && let Some(error) = services.store.persist_operator_state(&app.to_local_state())
+        {
+            reduce(&mut app, Action::PlanningStoreDegraded(Some(error)));
+        }
+
         if last_git_reconcile.elapsed() >= Duration::from_secs(10) {
             let effects = reduce(&mut app, Action::RefreshActiveGitProjections);
             apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
@@ -1199,6 +1249,9 @@ fn apply_effects(
                 if let Some(error) = store.persist_operator_state(&app.to_local_state()) {
                     reduce(app, Action::PlanningStoreDegraded(Some(error)));
                 }
+            }
+            Effect::PersistOperatorStateDeferred => {
+                store.defer_operator_state();
             }
             Effect::CreateScratch { title, workspace } => {
                 match store.create_scratch(title, workspace) {
@@ -2073,6 +2126,26 @@ fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
         Command::CommandPalette | Command::OpenExternal => return vec![],
     };
     reduce(app, action)
+}
+
+#[cfg(test)]
+mod operator_state_write_behind_tests {
+    use super::*;
+
+    #[test]
+    fn deferred_operator_state_coalesces_without_extending_the_flush_deadline() {
+        let started = Instant::now();
+        let mut write_behind = OperatorStateWriteBehind::default();
+
+        write_behind.mark_at(started);
+        write_behind.mark_at(started + Duration::from_millis(100));
+
+        assert!(!write_behind.is_due_at(started + Duration::from_millis(249)));
+        assert!(write_behind.is_due_at(started + Duration::from_millis(250)));
+
+        write_behind.clear();
+        assert!(!write_behind.is_due_at(started + Duration::from_secs(1)));
+    }
 }
 
 #[cfg(test)]
