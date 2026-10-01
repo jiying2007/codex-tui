@@ -1748,6 +1748,43 @@ mod tests {
         assert!(error.to_string().contains("queue is full"));
     }
 
+    #[tokio::test]
+    async fn conversation_event_queue_backpressures_without_dropping() {
+        let (tx, mut rx) = mpsc::channel(1);
+        send_conversation_event(
+            &tx,
+            ConversationEvent::GoalCleared(ThreadId::new("first")),
+        )
+        .await;
+
+        let second_tx = tx.clone();
+        let second = tokio::spawn(async move {
+            send_conversation_event(
+                &second_tx,
+                ConversationEvent::GoalCleared(ThreadId::new("second")),
+            )
+            .await;
+        });
+        tokio::task::yield_now().await;
+        assert!(
+            !second.is_finished(),
+            "second event must wait while the bounded queue is full"
+        );
+
+        assert!(matches!(
+            rx.recv().await,
+            Some(ConversationEvent::GoalCleared(thread_id)) if thread_id.0 == "first"
+        ));
+        tokio::time::timeout(Duration::from_secs(1), second)
+            .await
+            .expect("second send must complete after capacity is released")
+            .expect("second sender task");
+        assert!(matches!(
+            rx.recv().await,
+            Some(ConversationEvent::GoalCleared(thread_id)) if thread_id.0 == "second"
+        ));
+    }
+
     #[test]
     fn registry_notifications_update_only_registry_relevant_state() {
         let mut threads = BTreeMap::new();
