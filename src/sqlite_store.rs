@@ -1080,11 +1080,24 @@ fn restore_preserved_sqlite_image(db_path: &Path, preserved: &Path) -> Result<()
 fn configure_connection(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "PRAGMA foreign_keys = ON;
-         PRAGMA journal_mode = WAL;
          PRAGMA synchronous = NORMAL;
          PRAGMA busy_timeout = 2000;",
     )
-    .context("configure SQLite connection")
+    .context("configure SQLite connection")?;
+
+    let journal_mode: String = conn
+        .query_row("PRAGMA journal_mode", [], |row| row.get(0))
+        .context("read SQLite journal mode")?;
+    if !journal_mode.eq_ignore_ascii_case("wal") {
+        let configured: String = conn
+            .query_row("PRAGMA journal_mode = WAL", [], |row| row.get(0))
+            .context("enable SQLite WAL journal mode")?;
+        anyhow::ensure!(
+            configured.eq_ignore_ascii_case("wal"),
+            "SQLite refused WAL journal mode: {configured}"
+        );
+    }
+    Ok(())
 }
 
 fn ensure_schema(conn: &mut Connection) -> Result<()> {

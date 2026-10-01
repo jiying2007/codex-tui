@@ -62,6 +62,46 @@ async fn missing_git_cwd_fails_closed_within_the_probe_deadline() {
 }
 
 #[test]
+fn sqlite_busy_write_fails_within_bounded_deadline_without_partial_state() {
+    let root = tempdir().expect("tempdir");
+    let store = SqliteStore::at(root.path());
+    let original = store.load_state().expect("initialize SQLite state");
+
+    let locker = Connection::open(store.db_path()).expect("open writer lock");
+    locker
+        .execute_batch("BEGIN IMMEDIATE;")
+        .expect("hold SQLite writer lock");
+
+    let mut candidate = original.clone();
+    candidate.pins.insert("must-not-partially-persist".into());
+    let started = Instant::now();
+    let error = store
+        .save_state(&candidate)
+        .expect_err("busy SQLite writer must fail closed");
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed <= Duration::from_millis(3_500),
+        "busy write exceeded bounded recovery window: {elapsed:?}"
+    );
+    assert!(
+        error.to_string().contains("locked")
+            || error.to_string().contains("busy")
+            || format!("{error:#}").contains("locked")
+            || format!("{error:#}").contains("busy"),
+        "unexpected SQLite busy error: {error:#}"
+    );
+
+    locker
+        .execute_batch("ROLLBACK;")
+        .expect("release writer lock");
+    assert_eq!(
+        store.load_state().expect("state after busy failure"),
+        original,
+        "busy failure must not partially persist operator state"
+    );
+}
+
+#[test]
 fn corrupt_sqlite_is_not_reinitialized_or_overwritten() {
     let root = tempdir().expect("tempdir");
     let store = SqliteStore::at(root.path());
