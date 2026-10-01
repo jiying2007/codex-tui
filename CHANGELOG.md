@@ -73,6 +73,7 @@ All notable codex-tui changes are recorded here.
 - retired the historical v1.0 hosted-runner 50/100 ms latency SLO as a v1.1 release authority; retained 10k p95/p99 stays as >=200-sample diagnostic evidence, while current major.minor criteria are selected dynamically and packaged as `STABLE-CRITERIA.json`.
 - added observation-driven Forge provider qualification that captures secret-safe GitLab/GitHub client/server/auth/capability fixtures from the exact candidate instead of inferring support from server versions.
 - added and packaged a personal-first team quickstart covering install, AGENTS/.codex authority, safe `.codex-tui.toml` launch presets, Forge setup, daily controls and Doctor Bundle troubleshooting without introducing a team server/RBAC layer.
+- hardened stable qualification dispatch by granting the release gate only the GitHub Actions read permission it actually needs, exercising that permission on every release self-test, and writing a dispatched qualification summary only after `gh workflow run` succeeds.
 
 ## [1.0.0] - 2026-09-30
 
