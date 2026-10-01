@@ -150,6 +150,25 @@ pub enum ContextChoice {
     ForgeMerge,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CommandPaletteChoice {
+    Search,
+    NextAttention,
+    QuickPrompt,
+    Board,
+    Review,
+    Workspace,
+    ManagedWorktrees,
+    NewScratch,
+    Goal,
+    TogglePin,
+    Snooze,
+    ContextActions,
+    TerminalDrawer,
+    CloseTerminalDrawer,
+    Help,
+}
+
 impl ContextChoice {
     pub const fn label(self) -> &'static str {
         match self {
@@ -229,6 +248,9 @@ pub enum Action {
     OpenPlanningSelected,
     BeginScratch,
     BeginSnooze,
+    OpenCommandPalette,
+    CloseCommandPalette,
+    MoveCommandPalette(i32),
     OpenContext,
     CloseContext,
     MoveContext(i32),
@@ -462,6 +484,8 @@ pub struct AppState {
     pub snooze_target: Option<SourceRef>,
     pub note_target: Option<SourceRef>,
     pub saved_view_template: Option<SavedView>,
+    pub command_palette_open: bool,
+    pub command_palette_selected: usize,
     pub context_open: bool,
     pub context_selected: usize,
     pub hot_slot_bind_pending: bool,
@@ -574,6 +598,8 @@ impl AppState {
             snooze_target: None,
             note_target: None,
             saved_view_template: None,
+            command_palette_open: false,
+            command_palette_selected: 0,
             context_open: false,
             context_selected: 0,
             hot_slot_bind_pending: false,
@@ -1038,6 +1064,64 @@ impl AppState {
             identity,
             change_request,
         })
+    }
+
+    pub fn command_palette_choices(&self) -> Vec<CommandPaletteChoice> {
+        let mut choices = vec![CommandPaletteChoice::Search];
+
+        if matches!(self.view, View::Registry | View::Board) {
+            choices.push(CommandPaletteChoice::NextAttention);
+        }
+        if self.current_thread_id().is_some() {
+            choices.push(CommandPaletteChoice::QuickPrompt);
+        }
+        if !matches!(self.view, View::Board) {
+            choices.push(CommandPaletteChoice::Board);
+        }
+        if self.current_thread_id().is_some() && !matches!(self.view, View::Review(_)) {
+            choices.push(CommandPaletteChoice::Review);
+        }
+        if self.current_thread_id().is_some() && !matches!(self.view, View::Workspace(_)) {
+            choices.push(CommandPaletteChoice::Workspace);
+        }
+        if self.current_thread_id().is_some_and(|thread_id| {
+            self.git_context(thread_id)
+                .is_some_and(|context| context.repo.is_some())
+        }) && !matches!(self.view, View::ManagedWorktrees(_))
+        {
+            choices.push(CommandPaletteChoice::ManagedWorktrees);
+        }
+
+        choices.push(CommandPaletteChoice::NewScratch);
+
+        if matches!(self.view, View::Thread(_)) {
+            choices.push(CommandPaletteChoice::Goal);
+        }
+        if matches!(self.view, View::Registry) && self.selected_thread().is_some() {
+            choices.push(CommandPaletteChoice::TogglePin);
+        }
+        if self.selected_local_target().is_some() {
+            choices.push(CommandPaletteChoice::Snooze);
+        }
+        if !self.context_choices().is_empty() {
+            choices.push(CommandPaletteChoice::ContextActions);
+        }
+        if !matches!(self.view, View::Scratch(_)) {
+            choices.push(if self.terminal_drawer_open {
+                CommandPaletteChoice::CloseTerminalDrawer
+            } else {
+                CommandPaletteChoice::TerminalDrawer
+            });
+        }
+
+        choices.push(CommandPaletteChoice::Help);
+        choices
+    }
+
+    pub fn command_palette_choice(&self) -> Option<CommandPaletteChoice> {
+        self.command_palette_choices()
+            .get(self.command_palette_selected)
+            .copied()
     }
 
     pub fn context_choices(&self) -> Vec<ContextChoice> {
@@ -1801,6 +1885,26 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             };
             state.input_buffer.clear();
             state.input_mode = InputMode::ScratchTitle;
+        }
+        Action::OpenCommandPalette => {
+            if !state.command_palette_choices().is_empty() {
+                state.command_palette_open = true;
+                state.command_palette_selected = 0;
+                state.show_help = false;
+            }
+        }
+        Action::CloseCommandPalette => {
+            state.command_palette_open = false;
+            state.command_palette_selected = 0;
+        }
+        Action::MoveCommandPalette(delta) => {
+            let len = state.command_palette_choices().len();
+            if len == 0 {
+                state.command_palette_selected = 0;
+            } else {
+                state.command_palette_selected =
+                    (state.command_palette_selected as i32 + delta).rem_euclid(len as i32) as usize;
+            }
         }
         Action::OpenContext => {
             if !state.context_choices().is_empty() {
@@ -5570,6 +5674,37 @@ mod tests {
         let scratch_choices = app.context_choices();
         assert!(scratch_choices.contains(&ContextChoice::ScratchReady));
         assert!(scratch_choices.contains(&ContextChoice::DeleteScratch));
+    }
+
+    #[test]
+    fn command_palette_is_contextual_and_wraps_selection() {
+        let mut app = app();
+        let registry_choices = app.command_palette_choices();
+        assert!(registry_choices.contains(&CommandPaletteChoice::Search));
+        assert!(registry_choices.contains(&CommandPaletteChoice::NextAttention));
+        assert!(registry_choices.contains(&CommandPaletteChoice::Board));
+        assert!(registry_choices.contains(&CommandPaletteChoice::TogglePin));
+        assert!(registry_choices.contains(&CommandPaletteChoice::Help));
+
+        reduce(&mut app, Action::OpenCommandPalette);
+        assert!(app.command_palette_open);
+        assert_eq!(app.command_palette_selected, 0);
+
+        reduce(&mut app, Action::MoveCommandPalette(-1));
+        assert_eq!(
+            app.command_palette_selected,
+            app.command_palette_choices().len() - 1
+        );
+
+        reduce(&mut app, Action::CloseCommandPalette);
+        assert!(!app.command_palette_open);
+        assert_eq!(app.command_palette_selected, 0);
+
+        app.view = View::Scratch("scratch:missing".into());
+        let scratch_choices = app.command_palette_choices();
+        assert!(scratch_choices.contains(&CommandPaletteChoice::Board));
+        assert!(!scratch_choices.contains(&CommandPaletteChoice::TerminalDrawer));
+        assert!(!scratch_choices.contains(&CommandPaletteChoice::CloseTerminalDrawer));
     }
 
     #[test]

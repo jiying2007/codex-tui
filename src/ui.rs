@@ -1,4 +1,4 @@
-use crate::app::{AppState, ContextChoice, InputMode, View};
+use crate::app::{AppState, CommandPaletteChoice, ContextChoice, InputMode, View};
 use crate::conversation::{InteractiveRequest, InteractiveRequestKind};
 use crate::domain::{AttentionReason, CwdLocality, RuntimeStatus, ThreadSummary, display_cwd};
 use crate::forge::ForgeFreshness;
@@ -185,6 +185,46 @@ fn terminal_process_state_label(state: &TerminalProcessState, language: UiLangua
     }
 }
 
+fn command_palette_choice_label(
+    choice: CommandPaletteChoice,
+    language: UiLanguage,
+) -> &'static str {
+    match (choice, language) {
+        (CommandPaletteChoice::Search, UiLanguage::SimplifiedChinese) => "搜索",
+        (CommandPaletteChoice::NextAttention, UiLanguage::SimplifiedChinese) => "下一个待处理",
+        (CommandPaletteChoice::QuickPrompt, UiLanguage::SimplifiedChinese) => "快速消息",
+        (CommandPaletteChoice::Board, UiLanguage::SimplifiedChinese) => "打开看板",
+        (CommandPaletteChoice::Review, UiLanguage::SimplifiedChinese) => "打开评审",
+        (CommandPaletteChoice::Workspace, UiLanguage::SimplifiedChinese) => "打开工作区",
+        (CommandPaletteChoice::ManagedWorktrees, UiLanguage::SimplifiedChinese) => "受管 Worktrees",
+        (CommandPaletteChoice::NewScratch, UiLanguage::SimplifiedChinese) => "新建 Scratch",
+        (CommandPaletteChoice::Goal, UiLanguage::SimplifiedChinese) => "Goal 操作",
+        (CommandPaletteChoice::TogglePin, UiLanguage::SimplifiedChinese) => "切换固定",
+        (CommandPaletteChoice::Snooze, UiLanguage::SimplifiedChinese) => "稍后提醒",
+        (CommandPaletteChoice::ContextActions, UiLanguage::SimplifiedChinese) => "上下文操作",
+        (CommandPaletteChoice::TerminalDrawer, UiLanguage::SimplifiedChinese) => "打开终端抽屉",
+        (CommandPaletteChoice::CloseTerminalDrawer, UiLanguage::SimplifiedChinese) => {
+            "关闭终端抽屉"
+        }
+        (CommandPaletteChoice::Help, UiLanguage::SimplifiedChinese) => "帮助",
+        (CommandPaletteChoice::Search, UiLanguage::English) => "Search",
+        (CommandPaletteChoice::NextAttention, UiLanguage::English) => "Next attention",
+        (CommandPaletteChoice::QuickPrompt, UiLanguage::English) => "Quick Prompt",
+        (CommandPaletteChoice::Board, UiLanguage::English) => "Open Board",
+        (CommandPaletteChoice::Review, UiLanguage::English) => "Open Review",
+        (CommandPaletteChoice::Workspace, UiLanguage::English) => "Open Workspace",
+        (CommandPaletteChoice::ManagedWorktrees, UiLanguage::English) => "Managed Worktrees",
+        (CommandPaletteChoice::NewScratch, UiLanguage::English) => "New Scratch",
+        (CommandPaletteChoice::Goal, UiLanguage::English) => "Goal actions",
+        (CommandPaletteChoice::TogglePin, UiLanguage::English) => "Toggle pin",
+        (CommandPaletteChoice::Snooze, UiLanguage::English) => "Snooze",
+        (CommandPaletteChoice::ContextActions, UiLanguage::English) => "Context actions",
+        (CommandPaletteChoice::TerminalDrawer, UiLanguage::English) => "Open Terminal Drawer",
+        (CommandPaletteChoice::CloseTerminalDrawer, UiLanguage::English) => "Close Terminal Drawer",
+        (CommandPaletteChoice::Help, UiLanguage::English) => "Help",
+    }
+}
+
 fn context_choice_label(choice: ContextChoice, language: UiLanguage) -> &'static str {
     if language == UiLanguage::English {
         return choice.label();
@@ -254,6 +294,9 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
     }
     if app.terminal_drawer_open {
         render_terminal_drawer(frame, app);
+    }
+    if app.command_palette_open {
+        render_command_palette(frame, app);
     }
     if app.show_help {
         render_help(frame, app.language);
@@ -2262,6 +2305,47 @@ fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area: R
             "j/k 文件 · PageUp/PageDown diff · w 单词级 diff · e 编辑器 · . 操作 · Esc 返回",
         )),
         outer[1],
+    );
+}
+
+fn render_command_palette(frame: &mut Frame<'_>, app: &AppState) {
+    let choices = app.command_palette_choices();
+    let lines = choices
+        .iter()
+        .enumerate()
+        .map(|(index, choice)| {
+            let selected = index == app.command_palette_selected;
+            let style = if selected {
+                Style::default().add_modifier(Modifier::REVERSED)
+            } else {
+                Style::default()
+            };
+            Line::from(Span::styled(
+                format!(
+                    "{} {}",
+                    if selected { ">" } else { " " },
+                    command_palette_choice_label(*choice, app.language)
+                ),
+                style,
+            ))
+        })
+        .chain(std::iter::once(Line::from("")))
+        .chain(std::iter::once(Line::from(tr(
+            app,
+            "j/k move · Enter execute · Esc close · Ctrl+K toggle",
+            "j/k 移动 · Enter 执行 · Esc 关闭 · Ctrl+K 切换",
+        ))))
+        .collect::<Vec<_>>();
+    let height = u16::try_from(lines.len().saturating_add(2))
+        .unwrap_or(20)
+        .clamp(7, 24);
+    let area = centered_fixed(72, height, frame.area());
+    frame.render_widget(Clear, area);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(Block::bordered().title(tr(app, " Command Palette ", " 命令面板 ")))
+            .wrap(Wrap { trim: false }),
+        area,
     );
 }
 
