@@ -30,7 +30,7 @@ use crate::planning::{
 use crate::pty::TerminalSize;
 use crate::store::LocalStateV1;
 use crate::terminal_drawer::TerminalSnapshot;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 const REGISTRY_RECENT_LIMIT: usize = 100;
 
@@ -1150,18 +1150,34 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::ReplaceThreads(mut threads) => {
             state.worktree_collision_counts.clear();
             let selected_id = state.selected_thread_id();
+            let existing_by_id = state
+                .threads
+                .iter()
+                .map(|thread| {
+                    (
+                        thread.id.0.clone(),
+                        (
+                            thread.pinned,
+                            thread.alias.clone(),
+                            remote_attention(thread),
+                            thread.attention.contains(&AttentionReason::MarkedUnread),
+                        ),
+                    )
+                })
+                .collect::<HashMap<_, _>>();
             for fresh in &mut threads {
-                if let Some(existing) = state.threads.iter().find(|old| old.id == fresh.id) {
-                    fresh.pinned = existing.pinned;
-                    fresh.alias.clone_from(&existing.alias);
+                if let Some((pinned, alias, existing_remote, marked_unread)) =
+                    existing_by_id.get(&fresh.id.0)
+                {
+                    fresh.pinned = *pinned;
+                    fresh.alias.clone_from(alias);
 
-                    let existing_remote = remote_attention(existing);
                     let fresh_remote = remote_attention(fresh);
-                    if existing_remote != fresh_remote && !fresh_remote.is_empty() {
+                    if existing_remote != &fresh_remote && !fresh_remote.is_empty() {
                         state.acknowledged_attention.remove(&fresh.id.0);
                     }
 
-                    if existing.attention.contains(&AttentionReason::MarkedUnread)
+                    if *marked_unread
                         && !fresh.attention.contains(&AttentionReason::MarkedUnread)
                     {
                         fresh.attention.push(AttentionReason::MarkedUnread);
