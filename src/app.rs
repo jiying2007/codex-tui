@@ -3825,6 +3825,7 @@ mod tests {
         reduce(&mut app, Action::CancelInput);
 
         app.selected = 0;
+        app.threads[0].alias = None;
         reduce(&mut app, Action::BeginAlias);
         for character in "主会话".chars() {
             reduce(&mut app, Action::InputChar(character));
