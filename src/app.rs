@@ -1311,6 +1311,17 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
             state.threads = threads;
             state.rebuild_thread_indexes();
+            let current_thread_ids = state
+                .thread_index_by_id
+                .keys()
+                .cloned()
+                .collect::<BTreeSet<_>>();
+            state
+                .goals
+                .retain(|thread_id, _| current_thread_ids.contains(thread_id));
+            state
+                .goal_checked
+                .retain(|thread_id| current_thread_ids.contains(thread_id));
             state.reconcile_cwd_locality_cache(state.host_local_only || state.repo_backed_only);
             if state.threads.is_empty() {
                 state.selected = 0;
@@ -4476,6 +4487,46 @@ mod tests {
                 .expect("serialize")
                 .contains("Ship M4")
         );
+    }
+
+    #[test]
+    fn replace_threads_prunes_remote_goal_cache_for_missing_threads() {
+        let mut app = app();
+        let kept = app.threads[0].id.clone();
+        let removed = app.threads[1].id.clone();
+
+        app.goal_checked.insert(kept.0.clone());
+        app.goal_checked.insert(removed.0.clone());
+        app.goals.insert(
+            kept.0.clone(),
+            GoalObservation {
+                thread_id: kept.clone(),
+                objective: Some("keep".into()),
+                status: GoalStatus::Active,
+                token_budget: None,
+                tokens_used: 0,
+                time_used_seconds: 0,
+            },
+        );
+        app.goals.insert(
+            removed.0.clone(),
+            GoalObservation {
+                thread_id: removed.clone(),
+                objective: Some("remove".into()),
+                status: GoalStatus::Active,
+                token_budget: None,
+                tokens_used: 0,
+                time_used_seconds: 0,
+            },
+        );
+
+        let fresh = vec![app.threads[0].clone()];
+        reduce(&mut app, Action::ReplaceThreads(fresh));
+
+        assert!(app.goal_checked.contains(&kept.0));
+        assert!(!app.goal_checked.contains(&removed.0));
+        assert!(app.goals.contains_key(&kept.0));
+        assert!(!app.goals.contains_key(&removed.0));
     }
 
     #[test]
