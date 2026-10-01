@@ -1068,10 +1068,7 @@ fn preserve_sqlite_image(db_path: &Path, label: &str) -> Result<Option<PathBuf>>
     if !db_path.exists() {
         return Ok(None);
     }
-    let previous = db_path.with_file_name(format!(
-        "state-v2.sqlite3.{label}.{}",
-        now_unix_ms()
-    ));
+    let previous = db_path.with_file_name(format!("state-v2.sqlite3.{label}.{}", now_unix_ms()));
     move_sqlite_image(db_path, &previous)?;
     Ok(Some(previous))
 }
