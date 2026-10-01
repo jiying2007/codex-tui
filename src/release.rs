@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 pub const RELEASE_VERIFY_SCHEMA: &str = "codex-tui/release-verification/v1";
 pub const RELEASE_EVIDENCE_SCHEMA: &str = "codex-tui/release-evidence/v3";
-pub const AUTOMATED_QUALIFICATION_SCHEMA: &str = "codex-tui/automated-qualification/v2";
+pub const AUTOMATED_QUALIFICATION_SCHEMA: &str = "codex-tui/automated-qualification/v3";
 pub const STABLE_CRITERIA_SCHEMA: &str = "codex-tui/stable-criteria/v2";
 pub const PRIMARY_STABLE_PLATFORM: &str = "linux";
 pub const SECONDARY_PLATFORMS: [&str; 2] = ["macos", "windows"];
@@ -69,6 +69,7 @@ pub struct AutomatedQualificationArtifacts {
     pub scale_evidence_sha256: String,
     pub soak_evidence_sha256: String,
     pub support_manifest_sha256: String,
+    pub support_snapshot_sha256: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -383,6 +384,10 @@ fn validate_automated_qualification(
         valid_sha256(&receipt.artifacts.support_manifest_sha256),
         "support manifest SHA-256 must be 64 hexadecimal characters"
     );
+    anyhow::ensure!(
+        valid_sha256(&receipt.artifacts.support_snapshot_sha256),
+        "support snapshot SHA-256 must be 64 hexadecimal characters"
+    );
     Ok(())
 }
 
@@ -604,6 +609,7 @@ mod tests {
                 scale_evidence_sha256: "b".repeat(64),
                 soak_evidence_sha256: "c".repeat(64),
                 support_manifest_sha256: "d".repeat(64),
+                support_snapshot_sha256: "e".repeat(64),
             },
         }
     }
