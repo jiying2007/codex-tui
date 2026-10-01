@@ -1219,13 +1219,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.mutation_notice = Some(format!(
                 "{} · {}",
                 receipt.plan.kind.label(),
-                match receipt.state {
-                    OperationState::Planned => "planned",
-                    OperationState::Executing => "executing",
-                    OperationState::Succeeded => "succeeded",
-                    OperationState::Failed => "failed",
-                    OperationState::OutcomeUnknown => "outcome unknown",
-                }
+                operation_state_text(receipt.state, state.language)
             ));
             let repo = receipt.plan.repo.clone();
             state
@@ -1256,13 +1250,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.mutation_notice = Some(format!(
                 "{} · {}",
                 receipt.plan.kind.label(),
-                match receipt.state {
-                    OperationState::Planned => "planned",
-                    OperationState::Executing => "executing",
-                    OperationState::Succeeded => "succeeded",
-                    OperationState::Failed => "failed",
-                    OperationState::OutcomeUnknown => "outcome unknown",
-                }
+                operation_state_text(receipt.state, state.language)
             ));
 
             for observation in state.forge_observations.values_mut() {
