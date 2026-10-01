@@ -1177,9 +1177,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                         state.acknowledged_attention.remove(&fresh.id.0);
                     }
 
-                    if *marked_unread
-                        && !fresh.attention.contains(&AttentionReason::MarkedUnread)
-                    {
+                    if *marked_unread && !fresh.attention.contains(&AttentionReason::MarkedUnread) {
                         fresh.attention.push(AttentionReason::MarkedUnread);
                     }
                 }
@@ -4345,11 +4343,7 @@ mod tests {
                 .attention
                 .contains(&AttentionReason::ApprovalRequired)
         );
-        assert!(
-            refreshed
-                .attention
-                .contains(&AttentionReason::MarkedUnread)
-        );
+        assert!(refreshed.attention.contains(&AttentionReason::MarkedUnread));
         assert!(!app.acknowledged_attention.contains(&thread_id.0));
     }
 
