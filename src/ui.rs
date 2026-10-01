@@ -196,9 +196,7 @@ fn command_palette_choice_label(
         (CommandPaletteChoice::Board, UiLanguage::SimplifiedChinese) => "打开看板",
         (CommandPaletteChoice::Review, UiLanguage::SimplifiedChinese) => "打开评审",
         (CommandPaletteChoice::Workspace, UiLanguage::SimplifiedChinese) => "打开工作区",
-        (CommandPaletteChoice::ManagedWorktrees, UiLanguage::SimplifiedChinese) => {
-            "受管 Worktrees"
-        }
+        (CommandPaletteChoice::ManagedWorktrees, UiLanguage::SimplifiedChinese) => "受管 Worktrees",
         (CommandPaletteChoice::NewScratch, UiLanguage::SimplifiedChinese) => "新建 Scratch",
         (CommandPaletteChoice::Goal, UiLanguage::SimplifiedChinese) => "Goal 操作",
         (CommandPaletteChoice::TogglePin, UiLanguage::SimplifiedChinese) => "切换固定",
@@ -222,9 +220,7 @@ fn command_palette_choice_label(
         (CommandPaletteChoice::Snooze, UiLanguage::English) => "Snooze",
         (CommandPaletteChoice::ContextActions, UiLanguage::English) => "Context actions",
         (CommandPaletteChoice::TerminalDrawer, UiLanguage::English) => "Open Terminal Drawer",
-        (CommandPaletteChoice::CloseTerminalDrawer, UiLanguage::English) => {
-            "Close Terminal Drawer"
-        }
+        (CommandPaletteChoice::CloseTerminalDrawer, UiLanguage::English) => "Close Terminal Drawer",
         (CommandPaletteChoice::Help, UiLanguage::English) => "Help",
     }
 }
@@ -2347,11 +2343,7 @@ fn render_command_palette(frame: &mut Frame<'_>, app: &AppState) {
     frame.render_widget(Clear, area);
     frame.render_widget(
         Paragraph::new(lines)
-            .block(Block::bordered().title(tr(
-                app,
-                " Command Palette ",
-                " 命令面板 ",
-            )))
+            .block(Block::bordered().title(tr(app, " Command Palette ", " 命令面板 ")))
             .wrap(Wrap { trim: false }),
         area,
     );
