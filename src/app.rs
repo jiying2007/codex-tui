@@ -2599,7 +2599,8 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         }
         Action::ToggleHostLocalFilter => {
             state.host_local_only = !state.host_local_only;
-            if state.host_local_only || state.repo_backed_only {
+            if state.host_local_only {
+                state.cwd_localities.clear();
                 state.reconcile_cwd_locality_cache(true);
             }
             ensure_selection_visible(state);
@@ -2607,7 +2608,8 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         }
         Action::ToggleRepoBackedFilter => {
             state.repo_backed_only = !state.repo_backed_only;
-            if state.host_local_only || state.repo_backed_only {
+            if state.repo_backed_only {
+                state.cwd_localities.clear();
                 state.reconcile_cwd_locality_cache(true);
             }
             ensure_selection_visible(state);
