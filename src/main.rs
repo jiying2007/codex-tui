@@ -796,13 +796,14 @@ async fn run_app(fake_mode: bool) -> Result<()> {
     );
 
     let mut services = RuntimeServices::new(store);
+    let language = app.language;
     if let Err(error) = services.mutations.recover() {
         reduce(
             &mut app,
             Action::MutationNotice(format!(
                 "{}: {error}",
                 runtime_text(
-                    app.language,
+                    language,
                     "worktree recovery unavailable",
                     "worktree 恢复不可用",
                 )
@@ -815,7 +816,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
             Action::MutationNotice(format!(
                 "{}: {error}",
                 runtime_text(
-                    app.language,
+                    language,
                     "forge mutation recovery unavailable",
                     "Forge 变更恢复不可用",
                 )
@@ -866,12 +867,13 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                     );
                 }
                 Err(error) => {
+                    let language = app.language;
                     reduce(
                         &mut app,
                         Action::BackendStatus(backend_error_status(format!(
                             "{}: {error}",
                             runtime_text(
-                                app.language,
+                                language,
                                 "App Server connection task failed",
                                 "App Server 连接任务失败",
                             )
