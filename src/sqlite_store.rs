@@ -15,6 +15,7 @@ use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
+use tempfile::NamedTempFile;
 
 const DB_SCHEMA_VERSION: i64 = 3;
 const OPERATOR_STATE_KEY: &str = "operator-state-v1";
@@ -33,6 +34,23 @@ pub struct StoreHealth {
     pub db_path: PathBuf,
     pub legacy_import: Option<String>,
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecoveryBackupReceipt {
+    pub path: PathBuf,
+    pub schema_version: i64,
+    pub bytes: u64,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecoveryRestoreReceipt {
+    pub source: PathBuf,
+    pub schema_version: i64,
+    pub previous_database: Option<PathBuf>,
+}
+
 
 impl SqliteStore {
     pub fn discover() -> Result<Self> {
@@ -87,6 +105,153 @@ impl SqliteStore {
             db_path: self.db_path.clone(),
             legacy_import,
         })
+    }
+
+    pub fn create_recovery_backup(
+        &self,
+        destination: impl AsRef<Path>,
+    ) -> Result<RecoveryBackupReceipt> {
+        let destination = destination.as_ref();
+        anyhow::ensure!(
+            !destination.exists(),
+            "recovery backup destination already exists: {}",
+            destination.display()
+        );
+        let parent = destination
+            .parent()
+            .context("recovery backup destination has no parent")?;
+        fs::create_dir_all(parent)
+            .with_context(|| format!("create recovery backup directory {}", parent.display()))?;
+
+        let conn = self.open_ready()?;
+        conn.execute_batch("PRAGMA wal_checkpoint(FULL);")
+            .context("checkpoint SQLite before recovery backup")?;
+        let schema_version: i64 =
+            conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        drop(conn);
+
+        let temporary = NamedTempFile::new_in(parent).with_context(|| {
+            format!("create temporary recovery backup in {}", parent.display())
+        })?;
+        fs::copy(&self.db_path, temporary.path()).with_context(|| {
+            format!(
+                "copy SQLite recovery backup {} -> {}",
+                self.db_path.display(),
+                temporary.path().display()
+            )
+        })?;
+        temporary
+            .as_file()
+            .sync_all()
+            .context("sync temporary SQLite recovery backup")?;
+        validate_recovery_database(temporary.path())?;
+        temporary.persist(destination).map_err(|error| {
+            anyhow::anyhow!(
+                "persist recovery backup {}: {}",
+                destination.display(),
+                error.error
+            )
+        })?;
+
+        Ok(RecoveryBackupReceipt {
+            path: destination.to_path_buf(),
+            schema_version,
+            bytes: fs::metadata(destination)
+                .with_context(|| format!("stat recovery backup {}", destination.display()))?
+                .len(),
+        })
+    }
+
+    pub fn restore_recovery_backup(
+        &self,
+        source: impl AsRef<Path>,
+    ) -> Result<RecoveryRestoreReceipt> {
+        let source = source.as_ref();
+        anyhow::ensure!(
+            source != self.db_path,
+            "recovery source must differ from the live database"
+        );
+        let source_schema = validate_recovery_database(source)?;
+        let parent = self
+            .db_path
+            .parent()
+            .context("SQLite database path has no parent")?;
+        fs::create_dir_all(parent)
+            .with_context(|| format!("create SQLite state directory {}", parent.display()))?;
+
+        if self.db_path.exists() {
+            let conn = self.open_ready()?;
+            conn.execute_batch("PRAGMA wal_checkpoint(FULL);")
+                .context("checkpoint live SQLite before restore")?;
+            drop(conn);
+        }
+
+        let temporary = NamedTempFile::new_in(parent)
+            .with_context(|| format!("create restore staging file in {}", parent.display()))?;
+        fs::copy(source, temporary.path()).with_context(|| {
+            format!(
+                "stage SQLite recovery backup {} -> {}",
+                source.display(),
+                temporary.path().display()
+            )
+        })?;
+        temporary
+            .as_file()
+            .sync_all()
+            .context("sync staged SQLite recovery backup")?;
+        validate_recovery_database(temporary.path())?;
+
+        remove_sqlite_sidecars(&self.db_path)?;
+        let previous_database = if self.db_path.exists() {
+            let previous = self.db_path.with_file_name(format!(
+                "state-v2.sqlite3.pre-restore.{}",
+                now_unix_ms()
+            ));
+            fs::rename(&self.db_path, &previous).with_context(|| {
+                format!(
+                    "preserve live SQLite before restore {} -> {}",
+                    self.db_path.display(),
+                    previous.display()
+                )
+            })?;
+            Some(previous)
+        } else {
+            None
+        };
+
+        if let Err(error) = temporary.persist(&self.db_path) {
+            if let Some(previous) = previous_database.as_ref() {
+                let _ = fs::rename(previous, &self.db_path);
+            }
+            return Err(anyhow::anyhow!(
+                "install recovery database {}: {}",
+                self.db_path.display(),
+                error.error
+            ));
+        }
+
+        match self.health() {
+            Ok(health) => Ok(RecoveryRestoreReceipt {
+                source: source.to_path_buf(),
+                schema_version: health.schema_version.max(source_schema),
+                previous_database,
+            }),
+            Err(error) => {
+                let failed = self.db_path.with_file_name(format!(
+                    "state-v2.sqlite3.failed-restore.{}",
+                    now_unix_ms()
+                ));
+                let _ = remove_sqlite_sidecars(&self.db_path);
+                let _ = fs::rename(&self.db_path, &failed);
+                if let Some(previous) = previous_database.as_ref() {
+                    let _ = fs::rename(previous, &self.db_path);
+                }
+                Err(error.context(format!(
+                    "restored SQLite failed health check; failed image preserved at {}",
+                    failed.display()
+                )))
+            }
+        }
     }
 
     pub fn load_planning_snapshot(&self) -> Result<PlanningSnapshot> {
@@ -854,6 +1019,42 @@ impl LocalStore for SqliteStore {
         save_operator_state_tx(&tx, state)?;
         tx.commit().context("commit operator state")
     }
+}
+
+fn validate_recovery_database(path: &Path) -> Result<i64> {
+    anyhow::ensure!(
+        path.is_file(),
+        "recovery database does not exist: {}",
+        path.display()
+    );
+    let conn = Connection::open(path)
+        .with_context(|| format!("open recovery SQLite {}", path.display()))?;
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    anyhow::ensure!(
+        (1..=DB_SCHEMA_VERSION).contains(&version),
+        "unsupported recovery SQLite schema version {version}"
+    );
+    let integrity = quick_check(&conn)?;
+    anyhow::ensure!(
+        integrity == "ok",
+        "recovery SQLite quick_check failed: {integrity}"
+    );
+    Ok(version)
+}
+
+fn remove_sqlite_sidecars(db_path: &Path) -> Result<()> {
+    let Some(file_name) = db_path.file_name().and_then(|value| value.to_str()) else {
+        return Ok(());
+    };
+    let parent = db_path.parent().context("SQLite database path has no parent")?;
+    for suffix in ["-wal", "-shm"] {
+        let sidecar = parent.join(format!("{file_name}{suffix}"));
+        if sidecar.exists() {
+            fs::remove_file(&sidecar)
+                .with_context(|| format!("remove SQLite sidecar {}", sidecar.display()))?;
+        }
+    }
+    Ok(())
 }
 
 fn configure_connection(conn: &Connection) -> Result<()> {
