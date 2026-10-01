@@ -152,6 +152,7 @@ cargo run -- headless work --json
 cargo run -- headless threads --fixture-10k
 cargo run -- release verify --channel preview --tag v1.1.0-preview.1 --commit "$(git rev-parse HEAD)" --json
 cargo run -- release benchmark --iterations 200 --source retained-runner --json
+cargo run -- release failure-matrix --json
 cargo run -- soak --rows 50000 --cycles 256 --json
 cargo run -- --fake
 ```
