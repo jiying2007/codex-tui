@@ -105,7 +105,7 @@ where
 fn locale_prefers_simplified_chinese(value: &str) -> bool {
     let normalized = value.trim().replace('_', "-").to_ascii_lowercase();
     let language_tag = normalized
-        .split(|character| character == '.' || character == '@')
+        .split(['.', '@'])
         .next()
         .unwrap_or(normalized.as_str());
 
