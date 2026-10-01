@@ -328,6 +328,7 @@ async fn bootstrap_registry(
             .push("thread/loaded/list".into());
     }
     status.connected = true;
+    status.registry_complete = max_pages.is_none();
     status.last_refresh_unix_ms = Some(now_unix_ms());
     Ok((threads, status))
 }
@@ -415,6 +416,7 @@ fn apply_full_registry_refresh(
 ) {
     *threads = by_id(fresh);
     status.connected = true;
+    status.registry_complete = true;
     status.error = None;
     status.last_refresh_unix_ms = Some(now_unix_ms());
     if loaded_supported
@@ -899,6 +901,7 @@ fn status_from_initialize(result: &Value) -> BackendStatus {
             .map(ToOwned::to_owned),
         capabilities: vec![],
         optional_capabilities_missing: vec![],
+        registry_complete: false,
         last_refresh_unix_ms: None,
         error: None,
     }
@@ -2017,6 +2020,17 @@ mod tests {
     #[test]
     fn registry_full_reconcile_is_low_frequency_fallback() {
         assert!(REFRESH_INTERVAL >= Duration::from_secs(5 * 60));
+    }
+
+    #[test]
+    fn bootstrap_registry_completeness_follows_page_limit() {
+        let source = include_str!("app_server.rs");
+        let production = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("production source");
+        assert!(production.contains("status.registry_complete = max_pages.is_none();"));
+        assert!(production.contains("status.registry_complete = true;"));
     }
 
     #[test]
