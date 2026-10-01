@@ -3893,6 +3893,9 @@ pub(crate) struct PlanningReconcilePhaseTimings {
     pub(crate) thread_projection_ms: f64,
     pub(crate) supplemental_projection_ms: f64,
     pub(crate) sort_ms: f64,
+    pub(crate) collision_index_ms: f64,
+    pub(crate) work_card_index_ms: f64,
+    pub(crate) work_cards_commit_ms: f64,
     pub(crate) index_commit_ms: f64,
     pub(crate) rebuild_total_ms: f64,
     pub(crate) selection_refresh_ms: f64,
@@ -4058,14 +4061,22 @@ fn rebuild_planning_inner<const PROFILE: bool>(
     let sort_ms = planning_phase_elapsed::<PROFILE>(sort_started);
     let index_commit_started = planning_phase_start::<PROFILE>();
 
+    let collision_index_started = planning_phase_start::<PROFILE>();
     state.worktree_collision_counts = worktree_collision_counts.into_iter().collect();
+    let collision_index_ms = planning_phase_elapsed::<PROFILE>(collision_index_started);
+
+    let work_card_index_started = planning_phase_start::<PROFILE>();
     state.work_card_by_thread = projections
         .iter()
         .enumerate()
         .filter(|(_, card)| card.anchor.kind == SourceKind::CodexThread)
         .map(|(index, card)| (card.anchor.value.clone(), index))
         .collect();
+    let work_card_index_ms = planning_phase_elapsed::<PROFILE>(work_card_index_started);
+
+    let work_cards_commit_started = planning_phase_start::<PROFILE>();
     state.work_cards = projections;
+    let work_cards_commit_ms = planning_phase_elapsed::<PROFILE>(work_cards_commit_started);
 
     let index_commit_ms = planning_phase_elapsed::<PROFILE>(index_commit_started);
     let rebuild_total_ms = planning_phase_elapsed::<PROFILE>(rebuild_started);
@@ -4075,6 +4086,9 @@ fn rebuild_planning_inner<const PROFILE: bool>(
         thread_projection_ms,
         supplemental_projection_ms,
         sort_ms,
+        collision_index_ms,
+        work_card_index_ms,
+        work_cards_commit_ms,
         index_commit_ms,
         rebuild_total_ms,
         selection_refresh_ms: 0.0,

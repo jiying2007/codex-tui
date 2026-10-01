@@ -9,7 +9,7 @@ use std::{
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
-pub const SCALE_EVIDENCE_SCHEMA: &str = "codex-tui/scale-evidence/v3";
+pub const SCALE_EVIDENCE_SCHEMA: &str = "codex-tui/scale-evidence/v4";
 pub const DEFAULT_ROWS: usize = 10_000;
 pub const DEFAULT_WARMUP_ITERATIONS: usize = 5;
 pub const DEFAULT_ITERATIONS: usize = 50;
@@ -31,6 +31,9 @@ pub struct PlanningPhaseSummary {
     pub thread_projection: TimingSummary,
     pub supplemental_projection: TimingSummary,
     pub sort: TimingSummary,
+    pub collision_index: TimingSummary,
+    pub work_card_index: TimingSummary,
+    pub work_cards_commit: TimingSummary,
     pub index_commit: TimingSummary,
     pub rebuild_total: TimingSummary,
     pub selection_refresh: TimingSummary,
@@ -184,6 +187,18 @@ pub fn run_cli(args: &[String]) -> Result<i32> {
         );
         print_timing("planning-phase-sort", &report.planning_phases.sort);
         print_timing(
+            "planning-phase-collision-index",
+            &report.planning_phases.collision_index,
+        );
+        print_timing(
+            "planning-phase-work-card-index",
+            &report.planning_phases.work_card_index,
+        );
+        print_timing(
+            "planning-phase-work-cards-commit",
+            &report.planning_phases.work_cards_commit,
+        );
+        print_timing(
             "planning-phase-index-commit",
             &report.planning_phases.index_commit,
         );
@@ -234,6 +249,9 @@ fn sample_planning_phases(
     let mut thread_projection = Vec::with_capacity(iterations);
     let mut supplemental_projection = Vec::with_capacity(iterations);
     let mut sort = Vec::with_capacity(iterations);
+    let mut collision_index = Vec::with_capacity(iterations);
+    let mut work_card_index = Vec::with_capacity(iterations);
+    let mut work_cards_commit = Vec::with_capacity(iterations);
     let mut index_commit = Vec::with_capacity(iterations);
     let mut rebuild_total = Vec::with_capacity(iterations);
     let mut selection_refresh = Vec::with_capacity(iterations);
@@ -247,6 +265,9 @@ fn sample_planning_phases(
             &mut thread_projection,
             &mut supplemental_projection,
             &mut sort,
+            &mut collision_index,
+            &mut work_card_index,
+            &mut work_cards_commit,
             &mut index_commit,
             &mut rebuild_total,
             &mut selection_refresh,
@@ -259,6 +280,9 @@ fn sample_planning_phases(
         thread_projection: summarize_samples(thread_projection),
         supplemental_projection: summarize_samples(supplemental_projection),
         sort: summarize_samples(sort),
+        collision_index: summarize_samples(collision_index),
+        work_card_index: summarize_samples(work_card_index),
+        work_cards_commit: summarize_samples(work_cards_commit),
         index_commit: summarize_samples(index_commit),
         rebuild_total: summarize_samples(rebuild_total),
         selection_refresh: summarize_samples(selection_refresh),
@@ -273,6 +297,9 @@ fn push_phase_sample(
     thread_projection: &mut Vec<f64>,
     supplemental_projection: &mut Vec<f64>,
     sort: &mut Vec<f64>,
+    collision_index: &mut Vec<f64>,
+    work_card_index: &mut Vec<f64>,
+    work_cards_commit: &mut Vec<f64>,
     index_commit: &mut Vec<f64>,
     rebuild_total: &mut Vec<f64>,
     selection_refresh: &mut Vec<f64>,
@@ -282,6 +309,9 @@ fn push_phase_sample(
     thread_projection.push(sample.thread_projection_ms);
     supplemental_projection.push(sample.supplemental_projection_ms);
     sort.push(sample.sort_ms);
+    collision_index.push(sample.collision_index_ms);
+    work_card_index.push(sample.work_card_index_ms);
+    work_cards_commit.push(sample.work_cards_commit_ms);
     index_commit.push(sample.index_commit_ms);
     rebuild_total.push(sample.rebuild_total_ms);
     selection_refresh.push(sample.selection_refresh_ms);
@@ -359,6 +389,9 @@ mod tests {
             &report.planning_phases.thread_projection,
             &report.planning_phases.supplemental_projection,
             &report.planning_phases.sort,
+            &report.planning_phases.collision_index,
+            &report.planning_phases.work_card_index,
+            &report.planning_phases.work_cards_commit,
             &report.planning_phases.index_commit,
             &report.planning_phases.rebuild_total,
             &report.planning_phases.selection_refresh,
