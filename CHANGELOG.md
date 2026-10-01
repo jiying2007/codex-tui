@@ -27,6 +27,7 @@ All notable codex-tui changes are recorded here.
 - completed the second i18n hardening pass for Terminal Drawer target/status errors, Forge freshness and planning errors, Selected attention labels and operation receipt states; locale auto-detection no longer misclassifies known Traditional Chinese locales as Simplified Chinese.
 - cached cwd locality for Registry rendering and scope filters, removed repeated/all-history filesystem probing from ordinary Registry search and Git projection cleanup, and added a 10k host-local Registry benchmark so LOCAL ONLY / REPO ONLY scale paths are covered explicitly.
 - indexed prior thread-local overlays during Registry snapshot replacement, removing the remaining O(N²) fresh-thread × existing-thread lookup while preserving pins, aliases, unread markers, attention acknowledgment invalidation and selection.
+- completed a third bilingual UI cleanup for product-owned placeholders and labels, including Goal/model/branch fallbacks, Git/conversation fallback errors, ScratchWork title context and detached/empty branch placeholders while preserving raw upstream diagnostics and technical identifiers.
 
 ## [1.0.0] - 2026-09-30
 
