@@ -134,7 +134,6 @@ fn is_registry_query_optimization_unsupported(error: &anyhow::Error) -> bool {
     .any(|fragment| message.contains(fragment))
 }
 
-
 pub struct StartedRegistry {
     pub initial: BackendSnapshot,
     pub handle: RegistryHandle,
