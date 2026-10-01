@@ -57,6 +57,21 @@ fn operation_state_text(state: OperationState, language: UiLanguage) -> &'static
     }
 }
 
+fn build_thread_indexes(
+    threads: &[ThreadSummary],
+) -> (HashMap<String, usize>, BTreeMap<String, Vec<usize>>) {
+    let mut by_id = HashMap::with_capacity(threads.len());
+    let mut by_cwd = BTreeMap::<String, Vec<usize>>::new();
+    for (index, thread) in threads.iter().enumerate() {
+        by_id.insert(thread.id.0.clone(), index);
+        by_cwd
+            .entry(thread.metadata.cwd.clone())
+            .or_default()
+            .push(index);
+    }
+    (by_id, by_cwd)
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum View {
     Registry,
@@ -385,6 +400,8 @@ pub enum Effect {
 #[derive(Clone, Debug)]
 pub struct AppState {
     pub threads: Vec<ThreadSummary>,
+    thread_index_by_id: HashMap<String, usize>,
+    thread_indices_by_cwd: BTreeMap<String, Vec<usize>>,
     pub selected: usize,
     pub view: View,
     pub previous_target: Option<ThreadId>,
@@ -467,8 +484,11 @@ struct ForgeMutationTarget {
 
 impl AppState {
     pub fn new(threads: Vec<ThreadSummary>) -> Self {
+        let (thread_index_by_id, thread_indices_by_cwd) = build_thread_indexes(&threads);
         Self {
             threads,
+            thread_index_by_id,
+            thread_indices_by_cwd,
             selected: 0,
             view: View::Registry,
             previous_target: None,
@@ -540,6 +560,40 @@ impl AppState {
             input_buffer: String::new(),
             input_original: String::new(),
         }
+    }
+
+    fn rebuild_thread_indexes(&mut self) {
+        let (thread_index_by_id, thread_indices_by_cwd) = build_thread_indexes(&self.threads);
+        self.thread_index_by_id = thread_index_by_id;
+        self.thread_indices_by_cwd = thread_indices_by_cwd;
+    }
+
+    fn thread_by_id(&self, thread_id: &ThreadId) -> Option<&ThreadSummary> {
+        self.thread_index_by_id
+            .get(&thread_id.0)
+            .and_then(|index| self.threads.get(*index))
+            .filter(|thread| thread.id == *thread_id)
+            .or_else(|| self.threads.iter().find(|thread| thread.id == *thread_id))
+    }
+
+    fn thread_ids_for_cwd(&self, cwd: &str) -> Vec<ThreadId> {
+        if let Some(indices) = self.thread_indices_by_cwd.get(cwd) {
+            let indexed = indices
+                .iter()
+                .filter_map(|index| self.threads.get(*index))
+                .filter(|thread| thread.metadata.cwd == cwd)
+                .map(|thread| thread.id.clone())
+                .collect::<Vec<_>>();
+            if !indexed.is_empty() {
+                return indexed;
+            }
+        }
+
+        self.threads
+            .iter()
+            .filter(|thread| thread.metadata.cwd == cwd)
+            .map(|thread| thread.id.clone())
+            .collect()
     }
 
     pub const fn view_kind(&self) -> ViewKind {
@@ -1183,14 +1237,15 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 }
             }
             state.threads = threads;
+            state.rebuild_thread_indexes();
             state.reconcile_cwd_locality_cache(state.host_local_only || state.repo_backed_only);
             if state.threads.is_empty() {
                 state.selected = 0;
             } else if let Some(id) = selected_id {
                 state.selected = state
-                    .threads
-                    .iter()
-                    .position(|thread| thread.id == id)
+                    .thread_index_by_id
+                    .get(&id.0)
+                    .copied()
                     .unwrap_or_else(|| state.selected.min(state.threads.len() - 1));
             } else {
                 state.selected = state.selected.min(state.threads.len() - 1);
@@ -2265,25 +2320,25 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
             state.view = View::Workspace(thread_id.clone());
 
-            let Some(thread) = state.threads.iter().find(|thread| thread.id == thread_id) else {
+            let Some(cwd) = state
+                .thread_by_id(&thread_id)
+                .map(|thread| thread.metadata.cwd.clone())
+            else {
                 return vec![];
             };
-            if thread.metadata.cwd.trim().is_empty() {
+            if cwd.trim().is_empty() {
                 return vec![];
             }
             let needs_probe = state
                 .git_contexts
                 .get(&thread_id.0)
-                .is_none_or(|context| context.cwd != thread.metadata.cwd);
+                .is_none_or(|context| context.cwd != cwd);
             if needs_probe {
                 state.git_contexts.insert(
                     thread_id.0.clone(),
-                    GitContext::pending(thread_id.clone(), thread.metadata.cwd.clone()),
+                    GitContext::pending(thread_id.clone(), cwd.clone()),
                 );
-                return vec![Effect::ProbeGit {
-                    thread_id,
-                    cwd: thread.metadata.cwd.clone(),
-                }];
+                return vec![Effect::ProbeGit { thread_id, cwd }];
             }
         }
         Action::MoveReview(delta) => {
@@ -3298,10 +3353,10 @@ fn select_next_planning_attention(state: &mut AppState) {
 
 const FORGE_REFRESH_TTL_MS: u64 = 60_000;
 
-fn forge_scope_key(state: &AppState, thread: &ThreadSummary) -> String {
+fn forge_scope_key(state: &AppState, thread_id: &ThreadId, cwd: &str) -> String {
     if let Some(identity) = state
         .forge_observations
-        .get(&thread.id.0)
+        .get(&thread_id.0)
         .and_then(|observation| observation.identity.as_ref())
     {
         format!(
@@ -3311,7 +3366,7 @@ fn forge_scope_key(state: &AppState, thread: &ThreadSummary) -> String {
             identity.project_id
         )
     } else {
-        format!("cwd:{}", thread.metadata.cwd)
+        format!("cwd:{cwd}")
     }
 }
 
@@ -3319,17 +3374,20 @@ fn refresh_forge_projections(state: &mut AppState) -> Vec<Effect> {
     let now = now_unix_ms();
     let mut groups = BTreeMap::<String, Vec<(ThreadId, String)>>::new();
 
-    for thread in &state.threads {
-        let Some(context) = state.git_context(&thread.id) else {
+    for context in state.git_contexts.values() {
+        if !context.is_repository || context.error.is_some() {
+            continue;
+        }
+        let Some(thread) = state.thread_by_id(&context.thread_id) else {
             continue;
         };
-        if !context.is_repository || context.error.is_some() || context.cwd != thread.metadata.cwd {
+        if context.cwd != thread.metadata.cwd {
             continue;
         }
         groups
-            .entry(forge_scope_key(state, thread))
+            .entry(forge_scope_key(state, &context.thread_id, &context.cwd))
             .or_default()
-            .push((thread.id.clone(), thread.metadata.cwd.clone()));
+            .push((context.thread_id.clone(), context.cwd.clone()));
     }
 
     let mut effects = Vec::new();
@@ -3428,13 +3486,10 @@ fn refresh_git_projections(state: &mut AppState) -> Vec<Effect> {
     let target_ids = git_projection_target_ids(state);
     let mut threads_by_cwd = BTreeMap::<String, Vec<ThreadId>>::new();
     for thread_id in target_ids {
-        let Some(thread) = state.threads.iter().find(|thread| thread.id == thread_id) else {
+        let Some(cwd) = thread_cwds.get(&thread_id.0).cloned() else {
             continue;
         };
-        threads_by_cwd
-            .entry(thread.metadata.cwd.clone())
-            .or_default()
-            .push(thread_id);
+        threads_by_cwd.entry(cwd).or_default().push(thread_id);
     }
 
     let mut effects = Vec::new();
@@ -3504,7 +3559,7 @@ fn refresh_active_git_projections(state: &mut AppState) -> Vec<Effect> {
     let mut seen_ids = BTreeSet::new();
     let mut threads_by_cwd = BTreeMap::<String, Vec<ThreadId>>::new();
     if let Some(thread_id) = selected_thread_id
-        && let Some(thread) = state.threads.iter().find(|thread| thread.id == thread_id)
+        && let Some(thread) = state.thread_by_id(&thread_id)
         && seen_ids.insert(thread.id.0.clone())
     {
         threads_by_cwd
@@ -3547,12 +3602,7 @@ fn refresh_active_git_projections(state: &mut AppState) -> Vec<Effect> {
 }
 
 fn propagate_git_context(state: &mut AppState, context: GitContext) {
-    let target_ids = state
-        .threads
-        .iter()
-        .filter(|thread| thread.metadata.cwd == context.cwd)
-        .map(|thread| thread.id.clone())
-        .collect::<Vec<_>>();
+    let target_ids = state.thread_ids_for_cwd(&context.cwd);
 
     for thread_id in target_ids {
         let mut projection = context.clone();
@@ -3565,29 +3615,28 @@ fn propagate_forge_observation(state: &mut AppState, observation: ForgeObservati
     let source_cwd = observation.cwd.clone();
     let source_identity = observation.identity.clone();
     let mut targets = state
-        .threads
-        .iter()
-        .filter(|thread| {
-            let valid_git = state.git_context(&thread.id).is_some_and(|context| {
-                context.is_repository
-                    && context.error.is_none()
-                    && context.cwd == thread.metadata.cwd
-            });
-            if !valid_git {
-                return false;
+        .git_contexts
+        .values()
+        .filter_map(|context| {
+            if !context.is_repository || context.error.is_some() {
+                return None;
             }
-            if thread.metadata.cwd == source_cwd {
-                return true;
+            let thread = state.thread_by_id(&context.thread_id)?;
+            if context.cwd != thread.metadata.cwd {
+                return None;
             }
-            source_identity.as_ref().is_some_and(|identity| {
-                state
+            if context.cwd == source_cwd {
+                return Some((context.thread_id.clone(), context.cwd.clone()));
+            }
+            source_identity.as_ref().and_then(|identity| {
+                (state
                     .forge_observations
-                    .get(&thread.id.0)
+                    .get(&context.thread_id.0)
                     .and_then(|existing| existing.identity.as_ref())
-                    == Some(identity)
+                    == Some(identity))
+                .then(|| (context.thread_id.clone(), context.cwd.clone()))
             })
         })
-        .map(|thread| (thread.id.clone(), thread.metadata.cwd.clone()))
         .collect::<Vec<_>>();
 
     if targets.is_empty() {
@@ -3637,17 +3686,19 @@ fn propagate_forge_observation(state: &mut AppState, observation: ForgeObservati
 
 fn active_worktree_counts(state: &AppState) -> BTreeMap<(LocalRepoIdentity, String), usize> {
     let mut counts = BTreeMap::new();
-    for thread in &state.threads {
-        if !matches!(
-            thread.runtime,
-            RuntimeStatus::Working | RuntimeStatus::WaitingHuman
-        ) {
+    for context in state.git_contexts.values() {
+        let Some(thread) = state.thread_by_id(&context.thread_id) else {
+            continue;
+        };
+        if context.cwd != thread.metadata.cwd
+            || !matches!(
+                thread.runtime,
+                RuntimeStatus::Working | RuntimeStatus::WaitingHuman
+            )
+        {
             continue;
         }
-        let Some(worktree) = state
-            .git_context(&thread.id)
-            .and_then(|context| context.worktree.as_ref())
-        else {
+        let Some(worktree) = context.worktree.as_ref() else {
             continue;
         };
         *counts
@@ -5161,6 +5212,53 @@ mod tests {
             assert_eq!(app.worktree_collision_count(&thread.id), 1);
         }
         assert_eq!(app.work_card_by_thread.len(), app.threads.len());
+    }
+
+    #[test]
+    fn thread_projection_indexes_rebuild_for_10k_registry_replacement() {
+        let mut app = AppState::new(FakeBackend::scaled(10_000).snapshot().threads);
+        assert_eq!(app.thread_index_by_id.len(), 10_000);
+
+        let shared_cwd = "/shared/indexed/repo";
+        let mut fresh = FakeBackend::scaled(10_000).snapshot().threads;
+        for thread in fresh.iter_mut().take(1_000) {
+            thread.metadata.cwd = shared_cwd.into();
+        }
+        let tail_id = fresh.last().expect("tail").id.clone();
+
+        reduce(&mut app, Action::ReplaceThreads(fresh));
+
+        assert_eq!(app.thread_index_by_id.len(), 10_000);
+        assert_eq!(app.thread_ids_for_cwd(shared_cwd).len(), 1_000);
+        assert_eq!(
+            app.thread_by_id(&tail_id).map(|thread| &thread.id),
+            Some(&tail_id)
+        );
+    }
+
+    #[test]
+    fn indexed_cwd_fanout_preserves_git_projection_semantics() {
+        let mut app = app();
+        let shared_cwd = "/shared/fanout";
+        let mut fresh = app.threads.clone();
+        fresh[0].metadata.cwd = shared_cwd.into();
+        fresh[1].metadata.cwd = shared_cwd.into();
+        reduce(&mut app, Action::ReplaceThreads(fresh));
+
+        let source = app.threads[0].id.clone();
+        let peer = app.threads[1].id.clone();
+        let mut context = GitContext::pending(source, shared_cwd);
+        context.observed_at_unix_ms = 1;
+        context.is_repository = true;
+        context.branch = Some("main".into());
+
+        reduce(&mut app, Action::GitContextLoaded(context));
+
+        for thread_id in [peer, app.threads[0].id.clone()] {
+            let projected = app.git_context(&thread_id).expect("projected git context");
+            assert_eq!(projected.cwd, shared_cwd);
+            assert_eq!(projected.branch.as_deref(), Some("main"));
+        }
     }
 
     #[test]
