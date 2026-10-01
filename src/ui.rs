@@ -211,7 +211,11 @@ fn render_terminal_drawer(frame: &mut Frame<'_>, app: &AppState) {
             "已聚焦 · F6 返回应用 · Ctrl+] 备用",
         )
     } else {
-        tr(app, "unfocused · t focus · T close", "未聚焦 · t 聚焦 · T 关闭")
+        tr(
+            app,
+            "unfocused · t focus · T close",
+            "未聚焦 · t 聚焦 · T 关闭",
+        )
     };
     let title = format!(
         " {} · {focus} · {} · {} ",
@@ -221,7 +225,13 @@ fn render_terminal_drawer(frame: &mut Frame<'_>, app: &AppState) {
     );
 
     let lines = snapshot.map_or_else(
-        || vec![Line::from(tr(app, "Starting platform default terminal…", "正在启动平台默认终端…"))],
+        || {
+            vec![Line::from(tr(
+                app,
+                "Starting platform default terminal…",
+                "正在启动平台默认终端…",
+            ))]
+        },
         |snapshot| {
             snapshot
                 .rows
@@ -567,7 +577,12 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
     let range = if viewport.total == 0 {
         tr(app, "rows 0/0", "行 0/0").to_string()
     } else if app.language.is_simplified_chinese() {
-        format!("行 {}-{}/{}", viewport.start + 1, viewport.end, viewport.total)
+        format!(
+            "行 {}-{}/{}",
+            viewport.start + 1,
+            viewport.end,
+            viewport.total
+        )
     } else {
         format!(
             "rows {}-{}/{}",
@@ -1638,18 +1653,24 @@ fn render_workspace(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area
                 )
             }));
             lines.push(Line::from(if app.language.is_simplified_chinese() {
-                format!("脏状态: {} · 变更文件={}", context.dirty, context.changes.len())
+                format!(
+                    "脏状态: {} · 变更文件={}",
+                    context.dirty,
+                    context.changes.len()
+                )
             } else {
-                format!("Dirty: {} · changed files={}", context.dirty, context.changes.len())
+                format!(
+                    "Dirty: {} · changed files={}",
+                    context.dirty,
+                    context.changes.len()
+                )
             }));
             let collisions = app.worktree_collision_count(&thread.id);
             if collisions > 0 {
                 lines.push(Line::from(if app.language.is_simplified_chinese() {
                     format!("警告: 与 {collisions} 个活跃会话共享可变 checkout")
                 } else {
-                    format!(
-                        "WARNING: shared mutable checkout with {collisions} active thread(s)"
-                    )
+                    format!("WARNING: shared mutable checkout with {collisions} active thread(s)")
                 }));
             }
             lines.push(Line::from(""));
@@ -1906,12 +1927,8 @@ fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area: R
 
     let Some(review) = app.git_reviews.get(thread_id) else {
         frame.render_widget(
-            Paragraph::new(tr(
-                app,
-                "Review has not been loaded.",
-                "评审尚未加载。",
-            ))
-            .block(Block::bordered().title(tr(app, " Review ", " 评审 "))),
+            Paragraph::new(tr(app, "Review has not been loaded.", "评审尚未加载。"))
+                .block(Block::bordered().title(tr(app, " Review ", " 评审 "))),
             outer[0],
         );
         return;
@@ -2095,7 +2112,11 @@ fn render_local_input_overlay(frame: &mut Frame<'_>, app: &AppState) {
             tr(app, "Enter save · Esc cancel", "Enter 保存 · Esc 取消"),
         ),
         InputMode::BatchAddTag => (
-            tr(app, " Batch visible · Add tag ", " 批量当前可见项 · 添加标签 "),
+            tr(
+                app,
+                " Batch visible · Add tag ",
+                " 批量当前可见项 · 添加标签 ",
+            ),
             tr(
                 app,
                 "Enter creates frozen plan · Esc cancel",
@@ -2260,11 +2281,7 @@ fn render_forge_mutation_confirmation(frame: &mut Frame<'_>, app: &AppState) {
     frame.render_widget(Clear, area);
     frame.render_widget(
         Paragraph::new(lines)
-            .block(Block::bordered().title(tr(
-                app,
-                " Forge Mutation Plan ",
-                " Forge 变更计划 ",
-            )))
+            .block(Block::bordered().title(tr(app, " Forge Mutation Plan ", " Forge 变更计划 ")))
             .wrap(Wrap { trim: false }),
         area,
     );
@@ -2340,11 +2357,7 @@ fn render_local_batch_confirmation(frame: &mut Frame<'_>, app: &AppState) {
     frame.render_widget(Clear, area);
     frame.render_widget(
         Paragraph::new(lines)
-            .block(Block::bordered().title(tr(
-                app,
-                " Local Batch Plan ",
-                " 本地批量计划 ",
-            )))
+            .block(Block::bordered().title(tr(app, " Local Batch Plan ", " 本地批量计划 ")))
             .wrap(Wrap { trim: false }),
         area,
     );
@@ -2456,11 +2469,7 @@ fn render_launch_confirmation(frame: &mut Frame<'_>, app: &AppState) {
     frame.render_widget(Clear, area);
     frame.render_widget(
         Paragraph::new(lines)
-            .block(Block::bordered().title(tr(
-                app,
-                " Launch Preset Plan ",
-                " 启动预设计划 ",
-            )))
+            .block(Block::bordered().title(tr(app, " Launch Preset Plan ", " 启动预设计划 ")))
             .wrap(Wrap { trim: false }),
         area,
     );
@@ -2520,11 +2529,7 @@ fn render_help(frame: &mut Frame<'_>, language: UiLanguage) {
                 .map(|line| Line::from(*line))
                 .collect::<Vec<_>>(),
         )
-        .block(Block::bordered().title(tr_language(
-            language,
-            " Help ",
-            " 帮助 ",
-        )))
+        .block(Block::bordered().title(tr_language(language, " Help ", " 帮助 ")))
         .wrap(Wrap { trim: true }),
         area,
     );
@@ -2534,11 +2539,7 @@ fn interactive_request_lines(
     request: &InteractiveRequest,
     language: UiLanguage,
 ) -> Vec<Line<'static>> {
-    let mut lines = vec![Line::from(tr_language(
-        language,
-        "NEEDS YOU",
-        "需要你处理",
-    ))];
+    let mut lines = vec![Line::from(tr_language(language, "NEEDS YOU", "需要你处理"))];
     match &request.kind {
         InteractiveRequestKind::CommandApproval {
             command,
@@ -2708,7 +2709,9 @@ mod tests {
         assert!(snapshot.contains("搜索"));
 
         app.show_help = true;
-        terminal.draw(|frame| render(frame, &app)).expect("draw help");
+        terminal
+            .draw(|frame| render(frame, &app))
+            .expect("draw help");
         let mut help_snapshot = String::new();
         let buffer = terminal.backend().buffer();
         for y in 0..buffer.area.height {
