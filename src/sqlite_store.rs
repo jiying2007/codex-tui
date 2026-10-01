@@ -51,7 +51,6 @@ pub struct RecoveryRestoreReceipt {
     pub previous_database: Option<PathBuf>,
 }
 
-
 impl SqliteStore {
     pub fn discover() -> Result<Self> {
         Self::from_legacy(FileStore::discover()?)
@@ -126,13 +125,11 @@ impl SqliteStore {
         let conn = self.open_ready()?;
         conn.execute_batch("PRAGMA wal_checkpoint(FULL);")
             .context("checkpoint SQLite before recovery backup")?;
-        let schema_version: i64 =
-            conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        let schema_version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
         drop(conn);
 
-        let temporary = NamedTempFile::new_in(parent).with_context(|| {
-            format!("create temporary recovery backup in {}", parent.display())
-        })?;
+        let temporary = NamedTempFile::new_in(parent)
+            .with_context(|| format!("create temporary recovery backup in {}", parent.display()))?;
         fs::copy(&self.db_path, temporary.path()).with_context(|| {
             format!(
                 "copy SQLite recovery backup {} -> {}",
@@ -203,10 +200,9 @@ impl SqliteStore {
 
         remove_sqlite_sidecars(&self.db_path)?;
         let previous_database = if self.db_path.exists() {
-            let previous = self.db_path.with_file_name(format!(
-                "state-v2.sqlite3.pre-restore.{}",
-                now_unix_ms()
-            ));
+            let previous = self
+                .db_path
+                .with_file_name(format!("state-v2.sqlite3.pre-restore.{}", now_unix_ms()));
             fs::rename(&self.db_path, &previous).with_context(|| {
                 format!(
                     "preserve live SQLite before restore {} -> {}",
@@ -237,10 +233,9 @@ impl SqliteStore {
                 previous_database,
             }),
             Err(error) => {
-                let failed = self.db_path.with_file_name(format!(
-                    "state-v2.sqlite3.failed-restore.{}",
-                    now_unix_ms()
-                ));
+                let failed = self
+                    .db_path
+                    .with_file_name(format!("state-v2.sqlite3.failed-restore.{}", now_unix_ms()));
                 let _ = remove_sqlite_sidecars(&self.db_path);
                 let _ = fs::rename(&self.db_path, &failed);
                 if let Some(previous) = previous_database.as_ref() {
@@ -1046,7 +1041,9 @@ fn remove_sqlite_sidecars(db_path: &Path) -> Result<()> {
     let Some(file_name) = db_path.file_name().and_then(|value| value.to_str()) else {
         return Ok(());
     };
-    let parent = db_path.parent().context("SQLite database path has no parent")?;
+    let parent = db_path
+        .parent()
+        .context("SQLite database path has no parent")?;
     for suffix in ["-wal", "-shm"] {
         let sidecar = parent.join(format!("{file_name}{suffix}"));
         if sidecar.exists() {
