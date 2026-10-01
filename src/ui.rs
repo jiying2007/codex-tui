@@ -9,7 +9,7 @@ use crate::goal::GoalStatus;
 use crate::i18n::{UiLanguage, pick};
 use crate::operation::OperationState;
 use crate::planning::{
-    PlanningAttention, SavedView, SavedViewLayout, WorkflowStage, apply_saved_view,
+    PlanningAttention, SavedView, SavedViewLayout, ScratchState, WorkflowStage, apply_saved_view,
     saved_view_group_key,
 };
 use crate::pty::TerminalSize;
@@ -112,6 +112,17 @@ fn goal_status_label(status: GoalStatus, language: UiLanguage) -> &'static str {
         (GoalStatus::BudgetLimited, UiLanguage::SimplifiedChinese) => "预算受限",
         (GoalStatus::Complete, UiLanguage::SimplifiedChinese) => "完成",
         _ => status.label(),
+    }
+}
+
+fn scratch_state_label(state: ScratchState, language: UiLanguage) -> &'static str {
+    match (state, language) {
+        (ScratchState::Inbox, UiLanguage::SimplifiedChinese) => "收件箱",
+        (ScratchState::Ready, UiLanguage::SimplifiedChinese) => "就绪",
+        (ScratchState::Done, UiLanguage::SimplifiedChinese) => "完成",
+        (ScratchState::Inbox, UiLanguage::English) => "Inbox",
+        (ScratchState::Ready, UiLanguage::English) => "Ready",
+        (ScratchState::Done, UiLanguage::English) => "Done",
     }
 }
 
@@ -1641,9 +1652,9 @@ fn render_scratch(frame: &mut Frame<'_>, app: &AppState, scratch_id: &str, area:
                 sanitize_inline(&scratch.title)
             )),
             Line::from(format!(
-                "{}: {:?} · {}={}",
+                "{}: {} · {}={}",
                 tr(app, "State", "状态"),
-                scratch.state,
+                scratch_state_label(scratch.state, app.language),
                 tr(app, "priority", "优先级"),
                 scratch
                     .priority
@@ -3151,6 +3162,10 @@ mod tests {
         assert_eq!(
             operation_state_label(OperationState::Succeeded, UiLanguage::SimplifiedChinese),
             "已成功"
+        );
+        assert_eq!(
+            scratch_state_label(ScratchState::Ready, UiLanguage::SimplifiedChinese),
+            "就绪"
         );
     }
 
