@@ -476,10 +476,12 @@ impl ForgeHandle {
     }
 
     fn queue_command(&self, command: ForgeCommand) -> Result<()> {
-        self.command_tx.try_send(command).map_err(|error| match error {
-            mpsc::error::TrySendError::Full(_) => anyhow!("Forge actor queue is full"),
-            mpsc::error::TrySendError::Closed(_) => anyhow!("Forge actor is not available"),
-        })
+        self.command_tx
+            .try_send(command)
+            .map_err(|error| match error {
+                mpsc::error::TrySendError::Full(_) => anyhow!("Forge actor queue is full"),
+                mpsc::error::TrySendError::Closed(_) => anyhow!("Forge actor is not available"),
+            })
     }
 
     pub fn try_recv(&mut self) -> Option<ForgeEvent> {
@@ -1365,7 +1367,10 @@ mod tests {
 
         for index in 0..8 {
             handle
-                .probe(ThreadId::new(format!("thread-{index}")), format!("/repo/{index}"))
+                .probe(
+                    ThreadId::new(format!("thread-{index}")),
+                    format!("/repo/{index}"),
+                )
                 .expect("queue probe");
         }
 
@@ -1380,7 +1385,10 @@ mod tests {
 
         assert_eq!(received, 8);
         let observed = max_active.load(std::sync::atomic::Ordering::SeqCst);
-        assert!(observed > 1, "actor must execute independent probes concurrently");
+        assert!(
+            observed > 1,
+            "actor must execute independent probes concurrently"
+        );
         assert!(
             observed <= FORGE_MAX_CONCURRENCY,
             "actor exceeded concurrency bound: {observed}"
@@ -1408,7 +1416,10 @@ mod tests {
             }
         }
 
-        assert!(queue_full, "bounded Forge command queue must apply backpressure");
+        assert!(
+            queue_full,
+            "bounded Forge command queue must apply backpressure"
+        );
     }
 
     #[test]
