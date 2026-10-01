@@ -15,7 +15,7 @@ def main() -> int:
     args = parser.parse_args()
 
     matrix = json.loads(pathlib.Path(args.matrix).read_text(encoding="utf-8"))
-    if matrix.get("schema") != "codex-tui/failure-matrix/v1":
+    if matrix.get("schema") != "codex-tui/failure-matrix/v2":
         raise SystemExit("unexpected Failure Matrix schema")
 
     cases = matrix.get("cases")
