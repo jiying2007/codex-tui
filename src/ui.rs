@@ -2985,6 +2985,36 @@ mod tests {
         assert!(viewport.total < 100);
     }
 
+    #[test]
+    fn ordinary_registry_search_renders_unprobed_native_cwds_without_locality_cache() {
+        let backend = TestBackend::new(140, 14);
+        let mut terminal = Terminal::new(backend).expect("terminal");
+        let mut app = AppState::new(FakeBackend::scaled(150).snapshot().threads);
+        let cwd = std::env::current_dir()
+            .expect("cwd")
+            .to_string_lossy()
+            .into_owned();
+        for thread in &mut app.threads {
+            thread.metadata.cwd.clone_from(&cwd);
+        }
+        app.filter = "Synthetic".into();
+
+        assert_eq!(app.cwd_locality_for_display(&cwd), None);
+        terminal.draw(|frame| render(frame, &app)).expect("draw");
+
+        let buffer = terminal.backend().buffer();
+        let mut snapshot = String::new();
+        for y in 0..buffer.area.height {
+            for x in 0..buffer.area.width {
+                snapshot.push_str(buffer[(x, y)].symbol());
+            }
+            snapshot.push('\n');
+        }
+
+        assert!(snapshot.contains("150 unprobed"));
+        assert_eq!(app.cwd_locality_for_display(&cwd), None);
+    }
+
     #[cfg(not(windows))]
     #[test]
     fn registry_marks_foreign_windows_cwd_without_linux_prefix() {
@@ -3018,7 +3048,7 @@ mod tests {
             .expect("cwd")
             .to_string_lossy()
             .into_owned();
-        app.host_local_only = true;
+        reduce(&mut app, crate::app::Action::ToggleHostLocalFilter);
 
         terminal.draw(|frame| render(frame, &app)).expect("draw");
         let buffer = terminal.backend().buffer();
@@ -3043,7 +3073,7 @@ mod tests {
             .expect("cwd")
             .to_string_lossy()
             .into_owned();
-        app.repo_backed_only = true;
+        reduce(&mut app, crate::app::Action::ToggleRepoBackedFilter);
 
         terminal.draw(|frame| render(frame, &app)).expect("draw");
         let buffer = terminal.backend().buffer();
@@ -3100,7 +3130,12 @@ mod tests {
             .to_string_lossy()
             .into_owned();
         let status = registry_scope_status(&app, 160);
-        assert!(status.contains("selected cwd: local · terminal ready · git not-probed"));
+        assert!(status.contains("selected cwd: unprobed · terminal unchecked · git not-probed"));
+
+        let effects = reduce(&mut app, crate::app::Action::RefreshGitProjections);
+        assert!(!effects.is_empty());
+        let status = registry_scope_status(&app, 160);
+        assert!(status.contains("selected cwd: local · terminal ready · git probing"));
     }
 
     #[test]
