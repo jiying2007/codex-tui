@@ -79,7 +79,7 @@ def main() -> int:
             "CHANGELOG.md",
             "INSTALL-UPGRADE.md",
             "THIRD_PARTY_NOTICES.txt",
-            "V1-STABLE-CRITERIA.json",
+            "STABLE-CRITERIA.json",
             "RELEASE-METADATA.json",
         ]
         missing = [name for name in required if not (root / name).is_file()]
