@@ -216,7 +216,6 @@ fn corrupt_restore_source_is_refused_without_touching_live_state() {
     );
 }
 
-
 #[test]
 fn validated_backup_restores_over_corrupt_live_database_and_preserves_raw_image() {
     let root = tempdir().expect("tempdir");
@@ -239,10 +238,8 @@ fn validated_backup_restores_over_corrupt_live_database_and_preserves_raw_image(
     let corrupt_bytes = b"corrupt-live-database-retained-for-recovery";
     fs::write(store.db_path(), corrupt_bytes).expect("corrupt live database");
     for suffix in ["-wal", "-shm"] {
-        let sidecar = std::path::PathBuf::from(format!(
-            "{}{suffix}",
-            store.db_path().to_string_lossy()
-        ));
+        let sidecar =
+            std::path::PathBuf::from(format!("{}{suffix}", store.db_path().to_string_lossy()));
         fs::write(&sidecar, format!("retained{suffix}")).expect("write retained sidecar");
     }
 
@@ -257,10 +254,7 @@ fn validated_backup_restores_over_corrupt_live_database_and_preserves_raw_image(
         corrupt_bytes
     );
     for suffix in ["-wal", "-shm"] {
-        let sidecar = std::path::PathBuf::from(format!(
-            "{}{suffix}",
-            previous.to_string_lossy()
-        ));
+        let sidecar = std::path::PathBuf::from(format!("{}{suffix}", previous.to_string_lossy()));
         assert!(
             sidecar.is_file(),
             "pre-restore {suffix} sidecar must be preserved"
