@@ -501,6 +501,12 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
                     app.backend_status.source,
                     tr(app, "offline", "离线")
                 ))
+            } else if !app.backend_status.registry_complete {
+                Line::from(format!(
+                    "{} · {}",
+                    tr(app, "loading full history", "正在加载完整历史"),
+                    registry_scope_status(app, area.width)
+                ))
             } else {
                 Line::from(registry_scope_status(app, area.width))
             }
@@ -747,19 +753,31 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
         format!(" · filter: {}", app.filter)
     };
     let history = if app.language.is_simplified_chinese() {
-        if !app.filter.is_empty() {
-            "搜索全部"
-        } else if app.show_all_history {
-            "全部历史"
-        } else {
-            "最近"
+        match (
+            app.backend_status.registry_complete,
+            !app.filter.is_empty(),
+            app.show_all_history,
+        ) {
+            (false, true, _) => "搜索（历史加载中）",
+            (false, false, true) => "全部历史（加载中）",
+            (false, false, false) => "最近（历史加载中）",
+            (true, true, _) => "搜索全部",
+            (true, false, true) => "全部历史",
+            (true, false, false) => "最近",
         }
-    } else if !app.filter.is_empty() {
-        "SEARCH ALL"
-    } else if app.show_all_history {
-        "ALL HISTORY"
     } else {
-        "RECENT"
+        match (
+            app.backend_status.registry_complete,
+            !app.filter.is_empty(),
+            app.show_all_history,
+        ) {
+            (false, true, _) => "SEARCH PARTIAL · HYDRATING",
+            (false, false, true) => "ALL HISTORY · HYDRATING",
+            (false, false, false) => "RECENT · HYDRATING",
+            (true, true, _) => "SEARCH ALL",
+            (true, false, true) => "ALL HISTORY",
+            (true, false, false) => "RECENT",
+        }
     };
     let matched = viewport.matched;
     let summary = if app.language.is_simplified_chinese() {
@@ -2901,6 +2919,7 @@ mod tests {
         let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
         app.language = UiLanguage::SimplifiedChinese;
         app.backend_status.connected = true;
+        app.backend_status.registry_complete = true;
         app.backend_status.source = "codex-app-server".into();
         app.backend_status.platform = None;
         app.threads[0].metadata.model = None;
@@ -3119,6 +3138,7 @@ mod tests {
         let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
         app.backend_status.source = "codex-app-server".into();
         app.backend_status.connected = true;
+        app.backend_status.registry_complete = true;
         app.backend_status.platform = Some("linux/linux".into());
         app.backend_status.codex_home = Some("/home/jun/.codex".into());
         app.threads[0].metadata.cwd.clear();
