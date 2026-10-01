@@ -2320,25 +2320,25 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
             state.view = View::Workspace(thread_id.clone());
 
-            let Some(thread) = state.thread_by_id(&thread_id) else {
+            let Some(cwd) = state
+                .thread_by_id(&thread_id)
+                .map(|thread| thread.metadata.cwd.clone())
+            else {
                 return vec![];
             };
-            if thread.metadata.cwd.trim().is_empty() {
+            if cwd.trim().is_empty() {
                 return vec![];
             }
             let needs_probe = state
                 .git_contexts
                 .get(&thread_id.0)
-                .is_none_or(|context| context.cwd != thread.metadata.cwd);
+                .is_none_or(|context| context.cwd != cwd);
             if needs_probe {
                 state.git_contexts.insert(
                     thread_id.0.clone(),
-                    GitContext::pending(thread_id.clone(), thread.metadata.cwd.clone()),
+                    GitContext::pending(thread_id.clone(), cwd.clone()),
                 );
-                return vec![Effect::ProbeGit {
-                    thread_id,
-                    cwd: thread.metadata.cwd.clone(),
-                }];
+                return vec![Effect::ProbeGit { thread_id, cwd }];
             }
         }
         Action::MoveReview(delta) => {
