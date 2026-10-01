@@ -2190,8 +2190,8 @@ mod tests {
             .split("#[cfg(test)]")
             .next()
             .expect("production source");
-        assert!(production.contains("status.registry_complete = registry_complete;"));
-        assert!(production.contains("registry_complete = true;"));
+        assert!(production.contains("status.registry_complete = load.registry_complete;"));
+        assert!(production.contains("registry_complete: true"));
         assert!(production.contains("status.registry_complete = true;"));
     }
 
