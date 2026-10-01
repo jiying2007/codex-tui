@@ -22,6 +22,7 @@ All notable codex-tui changes are recorded here.
 - hardened reducer routing so Context/Forge/Scratch/batch state drift fails closed with an operator notice instead of panicking the TUI.
 - added local UI language selection (`auto`, `en`, `zh-CN`) with locale auto-detection and Simplified Chinese coverage across daily TUI surfaces while preserving technical identifiers and upstream diagnostic text.
 - deduplicated Git projection probes by exact host-local cwd, fan out completed checkout state across historical threads sharing the same working directory, and refresh selected/active checkouts every 10 seconds so dirty/branch state does not freeze after startup.
+- removed Registry/planning O(N²) hot paths by indexing thread WorkCards, precomputing active-worktree collision counts, and added 10k recent/search Registry projection benchmarks.
 
 ## [1.0.0] - 2026-09-30
 

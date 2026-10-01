@@ -5,8 +5,8 @@ use crate::conversation::{
     InteractiveResolution, RpcRequestId, UserInputQuestion,
 };
 use crate::domain::{
-    AttentionReason, CwdLocality, RuntimeStatus, ThreadId, ThreadSummary, ThreadUiState,
-    classify_cwd,
+    AttentionReason, CwdLocality, LocalRepoIdentity, RuntimeStatus, ThreadId, ThreadSummary,
+    ThreadUiState, classify_cwd,
 };
 use crate::forge::{
     CapabilityState, ChangeRequestSummary, ForgeCapability, ForgeIdentity, ForgeObservation,
@@ -372,6 +372,8 @@ pub struct AppState {
     pub git_reviews: BTreeMap<String, GitReview>,
     pub planning_snapshot: PlanningSnapshot,
     pub work_cards: Vec<WorkCardProjection>,
+    work_card_by_thread: BTreeMap<String, usize>,
+    worktree_collision_counts: BTreeMap<String, usize>,
     pub goals: BTreeMap<String, GoalObservation>,
     pub goal_checked: BTreeSet<String>,
     pub goal_actions_open: bool,
@@ -453,6 +455,8 @@ impl AppState {
             git_reviews: BTreeMap::new(),
             planning_snapshot: PlanningSnapshot::default(),
             work_cards: vec![],
+            work_card_by_thread: BTreeMap::new(),
+            worktree_collision_counts: BTreeMap::new(),
             goals: BTreeMap::new(),
             goal_checked: BTreeSet::new(),
             goal_actions_open: false,
@@ -531,7 +535,16 @@ impl AppState {
     }
 
     fn thread_visible_in_registry(&self, thread: &ThreadSummary) -> bool {
-        matches_filter(thread, &self.filter)
+        let query = self.filter.trim().to_lowercase();
+        self.thread_visible_in_registry_with_query(thread, &query)
+    }
+
+    fn thread_visible_in_registry_with_query(
+        &self,
+        thread: &ThreadSummary,
+        normalized_query: &str,
+    ) -> bool {
+        matches_filter_normalized(thread, normalized_query)
             && (!self.host_local_only
                 || classify_cwd(&thread.metadata.cwd) == CwdLocality::LocalDirectory)
             && self.thread_matches_repo_scope(thread)
@@ -842,12 +855,22 @@ impl AppState {
     }
 
     pub fn work_card_for_thread(&self, thread_id: &ThreadId) -> Option<&WorkCardProjection> {
+        if let Some(index) = self.work_card_by_thread.get(&thread_id.0) {
+            return self.work_cards.get(*index);
+        }
         self.work_cards
             .iter()
             .find(|card| card.anchor == SourceRef::codex_thread(thread_id))
     }
 
     pub fn worktree_collision_count(&self, thread_id: &ThreadId) -> usize {
+        if let Some(count) = self.worktree_collision_counts.get(&thread_id.0) {
+            return *count;
+        }
+        self.worktree_collision_count_uncached(thread_id)
+    }
+
+    fn worktree_collision_count_uncached(&self, thread_id: &ThreadId) -> usize {
         let Some(context) = self.git_context(thread_id) else {
             return 0;
         };
@@ -892,39 +915,40 @@ impl AppState {
         questions.get(self.user_input_question_index)
     }
 
-    fn registry_matching_indices(&self) -> Vec<usize> {
-        self.threads
-            .iter()
-            .enumerate()
-            .filter_map(|(index, thread)| self.thread_visible_in_registry(thread).then_some(index))
-            .collect()
-    }
-
     pub fn visible_indices_with_match_count(&self) -> (Vec<usize>, usize) {
-        let matched = self.registry_matching_indices();
-        let matched_count = matched.len();
-        if self.show_all_history
-            || !self.filter.is_empty()
-            || matched_count <= REGISTRY_RECENT_LIMIT
-        {
-            return (matched, matched_count);
+        let query = self.filter.trim().to_lowercase();
+        let show_all_matches = self.show_all_history || !query.is_empty();
+        let mut visible = Vec::with_capacity(if show_all_matches {
+            self.threads.len()
+        } else {
+            REGISTRY_RECENT_LIMIT.min(self.threads.len())
+        });
+        let mut matched_count = 0_usize;
+
+        for (index, thread) in self.threads.iter().enumerate() {
+            if !self.thread_visible_in_registry_with_query(thread, &query) {
+                continue;
+            }
+            let matched_position = matched_count;
+            matched_count = matched_count.saturating_add(1);
+            if show_all_matches
+                || matched_position < REGISTRY_RECENT_LIMIT
+                || thread.pinned
+                || self.thread_needs_attention(index)
+            {
+                visible.push(index);
+            }
         }
 
-        let visible = matched
-            .into_iter()
-            .enumerate()
-            .filter_map(|(position, index)| {
-                (position < REGISTRY_RECENT_LIMIT
-                    || self.threads[index].pinned
-                    || self.thread_needs_attention(index))
-                .then_some(index)
-            })
-            .collect();
         (visible, matched_count)
     }
 
     pub fn registry_match_count(&self) -> usize {
-        self.registry_matching_indices().len()
+        let query = self.filter.trim().to_lowercase();
+        self.threads
+            .iter()
+            .filter(|thread| self.thread_visible_in_registry_with_query(thread, &query))
+            .count()
     }
 
     pub fn visible_indices(&self) -> Vec<usize> {
@@ -1019,6 +1043,7 @@ impl AppState {
 pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
     match action {
         Action::ReplaceThreads(mut threads) => {
+            state.worktree_collision_counts.clear();
             let selected_id = state.selected_thread_id();
             for fresh in &mut threads {
                 if let Some(existing) = state.threads.iter().find(|old| old.id == fresh.id) {
@@ -1063,6 +1088,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             return refresh_forge_projections(state);
         }
         Action::GitContextLoaded(context) => {
+            state.worktree_collision_counts.clear();
             propagate_git_context(state, context);
             ensure_selection_visible(state);
         }
@@ -3283,6 +3309,53 @@ fn propagate_forge_observation(state: &mut AppState, observation: ForgeObservati
     }
 }
 
+fn active_worktree_counts(state: &AppState) -> BTreeMap<(LocalRepoIdentity, String), usize> {
+    let mut counts = BTreeMap::new();
+    for thread in &state.threads {
+        if !matches!(
+            thread.runtime,
+            RuntimeStatus::Working | RuntimeStatus::WaitingHuman
+        ) {
+            continue;
+        }
+        let Some(worktree) = state
+            .git_context(&thread.id)
+            .and_then(|context| context.worktree.as_ref())
+        else {
+            continue;
+        };
+        *counts
+            .entry((worktree.repo.clone(), worktree.canonical_path.clone()))
+            .or_default() += 1;
+    }
+    counts
+}
+
+fn collision_count_from_active_worktrees(
+    state: &AppState,
+    thread: &ThreadSummary,
+    active_counts: &BTreeMap<(LocalRepoIdentity, String), usize>,
+) -> usize {
+    let Some(worktree) = state
+        .git_context(&thread.id)
+        .and_then(|context| context.worktree.as_ref())
+    else {
+        return 0;
+    };
+    let active = active_counts
+        .get(&(worktree.repo.clone(), worktree.canonical_path.clone()))
+        .copied()
+        .unwrap_or(0);
+    if matches!(
+        thread.runtime,
+        RuntimeStatus::Working | RuntimeStatus::WaitingHuman
+    ) {
+        active.saturating_sub(1)
+    } else {
+        active
+    }
+}
+
 fn rebuild_planning(state: &mut AppState, now_unix_ms: u64) {
     let local_by_anchor = state
         .planning_snapshot
@@ -3290,9 +3363,16 @@ fn rebuild_planning(state: &mut AppState, now_unix_ms: u64) {
         .iter()
         .map(|card| (card.anchor.clone(), card))
         .collect::<BTreeMap<_, _>>();
+    let notes_by_owner = state
+        .planning_snapshot
+        .notes
+        .iter()
+        .map(|note| (note.owner.clone(), note))
+        .collect::<BTreeMap<_, _>>();
 
     let mut projections =
         Vec::with_capacity(state.threads.len() + state.planning_snapshot.scratch.len());
+    let active_worktrees = active_worktree_counts(state);
 
     for thread in &state.threads {
         let anchor = SourceRef::codex_thread(&thread.id);
@@ -3301,7 +3381,11 @@ fn rebuild_planning(state: &mut AppState, now_unix_ms: u64) {
                 thread,
                 git: state.git_context(&thread.id),
                 local: local_by_anchor.get(&anchor).copied(),
-                collision_count: state.worktree_collision_count(&thread.id),
+                collision_count: collision_count_from_active_worktrees(
+                    state,
+                    thread,
+                    &active_worktrees,
+                ),
                 backend_observed_at_unix_ms: state.backend_status.last_refresh_unix_ms,
                 backend_error: state.backend_status.error.as_deref(),
                 now_unix_ms,
@@ -3355,12 +3439,7 @@ fn rebuild_planning(state: &mut AppState, now_unix_ms: u64) {
     }
 
     for projection in &mut projections {
-        if let Some(note) = state
-            .planning_snapshot
-            .notes
-            .iter()
-            .find(|note| note.owner == projection.anchor)
-        {
+        if let Some(note) = notes_by_owner.get(&projection.anchor) {
             projection.overlay.note = Some(note.text.clone());
         }
     }
@@ -3381,6 +3460,22 @@ fn rebuild_planning(state: &mut AppState, now_unix_ms: u64) {
             .then_with(|| left.local_id.cmp(&right.local_id))
     });
 
+    state.worktree_collision_counts = state
+        .threads
+        .iter()
+        .map(|thread| {
+            (
+                thread.id.0.clone(),
+                collision_count_from_active_worktrees(state, thread, &active_worktrees),
+            )
+        })
+        .collect();
+    state.work_card_by_thread = projections
+        .iter()
+        .enumerate()
+        .filter(|(_, card)| card.anchor.kind == SourceKind::CodexThread)
+        .map(|(index, card)| (card.anchor.value.clone(), index))
+        .collect();
     state.work_cards = projections;
 }
 
@@ -3442,8 +3537,7 @@ fn ensure_selection_visible(state: &mut AppState) {
     }
 }
 
-fn matches_filter(thread: &ThreadSummary, query: &str) -> bool {
-    let query = query.trim().to_lowercase();
+fn matches_filter_normalized(thread: &ThreadSummary, query: &str) -> bool {
     if query.is_empty() {
         return true;
     }
@@ -4541,6 +4635,53 @@ mod tests {
         assert_ne!(selected.anchor, SourceRef::codex_thread(&app.threads[0].id));
         assert!(!selected.snoozed);
         assert!(selected.needs_you());
+    }
+
+    #[test]
+    fn planning_rebuild_indexes_thread_cards_and_preserves_collision_counts() {
+        let mut app = app();
+        let repo = LocalRepoIdentity {
+            git_common_dir: "/repo/.git".into(),
+            primary_root: "/repo".into(),
+        };
+        for thread in app.threads.iter_mut().take(2) {
+            thread.runtime = RuntimeStatus::Working;
+            thread.metadata.cwd = "/repo".into();
+            let mut context = GitContext::pending(thread.id.clone(), "/repo");
+            context.is_repository = true;
+            context.repo = Some(repo.clone());
+            context.worktree = Some(crate::domain::WorktreeIdentity {
+                repo: repo.clone(),
+                canonical_path: "/repo".into(),
+                branch: Some("main".into()),
+                managed_by_codex_tui: false,
+            });
+            app.git_contexts.insert(thread.id.0.clone(), context);
+        }
+
+        reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 1 });
+
+        for thread in app.threads.iter().take(2) {
+            let card = app.work_card_for_thread(&thread.id).expect("indexed card");
+            assert!(
+                card.attention
+                    .contains(&crate::planning::PlanningAttention::ConflictRisk)
+            );
+            assert_eq!(app.worktree_collision_count(&thread.id), 1);
+        }
+        assert_eq!(app.work_card_by_thread.len(), app.threads.len());
+    }
+
+    #[test]
+    fn reconciled_10k_registry_keeps_recent_projection_bounded() {
+        let mut app = AppState::new(FakeBackend::scaled(10_000).snapshot().threads);
+        reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 1 });
+
+        let (visible, matched) = app.visible_indices_with_match_count();
+        assert_eq!(matched, 10_000);
+        assert!(visible.len() >= REGISTRY_RECENT_LIMIT);
+        assert!(visible.len() < 10_000);
+        assert_eq!(app.work_card_by_thread.len(), 10_000);
     }
 
     #[test]
