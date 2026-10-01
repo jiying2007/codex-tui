@@ -3584,7 +3584,29 @@ fn refresh_active_git_projections(state: &mut AppState) -> Vec<Effect> {
     let mut effects = Vec::new();
     for (cwd, thread_ids) in threads_by_cwd {
         if state.refresh_cwd_locality(&cwd).terminal_usable() {
+            let probe_pending = thread_ids.iter().any(|thread_id| {
+                state
+                    .git_contexts
+                    .get(&thread_id.0)
+                    .is_some_and(|context| context.cwd == cwd && context.observed_at_unix_ms == 0)
+            });
+            if probe_pending {
+                continue;
+            }
+
             if let Some(thread_id) = thread_ids.first() {
+                let has_projection = thread_ids.iter().any(|candidate| {
+                    state
+                        .git_contexts
+                        .get(&candidate.0)
+                        .is_some_and(|context| context.cwd == cwd)
+                });
+                if !has_projection {
+                    state.git_contexts.insert(
+                        thread_id.0.clone(),
+                        GitContext::pending(thread_id.clone(), cwd.clone()),
+                    );
+                }
                 effects.push(Effect::ProbeGit {
                     thread_id: thread_id.clone(),
                     cwd,
@@ -5445,6 +5467,10 @@ mod tests {
                     cwd: shared,
                 },
             ]
+        );
+        assert!(
+            reduce(&mut app, Action::RefreshActiveGitProjections).is_empty(),
+            "pending active probes must not be enqueued again"
         );
     }
 

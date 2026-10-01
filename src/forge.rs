@@ -12,10 +12,13 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::Command;
 use tokio::sync::mpsc;
-use tokio::task::JoinHandle;
+use tokio::task::{JoinHandle, JoinSet};
 use tokio::time::timeout;
 
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
+const FORGE_COMMAND_QUEUE_CAPACITY: usize = 128;
+const FORGE_EVENT_QUEUE_CAPACITY: usize = 128;
+const FORGE_MAX_CONCURRENCY: usize = 4;
 const MAX_STDOUT_BYTES: usize = 1024 * 1024;
 const MAX_STDERR_BYTES: usize = 64 * 1024;
 const DEFAULT_PAGE_SIZE: usize = 20;
@@ -443,8 +446,8 @@ pub enum ForgeEvent {
 }
 
 pub struct ForgeHandle {
-    command_tx: mpsc::UnboundedSender<ForgeCommand>,
-    event_rx: mpsc::UnboundedReceiver<ForgeEvent>,
+    command_tx: mpsc::Sender<ForgeCommand>,
+    event_rx: mpsc::Receiver<ForgeEvent>,
     task: JoinHandle<()>,
 }
 
@@ -454,8 +457,8 @@ impl ForgeHandle {
     }
 
     pub fn start_with_provider(provider: Arc<dyn ForgeProvider>) -> Self {
-        let (command_tx, command_rx) = mpsc::unbounded_channel();
-        let (event_tx, event_rx) = mpsc::unbounded_channel();
+        let (command_tx, command_rx) = mpsc::channel(FORGE_COMMAND_QUEUE_CAPACITY);
+        let (event_tx, event_rx) = mpsc::channel(FORGE_EVENT_QUEUE_CAPACITY);
         let task = tokio::spawn(run_actor(provider, command_rx, event_tx));
         Self {
             command_tx,
@@ -465,15 +468,20 @@ impl ForgeHandle {
     }
 
     pub fn probe(&self, thread_id: ThreadId, cwd: String) -> Result<()> {
-        self.command_tx
-            .send(ForgeCommand::Probe { thread_id, cwd })
-            .map_err(|_| anyhow!("Forge actor is not available"))
+        self.queue_command(ForgeCommand::Probe { thread_id, cwd })
     }
 
     pub fn probe_review(&self, target: ForgeReviewTarget) -> Result<()> {
+        self.queue_command(ForgeCommand::ProbeReview(target))
+    }
+
+    fn queue_command(&self, command: ForgeCommand) -> Result<()> {
         self.command_tx
-            .send(ForgeCommand::ProbeReview(target))
-            .map_err(|_| anyhow!("Forge actor is not available"))
+            .try_send(command)
+            .map_err(|error| match error {
+                mpsc::error::TrySendError::Full(_) => anyhow!("Forge actor queue is full"),
+                mpsc::error::TrySendError::Closed(_) => anyhow!("Forge actor is not available"),
+            })
     }
 
     pub fn try_recv(&mut self) -> Option<ForgeEvent> {
@@ -489,18 +497,41 @@ impl Drop for ForgeHandle {
 
 async fn run_actor(
     provider: Arc<dyn ForgeProvider>,
-    mut command_rx: mpsc::UnboundedReceiver<ForgeCommand>,
-    event_tx: mpsc::UnboundedSender<ForgeEvent>,
+    mut command_rx: mpsc::Receiver<ForgeCommand>,
+    event_tx: mpsc::Sender<ForgeEvent>,
 ) {
-    while let Some(command) = command_rx.recv().await {
-        match command {
-            ForgeCommand::Probe { thread_id, cwd } => {
-                let observation = provider.probe(thread_id, cwd).await;
-                let _ = event_tx.send(ForgeEvent::Observation(Box::new(observation)));
+    let mut tasks = JoinSet::new();
+    let mut command_open = true;
+
+    loop {
+        tokio::select! {
+            joined = tasks.join_next(), if !tasks.is_empty() => {
+                let _ = joined;
             }
-            ForgeCommand::ProbeReview(target) => {
-                let review = provider.probe_review(target).await;
-                let _ = event_tx.send(ForgeEvent::Review(review));
+            command = command_rx.recv(), if command_open && tasks.len() < FORGE_MAX_CONCURRENCY => {
+                match command {
+                    Some(command) => {
+                        let provider = Arc::clone(&provider);
+                        let event_tx = event_tx.clone();
+                        tasks.spawn(async move {
+                            let event = match command {
+                                ForgeCommand::Probe { thread_id, cwd } => {
+                                    ForgeEvent::Observation(Box::new(provider.probe(thread_id, cwd).await))
+                                }
+                                ForgeCommand::ProbeReview(target) => {
+                                    ForgeEvent::Review(provider.probe_review(target).await)
+                                }
+                            };
+                            let _ = event_tx.send(event).await;
+                        });
+                    }
+                    None => command_open = false,
+                }
+            }
+            else => {
+                if !command_open && tasks.is_empty() {
+                    break;
+                }
             }
         }
     }
@@ -1264,6 +1295,132 @@ fn now_unix_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[derive(Clone)]
+    struct SlowProbeProvider {
+        active: Arc<std::sync::atomic::AtomicUsize>,
+        max_active: Arc<std::sync::atomic::AtomicUsize>,
+        delay: Duration,
+    }
+
+    impl SlowProbeProvider {
+        fn record_enter(
+            active: &std::sync::atomic::AtomicUsize,
+            max_active: &std::sync::atomic::AtomicUsize,
+        ) {
+            let current = active.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+            max_active.fetch_max(current, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
+    impl ForgeProvider for SlowProbeProvider {
+        fn probe<'a>(
+            &'a self,
+            thread_id: ThreadId,
+            cwd: String,
+        ) -> ForgeFuture<'a, ForgeObservation> {
+            let active = Arc::clone(&self.active);
+            let max_active = Arc::clone(&self.max_active);
+            let delay = self.delay;
+            Box::pin(async move {
+                Self::record_enter(&active, &max_active);
+                tokio::time::sleep(delay).await;
+                active.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                ForgeObservation::unavailable(thread_id, cwd, "fixture")
+            })
+        }
+
+        fn probe_review<'a>(
+            &'a self,
+            target: ForgeReviewTarget,
+        ) -> ForgeFuture<'a, ForgeReviewSummary> {
+            Box::pin(async move {
+                ForgeReviewSummary {
+                    thread_id: target.thread_id,
+                    cwd: target.cwd,
+                    change_request_iid: target.change_request_iid,
+                    approvals_required: None,
+                    approvals_left: None,
+                    approved_by_count: 0,
+                    changes_requested_by_count: 0,
+                    discussions_total: 0,
+                    unresolved_discussions: 0,
+                    approvals_available: false,
+                    discussions_available: false,
+                    observed_at_unix_ms: now_unix_ms(),
+                    error: Some("fixture".into()),
+                }
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn forge_actor_runs_bounded_concurrent_probes() {
+        let active = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let max_active = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let provider = Arc::new(SlowProbeProvider {
+            active,
+            max_active: Arc::clone(&max_active),
+            delay: Duration::from_millis(40),
+        });
+        let mut handle = ForgeHandle::start_with_provider(provider);
+
+        for index in 0..8 {
+            handle
+                .probe(
+                    ThreadId::new(format!("thread-{index}")),
+                    format!("/repo/{index}"),
+                )
+                .expect("queue probe");
+        }
+
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+        let mut received = 0;
+        while received < 8 && tokio::time::Instant::now() < deadline {
+            while handle.try_recv().is_some() {
+                received += 1;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+
+        assert_eq!(received, 8);
+        let observed = max_active.load(std::sync::atomic::Ordering::SeqCst);
+        assert!(
+            observed > 1,
+            "actor must execute independent probes concurrently"
+        );
+        assert!(
+            observed <= FORGE_MAX_CONCURRENCY,
+            "actor exceeded concurrency bound: {observed}"
+        );
+    }
+
+    #[tokio::test]
+    async fn forge_actor_command_queue_applies_backpressure() {
+        let provider = Arc::new(SlowProbeProvider {
+            active: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            max_active: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            delay: Duration::from_secs(1),
+        });
+        let handle = ForgeHandle::start_with_provider(provider);
+
+        let mut queue_full = false;
+        for index in 0..(FORGE_COMMAND_QUEUE_CAPACITY + FORGE_MAX_CONCURRENCY + 16) {
+            let result = handle.probe(
+                ThreadId::new(format!("backpressure-{index}")),
+                format!("/repo/backpressure/{index}"),
+            );
+            if result.is_err() {
+                queue_full = true;
+                break;
+            }
+        }
+
+        assert!(
+            queue_full,
+            "bounded Forge command queue must apply backpressure"
+        );
+    }
 
     #[test]
     fn provider_routing_is_explicit_and_custom_hosts_use_auth_authority() {
