@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use codex_tui::{
     app::{Action, AppState, Effect, InputMode, ViewKind, reduce},
     app_server::{self, ConversationEvent, RegistryHandle},
@@ -138,6 +138,16 @@ impl RuntimeStore {
                 Some(message)
             }
         }
+    }
+
+    fn flush_operator_state_on_exit(&mut self, state: &LocalStateV1) -> Result<()> {
+        self.operator_state_write_behind.clear();
+        if !self.writable {
+            return Ok(());
+        }
+        self.sqlite
+            .save_state(state)
+            .context("final SQLite operator-state flush")
     }
 
     fn error(&self) -> Option<String> {
@@ -1083,9 +1093,9 @@ async fn run_app(fake_mode: bool) -> Result<()> {
     if let Some(task) = connect_task {
         task.abort();
     }
-    if let Some(error) = services.store.persist_operator_state(&app.to_local_state()) {
-        reduce(&mut app, Action::PlanningStoreDegraded(Some(error)));
-    }
+    services
+        .store
+        .flush_operator_state_on_exit(&app.to_local_state())?;
     Ok(())
 }
 
@@ -2414,6 +2424,30 @@ mod background_planning_coalescing_tests {
 #[cfg(test)]
 mod operator_state_write_behind_tests {
     use super::*;
+
+    #[test]
+    fn final_operator_state_flush_failure_is_returned_to_the_caller() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let blocked = root.path().join("blocked-parent");
+        std::fs::write(&blocked, "not a directory").expect("blocked parent fixture");
+        let mut store = RuntimeStore {
+            sqlite: SqliteStore::at(blocked),
+            writable: true,
+            error: None,
+            operator_state_write_behind: OperatorStateWriteBehind::default(),
+        };
+        store.defer_operator_state();
+
+        let error = store
+            .flush_operator_state_on_exit(&LocalStateV1::default())
+            .expect_err("final flush failure must not be silently ignored");
+        assert!(
+            error
+                .to_string()
+                .contains("final SQLite operator-state flush"),
+            "unexpected final flush error: {error:#}"
+        );
+    }
 
     #[test]
     fn deferred_operator_state_coalesces_without_extending_the_flush_deadline() {
