@@ -42,6 +42,7 @@ All notable codex-tui changes are recorded here.
 - made terminal startup transactional: once raw mode is enabled, an armed rollback guard restores raw mode, mouse capture, alternate screen and cursor state on every subsequent setup error before a `TerminalSession` can exist.
 - coalesced high-frequency thread draft and scroll persistence behind a 250ms bounded write-behind window, while keeping pin/alias/attention/filter changes and submitted-draft clearing immediately durable and preserving the final shutdown flush.
 - staged App Server Registry hydration for large histories: interactive startup now loads only the newest 200 threads for first paint, the Registry actor immediately hydrates the complete history afterward, `doctor codex` still performs a full probe, and full reconciliation fallback is reduced from every 30 seconds to every 5 minutes because lifecycle/status notifications remain the real-time authority.
+- decoupled durable per-thread pins, aliases and local unread markers from the currently hydrated Registry slice, so staged startup, temporary thread omission and later full-history hydration cannot drop operator overlays or persist a truncated local-state snapshot.
 
 ## [1.0.0] - 2026-09-30
 
