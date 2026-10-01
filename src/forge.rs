@@ -333,12 +333,12 @@ fn provider_from_auth_state(
     match (github_authenticated, gitlab_authenticated) {
         (true, false) => Ok(ForgeProviderKind::GitHub),
         (false, true) => Ok(ForgeProviderKind::GitLab),
-        (true, true) => bail!(
-            "forge provider is ambiguous for host {host}: both gh and glab are authenticated"
-        ),
-        (false, false) => bail!(
-            "forge provider not configured for host {host}; authenticate with gh or glab"
-        ),
+        (true, true) => {
+            bail!("forge provider is ambiguous for host {host}: both gh and glab are authenticated")
+        }
+        (false, false) => {
+            bail!("forge provider not configured for host {host}; authenticate with gh or glab")
+        }
     }
 }
 
