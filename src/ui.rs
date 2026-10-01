@@ -3,14 +3,17 @@ use crate::conversation::{InteractiveRequest, InteractiveRequestKind};
 use crate::domain::{
     AttentionReason, CwdLocality, RuntimeStatus, ThreadSummary, classify_cwd, display_cwd,
 };
+use crate::forge::ForgeFreshness;
 use crate::git::presentation_diff_lines;
 use crate::goal::GoalStatus;
 use crate::i18n::{UiLanguage, pick};
+use crate::operation::OperationState;
 use crate::planning::{
-    PlanningAttention, SavedView, SavedViewLayout, WorkflowStage, apply_saved_view,
+    PlanningAttention, SavedView, SavedViewLayout, ScratchState, WorkflowStage, apply_saved_view,
     saved_view_group_key,
 };
 use crate::pty::TerminalSize;
+use crate::terminal_drawer::TerminalProcessState;
 use crate::text::{fit_display, sanitize_inline, truncate_display};
 use ratatui::{
     Frame,
@@ -112,6 +115,17 @@ fn goal_status_label(status: GoalStatus, language: UiLanguage) -> &'static str {
     }
 }
 
+fn scratch_state_label(state: ScratchState, language: UiLanguage) -> &'static str {
+    match (state, language) {
+        (ScratchState::Inbox, UiLanguage::SimplifiedChinese) => "收件箱",
+        (ScratchState::Ready, UiLanguage::SimplifiedChinese) => "就绪",
+        (ScratchState::Done, UiLanguage::SimplifiedChinese) => "完成",
+        (ScratchState::Inbox, UiLanguage::English) => "Inbox",
+        (ScratchState::Ready, UiLanguage::English) => "Ready",
+        (ScratchState::Done, UiLanguage::English) => "Done",
+    }
+}
+
 fn workflow_stage_label(stage: WorkflowStage, language: UiLanguage) -> &'static str {
     match (stage, language) {
         (WorkflowStage::Inbox, UiLanguage::SimplifiedChinese) => "收件箱",
@@ -120,6 +134,49 @@ fn workflow_stage_label(stage: WorkflowStage, language: UiLanguage) -> &'static 
         (WorkflowStage::Review, UiLanguage::SimplifiedChinese) => "评审",
         (WorkflowStage::Done, UiLanguage::SimplifiedChinese) => "完成",
         _ => stage.label(),
+    }
+}
+
+fn forge_freshness_label(freshness: ForgeFreshness, language: UiLanguage) -> &'static str {
+    match (freshness, language) {
+        (ForgeFreshness::Fresh, UiLanguage::SimplifiedChinese) => "最新",
+        (ForgeFreshness::Aging, UiLanguage::SimplifiedChinese) => "稍旧",
+        (ForgeFreshness::Stale, UiLanguage::SimplifiedChinese) => "过期",
+        (ForgeFreshness::Unavailable, UiLanguage::SimplifiedChinese) => "不可用",
+        _ => freshness.label(),
+    }
+}
+
+fn operation_state_label(state: OperationState, language: UiLanguage) -> &'static str {
+    match (state, language) {
+        (OperationState::Planned, UiLanguage::SimplifiedChinese) => "已计划",
+        (OperationState::Executing, UiLanguage::SimplifiedChinese) => "执行中",
+        (OperationState::Succeeded, UiLanguage::SimplifiedChinese) => "已成功",
+        (OperationState::Failed, UiLanguage::SimplifiedChinese) => "失败",
+        (OperationState::OutcomeUnknown, UiLanguage::SimplifiedChinese) => "结果未知",
+        (OperationState::Planned, UiLanguage::English) => "planned",
+        (OperationState::Executing, UiLanguage::English) => "executing",
+        (OperationState::Succeeded, UiLanguage::English) => "succeeded",
+        (OperationState::Failed, UiLanguage::English) => "failed",
+        (OperationState::OutcomeUnknown, UiLanguage::English) => "outcome unknown",
+    }
+}
+
+fn terminal_process_state_label(state: &TerminalProcessState, language: UiLanguage) -> String {
+    match (state, language) {
+        (TerminalProcessState::Starting, UiLanguage::SimplifiedChinese) => "启动中".into(),
+        (TerminalProcessState::Running, UiLanguage::SimplifiedChinese) => "运行中".into(),
+        (TerminalProcessState::Exited { success, code }, UiLanguage::SimplifiedChinese) => {
+            format!(
+                "已退出 · success={} · code={}",
+                success,
+                code.map_or_else(|| "?".into(), |value| value.to_string())
+            )
+        }
+        (TerminalProcessState::Error(error), UiLanguage::SimplifiedChinese) => {
+            format!("错误 · {error}")
+        }
+        _ => state.label(),
     }
 }
 
@@ -266,8 +323,8 @@ fn render_terminal_drawer(frame: &mut Frame<'_>, app: &AppState) {
 
     let snapshot = app.terminal_snapshot.as_ref();
     let status = snapshot
-        .map(|snapshot| snapshot.state.label())
-        .unwrap_or_else(|| "starting".into());
+        .map(|snapshot| terminal_process_state_label(&snapshot.state, app.language))
+        .unwrap_or_else(|| tr(app, "starting", "启动中").into());
     let cwd = snapshot
         .map(|snapshot| snapshot.cwd.as_str())
         .unwrap_or_else(|| tr(app, "<starting>", "<启动中>"));
@@ -787,7 +844,7 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
             thread
                 .attention
                 .iter()
-                .map(|reason| reason.label())
+                .map(|reason| attention_reason_label(reason, app.language))
                 .collect::<Vec<_>>()
                 .join(", ")
         };
@@ -1034,9 +1091,10 @@ fn forge_context_lines(
         identity.provider.label(),
         identity.host,
         identity.path_with_namespace,
-        observation
-            .freshness_at(crate::operation::now_unix_ms())
-            .label()
+        forge_freshness_label(
+            observation.freshness_at(crate::operation::now_unix_ms()),
+            app.language,
+        )
     ))];
 
     let branch = app
@@ -1594,9 +1652,9 @@ fn render_scratch(frame: &mut Frame<'_>, app: &AppState, scratch_id: &str, area:
                 sanitize_inline(&scratch.title)
             )),
             Line::from(format!(
-                "{}: {:?} · {}={}",
+                "{}: {} · {}={}",
                 tr(app, "State", "状态"),
-                scratch.state,
+                scratch_state_label(scratch.state, app.language),
                 tr(app, "priority", "优先级"),
                 scratch
                     .priority
@@ -1912,10 +1970,10 @@ fn render_managed_worktrees(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
     if let Some(receipt) = app.recent_operations.first() {
         lines.push(Line::from(""));
         lines.push(Line::from(format!(
-            "{}: {} · {:?}",
+            "{}: {} · {}",
             tr(app, "Latest receipt", "最新回执"),
             receipt.plan.kind.label(),
-            receipt.state
+            operation_state_label(receipt.state, app.language)
         )));
         if let Some(verification) = &receipt.verification {
             lines.push(Line::from(format!(
@@ -3086,6 +3144,29 @@ mod tests {
             );
         }
         assert!(!snapshot.contains('\u{0007}'));
+    }
+
+    #[test]
+    fn simplified_chinese_status_helpers_cover_terminal_forge_and_receipts() {
+        assert_eq!(
+            terminal_process_state_label(
+                &TerminalProcessState::Running,
+                UiLanguage::SimplifiedChinese
+            ),
+            "运行中"
+        );
+        assert_eq!(
+            forge_freshness_label(ForgeFreshness::Stale, UiLanguage::SimplifiedChinese),
+            "过期"
+        );
+        assert_eq!(
+            operation_state_label(OperationState::Succeeded, UiLanguage::SimplifiedChinese),
+            "已成功"
+        );
+        assert_eq!(
+            scratch_state_label(ScratchState::Ready, UiLanguage::SimplifiedChinese),
+            "就绪"
+        );
     }
 
     #[test]

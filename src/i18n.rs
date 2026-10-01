@@ -93,7 +93,7 @@ where
         if value.is_empty() {
             continue;
         }
-        return if locale_is_chinese(value) {
+        return if locale_prefers_simplified_chinese(value) {
             UiLanguage::SimplifiedChinese
         } else {
             UiLanguage::English
@@ -102,9 +102,28 @@ where
     UiLanguage::English
 }
 
-fn locale_is_chinese(value: &str) -> bool {
+fn locale_prefers_simplified_chinese(value: &str) -> bool {
     let normalized = value.trim().replace('_', "-").to_ascii_lowercase();
-    normalized == "zh" || normalized.starts_with("zh-")
+    let language_tag = normalized
+        .split(['.', '@'])
+        .next()
+        .unwrap_or(normalized.as_str());
+
+    if language_tag == "zh" {
+        return true;
+    }
+
+    if language_tag == "zh-hant"
+        || language_tag.starts_with("zh-hant-")
+        || matches!(language_tag, "zh-tw" | "zh-hk" | "zh-mo")
+        || language_tag.starts_with("zh-tw-")
+        || language_tag.starts_with("zh-hk-")
+        || language_tag.starts_with("zh-mo-")
+    {
+        return false;
+    }
+
+    language_tag.starts_with("zh-")
 }
 
 #[cfg(test)]
@@ -112,8 +131,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn auto_locale_recognizes_common_chinese_spellings() {
-        for locale in ["zh", "zh_CN.UTF-8", "zh-CN", "zh_Hans_CN.UTF-8"] {
+    fn auto_locale_recognizes_common_simplified_chinese_spellings() {
+        for locale in [
+            "zh",
+            "zh_CN.UTF-8",
+            "zh-CN",
+            "zh_SG.UTF-8",
+            "zh_Hans_CN.UTF-8",
+            "zh-Hans-SG",
+        ] {
             assert_eq!(
                 LanguagePreference::Auto.resolve_from_locale_values([locale]),
                 UiLanguage::SimplifiedChinese,
@@ -136,6 +162,23 @@ mod tests {
             LanguagePreference::Auto.resolve_from_locale_values(std::iter::empty::<&str>()),
             UiLanguage::English
         );
+    }
+
+    #[test]
+    fn auto_locale_does_not_misclassify_traditional_chinese_as_simplified() {
+        for locale in [
+            "zh_TW.UTF-8",
+            "zh-HK",
+            "zh_MO.UTF-8",
+            "zh-Hant",
+            "zh_Hant_TW.UTF-8",
+        ] {
+            assert_eq!(
+                LanguagePreference::Auto.resolve_from_locale_values([locale]),
+                UiLanguage::English,
+                "{locale}"
+            );
+        }
     }
 
     #[test]
