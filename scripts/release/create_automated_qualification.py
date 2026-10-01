@@ -40,9 +40,11 @@ def main() -> int:
     scale_path = pathlib.Path(args.scale)
     soak_path = pathlib.Path(args.soak)
     support_path = pathlib.Path(args.support_manifest)
+    support_snapshot_path = pathlib.Path(args.support_snapshot)
     failure_matrix = json.loads(failure_matrix_path.read_text(encoding="utf-8"))
     scale = json.loads(scale_path.read_text(encoding="utf-8"))
     soak = json.loads(soak_path.read_text(encoding="utf-8"))
+    support_snapshot = json.loads(support_snapshot_path.read_text(encoding="utf-8"))
 
     if failure_matrix.get("schema") != "codex-tui/failure-matrix/v2":
         raise SystemExit("unexpected Failure Matrix schema")
