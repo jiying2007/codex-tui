@@ -16,8 +16,8 @@ use tokio::task::{JoinHandle, JoinSet};
 use tokio::time::timeout;
 
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
-const FORGE_COMMAND_QUEUE_CAPACITY: usize = 64;
-const FORGE_EVENT_QUEUE_CAPACITY: usize = 64;
+const FORGE_COMMAND_QUEUE_CAPACITY: usize = 128;
+const FORGE_EVENT_QUEUE_CAPACITY: usize = 128;
 const FORGE_MAX_CONCURRENCY: usize = 4;
 const MAX_STDOUT_BYTES: usize = 1024 * 1024;
 const MAX_STDERR_BYTES: usize = 64 * 1024;
