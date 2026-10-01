@@ -385,6 +385,8 @@ pub enum Effect {
 #[derive(Clone, Debug)]
 pub struct AppState {
     pub threads: Vec<ThreadSummary>,
+    thread_index_by_id: HashMap<String, usize>,
+    thread_indices_by_cwd: BTreeMap<String, Vec<usize>>,
     pub selected: usize,
     pub view: View,
     pub previous_target: Option<ThreadId>,
@@ -467,8 +469,11 @@ struct ForgeMutationTarget {
 
 impl AppState {
     pub fn new(threads: Vec<ThreadSummary>) -> Self {
+        let (thread_index_by_id, thread_indices_by_cwd) = build_thread_indexes(&threads);
         Self {
             threads,
+            thread_index_by_id,
+            thread_indices_by_cwd,
             selected: 0,
             view: View::Registry,
             previous_target: None,
@@ -540,6 +545,40 @@ impl AppState {
             input_buffer: String::new(),
             input_original: String::new(),
         }
+    }
+
+    fn rebuild_thread_indexes(&mut self) {
+        let (thread_index_by_id, thread_indices_by_cwd) = build_thread_indexes(&self.threads);
+        self.thread_index_by_id = thread_index_by_id;
+        self.thread_indices_by_cwd = thread_indices_by_cwd;
+    }
+
+    fn thread_by_id(&self, thread_id: &ThreadId) -> Option<&ThreadSummary> {
+        self.thread_index_by_id
+            .get(&thread_id.0)
+            .and_then(|index| self.threads.get(*index))
+            .filter(|thread| thread.id == *thread_id)
+            .or_else(|| self.threads.iter().find(|thread| thread.id == *thread_id))
+    }
+
+    fn thread_ids_for_cwd(&self, cwd: &str) -> Vec<ThreadId> {
+        if let Some(indices) = self.thread_indices_by_cwd.get(cwd) {
+            let indexed = indices
+                .iter()
+                .filter_map(|index| self.threads.get(*index))
+                .filter(|thread| thread.metadata.cwd == cwd)
+                .map(|thread| thread.id.clone())
+                .collect::<Vec<_>>();
+            if !indexed.is_empty() {
+                return indexed;
+            }
+        }
+
+        self.threads
+            .iter()
+            .filter(|thread| thread.metadata.cwd == cwd)
+            .map(|thread| thread.id.clone())
+            .collect()
     }
 
     pub const fn view_kind(&self) -> ViewKind {
@@ -1183,14 +1222,15 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 }
             }
             state.threads = threads;
+            state.rebuild_thread_indexes();
             state.reconcile_cwd_locality_cache(state.host_local_only || state.repo_backed_only);
             if state.threads.is_empty() {
                 state.selected = 0;
             } else if let Some(id) = selected_id {
                 state.selected = state
-                    .threads
-                    .iter()
-                    .position(|thread| thread.id == id)
+                    .thread_index_by_id
+                    .get(&id.0)
+                    .copied()
                     .unwrap_or_else(|| state.selected.min(state.threads.len() - 1));
             } else {
                 state.selected = state.selected.min(state.threads.len() - 1);
@@ -2265,7 +2305,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
             state.view = View::Workspace(thread_id.clone());
 
-            let Some(thread) = state.threads.iter().find(|thread| thread.id == thread_id) else {
+            let Some(thread) = state.thread_by_id(&thread_id) else {
                 return vec![];
             };
             if thread.metadata.cwd.trim().is_empty() {
