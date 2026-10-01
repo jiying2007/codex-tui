@@ -548,6 +548,25 @@ mod tests {
         "0123456789abcdef0123456789abcdef01234567".into()
     }
 
+    fn automated_receipt() -> AutomatedQualificationReceipt {
+        AutomatedQualificationReceipt {
+            schema: AUTOMATED_QUALIFICATION_SCHEMA.into(),
+            source_sha: sha(),
+            observed_at: "2026-10-01T00:00:00Z".into(),
+            gates: AutomatedQualificationGates {
+                failure_matrix: "pass".into(),
+                soak_structural: "pass".into(),
+                ui_contract: "pass".into(),
+                state_migration_recovery: "pass".into(),
+                support_bundle_redaction: "pass".into(),
+            },
+            artifacts: AutomatedQualificationArtifacts {
+                soak_evidence_sha256: "c".repeat(64),
+                support_manifest_sha256: "d".repeat(64),
+            },
+        }
+    }
+
     fn repo_with_lock_and_changelog() -> tempfile::TempDir {
         let root = tempdir().expect("tempdir");
         fs::write(root.path().join("Cargo.lock"), "# lock").expect("lock");
@@ -557,7 +576,12 @@ mod tests {
         )
         .expect("changelog");
         fs::create_dir_all(root.path().join("release")).expect("release dir");
-        fs::write(root.path().join("release/v1.0-criteria.json"), "{}").expect("criteria");
+        fs::write(
+            root.path()
+                .join(stable_criteria_filename(env!("CARGO_PKG_VERSION"))),
+            "{}",
+        )
+        .expect("criteria");
         root
     }
 
@@ -666,6 +690,7 @@ mod tests {
                         notes: None,
                     },
                 )]),
+                automated_qualification: automated_receipt(),
                 performance: PerformanceReceipt {
                     platform: PRIMARY_STABLE_PLATFORM.into(),
                     fixture: PERFORMANCE_FIXTURE.into(),
@@ -728,6 +753,7 @@ mod tests {
                         notes: None,
                     },
                 )]),
+                automated_qualification: automated_receipt(),
                 performance: PerformanceReceipt {
                     platform: PRIMARY_STABLE_PLATFORM.into(),
                     fixture: PERFORMANCE_FIXTURE.into(),
@@ -786,6 +812,7 @@ mod tests {
                     .collect(),
                 compatibility: BTreeMap::from([("linux".into(), compatibility('a'))]),
                 terminal_restoration: BTreeMap::from([("linux".into(), terminal("xterm"))]),
+                automated_qualification: automated_receipt(),
                 performance: PerformanceReceipt {
                     platform: PRIMARY_STABLE_PLATFORM.into(),
                     fixture: PERFORMANCE_FIXTURE.into(),
