@@ -49,6 +49,7 @@ All notable codex-tui changes are recorded here.
 - made staged Registry hydration cooperative instead of actor-blocking: startup retains the first-page cursor and query compatibility state, then fetches at most one additional page per actor turn with a 10ms yield; user commands are selected before the next hydration page, semantic notifications are drained before publishing pending page growth, newer live thread state wins over stale page data, and archive/delete tombstones prevent reintroduction during hydration.
 - made the 5-minute authoritative Registry reconciliation cooperative as well: it builds a candidate full snapshot one page per actor turn, overlays live thread changes observed during reconciliation, applies archive/delete tombstones, and atomically replaces the live Registry only after the candidate is complete, eliminating periodic whole-history actor stalls.
 - removed `thread/loaded/list` from the interactive Registry critical path: startup and periodic reconciliation now hydrate loaded-session metadata cooperatively one page per actor turn after Registry pages, while user commands and semantic notifications retain priority; `doctor compat` keeps the authoritative full capability probe.
+- added an advisory Linux Registry scale-evidence harness for 10k/50k histories, capturing construction/reconciliation and recent/all-history/search/host-local projection latency plus process peak RSS as retained artifacts before any paging or SQLite-index redesign.
 
 ## [1.0.0] - 2026-09-30
 

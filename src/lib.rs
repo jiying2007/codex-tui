@@ -20,6 +20,7 @@ pub mod planning;
 pub mod pty;
 pub mod release;
 pub mod release_benchmark;
+pub mod scale_evidence;
 pub mod sqlite_store;
 pub mod store;
 pub mod terminal;
