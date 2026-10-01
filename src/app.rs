@@ -5883,10 +5883,7 @@ mod tests {
             .position(|choice| *choice == Command::TogglePin)
             .expect("TogglePin palette entry");
         app.command_palette_selected = toggle_pin_index;
-        assert_eq!(
-            app.command_palette_choice(),
-            Some(Command::TogglePin)
-        );
+        assert_eq!(app.command_palette_choice(), Some(Command::TogglePin));
 
         app.threads.clear();
         app.rebuild_thread_indexes();
@@ -5902,10 +5899,7 @@ mod tests {
 
         reduce(&mut app, Action::CloseCommandPalette);
         assert!(app.command_palette_items.is_empty());
-        assert!(
-            !app.command_palette_choices()
-                .contains(&Command::TogglePin)
-        );
+        assert!(!app.command_palette_choices().contains(&Command::TogglePin));
     }
 
     #[test]
