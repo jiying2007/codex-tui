@@ -34,6 +34,7 @@ All notable codex-tui changes are recorded here.
 - removed filesystem probing from Mission Control rendering itself: uncached native absolute cwd values render as unprobed until controlled locality/Git reconciliation checks them, while Terminal Drawer open keeps its fresh fail-closed cwd validation.
 - bounded App Server command and conversation-event channels; user commands now fail explicitly under backpressure while conversation/interactive/Goal events wait for capacity instead of accumulating in unbounded memory or being dropped.
 - bounded Forge/worktree mutation command and event queues and moved in-flight mutation tasks under coordinator-owned JoinSets with a total concurrency cap of 4, preserving repo/project locks while preventing unbounded queued or detached mutation work.
+- bounded resident conversation history to a 16-thread LRU cache; evicted conversations reload from App Server on demand while per-thread drafts, aliases, pins and other local UI state remain resident/persisted independently.
 
 ## [1.0.0] - 2026-09-30
 
