@@ -27,6 +27,7 @@ use tokio::task::JoinHandle;
 const PAGE_SIZE: u32 = 200;
 const STARTUP_REGISTRY_PAGE_LIMIT: usize = 1;
 const REGISTRY_HYDRATION_YIELD_INTERVAL: Duration = Duration::from_millis(10);
+const REGISTRY_HYDRATION_PUBLISH_PAGE_INTERVAL: usize = 10;
 const REFRESH_INTERVAL: Duration = Duration::from_secs(5 * 60);
 const GOAL_PROBE_INTERVAL: Duration = Duration::from_millis(250);
 const GOAL_EAGER_PROBE_LIMIT: usize = 100;
@@ -318,6 +319,7 @@ struct RegistryHydration {
     use_state_db_only: bool,
     optimized_query: bool,
     tombstones: BTreeSet<String>,
+    pages_since_publish: usize,
 }
 
 #[derive(Debug)]
@@ -511,6 +513,10 @@ fn apply_full_registry_refresh(
     status.registry_complete = true;
     status.error = None;
     status.last_refresh_unix_ms = Some(now_unix_ms());
+}
+
+fn hydration_publish_due(pages_since_publish: usize, complete: bool) -> bool {
+    complete || pages_since_publish >= REGISTRY_HYDRATION_PUBLISH_PAGE_INTERVAL
 }
 
 fn merge_registry_hydration_page(
@@ -932,8 +938,19 @@ async fn run_registry_actor(
                             );
                             status.last_refresh_unix_ms = Some(now_unix_ms());
 
+                            state.pages_since_publish =
+                                state.pages_since_publish.saturating_add(1);
+                            let hydration_complete = next_cursor.is_none();
+                            let publish_due = hydration_publish_due(
+                                state.pages_since_publish,
+                                hydration_complete,
+                            );
+
                             if let Some(next_cursor) = next_cursor {
                                 state.cursor = next_cursor;
+                                if publish_due {
+                                    state.pages_since_publish = 0;
+                                }
                             } else {
                                 hydration = None;
                                 status.registry_complete = true;
@@ -946,7 +963,7 @@ async fn run_registry_actor(
                                     );
                                 }
                             }
-                            hydration_pending_publish = true;
+                            hydration_pending_publish |= publish_due;
                             hydration_tick.reset();
                         }
                         Err(error) => {
@@ -1316,6 +1333,7 @@ async fn load_registry_with_page_limit(
                     use_state_db_only,
                     optimized_query,
                     tombstones: BTreeSet::new(),
+                    pages_since_publish: 0,
                 }),
             });
         }
@@ -2442,6 +2460,15 @@ mod tests {
     }
 
     #[test]
+    fn startup_hydration_publish_is_batched_but_final_page_is_immediate() {
+        assert_eq!(REGISTRY_HYDRATION_PUBLISH_PAGE_INTERVAL, 10);
+        assert!(!hydration_publish_due(1, false));
+        assert!(!hydration_publish_due(9, false));
+        assert!(hydration_publish_due(10, false));
+        assert!(hydration_publish_due(1, true));
+    }
+
+    #[test]
     fn hydration_merge_preserves_newer_live_state_and_tombstones() {
         let mut current = FakeBackend::scaled(1)
             .snapshot()
@@ -2482,6 +2509,7 @@ mod tests {
             use_state_db_only: false,
             optimized_query: true,
             tombstones: BTreeSet::new(),
+            pages_since_publish: 0,
         };
 
         observe_registry_hydration_message(
@@ -2575,6 +2603,7 @@ mod tests {
                 use_state_db_only: true,
                 optimized_query: true,
                 tombstones: BTreeSet::from(["removed".to_string()]),
+                pages_since_publish: 0,
             },
             candidate,
             live_overrides: BTreeSet::from(["live".to_string()]),

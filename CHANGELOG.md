@@ -58,6 +58,7 @@ All notable codex-tui changes are recorded here.
 - classified Registry drain changes by responsibility: conversation/history/interactive UI events no longer trigger Git projection refresh plus full planning reconciliation, while Registry snapshots still refresh Git + planning and Goal observations still reconcile planning.
 - extended drain classification to Git and mutation actors: Git review payloads, managed-worktree inventory updates and mutation notices render normally without triggering unrelated Forge/Git refresh plus full planning reconciliation; Git contexts and mutation receipts retain existing projection refresh semantics.
 - coalesced automatic background planning invalidations across Registry, Git, Forge, mutation drains, periodic Forge refresh and fake ticks so one UI loop performs at most one full planning reconciliation before rendering, while explicit user-driven planning writes remain immediate.
+- throttled startup Registry hydration publication without slowing cooperative RPC paging: background history still fetches one 200-thread page per actor turn, but partial full-snapshot clone/sort publication is batched every 10 pages (~2000 threads) with final/error publication immediate, reducing repeated large snapshot replacement and planning work.
 
 ## [1.0.0] - 2026-09-30
 
