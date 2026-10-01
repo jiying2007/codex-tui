@@ -60,6 +60,15 @@
       "expectedEvidence": "retained PASS codex-tui/terminal-restoration/v1 receipt with sourceSha equal to the exact candidate from a real controlling TTY"
     },
     {
+      "id": "linux-performance-diagnostics",
+      "criteriaGate": "performance-diagnostics",
+      "requiredForStable": true,
+      "requiredForTeamReuseQualification": false,
+      "canBeSynthesized": false,
+      "collector": "scripts/release/linux_qualify.py",
+      "expectedEvidence": "retained resident-planning-10k report with at least 200 samples and sourceSha equal to the exact candidate; p95/p99 are diagnostic rather than hosted-runner pass/fail thresholds"
+    },
+    {
       "id": "internal-gitlab-provider",
       "criteriaGate": null,
       "requiredForStable": false,
