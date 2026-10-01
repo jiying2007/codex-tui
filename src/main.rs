@@ -1559,6 +1559,7 @@ fn apply_effects(
             Effect::ProbeGit { thread_id, cwd } => {
                 if let Err(error) = git.probe(thread_id.clone(), cwd.clone()) {
                     let mut context = codex_tui::git::GitContext::pending(thread_id, cwd);
+                    context.observed_at_unix_ms = now_unix_ms();
                     context.error = Some(error.to_string());
                     reduce(app, Action::GitContextLoaded(context));
                 }
