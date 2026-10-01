@@ -4061,6 +4061,33 @@ mod tests {
     }
 
     #[test]
+    fn registry_locality_cache_is_refreshed_by_active_git_reconcile() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let cwd = root.path().join("repo");
+        std::fs::create_dir_all(&cwd).expect("create cwd");
+        let cwd = cwd.to_string_lossy().into_owned();
+
+        let mut app = app();
+        app.threads[0].metadata.cwd.clone_from(&cwd);
+        app.selected = 0;
+
+        reduce(&mut app, Action::ToggleHostLocalFilter);
+        assert_eq!(app.cwd_locality(&cwd), CwdLocality::LocalDirectory);
+        assert!(app.visible_indices().contains(&0));
+
+        std::fs::remove_dir(&cwd).expect("remove cwd");
+        assert_eq!(
+            app.cwd_locality(&cwd),
+            CwdLocality::LocalDirectory,
+            "render-time lookup must reuse the cached filesystem classification"
+        );
+
+        reduce(&mut app, Action::RefreshActiveGitProjections);
+        assert_eq!(app.cwd_locality(&cwd), CwdLocality::NativeMissing);
+        assert!(!app.visible_indices().contains(&0));
+    }
+
+    #[test]
     fn registry_repo_only_filter_keeps_unresolved_and_degraded_candidates() {
         let cwd = std::env::current_dir()
             .expect("cwd")
@@ -5100,6 +5127,11 @@ mod tests {
         let effects = reduce(&mut app, Action::RefreshGitProjections);
         assert_eq!(effects.len(), REGISTRY_RECENT_LIMIT);
         assert_eq!(app.git_contexts.len(), REGISTRY_RECENT_LIMIT);
+        assert_eq!(
+            app.cwd_localities.len(),
+            REGISTRY_RECENT_LIMIT,
+            "Git projection must not stat every historical cwd"
+        );
 
         app.filter = "00149".into();
         let effects = reduce(&mut app, Action::RefreshGitProjections);
