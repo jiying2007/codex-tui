@@ -208,6 +208,33 @@ mod tests {
     }
 
     #[test]
+    fn config_accepts_explicit_english_and_simplified_chinese() {
+        let root = tempdir().expect("tempdir");
+        let store = FileStore::at(root.path());
+
+        fs::create_dir_all(root.path()).expect("mkdir");
+        fs::write(
+            store.config_path(),
+            "[ui]\nmouse = true\nlanguage = \"zh-CN\"\n",
+        )
+        .expect("write zh config");
+        assert_eq!(
+            store.load_config().expect("zh config").ui.language,
+            LanguagePreference::SimplifiedChinese
+        );
+
+        fs::write(
+            store.config_path(),
+            "[ui]\nmouse = true\nlanguage = \"en\"\n",
+        )
+        .expect("write en config");
+        assert_eq!(
+            store.load_config().expect("en config").ui.language,
+            LanguagePreference::English
+        );
+    }
+
+    #[test]
     fn repeated_state_write_replaces_previous_content() {
         let root = tempdir().expect("tempdir");
         let store = FileStore::at(root.path());
