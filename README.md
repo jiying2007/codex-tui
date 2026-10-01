@@ -166,7 +166,7 @@ language = "auto" # auto | en | zh-CN
 
 `auto` is the default and follows the process locale in standard precedence order: `LC_ALL`, then `LC_MESSAGES`, then `LANG`. Chinese locales such as `zh_CN.UTF-8` or `zh-CN` select Simplified Chinese; other or unavailable locales select English. Use `en` or `zh-CN` to pin the UI language explicitly. Technical identifiers and upstream error text remain unchanged so terminal output still matches Codex/Git/Forge diagnostics.
 
-Normal startup launches a local `codex app-server --listen stdio://` connection after the first UI frame. Mission Control stays metadata-first; opening a thread loads only the recent conversation page. Thread View supports paginated history, persistent local drafts, turn start/steer/interrupt, approvals, user-input requests, and stable Codex Goal projection when the connected App Server supports it.
+Normal startup launches a local `codex app-server --listen stdio://` connection after the first UI frame. Mission Control stays metadata-first; opening a thread loads only the recent conversation page. Git checkout projection is deduplicated by exact cwd and the selected/active checkouts are refreshed every 10 seconds so branch/dirty state does not remain frozen after the initial probe. Thread View supports paginated history, persistent local drafts, turn start/steer/interrupt, approvals, user-input requests, and stable Codex Goal projection when the connected App Server supports it.
 
 Personal planning state is stored locally in SQLite: WorkCard relationships/overlays, ScratchWork, Saved Views, notes, bookmarks, snooze and hot slots. Canonical Codex conversations/Goals and Git state are never copied into SQLite.
 

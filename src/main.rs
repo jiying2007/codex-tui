@@ -817,6 +817,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
 
     let mut terminal = TerminalSession::enter(config.ui.mouse)?;
     let mut last_fake_tick = Instant::now();
+    let mut last_git_reconcile = Instant::now();
     let mut last_forge_reconcile = Instant::now();
     let mut needs_render = true;
 
@@ -925,6 +926,12 @@ async fn run_app(fake_mode: bool) -> Result<()> {
 
         let terminal_changed = drain_terminal_drawer(&mut app, &mut services.terminal_drawer);
         needs_render |= terminal_changed;
+
+        if last_git_reconcile.elapsed() >= Duration::from_secs(10) {
+            let effects = reduce(&mut app, Action::RefreshActiveGitProjections);
+            apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
+            last_git_reconcile = Instant::now();
+        }
 
         if last_forge_reconcile.elapsed() >= Duration::from_secs(15) {
             let effects = reduce(&mut app, Action::RefreshForgeProjections);
