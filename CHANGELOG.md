@@ -62,6 +62,7 @@ All notable codex-tui changes are recorded here.
 - completed the advertised Ctrl+K command palette: it now opens a bilingual contextual action/navigation menu, traps j/k/Enter/Esc while active, executes existing commands through the normal reducer/effect paths, and leaves focused PTY input authoritative.
 - stabilized Command Palette intent across asynchronous Registry/Git updates by snapshotting contextual entries on open; render, navigation and Enter now use the same frozen list so background eligibility changes cannot silently retarget the highlighted command.
 - aligned Command Palette thread targeting with Mission Control/Board keyboard semantics: selected thread-backed items now expose Quick Prompt, Review and Workspace from Registry and Board instead of requiring an already-open Thread view.
+- made the advertised global `/` search semantics explicit: invoking Search from Thread/Review/Workspace/Board/Scratch enters Mission Control metadata search, Esc restores the exact origin view and prior filter when that target still exists (otherwise safely remains in Registry), while Enter commits the filter and remains in Registry results.
 
 ## [1.0.0] - 2026-09-30
 

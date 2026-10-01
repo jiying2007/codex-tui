@@ -510,6 +510,7 @@ pub struct AppState {
     pub input_mode: InputMode,
     pub input_buffer: String,
     input_original: String,
+    search_return_view: Option<View>,
 }
 
 #[derive(Clone, Debug)]
@@ -625,6 +626,7 @@ impl AppState {
             input_mode: InputMode::Normal,
             input_buffer: String::new(),
             input_original: String::new(),
+            search_return_view: None,
         }
     }
 
@@ -693,6 +695,16 @@ impl AppState {
             .and_then(|index| self.threads.get(*index))
             .filter(|thread| thread.id == *thread_id)
             .or_else(|| self.threads.iter().find(|thread| thread.id == *thread_id))
+    }
+
+    fn search_return_view_is_valid(&self, view: &View) -> bool {
+        match view {
+            View::Thread(thread_id)
+            | View::Review(thread_id)
+            | View::Workspace(thread_id)
+            | View::ManagedWorktrees(thread_id) => self.thread_by_id(thread_id).is_some(),
+            View::Registry | View::Board | View::Scratch(_) => true,
+        }
     }
 
     fn thread_ids_for_cwd(&self, cwd: &str) -> Vec<ThreadId> {
@@ -2891,6 +2903,15 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             ensure_selection_visible(state);
         }
         Action::BeginSearch => {
+            state.search_return_view = if matches!(state.view, View::Registry) {
+                None
+            } else {
+                Some(state.view.clone())
+            };
+            if state.search_return_view.is_some() {
+                state.view = View::Registry;
+                ensure_selection_visible(state);
+            }
             state.input_original.clone_from(&state.filter);
             state.input_buffer.clone_from(&state.filter);
             state.input_mode = InputMode::Search;
@@ -3478,6 +3499,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.input_buffer.clear();
             state.input_original.clear();
             if was_search {
+                state.search_return_view = None;
                 return refresh_git_projections(state);
             }
         }
@@ -3534,6 +3556,11 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             if state.input_mode == InputMode::Search {
                 state.filter.clone_from(&state.input_original);
                 ensure_selection_visible(state);
+                if let Some(return_view) = state.search_return_view.take()
+                    && state.search_return_view_is_valid(&return_view)
+                {
+                    state.view = return_view;
+                }
             }
             if state.input_mode == InputMode::UserInput {
                 clear_user_input_editor(state);
@@ -4395,6 +4422,72 @@ mod tests {
         assert_eq!(
             app.mutation_notice.as_deref(),
             Some("当前会话不在 Git 仓库中")
+        );
+    }
+
+    #[test]
+    fn global_search_enters_registry_and_cancel_restores_origin_view() {
+        let mut app = app();
+        let thread_id = app.threads[0].id.clone();
+        app.view = View::Thread(thread_id.clone());
+        app.filter = "existing".into();
+
+        reduce(&mut app, Action::BeginSearch);
+        assert_eq!(app.view, View::Registry);
+        assert_eq!(app.input_mode, InputMode::Search);
+        assert_eq!(app.input_buffer, "existing");
+
+        reduce(&mut app, Action::InputText(" audio".into()));
+        assert_eq!(app.filter, "existing audio");
+
+        reduce(&mut app, Action::CancelInput);
+        assert_eq!(app.view, View::Thread(thread_id));
+        assert_eq!(app.filter, "existing");
+        assert_eq!(app.input_mode, InputMode::Normal);
+        assert!(app.search_return_view.is_none());
+    }
+
+    #[test]
+    fn global_search_cancel_falls_back_to_registry_when_origin_thread_disappears() {
+        let mut app = app();
+        let thread_id = app.threads[0].id.clone();
+        app.view = View::Workspace(thread_id.clone());
+        app.filter = "existing".into();
+
+        reduce(&mut app, Action::BeginSearch);
+        let remaining = app
+            .threads
+            .iter()
+            .filter(|thread| thread.id != thread_id)
+            .cloned()
+            .collect();
+        reduce(&mut app, Action::ReplaceThreads(remaining));
+
+        reduce(&mut app, Action::CancelInput);
+        assert_eq!(app.view, View::Registry);
+        assert_eq!(app.filter, "existing");
+        assert_eq!(app.input_mode, InputMode::Normal);
+        assert!(app.search_return_view.is_none());
+    }
+
+    #[test]
+    fn committed_global_search_stays_in_registry_with_filter() {
+        let mut app = app();
+        let thread_id = app.threads[0].id.clone();
+        app.view = View::Review(thread_id);
+
+        reduce(&mut app, Action::BeginSearch);
+        reduce(&mut app, Action::InputText("audio".into()));
+        let effects = reduce(&mut app, Action::CommitInput);
+
+        assert_eq!(app.view, View::Registry);
+        assert_eq!(app.filter, "audio");
+        assert_eq!(app.input_mode, InputMode::Normal);
+        assert!(app.search_return_view.is_none());
+        assert!(
+            effects
+                .iter()
+                .all(|effect| matches!(effect, Effect::ProbeGit { .. }))
         );
     }
 
