@@ -9,10 +9,13 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use tokio::sync::{Mutex, mpsc};
-use tokio::task::JoinHandle;
+use tokio::task::{JoinHandle, JoinSet};
 
 const MAX_MR_TITLE_BYTES: usize = 512;
 const MAX_COMMENT_BYTES: usize = 64 * 1024;
+const MUTATION_COMMAND_QUEUE_CAPACITY: usize = 32;
+const MUTATION_EVENT_QUEUE_CAPACITY: usize = 64;
+const MUTATION_MAX_CONCURRENCY: usize = 4;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -358,15 +361,15 @@ pub enum ForgeMutationEvent {
 }
 
 pub struct ForgeMutationHandle {
-    command_tx: mpsc::UnboundedSender<ForgeMutationCommand>,
-    event_rx: mpsc::UnboundedReceiver<ForgeMutationEvent>,
+    command_tx: mpsc::Sender<ForgeMutationCommand>,
+    event_rx: mpsc::Receiver<ForgeMutationEvent>,
     task: JoinHandle<()>,
 }
 
 impl ForgeMutationHandle {
     pub fn start(store: SqliteStore) -> Self {
-        let (command_tx, command_rx) = mpsc::unbounded_channel();
-        let (event_tx, event_rx) = mpsc::unbounded_channel();
+        let (command_tx, command_rx) = mpsc::channel(MUTATION_COMMAND_QUEUE_CAPACITY);
+        let (event_tx, event_rx) = mpsc::channel(MUTATION_EVENT_QUEUE_CAPACITY);
         let locks = Arc::new(Mutex::new(BTreeMap::new()));
         let task = tokio::spawn(run_coordinator(store, locks, command_rx, event_tx));
         Self {
@@ -377,20 +380,29 @@ impl ForgeMutationHandle {
     }
 
     pub fn execute(&self, request: ForgeMutationRequest) -> Result<()> {
-        self.command_tx
-            .send(ForgeMutationCommand::Execute(Box::new(request)))
-            .map_err(|_| anyhow!("forge mutation coordinator is unavailable"))
+        queue_mutation_command(
+            &self.command_tx,
+            ForgeMutationCommand::Execute(Box::new(request)),
+        )
     }
 
     pub fn recover(&self) -> Result<()> {
-        self.command_tx
-            .send(ForgeMutationCommand::Recover)
-            .map_err(|_| anyhow!("forge mutation coordinator is unavailable"))
+        queue_mutation_command(&self.command_tx, ForgeMutationCommand::Recover)
     }
 
     pub fn try_recv(&mut self) -> Option<ForgeMutationEvent> {
         self.event_rx.try_recv().ok()
     }
+}
+
+fn queue_mutation_command(
+    tx: &mpsc::Sender<ForgeMutationCommand>,
+    command: ForgeMutationCommand,
+) -> Result<()> {
+    tx.try_send(command).map_err(|error| match error {
+        mpsc::error::TrySendError::Full(_) => anyhow!("forge mutation coordinator queue is full"),
+        mpsc::error::TrySendError::Closed(_) => anyhow!("forge mutation coordinator is unavailable"),
+    })
 }
 
 impl Drop for ForgeMutationHandle {
@@ -404,39 +416,62 @@ type ProjectLocks = Arc<Mutex<BTreeMap<String, Arc<Mutex<()>>>>>;
 async fn run_coordinator(
     store: SqliteStore,
     locks: ProjectLocks,
-    mut command_rx: mpsc::UnboundedReceiver<ForgeMutationCommand>,
-    event_tx: mpsc::UnboundedSender<ForgeMutationEvent>,
+    mut command_rx: mpsc::Receiver<ForgeMutationCommand>,
+    event_tx: mpsc::Sender<ForgeMutationEvent>,
 ) {
-    while let Some(command) = command_rx.recv().await {
-        match command {
-            ForgeMutationCommand::Execute(request) => {
-                let store = store.clone();
-                let locks = locks.clone();
-                let event_tx = event_tx.clone();
-                tokio::spawn(async move {
-                    match execute_with_project_lock(&store, &locks, *request).await {
-                        Ok(receipt) => {
-                            let _ = event_tx.send(ForgeMutationEvent::Receipt(Box::new(receipt)));
-                        }
-                        Err(error) => {
-                            let _ = event_tx.send(ForgeMutationEvent::Notice(format!(
-                                "forge mutation coordinator failed: {error:#}"
-                            )));
-                        }
-                    }
-                });
+    let mut tasks = JoinSet::new();
+    let mut command_open = true;
+
+    loop {
+        tokio::select! {
+            joined = tasks.join_next(), if !tasks.is_empty() => {
+                let _ = joined;
             }
-            ForgeMutationCommand::Recover => {
-                let store = store.clone();
-                let locks = locks.clone();
-                let event_tx = event_tx.clone();
-                tokio::spawn(async move {
-                    if let Err(error) = recover_incomplete(&store, &locks, &event_tx).await {
-                        let _ = event_tx.send(ForgeMutationEvent::Notice(format!(
-                            "forge mutation recovery failed: {error:#}"
-                        )));
+            command = command_rx.recv(), if command_open && tasks.len() < MUTATION_MAX_CONCURRENCY => {
+                match command {
+                    Some(command) => {
+                        let store = store.clone();
+                        let locks = locks.clone();
+                        let event_tx = event_tx.clone();
+                        tasks.spawn(async move {
+                            match command {
+                                ForgeMutationCommand::Execute(request) => {
+                                    match execute_with_project_lock(&store, &locks, *request).await {
+                                        Ok(receipt) => {
+                                            let _ = event_tx
+                                                .send(ForgeMutationEvent::Receipt(Box::new(receipt)))
+                                                .await;
+                                        }
+                                        Err(error) => {
+                                            let _ = event_tx
+                                                .send(ForgeMutationEvent::Notice(format!(
+                                                    "forge mutation coordinator failed: {error:#}"
+                                                )))
+                                                .await;
+                                        }
+                                    }
+                                }
+                                ForgeMutationCommand::Recover => {
+                                    if let Err(error) =
+                                        recover_incomplete(&store, &locks, &event_tx).await
+                                    {
+                                        let _ = event_tx
+                                            .send(ForgeMutationEvent::Notice(format!(
+                                                "forge mutation recovery failed: {error:#}"
+                                            )))
+                                            .await;
+                                    }
+                                }
+                            }
+                        });
                     }
-                });
+                    None => command_open = false,
+                }
+            }
+            else => {
+                if !command_open && tasks.is_empty() {
+                    break;
+                }
             }
         }
     }
@@ -1176,7 +1211,7 @@ async fn reconcile_outcome(plan: &ForgeMutationPlan) -> Result<ReconciledOutcome
 async fn recover_incomplete(
     store: &SqliteStore,
     locks: &ProjectLocks,
-    tx: &mpsc::UnboundedSender<ForgeMutationEvent>,
+    tx: &mpsc::Sender<ForgeMutationEvent>,
 ) -> Result<()> {
     let receipts = store.load_recoverable_forge_mutation_receipts()?;
     for mut receipt in receipts {
@@ -1199,7 +1234,9 @@ async fn recover_incomplete(
             }
             receipt = reconcile_receipt(store, receipt).await?;
         }
-        let _ = tx.send(ForgeMutationEvent::Receipt(Box::new(receipt)));
+        let _ = tx
+            .send(ForgeMutationEvent::Receipt(Box::new(receipt)))
+            .await;
     }
     Ok(())
 }
@@ -1217,6 +1254,28 @@ mod tests {
             web_url: "https://gitlab.example.com/team/repo".into(),
             default_branch: Some("main".into()),
         }
+    }
+
+    #[test]
+    fn mutation_coordinator_channels_are_bounded() {
+        let source = include_str!("forge_mutation.rs");
+        let production = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("production source");
+        assert!(!production.contains("unbounded_channel"));
+        assert!(!production.contains("UnboundedSender"));
+        assert!(!production.contains("UnboundedReceiver"));
+        assert!(production.contains("JoinSet"));
+    }
+
+    #[test]
+    fn mutation_command_queue_reports_backpressure() {
+        let (tx, _rx) = mpsc::channel(1);
+        queue_mutation_command(&tx, ForgeMutationCommand::Recover).expect("first command");
+        let error = queue_mutation_command(&tx, ForgeMutationCommand::Recover)
+            .expect_err("second command must hit bounded queue");
+        assert!(error.to_string().contains("queue is full"));
     }
 
     #[test]
