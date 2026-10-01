@@ -2755,7 +2755,7 @@ fn centered_fixed(width: u16, height: u16, area: Rect) -> Rect {
 
 const HELP_LINES: &[&str] = &[
     "Global: ? help · Ctrl+K palette · / search · . actions · Esc back",
-    "Registry: j/k · Enter · Space attention · / search · l local-only · g repo-only · h recent/all-history · p pin · e alias · x ack",
+    "Registry: j/k · Enter · Space attention · l local-only · g repo-only · h recent/all-history · p pin · e alias · x ack",
     "Thread: a composer · y/n/c approval · i answer · Ctrl+C interrupt · r review",
     "Review: j/k file · w word-diff · e editor · . Forge actions · PageUp/PageDown · Esc",
     "Workspace: Git + Forge · . actions/launch presets · r review · m worktrees · Esc",
@@ -2770,7 +2770,7 @@ const HELP_LINES: &[&str] = &[
 
 const HELP_LINES_ZH: &[&str] = &[
     "全局: ? 帮助 · Ctrl+K 命令面板 · / 搜索 · . 操作 · Esc 返回",
-    "任务中心: j/k 移动 · Enter 打开 · Space 待处理 · / 搜索 · l 仅本机 · g 仅仓库 · h 最近/全部历史 · p 固定 · e 别名 · x 已处理",
+    "任务中心: j/k 移动 · Enter 打开 · Space 待处理 · l 仅本机 · g 仅仓库 · h 最近/全部历史 · p 固定 · e 别名 · x 已处理",
     "会话: a 编辑消息 · y/n/c 审批 · i 回答 · Ctrl+C 中断 · r 评审",
     "评审: j/k 文件 · w 单词级 diff · e 编辑器 · . Forge 操作 · PageUp/PageDown · Esc",
     "工作区: Git + Forge · . 操作/启动预设 · r 评审 · m worktree · Esc",
@@ -2958,7 +2958,7 @@ mod tests {
 
     #[test]
     fn english_help_tokens_exactly_match_the_executable_key_contract() {
-        let mut surfaces = HELP_BINDINGS
+        let surfaces = HELP_BINDINGS
             .iter()
             .map(|binding| binding.surface)
             .collect::<BTreeSet<_>>();
@@ -2985,7 +2985,6 @@ mod tests {
                 "Help/keymap contract drift on {surface}"
             );
         }
-        surfaces.clear();
     }
 
     #[test]
