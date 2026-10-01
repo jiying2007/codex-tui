@@ -43,7 +43,7 @@ def main() -> int:
     scale = json.loads(scale_path.read_text(encoding="utf-8"))
     soak = json.loads(soak_path.read_text(encoding="utf-8"))
 
-    if failure_matrix.get("schema") != "codex-tui/failure-matrix/v1":
+    if failure_matrix.get("schema") != "codex-tui/failure-matrix/v2":
         raise SystemExit("unexpected Failure Matrix schema")
     cases = failure_matrix.get("cases")
     if not isinstance(cases, list) or not cases:
