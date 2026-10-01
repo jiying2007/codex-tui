@@ -601,7 +601,9 @@ impl AppState {
         thread: &ThreadSummary,
         normalized_query: &str,
     ) -> bool {
-        matches_filter_normalized(thread, normalized_query)
+        let locality = filter_requires_locality(normalized_query)
+            .then(|| self.cwd_locality(&thread.metadata.cwd));
+        matches_filter_normalized(thread, normalized_query, locality)
             && (!self.host_local_only
                 || self.cwd_locality(&thread.metadata.cwd) == CwdLocality::LocalDirectory)
             && self.thread_matches_repo_scope(thread)
@@ -2668,6 +2670,9 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 state.input_buffer.push(character);
                 if state.input_mode == InputMode::Search {
                     state.filter.clone_from(&state.input_buffer);
+                    if filter_requires_locality(&state.filter) {
+                        state.reconcile_cwd_locality_cache(true);
+                    }
                     ensure_selection_visible(state);
                 }
             }
@@ -2701,6 +2706,9 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 state.input_buffer.pop();
                 if state.input_mode == InputMode::Search {
                     state.filter.clone_from(&state.input_buffer);
+                    if filter_requires_locality(&state.filter) {
+                        state.reconcile_cwd_locality_cache(true);
+                    }
                     ensure_selection_visible(state);
                 }
             }
@@ -3842,12 +3850,26 @@ fn ensure_selection_visible(state: &mut AppState) {
     }
 }
 
-fn matches_filter_normalized(thread: &ThreadSummary, query: &str) -> bool {
+fn is_locality_filter_token(token: &str) -> bool {
+    matches!(
+        token,
+        "local" | "stale" | "foreign-windows" | "foreign-unix" | "relative" | "empty"
+    )
+}
+
+fn filter_requires_locality(query: &str) -> bool {
+    query.split_whitespace().any(is_locality_filter_token)
+}
+
+fn matches_filter_normalized(
+    thread: &ThreadSummary,
+    query: &str,
+    locality: Option<CwdLocality>,
+) -> bool {
     if query.is_empty() {
         return true;
     }
 
-    let locality = classify_cwd(&thread.metadata.cwd).label();
     let fields = [
         thread.id.0.as_str(),
         thread.display_title(),
@@ -3858,16 +3880,12 @@ fn matches_filter_normalized(thread: &ThreadSummary, query: &str) -> bool {
         thread.metadata.workspace_key.as_str(),
         thread.metadata.model.as_deref().unwrap_or_default(),
         thread.metadata.project_id.as_deref().unwrap_or_default(),
-        locality,
     ]
     .map(str::to_lowercase);
 
     query.split_whitespace().all(|token| {
-        if matches!(
-            token,
-            "local" | "stale" | "foreign-windows" | "foreign-unix" | "relative" | "empty"
-        ) {
-            token == locality
+        if is_locality_filter_token(token) {
+            locality.is_some_and(|locality| token == locality.label())
         } else {
             fields.iter().any(|field| fuzzy_subsequence(token, field))
         }
@@ -4025,6 +4043,19 @@ mod tests {
             app.mutation_notice
                 .as_deref()
                 .is_some_and(|notice| notice.contains("Windows cwd"))
+        );
+    }
+
+    #[test]
+    fn ordinary_registry_search_does_not_probe_filesystem_locality() {
+        let mut app = AppState::new(FakeBackend::scaled(10_000).snapshot().threads);
+        app.filter = "repo-031 synthetic 099".into();
+
+        let _ = app.visible_indices_with_match_count();
+
+        assert!(
+            app.cwd_localities.is_empty(),
+            "ordinary text search must not populate cwd filesystem locality"
         );
     }
 
