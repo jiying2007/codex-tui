@@ -51,7 +51,7 @@ jobs:
 
           cat > "$OUT/failure-matrix.json" <<'EOF'
           {
-            "schema": "codex-tui/failure-matrix/v1",
+            "schema": "codex-tui/failure-matrix/v2",
             "cases": [
               {
                 "id": "fixture",
