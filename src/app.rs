@@ -6,7 +6,7 @@ use crate::conversation::{
 };
 use crate::domain::{
     AttentionReason, CwdLocality, LocalRepoIdentity, RuntimeStatus, ThreadId, ThreadSummary,
-    ThreadUiState, classify_cwd,
+    ThreadUiState, classify_cwd, classify_cwd_without_io,
 };
 use crate::forge::{
     CapabilityState, ChangeRequestSummary, ForgeCapability, ForgeIdentity, ForgeObservation,
@@ -613,6 +613,13 @@ impl AppState {
             .get(cwd)
             .copied()
             .unwrap_or_else(|| classify_cwd(cwd))
+    }
+
+    pub fn cwd_locality_for_display(&self, cwd: &str) -> Option<CwdLocality> {
+        self.cwd_localities
+            .get(cwd)
+            .copied()
+            .or_else(|| classify_cwd_without_io(cwd))
     }
 
     fn refresh_cwd_locality(&mut self, cwd: &str) -> CwdLocality {
