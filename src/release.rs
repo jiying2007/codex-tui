@@ -510,9 +510,7 @@ pub fn run_cli(args: &[String]) -> Result<i32> {
         Some("failure-matrix") => return crate::hardening::run_cli(&args[1..]),
         Some("verify") => {}
         _ => {
-            anyhow::bail!(
-                "usage: codex-tui release <verify|benchmark|scale|failure-matrix> ..."
-            );
+            anyhow::bail!("usage: codex-tui release <verify|benchmark|scale|failure-matrix> ...");
         }
     }
 
