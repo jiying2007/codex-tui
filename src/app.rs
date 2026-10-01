@@ -1055,41 +1055,72 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::RefreshGitProjections => {
             let mut effects = Vec::new();
             let mut host_local_thread_ids = BTreeSet::new();
+            let mut threads_by_cwd = BTreeMap::<String, Vec<ThreadId>>::new();
+
             for thread in &state.threads {
                 if !classify_cwd(&thread.metadata.cwd).terminal_usable() {
                     continue;
                 }
                 host_local_thread_ids.insert(thread.id.0.clone());
-                let needs_probe = state
-                    .git_contexts
-                    .get(&thread.id.0)
-                    .is_none_or(|context| context.cwd != thread.metadata.cwd);
-                if needs_probe {
-                    state.git_contexts.insert(
-                        thread.id.0.clone(),
-                        GitContext::pending(thread.id.clone(), thread.metadata.cwd.clone()),
-                    );
-                    effects.push(Effect::ProbeGit {
-                        thread_id: thread.id.clone(),
-                        cwd: thread.metadata.cwd.clone(),
-                    });
-                }
+                threads_by_cwd
+                    .entry(thread.metadata.cwd.clone())
+                    .or_default()
+                    .push(thread.id.clone());
             }
+
             state
                 .git_contexts
                 .retain(|thread_id, _| host_local_thread_ids.contains(thread_id));
             state
                 .forge_observations
                 .retain(|thread_id, _| host_local_thread_ids.contains(thread_id));
+
+            for (cwd, thread_ids) in threads_by_cwd {
+                let existing = thread_ids.iter().find_map(|thread_id| {
+                    state
+                        .git_contexts
+                        .get(&thread_id.0)
+                        .filter(|context| context.cwd == cwd)
+                        .cloned()
+                });
+
+                if let Some(existing) = existing {
+                    for thread_id in thread_ids {
+                        let needs_projection = state
+                            .git_contexts
+                            .get(&thread_id.0)
+                            .is_none_or(|context| context.cwd != cwd);
+                        if needs_projection {
+                            let mut projection = existing.clone();
+                            projection.thread_id = thread_id.clone();
+                            state.git_contexts.insert(thread_id.0, projection);
+                        }
+                    }
+                    continue;
+                }
+
+                let Some(leader) = thread_ids.first().cloned() else {
+                    continue;
+                };
+                for thread_id in thread_ids {
+                    state.git_contexts.insert(
+                        thread_id.0.clone(),
+                        GitContext::pending(thread_id, cwd.clone()),
+                    );
+                }
+                effects.push(Effect::ProbeGit {
+                    thread_id: leader,
+                    cwd,
+                });
+            }
+
             return effects;
         }
         Action::RefreshForgeProjections => {
             return refresh_forge_projections(state);
         }
         Action::GitContextLoaded(context) => {
-            state
-                .git_contexts
-                .insert(context.thread_id.0.clone(), context);
+            propagate_git_context(state, context);
             ensure_selection_visible(state);
         }
         Action::ForgeObservationLoaded(observation) => {
@@ -3052,6 +3083,21 @@ fn refresh_forge_projections(state: &mut AppState) -> Vec<Effect> {
     }
 
     effects
+}
+
+fn propagate_git_context(state: &mut AppState, context: GitContext) {
+    let target_ids = state
+        .threads
+        .iter()
+        .filter(|thread| thread.metadata.cwd == context.cwd)
+        .map(|thread| thread.id.clone())
+        .collect::<Vec<_>>();
+
+    for thread_id in target_ids {
+        let mut projection = context.clone();
+        projection.thread_id = thread_id.clone();
+        state.git_contexts.insert(thread_id.0, projection);
+    }
 }
 
 fn propagate_forge_observation(state: &mut AppState, observation: ForgeObservation) {
