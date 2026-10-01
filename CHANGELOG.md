@@ -19,6 +19,7 @@ All notable codex-tui changes are recorded here.
 - reserved screen rows for Terminal Drawer instead of overlaying it on Mission Control/Thread/Review/Workspace/Board content, keeping scrollbars, footers and context visible;
 - reduced Mission Control Selected-detail noise, hid unavailable Forge internals from daily UI, and made custom Forge hosts require explicit gh/glab authentication instead of defaulting every non-GitHub host to GitLab.
 - reduced Mission Control render work by computing Registry visibility and total match count in one projection pass and folding locality counts once.
+- hardened reducer routing so Context/Forge/Scratch/batch state drift fails closed with an operator notice instead of panicking the TUI.
 
 ## [1.0.0] - 2026-09-30
 
