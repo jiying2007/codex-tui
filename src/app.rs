@@ -2359,21 +2359,16 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::ToggleHostLocalFilter => {
             state.host_local_only = !state.host_local_only;
             ensure_selection_visible(state);
-            let mut effects = vec![Effect::PersistOperatorState];
-            effects.extend(refresh_git_projections(state));
-            return effects;
+            return vec![Effect::PersistOperatorState];
         }
         Action::ToggleRepoBackedFilter => {
             state.repo_backed_only = !state.repo_backed_only;
             ensure_selection_visible(state);
-            let mut effects = vec![Effect::PersistOperatorState];
-            effects.extend(refresh_git_projections(state));
-            return effects;
+            return vec![Effect::PersistOperatorState];
         }
         Action::ToggleAllHistory => {
             state.show_all_history = !state.show_all_history;
             ensure_selection_visible(state);
-            return refresh_git_projections(state);
         }
         Action::BeginSearch => {
             state.input_original.clone_from(&state.filter);
@@ -3041,13 +3036,8 @@ fn git_projection_target_ids(state: &AppState) -> Vec<ThreadId> {
     let mut target_ids = Vec::new();
     let mut seen = BTreeSet::new();
     let visible = state.visible_indices();
-    let visible_limit = if state.filter.is_empty() && !state.show_all_history {
-        visible.len()
-    } else {
-        REGISTRY_RECENT_LIMIT.min(visible.len())
-    };
 
-    for index in visible.into_iter().take(visible_limit) {
+    for index in visible.into_iter().take(REGISTRY_RECENT_LIMIT) {
         let thread = &state.threads[index];
         if seen.insert(thread.id.0.clone()) {
             target_ids.push(thread.id.clone());
