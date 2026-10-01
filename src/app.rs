@@ -34,6 +34,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
 const REGISTRY_RECENT_LIMIT: usize = 100;
 const CONVERSATION_CACHE_LIMIT: usize = 16;
+const GIT_REVIEW_CACHE_LIMIT: usize = 4;
 
 fn local_text(
     language: UiLanguage,
@@ -413,6 +414,7 @@ pub struct AppState {
     cwd_localities: BTreeMap<String, CwdLocality>,
     pub forge_observations: BTreeMap<String, ForgeObservation>,
     pub git_reviews: BTreeMap<String, GitReview>,
+    git_review_cache_order: VecDeque<String>,
     pub planning_snapshot: PlanningSnapshot,
     pub work_cards: Vec<WorkCardProjection>,
     work_card_by_thread: BTreeMap<String, usize>,
@@ -501,6 +503,7 @@ impl AppState {
             cwd_localities: BTreeMap::new(),
             forge_observations: BTreeMap::new(),
             git_reviews: BTreeMap::new(),
+            git_review_cache_order: VecDeque::new(),
             planning_snapshot: PlanningSnapshot::default(),
             work_cards: vec![],
             work_card_by_thread: BTreeMap::new(),
@@ -590,6 +593,31 @@ impl AppState {
                 continue;
             }
             self.conversations.remove(&evicted);
+        }
+    }
+
+    fn prepare_git_review(&mut self, thread_id: &ThreadId, cwd: String) {
+        self.git_reviews.insert(
+            thread_id.0.clone(),
+            GitReview::pending(thread_id.clone(), cwd),
+        );
+        self.touch_git_review_cache(thread_id);
+    }
+
+    fn touch_git_review_cache(&mut self, thread_id: &ThreadId) {
+        self.git_review_cache_order
+            .retain(|candidate| candidate != &thread_id.0);
+        self.git_review_cache_order.push_back(thread_id.0.clone());
+
+        while self.git_review_cache_order.len() > GIT_REVIEW_CACHE_LIMIT {
+            let Some(evicted) = self.git_review_cache_order.pop_front() else {
+                break;
+            };
+            if matches!(&self.view, View::Review(current) if current.0 == evicted) {
+                self.git_review_cache_order.push_back(evicted);
+                continue;
+            }
+            self.git_reviews.remove(&evicted);
         }
     }
 
@@ -1341,9 +1369,11 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
         }
         Action::GitReviewLoaded(review) => {
-            let key = review.thread_id.0.clone();
+            let thread_id = review.thread_id.clone();
+            let key = thread_id.0.clone();
             let len = review.changes.len();
             state.git_reviews.insert(key, review);
+            state.touch_git_review_cache(&thread_id);
             state.review_selected = if len == 0 {
                 0
             } else {
@@ -2269,8 +2299,9 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             let review = state
                 .git_reviews
                 .entry(thread_id.0.clone())
-                .or_insert_with(|| GitReview::pending(thread_id, ""));
+                .or_insert_with(|| GitReview::pending(thread_id.clone(), ""));
             review.error = Some(error);
+            state.touch_git_review_cache(&thread_id);
         }
         Action::OpenReview => {
             let thread_id = match &state.view {
@@ -2302,10 +2333,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
             state.review_selected = 0;
             state.review_scroll = 0;
-            state.git_reviews.insert(
-                thread_id.0.clone(),
-                GitReview::pending(thread_id.clone(), cwd.clone()),
-            );
+            state.prepare_git_review(&thread_id, cwd.clone());
 
             let forge_review_effect = state
                 .git_context(&thread_id)
@@ -4941,6 +4969,50 @@ mod tests {
         );
         reduce(&mut app, Action::Back);
         assert_eq!(app.view, View::Registry);
+    }
+
+    #[test]
+    fn git_review_cache_is_lru_bounded() {
+        let mut app = AppState::new(
+            FakeBackend::scaled(GIT_REVIEW_CACHE_LIMIT + 1)
+                .snapshot()
+                .threads,
+        );
+        let ids = app
+            .threads
+            .iter()
+            .map(|thread| thread.id.clone())
+            .collect::<Vec<_>>();
+        for (index, thread) in app.threads.iter_mut().enumerate() {
+            thread.metadata.cwd = format!("/repo/{index}");
+        }
+
+        for index in 0..GIT_REVIEW_CACHE_LIMIT {
+            app.view = View::Registry;
+            app.selected = index;
+            assert!(
+                reduce(&mut app, Action::OpenReview)
+                    .iter()
+                    .any(|effect| matches!(effect, Effect::LoadGitReview { .. }))
+            );
+        }
+        assert_eq!(app.git_reviews.len(), GIT_REVIEW_CACHE_LIMIT);
+
+        app.view = View::Registry;
+        app.selected = 0;
+        reduce(&mut app, Action::OpenReview);
+
+        app.view = View::Registry;
+        app.selected = GIT_REVIEW_CACHE_LIMIT;
+        reduce(&mut app, Action::OpenReview);
+
+        assert_eq!(app.git_reviews.len(), GIT_REVIEW_CACHE_LIMIT);
+        assert!(app.git_reviews.contains_key(&ids[0].0));
+        assert!(!app.git_reviews.contains_key(&ids[1].0));
+        assert!(
+            app.git_reviews
+                .contains_key(&ids[GIT_REVIEW_CACHE_LIMIT].0)
+        );
     }
 
     #[test]
