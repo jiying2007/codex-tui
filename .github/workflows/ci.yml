@@ -47,7 +47,7 @@ jobs:
           OUT="$RUNNER_TEMP/release-py38"
           mkdir -p "$OUT"
 
-          python scripts/release/create_terminal_receipt.py             --platform linux             --terminal ci-python38             --pass             --output "$OUT/terminal.json"
+          python scripts/release/create_terminal_receipt.py             --platform linux             --terminal ci-python38             --source-sha 0123456789abcdef0123456789abcdef01234567             --pass             --output "$OUT/terminal.json"
 
           cat > "$OUT/failure-matrix.json" <<'EOF'
           {
@@ -138,7 +138,12 @@ jobs:
           assert all(re.fullmatch(r"[0-9a-f]{64}", value) for value in receipt["artifacts"].values())
           PY
 
-          python scripts/release/create_evidence.py             --output "$OUT/evidence.json"             --compat-schema codex-tui/compat/v2             --version 1.0.0             --commit 0123456789abcdef0123456789abcdef01234567             --canonical-ci-run 1             --automated-qualification "$OUT/automated-qualification.json"             --linux-compat-sha256 "$(printf 'a%.0s' {1..64})"             --linux-compat-observed-at 2026-09-30T00:00:00Z             --linux-terminal ci-python38             --linux-terminal-observed-at 2026-09-30T00:00:00Z             --performance-iterations 200             --performance-p95-ms 1             --performance-p99-ms 2             --performance-source ci-python38             --performance-observed-at 2026-09-30T00:00:00Z
+          python scripts/release/create_evidence.py             --output "$OUT/evidence.json"             --compat-schema codex-tui/compat/v2             --version 1.0.0             --commit 0123456789abcdef0123456789abcdef01234567             --canonical-ci-run 1             --automated-qualification "$OUT/automated-qualification.json"             --linux-source-sha 0123456789abcdef0123456789abcdef01234567             --linux-compat-sha256 "$(printf 'a%.0s' {1..64})"             --linux-compat-observed-at 2026-09-30T00:00:00Z             --linux-terminal ci-python38             --linux-terminal-observed-at 2026-09-30T00:00:00Z             --performance-source-sha 0123456789abcdef0123456789abcdef01234567             --performance-iterations 200             --performance-p95-ms 1             --performance-p99-ms 2             --performance-source ci-python38             --performance-observed-at 2026-09-30T00:00:00Z
+
+          if python scripts/release/create_evidence.py             --output "$OUT/evidence-mismatch.json"             --compat-schema codex-tui/compat/v2             --version 1.0.0             --commit 0123456789abcdef0123456789abcdef01234567             --canonical-ci-run 1             --automated-qualification "$OUT/automated-qualification.json"             --linux-source-sha 1123456789abcdef0123456789abcdef01234567             --linux-compat-sha256 "$(printf 'a%.0s' {1..64})"             --linux-compat-observed-at 2026-09-30T00:00:00Z             --linux-terminal ci-python38             --linux-terminal-observed-at 2026-09-30T00:00:00Z             --performance-source-sha 0123456789abcdef0123456789abcdef01234567             --performance-iterations 200             --performance-p95-ms 1             --performance-p99-ms 2             --performance-source ci-python38             --performance-observed-at 2026-09-30T00:00:00Z; then
+            echo "expected cross-SHA real evidence to fail" >&2
+            exit 1
+          fi
 
           python scripts/release/extract_changelog.py             --version 1.0.0             --require-released             --output "$OUT/RELEASE_NOTES.md"
 

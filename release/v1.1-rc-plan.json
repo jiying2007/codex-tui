@@ -48,7 +48,7 @@
       "requiredForTeamReuseQualification": false,
       "canBeSynthesized": false,
       "collector": "scripts/release/linux_qualify.py",
-      "expectedEvidence": "retained READY codex-tui/compat/v2 report bound by SHA-256"
+      "expectedEvidence": "retained READY codex-tui/compat/v2 report with sourceSha equal to the exact candidate and report SHA-256 retained"
     },
     {
       "id": "linux-terminal-restoration",
@@ -57,7 +57,16 @@
       "requiredForTeamReuseQualification": false,
       "canBeSynthesized": false,
       "collector": "scripts/release/linux_qualify.py --terminal-receipt <real-receipt.json>",
-      "expectedEvidence": "retained PASS codex-tui/terminal-restoration/v1 receipt from a real controlling TTY"
+      "expectedEvidence": "retained PASS codex-tui/terminal-restoration/v1 receipt with sourceSha equal to the exact candidate from a real controlling TTY"
+    },
+    {
+      "id": "linux-performance-diagnostics",
+      "criteriaGate": "performance-diagnostics",
+      "requiredForStable": true,
+      "requiredForTeamReuseQualification": false,
+      "canBeSynthesized": false,
+      "collector": "scripts/release/linux_qualify.py",
+      "expectedEvidence": "retained resident-planning-10k report with at least 200 samples and sourceSha equal to the exact candidate; p95/p99 are diagnostic rather than hosted-runner pass/fail thresholds"
     },
     {
       "id": "internal-gitlab-provider",

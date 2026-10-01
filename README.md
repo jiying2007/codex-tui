@@ -289,6 +289,7 @@ After completing the documented real-TTY Terminal Drawer smoke on Linux:
 python3 scripts/release/create_terminal_receipt.py \
   --platform linux \
   --terminal "<your terminal>" \
+  --source-sha "$(git rev-parse HEAD)" \
   --pass \
   --output release/evidence/linux/terminal-linux.json
 
@@ -300,4 +301,4 @@ python3 scripts/release/linux_qualify.py \
 # Add --dispatch to trigger stable + publish=false automatically after local PASS.
 ```
 
-The second command verifies a clean exact-main SHA, canonical CI, locked tests/build, READY `compat/v2`, the exact-SHA 50k scale-v4 startup/interaction distributions, 50k structural soak, support-bundle privacy manifest, state/UI/failure gates, a 200-sample 10k performance diagnostic, evidence assembly, and local stable verification. It does **not** publish.
+The second command verifies a clean exact-main SHA, canonical CI, locked tests/build, source-bound READY `compat/v2` plus terminal receipts, the exact-SHA 50k scale-v4 startup/interaction distributions, 50k structural soak, support-bundle privacy manifest, state/UI/failure gates, a 200-sample 10k performance diagnostic, evidence assembly, and local stable verification. It does **not** publish.

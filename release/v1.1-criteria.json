@@ -42,7 +42,8 @@
   "performance": {
     "fixture": "resident-planning-10k",
     "iterationsMin": 200,
-    "policy": "retain p95/p99 as diagnostic evidence; v1.1 does not fail stable solely on hosted-runner wall-clock thresholds"
+    "policy": "retain p95/p99 as diagnostic evidence; sourceSha must equal the exact release commit; v1.1 does not fail stable solely on hosted-runner wall-clock thresholds",
+    "sourceBound": true
   },
   "requiredGates": [
     {
@@ -93,17 +94,17 @@
     {
       "id": "compatibility",
       "authority": "codex-tui doctor compat --json",
-      "evidence": "Linux READY retained compat/v2 report SHA-256 is required; macOS/Windows remain optional Tier 2 real-environment evidence"
+      "evidence": "Linux READY retained compat/v2 report SHA-256 is required and its sourceSha must equal the exact release commit; macOS/Windows remain optional Tier 2 real-environment evidence"
     },
     {
       "id": "terminal-restoration",
       "authority": "retained real interaction smoke",
-      "evidence": "Linux real controlling-TTY PASS receipt is required; this evidence cannot be synthesized by repository CI"
+      "evidence": "Linux real controlling-TTY PASS receipt is required and its sourceSha must equal the exact release commit; this evidence cannot be synthesized by repository CI"
     },
     {
       "id": "performance-diagnostics",
       "authority": "retained benchmark run",
-      "evidence": "Linux resident-planning-10k >= 200 iterations with finite p95/p99 retained for comparison, not a hosted-runner latency threshold"
+      "evidence": "Linux resident-planning-10k >= 200 iterations with finite p95/p99 and sourceSha equal to the exact release commit; retained for comparison, not a hosted-runner latency threshold"
     },
     {
       "id": "archive-smoke",
@@ -123,5 +124,10 @@
     "generic-plugin-system",
     "generic-multi-agent-framework",
     "terminal-drawer-as-tmux-replacement"
-  ]
+  ],
+  "realEnvironmentEvidence": {
+    "schema": "codex-tui/real-environment-evidence/v1",
+    "exactSourceSha": true,
+    "policy": "compatibility and terminal-restoration receipts must each carry sourceSha equal to the exact release commit; old candidate receipts cannot be replayed onto a new SHA"
+  }
 }
