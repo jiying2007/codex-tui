@@ -3353,10 +3353,10 @@ fn select_next_planning_attention(state: &mut AppState) {
 
 const FORGE_REFRESH_TTL_MS: u64 = 60_000;
 
-fn forge_scope_key(state: &AppState, thread: &ThreadSummary) -> String {
+fn forge_scope_key(state: &AppState, thread_id: &ThreadId, cwd: &str) -> String {
     if let Some(identity) = state
         .forge_observations
-        .get(&thread.id.0)
+        .get(&thread_id.0)
         .and_then(|observation| observation.identity.as_ref())
     {
         format!(
@@ -3366,7 +3366,7 @@ fn forge_scope_key(state: &AppState, thread: &ThreadSummary) -> String {
             identity.project_id
         )
     } else {
-        format!("cwd:{}", thread.metadata.cwd)
+        format!("cwd:{cwd}")
     }
 }
 
@@ -3374,17 +3374,20 @@ fn refresh_forge_projections(state: &mut AppState) -> Vec<Effect> {
     let now = now_unix_ms();
     let mut groups = BTreeMap::<String, Vec<(ThreadId, String)>>::new();
 
-    for thread in &state.threads {
-        let Some(context) = state.git_context(&thread.id) else {
+    for context in state.git_contexts.values() {
+        if !context.is_repository || context.error.is_some() {
+            continue;
+        }
+        let Some(thread) = state.thread_by_id(&context.thread_id) else {
             continue;
         };
-        if !context.is_repository || context.error.is_some() || context.cwd != thread.metadata.cwd {
+        if context.cwd != thread.metadata.cwd {
             continue;
         }
         groups
-            .entry(forge_scope_key(state, thread))
+            .entry(forge_scope_key(state, &context.thread_id, &context.cwd))
             .or_default()
-            .push((thread.id.clone(), thread.metadata.cwd.clone()));
+            .push((context.thread_id.clone(), context.cwd.clone()));
     }
 
     let mut effects = Vec::new();
@@ -3483,13 +3486,10 @@ fn refresh_git_projections(state: &mut AppState) -> Vec<Effect> {
     let target_ids = git_projection_target_ids(state);
     let mut threads_by_cwd = BTreeMap::<String, Vec<ThreadId>>::new();
     for thread_id in target_ids {
-        let Some(thread) = state.threads.iter().find(|thread| thread.id == thread_id) else {
+        let Some(cwd) = thread_cwds.get(&thread_id.0).cloned() else {
             continue;
         };
-        threads_by_cwd
-            .entry(thread.metadata.cwd.clone())
-            .or_default()
-            .push(thread_id);
+        threads_by_cwd.entry(cwd).or_default().push(thread_id);
     }
 
     let mut effects = Vec::new();
@@ -3559,7 +3559,7 @@ fn refresh_active_git_projections(state: &mut AppState) -> Vec<Effect> {
     let mut seen_ids = BTreeSet::new();
     let mut threads_by_cwd = BTreeMap::<String, Vec<ThreadId>>::new();
     if let Some(thread_id) = selected_thread_id
-        && let Some(thread) = state.threads.iter().find(|thread| thread.id == thread_id)
+        && let Some(thread) = state.thread_by_id(&thread_id)
         && seen_ids.insert(thread.id.0.clone())
     {
         threads_by_cwd
@@ -3602,12 +3602,7 @@ fn refresh_active_git_projections(state: &mut AppState) -> Vec<Effect> {
 }
 
 fn propagate_git_context(state: &mut AppState, context: GitContext) {
-    let target_ids = state
-        .threads
-        .iter()
-        .filter(|thread| thread.metadata.cwd == context.cwd)
-        .map(|thread| thread.id.clone())
-        .collect::<Vec<_>>();
+    let target_ids = state.thread_ids_for_cwd(&context.cwd);
 
     for thread_id in target_ids {
         let mut projection = context.clone();
@@ -3620,29 +3615,28 @@ fn propagate_forge_observation(state: &mut AppState, observation: ForgeObservati
     let source_cwd = observation.cwd.clone();
     let source_identity = observation.identity.clone();
     let mut targets = state
-        .threads
-        .iter()
-        .filter(|thread| {
-            let valid_git = state.git_context(&thread.id).is_some_and(|context| {
-                context.is_repository
-                    && context.error.is_none()
-                    && context.cwd == thread.metadata.cwd
-            });
-            if !valid_git {
-                return false;
+        .git_contexts
+        .values()
+        .filter_map(|context| {
+            if !context.is_repository || context.error.is_some() {
+                return None;
             }
-            if thread.metadata.cwd == source_cwd {
-                return true;
+            let thread = state.thread_by_id(&context.thread_id)?;
+            if context.cwd != thread.metadata.cwd {
+                return None;
             }
-            source_identity.as_ref().is_some_and(|identity| {
-                state
+            if context.cwd == source_cwd {
+                return Some((context.thread_id.clone(), context.cwd.clone()));
+            }
+            source_identity.as_ref().and_then(|identity| {
+                (state
                     .forge_observations
-                    .get(&thread.id.0)
+                    .get(&context.thread_id.0)
                     .and_then(|existing| existing.identity.as_ref())
-                    == Some(identity)
+                    == Some(identity))
+                .then(|| (context.thread_id.clone(), context.cwd.clone()))
             })
         })
-        .map(|thread| (thread.id.clone(), thread.metadata.cwd.clone()))
         .collect::<Vec<_>>();
 
     if targets.is_empty() {
@@ -3692,17 +3686,19 @@ fn propagate_forge_observation(state: &mut AppState, observation: ForgeObservati
 
 fn active_worktree_counts(state: &AppState) -> BTreeMap<(LocalRepoIdentity, String), usize> {
     let mut counts = BTreeMap::new();
-    for thread in &state.threads {
-        if !matches!(
-            thread.runtime,
-            RuntimeStatus::Working | RuntimeStatus::WaitingHuman
-        ) {
+    for context in state.git_contexts.values() {
+        let Some(thread) = state.thread_by_id(&context.thread_id) else {
+            continue;
+        };
+        if context.cwd != thread.metadata.cwd
+            || !matches!(
+                thread.runtime,
+                RuntimeStatus::Working | RuntimeStatus::WaitingHuman
+            )
+        {
             continue;
         }
-        let Some(worktree) = state
-            .git_context(&thread.id)
-            .and_then(|context| context.worktree.as_ref())
-        else {
+        let Some(worktree) = context.worktree.as_ref() else {
             continue;
         };
         *counts
