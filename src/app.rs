@@ -15,7 +15,7 @@ use crate::forge::{
 use crate::forge_mutation::{ForgeMutationPlan, ForgeMutationReceipt, ForgeMutationRequest};
 use crate::git::{GitContext, GitReview};
 use crate::goal::{GoalObservation, GoalStatus};
-use crate::i18n::UiLanguage;
+use crate::i18n::{UiLanguage, pick};
 use crate::launch::{LaunchPlan, LaunchPreset};
 use crate::operation::{
     ManagedWorktreeRecord, MutationScope, OperationPlan, OperationReceipt, OperationState,
@@ -33,6 +33,29 @@ use crate::terminal_drawer::TerminalSnapshot;
 use std::collections::{BTreeMap, BTreeSet};
 
 const REGISTRY_RECENT_LIMIT: usize = 100;
+
+fn local_text(
+    language: UiLanguage,
+    english: &'static str,
+    simplified_chinese: &'static str,
+) -> &'static str {
+    pick(language, english, simplified_chinese)
+}
+
+fn operation_state_text(state: OperationState, language: UiLanguage) -> &'static str {
+    match (state, language) {
+        (OperationState::Planned, UiLanguage::SimplifiedChinese) => "已计划",
+        (OperationState::Executing, UiLanguage::SimplifiedChinese) => "执行中",
+        (OperationState::Succeeded, UiLanguage::SimplifiedChinese) => "已成功",
+        (OperationState::Failed, UiLanguage::SimplifiedChinese) => "失败",
+        (OperationState::OutcomeUnknown, UiLanguage::SimplifiedChinese) => "结果未知",
+        (OperationState::Planned, UiLanguage::English) => "planned",
+        (OperationState::Executing, UiLanguage::English) => "executing",
+        (OperationState::Succeeded, UiLanguage::English) => "succeeded",
+        (OperationState::Failed, UiLanguage::English) => "failed",
+        (OperationState::OutcomeUnknown, UiLanguage::English) => "outcome unknown",
+    }
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum View {
@@ -692,7 +715,14 @@ impl AppState {
             }
             Err(error) => {
                 self.pending_local_batch = None;
-                self.mutation_notice = Some(format!("cannot create local batch plan: {error:#}"));
+                self.mutation_notice = Some(format!(
+                    "{}: {error:#}",
+                    local_text(
+                        self.language,
+                        "cannot create local batch plan",
+                        "无法创建本地批量计划",
+                    )
+                ));
             }
         }
     }
@@ -1151,7 +1181,14 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 .and_then(|context| context.repo.as_ref())
                 .is_none()
             {
-                state.mutation_notice = Some("current thread is not in a Git repository".into());
+                state.mutation_notice = Some(
+                    local_text(
+                        state.language,
+                        "current thread is not in a Git repository",
+                        "当前会话不在 Git 仓库中",
+                    )
+                    .into(),
+                );
                 return vec![];
             }
             if !matches!(state.view, View::ManagedWorktrees(_)) {
@@ -1181,13 +1218,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.mutation_notice = Some(format!(
                 "{} · {}",
                 receipt.plan.kind.label(),
-                match receipt.state {
-                    OperationState::Planned => "planned",
-                    OperationState::Executing => "executing",
-                    OperationState::Succeeded => "succeeded",
-                    OperationState::Failed => "failed",
-                    OperationState::OutcomeUnknown => "outcome unknown",
-                }
+                operation_state_text(receipt.state, state.language)
             ));
             let repo = receipt.plan.repo.clone();
             state
@@ -1218,13 +1249,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.mutation_notice = Some(format!(
                 "{} · {}",
                 receipt.plan.kind.label(),
-                match receipt.state {
-                    OperationState::Planned => "planned",
-                    OperationState::Executing => "executing",
-                    OperationState::Succeeded => "succeeded",
-                    OperationState::Failed => "failed",
-                    OperationState::OutcomeUnknown => "outcome unknown",
-                }
+                operation_state_text(receipt.state, state.language)
             ));
 
             for observation in state.forge_observations.values_mut() {
@@ -1263,11 +1288,25 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 return vec![];
             };
             let Some(context) = state.git_context(&thread_id) else {
-                state.mutation_notice = Some("Git context is unavailable".into());
+                state.mutation_notice = Some(
+                    local_text(
+                        state.language,
+                        "Git context is unavailable",
+                        "Git 上下文不可用",
+                    )
+                    .into(),
+                );
                 return vec![];
             };
             if context.repo.is_none() {
-                state.mutation_notice = Some("current cwd is not a Git repository".into());
+                state.mutation_notice = Some(
+                    local_text(
+                        state.language,
+                        "current cwd is not a Git repository",
+                        "当前 cwd 不是 Git 仓库",
+                    )
+                    .into(),
+                );
                 return vec![];
             }
             state.pending_operation = None;
@@ -1284,13 +1323,27 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 return vec![];
             };
             let (Some(repo), Some(worktree)) = (&context.repo, &context.worktree) else {
-                state.mutation_notice = Some("current cwd is not a Git worktree".into());
+                state.mutation_notice = Some(
+                    local_text(
+                        state.language,
+                        "current cwd is not a Git worktree",
+                        "当前 cwd 不是 Git worktree",
+                    )
+                    .into(),
+                );
                 return vec![];
             };
             if state.managed_worktrees.iter().any(|record| {
                 record.repo == *repo && record.canonical_path == worktree.canonical_path
             }) {
-                state.mutation_notice = Some("current worktree is already managed/adopted".into());
+                state.mutation_notice = Some(
+                    local_text(
+                        state.language,
+                        "current worktree is already managed/adopted",
+                        "当前 worktree 已受管或已接管",
+                    )
+                    .into(),
+                );
                 return vec![];
             }
             state.pending_operation = Some(OperationPlan::adopt_worktree(
@@ -1332,8 +1385,14 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         }
         Action::ConfirmPendingOperation => {
             if state.planning_store_error.is_some() {
-                state.mutation_notice =
-                    Some("local store is degraded; mutation receipts cannot be persisted".into());
+                state.mutation_notice = Some(
+                    local_text(
+                        state.language,
+                        "local store is degraded; mutation receipts cannot be persisted",
+                        "本地存储已降级；无法持久化变更回执",
+                    )
+                    .into(),
+                );
                 return vec![];
             }
             if let Some(plan) = state.pending_local_batch.take() {
@@ -1359,7 +1418,14 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.pending_forge_payload = None;
             state.pending_local_batch = None;
             state.pending_launch_plan = None;
-            state.mutation_notice = Some("operation cancelled before execution".into());
+            state.mutation_notice = Some(
+                local_text(
+                    state.language,
+                    "operation cancelled before execution",
+                    "操作已在执行前取消",
+                )
+                .into(),
+            );
         }
         Action::GoalObserved(goal) => {
             state.goal_checked.insert(goal.thread_id.0.clone());
@@ -1610,8 +1676,14 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                         state.freeze_visible_batch(LocalBatchAction::SnoozeUntil(None));
                     }
                     _ => {
-                        state.mutation_notice =
-                            Some("context action routing mismatch; no operation executed".into());
+                        state.mutation_notice = Some(
+                            local_text(
+                                state.language,
+                                "context action routing mismatch; no operation executed",
+                                "上下文操作路由不匹配；未执行任何操作",
+                            )
+                            .into(),
+                        );
                         return vec![];
                     }
                 }
@@ -1623,13 +1695,25 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     return vec![];
                 };
                 let Some(context) = state.git_context(&thread_id) else {
-                    state.mutation_notice =
-                        Some("Git context unavailable for launch presets".into());
+                    state.mutation_notice = Some(
+                        local_text(
+                            state.language,
+                            "Git context unavailable for launch presets",
+                            "启动预设所需的 Git 上下文不可用",
+                        )
+                        .into(),
+                    );
                     return vec![];
                 };
                 let Some(repo) = context.repo.as_ref() else {
-                    state.mutation_notice =
-                        Some("repository root unavailable for launch presets".into());
+                    state.mutation_notice = Some(
+                        local_text(
+                            state.language,
+                            "repository root unavailable for launch presets",
+                            "启动预设所需的仓库根目录不可用",
+                        )
+                        .into(),
+                    );
                     return vec![];
                 };
                 return vec![Effect::LoadLaunchPresets {
@@ -1646,7 +1730,14 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     | ContextChoice::ForgeMerge
             ) {
                 let Some(target) = state.current_forge_mutation_target() else {
-                    state.mutation_notice = Some("forge mutation target is unavailable".into());
+                    state.mutation_notice = Some(
+                        local_text(
+                            state.language,
+                            "forge mutation target is unavailable",
+                            "Forge 变更目标不可用",
+                        )
+                        .into(),
+                    );
                     return vec![];
                 };
                 state.pending_operation = None;
@@ -1665,8 +1756,14 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     }
                     ContextChoice::ForgeApprove | ContextChoice::ForgeMerge => {
                         let Some(change) = target.change_request else {
-                            state.mutation_notice =
-                                Some("current branch has no open merge request".into());
+                            state.mutation_notice = Some(
+                                local_text(
+                                    state.language,
+                                    "current branch has no open merge request",
+                                    "当前分支没有打开的合并请求",
+                                )
+                                .into(),
+                            );
                             return vec![];
                         };
                         let planned_at = now_unix_ms();
@@ -1691,7 +1788,12 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                             ),
                             _ => {
                                 state.mutation_notice = Some(
-                                    "forge action routing mismatch; no mutation executed".into(),
+                                    local_text(
+                                        state.language,
+                                        "forge action routing mismatch; no mutation executed",
+                                        "Forge 操作路由不匹配；未执行变更",
+                                    )
+                                    .into(),
                                 );
                                 return vec![];
                             }
@@ -1703,14 +1805,26 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                                 state.mutation_notice = None;
                             }
                             Err(error) => {
-                                state.mutation_notice =
-                                    Some(format!("cannot create forge mutation plan: {error:#}"));
+                                state.mutation_notice = Some(format!(
+                                    "{}: {error:#}",
+                                    local_text(
+                                        state.language,
+                                        "cannot create forge mutation plan",
+                                        "无法创建 Forge 变更计划",
+                                    )
+                                ));
                             }
                         }
                     }
                     _ => {
-                        state.mutation_notice =
-                            Some("forge action routing mismatch; no mutation executed".into());
+                        state.mutation_notice = Some(
+                            local_text(
+                                state.language,
+                                "forge action routing mismatch; no mutation executed",
+                                "Forge 操作路由不匹配；未执行变更",
+                            )
+                            .into(),
+                        );
                         return vec![];
                     }
                 }
@@ -1765,8 +1879,14 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                         ContextChoice::ScratchReady => crate::planning::ScratchState::Ready,
                         ContextChoice::ScratchDone => crate::planning::ScratchState::Done,
                         _ => {
-                            state.mutation_notice =
-                                Some("scratch action routing mismatch; no write executed".into());
+                            state.mutation_notice = Some(
+                                local_text(
+                                    state.language,
+                                    "scratch action routing mismatch; no write executed",
+                                    "Scratch 操作路由不匹配；未执行写入",
+                                )
+                                .into(),
+                            );
                             return vec![];
                         }
                     };
@@ -1800,8 +1920,14 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 | ContextChoice::ForgeComment
                 | ContextChoice::ForgeApprove
                 | ContextChoice::ForgeMerge => {
-                    state.mutation_notice =
-                        Some("context action is unavailable in the current state".into());
+                    state.mutation_notice = Some(
+                        local_text(
+                            state.language,
+                            "context action is unavailable in the current state",
+                            "当前状态下此上下文操作不可用",
+                        )
+                        .into(),
+                    );
                 }
             }
         }
@@ -1840,7 +1966,14 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 state.launch_thread_cwd.clone(),
             ) else {
                 state.launch_menu_open = false;
-                state.mutation_notice = Some("launch preset scope is unavailable".into());
+                state.mutation_notice = Some(
+                    local_text(
+                        state.language,
+                        "launch preset scope is unavailable",
+                        "启动预设作用域不可用",
+                    )
+                    .into(),
+                );
                 return vec![];
             };
             state.launch_menu_open = false;
@@ -2247,7 +2380,14 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::Back => {
             if state.pending_operation.is_some() {
                 state.pending_operation = None;
-                state.mutation_notice = Some("operation cancelled before execution".into());
+                state.mutation_notice = Some(
+                    local_text(
+                        state.language,
+                        "operation cancelled before execution",
+                        "操作已在执行前取消",
+                    )
+                    .into(),
+                );
                 return vec![];
             }
             if matches!(state.view, View::ManagedWorktrees(_)) {
@@ -2490,12 +2630,25 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     return vec![];
                 }
                 let Some(target) = state.current_forge_mutation_target() else {
-                    state.mutation_notice = Some("forge mutation target is unavailable".into());
+                    state.mutation_notice = Some(
+                        local_text(
+                            state.language,
+                            "forge mutation target is unavailable",
+                            "Forge 变更目标不可用",
+                        )
+                        .into(),
+                    );
                     return vec![];
                 };
                 let Some(target_branch) = target.identity.default_branch.clone() else {
-                    state.mutation_notice =
-                        Some("GitLab default branch is unavailable; create-MR plan refused".into());
+                    state.mutation_notice = Some(
+                        local_text(
+                            state.language,
+                            "GitLab default branch is unavailable; create-MR plan refused",
+                            "GitLab 默认分支不可用；已拒绝创建合并请求计划",
+                        )
+                        .into(),
+                    );
                     return vec![];
                 };
                 match ForgeMutationPlan::create_merge_request(
@@ -2526,11 +2679,25 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     return vec![];
                 }
                 let Some(target) = state.current_forge_mutation_target() else {
-                    state.mutation_notice = Some("forge mutation target is unavailable".into());
+                    state.mutation_notice = Some(
+                        local_text(
+                            state.language,
+                            "forge mutation target is unavailable",
+                            "Forge 变更目标不可用",
+                        )
+                        .into(),
+                    );
                     return vec![];
                 };
                 let Some(change) = target.change_request else {
-                    state.mutation_notice = Some("current branch has no open merge request".into());
+                    state.mutation_notice = Some(
+                        local_text(
+                            state.language,
+                            "current branch has no open merge request",
+                            "当前分支没有打开的合并请求",
+                        )
+                        .into(),
+                    );
                     return vec![];
                 };
                 match ForgeMutationPlan::comment_merge_request(
@@ -2572,8 +2739,14 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     return vec![];
                 }
                 if !std::path::Path::new(&path).is_absolute() {
-                    state.mutation_notice =
-                        Some("worktree path must be absolute before a plan can be created".into());
+                    state.mutation_notice = Some(
+                        local_text(
+                            state.language,
+                            "worktree path must be absolute before a plan can be created",
+                            "创建计划前 worktree 路径必须是绝对路径",
+                        )
+                        .into(),
+                    );
                     return vec![];
                 }
                 state.create_worktree_path = Some(path);
@@ -2654,15 +2827,26 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     InputMode::BatchPriority => match parse_priority(&raw) {
                         Ok(priority) => LocalBatchAction::SetPriority(priority),
                         Err(error) => {
-                            state.mutation_notice =
-                                Some(format!("invalid local batch priority: {error:#}"));
+                            state.mutation_notice = Some(format!(
+                                "{}: {error:#}",
+                                local_text(
+                                    state.language,
+                                    "invalid local batch priority",
+                                    "本地批量优先级无效",
+                                )
+                            ));
                             return vec![];
                         }
                     },
                     InputMode::BatchSnooze => {
                         let Some(duration_ms) = parse_snooze_duration(&raw) else {
                             state.mutation_notice = Some(
-                                "invalid batch snooze; use examples such as 15m, 1h, 1d".into(),
+                                local_text(
+                                    state.language,
+                                    "invalid batch snooze; use examples such as 15m, 1h, 1d",
+                                    "批量稍后提醒无效；请使用 15m、1h、1d 等格式",
+                                )
+                                .into(),
                             );
                             return vec![];
                         };
@@ -2671,8 +2855,14 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                         ))
                     }
                     _ => {
-                        state.mutation_notice =
-                            Some("batch input routing mismatch; no write executed".into());
+                        state.mutation_notice = Some(
+                            local_text(
+                                state.language,
+                                "batch input routing mismatch; no write executed",
+                                "批量输入路由不匹配；未执行写入",
+                            )
+                            .into(),
+                        );
                         return vec![];
                     }
                 };
@@ -3606,6 +3796,53 @@ mod tests {
 
     fn app() -> AppState {
         AppState::new(FakeBackend::seeded().snapshot().threads)
+    }
+
+    #[test]
+    fn simplified_chinese_local_notice_follows_ui_language() {
+        let mut app = app();
+        app.language = UiLanguage::SimplifiedChinese;
+        let thread_id = app.threads[0].id.clone();
+        app.view = View::Thread(thread_id);
+
+        assert!(reduce(&mut app, Action::OpenManagedWorktrees).is_empty());
+        assert_eq!(
+            app.mutation_notice.as_deref(),
+            Some("当前会话不在 Git 仓库中")
+        );
+    }
+
+    #[test]
+    fn unicode_search_alias_and_composer_input_are_lossless() {
+        let mut app = app();
+        app.threads[0].title = "音频管线回归".into();
+
+        reduce(&mut app, Action::BeginSearch);
+        for character in "音频".chars() {
+            reduce(&mut app, Action::InputChar(character));
+        }
+        assert_eq!(app.visible_indices(), vec![0]);
+        reduce(&mut app, Action::CancelInput);
+
+        app.selected = 0;
+        app.threads[0].alias = None;
+        reduce(&mut app, Action::BeginAlias);
+        for character in "主会话".chars() {
+            reduce(&mut app, Action::InputChar(character));
+        }
+        reduce(&mut app, Action::CommitInput);
+        assert_eq!(app.threads[0].alias.as_deref(), Some("主会话"));
+
+        reduce(&mut app, Action::OpenSelected);
+        reduce(&mut app, Action::QuickPrompt);
+        for character in "继续检查".chars() {
+            reduce(&mut app, Action::InputChar(character));
+        }
+        let thread_id = app.current_thread_id().expect("thread");
+        assert_eq!(
+            app.thread_ui.get(&thread_id.0).expect("thread ui").draft,
+            "继续检查"
+        );
     }
 
     #[test]
