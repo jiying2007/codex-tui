@@ -365,7 +365,7 @@ def main() -> int:
         "next": (
             "stable publish=false workflow dispatched"
             if args.dispatch
-            else "rerun with --dispatch to start stable publish=false qualification"
+            else "use workflowInputs for stable publish=false, or run a fresh qualification with --dispatch"
         ),
     }
     summary_path = output_dir / "qualification-summary.json"
