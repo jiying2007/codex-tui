@@ -38,6 +38,14 @@ const REGISTRY_RECENT_LIMIT: usize = 100;
 const CONVERSATION_CACHE_LIMIT: usize = 16;
 const GIT_REVIEW_CACHE_LIMIT: usize = 4;
 
+pub const fn conversation_cache_limit() -> usize {
+    CONVERSATION_CACHE_LIMIT
+}
+
+pub const fn git_review_cache_limit() -> usize {
+    GIT_REVIEW_CACHE_LIMIT
+}
+
 fn local_text(
     language: UiLanguage,
     english: &'static str,

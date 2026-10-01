@@ -1,0 +1,40 @@
+name: retained-soak
+
+on:
+  workflow_dispatch:
+    inputs:
+      rows:
+        description: Registry rows
+        required: false
+        default: "50000"
+      cycles:
+        description: Churn cycles
+        required: false
+        default: "256"
+  schedule:
+    - cron: "17 3 * * 0"
+
+permissions:
+  contents: read
+
+jobs:
+  soak:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build exact source
+        run: cargo build --locked --release
+      - name: Run retained structural soak
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./target/release/codex-tui soak             --rows "${{ inputs.rows || '50000' }}"             --cycles "${{ inputs.cycles || '256' }}"             --json | tee soak-evidence.json
+      - name: Retain evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: soak-evidence-${{ github.sha }}
+          path: soak-evidence.json
+          if-no-files-found: error
+          retention-days: 30

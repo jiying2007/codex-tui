@@ -519,6 +519,17 @@ fn hydration_publish_due(pages_since_publish: usize, complete: bool) -> bool {
     complete || pages_since_publish >= REGISTRY_HYDRATION_PUBLISH_PAGE_INTERVAL
 }
 
+pub fn registry_snapshot_publication_upper_bound(total_rows: usize) -> usize {
+    if total_rows == 0 {
+        return 0;
+    }
+    let page_size = PAGE_SIZE as usize;
+    let total_pages = total_rows.saturating_add(page_size - 1) / page_size;
+    let hydration_pages = total_pages.saturating_sub(STARTUP_REGISTRY_PAGE_LIMIT);
+    1 + hydration_pages.saturating_add(REGISTRY_HYDRATION_PUBLISH_PAGE_INTERVAL - 1)
+        / REGISTRY_HYDRATION_PUBLISH_PAGE_INTERVAL
+}
+
 fn merge_registry_hydration_page(
     threads: &mut BTreeMap<String, ThreadSummary>,
     page: Vec<ThreadSummary>,

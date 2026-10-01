@@ -461,6 +461,14 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
+    if args.first().is_some_and(|arg| arg == "soak") {
+        let code = codex_tui::soak::run_cli(&args[1..])?;
+        if code != 0 {
+            std::process::exit(code);
+        }
+        return Ok(());
+    }
+
     if args.first().is_some_and(|arg| arg == "headless") {
         let code = codex_tui::headless::run(&args[1..]).await?;
         if code != codex_tui::headless::EXIT_OK {
