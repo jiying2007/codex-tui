@@ -23,6 +23,7 @@ All notable codex-tui changes are recorded here.
 - added local UI language selection (`auto`, `en`, `zh-CN`) with locale auto-detection and Simplified Chinese coverage across daily TUI surfaces while preserving technical identifiers and upstream diagnostic text.
 - deduplicated Git projection probes by exact host-local cwd, fan out completed checkout state across historical threads sharing the same working directory, and refresh selected/active checkouts every 10 seconds so dirty/branch state does not freeze after startup.
 - removed Registry/planning O(N²) hot paths by indexing thread WorkCards, precomputing active-worktree collision counts, and added 10k recent/search Registry projection benchmarks.
+- changed App Server Registry synchronization to event-driven thread lifecycle/status updates, suppressing full snapshot work for unrelated streaming notifications, reducing complete registry reconciliation from 2s to a 30s fallback, using canonical `recency_at` plus the state-DB fast path with legacy fallback for recurring reconciliation, and bounding eager Goal probing to the most recent 100 threads.
 
 ## [1.0.0] - 2026-09-30
 
