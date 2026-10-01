@@ -28,6 +28,7 @@ All notable codex-tui changes are recorded here.
 - cached cwd locality for Registry rendering and scope filters, removed repeated/all-history filesystem probing from ordinary Registry search and Git projection cleanup, and added a 10k host-local Registry benchmark so LOCAL ONLY / REPO ONLY scale paths are covered explicitly.
 - indexed prior thread-local overlays during Registry snapshot replacement, removing the remaining O(N²) fresh-thread × existing-thread lookup while preserving pins, aliases, unread markers, attention acknowledgment invalidation and selection.
 - completed a third bilingual UI cleanup for product-owned placeholders and labels, including Goal/model/branch fallbacks, Git/conversation fallback errors, ScratchWork title context and detached/empty branch placeholders while preserving raw upstream diagnostics and technical identifiers.
+- added lightweight thread-id and cwd indexes for projection fan-out, removing repeated full-history scans from Git result propagation, Forge periodic refresh/propagation and active-worktree counting while keeping Registry snapshots as the source of index truth.
 
 ## [1.0.0] - 2026-09-30
 
