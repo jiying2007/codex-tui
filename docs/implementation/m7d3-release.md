@@ -58,7 +58,7 @@ This gate prevents accidental publication when project license metadata is absen
 
 ## Stable evidence
 
-Stable evidence is represented by `codex-tui/release-evidence/v2`.
+Stable evidence is represented by `codex-tui/release-evidence/v3`.
 
 It binds:
 
@@ -68,15 +68,11 @@ It binds:
 - compatibility schema version;
 - Linux Tier 1 compatibility report SHA-256 with READY state and observation timestamp;
 - Linux Tier 1 terminal-restoration PASS receipt;
-- Linux retained `resident-planning-10k` p95/p99 performance receipt;
+- an exact-SHA `codex-tui/automated-qualification/v1` receipt covering Failure Matrix, 50k structural soak, UI contract, state migration/recovery and support-bundle redaction;
+- Linux retained `resident-planning-10k` p95/p99 diagnostic receipt;
 - optional macOS/Windows Tier 2 retained receipts when available.
 
-The stable verifier requires:
-
-- at least 200 retained resident-planning-10k samples;
-- p95 <= 50 ms;
-- p99 <= 100 ms;
-- compatibility report hashes are exactly 64 hexadecimal characters.
+The stable verifier requires at least 200 retained resident-planning-10k samples with finite nonnegative p95/p99 values, but v1.1 does not fail solely on hosted-runner latency thresholds. Compatibility report hashes and automated-qualification artifact hashes are exact SHA-256 values.
 
 The workflow independently calls the GitHub Actions API and verifies the supplied canonical CI run is the `ci` workflow on `main`, succeeded, and is bound to the release source SHA.
 
@@ -171,11 +167,11 @@ The compatibility helper refuses anything other than `readiness=ready` and print
 
 Terminal-restoration evidence remains an explicit real-controlling-TTY smoke receipt; it is not synthesized by CI.
 
-## v1 stable criteria baseline
+## Versioned stable criteria
 
-`release/v1.0-criteria.json` is the machine-readable v1 stable gate baseline and is shipped inside every archive. The filename is retained for compatibility because v1.0.0 is the first stable version.
+Release qualification uses the current major.minor criteria file. For v1.1.0 the authority is `release/v1.1-criteria.json`, and archives expose it as `STABLE-CRITERIA.json`. `release/v1.0-criteria.json` remains only as the historical record for the published v1.0.0 line.
 
-The repository is Apache-2.0 licensed and v1.0.0 was published on 2026-09-30. Stable publication across the v1 line is fail-closed on exact-commit canonical CI plus the Linux Tier 1 retained compatibility, real terminal-restoration and performance evidence defined below. macOS and Windows remain required in canonical CI and native package/archive smoke as Tier 2 automated-compatibility platforms; their real-environment retained receipts are optional for v1 stable releases.
+The repository is Apache-2.0 licensed and v1.0.0 was published on 2026-09-30. v1.1 stable publication is fail-closed on exact-commit automated hardening, canonical CI, Linux Tier 1 retained compatibility and real terminal restoration. macOS and Windows remain required in canonical CI and native package/archive smoke as Tier 2 automated-compatibility platforms; their real-environment retained receipts are optional.
 
 ## Non-goals
 
@@ -195,8 +191,9 @@ For the v1 stable line, Linux is the Tier 1 stable platform.
 Stable-blocking real-world retained evidence:
 
 - Linux `compat/v2` readiness = READY;
-- Linux real controlling-TTY restoration smoke = PASS;
-- Linux retained resident-planning-10k benchmark >= 200 samples, p95 <= 50 ms, p99 <= 100 ms.
+- Linux real controlling-TTY restoration smoke = PASS.
+
+Repository-internal stable gates are exact-SHA automated hardening plus canonical CI/package smoke. The Linux resident-planning-10k benchmark remains retained with >= 200 samples for diagnosis and trend comparison, but its hosted-runner p95/p99 values are not an independent v1.1 release blocker.
 
 macOS and Windows remain Tier 2 automated-compatibility platforms:
 
