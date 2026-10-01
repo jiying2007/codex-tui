@@ -30,6 +30,7 @@ All notable codex-tui changes are recorded here.
 - completed a third bilingual UI cleanup for product-owned placeholders and labels, including Goal/model/branch fallbacks, Git/conversation fallback errors, ScratchWork title context and detached/empty branch placeholders while preserving raw upstream diagnostics and technical identifiers.
 - added lightweight thread-id and cwd indexes for projection fan-out, removing repeated full-history scans from Git result propagation, Forge periodic refresh/propagation and active-worktree counting while keeping Registry snapshots as the source of index truth.
 - bounded Git/Forge actor command and event queues, added finite projection concurrency, and suppressed duplicate pending active-Git refreshes so large multi-project refreshes cannot grow unbounded queues or serialize all probes behind one worker.
+- added a canonical Linux Rust 1.88 MSRV compile gate so the `rust-version = "1.88"` package contract is continuously verified against the locked dependency graph.
 
 ## [1.0.0] - 2026-09-30
 

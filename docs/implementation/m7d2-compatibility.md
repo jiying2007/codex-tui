@@ -134,7 +134,7 @@ M7d3 will consume these evidence requirements as release gates; M7d2 only define
 
 The machine report names Linux, macOS and Windows as canonical CI platforms. A test binds that matrix to the actual CI workflow runner names so documentation cannot silently drift away from repository gates.
 
-The Rust MSRV is similarly asserted against `Cargo.toml`.
+The Rust MSRV is asserted against `Cargo.toml` and is also compiled in canonical CI with the exact declared Rust 1.88 toolchain, so the compatibility report cannot claim an untested compiler floor.
 
 ## Forge transport policy
 
