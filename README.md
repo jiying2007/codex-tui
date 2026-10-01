@@ -245,6 +245,8 @@ See:
 - `docs/implementation/m7d2-compatibility.md`
 - `docs/implementation/m7d3-release.md`
 - `docs/release/install-upgrade.md`
+- `docs/team-quickstart.md`
+- `docs/qualification/provider.md`
 - `release/v1.1-criteria.json` — current v1.1 qualification authority
 - `release/v1.0-criteria.json` — historical v1.0 release record
 - `CHANGELOG.md`
