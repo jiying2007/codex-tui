@@ -51,7 +51,7 @@ pub enum PtyEvent {
 
 pub struct PtyHandle {
     command_tx: Option<SyncSender<PtyCommand>>,
-    event_rx: Receiver<PtyEvent>,
+    event_rx: Option<Receiver<PtyEvent>>,
     actor: Option<JoinHandle<()>>,
 }
 
@@ -68,7 +68,7 @@ impl PtyHandle {
 
         Ok(Self {
             command_tx: Some(command_tx),
-            event_rx,
+            event_rx: Some(event_rx),
             actor: Some(actor),
         })
     }
@@ -86,7 +86,7 @@ impl PtyHandle {
     }
 
     pub fn try_recv(&self) -> Option<PtyEvent> {
-        self.event_rx.try_recv().ok()
+        self.event_rx.as_ref()?.try_recv().ok()
     }
 }
 
@@ -96,6 +96,7 @@ impl Drop for PtyHandle {
             let _ = tx.try_send(PtyCommand::Terminate);
             drop(tx);
         }
+        self.event_rx.take();
         if let Some(actor) = self.actor.take() {
             let _ = actor.join();
         }
@@ -155,6 +156,13 @@ fn spawn_and_drive_pty(
     let mut reader = pair.master.try_clone_reader().context("clone PTY reader")?;
     let mut writer = pair.master.take_writer().context("take PTY writer")?;
 
+    event_tx
+        .send(PtyEvent::Ready {
+            cwd: cwd.clone(),
+            size,
+        })
+        .context("emit PTY ready")?;
+
     let output_tx = event_tx.clone();
     thread::Builder::new()
         .name("codex-tui-pty-reader".into())
@@ -199,13 +207,6 @@ fn spawn_and_drive_pty(
             }
         })
         .context("spawn PTY waiter")?;
-
-    event_tx
-        .send(PtyEvent::Ready {
-            cwd: cwd.clone(),
-            size,
-        })
-        .context("emit PTY ready")?;
 
     while let Ok(command) = command_rx.recv() {
         match command {
@@ -399,6 +400,38 @@ mod tests {
 
         drop(command_tx);
         actor.join().expect("actor join").expect("actor result");
+    }
+
+    #[test]
+    fn drop_releases_event_receiver_before_joining_backpressured_actor() {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicBool, Ordering},
+            mpsc::sync_channel,
+        };
+
+        let (command_tx, _command_rx) = sync_channel(1);
+        let (event_tx, event_rx) = sync_channel(1);
+        event_tx
+            .send(PtyEvent::ReaderClosed)
+            .expect("fill event queue");
+
+        let send_unblocked = Arc::new(AtomicBool::new(false));
+        let send_unblocked_in_actor = Arc::clone(&send_unblocked);
+        let actor = std::thread::spawn(move || {
+            let result = event_tx.send(PtyEvent::Error("blocked".into()));
+            assert!(result.is_err(), "receiver should be dropped during handle teardown");
+            send_unblocked_in_actor.store(true, Ordering::SeqCst);
+        });
+
+        let handle = PtyHandle {
+            command_tx: Some(command_tx),
+            event_rx: Some(event_rx),
+            actor: Some(actor),
+        };
+
+        drop(handle);
+        assert!(send_unblocked.load(Ordering::SeqCst));
     }
 
     #[test]
