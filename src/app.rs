@@ -15,6 +15,7 @@ use crate::forge::{
 use crate::forge_mutation::{ForgeMutationPlan, ForgeMutationReceipt, ForgeMutationRequest};
 use crate::git::{GitContext, GitReview};
 use crate::goal::{GoalObservation, GoalStatus};
+use crate::i18n::UiLanguage;
 use crate::launch::{LaunchPlan, LaunchPreset};
 use crate::operation::{
     ManagedWorktreeRecord, MutationScope, OperationPlan, OperationReceipt, OperationState,
@@ -418,6 +419,7 @@ pub struct AppState {
     pub show_help: bool,
     pub should_quit: bool,
     pub backend_status: BackendStatus,
+    pub language: UiLanguage,
     pub acknowledged_attention: BTreeSet<String>,
     pub filter: String,
     pub host_local_only: bool,
@@ -498,6 +500,7 @@ impl AppState {
             show_help: false,
             should_quit: false,
             backend_status: BackendStatus::starting("unknown"),
+            language: UiLanguage::English,
             acknowledged_attention: BTreeSet::new(),
             filter: String::new(),
             host_local_only: false,
