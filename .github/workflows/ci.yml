@@ -86,6 +86,16 @@ jobs:
           }
           EOF
 
+          cat > "$OUT/support-snapshot.json" <<'EOF'
+          {
+            "schema": "codex-tui/support-bundle/v1",
+            "build": {
+              "productVersion": "1.1.0",
+              "sourceSha": "0123456789abcdef0123456789abcdef01234567"
+            }
+          }
+          EOF
+
           cat > "$OUT/support-manifest.json" <<'EOF'
           {
             "schema": "codex-tui/support-bundle/v1",
@@ -106,7 +116,8 @@ jobs:
             --failure-matrix "$OUT/failure-matrix.json" \
             --scale "$OUT/scale.json" \
             --soak "$OUT/soak.json" \
-            --support-manifest "$OUT/support-manifest.json"
+            --support-manifest "$OUT/support-manifest.json" \
+            --support-snapshot "$OUT/support-snapshot.json"
 
           python scripts/release/create_evidence.py             --output "$OUT/evidence.json"             --compat-schema codex-tui/compat/v2             --version 1.0.0             --commit 0123456789abcdef0123456789abcdef01234567             --canonical-ci-run 1             --automated-qualification "$OUT/automated-qualification.json"             --linux-compat-sha256 "$(printf 'a%.0s' {1..64})"             --linux-compat-observed-at 2026-09-30T00:00:00Z             --linux-terminal ci-python38             --linux-terminal-observed-at 2026-09-30T00:00:00Z             --performance-iterations 200             --performance-p95-ms 1             --performance-p99-ms 2             --performance-source ci-python38             --performance-observed-at 2026-09-30T00:00:00Z
 
