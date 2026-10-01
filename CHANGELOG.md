@@ -75,6 +75,7 @@ All notable codex-tui changes are recorded here.
 - added and packaged a personal-first team quickstart covering install, AGENTS/.codex authority, safe `.codex-tui.toml` launch presets, Forge setup, daily controls and Doctor Bundle troubleshooting without introducing a team server/RBAC layer.
 - hardened stable qualification dispatch by granting the release gate only the GitHub Actions read permission it actually needs, exercising that permission on every release self-test, and writing a dispatched qualification summary only after `gh workflow run` succeeds.
 - entered v1.1 RC code freeze with a machine-validated handoff contract: automated gates continue on every exact SHA, real Linux compatibility/TTY evidence is explicitly deferred and non-synthesizable, and internal GitLab evidence remains a separate team-reuse qualification.
+- strengthened stable real-environment evidence to source-bound v4: compat and terminal-restoration receipts now carry the exact candidate SHA, local qualification rejects cross-SHA receipts, and the cloud release verifier independently rejects replay of older RC evidence.
 
 ## [1.0.0] - 2026-09-30
 
