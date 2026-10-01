@@ -163,6 +163,26 @@ def main() -> int:
     if compat_summary.get("readiness") != "ready":
         raise SystemExit("Linux compatibility is not ready")
 
+    scale_path = output_dir / "scale-evidence.json"
+    scale = run(
+        [
+            str(binary),
+            "release",
+            "scale",
+            "--rows",
+            "50000",
+            "--warmup",
+            "5",
+            "--iterations",
+            "50",
+            "--source",
+            args.source.strip() or f"linux:{commit_sha[:12]}",
+            "--json",
+        ],
+        cwd=root,
+    )
+    write_text_lf(scale_path, scale.stdout)
+
     soak_path = output_dir / "soak-evidence.json"
     soak = run(
         [
@@ -207,6 +227,8 @@ def main() -> int:
             str(automated_path),
             "--commit",
             commit_sha,
+            "--scale",
+            str(scale_path),
             "--soak",
             str(soak_path),
             "--support-manifest",
@@ -349,6 +371,7 @@ def main() -> int:
         "compatReport": str(compat_path),
         "compatReportSha256": compat_summary["reportSha256"],
         "terminalReceipt": str(terminal_path),
+        "scaleEvidence": str(scale_path),
         "soakEvidence": str(soak_path),
         "supportBundleManifest": str(support_manifest),
         "automatedQualification": str(automated_path),
