@@ -62,7 +62,7 @@ This improves the current watch item without changing the storage decision: full
 Re-run this decision rather than changing architecture speculatively when one or more of these conditions becomes true:
 
 - real user histories commonly approach or exceed the 50k fixture;
-- retained Registry projection p95/p99 approaches or exceeds the existing 50 ms / 100 ms stable interaction envelope (used here as an advisory comparison, not a new release gate);
+- retained Registry projection latency shows a sustained regression relative to its own qualified baseline; historical v1.0 50 ms / 100 ms numbers are comparison context only and are not a v1.1 release gate;
 - resident Registry memory becomes an operational problem on supported Tier 1 hosts;
 - real traces show planning reconciliation blocking input/render responsiveness;
 - a future App Server contract provides server-side search/index/paging semantics that materially reduce client complexity.
