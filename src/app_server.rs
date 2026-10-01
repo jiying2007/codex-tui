@@ -2415,13 +2415,11 @@ mod tests {
             .split("#[cfg(test)]")
             .next()
             .expect("production source");
-        assert!(production.contains(
-            "load_registry_with_page_limit(&mut rpc, true, Some(1)).await"
-        ));
+        assert!(
+            production.contains("load_registry_with_page_limit(&mut rpc, true, Some(1)).await")
+        );
         assert!(production.contains("reconcile: Option<RegistryReconcile>"));
-        assert!(!production.contains(
-            "_ = refresh.tick(), if hydration.is_none() =>"
-        ));
+        assert!(!production.contains("_ = refresh.tick(), if hydration.is_none() =>"));
     }
 
     #[test]
