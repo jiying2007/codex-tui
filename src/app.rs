@@ -486,6 +486,7 @@ pub struct AppState {
     pub saved_view_template: Option<SavedView>,
     pub command_palette_open: bool,
     pub command_palette_selected: usize,
+    command_palette_items: Vec<CommandPaletteChoice>,
     pub context_open: bool,
     pub context_selected: usize,
     pub hot_slot_bind_pending: bool,
@@ -600,6 +601,7 @@ impl AppState {
             saved_view_template: None,
             command_palette_open: false,
             command_palette_selected: 0,
+            command_palette_items: vec![],
             context_open: false,
             context_selected: 0,
             hot_slot_bind_pending: false,
@@ -1066,7 +1068,7 @@ impl AppState {
         })
     }
 
-    pub fn command_palette_choices(&self) -> Vec<CommandPaletteChoice> {
+    fn build_command_palette_choices(&self) -> Vec<CommandPaletteChoice> {
         let mut choices = vec![CommandPaletteChoice::Search];
 
         if matches!(self.view, View::Registry | View::Board) {
@@ -1118,8 +1120,16 @@ impl AppState {
         choices
     }
 
+    pub fn command_palette_choices(&self) -> Vec<CommandPaletteChoice> {
+        if self.command_palette_open {
+            self.command_palette_items.clone()
+        } else {
+            self.build_command_palette_choices()
+        }
+    }
+
     pub fn command_palette_choice(&self) -> Option<CommandPaletteChoice> {
-        self.command_palette_choices()
+        self.command_palette_items
             .get(self.command_palette_selected)
             .copied()
     }
@@ -1887,7 +1897,9 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.input_mode = InputMode::ScratchTitle;
         }
         Action::OpenCommandPalette => {
-            if !state.command_palette_choices().is_empty() {
+            let choices = state.build_command_palette_choices();
+            if !choices.is_empty() {
+                state.command_palette_items = choices;
                 state.command_palette_open = true;
                 state.command_palette_selected = 0;
                 state.show_help = false;
@@ -1896,9 +1908,10 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::CloseCommandPalette => {
             state.command_palette_open = false;
             state.command_palette_selected = 0;
+            state.command_palette_items.clear();
         }
         Action::MoveCommandPalette(delta) => {
-            let len = state.command_palette_choices().len();
+            let len = state.command_palette_items.len();
             if len == 0 {
                 state.command_palette_selected = 0;
             } else {
@@ -5705,6 +5718,42 @@ mod tests {
         assert!(scratch_choices.contains(&CommandPaletteChoice::Board));
         assert!(!scratch_choices.contains(&CommandPaletteChoice::TerminalDrawer));
         assert!(!scratch_choices.contains(&CommandPaletteChoice::CloseTerminalDrawer));
+    }
+
+    #[test]
+    fn command_palette_freezes_choices_while_background_state_changes() {
+        let mut app = app();
+        reduce(&mut app, Action::OpenCommandPalette);
+
+        let toggle_pin_index = app
+            .command_palette_choices()
+            .iter()
+            .position(|choice| *choice == CommandPaletteChoice::TogglePin)
+            .expect("TogglePin palette entry");
+        app.command_palette_selected = toggle_pin_index;
+        assert_eq!(
+            app.command_palette_choice(),
+            Some(CommandPaletteChoice::TogglePin)
+        );
+
+        app.threads.clear();
+        app.rebuild_thread_indexes();
+        assert!(
+            !app.build_command_palette_choices()
+                .contains(&CommandPaletteChoice::TogglePin)
+        );
+        assert_eq!(
+            app.command_palette_choice(),
+            Some(CommandPaletteChoice::TogglePin),
+            "background state changes must not retarget the highlighted command"
+        );
+
+        reduce(&mut app, Action::CloseCommandPalette);
+        assert!(app.command_palette_items.is_empty());
+        assert!(
+            !app.command_palette_choices()
+                .contains(&CommandPaletteChoice::TogglePin)
+        );
     }
 
     #[test]
