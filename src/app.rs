@@ -1609,7 +1609,11 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     ContextChoice::BatchClearSnooze => {
                         state.freeze_visible_batch(LocalBatchAction::SnoozeUntil(None));
                     }
-                    _ => unreachable!(),
+                    _ => {
+                        state.mutation_notice =
+                            Some("context action routing mismatch; no operation executed".into());
+                        return vec![];
+                    }
                 }
                 return vec![];
             }
@@ -1685,7 +1689,12 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                                 change.target_branch,
                                 planned_at,
                             ),
-                            _ => unreachable!(),
+                            _ => {
+                                state.mutation_notice = Some(
+                                    "forge action routing mismatch; no mutation executed".into(),
+                                );
+                                return vec![];
+                            }
                         };
                         match plan {
                             Ok(plan) => {
@@ -1699,7 +1708,11 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                             }
                         }
                     }
-                    _ => unreachable!(),
+                    _ => {
+                        state.mutation_notice =
+                            Some("forge action routing mismatch; no mutation executed".into());
+                        return vec![];
+                    }
                 }
                 return vec![];
             }
@@ -1751,7 +1764,11 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                         ContextChoice::ScratchInbox => crate::planning::ScratchState::Inbox,
                         ContextChoice::ScratchReady => crate::planning::ScratchState::Ready,
                         ContextChoice::ScratchDone => crate::planning::ScratchState::Done,
-                        _ => unreachable!(),
+                        _ => {
+                            state.mutation_notice =
+                                Some("scratch action routing mismatch; no write executed".into());
+                            return vec![];
+                        }
                     };
                     return vec![Effect::UpdateScratchState {
                         scratch_id: target.value,
@@ -1782,7 +1799,10 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 | ContextChoice::ForgeCreateMergeRequest
                 | ContextChoice::ForgeComment
                 | ContextChoice::ForgeApprove
-                | ContextChoice::ForgeMerge => unreachable!(),
+                | ContextChoice::ForgeMerge => {
+                    state.mutation_notice =
+                        Some("context action is unavailable in the current state".into());
+                }
             }
         }
         Action::LaunchPresetsLoaded {
@@ -2650,7 +2670,11 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                             now_unix_ms().saturating_add(duration_ms),
                         ))
                     }
-                    _ => unreachable!(),
+                    _ => {
+                        state.mutation_notice =
+                            Some("batch input routing mismatch; no write executed".into());
+                        return vec![];
+                    }
                 };
                 state.input_mode = InputMode::Normal;
                 state.input_buffer.clear();
@@ -3316,6 +3340,19 @@ fn fuzzy_subsequence(needle: &str, haystack: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn production_reducer_routes_do_not_panic_on_declared_unreachable_states() {
+        let source = include_str!("app.rs");
+        let production = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("production source");
+        assert!(
+            !production.contains("unreachable!()"),
+            "user-driven reducer routing must fail closed instead of panicking"
+        );
+    }
     use crate::backend::{CodexBackend, FakeBackend};
 
     fn app() -> AppState {
