@@ -1,6 +1,6 @@
 use crate::{
     compat::COMPAT_SCHEMA,
-    release_benchmark::{PERFORMANCE_FIXTURE, STABLE_MIN_ITERATIONS},
+    release_benchmark::{PERFORMANCE_FIXTURE, RETAINED_MIN_ITERATIONS},
 };
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -302,8 +302,8 @@ pub fn validate_evidence(path: &Path, version: &str, commit_sha: &str) -> Result
         "stable performance fixture must be {PERFORMANCE_FIXTURE}"
     );
     anyhow::ensure!(
-        receipt.performance.iterations >= STABLE_MIN_ITERATIONS,
-        "stable performance evidence requires at least {STABLE_MIN_ITERATIONS} iterations"
+        receipt.performance.iterations >= RETAINED_MIN_ITERATIONS,
+        "stable performance evidence requires at least {RETAINED_MIN_ITERATIONS} iterations"
     );
     anyhow::ensure!(
         receipt.performance.p95_ms.is_finite() && receipt.performance.p95_ms >= 0.0,
@@ -696,7 +696,7 @@ mod tests {
                 performance: PerformanceReceipt {
                     platform: PRIMARY_STABLE_PLATFORM.into(),
                     fixture: PERFORMANCE_FIXTURE.into(),
-                    iterations: STABLE_MIN_ITERATIONS,
+                    iterations: RETAINED_MIN_ITERATIONS,
                     p95_ms: 40.0,
                     p99_ms: 80.0,
                     source: "retained-linux".into(),
@@ -759,7 +759,7 @@ mod tests {
                 performance: PerformanceReceipt {
                     platform: PRIMARY_STABLE_PLATFORM.into(),
                     fixture: PERFORMANCE_FIXTURE.into(),
-                    iterations: STABLE_MIN_ITERATIONS,
+                    iterations: RETAINED_MIN_ITERATIONS,
                     p95_ms: 40.0,
                     p99_ms: 80.0,
                     source: "retained-linux".into(),
@@ -818,7 +818,7 @@ mod tests {
                 performance: PerformanceReceipt {
                     platform: PRIMARY_STABLE_PLATFORM.into(),
                     fixture: PERFORMANCE_FIXTURE.into(),
-                    iterations: STABLE_MIN_ITERATIONS - 1,
+                    iterations: RETAINED_MIN_ITERATIONS - 1,
                     p95_ms: 1.0,
                     p99_ms: 2.0,
                     source: "test".into(),
