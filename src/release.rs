@@ -89,6 +89,7 @@ pub struct AutomatedQualificationReceipt {
 pub struct PerformanceReceipt {
     pub platform: String,
     pub fixture: String,
+    pub source_sha: String,
     pub iterations: usize,
     pub p95_ms: f64,
     pub p99_ms: f64,
@@ -312,6 +313,10 @@ pub fn validate_evidence(path: &Path, version: &str, commit_sha: &str) -> Result
     anyhow::ensure!(
         receipt.performance.fixture == PERFORMANCE_FIXTURE,
         "stable performance fixture must be {PERFORMANCE_FIXTURE}"
+    );
+    anyhow::ensure!(
+        receipt.performance.source_sha.eq_ignore_ascii_case(commit_sha),
+        "stable performance evidence source SHA must match the release commit"
     );
     anyhow::ensure!(
         receipt.performance.iterations >= RETAINED_MIN_ITERATIONS,
@@ -788,6 +793,7 @@ mod tests {
                 )]),
                 automated_qualification: automated_receipt(),
                 performance: PerformanceReceipt {
+                    source_sha: sha(),
                     platform: PRIMARY_STABLE_PLATFORM.into(),
                     fixture: PERFORMANCE_FIXTURE.into(),
                     iterations: RETAINED_MIN_ITERATIONS,
@@ -854,6 +860,7 @@ mod tests {
                 )]),
                 automated_qualification: automated_receipt(),
                 performance: PerformanceReceipt {
+                    source_sha: sha(),
                     platform: PRIMARY_STABLE_PLATFORM.into(),
                     fixture: PERFORMANCE_FIXTURE.into(),
                     iterations: RETAINED_MIN_ITERATIONS,
@@ -910,6 +917,7 @@ mod tests {
                 )]),
                 automated_qualification: automated_receipt(),
                 performance: PerformanceReceipt {
+                    source_sha: sha(),
                     platform: PRIMARY_STABLE_PLATFORM.into(),
                     fixture: PERFORMANCE_FIXTURE.into(),
                     iterations: RETAINED_MIN_ITERATIONS,
@@ -971,6 +979,7 @@ mod tests {
                 terminal_restoration: BTreeMap::from([("linux".into(), terminal("xterm"))]),
                 automated_qualification: automated_receipt(),
                 performance: PerformanceReceipt {
+                    source_sha: sha(),
                     platform: PRIMARY_STABLE_PLATFORM.into(),
                     fixture: PERFORMANCE_FIXTURE.into(),
                     iterations: RETAINED_MIN_ITERATIONS - 1,
