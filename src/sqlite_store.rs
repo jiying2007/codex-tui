@@ -176,8 +176,12 @@ impl SqliteStore {
         fs::create_dir_all(parent)
             .with_context(|| format!("create SQLite state directory {}", parent.display()))?;
 
-        if self.db_path.exists() {
-            let conn = self.open_ready()?;
+        // A healthy live database gets a best-effort WAL checkpoint before preservation.
+        // A corrupt/forward-incompatible database must not block disaster recovery: preserve its
+        // raw database + sidecars and continue with the already validated recovery image.
+        if self.db_path.exists()
+            && let Ok(conn) = self.open_ready()
+        {
             conn.execute_batch("PRAGMA wal_checkpoint(FULL);")
                 .context("checkpoint live SQLite before restore")?;
             drop(conn);
@@ -198,26 +202,11 @@ impl SqliteStore {
             .context("sync staged SQLite recovery backup")?;
         validate_recovery_database(temporary.path())?;
 
-        remove_sqlite_sidecars(&self.db_path)?;
-        let previous_database = if self.db_path.exists() {
-            let previous = self
-                .db_path
-                .with_file_name(format!("state-v2.sqlite3.pre-restore.{}", now_unix_ms()));
-            fs::rename(&self.db_path, &previous).with_context(|| {
-                format!(
-                    "preserve live SQLite before restore {} -> {}",
-                    self.db_path.display(),
-                    previous.display()
-                )
-            })?;
-            Some(previous)
-        } else {
-            None
-        };
+        let previous_database = preserve_sqlite_image(&self.db_path, "pre-restore")?;
 
         if let Err(error) = temporary.persist(&self.db_path) {
             if let Some(previous) = previous_database.as_ref() {
-                let _ = fs::rename(previous, &self.db_path);
+                let _ = restore_preserved_sqlite_image(&self.db_path, previous);
             }
             return Err(anyhow::anyhow!(
                 "install recovery database {}: {}",
@@ -236,10 +225,9 @@ impl SqliteStore {
                 let failed = self
                     .db_path
                     .with_file_name(format!("state-v2.sqlite3.failed-restore.{}", now_unix_ms()));
-                let _ = remove_sqlite_sidecars(&self.db_path);
-                let _ = fs::rename(&self.db_path, &failed);
+                let _ = move_sqlite_image(&self.db_path, &failed);
                 if let Some(previous) = previous_database.as_ref() {
-                    let _ = fs::rename(previous, &self.db_path);
+                    let _ = restore_preserved_sqlite_image(&self.db_path, previous);
                 }
                 Err(error.context(format!(
                     "restored SQLite failed health check; failed image preserved at {}",
@@ -1037,21 +1025,63 @@ fn validate_recovery_database(path: &Path) -> Result<i64> {
     Ok(version)
 }
 
-fn remove_sqlite_sidecars(db_path: &Path) -> Result<()> {
-    let Some(file_name) = db_path.file_name().and_then(|value| value.to_str()) else {
-        return Ok(());
-    };
+fn sqlite_sidecar_path(db_path: &Path, suffix: &str) -> Result<PathBuf> {
+    let file_name = db_path
+        .file_name()
+        .context("SQLite database path has no file name")?;
     let parent = db_path
         .parent()
         .context("SQLite database path has no parent")?;
+    let mut sidecar_name = file_name.to_os_string();
+    sidecar_name.push(suffix);
+    Ok(parent.join(sidecar_name))
+}
+
+fn move_sqlite_image(source: &Path, destination: &Path) -> Result<()> {
+    if source.exists() {
+        fs::rename(source, destination).with_context(|| {
+            format!(
+                "preserve SQLite database {} -> {}",
+                source.display(),
+                destination.display()
+            )
+        })?;
+    }
     for suffix in ["-wal", "-shm"] {
-        let sidecar = parent.join(format!("{file_name}{suffix}"));
-        if sidecar.exists() {
-            fs::remove_file(&sidecar)
-                .with_context(|| format!("remove SQLite sidecar {}", sidecar.display()))?;
+        let source_sidecar = sqlite_sidecar_path(source, suffix)?;
+        if !source_sidecar.exists() {
+            continue;
         }
+        let destination_sidecar = sqlite_sidecar_path(destination, suffix)?;
+        fs::rename(&source_sidecar, &destination_sidecar).with_context(|| {
+            format!(
+                "preserve SQLite sidecar {} -> {}",
+                source_sidecar.display(),
+                destination_sidecar.display()
+            )
+        })?;
     }
     Ok(())
+}
+
+fn preserve_sqlite_image(db_path: &Path, label: &str) -> Result<Option<PathBuf>> {
+    if !db_path.exists() {
+        return Ok(None);
+    }
+    let previous = db_path.with_file_name(format!("state-v2.sqlite3.{label}.{}", now_unix_ms()));
+    move_sqlite_image(db_path, &previous)?;
+    Ok(Some(previous))
+}
+
+fn restore_preserved_sqlite_image(db_path: &Path, preserved: &Path) -> Result<()> {
+    if db_path.exists() {
+        let failed = db_path.with_file_name(format!(
+            "state-v2.sqlite3.rollback-displaced.{}",
+            now_unix_ms()
+        ));
+        move_sqlite_image(db_path, &failed)?;
+    }
+    move_sqlite_image(preserved, db_path)
 }
 
 fn configure_connection(conn: &Connection) -> Result<()> {
