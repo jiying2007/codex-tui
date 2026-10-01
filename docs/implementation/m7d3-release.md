@@ -213,12 +213,8 @@ python3 scripts/release/linux_qualify.py \
   --terminal-receipt release/evidence/linux/terminal-linux.json \
   --source <retained-linux-machine-id>
 
-# Optional after local qualification succeeds:
-python3 scripts/release/linux_qualify.py \
-  --canonical-ci-run <successful-main-ci-run-id> \
-  --terminal-receipt release/evidence/linux/terminal-linux.json \
-  --source <retained-linux-machine-id> \
-  --dispatch
+# Optional one-shot mode: add --dispatch to the qualification command.
+# Dispatch happens only after every local gate above succeeds.
 ```
 
 It performs:
