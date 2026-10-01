@@ -578,10 +578,9 @@ impl AppState {
 
         if fill_missing {
             for cwd in current_cwds {
-                if !self.cwd_localities.contains_key(&cwd) {
-                    let locality = classify_cwd(&cwd);
-                    self.cwd_localities.insert(cwd, locality);
-                }
+                self.cwd_localities
+                    .entry(cwd.clone())
+                    .or_insert_with(|| classify_cwd(&cwd));
             }
         }
     }
