@@ -819,7 +819,9 @@ async fn run_app(fake_mode: bool) -> Result<()> {
             .as_ref()
             .is_some_and(tokio::task::JoinHandle::is_finished)
         {
-            let task = connect_task.take().expect("finished connect task");
+            let Some(task) = connect_task.take() else {
+                continue;
+            };
             match task.await {
                 Ok(Ok(started)) => {
                     reduce(&mut app, Action::ReplaceThreads(started.initial.threads));
