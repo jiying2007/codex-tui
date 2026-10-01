@@ -32,6 +32,7 @@ All notable codex-tui changes are recorded here.
 - bounded Git/Forge actor command and event queues, added finite projection concurrency, and suppressed duplicate pending active-Git refreshes so large multi-project refreshes cannot grow unbounded queues or serialize all probes behind one worker.
 - added a canonical Linux Rust 1.88 MSRV compile gate so the `rust-version = "1.88"` package contract is continuously verified against the locked dependency graph.
 - removed filesystem probing from Mission Control rendering itself: uncached native absolute cwd values render as unprobed until controlled locality/Git reconciliation checks them, while Terminal Drawer open keeps its fresh fail-closed cwd validation.
+- bounded App Server command and conversation-event channels; user commands now fail explicitly under backpressure while conversation/interactive/Goal events wait for capacity instead of accumulating in unbounded memory or being dropped.
 
 ## [1.0.0] - 2026-09-30
 
