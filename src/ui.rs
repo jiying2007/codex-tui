@@ -661,6 +661,33 @@ fn registry_viewport(app: &AppState, area_height: u16) -> (Vec<usize>, RegistryV
     )
 }
 
+fn registry_history_label(
+    language: UiLanguage,
+    registry_complete: bool,
+    has_filter: bool,
+    show_all_history: bool,
+) -> &'static str {
+    if language.is_simplified_chinese() {
+        match (registry_complete, has_filter, show_all_history) {
+            (false, true, _) => "搜索（历史加载中）",
+            (false, false, true) => "全部历史（加载中）",
+            (false, false, false) => "最近（历史加载中）",
+            (true, true, _) => "搜索全部",
+            (true, false, true) => "全部历史",
+            (true, false, false) => "最近",
+        }
+    } else {
+        match (registry_complete, has_filter, show_all_history) {
+            (false, true, _) => "SEARCH PARTIAL · HYDRATING",
+            (false, false, true) => "ALL HISTORY · HYDRATING",
+            (false, false, false) => "RECENT · HYDRATING",
+            (true, true, _) => "SEARCH ALL",
+            (true, false, true) => "ALL HISTORY",
+            (true, false, false) => "RECENT",
+        }
+    }
+}
+
 fn render_thread_list(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
     let (paragraph, viewport) = thread_list(app, area);
     frame.render_widget(paragraph, area);
@@ -752,33 +779,12 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
     } else {
         format!(" · filter: {}", app.filter)
     };
-    let history = if app.language.is_simplified_chinese() {
-        match (
-            app.backend_status.registry_complete,
-            !app.filter.is_empty(),
-            app.show_all_history,
-        ) {
-            (false, true, _) => "搜索（历史加载中）",
-            (false, false, true) => "全部历史（加载中）",
-            (false, false, false) => "最近（历史加载中）",
-            (true, true, _) => "搜索全部",
-            (true, false, true) => "全部历史",
-            (true, false, false) => "最近",
-        }
-    } else {
-        match (
-            app.backend_status.registry_complete,
-            !app.filter.is_empty(),
-            app.show_all_history,
-        ) {
-            (false, true, _) => "SEARCH PARTIAL · HYDRATING",
-            (false, false, true) => "ALL HISTORY · HYDRATING",
-            (false, false, false) => "RECENT · HYDRATING",
-            (true, true, _) => "SEARCH ALL",
-            (true, false, true) => "ALL HISTORY",
-            (true, false, false) => "RECENT",
-        }
-    };
+    let history = registry_history_label(
+        app.language,
+        app.backend_status.registry_complete,
+        !app.filter.is_empty(),
+        app.show_all_history,
+    );
     let matched = viewport.matched;
     let summary = if app.language.is_simplified_chinese() {
         format!(
@@ -2893,6 +2899,30 @@ mod tests {
             out.push('\n');
         }
         out
+    }
+
+    #[test]
+    fn registry_history_label_distinguishes_partial_and_complete_history() {
+        assert_eq!(
+            registry_history_label(UiLanguage::English, false, false, false),
+            "RECENT · HYDRATING"
+        );
+        assert_eq!(
+            registry_history_label(UiLanguage::English, false, true, false),
+            "SEARCH PARTIAL · HYDRATING"
+        );
+        assert_eq!(
+            registry_history_label(UiLanguage::English, true, true, false),
+            "SEARCH ALL"
+        );
+        assert_eq!(
+            registry_history_label(UiLanguage::SimplifiedChinese, false, false, true),
+            "全部历史（加载中）"
+        );
+        assert_eq!(
+            registry_history_label(UiLanguage::SimplifiedChinese, true, false, true),
+            "全部历史"
+        );
     }
 
     #[test]
