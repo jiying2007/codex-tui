@@ -150,15 +150,7 @@ fn run_actor_inner(
 
     let mut command = CommandBuilder::new_default_prog();
     command.cwd(&cwd);
-    spawn_and_drive_pty(
-        pair,
-        command,
-        cwd,
-        size,
-        command_rx,
-        event_tx,
-        child_killer,
-    )
+    spawn_and_drive_pty(pair, command, cwd, size, command_rx, event_tx, child_killer)
 }
 
 fn spawn_and_drive_pty(
@@ -515,9 +507,8 @@ mod tests {
         let (_event_tx, event_rx) = sync_channel(1);
 
         let killed = Arc::new(AtomicBool::new(false));
-        let child_killer: SharedChildKiller = Arc::new(Mutex::new(Some(Box::new(FlagKiller(
-            Arc::clone(&killed),
-        )))));
+        let child_killer: SharedChildKiller =
+            Arc::new(Mutex::new(Some(Box::new(FlagKiller(Arc::clone(&killed))))));
 
         let (release_tx, release_rx) = channel();
         let (done_tx, done_rx) = channel();
