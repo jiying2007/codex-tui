@@ -537,6 +537,10 @@ mod tests {
                 "compat matrix drifted from CI: {runner}"
             );
         }
+        assert!(
+            ci.contains("name: rust-1.88-msrv") && ci.contains("toolchain: 1.88.0"),
+            "declared Rust MSRV must remain an exact canonical CI compile gate"
+        );
     }
 
     #[test]
