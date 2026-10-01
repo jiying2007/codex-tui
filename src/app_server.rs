@@ -2026,6 +2026,11 @@ fn enqueue_rpc_message(queue: &mut VecDeque<Value>, message: Value) -> Result<()
     Ok(())
 }
 
+fn decode_wire_line(line: &str) -> Result<Value> {
+    serde_json::from_str(line)
+        .with_context(|| format!("decode app-server JSON line ({} bytes)", line.len()))
+}
+
 struct RpcSession {
     _child: Child,
     reader: Lines<BufReader<ChildStdout>>,
@@ -2157,8 +2162,7 @@ impl RpcSession {
             if line.trim().is_empty() {
                 continue;
             }
-            let value = serde_json::from_str(&line)
-                .with_context(|| format!("decode app-server JSON line ({} bytes)", line.len()))?;
+            let value = decode_wire_line(&line)?;
             return Ok(Some(value));
         }
     }
@@ -2257,6 +2261,17 @@ mod tests {
             rx.recv().await,
             Some(ConversationEvent::GoalCleared(thread_id)) if thread_id.0 == "second"
         ));
+    }
+
+    #[test]
+    fn malformed_rpc_wire_line_is_rejected_fail_closed() {
+        let error = decode_wire_line("{not-json").expect_err("malformed protocol must fail");
+        assert!(
+            error
+                .to_string()
+                .contains("decode app-server JSON line"),
+            "wire errors must retain protocol context: {error:#}"
+        );
     }
 
     #[test]
