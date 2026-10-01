@@ -40,6 +40,23 @@ Planning reconciliation is the clear scale watch item: 50k takes about 85.8 ms. 
 
 If real terminal traces later show planning reconciliation becoming user-visible, prefer incremental reconciliation, cheaper projection construction, or moving non-interactive reconciliation work off the foreground path before changing Registry storage.
 
+## Follow-up: planning reconciliation optimization
+
+PR #107 / main commit `3003dc763751b065250612337649b9418a9c4cda` removed the duplicate active-worktree collision calculation pass while keeping collision-index construction out of the WorkCard projection hot loop.
+
+Fresh-main scale evidence:
+- workflow run: `36861846830`
+- artifact: `scale-evidence-3003dc763751b065250612337649b9418a9c4cda`
+- artifact id: `11162045215`
+- artifact digest: `sha256:07668a45fba88f3f01ca2d017f6433c8af93d5b0ba73c243cc953cdb8aa0dbdc`
+- 10k planning reconciliation: **14.101 ms**
+- 50k planning reconciliation: **80.672 ms**
+- 50k peak RSS: **89,148 KB (~87.1 MiB)**
+
+Because hosted-runner wall-clock results showed substantial run-to-run variance, the optimization was evaluated with repeated baseline/candidate samples instead of a single measurement. The 50k median moved from about **85.42 ms** on the pre-change baseline to about **77.54 ms** on the final candidate implementation, a roughly **9%** median improvement, while canonical CI remained green.
+
+This improves the current watch item without changing the storage decision: full hydrated Registry state remains resident, and true Registry paging / a SQLite Registry index remain deferred.
+
 ## Revisit conditions
 
 Re-run this decision rather than changing architecture speculatively when one or more of these conditions becomes true:
