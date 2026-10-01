@@ -3549,7 +3549,7 @@ mod tests {
     #[test]
     fn help_hints_match_locked_keyboard_commands() {
         use crate::app::ViewKind;
-        use crate::keymap::{Command, command_for_key};
+        use crate::{command::Command, keymap::command_for_key};
         use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
         let help = HELP_LINES.join("\n");
