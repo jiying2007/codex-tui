@@ -190,42 +190,42 @@ fn command_palette_choice_label(
     language: UiLanguage,
 ) -> &'static str {
     match (choice, language) {
-        (CommandPaletteChoice::Search, UiLanguage::SimplifiedChinese) => "搜索  /",
-        (CommandPaletteChoice::NextAttention, UiLanguage::SimplifiedChinese) => "下一个待处理  Space",
-        (CommandPaletteChoice::QuickPrompt, UiLanguage::SimplifiedChinese) => "快速消息  a",
-        (CommandPaletteChoice::Board, UiLanguage::SimplifiedChinese) => "打开看板  b",
-        (CommandPaletteChoice::Review, UiLanguage::SimplifiedChinese) => "打开评审  r",
-        (CommandPaletteChoice::Workspace, UiLanguage::SimplifiedChinese) => "打开工作区  w",
+        (CommandPaletteChoice::Search, UiLanguage::SimplifiedChinese) => "搜索",
+        (CommandPaletteChoice::NextAttention, UiLanguage::SimplifiedChinese) => "下一个待处理",
+        (CommandPaletteChoice::QuickPrompt, UiLanguage::SimplifiedChinese) => "快速消息",
+        (CommandPaletteChoice::Board, UiLanguage::SimplifiedChinese) => "打开看板",
+        (CommandPaletteChoice::Review, UiLanguage::SimplifiedChinese) => "打开评审",
+        (CommandPaletteChoice::Workspace, UiLanguage::SimplifiedChinese) => "打开工作区",
         (CommandPaletteChoice::ManagedWorktrees, UiLanguage::SimplifiedChinese) => {
-            "受管 Worktrees  m"
+            "受管 Worktrees"
         }
-        (CommandPaletteChoice::NewScratch, UiLanguage::SimplifiedChinese) => "新建 Scratch  n",
-        (CommandPaletteChoice::Goal, UiLanguage::SimplifiedChinese) => "Goal 操作  g",
-        (CommandPaletteChoice::TogglePin, UiLanguage::SimplifiedChinese) => "切换固定  p",
-        (CommandPaletteChoice::Snooze, UiLanguage::SimplifiedChinese) => "稍后提醒  s",
-        (CommandPaletteChoice::ContextActions, UiLanguage::SimplifiedChinese) => "上下文操作  .",
-        (CommandPaletteChoice::TerminalDrawer, UiLanguage::SimplifiedChinese) => "打开终端抽屉  t",
+        (CommandPaletteChoice::NewScratch, UiLanguage::SimplifiedChinese) => "新建 Scratch",
+        (CommandPaletteChoice::Goal, UiLanguage::SimplifiedChinese) => "Goal 操作",
+        (CommandPaletteChoice::TogglePin, UiLanguage::SimplifiedChinese) => "切换固定",
+        (CommandPaletteChoice::Snooze, UiLanguage::SimplifiedChinese) => "稍后提醒",
+        (CommandPaletteChoice::ContextActions, UiLanguage::SimplifiedChinese) => "上下文操作",
+        (CommandPaletteChoice::TerminalDrawer, UiLanguage::SimplifiedChinese) => "打开终端抽屉",
         (CommandPaletteChoice::CloseTerminalDrawer, UiLanguage::SimplifiedChinese) => {
-            "关闭终端抽屉  T"
+            "关闭终端抽屉"
         }
-        (CommandPaletteChoice::Help, UiLanguage::SimplifiedChinese) => "帮助  ?",
-        (CommandPaletteChoice::Search, UiLanguage::English) => "Search  /",
-        (CommandPaletteChoice::NextAttention, UiLanguage::English) => "Next attention  Space",
-        (CommandPaletteChoice::QuickPrompt, UiLanguage::English) => "Quick Prompt  a",
-        (CommandPaletteChoice::Board, UiLanguage::English) => "Open Board  b",
-        (CommandPaletteChoice::Review, UiLanguage::English) => "Open Review  r",
-        (CommandPaletteChoice::Workspace, UiLanguage::English) => "Open Workspace  w",
-        (CommandPaletteChoice::ManagedWorktrees, UiLanguage::English) => "Managed Worktrees  m",
-        (CommandPaletteChoice::NewScratch, UiLanguage::English) => "New Scratch  n",
-        (CommandPaletteChoice::Goal, UiLanguage::English) => "Goal actions  g",
-        (CommandPaletteChoice::TogglePin, UiLanguage::English) => "Toggle pin  p",
-        (CommandPaletteChoice::Snooze, UiLanguage::English) => "Snooze  s",
-        (CommandPaletteChoice::ContextActions, UiLanguage::English) => "Context actions  .",
-        (CommandPaletteChoice::TerminalDrawer, UiLanguage::English) => "Open Terminal Drawer  t",
+        (CommandPaletteChoice::Help, UiLanguage::SimplifiedChinese) => "帮助",
+        (CommandPaletteChoice::Search, UiLanguage::English) => "Search",
+        (CommandPaletteChoice::NextAttention, UiLanguage::English) => "Next attention",
+        (CommandPaletteChoice::QuickPrompt, UiLanguage::English) => "Quick Prompt",
+        (CommandPaletteChoice::Board, UiLanguage::English) => "Open Board",
+        (CommandPaletteChoice::Review, UiLanguage::English) => "Open Review",
+        (CommandPaletteChoice::Workspace, UiLanguage::English) => "Open Workspace",
+        (CommandPaletteChoice::ManagedWorktrees, UiLanguage::English) => "Managed Worktrees",
+        (CommandPaletteChoice::NewScratch, UiLanguage::English) => "New Scratch",
+        (CommandPaletteChoice::Goal, UiLanguage::English) => "Goal actions",
+        (CommandPaletteChoice::TogglePin, UiLanguage::English) => "Toggle pin",
+        (CommandPaletteChoice::Snooze, UiLanguage::English) => "Snooze",
+        (CommandPaletteChoice::ContextActions, UiLanguage::English) => "Context actions",
+        (CommandPaletteChoice::TerminalDrawer, UiLanguage::English) => "Open Terminal Drawer",
         (CommandPaletteChoice::CloseTerminalDrawer, UiLanguage::English) => {
-            "Close Terminal Drawer  T"
+            "Close Terminal Drawer"
         }
-        (CommandPaletteChoice::Help, UiLanguage::English) => "Help  ?",
+        (CommandPaletteChoice::Help, UiLanguage::English) => "Help",
     }
 }
 
