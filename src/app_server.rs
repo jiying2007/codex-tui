@@ -26,6 +26,7 @@ use tokio::task::JoinHandle;
 
 const PAGE_SIZE: u32 = 200;
 const STARTUP_REGISTRY_PAGE_LIMIT: usize = 1;
+const REGISTRY_HYDRATION_YIELD_INTERVAL: Duration = Duration::from_millis(10);
 const REFRESH_INTERVAL: Duration = Duration::from_secs(5 * 60);
 const GOAL_PROBE_INTERVAL: Duration = Duration::from_millis(250);
 const GOAL_EAGER_PROBE_LIMIT: usize = 100;
@@ -311,17 +312,39 @@ fn try_recv_latest_snapshot(
     }
 }
 
+#[derive(Debug)]
+struct RegistryHydration {
+    cursor: String,
+    loaded_ids: Option<BTreeSet<String>>,
+    optimized_query: bool,
+    tombstones: BTreeSet<String>,
+}
+
+#[derive(Debug)]
+struct RegistryLoad {
+    threads: Vec<ThreadSummary>,
+    loaded_supported: bool,
+    registry_complete: bool,
+    hydration: Option<RegistryHydration>,
+}
+
+#[derive(Debug)]
+struct RegistryPage {
+    threads: Vec<ThreadSummary>,
+    next_cursor: Option<String>,
+    optimized_query: bool,
+}
+
 async fn bootstrap_registry(
     rpc: &mut RpcSession,
     max_pages: Option<usize>,
-) -> Result<(Vec<ThreadSummary>, BackendStatus)> {
+) -> Result<(Vec<ThreadSummary>, BackendStatus, Option<RegistryHydration>)> {
     let init = initialize(rpc).await?;
     let mut status = status_from_initialize(&init);
-    let (threads, loaded_supported, registry_complete) =
-        load_registry_with_page_limit(rpc, false, max_pages).await?;
+    let load = load_registry_with_page_limit(rpc, false, max_pages).await?;
     status.capabilities.push("thread/list".into());
     status.capabilities.push("thread/status/changed".into());
-    if loaded_supported {
+    if load.loaded_supported {
         status.capabilities.push("thread/loaded/list".into());
     } else {
         status
@@ -329,14 +352,15 @@ async fn bootstrap_registry(
             .push("thread/loaded/list".into());
     }
     status.connected = true;
-    status.registry_complete = registry_complete;
+    status.registry_complete = load.registry_complete;
     status.last_refresh_unix_ms = Some(now_unix_ms());
-    Ok((threads, status))
+    Ok((load.threads, status, load.hydration))
 }
 
 pub async fn start(codex_bin: Option<OsString>) -> Result<StartedRegistry> {
     let mut rpc = RpcSession::spawn(codex_bin).await?;
-    let (threads, status) = bootstrap_registry(&mut rpc, Some(STARTUP_REGISTRY_PAGE_LIMIT)).await?;
+    let (threads, status, hydration) =
+        bootstrap_registry(&mut rpc, Some(STARTUP_REGISTRY_PAGE_LIMIT)).await?;
 
     let initial = BackendSnapshot {
         generation: 0,
@@ -353,6 +377,7 @@ pub async fn start(codex_bin: Option<OsString>) -> Result<StartedRegistry> {
         tx,
         conversation_tx,
         command_rx,
+        hydration,
     ));
 
     Ok(StartedRegistry {
@@ -368,7 +393,8 @@ pub async fn start(codex_bin: Option<OsString>) -> Result<StartedRegistry> {
 
 pub async fn probe(codex_bin: Option<OsString>) -> Result<BackendSnapshot> {
     let mut rpc = RpcSession::spawn(codex_bin).await?;
-    let (threads, status) = bootstrap_registry(&mut rpc, None).await?;
+    let (threads, status, hydration) = bootstrap_registry(&mut rpc, None).await?;
+    debug_assert!(hydration.is_none());
     Ok(BackendSnapshot {
         generation: 0,
         threads,
@@ -433,6 +459,48 @@ fn apply_full_registry_refresh(
     }
 }
 
+fn merge_registry_hydration_page(
+    threads: &mut BTreeMap<String, ThreadSummary>,
+    page: Vec<ThreadSummary>,
+    tombstones: &BTreeSet<String>,
+) {
+    for incoming in page {
+        if tombstones.contains(&incoming.id.0) {
+            continue;
+        }
+        let replace = threads
+            .get(&incoming.id.0)
+            .is_none_or(|current| current.metadata.updated_at < incoming.metadata.updated_at);
+        if replace {
+            threads.insert(incoming.id.0.clone(), incoming);
+        }
+    }
+}
+
+fn observe_registry_hydration_message(hydration: &mut RegistryHydration, message: &Value) {
+    let Some(method) = message.get("method").and_then(Value::as_str) else {
+        return;
+    };
+    match method {
+        "thread/archived" | "thread/deleted" => {
+            if let Some(thread_id) = message.pointer("/params/threadId").and_then(Value::as_str) {
+                hydration.tombstones.insert(thread_id.to_string());
+            }
+        }
+        "thread/unarchived" => {
+            if let Some(thread_id) = message.pointer("/params/threadId").and_then(Value::as_str) {
+                hydration.tombstones.remove(thread_id);
+            }
+        }
+        "thread/started" => {
+            if let Some(thread_id) = message.pointer("/params/thread/id").and_then(Value::as_str) {
+                hydration.tombstones.remove(thread_id);
+            }
+        }
+        _ => {}
+    }
+}
+
 async fn run_registry_actor(
     mut rpc: RpcSession,
     initial_threads: Vec<ThreadSummary>,
@@ -440,6 +508,7 @@ async fn run_registry_actor(
     tx: watch::Sender<BackendSnapshot>,
     conversation_tx: mpsc::Sender<ConversationEvent>,
     mut command_rx: mpsc::Receiver<BackendCommand>,
+    mut hydration: Option<RegistryHydration>,
 ) {
     let mut generation = 0_u64;
     let mut threads = by_id(initial_threads);
@@ -460,31 +529,18 @@ async fn run_registry_actor(
     refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     refresh.tick().await;
 
-    match load_registry(&mut rpc, true).await {
-        Ok((fresh, loaded_supported)) => {
-            apply_full_registry_refresh(fresh, loaded_supported, &mut threads, &mut status);
-            if goal_supported != Some(false) {
-                reset_eager_goal_queue(
-                    &threads,
-                    &goal_probed,
-                    &mut goal_queued,
-                    &mut goal_probe_queue,
-                );
-            }
-        }
-        Err(error) => {
-            status.error = Some(error.to_string());
-        }
-    }
-    generation = generation.saturating_add(1);
-    let _ = tx.send(snapshot(generation, &threads, &status));
+    let mut hydration_tick = tokio::time::interval(REGISTRY_HYDRATION_YIELD_INTERVAL);
+    hydration_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    let mut hydration_pending_publish = false;
 
     let mut goal_probe = tokio::time::interval(GOAL_PROBE_INTERVAL);
     goal_probe.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     goal_probe.tick().await;
 
     loop {
+        let hydration_can_advance = hydration.is_some() && !rpc.has_queued_messages();
         tokio::select! {
+            biased;
             command = command_rx.recv() => {
                 let Some(command) = command else {
                     return;
@@ -711,6 +767,53 @@ async fn run_registry_actor(
                     }
                 }
             }
+            _ = hydration_tick.tick(), if hydration_can_advance => {
+                let page_result = {
+                    let state = hydration.as_ref().expect("hydration state");
+                    load_registry_page(
+                        &mut rpc,
+                        Some(state.cursor.clone()),
+                        false,
+                        state.optimized_query,
+                        state.loaded_ids.as_ref(),
+                    )
+                    .await
+                };
+
+                match page_result {
+                    Ok(page) => {
+                        let next_cursor = page.next_cursor;
+                        let optimized_query = page.optimized_query;
+                        let tombstones = &hydration.as_ref().expect("hydration state").tombstones;
+                        merge_registry_hydration_page(&mut threads, page.threads, tombstones);
+                        status.last_refresh_unix_ms = Some(now_unix_ms());
+
+                        if let Some(next_cursor) = next_cursor {
+                            let state = hydration.as_mut().expect("hydration state");
+                            state.cursor = next_cursor;
+                            state.optimized_query = optimized_query;
+                        } else {
+                            hydration = None;
+                            status.registry_complete = true;
+                            if goal_supported != Some(false) {
+                                reset_eager_goal_queue(
+                                    &threads,
+                                    &goal_probed,
+                                    &mut goal_queued,
+                                    &mut goal_probe_queue,
+                                );
+                            }
+                        }
+                        hydration_pending_publish = true;
+                        hydration_tick.reset();
+                    }
+                    Err(error) => {
+                        status.error = Some(format!("Registry hydration failed: {error}"));
+                        hydration = None;
+                        hydration_pending_publish = true;
+                    }
+                }
+            }
             _ = goal_probe.tick() => {
                 if goal_supported != Some(false)
                     && let Some(thread_id) = goal_probe_queue.pop_front()
@@ -751,7 +854,7 @@ async fn run_registry_actor(
                     }
                 }
             }
-            _ = refresh.tick() => {
+            _ = refresh.tick(), if hydration.is_none() => {
                 match load_registry(&mut rpc, true).await {
                     Ok((fresh, loaded_supported)) => {
                         apply_full_registry_refresh(
@@ -779,6 +882,9 @@ async fn run_registry_actor(
             message = rpc.read_message() => {
                 match message {
                     Ok(Some(message)) => {
+                        if let Some(hydration) = hydration.as_mut() {
+                            observe_registry_hydration_message(hydration, &message);
+                        }
                         let registry_changed = match handle_unsolicited(
                             &mut rpc,
                             message,
@@ -798,6 +904,7 @@ async fn run_registry_actor(
                         if registry_changed {
                             generation = generation.saturating_add(1);
                             let _ = tx.send(snapshot(generation, &threads, &status));
+                            hydration_pending_publish = false;
                         }
                     }
                     Ok(None) => {
@@ -816,6 +923,12 @@ async fn run_registry_actor(
                     }
                 }
             }
+        }
+
+        if hydration_pending_publish && !rpc.has_queued_messages() {
+            generation = generation.saturating_add(1);
+            let _ = tx.send(snapshot(generation, &threads, &status));
+            hydration_pending_publish = false;
         }
     }
 }
@@ -912,17 +1025,61 @@ async fn load_registry(
     rpc: &mut RpcSession,
     use_state_db_only: bool,
 ) -> Result<(Vec<ThreadSummary>, bool)> {
-    let (threads, loaded_supported, registry_complete) =
-        load_registry_with_page_limit(rpc, use_state_db_only, None).await?;
-    debug_assert!(registry_complete);
-    Ok((threads, loaded_supported))
+    let load = load_registry_with_page_limit(rpc, use_state_db_only, None).await?;
+    debug_assert!(load.registry_complete);
+    debug_assert!(load.hydration.is_none());
+    Ok((load.threads, load.loaded_supported))
+}
+
+async fn load_registry_page(
+    rpc: &mut RpcSession,
+    cursor: Option<String>,
+    use_state_db_only: bool,
+    mut optimized_query: bool,
+    loaded_ids: Option<&BTreeSet<String>>,
+) -> Result<RegistryPage> {
+    let optimized_params = json!({
+        "cursor": cursor,
+        "limit": PAGE_SIZE,
+        "sortKey": "recency_at",
+        "sortDirection": "desc",
+        "useStateDbOnly": use_state_db_only
+    });
+    let legacy_params = json!({
+        "cursor": cursor,
+        "limit": PAGE_SIZE
+    });
+
+    let result = if optimized_query {
+        match rpc.request("thread/list", optimized_params).await {
+            Ok(result) => result,
+            Err(error) if is_registry_query_optimization_unsupported(&error) => {
+                optimized_query = false;
+                rpc.request("thread/list", legacy_params).await?
+            }
+            Err(error) => return Err(error),
+        }
+    } else {
+        rpc.request("thread/list", legacy_params).await?
+    };
+
+    let page = parse_thread_list(result)?;
+    Ok(RegistryPage {
+        threads: page
+            .data
+            .into_iter()
+            .map(|thread| normalize_thread(thread, loaded_ids))
+            .collect(),
+        next_cursor: page.next_cursor,
+        optimized_query,
+    })
 }
 
 async fn load_registry_with_page_limit(
     rpc: &mut RpcSession,
     use_state_db_only: bool,
     max_pages: Option<usize>,
-) -> Result<(Vec<ThreadSummary>, bool, bool)> {
+) -> Result<RegistryLoad> {
     let loaded = load_all_loaded_ids(rpc).await;
     let (loaded_ids, loaded_supported) = match loaded {
         Ok(ids) => (Some(ids), true),
@@ -930,57 +1087,47 @@ async fn load_registry_with_page_limit(
     };
 
     let mut cursor: Option<String> = None;
-    let mut raw_threads: Vec<ThreadWire> = Vec::new();
+    let mut threads = Vec::new();
     let mut optimized_query = true;
     let mut pages = 0_usize;
-    let mut registry_complete = false;
-    loop {
-        let optimized_params = json!({
-            "cursor": cursor,
-            "limit": PAGE_SIZE,
-            "sortKey": "recency_at",
-            "sortDirection": "desc",
-            "useStateDbOnly": use_state_db_only
-        });
-        let legacy_params = json!({
-            "cursor": cursor,
-            "limit": PAGE_SIZE
-        });
 
-        let result = if optimized_query {
-            match rpc.request("thread/list", optimized_params).await {
-                Ok(result) => result,
-                Err(error) if is_registry_query_optimization_unsupported(&error) => {
-                    optimized_query = false;
-                    rpc.request("thread/list", legacy_params).await?
-                }
-                Err(error) => return Err(error),
-            }
-        } else {
-            rpc.request("thread/list", legacy_params).await?
+    loop {
+        let page = load_registry_page(
+            rpc,
+            cursor,
+            use_state_db_only,
+            optimized_query,
+            loaded_ids.as_ref(),
+        )
+        .await?;
+        optimized_query = page.optimized_query;
+        threads.extend(page.threads);
+        pages = pages.saturating_add(1);
+
+        let Some(next_cursor) = page.next_cursor else {
+            return Ok(RegistryLoad {
+                threads,
+                loaded_supported,
+                registry_complete: true,
+                hydration: None,
+            });
         };
 
-        let page = parse_thread_list(result)?;
-        raw_threads.extend(page.data);
-        cursor = page.next_cursor;
-        pages = pages.saturating_add(1);
-        if cursor.is_none() {
-            registry_complete = true;
-            break;
-        }
         if max_pages.is_some_and(|limit| pages >= limit) {
-            break;
+            return Ok(RegistryLoad {
+                threads,
+                loaded_supported,
+                registry_complete: false,
+                hydration: Some(RegistryHydration {
+                    cursor: next_cursor,
+                    loaded_ids,
+                    optimized_query,
+                    tombstones: BTreeSet::new(),
+                }),
+            });
         }
+        cursor = Some(next_cursor);
     }
-
-    Ok((
-        raw_threads
-            .into_iter()
-            .map(|thread| normalize_thread(thread, loaded_ids.as_ref()))
-            .collect(),
-        loaded_supported,
-        registry_complete,
-    ))
 }
 
 async fn load_all_loaded_ids(rpc: &mut RpcSession) -> Result<BTreeSet<String>> {
@@ -1754,6 +1901,10 @@ impl RpcSession {
         }
     }
 
+    fn has_queued_messages(&self) -> bool {
+        !self.queued_messages.is_empty()
+    }
+
     async fn notify(&mut self, method: &str, params: Option<Value>) -> Result<()> {
         let mut message = json!({"method": method});
         if let Some(params) = params {
@@ -2039,25 +2190,99 @@ mod tests {
             .split("#[cfg(test)]")
             .next()
             .expect("production source");
-        assert!(production.contains("status.registry_complete = registry_complete;"));
-        assert!(production.contains("registry_complete = true;"));
+        assert!(production.contains("status.registry_complete = load.registry_complete;"));
+        assert!(production.contains("registry_complete: true"));
         assert!(production.contains("status.registry_complete = true;"));
     }
 
     #[test]
-    fn startup_registry_is_one_page_before_full_actor_hydration() {
+    fn startup_registry_hydration_is_pagewise_and_command_priority() {
         assert_eq!(STARTUP_REGISTRY_PAGE_LIMIT, 1);
+        assert!(REGISTRY_HYDRATION_YIELD_INTERVAL <= Duration::from_millis(50));
+
         let source = include_str!("app_server.rs");
         let production = source
             .split("#[cfg(test)]")
             .next()
             .expect("production source");
+        let actor = production
+            .split("async fn run_registry_actor")
+            .nth(1)
+            .expect("registry actor");
+        let command = actor
+            .find("command = command_rx.recv()")
+            .expect("command branch");
+        let hydration = actor
+            .find("_ = hydration_tick.tick(), if hydration_can_advance")
+            .expect("hydration branch");
+
         assert!(
             production
                 .contains("bootstrap_registry(&mut rpc, Some(STARTUP_REGISTRY_PAGE_LIMIT)).await?")
         );
         assert!(production.contains("bootstrap_registry(&mut rpc, None).await?"));
-        assert!(production.contains("match load_registry(&mut rpc, true).await"));
+        assert!(actor.contains("biased;"));
+        assert!(command < hydration);
+        assert!(actor.contains("hydration_tick.reset();"));
+    }
+
+    #[test]
+    fn hydration_merge_preserves_newer_live_state_and_tombstones() {
+        let mut current = FakeBackend::scaled(1)
+            .snapshot()
+            .threads
+            .into_iter()
+            .next()
+            .expect("current");
+        current.id = ThreadId::new("same");
+        current.title = "live-newer".into();
+        current.metadata.updated_at = 20;
+
+        let mut stale = current.clone();
+        stale.title = "stale-page".into();
+        stale.metadata.updated_at = 10;
+
+        let mut fresh = current.clone();
+        fresh.id = ThreadId::new("fresh");
+        fresh.title = "fresh-page".into();
+        fresh.metadata.updated_at = 30;
+
+        let mut tombstoned = current.clone();
+        tombstoned.id = ThreadId::new("gone");
+        tombstoned.metadata.updated_at = 30;
+
+        let mut threads = BTreeMap::from([(current.id.0.clone(), current)]);
+        let tombstones = BTreeSet::from(["gone".to_string()]);
+        merge_registry_hydration_page(&mut threads, vec![stale, fresh, tombstoned], &tombstones);
+
+        assert_eq!(threads["same"].title, "live-newer");
+        assert_eq!(threads["fresh"].title, "fresh-page");
+        assert!(!threads.contains_key("gone"));
+    }
+
+    #[test]
+    fn hydration_tombstones_follow_archive_and_reappearance_notifications() {
+        let mut hydration = RegistryHydration {
+            cursor: "next".into(),
+            loaded_ids: None,
+            optimized_query: true,
+            tombstones: BTreeSet::new(),
+        };
+
+        observe_registry_hydration_message(
+            &mut hydration,
+            &json!({"method": "thread/archived", "params": {"threadId": "thread-1"}}),
+        );
+        assert!(hydration.tombstones.contains("thread-1"));
+
+        observe_registry_hydration_message(
+            &mut hydration,
+            &json!({
+                "method": "thread/started",
+                "params": {"thread": {"id": "thread-1"}}
+            }),
+        );
+        assert!(!hydration.tombstones.contains("thread-1"));
     }
 
     #[test]
