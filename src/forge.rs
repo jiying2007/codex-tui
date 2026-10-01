@@ -1294,6 +1294,123 @@ fn now_unix_ms() -> u64 {
 mod tests {
     use super::*;
 
+    #[derive(Clone)]
+    struct SlowProbeProvider {
+        active: Arc<std::sync::atomic::AtomicUsize>,
+        max_active: Arc<std::sync::atomic::AtomicUsize>,
+        delay: Duration,
+    }
+
+    impl SlowProbeProvider {
+        fn record_enter(
+            active: &std::sync::atomic::AtomicUsize,
+            max_active: &std::sync::atomic::AtomicUsize,
+        ) {
+            let current = active.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+            max_active.fetch_max(current, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+
+    impl ForgeProvider for SlowProbeProvider {
+        fn probe<'a>(
+            &'a self,
+            thread_id: ThreadId,
+            cwd: String,
+        ) -> ForgeFuture<'a, ForgeObservation> {
+            let active = Arc::clone(&self.active);
+            let max_active = Arc::clone(&self.max_active);
+            let delay = self.delay;
+            Box::pin(async move {
+                Self::record_enter(&active, &max_active);
+                tokio::time::sleep(delay).await;
+                active.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                ForgeObservation::unavailable(thread_id, cwd, "fixture")
+            })
+        }
+
+        fn probe_review<'a>(
+            &'a self,
+            target: ForgeReviewTarget,
+        ) -> ForgeFuture<'a, ForgeReviewSummary> {
+            Box::pin(async move {
+                ForgeReviewSummary {
+                    thread_id: target.thread_id,
+                    cwd: target.cwd,
+                    change_request_iid: target.change_request_iid,
+                    approvals_required: None,
+                    approvals_left: None,
+                    approved_by_count: 0,
+                    changes_requested_by_count: 0,
+                    discussions_total: 0,
+                    unresolved_discussions: 0,
+                    approvals_available: false,
+                    discussions_available: false,
+                    observed_at_unix_ms: now_unix_ms(),
+                    error: Some("fixture".into()),
+                }
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn forge_actor_runs_bounded_concurrent_probes() {
+        let active = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let max_active = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let provider = Arc::new(SlowProbeProvider {
+            active,
+            max_active: Arc::clone(&max_active),
+            delay: Duration::from_millis(40),
+        });
+        let mut handle = ForgeHandle::start_with_provider(provider);
+
+        for index in 0..8 {
+            handle
+                .probe(ThreadId::new(format!("thread-{index}")), format!("/repo/{index}"))
+                .expect("queue probe");
+        }
+
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+        let mut received = 0;
+        while received < 8 && tokio::time::Instant::now() < deadline {
+            while handle.try_recv().is_some() {
+                received += 1;
+            }
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+
+        assert_eq!(received, 8);
+        let observed = max_active.load(std::sync::atomic::Ordering::SeqCst);
+        assert!(observed > 1, "actor must execute independent probes concurrently");
+        assert!(
+            observed <= FORGE_MAX_CONCURRENCY,
+            "actor exceeded concurrency bound: {observed}"
+        );
+    }
+
+    #[tokio::test]
+    async fn forge_actor_command_queue_applies_backpressure() {
+        let provider = Arc::new(SlowProbeProvider {
+            active: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            max_active: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            delay: Duration::from_secs(1),
+        });
+        let handle = ForgeHandle::start_with_provider(provider);
+
+        let mut queue_full = false;
+        for index in 0..(FORGE_COMMAND_QUEUE_CAPACITY + FORGE_MAX_CONCURRENCY + 16) {
+            let result = handle.probe(
+                ThreadId::new(format!("backpressure-{index}")),
+                format!("/repo/backpressure/{index}"),
+            );
+            if result.is_err() {
+                queue_full = true;
+                break;
+            }
+        }
+
+        assert!(queue_full, "bounded Forge command queue must apply backpressure");
+    }
+
     #[test]
     fn provider_routing_is_explicit_and_custom_hosts_use_auth_authority() {
         assert_eq!(
