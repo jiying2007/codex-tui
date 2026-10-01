@@ -9,7 +9,7 @@ use std::{
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
-pub const SCALE_EVIDENCE_SCHEMA: &str = "codex-tui/scale-evidence/v1";
+pub const SCALE_EVIDENCE_SCHEMA: &str = "codex-tui/scale-evidence/v2";
 pub const DEFAULT_ROWS: usize = 10_000;
 pub const DEFAULT_WARMUP_ITERATIONS: usize = 5;
 pub const DEFAULT_ITERATIONS: usize = 50;
@@ -32,7 +32,7 @@ pub struct ScaleEvidenceReport {
     pub warmup_iterations: usize,
     pub iterations: usize,
     pub registry_construct_ms: f64,
-    pub planning_reconcile_ms: f64,
+    pub planning_reconcile: TimingSummary,
     pub recent_projection: TimingSummary,
     pub all_history_projection: TimingSummary,
     pub search_projection: TimingSummary,
@@ -69,9 +69,7 @@ pub fn run(
     let mut app = AppState::new(threads);
     let registry_construct_ms = construct_started.elapsed().as_secs_f64() * 1000.0;
 
-    let reconcile_started = Instant::now();
-    reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 1 });
-    let planning_reconcile_ms = reconcile_started.elapsed().as_secs_f64() * 1000.0;
+    let planning_reconcile = sample_planning_reconcile(&mut app, warmup_iterations, iterations);
 
     let recent_projection = sample_projection(&app, warmup_iterations, iterations);
 
@@ -91,7 +89,7 @@ pub fn run(
         warmup_iterations,
         iterations,
         registry_construct_ms,
-        planning_reconcile_ms,
+        planning_reconcile,
         recent_projection,
         all_history_projection,
         search_projection,
@@ -158,7 +156,7 @@ pub fn run_cli(args: &[String]) -> Result<i32> {
         println!("warmup-iterations: {}", report.warmup_iterations);
         println!("iterations: {}", report.iterations);
         println!("registry-construct-ms: {:.3}", report.registry_construct_ms);
-        println!("planning-reconcile-ms: {:.3}", report.planning_reconcile_ms);
+        print_timing("planning-reconcile", &report.planning_reconcile);
         print_timing("recent-projection", &report.recent_projection);
         print_timing("all-history-projection", &report.all_history_projection);
         print_timing("search-projection", &report.search_projection);
@@ -170,16 +168,37 @@ pub fn run_cli(args: &[String]) -> Result<i32> {
     Ok(0)
 }
 
+fn sample_planning_reconcile(
+    app: &mut AppState,
+    warmup_iterations: usize,
+    iterations: usize,
+) -> TimingSummary {
+    for _ in 0..warmup_iterations {
+        black_box(reduce(app, Action::ReconcilePlanning { now_unix_ms: 1 }));
+    }
+
+    sample_timings(iterations, || {
+        black_box(reduce(app, Action::ReconcilePlanning { now_unix_ms: 1 }));
+    })
+}
+
 fn sample_projection(app: &AppState, warmup_iterations: usize, iterations: usize) -> TimingSummary {
     for _ in 0..warmup_iterations {
         black_box(app.visible_indices_with_match_count());
     }
 
-    let mut samples = Vec::with_capacity(iterations);
-    for _ in 0..iterations {
-        let started = Instant::now();
+    sample_timings(iterations, || {
         black_box(app.visible_indices_with_match_count());
+    })
+}
+
+fn sample_timings(mut iterations: usize, mut operation: impl FnMut()) -> TimingSummary {
+    let mut samples = Vec::with_capacity(iterations);
+    while iterations > 0 {
+        let started = Instant::now();
+        operation();
         samples.push(started.elapsed().as_secs_f64() * 1000.0);
+        iterations -= 1;
     }
     samples.sort_by(f64::total_cmp);
 
@@ -225,6 +244,7 @@ mod tests {
         assert_eq!(report.rows, 64);
         assert_eq!(report.iterations, 3);
         for timing in [
+            &report.planning_reconcile,
             &report.recent_projection,
             &report.all_history_projection,
             &report.search_projection,

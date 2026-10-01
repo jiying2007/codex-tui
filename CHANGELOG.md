@@ -51,6 +51,7 @@ All notable codex-tui changes are recorded here.
 - removed `thread/loaded/list` from the interactive Registry critical path: startup and periodic reconciliation now hydrate loaded-session metadata cooperatively one page per actor turn after Registry pages, while user commands and semantic notifications retain priority; `doctor compat` keeps the authoritative full capability probe.
 - added an advisory Linux Registry scale-evidence harness for 10k/50k histories, capturing construction/reconciliation and recent/all-history/search/host-local projection latency plus process peak RSS as retained artifacts before any paging or SQLite-index redesign.
 - removed the duplicate per-thread active-worktree collision pass from planning reconciliation: collision counts are now computed once while thread WorkCards are projected and reused for the collision index; scale-evidence now runs automatically when `src/app.rs` changes.
+- upgraded retained scale evidence to schema v2: planning reconciliation now uses the same warmup + repeated p50/p95/p99/max sampling as Registry projections instead of a single noisy wall-clock measurement.
 
 ## [1.0.0] - 2026-09-30
 
