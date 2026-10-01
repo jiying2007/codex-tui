@@ -1,7 +1,8 @@
-use crate::app::{AppState, InputMode, View};
+use crate::app::{AppState, ContextChoice, InputMode, View};
 use crate::conversation::{InteractiveRequest, InteractiveRequestKind};
 use crate::domain::{CwdLocality, ThreadSummary, classify_cwd, display_cwd};
 use crate::git::presentation_diff_lines;
+use crate::i18n::{UiLanguage, pick};
 use crate::planning::{SavedViewLayout, WorkflowStage, apply_saved_view, saved_view_group_key};
 use crate::pty::TerminalSize;
 use crate::text::{fit_display, sanitize_inline, truncate_display};
@@ -30,6 +31,61 @@ pub const fn layout_mode(width: u16) -> LayoutMode {
     }
 }
 
+fn tr<'a>(app: &AppState, english: &'a str, simplified_chinese: &'a str) -> &'a str {
+    pick(app.language, english, simplified_chinese)
+}
+
+fn tr_language(
+    language: UiLanguage,
+    english: &'static str,
+    simplified_chinese: &'static str,
+) -> &'static str {
+    pick(language, english, simplified_chinese)
+}
+
+fn workflow_stage_label(stage: WorkflowStage, language: UiLanguage) -> &'static str {
+    match (stage, language) {
+        (WorkflowStage::Inbox, UiLanguage::SimplifiedChinese) => "收件箱",
+        (WorkflowStage::Ready, UiLanguage::SimplifiedChinese) => "就绪",
+        (WorkflowStage::Working, UiLanguage::SimplifiedChinese) => "进行中",
+        (WorkflowStage::Review, UiLanguage::SimplifiedChinese) => "评审",
+        (WorkflowStage::Done, UiLanguage::SimplifiedChinese) => "完成",
+        _ => stage.label(),
+    }
+}
+
+fn context_choice_label(choice: ContextChoice, language: UiLanguage) -> &'static str {
+    if language == UiLanguage::English {
+        return choice.label();
+    }
+    match choice {
+        ContextChoice::Snooze => "稍后提醒…",
+        ContextChoice::EditNote => "编辑本地备注…",
+        ContextChoice::Bookmark => "添加书签",
+        ContextChoice::ScratchInbox => "Scratch → 收件箱",
+        ContextChoice::ScratchReady => "Scratch → 就绪",
+        ContextChoice::ScratchDone => "Scratch → 完成",
+        ContextChoice::DeleteScratch => "删除 ScratchWork",
+        ContextChoice::SaveCurrentView => "保存当前视图…",
+        ContextChoice::DeleteCurrentView => "删除当前已保存视图",
+        ContextChoice::BatchAddTag => "批量当前可见项 · 添加标签…",
+        ContextChoice::BatchRemoveTag => "批量当前可见项 · 移除标签…",
+        ContextChoice::BatchSetPriority => "批量当前可见项 · 设置优先级…",
+        ContextChoice::BatchClearPriority => "批量当前可见项 · 清除优先级",
+        ContextChoice::BatchMarkReady => "批量当前可见项 · 标记就绪",
+        ContextChoice::BatchClearReady => "批量当前可见项 · 清除就绪",
+        ContextChoice::BatchMarkDone => "批量当前可见项 · 确认完成",
+        ContextChoice::BatchReopen => "批量当前可见项 · 重新打开",
+        ContextChoice::BatchSnooze => "批量当前可见项 · 稍后提醒…",
+        ContextChoice::BatchClearSnooze => "批量当前可见项 · 清除稍后提醒",
+        ContextChoice::LaunchPreset => "启动仓库预设…",
+        ContextChoice::ForgeCreateMergeRequest => "Forge · 创建合并请求…",
+        ContextChoice::ForgeComment => "Forge · 评论合并请求…",
+        ContextChoice::ForgeApprove => "Forge · 批准合并请求",
+        ContextChoice::ForgeMerge => "Forge · 合并合并请求",
+    }
+}
+
 pub fn render(frame: &mut Frame<'_>, app: &AppState) {
     let content_area = primary_view_rect(frame.area(), app.terminal_drawer_open);
     match &app.view {
@@ -47,7 +103,7 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
         render_terminal_drawer(frame, app);
     }
     if app.show_help {
-        render_help(frame);
+        render_help(frame, app.language);
     }
     if app.context_open {
         render_context_actions(frame, app);
@@ -850,7 +906,7 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area: R
         None => vec![Line::from("Conversation has not been loaded yet.")],
     };
     if let Some(request) = app.current_pending_request() {
-        let mut request_lines = interactive_request_lines(request);
+        let mut request_lines = interactive_request_lines(request, app.language);
         request_lines.push(Line::from(""));
         request_lines.append(&mut conversation_lines);
         conversation_lines = request_lines;
