@@ -1103,6 +1103,7 @@ fn backend_error_status(error: String) -> BackendStatus {
         codex_home: None,
         capabilities: vec![],
         optional_capabilities_missing: vec![],
+        registry_complete: false,
         last_refresh_unix_ms: None,
         error: Some(error),
     }
