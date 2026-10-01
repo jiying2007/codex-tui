@@ -420,13 +420,13 @@ fn registry_scope_status(app: &AppState, width: u16) -> String {
             (
                 locality.label(),
                 if locality.terminal_usable() {
-                    "ready"
+                    tr(app, "ready", "就绪")
                 } else {
-                    "blocked"
+                    tr(app, "blocked", "不可用")
                 },
             )
         })
-        .unwrap_or(("none", "blocked"));
+        .unwrap_or((tr(app, "none", "无"), tr(app, "blocked", "不可用")));
     let git = selected_git_status(app);
     let raw = if app.language.is_simplified_chinese() {
         format!(
@@ -541,7 +541,9 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
                 counts
             });
     let range = if viewport.total == 0 {
-        "rows 0/0".to_string()
+        tr(app, "rows 0/0", "行 0/0").to_string()
+    } else if app.language.is_simplified_chinese() {
+        format!("行 {}-{}/{}", viewport.start + 1, viewport.end, viewport.total)
     } else {
         format!(
             "rows {}-{}/{}",
@@ -550,18 +552,37 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
             viewport.total
         )
     };
-    let scope = match (app.host_local_only, app.repo_backed_only) {
-        (true, true) => "LOCAL+REPO ONLY · ",
-        (true, false) => "LOCAL ONLY · ",
-        (false, true) => "REPO ONLY · ",
-        (false, false) => "",
+    let scope = if app.language.is_simplified_chinese() {
+        match (app.host_local_only, app.repo_backed_only) {
+            (true, true) => "仅本机+仓库 · ",
+            (true, false) => "仅本机 · ",
+            (false, true) => "仅仓库 · ",
+            (false, false) => "",
+        }
+    } else {
+        match (app.host_local_only, app.repo_backed_only) {
+            (true, true) => "LOCAL+REPO ONLY · ",
+            (true, false) => "LOCAL ONLY · ",
+            (false, true) => "REPO ONLY · ",
+            (false, false) => "",
+        }
     };
     let text_filter = if app.filter.is_empty() {
         String::new()
+    } else if app.language.is_simplified_chinese() {
+        format!(" · 筛选: {}", app.filter)
     } else {
         format!(" · filter: {}", app.filter)
     };
-    let history = if !app.filter.is_empty() {
+    let history = if app.language.is_simplified_chinese() {
+        if !app.filter.is_empty() {
+            "搜索全部"
+        } else if app.show_all_history {
+            "全部历史"
+        } else {
+            "最近"
+        }
+    } else if !app.filter.is_empty() {
         "SEARCH ALL"
     } else if app.show_all_history {
         "ALL HISTORY"
@@ -569,13 +590,23 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
         "RECENT"
     };
     let matched = viewport.matched;
-    let summary = format!(
-        "{scope}{history} {}/{} matched · {} total · {local_count} local · {foreign_count} foreign · {stale_count} stale · {} need attention · {range}{text_filter}",
-        visible.len(),
-        matched,
-        app.threads.len(),
-        attention_count
-    );
+    let summary = if app.language.is_simplified_chinese() {
+        format!(
+            "{scope}{history} · 显示 {}/{} 匹配 · 共 {} · 本机 {local_count} · 外部 {foreign_count} · 失效 {stale_count} · 待处理 {} · {range}{text_filter}",
+            visible.len(),
+            matched,
+            app.threads.len(),
+            attention_count
+        )
+    } else {
+        format!(
+            "{scope}{history} {}/{} matched · {} total · {local_count} local · {foreign_count} foreign · {stale_count} stale · {} need attention · {range}{text_filter}",
+            visible.len(),
+            matched,
+            app.threads.len(),
+            attention_count
+        )
+    };
     lines.push(Line::from(summary));
 
     for index in visible[viewport.start..viewport.end].iter().copied() {
