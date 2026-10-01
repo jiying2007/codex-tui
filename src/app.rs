@@ -144,6 +144,7 @@ pub enum Action {
     ReplaceThreads(Vec<ThreadSummary>),
     BackendStatus(BackendStatus),
     RefreshGitProjections,
+    RefreshActiveGitProjections,
     RefreshForgeProjections,
     GitContextLoaded(GitContext),
     ForgeObservationLoaded(ForgeObservation),
@@ -1115,6 +1116,9 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
 
             return effects;
+        }
+        Action::RefreshActiveGitProjections => {
+            return refresh_active_git_projections(state);
         }
         Action::RefreshForgeProjections => {
             return refresh_forge_projections(state);
@@ -3085,6 +3089,54 @@ fn refresh_forge_projections(state: &mut AppState) -> Vec<Effect> {
     effects
 }
 
+fn refresh_active_git_projections(state: &AppState) -> Vec<Effect> {
+    let mut target_ids = Vec::new();
+    let mut seen_ids = BTreeSet::new();
+
+    let selected_thread_id = match &state.view {
+        View::Registry => state.selected_thread_id(),
+        View::Thread(id)
+        | View::Review(id)
+        | View::Workspace(id)
+        | View::ManagedWorktrees(id) => Some(id.clone()),
+        View::Board => state.selected_planning_card().and_then(|card| {
+            (card.anchor.kind == SourceKind::CodexThread)
+                .then(|| ThreadId::new(card.anchor.value.clone()))
+        }),
+        View::Scratch(_) => None,
+    };
+    if let Some(thread_id) = selected_thread_id
+        && seen_ids.insert(thread_id.0.clone())
+    {
+        target_ids.push(thread_id);
+    }
+
+    for thread in &state.threads {
+        if matches!(
+            thread.runtime,
+            RuntimeStatus::Working | RuntimeStatus::WaitingHuman
+        ) && seen_ids.insert(thread.id.0.clone())
+        {
+            target_ids.push(thread.id.clone());
+        }
+    }
+
+    let mut seen_cwds = BTreeSet::new();
+    target_ids
+        .into_iter()
+        .filter_map(|thread_id| {
+            let thread = state.threads.iter().find(|thread| thread.id == thread_id)?;
+            let cwd = thread.metadata.cwd.clone();
+            (classify_cwd(&cwd).terminal_usable() && seen_cwds.insert(cwd.clone())).then_some(
+                Effect::ProbeGit {
+                    thread_id,
+                    cwd,
+                },
+            )
+        })
+        .collect()
+}
+
 fn propagate_git_context(state: &mut AppState, context: GitContext) {
     let target_ids = state
         .threads
@@ -4544,6 +4596,43 @@ mod tests {
             assert_eq!(context.observed_at_unix_ms, 1);
         }
         assert!(reduce(&mut app, Action::RefreshGitProjections).is_empty());
+    }
+
+    #[test]
+    fn active_git_refresh_is_selected_first_and_deduplicated_by_cwd() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let shared = root.path().join("shared");
+        let inactive = root.path().join("inactive");
+        std::fs::create_dir_all(&shared).expect("create shared cwd");
+        std::fs::create_dir_all(&inactive).expect("create inactive cwd");
+        let shared = shared.to_string_lossy().into_owned();
+        let inactive = inactive.to_string_lossy().into_owned();
+
+        let mut app = app();
+        app.threads[0].runtime = RuntimeStatus::Working;
+        app.threads[0].metadata.cwd.clone_from(&shared);
+        app.threads[1].runtime = RuntimeStatus::WaitingHuman;
+        app.threads[1].metadata.cwd.clone_from(&shared);
+        app.threads[2].runtime = RuntimeStatus::Inactive;
+        app.threads[2].metadata.cwd.clone_from(&inactive);
+        app.threads[3].runtime = RuntimeStatus::Inactive;
+        app.threads[3].metadata.cwd.clone_from(&inactive);
+        app.selected = 2;
+
+        let effects = reduce(&mut app, Action::RefreshActiveGitProjections);
+        assert_eq!(
+            effects,
+            vec![
+                Effect::ProbeGit {
+                    thread_id: app.threads[2].id.clone(),
+                    cwd: inactive,
+                },
+                Effect::ProbeGit {
+                    thread_id: app.threads[0].id.clone(),
+                    cwd: shared,
+                },
+            ]
+        );
     }
 
     #[test]
