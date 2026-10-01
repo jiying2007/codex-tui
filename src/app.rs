@@ -5823,6 +5823,13 @@ mod tests {
     fn command_palette_is_contextual_and_wraps_selection() {
         let mut app = app();
         let registry_choices = app.command_palette_choices();
+        assert!(
+            registry_choices
+                .iter()
+                .copied()
+                .all(Command::palette_capable),
+            "palette must be a projection of palette-capable Command values"
+        );
         assert!(registry_choices.contains(&Command::Search));
         assert!(registry_choices.contains(&Command::NextAttention));
         assert!(registry_choices.contains(&Command::QuickPrompt));
