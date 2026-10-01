@@ -25,7 +25,7 @@ def nonempty(value: str, label: str) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", required=True)
-    parser.add_argument("--schema", default="codex-tui/release-evidence/v3")
+    parser.add_argument("--schema", default="codex-tui/release-evidence/v4")
     parser.add_argument("--compat-schema", required=True)
     parser.add_argument("--version", required=True)
     parser.add_argument("--commit", required=True)
@@ -38,6 +38,7 @@ def main() -> int:
     parser.add_argument("--performance-observed-at", required=True)
     for platform in PLATFORMS:
         required = platform == PRIMARY_PLATFORM
+        parser.add_argument(f"--{platform}-source-sha", required=required, default="")
         parser.add_argument(f"--{platform}-compat-sha256", required=required, default="")
         parser.add_argument(
             f"--{platform}-compat-observed-at", required=required, default=""
@@ -56,27 +57,42 @@ def main() -> int:
     compatibility = {}
     terminal = {}
     for platform in PLATFORMS:
+        source_sha = getattr(args, f"{platform}_source_sha").strip().lower()
         compat_sha = getattr(args, f"{platform}_compat_sha256").strip()
         compat_at = getattr(args, f"{platform}_compat_observed_at").strip()
         terminal_name = getattr(args, f"{platform}_terminal").strip()
         terminal_at = getattr(args, f"{platform}_terminal_observed_at").strip()
 
-        supplied = [bool(compat_sha), bool(compat_at), bool(terminal_name), bool(terminal_at)]
+        supplied = [
+            bool(source_sha),
+            bool(compat_sha),
+            bool(compat_at),
+            bool(terminal_name),
+            bool(terminal_at),
+        ]
         if platform != PRIMARY_PLATFORM and not any(supplied):
             continue
         if not all(supplied):
             raise SystemExit(
                 f"{platform} secondary evidence must be either fully omitted or fully provided"
             )
+        if not HEX40.fullmatch(source_sha):
+            raise SystemExit(f"{platform} source SHA must be exactly 40 hexadecimal characters")
+        if source_sha != args.commit.lower():
+            raise SystemExit(
+                f"{platform} evidence source SHA mismatch: {source_sha} != {args.commit.lower()}"
+            )
         if not HEX64.fullmatch(compat_sha):
             raise SystemExit(f"{platform} compatibility SHA-256 must be 64 hex characters")
         compatibility[platform] = {
             "status": "ready",
+            "sourceSha": source_sha,
             "reportSha256": compat_sha.lower(),
             "observedAt": nonempty(compat_at, f"{platform} compatibility observed-at"),
         }
         terminal[platform] = {
             "status": "pass",
+            "sourceSha": source_sha,
             "terminal": nonempty(terminal_name, f"{platform} terminal"),
             "observedAt": nonempty(terminal_at, f"{platform} terminal observed-at"),
         }
