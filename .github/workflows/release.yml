@@ -205,6 +205,12 @@ jobs:
           cargo build --locked --release
 
           mkdir -p qualification
+          cargo test --locked --all-targets --all-features -- --list > qualification/test-list.txt
+          ./target/release/codex-tui release failure-matrix --json > qualification/failure-matrix.json
+          python3 scripts/release/check_failure_evidence.py \
+            --matrix qualification/failure-matrix.json \
+            --test-list qualification/test-list.txt
+
           ./target/release/codex-tui release scale \
             --rows 50000 \
             --warmup 5 \
@@ -223,6 +229,7 @@ jobs:
           python3 scripts/release/create_automated_qualification.py \
             --output qualification/automated-qualification.json \
             --commit "${{ github.sha }}" \
+            --failure-matrix qualification/failure-matrix.json \
             --scale qualification/scale-evidence.json \
             --soak qualification/soak-evidence.json \
             --support-manifest qualification/support-bundle/manifest.json
@@ -299,6 +306,8 @@ jobs:
           SERIES="${SERIES%.*}"
           cp "release/v${SERIES}-criteria.json" gate/STABLE-CRITERIA.json
           cp qualification/automated-qualification.json gate/automated-qualification.json
+          cp qualification/failure-matrix.json gate/failure-matrix.json
+          cp qualification/test-list.txt gate/failure-evidence-test-list.txt
           cp qualification/scale-evidence.json gate/scale-evidence.json
           cp qualification/soak-evidence.json gate/soak-evidence.json
           cp qualification/support-bundle/manifest.json gate/support-bundle-manifest.json
