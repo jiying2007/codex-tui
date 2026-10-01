@@ -576,8 +576,7 @@ impl AppState {
     fn touch_conversation_cache(&mut self, thread_id: &ThreadId) {
         self.conversation_cache_order
             .retain(|candidate| candidate != &thread_id.0);
-        self.conversation_cache_order
-            .push_back(thread_id.0.clone());
+        self.conversation_cache_order.push_back(thread_id.0.clone());
 
         while self.conversation_cache_order.len() > CONVERSATION_CACHE_LIMIT {
             let Some(evicted) = self.conversation_cache_order.pop_front() else {
