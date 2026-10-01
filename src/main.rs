@@ -1360,11 +1360,7 @@ fn apply_effects(
                         app,
                         Action::MutationNotice(format!(
                             "{} · {} · pid={pid}",
-                            runtime_text(
-                                app.language,
-                                "launch preset started",
-                                "启动预设已启动",
-                            ),
+                            runtime_text(app.language, "launch preset started", "启动预设已启动"),
                             plan.name
                         )),
                     );
@@ -1374,11 +1370,7 @@ fn apply_effects(
                         app,
                         Action::MutationNotice(format!(
                             "{}: {error:#}",
-                            runtime_text(
-                                app.language,
-                                "launch preset failed",
-                                "启动预设失败",
-                            )
+                            runtime_text(app.language, "launch preset failed", "启动预设失败")
                         )),
                     );
                 }
