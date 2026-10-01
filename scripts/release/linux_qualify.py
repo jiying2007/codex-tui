@@ -199,6 +199,8 @@ def main() -> int:
             str(binary),
             "--output",
             str(compat_path),
+            "--expected-source-sha",
+            commit_sha,
         ],
         cwd=root,
     )
@@ -207,6 +209,8 @@ def main() -> int:
         raise SystemExit("compat summary schema mismatch")
     if compat_summary.get("readiness") != "ready":
         raise SystemExit("Linux compatibility is not ready")
+    if str(compat_summary.get("sourceSha", "")).lower() != commit_sha.lower():
+        raise SystemExit("Linux compatibility source SHA mismatch")
 
     scale_path = output_dir / "scale-evidence.json"
     scale = run(
@@ -329,6 +333,8 @@ def main() -> int:
         raise SystemExit("terminal receipt must be for linux")
     if terminal.get("status") != "pass":
         raise SystemExit("terminal receipt must have status=pass")
+    if str(terminal.get("sourceSha", "")).lower() != commit_sha.lower():
+        raise SystemExit("terminal receipt source SHA mismatch")
     if not str(terminal.get("terminal", "")).strip():
         raise SystemExit("terminal receipt terminal name is empty")
     if not str(terminal.get("observedAt", "")).strip():
@@ -351,6 +357,8 @@ def main() -> int:
             str(args.canonical_ci_run),
             "--automated-qualification",
             str(automated_path),
+            "--linux-source-sha",
+            commit_sha,
             "--linux-compat-sha256",
             compat_summary["reportSha256"],
             "--linux-compat-observed-at",
@@ -404,6 +412,7 @@ def main() -> int:
         "channel": "stable",
         "publish": "false",
         "canonical_ci_run": str(args.canonical_ci_run),
+        "linux_source_sha": commit_sha,
         "linux_compat_sha256": compat_summary["reportSha256"],
         "linux_compat_observed_at": compat_summary["observedAt"],
         "linux_terminal": terminal["terminal"],
@@ -422,6 +431,7 @@ def main() -> int:
         "canonicalCiRun": args.canonical_ci_run,
         "compatReport": str(compat_path),
         "compatReportSha256": compat_summary["reportSha256"],
+        "realEvidenceSourceSha": commit_sha,
         "terminalReceipt": str(terminal_path),
         "failureMatrix": str(failure_matrix_path),
         "failureEvidenceTestList": str(failure_test_list),
