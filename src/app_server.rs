@@ -25,8 +25,9 @@ use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 
 const PAGE_SIZE: u32 = 200;
-const REFRESH_INTERVAL: Duration = Duration::from_secs(2);
+const REFRESH_INTERVAL: Duration = Duration::from_secs(30);
 const GOAL_PROBE_INTERVAL: Duration = Duration::from_millis(250);
+const GOAL_EAGER_PROBE_LIMIT: usize = 100;
 const RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug)]
@@ -110,6 +111,29 @@ fn is_history_pagination_unsupported(error: &anyhow::Error) -> bool {
                 .into_iter()
                 .any(|fragment| message.contains(fragment)))
 }
+
+fn is_registry_query_optimization_unsupported(error: &anyhow::Error) -> bool {
+    let Some(source) = error.downcast_ref::<RpcResponseError>() else {
+        return false;
+    };
+    if source.method != "thread/list" || !matches!(source.code, Some(-32600 | -32602)) {
+        return false;
+    }
+    let message = source.message.to_ascii_lowercase();
+    [
+        "sortkey",
+        "sort key",
+        "sortdirection",
+        "sort direction",
+        "usestatedbonly",
+        "use state db only",
+        "unknown field",
+        "unexpected field",
+    ]
+    .into_iter()
+    .any(|fragment| message.contains(fragment))
+}
+
 
 pub struct StartedRegistry {
     pub initial: BackendSnapshot,
@@ -279,7 +303,7 @@ pub async fn start(codex_bin: Option<OsString>) -> Result<StartedRegistry> {
     let mut rpc = RpcSession::spawn(codex_bin).await?;
     let init = initialize(&mut rpc).await?;
     let mut status = status_from_initialize(&init);
-    let (threads, loaded_supported) = load_registry(&mut rpc).await?;
+    let (threads, loaded_supported) = load_registry(&mut rpc, false).await?;
     status.capabilities.push("thread/list".into());
     status.capabilities.push("thread/status/changed".into());
     if loaded_supported {
@@ -324,6 +348,39 @@ pub async fn probe(codex_bin: Option<OsString>) -> Result<BackendSnapshot> {
     Ok(start(codex_bin).await?.initial)
 }
 
+fn eager_goal_probe_queue(
+    threads: &BTreeMap<String, ThreadSummary>,
+    goal_probed: &BTreeSet<String>,
+) -> VecDeque<ThreadId> {
+    let mut candidates = threads.values().collect::<Vec<_>>();
+    candidates.sort_by(|left, right| {
+        right
+            .metadata
+            .updated_at
+            .cmp(&left.metadata.updated_at)
+            .then_with(|| right.id.0.cmp(&left.id.0))
+    });
+    candidates
+        .into_iter()
+        .filter(|thread| !goal_probed.contains(&thread.id.0))
+        .take(GOAL_EAGER_PROBE_LIMIT)
+        .map(|thread| thread.id.clone())
+        .collect()
+}
+
+fn reset_eager_goal_queue(
+    threads: &BTreeMap<String, ThreadSummary>,
+    goal_probed: &BTreeSet<String>,
+    goal_queued: &mut BTreeSet<String>,
+    goal_probe_queue: &mut VecDeque<ThreadId>,
+) {
+    *goal_probe_queue = eager_goal_probe_queue(threads, goal_probed);
+    *goal_queued = goal_probe_queue
+        .iter()
+        .map(|thread_id| thread_id.0.clone())
+        .collect();
+}
+
 async fn run_registry_actor(
     mut rpc: RpcSession,
     initial_threads: Vec<ThreadSummary>,
@@ -338,12 +395,14 @@ async fn run_registry_actor(
     let mut watched_threads = BTreeSet::new();
     let mut goal_supported: Option<bool> = None;
     let mut goal_probed = BTreeSet::new();
-    let mut goal_queued = threads.keys().cloned().collect::<BTreeSet<_>>();
-    let mut goal_probe_queue = threads
-        .keys()
-        .cloned()
-        .map(ThreadId::new)
-        .collect::<VecDeque<_>>();
+    let mut goal_queued = BTreeSet::new();
+    let mut goal_probe_queue = VecDeque::new();
+    reset_eager_goal_queue(
+        &threads,
+        &goal_probed,
+        &mut goal_queued,
+        &mut goal_probe_queue,
+    );
 
     let mut refresh = tokio::time::interval(REFRESH_INTERVAL);
     refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -578,17 +637,16 @@ async fn run_registry_actor(
                 }
             }
             _ = refresh.tick() => {
-                match load_registry(&mut rpc).await {
+                match load_registry(&mut rpc, true).await {
                     Ok((fresh, loaded_supported)) => {
                         threads = by_id(fresh);
                         if goal_supported != Some(false) {
-                            for thread_id in threads.keys() {
-                                if !goal_probed.contains(thread_id)
-                                    && goal_queued.insert(thread_id.clone())
-                                {
-                                    goal_probe_queue.push_back(ThreadId::new(thread_id));
-                                }
-                            }
+                            reset_eager_goal_queue(
+                                &threads,
+                                &goal_probed,
+                                &mut goal_queued,
+                                &mut goal_probe_queue,
+                            );
                         }
                         status.connected = true;
                         status.error = None;
@@ -611,7 +669,7 @@ async fn run_registry_actor(
             message = rpc.read_message() => {
                 match message {
                     Ok(Some(message)) => {
-                        if let Err(error) = handle_unsolicited(
+                        let registry_changed = match handle_unsolicited(
                             &mut rpc,
                             message,
                             &mut threads,
@@ -621,10 +679,16 @@ async fn run_registry_actor(
                         )
                         .await
                         {
-                            status.error = Some(error.to_string());
+                            Ok(changed) => changed,
+                            Err(error) => {
+                                status.error = Some(error.to_string());
+                                true
+                            }
+                        };
+                        if registry_changed {
+                            generation = generation.saturating_add(1);
+                            let _ = tx.send(snapshot(generation, &threads, &status));
                         }
-                        generation = generation.saturating_add(1);
-                        let _ = tx.send(snapshot(generation, &threads, &status));
                     }
                     Ok(None) => {
                         status.connected = false;
@@ -733,7 +797,10 @@ fn status_from_initialize(result: &Value) -> BackendStatus {
     }
 }
 
-async fn load_registry(rpc: &mut RpcSession) -> Result<(Vec<ThreadSummary>, bool)> {
+async fn load_registry(
+    rpc: &mut RpcSession,
+    use_state_db_only: bool,
+) -> Result<(Vec<ThreadSummary>, bool)> {
     let loaded = load_all_loaded_ids(rpc).await;
     let (loaded_ids, loaded_supported) = match loaded {
         Ok(ids) => (Some(ids), true),
@@ -742,16 +809,33 @@ async fn load_registry(rpc: &mut RpcSession) -> Result<(Vec<ThreadSummary>, bool
 
     let mut cursor: Option<String> = None;
     let mut raw_threads: Vec<ThreadWire> = Vec::new();
+    let mut optimized_query = true;
     loop {
-        let result = rpc
-            .request(
-                "thread/list",
-                json!({
-                    "cursor": cursor,
-                    "limit": PAGE_SIZE
-                }),
-            )
-            .await?;
+        let optimized_params = json!({
+            "cursor": cursor,
+            "limit": PAGE_SIZE,
+            "sortKey": "recency_at",
+            "sortDirection": "desc",
+            "useStateDbOnly": use_state_db_only
+        });
+        let legacy_params = json!({
+            "cursor": cursor,
+            "limit": PAGE_SIZE
+        });
+
+        let result = if optimized_query {
+            match rpc.request("thread/list", optimized_params).await {
+                Ok(result) => result,
+                Err(error) if is_registry_query_optimization_unsupported(&error) => {
+                    optimized_query = false;
+                    rpc.request("thread/list", legacy_params).await?
+                }
+                Err(error) => return Err(error),
+            }
+        } else {
+            rpc.request("thread/list", legacy_params).await?
+        };
+
         let page = parse_thread_list(result)?;
         raw_threads.extend(page.data);
         cursor = page.next_cursor;
@@ -1125,6 +1209,89 @@ struct PendingServerRequest {
     params: Value,
 }
 
+fn apply_registry_notification(
+    method: &str,
+    params: &Value,
+    emitted_at_seconds: Option<i64>,
+    threads: &mut BTreeMap<String, ThreadSummary>,
+) -> Result<Option<bool>> {
+    if method == "thread/started" {
+        let wire: ThreadWire = serde_json::from_value(
+            params
+                .get("thread")
+                .cloned()
+                .context("thread/started notification missing thread")?,
+        )
+        .context("decode thread/started thread")?;
+        let mut summary = normalize_thread(wire, None);
+        summary.metadata.loaded = Some(true);
+        threads.insert(summary.id.0.clone(), summary);
+        return Ok(Some(true));
+    }
+
+    let Some(thread_id) = params.get("threadId").and_then(Value::as_str) else {
+        return Ok(None);
+    };
+
+    match method {
+        "thread/status/changed" => {
+            let Some(status) = params.get("status") else {
+                return Ok(Some(false));
+            };
+            let Some(thread) = threads.get_mut(thread_id) else {
+                return Ok(Some(false));
+            };
+            apply_status(thread, status);
+            if let Some(updated_at) = emitted_at_seconds {
+                thread.metadata.updated_at = thread.metadata.updated_at.max(updated_at);
+            }
+            Ok(Some(true))
+        }
+        "thread/archived" | "thread/deleted" => Ok(Some(threads.remove(thread_id).is_some())),
+        "thread/unarchived" => Ok(Some(false)),
+        "thread/name/updated" => {
+            let Some(thread) = threads.get_mut(thread_id) else {
+                return Ok(Some(false));
+            };
+            let Some(name) = params
+                .get("threadName")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+            else {
+                return Ok(Some(false));
+            };
+            thread.title = name.to_string();
+            if let Some(updated_at) = emitted_at_seconds {
+                thread.metadata.updated_at = thread.metadata.updated_at.max(updated_at);
+            }
+            Ok(Some(true))
+        }
+        "thread/project/updated" => {
+            let Some(thread) = threads.get_mut(thread_id) else {
+                return Ok(Some(false));
+            };
+            let Some(project_id) = params
+                .get("projectId")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|project_id| !project_id.is_empty())
+            else {
+                return Ok(Some(false));
+            };
+            thread.metadata.project_id = Some(project_id.to_string());
+            thread.workspace = format!("project:{project_id}");
+            thread.metadata.workspace_key = format!("project:{project_id}");
+            thread.metadata.workspace_basis = "codex-project".into();
+            if let Some(updated_at) = emitted_at_seconds {
+                thread.metadata.updated_at = thread.metadata.updated_at.max(updated_at);
+            }
+            Ok(Some(true))
+        }
+        _ => Ok(None),
+    }
+}
+
 async fn handle_unsolicited(
     rpc: &mut RpcSession,
     message: Value,
@@ -1132,7 +1299,7 @@ async fn handle_unsolicited(
     pending_requests: &mut BTreeMap<RpcRequestId, PendingServerRequest>,
     watched_threads: &BTreeSet<String>,
     conversation_tx: &mpsc::UnboundedSender<ConversationEvent>,
-) -> Result<()> {
+) -> Result<bool> {
     if message.get("id").is_some() && message.get("method").is_some() {
         if let Some(request) = parse_interactive_request(&message)? {
             let method = message
@@ -1146,7 +1313,7 @@ async fn handle_unsolicited(
                 PendingServerRequest { method, params },
             );
             let _ = conversation_tx.send(ConversationEvent::InteractiveRequested(request));
-            return Ok(());
+            return Ok(false);
         }
 
         rpc.reject_request(
@@ -1166,11 +1333,15 @@ async fn handle_unsolicited(
         );
     }
 
+    let emitted_at_seconds = message
+        .get("emittedAtMs")
+        .and_then(Value::as_u64)
+        .and_then(|millis| i64::try_from(millis / 1_000).ok());
     let Some(method) = message.get("method").and_then(Value::as_str) else {
-        return Ok(());
+        return Ok(false);
     };
     let Some(params) = message.get("params") else {
-        return Ok(());
+        return Ok(false);
     };
 
     if method == "serverRequest/resolved" {
@@ -1182,42 +1353,44 @@ async fn handle_unsolicited(
             pending_requests.remove(&request_id);
             let _ = conversation_tx.send(ConversationEvent::InteractiveResolved { request_id });
         }
-        return Ok(());
+        return Ok(false);
     }
 
     if method == "thread/goal/updated" {
         let goal = parse_goal_updated(params, now_unix_ms())?;
         let _ = conversation_tx.send(ConversationEvent::GoalObserved(goal));
-        return Ok(());
+        return Ok(false);
     }
 
     if method == "thread/goal/cleared" {
         let thread_id = parse_goal_cleared_thread(params)?;
         let _ = conversation_tx.send(ConversationEvent::GoalCleared(thread_id));
-        return Ok(());
+        return Ok(false);
+    }
+
+    if let Some(changed) = apply_registry_notification(method, params, emitted_at_seconds, threads)?
+    {
+        return Ok(changed);
     }
 
     let Some(thread_id) = params.get("threadId").and_then(Value::as_str) else {
-        return Ok(());
+        return Ok(false);
     };
 
-    if method == "thread/status/changed" {
-        let Some(status) = params.get("status") else {
-            return Ok(());
-        };
-        if let Some(thread) = threads.get_mut(thread_id) {
-            apply_status(thread, status);
-        }
-        return Ok(());
-    }
-
-    if matches!(method, "turn/started" | "turn/completed" | "item/completed")
-        && watched_threads.contains(thread_id)
-    {
+    let conversation_boundary =
+        matches!(method, "turn/started" | "turn/completed" | "item/completed");
+    if conversation_boundary && watched_threads.contains(thread_id) {
         emit_conversation_load(rpc, ThreadId::new(thread_id), conversation_tx).await;
     }
 
-    Ok(())
+    if conversation_boundary && let Some(thread) = threads.get_mut(thread_id) {
+        if let Some(updated_at) = emitted_at_seconds {
+            thread.metadata.updated_at = thread.metadata.updated_at.max(updated_at);
+        }
+        return Ok(true);
+    }
+
+    Ok(false)
 }
 
 async fn resolve_interactive(
@@ -1473,6 +1646,145 @@ impl RpcSession {
 mod tests {
     use super::*;
     use crate::backend::{CodexBackend, FakeBackend};
+
+    #[test]
+    fn registry_notifications_update_only_registry_relevant_state() {
+        let mut threads = BTreeMap::new();
+        assert_eq!(
+            apply_registry_notification(
+                "thread/started",
+                &json!({
+                    "thread": {
+                        "id": "thread-new",
+                        "preview": "New work",
+                        "updatedAt": 7,
+                        "status": {"type": "idle"},
+                        "cwd": "/repo",
+                        "source": "cli"
+                    }
+                }),
+                Some(8),
+                &mut threads,
+            )
+            .expect("started"),
+            Some(true)
+        );
+        let thread = threads.get("thread-new").expect("new thread");
+        assert_eq!(thread.title, "New work");
+        assert_eq!(thread.metadata.loaded, Some(true));
+
+        assert_eq!(
+            apply_registry_notification(
+                "thread/status/changed",
+                &json!({
+                    "threadId": "thread-new",
+                    "status": {
+                        "type": "active",
+                        "activeFlags": ["waitingOnApproval"]
+                    }
+                }),
+                Some(9),
+                &mut threads,
+            )
+            .expect("status"),
+            Some(true)
+        );
+        let thread = threads.get("thread-new").expect("updated thread");
+        assert_eq!(thread.runtime, crate::domain::RuntimeStatus::WaitingHuman);
+        assert_eq!(thread.metadata.updated_at, 9);
+
+        assert_eq!(
+            apply_registry_notification(
+                "thread/name/updated",
+                &json!({"threadId": "thread-new", "threadName": "Renamed"}),
+                Some(10),
+                &mut threads,
+            )
+            .expect("name"),
+            Some(true)
+        );
+        assert_eq!(threads["thread-new"].title, "Renamed");
+
+        assert_eq!(
+            apply_registry_notification(
+                "item/agentMessage/delta",
+                &json!({"threadId": "thread-new", "delta": "ignored"}),
+                Some(11),
+                &mut threads,
+            )
+            .expect("delta"),
+            None
+        );
+
+        assert_eq!(
+            apply_registry_notification(
+                "thread/archived",
+                &json!({"threadId": "thread-new"}),
+                Some(12),
+                &mut threads,
+            )
+            .expect("archived"),
+            Some(true)
+        );
+        assert!(!threads.contains_key("thread-new"));
+    }
+
+    #[test]
+    fn registry_full_reconcile_is_low_frequency_fallback() {
+        assert!(REFRESH_INTERVAL >= Duration::from_secs(30));
+    }
+
+    #[test]
+    fn eager_goal_probe_queue_is_bounded_and_prefers_recent_threads() {
+        let mut threads = BTreeMap::new();
+        for index in 0..150 {
+            let mut thread = FakeBackend::seeded()
+                .snapshot()
+                .threads
+                .into_iter()
+                .next()
+                .expect("thread");
+            thread.id = ThreadId::new(format!("thread-{index:03}"));
+            thread.metadata.updated_at = index;
+            threads.insert(thread.id.0.clone(), thread);
+        }
+
+        let queue = eager_goal_probe_queue(&threads, &BTreeSet::new());
+        assert_eq!(queue.len(), GOAL_EAGER_PROBE_LIMIT);
+        assert_eq!(queue.front().map(|id| id.0.as_str()), Some("thread-149"));
+        assert_eq!(queue.back().map(|id| id.0.as_str()), Some("thread-050"));
+
+        let probed = ["thread-149".to_string(), "thread-148".to_string()]
+            .into_iter()
+            .collect();
+        let queue = eager_goal_probe_queue(&threads, &probed);
+        assert_eq!(queue.len(), GOAL_EAGER_PROBE_LIMIT);
+        assert_eq!(queue.front().map(|id| id.0.as_str()), Some("thread-147"));
+    }
+
+    #[test]
+    fn registry_query_optimization_falls_back_only_for_invalid_thread_list_params() {
+        let invalid = anyhow::Error::new(RpcResponseError {
+            method: "thread/list".into(),
+            code: Some(-32602),
+            message: "unknown field useStateDbOnly".into(),
+        });
+        assert!(is_registry_query_optimization_unsupported(&invalid));
+
+        let unrelated = anyhow::Error::new(RpcResponseError {
+            method: "thread/list".into(),
+            code: Some(-32000),
+            message: "database unavailable".into(),
+        });
+        assert!(!is_registry_query_optimization_unsupported(&unrelated));
+
+        let other_method = anyhow::Error::new(RpcResponseError {
+            method: "thread/read".into(),
+            code: Some(-32602),
+            message: "unknown field".into(),
+        });
+        assert!(!is_registry_query_optimization_unsupported(&other_method));
+    }
 
     #[test]
     fn history_compatibility_matches_official_error_semantics() {
