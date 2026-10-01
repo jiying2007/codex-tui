@@ -145,6 +145,40 @@ def main() -> int:
     if not binary.is_file():
         raise SystemExit(f"release binary missing: {binary}")
 
+    failure_test_list = output_dir / "failure-evidence-test-list.txt"
+    listed = run(
+        [
+            "cargo",
+            "test",
+            "--locked",
+            "--all-targets",
+            "--all-features",
+            "--",
+            "--list",
+        ],
+        cwd=root,
+    )
+    write_text_lf(failure_test_list, listed.stdout)
+
+    failure_matrix_path = output_dir / "failure-matrix.json"
+    matrix = run(
+        [str(binary), "release", "failure-matrix", "--json"],
+        cwd=root,
+    )
+    write_text_lf(failure_matrix_path, matrix.stdout)
+    run(
+        [
+            sys.executable,
+            "scripts/release/check_failure_evidence.py",
+            "--matrix",
+            str(failure_matrix_path),
+            "--test-list",
+            str(failure_test_list),
+        ],
+        cwd=root,
+        capture=False,
+    )
+
     compat_path = output_dir / "compat-linux.json"
     compat_summary_proc = run(
         [
@@ -227,6 +261,8 @@ def main() -> int:
             str(automated_path),
             "--commit",
             commit_sha,
+            "--failure-matrix",
+            str(failure_matrix_path),
             "--scale",
             str(scale_path),
             "--soak",
@@ -371,6 +407,8 @@ def main() -> int:
         "compatReport": str(compat_path),
         "compatReportSha256": compat_summary["reportSha256"],
         "terminalReceipt": str(terminal_path),
+        "failureMatrix": str(failure_matrix_path),
+        "failureEvidenceTestList": str(failure_test_list),
         "scaleEvidence": str(scale_path),
         "soakEvidence": str(soak_path),
         "supportBundleManifest": str(support_manifest),
