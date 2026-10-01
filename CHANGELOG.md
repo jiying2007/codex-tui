@@ -36,6 +36,7 @@ All notable codex-tui changes are recorded here.
 - bounded Forge/worktree mutation command and event queues and moved in-flight mutation tasks under coordinator-owned JoinSets with a total concurrency cap of 4, preserving repo/project locks while preventing unbounded queued or detached mutation work.
 - bounded resident conversation history to a 16-thread LRU cache; evicted conversations reload from App Server on demand while per-thread drafts, aliases, pins and other local UI state remain resident/persisted independently.
 - bounded resident Git review data to a 4-thread LRU cache, keeping the actively viewed review protected while allowing staged/unstaged diff payloads from older reviews to be reloaded on demand instead of accumulating indefinitely.
+- indexed threads with pending interactive requests so 10k Registry attention projection no longer scans the full pending-request vector per thread, while preserving multiple simultaneous requests per thread and request-id retargeting semantics.
 
 ## [1.0.0] - 2026-09-30
 
