@@ -4543,11 +4543,7 @@ mod tests {
             .expect("hydrated thread");
         assert!(hydrated.pinned);
         assert_eq!(hydrated.alias.as_deref(), Some("late-history"));
-        assert!(
-            hydrated
-                .attention
-                .contains(&AttentionReason::MarkedUnread)
-        );
+        assert!(hydrated.attention.contains(&AttentionReason::MarkedUnread));
     }
 
     #[test]
