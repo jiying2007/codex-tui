@@ -2267,9 +2267,7 @@ mod tests {
     fn malformed_rpc_wire_line_is_rejected_fail_closed() {
         let error = decode_wire_line("{not-json").expect_err("malformed protocol must fail");
         assert!(
-            error
-                .to_string()
-                .contains("decode app-server JSON line"),
+            error.to_string().contains("decode app-server JSON line"),
             "wire errors must retain protocol context: {error:#}"
         );
     }
