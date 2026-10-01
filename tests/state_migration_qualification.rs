@@ -26,6 +26,23 @@ fn install_v1_operator_fixture(root: &std::path::Path) -> LocalStateV1 {
     expected
 }
 
+#[test]
+fn v1_config_fixture_preserves_settings_and_defaults_new_fields() {
+    let root = tempdir().expect("tempdir");
+    let legacy = FileStore::at(root.path());
+    fs::create_dir_all(legacy.config_path().parent().expect("config parent"))
+        .expect("create config dir");
+    fs::write(
+        legacy.config_path(),
+        include_str!("fixtures/v1.0/config.toml"),
+    )
+    .expect("install v1 config fixture");
+
+    let config = legacy.load_config().expect("load v1 config");
+    assert!(!config.ui.mouse);
+    assert_eq!(config.ui.language.as_str(), "auto");
+}
+
 fn populate_planning(store: &SqliteStore) {
     let mut card = WorkCardRecord::implicit_thread(&ThreadId::new("thread-1"));
     card.overlay.note = Some("retain work-card note".into());
