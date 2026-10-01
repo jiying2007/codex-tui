@@ -1,4 +1,5 @@
 use crate::domain::ThreadUiState;
+use crate::i18n::LanguagePreference;
 use anyhow::{Context, Result};
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
@@ -12,6 +13,8 @@ use tempfile::NamedTempFile;
 pub struct UiConfig {
     #[serde(default = "default_true")]
     pub mouse: bool,
+    #[serde(default)]
+    pub language: LanguagePreference,
 }
 
 const fn default_true() -> bool {
@@ -20,7 +23,10 @@ const fn default_true() -> bool {
 
 impl Default for UiConfig {
     fn default() -> Self {
-        Self { mouse: true }
+        Self {
+            mouse: true,
+            language: LanguagePreference::Auto,
+        }
     }
 }
 
@@ -176,6 +182,7 @@ mod tests {
         let store = FileStore::at(root.path());
         let config = store.load_config().expect("config");
         assert!(config.ui.mouse);
+        assert_eq!(config.ui.language, LanguagePreference::Auto);
 
         let mut state = LocalStateV1::default();
         state.pins.insert("thread-1".into());
@@ -188,6 +195,7 @@ mod tests {
         let config_text = fs::read_to_string(store.config_path()).expect("read config");
         let state_text = fs::read_to_string(store.state_path()).expect("read state");
         assert!(config_text.contains("[ui]"));
+        assert!(config_text.contains("language = \"auto\""));
         assert!(state_text.contains("\"schemaVersion\": 1"));
         assert!(state_text.contains("\"hostLocalOnly\": true"));
         assert!(state_text.contains("\"repoBackedOnly\": true"));
