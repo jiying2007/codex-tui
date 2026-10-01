@@ -294,6 +294,7 @@ pub enum Action {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Effect {
     PersistOperatorState,
+    PersistOperatorStateDeferred,
     CreateScratch {
         title: String,
         workspace: Option<String>,
@@ -2660,7 +2661,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::SetDraft(draft) => {
             if let Some(id) = state.current_thread_id().cloned() {
                 state.thread_ui.entry(id.0).or_default().draft = draft;
-                return vec![Effect::PersistOperatorState];
+                return vec![Effect::PersistOperatorStateDeferred];
             }
         }
         Action::ScrollBy(delta) => {
@@ -2698,7 +2699,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 } else {
                     ui.scroll.saturating_add(delta as u16)
                 };
-                return vec![Effect::PersistOperatorState];
+                return vec![Effect::PersistOperatorStateDeferred];
             }
         }
         Action::ToggleFollow => {
@@ -2787,7 +2788,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                         .or_default()
                         .draft
                         .push(character);
-                    return vec![Effect::PersistOperatorState];
+                    return vec![Effect::PersistOperatorStateDeferred];
                 }
             }
             InputMode::Search
@@ -2823,7 +2824,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             InputMode::Composer => {
                 if let Some(id) = state.current_thread_id().cloned() {
                     state.thread_ui.entry(id.0).or_default().draft.pop();
-                    return vec![Effect::PersistOperatorState];
+                    return vec![Effect::PersistOperatorStateDeferred];
                 }
             }
             InputMode::Search
@@ -6079,6 +6080,30 @@ mod tests {
         let effects = reduce(&mut app, Action::TogglePin);
         assert!(effects.is_empty());
         assert_eq!(app.threads[0].pinned, original_pin);
+    }
+
+    #[test]
+    fn high_frequency_thread_ui_edits_use_deferred_persistence() {
+        let mut app = app();
+        reduce(&mut app, Action::OpenSelected);
+
+        assert_eq!(
+            reduce(&mut app, Action::InputChar('x')),
+            vec![Effect::PersistOperatorStateDeferred]
+        );
+        assert_eq!(
+            reduce(&mut app, Action::InputBackspace),
+            vec![Effect::PersistOperatorStateDeferred]
+        );
+        assert_eq!(
+            reduce(&mut app, Action::ScrollBy(1)),
+            vec![Effect::PersistOperatorStateDeferred]
+        );
+
+        assert_eq!(
+            reduce(&mut app, Action::ToggleFollow),
+            vec![Effect::PersistOperatorState]
+        );
     }
 
     #[test]
