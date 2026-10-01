@@ -1,7 +1,5 @@
 use crate::{
-    app::{
-        Action, AppState, PlanningReconcilePhaseTimings, profile_planning_reconcile, reduce,
-    },
+    app::{Action, AppState, PlanningReconcilePhaseTimings, profile_planning_reconcile, reduce},
     backend::{CodexBackend, FakeBackend},
 };
 use anyhow::{Context, Result};
