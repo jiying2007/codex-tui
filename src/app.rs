@@ -461,6 +461,7 @@ pub struct AppState {
     pub review_scroll: u16,
     pub review_word_diff: bool,
     pub pending_requests: Vec<InteractiveRequest>,
+    pending_request_threads: BTreeSet<String>,
     pub user_input_request_id: Option<RpcRequestId>,
     pub user_input_question_index: usize,
     pub user_input_answers: BTreeMap<String, Vec<String>>,
@@ -550,6 +551,7 @@ impl AppState {
             review_scroll: 0,
             review_word_diff: false,
             pending_requests: vec![],
+            pending_request_threads: BTreeSet::new(),
             user_input_request_id: None,
             user_input_question_index: 0,
             user_input_answers: BTreeMap::new(),
@@ -1118,6 +1120,14 @@ impl AppState {
             .count()
     }
 
+    fn rebuild_pending_request_threads(&mut self) {
+        self.pending_request_threads = self
+            .pending_requests
+            .iter()
+            .map(|request| request.thread_id.0.clone())
+            .collect();
+    }
+
     pub fn current_pending_request(&self) -> Option<&InteractiveRequest> {
         let thread_id = self.current_thread_id()?;
         self.pending_requests
@@ -1195,10 +1205,7 @@ impl AppState {
                     | AttentionReason::SystemError
             )
         });
-        let interactive = self
-            .pending_requests
-            .iter()
-            .any(|request| request.thread_id == thread.id);
+        let interactive = self.pending_request_threads.contains(&thread.id.0);
         actionable
             || interactive
             || (!thread.attention.is_empty() && !self.acknowledged_attention.contains(&thread.id.0))
@@ -2487,6 +2494,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 .pending_requests
                 .retain(|pending| pending.request_id != request.request_id);
             state.pending_requests.push(request);
+            state.rebuild_pending_request_threads();
             if is_current_thread {
                 state.goal_actions_open = false;
                 if state.input_mode == InputMode::Composer {
@@ -2498,6 +2506,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state
                 .pending_requests
                 .retain(|request| request.request_id != request_id);
+            state.rebuild_pending_request_threads();
             if state.user_input_request_id.as_ref() == Some(&request_id) {
                 clear_user_input_editor(state);
             }
@@ -4783,6 +4792,84 @@ mod tests {
         );
         assert_eq!(app.input_mode, InputMode::Normal);
         assert_eq!(app.thread_ui[&thread_id.0].draft, "x");
+    }
+
+    #[test]
+    fn pending_request_thread_index_preserves_multi_request_attention() {
+        let mut app = app();
+        let thread_id = app.threads[0].id.clone();
+        app.threads[0].attention.clear();
+
+        for request_id in [101_i64, 102_i64] {
+            reduce(
+                &mut app,
+                Action::InteractiveRequested(InteractiveRequest {
+                    request_id: RpcRequestId::Integer(request_id),
+                    thread_id: thread_id.clone(),
+                    turn_id: "turn-1".into(),
+                    item_id: format!("item-{request_id}"),
+                    kind: InteractiveRequestKind::FileChangeApproval { reason: None },
+                }),
+            );
+        }
+
+        assert_eq!(app.pending_requests.len(), 2);
+        assert_eq!(app.pending_request_threads.len(), 1);
+        assert!(app.pending_request_threads.contains(&thread_id.0));
+        assert!(app.thread_needs_attention(0));
+
+        reduce(
+            &mut app,
+            Action::InteractiveResolved {
+                request_id: RpcRequestId::Integer(101),
+            },
+        );
+        assert!(app.pending_request_threads.contains(&thread_id.0));
+        assert!(app.thread_needs_attention(0));
+
+        reduce(
+            &mut app,
+            Action::InteractiveResolved {
+                request_id: RpcRequestId::Integer(102),
+            },
+        );
+        assert!(!app.pending_request_threads.contains(&thread_id.0));
+        assert!(!app.thread_needs_attention(0));
+    }
+
+    #[test]
+    fn pending_request_thread_index_tracks_request_retargeting() {
+        let mut app = app();
+        for thread in &mut app.threads {
+            thread.attention.clear();
+        }
+        let first = app.threads[0].id.clone();
+        let second = app.threads[1].id.clone();
+
+        reduce(
+            &mut app,
+            Action::InteractiveRequested(InteractiveRequest {
+                request_id: RpcRequestId::Integer(201),
+                thread_id: first.clone(),
+                turn_id: "turn-1".into(),
+                item_id: "item-1".into(),
+                kind: InteractiveRequestKind::FileChangeApproval { reason: None },
+            }),
+        );
+        reduce(
+            &mut app,
+            Action::InteractiveRequested(InteractiveRequest {
+                request_id: RpcRequestId::Integer(201),
+                thread_id: second.clone(),
+                turn_id: "turn-2".into(),
+                item_id: "item-2".into(),
+                kind: InteractiveRequestKind::FileChangeApproval { reason: None },
+            }),
+        );
+
+        assert_eq!(app.pending_requests.len(), 1);
+        assert!(!app.pending_request_threads.contains(&first.0));
+        assert!(app.pending_request_threads.contains(&second.0));
     }
 
     #[test]
