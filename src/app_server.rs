@@ -2033,7 +2033,7 @@ mod tests {
     }
 
     #[test]
-    fn bootstrap_registry_completeness_follows_page_limit() {
+    fn bootstrap_registry_completeness_follows_actual_pagination_exhaustion() {
         let source = include_str!("app_server.rs");
         let production = source
             .split("#[cfg(test)]")
