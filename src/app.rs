@@ -3585,9 +3585,10 @@ fn refresh_active_git_projections(state: &mut AppState) -> Vec<Effect> {
     for (cwd, thread_ids) in threads_by_cwd {
         if state.refresh_cwd_locality(&cwd).terminal_usable() {
             let probe_pending = thread_ids.iter().any(|thread_id| {
-                state.git_contexts.get(&thread_id.0).is_some_and(|context| {
-                    context.cwd == cwd && context.observed_at_unix_ms == 0
-                })
+                state
+                    .git_contexts
+                    .get(&thread_id.0)
+                    .is_some_and(|context| context.cwd == cwd && context.observed_at_unix_ms == 0)
             });
             if probe_pending {
                 continue;
