@@ -5725,26 +5725,26 @@ mod tests {
         let mut app = app();
         reduce(&mut app, Action::OpenCommandPalette);
 
-        let review_index = app
+        let toggle_pin_index = app
             .command_palette_choices()
             .iter()
-            .position(|choice| *choice == CommandPaletteChoice::Review)
-            .expect("Review palette entry");
-        app.command_palette_selected = review_index;
+            .position(|choice| *choice == CommandPaletteChoice::TogglePin)
+            .expect("TogglePin palette entry");
+        app.command_palette_selected = toggle_pin_index;
         assert_eq!(
             app.command_palette_choice(),
-            Some(CommandPaletteChoice::Review)
+            Some(CommandPaletteChoice::TogglePin)
         );
 
         app.threads.clear();
         app.rebuild_thread_indexes();
         assert!(
             !app.build_command_palette_choices()
-                .contains(&CommandPaletteChoice::Review)
+                .contains(&CommandPaletteChoice::TogglePin)
         );
         assert_eq!(
             app.command_palette_choice(),
-            Some(CommandPaletteChoice::Review),
+            Some(CommandPaletteChoice::TogglePin),
             "background state changes must not retarget the highlighted command"
         );
 
@@ -5752,7 +5752,7 @@ mod tests {
         assert!(app.command_palette_items.is_empty());
         assert!(
             !app.command_palette_choices()
-                .contains(&CommandPaletteChoice::Review)
+                .contains(&CommandPaletteChoice::TogglePin)
         );
     }
 
