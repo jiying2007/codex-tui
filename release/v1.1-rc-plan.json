@@ -1,0 +1,89 @@
+{
+  "schema": "codex-tui/rc-plan/v1",
+  "targetVersion": "1.1.0",
+  "criteriaFile": "release/v1.1-criteria.json",
+  "phase": "code-frozen-awaiting-real-environment-qualification",
+  "candidatePolicy": {
+    "source": "main-exact-sha",
+    "codeFreeze": true,
+    "candidateInvalidatedByProductCodeChange": true,
+    "nonPublishingStableDryRunBeforePublication": true,
+    "publicationRequiresFreshEvidenceForCandidateSha": true
+  },
+  "changePolicy": {
+    "allowedDuringFreeze": [
+      "release-qualification-correctness",
+      "security",
+      "data-loss-or-state-corruption",
+      "build-or-packaging-breakage",
+      "critical-platform-compatibility"
+    ],
+    "deferredUntilAfterV1_1": [
+      "new-product-features",
+      "registry-paging-or-new-registry-index",
+      "native-gitlab-rest-graphql",
+      "team-server-rbac",
+      "generic-plugin-system",
+      "generic-multi-agent-framework",
+      "terminal-drawer-as-tmux-replacement"
+    ]
+  },
+  "automatedQualification": {
+    "schema": "codex-tui/automated-qualification/v3",
+    "requiredOnEveryCandidateSha": true,
+    "requiredGates": [
+      "failureMatrix",
+      "scaleEvidence",
+      "soakStructural",
+      "uiContract",
+      "stateMigrationRecovery",
+      "supportBundleRedaction"
+    ]
+  },
+  "deferredRealEvidence": [
+    {
+      "id": "linux-compatibility",
+      "criteriaGate": "compatibility",
+      "requiredForStable": true,
+      "requiredForTeamReuseQualification": false,
+      "canBeSynthesized": false,
+      "collector": "scripts/release/linux_qualify.py",
+      "expectedEvidence": "retained READY codex-tui/compat/v2 report bound by SHA-256"
+    },
+    {
+      "id": "linux-terminal-restoration",
+      "criteriaGate": "terminal-restoration",
+      "requiredForStable": true,
+      "requiredForTeamReuseQualification": false,
+      "canBeSynthesized": false,
+      "collector": "scripts/release/linux_qualify.py --terminal-receipt <real-receipt.json>",
+      "expectedEvidence": "retained PASS codex-tui/terminal-restoration/v1 receipt from a real controlling TTY"
+    },
+    {
+      "id": "internal-gitlab-provider",
+      "criteriaGate": null,
+      "requiredForStable": false,
+      "requiredForTeamReuseQualification": true,
+      "canBeSynthesized": false,
+      "collector": "scripts/release/capture_forge_capability.py",
+      "expectedEvidence": "secret-safe observed capability fixture from a representative authenticated internal GitLab repository"
+    }
+  ],
+  "resumeSequence": [
+    "select one clean main exact SHA after code freeze",
+    "confirm canonical main CI success for that exact SHA",
+    "capture real Linux terminal-restoration receipt",
+    "run scripts/release/linux_qualify.py for that exact SHA",
+    "run stable publish=false workflow with the generated workflowInputs",
+    "optionally capture the internal GitLab provider fixture for team reuse qualification",
+    "publish v1.1.0 only from the same qualified SHA after release notes are finalized"
+  ],
+  "frozenNonGoals": [
+    "registry-paging-or-registry-sqlite-index",
+    "native-gitlab-rest-graphql",
+    "team-server-rbac",
+    "generic-plugin-system",
+    "generic-multi-agent-framework",
+    "terminal-drawer-as-tmux-replacement"
+  ]
+}
