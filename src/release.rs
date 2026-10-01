@@ -9,7 +9,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 pub const RELEASE_VERIFY_SCHEMA: &str = "codex-tui/release-verification/v1";
-pub const RELEASE_EVIDENCE_SCHEMA: &str = "codex-tui/release-evidence/v3";
+pub const RELEASE_EVIDENCE_SCHEMA: &str = "codex-tui/release-evidence/v4";
 pub const AUTOMATED_QUALIFICATION_SCHEMA: &str = "codex-tui/automated-qualification/v3";
 pub const STABLE_CRITERIA_SCHEMA: &str = "codex-tui/stable-criteria/v2";
 pub const PRIMARY_STABLE_PLATFORM: &str = "linux";
@@ -36,6 +36,7 @@ impl ReleaseChannel {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlatformTerminalReceipt {
+    pub source_sha: String,
     pub status: String,
     pub terminal: String,
     pub observed_at: String,
@@ -46,6 +47,7 @@ pub struct PlatformTerminalReceipt {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PlatformCompatReceipt {
+    pub source_sha: String,
     pub status: String,
     pub report_sha256: String,
     pub observed_at: String,
@@ -291,6 +293,7 @@ pub fn validate_evidence(path: &Path, version: &str, commit_sha: &str) -> Result
         &receipt.compatibility,
         &receipt.terminal_restoration,
         true,
+        commit_sha,
     )?;
     for platform in SECONDARY_PLATFORMS {
         validate_platform_evidence(
@@ -298,6 +301,7 @@ pub fn validate_evidence(path: &Path, version: &str, commit_sha: &str) -> Result
             &receipt.compatibility,
             &receipt.terminal_restoration,
             false,
+            commit_sha,
         )?;
     }
 
@@ -396,6 +400,7 @@ fn validate_platform_evidence(
     compatibility: &BTreeMap<String, PlatformCompatReceipt>,
     terminal_restoration: &BTreeMap<String, PlatformTerminalReceipt>,
     required: bool,
+    commit_sha: &str,
 ) -> Result<()> {
     let compat = compatibility.get(platform);
     let terminal = terminal_restoration.get(platform);
@@ -411,6 +416,10 @@ fn validate_platform_evidence(
         "compatibility evidence for {platform} must be READY"
     );
     anyhow::ensure!(
+        compat.source_sha.eq_ignore_ascii_case(commit_sha),
+        "compatibility evidence source SHA for {platform} must match the release commit"
+    );
+    anyhow::ensure!(
         valid_sha256(&compat.report_sha256),
         "compatibility report SHA-256 for {platform} must be 64 hexadecimal characters"
     );
@@ -424,6 +433,10 @@ fn validate_platform_evidence(
     anyhow::ensure!(
         terminal.status.eq_ignore_ascii_case("pass"),
         "terminal restoration evidence for {platform} must PASS"
+    );
+    anyhow::ensure!(
+        terminal.source_sha.eq_ignore_ascii_case(commit_sha),
+        "terminal restoration evidence source SHA for {platform} must match the release commit"
     );
     anyhow::ensure!(
         !terminal.terminal.trim().is_empty(),
@@ -757,6 +770,7 @@ mod tests {
                 compatibility: BTreeMap::from([(
                     "linux".into(),
                     PlatformCompatReceipt {
+                        source_sha: sha(),
                         status: "ready".into(),
                         report_sha256: "a".repeat(64),
                         observed_at: "2026-09-30T00:00:00Z".into(),
@@ -765,6 +779,7 @@ mod tests {
                 terminal_restoration: BTreeMap::from([(
                     "linux".into(),
                     PlatformTerminalReceipt {
+                        source_sha: sha(),
                         status: "pass".into(),
                         terminal: "xterm".into(),
                         observed_at: "2026-09-30T00:00:00Z".into(),
@@ -811,6 +826,7 @@ mod tests {
                     (
                         "linux".into(),
                         PlatformCompatReceipt {
+                            source_sha: sha(),
                             status: "ready".into(),
                             report_sha256: "a".repeat(64),
                             observed_at: "2026-09-30T00:00:00Z".into(),
@@ -819,6 +835,7 @@ mod tests {
                     (
                         "macos".into(),
                         PlatformCompatReceipt {
+                            source_sha: sha(),
                             status: "ready".into(),
                             report_sha256: "b".repeat(64),
                             observed_at: "2026-09-30T00:00:00Z".into(),
@@ -828,6 +845,7 @@ mod tests {
                 terminal_restoration: BTreeMap::from([(
                     "linux".into(),
                     PlatformTerminalReceipt {
+                        source_sha: sha(),
                         status: "pass".into(),
                         terminal: "xterm".into(),
                         observed_at: "2026-09-30T00:00:00Z".into(),
@@ -855,6 +873,62 @@ mod tests {
     }
 
     #[test]
+    fn stable_evidence_rejects_cross_sha_real_environment_receipts() {
+        let root = repo_with_lock_and_changelog();
+        let evidence = root.path().join("evidence.json");
+        fs::write(
+            &evidence,
+            serde_json::to_vec_pretty(&ReleaseEvidenceReceipt {
+                schema: RELEASE_EVIDENCE_SCHEMA.into(),
+                version: env!("CARGO_PKG_VERSION").into(),
+                commit_sha: sha(),
+                canonical_ci_run: 123,
+                compat_schema: COMPAT_SCHEMA.into(),
+                primary_platform: PRIMARY_STABLE_PLATFORM.into(),
+                secondary_platforms: SECONDARY_PLATFORMS
+                    .iter()
+                    .map(|platform| (*platform).to_string())
+                    .collect(),
+                compatibility: BTreeMap::from([(
+                    "linux".into(),
+                    PlatformCompatReceipt {
+                        source_sha: "1123456789abcdef0123456789abcdef01234567".into(),
+                        status: "ready".into(),
+                        report_sha256: "a".repeat(64),
+                        observed_at: "2026-10-01T00:00:00Z".into(),
+                    },
+                )]),
+                terminal_restoration: BTreeMap::from([(
+                    "linux".into(),
+                    PlatformTerminalReceipt {
+                        source_sha: sha(),
+                        status: "pass".into(),
+                        terminal: "xterm".into(),
+                        observed_at: "2026-10-01T00:00:00Z".into(),
+                        notes: None,
+                    },
+                )]),
+                automated_qualification: automated_receipt(),
+                performance: PerformanceReceipt {
+                    platform: PRIMARY_STABLE_PLATFORM.into(),
+                    fixture: PERFORMANCE_FIXTURE.into(),
+                    iterations: RETAINED_MIN_ITERATIONS,
+                    p95_ms: 1.0,
+                    p99_ms: 2.0,
+                    source: "fixture".into(),
+                    observed_at: "2026-10-01T00:00:00Z".into(),
+                },
+            })
+            .expect("evidence json"),
+        )
+        .expect("evidence");
+
+        let error = validate_evidence(&evidence, env!("CARGO_PKG_VERSION"), &sha())
+            .expect_err("cross-SHA compatibility evidence must fail closed");
+        assert!(format!("{error:#}").contains("source SHA"));
+    }
+
+    #[test]
     fn commit_sha_contract_is_exact() {
         assert!(valid_commit_sha(&sha()));
         assert!(!valid_commit_sha("deadbeef"));
@@ -868,12 +942,14 @@ mod tests {
         let root = repo_with_lock_and_changelog();
         let evidence = root.path().join("evidence.json");
         let terminal = |name: &str| PlatformTerminalReceipt {
+            source_sha: sha(),
             status: "pass".into(),
             terminal: name.into(),
             observed_at: "2026-09-30T00:00:00Z".into(),
             notes: None,
         };
         let compatibility = |hash: char| PlatformCompatReceipt {
+            source_sha: sha(),
             status: "ready".into(),
             report_sha256: hash.to_string().repeat(64),
             observed_at: "2026-09-30T00:00:00Z".into(),
