@@ -148,6 +148,9 @@ jobs:
   gate:
     name: release-gate
     runs-on: ubuntu-24.04
+    permissions:
+      actions: read
+      contents: read
     outputs:
       version: ${{ steps.meta.outputs.version }}
       tag: ${{ steps.meta.outputs.tag }}
@@ -198,6 +201,12 @@ jobs:
           fi
 
       - uses: Swatinem/rust-cache@v2
+
+      - name: Verify release token can read workflow runs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq .id)" = "$GITHUB_RUN_ID"
 
       - name: Run exact-SHA automated hardening qualification
         shell: bash
