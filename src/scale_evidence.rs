@@ -1,5 +1,7 @@
 use crate::{
-    app::{Action, AppState, reduce},
+    app::{
+        Action, AppState, PlanningReconcilePhaseTimings, profile_planning_reconcile, reduce,
+    },
     backend::{CodexBackend, FakeBackend},
 };
 use anyhow::{Context, Result};
@@ -9,7 +11,7 @@ use std::{
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
-pub const SCALE_EVIDENCE_SCHEMA: &str = "codex-tui/scale-evidence/v2";
+pub const SCALE_EVIDENCE_SCHEMA: &str = "codex-tui/scale-evidence/v3";
 pub const DEFAULT_ROWS: usize = 10_000;
 pub const DEFAULT_WARMUP_ITERATIONS: usize = 5;
 pub const DEFAULT_ITERATIONS: usize = 50;
@@ -26,6 +28,19 @@ pub struct TimingSummary {
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct PlanningPhaseSummary {
+    pub setup: TimingSummary,
+    pub thread_projection: TimingSummary,
+    pub supplemental_projection: TimingSummary,
+    pub sort: TimingSummary,
+    pub index_commit: TimingSummary,
+    pub rebuild_total: TimingSummary,
+    pub selection_refresh: TimingSummary,
+    pub total: TimingSummary,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ScaleEvidenceReport {
     pub schema: &'static str,
     pub rows: usize,
@@ -33,6 +48,7 @@ pub struct ScaleEvidenceReport {
     pub iterations: usize,
     pub registry_construct_ms: f64,
     pub planning_reconcile: TimingSummary,
+    pub planning_phases: PlanningPhaseSummary,
     pub recent_projection: TimingSummary,
     pub all_history_projection: TimingSummary,
     pub search_projection: TimingSummary,
@@ -70,6 +86,7 @@ pub fn run(
     let registry_construct_ms = construct_started.elapsed().as_secs_f64() * 1000.0;
 
     let planning_reconcile = sample_planning_reconcile(&mut app, warmup_iterations, iterations);
+    let planning_phases = sample_planning_phases(&mut app, warmup_iterations, iterations);
 
     let recent_projection = sample_projection(&app, warmup_iterations, iterations);
 
@@ -90,6 +107,7 @@ pub fn run(
         iterations,
         registry_construct_ms,
         planning_reconcile,
+        planning_phases,
         recent_projection,
         all_history_projection,
         search_projection,
@@ -157,6 +175,29 @@ pub fn run_cli(args: &[String]) -> Result<i32> {
         println!("iterations: {}", report.iterations);
         println!("registry-construct-ms: {:.3}", report.registry_construct_ms);
         print_timing("planning-reconcile", &report.planning_reconcile);
+        print_timing("planning-phase-setup", &report.planning_phases.setup);
+        print_timing(
+            "planning-phase-thread-projection",
+            &report.planning_phases.thread_projection,
+        );
+        print_timing(
+            "planning-phase-supplemental-projection",
+            &report.planning_phases.supplemental_projection,
+        );
+        print_timing("planning-phase-sort", &report.planning_phases.sort);
+        print_timing(
+            "planning-phase-index-commit",
+            &report.planning_phases.index_commit,
+        );
+        print_timing(
+            "planning-phase-rebuild-total",
+            &report.planning_phases.rebuild_total,
+        );
+        print_timing(
+            "planning-phase-selection-refresh",
+            &report.planning_phases.selection_refresh,
+        );
+        print_timing("planning-phase-total", &report.planning_phases.total);
         print_timing("recent-projection", &report.recent_projection);
         print_timing("all-history-projection", &report.all_history_projection);
         print_timing("search-projection", &report.search_projection);
@@ -182,6 +223,73 @@ fn sample_planning_reconcile(
     })
 }
 
+fn sample_planning_phases(
+    app: &mut AppState,
+    warmup_iterations: usize,
+    iterations: usize,
+) -> PlanningPhaseSummary {
+    for _ in 0..warmup_iterations {
+        black_box(profile_planning_reconcile(app, 1));
+    }
+
+    let mut setup = Vec::with_capacity(iterations);
+    let mut thread_projection = Vec::with_capacity(iterations);
+    let mut supplemental_projection = Vec::with_capacity(iterations);
+    let mut sort = Vec::with_capacity(iterations);
+    let mut index_commit = Vec::with_capacity(iterations);
+    let mut rebuild_total = Vec::with_capacity(iterations);
+    let mut selection_refresh = Vec::with_capacity(iterations);
+    let mut total = Vec::with_capacity(iterations);
+
+    for _ in 0..iterations {
+        let sample = black_box(profile_planning_reconcile(app, 1));
+        push_phase_sample(
+            sample,
+            &mut setup,
+            &mut thread_projection,
+            &mut supplemental_projection,
+            &mut sort,
+            &mut index_commit,
+            &mut rebuild_total,
+            &mut selection_refresh,
+            &mut total,
+        );
+    }
+
+    PlanningPhaseSummary {
+        setup: summarize_samples(setup),
+        thread_projection: summarize_samples(thread_projection),
+        supplemental_projection: summarize_samples(supplemental_projection),
+        sort: summarize_samples(sort),
+        index_commit: summarize_samples(index_commit),
+        rebuild_total: summarize_samples(rebuild_total),
+        selection_refresh: summarize_samples(selection_refresh),
+        total: summarize_samples(total),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn push_phase_sample(
+    sample: PlanningReconcilePhaseTimings,
+    setup: &mut Vec<f64>,
+    thread_projection: &mut Vec<f64>,
+    supplemental_projection: &mut Vec<f64>,
+    sort: &mut Vec<f64>,
+    index_commit: &mut Vec<f64>,
+    rebuild_total: &mut Vec<f64>,
+    selection_refresh: &mut Vec<f64>,
+    total: &mut Vec<f64>,
+) {
+    setup.push(sample.setup_ms);
+    thread_projection.push(sample.thread_projection_ms);
+    supplemental_projection.push(sample.supplemental_projection_ms);
+    sort.push(sample.sort_ms);
+    index_commit.push(sample.index_commit_ms);
+    rebuild_total.push(sample.rebuild_total_ms);
+    selection_refresh.push(sample.selection_refresh_ms);
+    total.push(sample.total_ms);
+}
+
 fn sample_projection(app: &AppState, warmup_iterations: usize, iterations: usize) -> TimingSummary {
     for _ in 0..warmup_iterations {
         black_box(app.visible_indices_with_match_count());
@@ -200,6 +308,10 @@ fn sample_timings(mut iterations: usize, mut operation: impl FnMut()) -> TimingS
         samples.push(started.elapsed().as_secs_f64() * 1000.0);
         iterations -= 1;
     }
+    summarize_samples(samples)
+}
+
+fn summarize_samples(mut samples: Vec<f64>) -> TimingSummary {
     samples.sort_by(f64::total_cmp);
 
     TimingSummary {
@@ -245,6 +357,14 @@ mod tests {
         assert_eq!(report.iterations, 3);
         for timing in [
             &report.planning_reconcile,
+            &report.planning_phases.setup,
+            &report.planning_phases.thread_projection,
+            &report.planning_phases.supplemental_projection,
+            &report.planning_phases.sort,
+            &report.planning_phases.index_commit,
+            &report.planning_phases.rebuild_total,
+            &report.planning_phases.selection_refresh,
+            &report.planning_phases.total,
             &report.recent_projection,
             &report.all_history_projection,
             &report.search_projection,
