@@ -283,20 +283,14 @@ impl RegistryHandle {
     }
 }
 
-fn queue_backend_command(
-    tx: &mpsc::Sender<BackendCommand>,
-    command: BackendCommand,
-) -> Result<()> {
+fn queue_backend_command(tx: &mpsc::Sender<BackendCommand>, command: BackendCommand) -> Result<()> {
     tx.try_send(command).map_err(|error| match error {
         mpsc::error::TrySendError::Full(_) => anyhow!("App Server actor queue is full"),
         mpsc::error::TrySendError::Closed(_) => anyhow!("App Server actor is not available"),
     })
 }
 
-async fn send_conversation_event(
-    tx: &mpsc::Sender<ConversationEvent>,
-    event: ConversationEvent,
-) {
+async fn send_conversation_event(tx: &mpsc::Sender<ConversationEvent>, event: ConversationEvent) {
     let _ = tx.send(event).await;
 }
 
@@ -338,8 +332,7 @@ pub async fn start(codex_bin: Option<OsString>) -> Result<StartedRegistry> {
         status: status.clone(),
     };
     let (tx, rx) = watch::channel(initial.clone());
-    let (conversation_tx, conversation_rx) =
-        mpsc::channel(APP_SERVER_CONVERSATION_QUEUE_CAPACITY);
+    let (conversation_tx, conversation_rx) = mpsc::channel(APP_SERVER_CONVERSATION_QUEUE_CAPACITY);
     let (command_tx, command_rx) = mpsc::channel(APP_SERVER_COMMAND_QUEUE_CAPACITY);
     let task = tokio::spawn(run_registry_actor(
         rpc,
@@ -1751,11 +1744,7 @@ mod tests {
     #[tokio::test]
     async fn conversation_event_queue_backpressures_without_dropping() {
         let (tx, mut rx) = mpsc::channel(1);
-        send_conversation_event(
-            &tx,
-            ConversationEvent::GoalCleared(ThreadId::new("first")),
-        )
-        .await;
+        send_conversation_event(&tx, ConversationEvent::GoalCleared(ThreadId::new("first"))).await;
 
         let second_tx = tx.clone();
         let second = tokio::spawn(async move {
