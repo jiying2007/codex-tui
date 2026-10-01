@@ -14,11 +14,14 @@ use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::Command;
 use tokio::sync::{Mutex, mpsc};
-use tokio::task::JoinHandle;
+use tokio::task::{JoinHandle, JoinSet};
 
 const MUTATION_TIMEOUT: Duration = Duration::from_secs(15);
 const VERIFY_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_MUTATION_OUTPUT_BYTES: usize = 256 * 1024;
+const MUTATION_COMMAND_QUEUE_CAPACITY: usize = 32;
+const MUTATION_EVENT_QUEUE_CAPACITY: usize = 64;
+const MUTATION_MAX_CONCURRENCY: usize = 4;
 
 #[derive(Clone, Debug)]
 pub struct MutationRequest {
@@ -41,15 +44,15 @@ pub enum MutationEvent {
 }
 
 pub struct WorktreeMutationHandle {
-    command_tx: mpsc::UnboundedSender<MutationCommand>,
-    event_rx: mpsc::UnboundedReceiver<MutationEvent>,
+    command_tx: mpsc::Sender<MutationCommand>,
+    event_rx: mpsc::Receiver<MutationEvent>,
     task: JoinHandle<()>,
 }
 
 impl WorktreeMutationHandle {
     pub fn start(store: SqliteStore) -> Self {
-        let (command_tx, command_rx) = mpsc::unbounded_channel();
-        let (event_tx, event_rx) = mpsc::unbounded_channel();
+        let (command_tx, command_rx) = mpsc::channel(MUTATION_COMMAND_QUEUE_CAPACITY);
+        let (event_tx, event_rx) = mpsc::channel(MUTATION_EVENT_QUEUE_CAPACITY);
         let locks = Arc::new(Mutex::new(BTreeMap::new()));
         let task = tokio::spawn(run_coordinator(store, locks, command_rx, event_tx));
         Self {
@@ -60,26 +63,37 @@ impl WorktreeMutationHandle {
     }
 
     pub fn execute(&self, request: MutationRequest) -> Result<()> {
-        self.command_tx
-            .send(MutationCommand::Execute(Box::new(request)))
-            .map_err(|_| anyhow!("worktree mutation coordinator is unavailable"))
+        queue_mutation_command(
+            &self.command_tx,
+            MutationCommand::Execute(Box::new(request)),
+        )
     }
 
     pub fn recover(&self) -> Result<()> {
-        self.command_tx
-            .send(MutationCommand::Recover)
-            .map_err(|_| anyhow!("worktree mutation coordinator is unavailable"))
+        queue_mutation_command(&self.command_tx, MutationCommand::Recover)
     }
 
     pub fn refresh_inventory(&self) -> Result<()> {
-        self.command_tx
-            .send(MutationCommand::RefreshInventory)
-            .map_err(|_| anyhow!("worktree mutation coordinator is unavailable"))
+        queue_mutation_command(&self.command_tx, MutationCommand::RefreshInventory)
     }
 
     pub fn try_recv(&mut self) -> Option<MutationEvent> {
         self.event_rx.try_recv().ok()
     }
+}
+
+fn queue_mutation_command(
+    tx: &mpsc::Sender<MutationCommand>,
+    command: MutationCommand,
+) -> Result<()> {
+    tx.try_send(command).map_err(|error| match error {
+        mpsc::error::TrySendError::Full(_) => {
+            anyhow!("worktree mutation coordinator queue is full")
+        }
+        mpsc::error::TrySendError::Closed(_) => {
+            anyhow!("worktree mutation coordinator is unavailable")
+        }
+    })
 }
 
 impl Drop for WorktreeMutationHandle {
@@ -93,60 +107,83 @@ type RepoLocks = Arc<Mutex<BTreeMap<String, Arc<Mutex<()>>>>>;
 async fn run_coordinator(
     store: SqliteStore,
     locks: RepoLocks,
-    mut command_rx: mpsc::UnboundedReceiver<MutationCommand>,
-    event_tx: mpsc::UnboundedSender<MutationEvent>,
+    mut command_rx: mpsc::Receiver<MutationCommand>,
+    event_tx: mpsc::Sender<MutationEvent>,
 ) {
-    while let Some(command) = command_rx.recv().await {
-        match command {
-            MutationCommand::Execute(request) => {
-                let request = *request;
-                let store = store.clone();
-                let locks = locks.clone();
-                let event_tx = event_tx.clone();
-                tokio::spawn(async move {
-                    let receipt = execute_with_repo_lock(&store, &locks, request).await;
-                    match receipt {
-                        Ok(receipt) => {
-                            let _ = event_tx.send(MutationEvent::Receipt(Box::new(receipt)));
-                            emit_inventory(&store, &event_tx);
-                        }
-                        Err(error) => {
-                            let _ = event_tx.send(MutationEvent::Notice(format!(
-                                "worktree mutation coordinator failed: {error:#}"
-                            )));
-                        }
-                    }
-                });
+    let mut tasks = JoinSet::new();
+    let mut command_open = true;
+
+    loop {
+        tokio::select! {
+            joined = tasks.join_next(), if !tasks.is_empty() => {
+                let _ = joined;
             }
-            MutationCommand::Recover => {
-                let store = store.clone();
-                let locks = locks.clone();
-                let event_tx = event_tx.clone();
-                tokio::spawn(async move {
-                    if let Err(error) = recover_incomplete(&store, &locks, &event_tx).await {
-                        let _ = event_tx.send(MutationEvent::Notice(format!(
-                            "worktree recovery failed: {error:#}"
-                        )));
+            command = command_rx.recv(), if command_open && tasks.len() < MUTATION_MAX_CONCURRENCY => {
+                match command {
+                    Some(command) => {
+                        let store = store.clone();
+                        let locks = locks.clone();
+                        let event_tx = event_tx.clone();
+                        tasks.spawn(async move {
+                            match command {
+                                MutationCommand::Execute(request) => {
+                                    match execute_with_repo_lock(&store, &locks, *request).await {
+                                        Ok(receipt) => {
+                                            let _ = event_tx
+                                                .send(MutationEvent::Receipt(Box::new(receipt)))
+                                                .await;
+                                            emit_inventory(&store, &event_tx).await;
+                                        }
+                                        Err(error) => {
+                                            let _ = event_tx
+                                                .send(MutationEvent::Notice(format!(
+                                                    "worktree mutation coordinator failed: {error:#}"
+                                                )))
+                                                .await;
+                                        }
+                                    }
+                                }
+                                MutationCommand::Recover => {
+                                    if let Err(error) =
+                                        recover_incomplete(&store, &locks, &event_tx).await
+                                    {
+                                        let _ = event_tx
+                                            .send(MutationEvent::Notice(format!(
+                                                "worktree recovery failed: {error:#}"
+                                            )))
+                                            .await;
+                                    }
+                                    emit_inventory(&store, &event_tx).await;
+                                }
+                                MutationCommand::RefreshInventory => {
+                                    emit_inventory(&store, &event_tx).await;
+                                }
+                            }
+                        });
                     }
-                    emit_inventory(&store, &event_tx);
-                });
+                    None => command_open = false,
+                }
             }
-            MutationCommand::RefreshInventory => {
-                emit_inventory(&store, &event_tx);
+            else => {
+                if !command_open && tasks.is_empty() {
+                    break;
+                }
             }
         }
     }
 }
 
-fn emit_inventory(store: &SqliteStore, tx: &mpsc::UnboundedSender<MutationEvent>) {
+async fn emit_inventory(store: &SqliteStore, tx: &mpsc::Sender<MutationEvent>) {
     match store.load_managed_worktrees() {
         Ok(records) => {
-            let _ = tx.send(MutationEvent::ManagedWorktrees(records));
+            let _ = tx.send(MutationEvent::ManagedWorktrees(records)).await;
         }
         Err(error) => {
-            let _ = tx.send(MutationEvent::Notice(format!(
-                "managed worktree inventory unavailable: {error:#}"
-            )));
+            let _ = tx
+                .send(MutationEvent::Notice(format!(
+                    "managed worktree inventory unavailable: {error:#}"
+                )))
+                .await;
         }
     }
 }
@@ -581,7 +618,7 @@ async fn reconcile_outcome(store: &SqliteStore, plan: &OperationPlan) -> Result<
 async fn recover_incomplete(
     store: &SqliteStore,
     locks: &RepoLocks,
-    tx: &mpsc::UnboundedSender<MutationEvent>,
+    tx: &mpsc::Sender<MutationEvent>,
 ) -> Result<()> {
     let receipts = store.load_recoverable_operation_receipts()?;
     for mut receipt in receipts {
@@ -604,7 +641,7 @@ async fn recover_incomplete(
             }
             receipt = reconcile_receipt(store, receipt).await?;
         }
-        let _ = tx.send(MutationEvent::Receipt(Box::new(receipt)));
+        let _ = tx.send(MutationEvent::Receipt(Box::new(receipt))).await;
     }
     Ok(())
 }
@@ -836,6 +873,28 @@ mod tests {
         let other = repo_lock(&locks, &repo_b).await;
         assert!(Arc::ptr_eq(&first, &same));
         assert!(!Arc::ptr_eq(&first, &other));
+    }
+
+    #[test]
+    fn mutation_coordinator_channels_are_bounded() {
+        let source = include_str!("worktree.rs");
+        let production = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("production source");
+        assert!(!production.contains("unbounded_channel"));
+        assert!(!production.contains("UnboundedSender"));
+        assert!(!production.contains("UnboundedReceiver"));
+        assert!(production.contains("JoinSet"));
+    }
+
+    #[test]
+    fn mutation_command_queue_reports_backpressure() {
+        let (tx, _rx) = mpsc::channel(1);
+        queue_mutation_command(&tx, MutationCommand::RefreshInventory).expect("first command");
+        let error = queue_mutation_command(&tx, MutationCommand::RefreshInventory)
+            .expect_err("second command must hit bounded queue");
+        assert!(error.to_string().contains("queue is full"));
     }
 
     #[test]
@@ -1099,7 +1158,7 @@ branch refs/heads/feature
             .save_operation_receipt(&receipt)
             .expect("save executing");
 
-        let (tx, mut rx) = mpsc::unbounded_channel();
+        let (tx, mut rx) = mpsc::channel(MUTATION_EVENT_QUEUE_CAPACITY);
         recover_incomplete(&store, &Arc::new(Mutex::new(BTreeMap::new())), &tx)
             .await
             .expect("recover");
