@@ -547,6 +547,7 @@ async fn run_registry_actor(
     goal_probe.tick().await;
 
     loop {
+        let hydration_can_advance = hydration.is_some() && !rpc.has_queued_messages();
         tokio::select! {
             biased;
             command = command_rx.recv() => {
@@ -775,7 +776,7 @@ async fn run_registry_actor(
                     }
                 }
             }
-            _ = hydration_tick.tick(), if hydration.is_some() => {
+            _ = hydration_tick.tick(), if hydration_can_advance => {
                 let page_result = {
                     let state = hydration.as_ref().expect("hydration state");
                     load_registry_page(
