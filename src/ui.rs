@@ -2881,6 +2881,23 @@ mod tests {
     }
 
     #[test]
+    fn production_ui_never_performs_authoritative_cwd_filesystem_classification() {
+        let source = include_str!("ui.rs");
+        let production = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("production ui source");
+        assert!(
+            !production.contains(".cwd_locality("),
+            "rendering must not call the filesystem-backed AppState cwd locality API"
+        );
+        assert!(
+            !production.contains("classify_cwd("),
+            "rendering must not call the filesystem-backed cwd classifier"
+        );
+    }
+
+    #[test]
     fn simplified_chinese_ui_localizes_daily_chrome_and_help() {
         let backend = TestBackend::new(160, 28);
         let mut terminal = Terminal::new(backend).expect("terminal");
