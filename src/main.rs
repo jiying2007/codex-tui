@@ -928,11 +928,13 @@ async fn run_app(fake_mode: bool) -> Result<()> {
             needs_render = true;
         }
 
-        let registry_changed = drain_registry(&mut app, registry.as_mut(), &mut services.store);
-        needs_render |= registry_changed;
-        if registry_changed {
+        let registry_changes = drain_registry(&mut app, registry.as_mut(), &mut services.store);
+        needs_render |= registry_changes.any;
+        if registry_changes.registry_projection {
             let effects = reduce(&mut app, Action::RefreshGitProjections);
             apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
+        }
+        if registry_changes.planning {
             reduce(
                 &mut app,
                 Action::ReconcilePlanning {
@@ -1112,21 +1114,43 @@ fn backend_error_status(error: String) -> BackendStatus {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct RegistryDrainChanges {
+    any: bool,
+    registry_projection: bool,
+    planning: bool,
+}
+
+fn conversation_event_changes_planning(event: &ConversationEvent) -> bool {
+    match event {
+        ConversationEvent::GoalObserved(_) | ConversationEvent::GoalCleared(_) => true,
+        ConversationEvent::Loaded(_)
+        | ConversationEvent::OlderLoaded(_)
+        | ConversationEvent::InteractiveRequested(_)
+        | ConversationEvent::InteractiveResolved { .. }
+        | ConversationEvent::PromptSubmitted { .. }
+        | ConversationEvent::Failed { .. } => false,
+    }
+}
+
 fn drain_registry(
     app: &mut AppState,
     registry: Option<&mut RegistryHandle>,
     store: &mut RuntimeStore,
-) -> bool {
+) -> RegistryDrainChanges {
     let Some(registry) = registry else {
-        return false;
+        return RegistryDrainChanges::default();
     };
-    let mut changed = false;
+    let mut changes = RegistryDrainChanges::default();
     while let Some(snapshot) = registry.try_recv() {
         reduce(app, Action::ReplaceThreads(snapshot.threads));
         reduce(app, Action::BackendStatus(snapshot.status));
-        changed = true;
+        changes.any = true;
+        changes.registry_projection = true;
+        changes.planning = true;
     }
     while let Some(event) = registry.try_recv_conversation() {
+        changes.planning |= conversation_event_changes_planning(&event);
         match event {
             ConversationEvent::Loaded(page) => {
                 reduce(app, Action::ConversationLoaded(page));
@@ -1160,9 +1184,33 @@ fn drain_registry(
                 reduce(app, Action::ConversationFailed { thread_id, error });
             }
         }
-        changed = true;
+        changes.any = true;
     }
-    changed
+    changes
+}
+
+#[cfg(test)]
+mod registry_drain_classification_tests {
+    use super::*;
+
+    #[test]
+    fn only_goal_conversation_events_require_planning_reconcile() {
+        assert!(conversation_event_changes_planning(
+            &ConversationEvent::GoalCleared(codex_tui::domain::ThreadId::new("thread"))
+        ));
+        assert!(!conversation_event_changes_planning(
+            &ConversationEvent::Failed {
+                thread_id: codex_tui::domain::ThreadId::new("thread"),
+                error: "fixture".into(),
+            }
+        ));
+        assert!(!conversation_event_changes_planning(
+            &ConversationEvent::PromptSubmitted {
+                thread_id: codex_tui::domain::ThreadId::new("thread"),
+                prompt: "fixture".into(),
+            }
+        ));
+    }
 }
 
 fn drain_git(app: &mut AppState, git: &mut GitHandle) -> bool {
