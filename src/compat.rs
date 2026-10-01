@@ -113,6 +113,7 @@ pub struct CompatReport {
     pub schema: String,
     pub generated_at_unix_ms: u64,
     pub product_version: String,
+    pub source_sha: String,
     pub rust_msrv: String,
     pub os: String,
     pub arch: String,
@@ -288,6 +289,7 @@ pub fn build_report(components: Vec<CompatComponent>) -> CompatReport {
         schema: COMPAT_SCHEMA.into(),
         generated_at_unix_ms: now_unix_ms(),
         product_version: env!("CARGO_PKG_VERSION").into(),
+        source_sha: source_sha().into(),
         rust_msrv: RUST_MSRV.into(),
         os: std::env::consts::OS.into(),
         arch: std::env::consts::ARCH.into(),
@@ -343,6 +345,7 @@ pub fn build_report(components: Vec<CompatComponent>) -> CompatReport {
 pub fn print_text(report: &CompatReport) {
     println!("schema: {}", report.schema);
     println!("version: {}", report.product_version);
+    println!("source-sha: {}", report.source_sha);
     println!("rust-msrv: {}", report.rust_msrv);
     println!("platform: {}/{}", report.os, report.arch);
     println!("readiness: {:?}", report.readiness);
@@ -438,6 +441,16 @@ async fn probe_binary(
         CompatComponent::available(id, requirement, Some(first_line.clone()), first_line)
     } else {
         CompatComponent::unavailable(id, requirement, first_line)
+    }
+}
+
+pub const fn source_sha() -> &'static str {
+    match option_env!("CODEX_TUI_GIT_SHA") {
+        Some(value) => value,
+        None => match option_env!("GITHUB_SHA") {
+            Some(value) => value,
+            None => "unknown",
+        },
     }
 }
 
@@ -548,6 +561,7 @@ mod tests {
         let report = build_report(vec![]);
         let json = serde_json::to_value(report).expect("serialize compat report");
         assert_eq!(json["schema"], COMPAT_SCHEMA);
+        assert!(json["sourceSha"].as_str().is_some());
         assert_eq!(
             json["forgeRuntime"]["defaultRemoteProbe"],
             serde_json::Value::Bool(false)
