@@ -154,7 +154,11 @@ mod tests {
         let mut ids = BTreeSet::new();
         for case in FAILURE_MATRIX {
             assert!(ids.insert(case.id), "duplicate failure case {}", case.id);
-            assert!(case.max_recovery_ms > 0, "{} needs a bounded deadline", case.id);
+            assert!(
+                case.max_recovery_ms > 0,
+                "{} needs a bounded deadline",
+                case.id
+            );
             if case.expected != QualificationState::Ready {
                 assert!(
                     !case.writes_allowed,
