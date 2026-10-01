@@ -79,9 +79,13 @@ def main() -> int:
     required_stable = {
         item["id"] for item in evidence if item.get("requiredForStable") is True
     }
-    if required_stable != {"linux-compatibility", "linux-terminal-restoration"}:
+    if required_stable != {
+        "linux-compatibility",
+        "linux-terminal-restoration",
+        "linux-performance-diagnostics",
+    }:
         raise SystemExit(
-            "stable real-environment blockers must be exactly Linux compatibility and terminal restoration"
+            "stable external evidence must be Linux compatibility, terminal restoration and performance diagnostics"
         )
 
     gitlab = by_id.get("internal-gitlab-provider")
