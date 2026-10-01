@@ -2936,9 +2936,9 @@ mod tests {
     use crate::app::AppState;
     use crate::backend::{CodexBackend, FakeBackend};
     use crate::keymap::HELP_BINDINGS;
-    use std::collections::BTreeSet;
     use pretty_assertions::assert_eq;
     use ratatui::{Terminal, backend::TestBackend};
+    use std::collections::BTreeSet;
 
     fn render_snapshot(width: u16) -> String {
         let backend = TestBackend::new(width, 12);
