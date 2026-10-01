@@ -2184,37 +2184,62 @@ fn render_forge_mutation_confirmation(frame: &mut Frame<'_>, app: &AppState) {
     };
 
     let mut lines = vec![
-        Line::from("CONFIRM REQUIRED — no GitLab mutation has executed yet."),
-        Line::from(format!("Operation: {}", plan.kind.label())),
-        Line::from(format!("Project: {}/{}", plan.host, plan.project_path)),
+        Line::from(tr(
+            app,
+            "CONFIRM REQUIRED — no GitLab mutation has executed yet.",
+            "需要确认 — 尚未执行任何 GitLab 变更。",
+        )),
+        Line::from(format!(
+            "{}: {}",
+            tr(app, "Operation", "操作"),
+            plan.kind.label()
+        )),
+        Line::from(format!(
+            "{}: {}/{}",
+            tr(app, "Project", "项目"),
+            plan.host,
+            plan.project_path
+        )),
     ];
     if let Some(iid) = plan.change_request_iid {
-        lines.push(Line::from(format!("Merge request: !{iid}")));
+        lines.push(Line::from(format!(
+            "{}: !{iid}",
+            tr(app, "Merge request", "合并请求")
+        )));
     }
     if plan.source_branch.is_some() || plan.target_branch.is_some() {
         lines.push(Line::from(format!(
-            "Branches: {} -> {}",
+            "{}: {} -> {}",
+            tr(app, "Branches", "分支"),
             plan.source_branch.as_deref().unwrap_or("<none>"),
             plan.target_branch.as_deref().unwrap_or("<none>")
         )));
     }
     if let Some(title) = &plan.title {
         lines.push(Line::from(format!(
-            "Title: {}",
+            "{}: {}",
+            tr(app, "Title", "标题"),
             truncate_display(title, 88)
         )));
     }
     if let Some(bytes) = plan.payload_bytes {
-        lines.push(Line::from(format!(
-            "Payload: {bytes} bytes · body intentionally not persisted"
-        )));
+        lines.push(Line::from(if app.language.is_simplified_chinese() {
+            format!("Payload: {bytes} 字节 · 正文按设计不持久化")
+        } else {
+            format!("Payload: {bytes} bytes · body intentionally not persisted")
+        }));
     }
     lines.push(Line::from(format!(
-        "Expected: {}",
+        "{}: {}",
+        tr(app, "Expected", "预期结果"),
         truncate_display(&plan.expected_side_effect, 100)
     )));
     lines.push(Line::from(""));
-    lines.push(Line::from("Preconditions revalidated at execution time:"));
+    lines.push(Line::from(tr(
+        app,
+        "Preconditions revalidated at execution time:",
+        "执行时将重新验证前置条件:",
+    )));
     lines.extend(
         plan.preconditions
             .iter()
@@ -2222,7 +2247,11 @@ fn render_forge_mutation_confirmation(frame: &mut Frame<'_>, app: &AppState) {
             .map(|item| Line::from(format!("  {} = {}", item.key, item.expected))),
     );
     lines.push(Line::from(""));
-    lines.push(Line::from("y CONFIRM execute · c/Esc cancel"));
+    lines.push(Line::from(tr(
+        app,
+        "y CONFIRM execute · c/Esc cancel",
+        "y 确认执行 · c/Esc 取消",
+    )));
 
     let height = u16::try_from(lines.len().saturating_add(2))
         .unwrap_or(18)
@@ -2231,7 +2260,11 @@ fn render_forge_mutation_confirmation(frame: &mut Frame<'_>, app: &AppState) {
     frame.render_widget(Clear, area);
     frame.render_widget(
         Paragraph::new(lines)
-            .block(Block::bordered().title(" Forge Mutation Plan "))
+            .block(Block::bordered().title(tr(
+                app,
+                " Forge Mutation Plan ",
+                " Forge 变更计划 ",
+            )))
             .wrap(Wrap { trim: false }),
         area,
     );
@@ -2243,10 +2276,26 @@ fn render_local_batch_confirmation(frame: &mut Frame<'_>, app: &AppState) {
     };
 
     let mut lines = vec![
-        Line::from("CONFIRM REQUIRED — no local write has executed yet."),
-        Line::from(format!("Operation: {}", plan.action.label())),
-        Line::from(format!("Frozen targets: {}", plan.targets.len())),
-        Line::from("Target set will NOT be recomputed before execution."),
+        Line::from(tr(
+            app,
+            "CONFIRM REQUIRED — no local write has executed yet.",
+            "需要确认 — 尚未执行任何本地写入。",
+        )),
+        Line::from(format!(
+            "{}: {}",
+            tr(app, "Operation", "操作"),
+            plan.action.label()
+        )),
+        Line::from(format!(
+            "{}: {}",
+            tr(app, "Frozen targets", "冻结目标"),
+            plan.targets.len()
+        )),
+        Line::from(tr(
+            app,
+            "Target set will NOT be recomputed before execution.",
+            "执行前不会重新计算目标集合。",
+        )),
         Line::from(""),
     ];
 
@@ -2258,17 +2307,30 @@ fn render_local_batch_confirmation(frame: &mut Frame<'_>, app: &AppState) {
         )));
     }
     if plan.targets.len() > 8 {
-        lines.push(Line::from(format!(
-            "  … and {} more frozen target(s)",
-            plan.targets.len() - 8
-        )));
+        lines.push(Line::from(if app.language.is_simplified_chinese() {
+            format!("  … 另有 {} 个冻结目标", plan.targets.len() - 8)
+        } else {
+            format!("  … and {} more frozen target(s)", plan.targets.len() - 8)
+        }));
     }
 
     lines.extend([
         Line::from(""),
-        Line::from("SQLite: one transaction; any failure rolls the whole batch back."),
-        Line::from("Authority: local overlays / ScratchWork only; no Codex/Git/Forge write."),
-        Line::from("y CONFIRM execute · c/Esc cancel"),
+        Line::from(tr(
+            app,
+            "SQLite: one transaction; any failure rolls the whole batch back.",
+            "SQLite: 单事务执行；任一失败都会回滚整批。",
+        )),
+        Line::from(tr(
+            app,
+            "Authority: local overlays / ScratchWork only; no Codex/Git/Forge write.",
+            "权限边界：仅本地 overlay / ScratchWork；不写 Codex/Git/Forge。",
+        )),
+        Line::from(tr(
+            app,
+            "y CONFIRM execute · c/Esc cancel",
+            "y 确认执行 · c/Esc 取消",
+        )),
     ]);
 
     let height = u16::try_from(lines.len().saturating_add(2))
@@ -2278,7 +2340,11 @@ fn render_local_batch_confirmation(frame: &mut Frame<'_>, app: &AppState) {
     frame.render_widget(Clear, area);
     frame.render_widget(
         Paragraph::new(lines)
-            .block(Block::bordered().title(" Local Batch Plan "))
+            .block(Block::bordered().title(tr(
+                app,
+                " Local Batch Plan ",
+                " 本地批量计划 ",
+            )))
             .wrap(Wrap { trim: false }),
         area,
     );
@@ -2287,7 +2353,11 @@ fn render_local_batch_confirmation(frame: &mut Frame<'_>, app: &AppState) {
 fn render_launch_presets(frame: &mut Frame<'_>, app: &AppState) {
     let mut lines = Vec::new();
     if app.launch_presets.is_empty() {
-        lines.push(Line::from("No [[launch]] presets in .codex-tui.toml."));
+        lines.push(Line::from(tr(
+            app,
+            "No [[launch]] presets in .codex-tui.toml.",
+            ".codex-tui.toml 中没有 [[launch]] 预设。",
+        )));
     } else {
         for (index, preset) in app.launch_presets.iter().enumerate() {
             let selected = index == app.launch_selected;
@@ -2316,7 +2386,11 @@ fn render_launch_presets(frame: &mut Frame<'_>, app: &AppState) {
     }
     lines.extend([
         Line::from(""),
-        Line::from("j/k move · Enter create exact launch plan · Esc close"),
+        Line::from(tr(
+            app,
+            "j/k move · Enter create exact launch plan · Esc close",
+            "j/k 移动 · Enter 创建精确启动计划 · Esc 关闭",
+        )),
     ]);
     let height = u16::try_from(lines.len().saturating_add(2))
         .unwrap_or(12)
@@ -2325,7 +2399,11 @@ fn render_launch_presets(frame: &mut Frame<'_>, app: &AppState) {
     frame.render_widget(Clear, area);
     frame.render_widget(
         Paragraph::new(lines)
-            .block(Block::bordered().title(" Repository Launch Presets "))
+            .block(Block::bordered().title(tr(
+                app,
+                " Repository Launch Presets ",
+                " 仓库启动预设 ",
+            )))
             .wrap(Wrap { trim: false }),
         area,
     );
@@ -2336,21 +2414,53 @@ fn render_launch_confirmation(frame: &mut Frame<'_>, app: &AppState) {
         return;
     };
     let lines = vec![
-        Line::from("CONFIRM REQUIRED — process has not started."),
-        Line::from(format!("Preset: {}", sanitize_inline(&plan.name))),
-        Line::from(format!("Config: {}", plan.config_path.display())),
+        Line::from(tr(
+            app,
+            "CONFIRM REQUIRED — process has not started.",
+            "需要确认 — 进程尚未启动。",
+        )),
+        Line::from(format!(
+            "{}: {}",
+            tr(app, "Preset", "预设"),
+            sanitize_inline(&plan.name)
+        )),
+        Line::from(format!(
+            "{}: {}",
+            tr(app, "Config", "配置"),
+            plan.config_path.display()
+        )),
         Line::from(format!("Cwd: {}", plan.cwd.display())),
-        Line::from(format!("Exact argv: {}", plan.command_preview())),
+        Line::from(format!(
+            "{}: {}",
+            tr(app, "Exact argv", "精确 argv"),
+            plan.command_preview()
+        )),
         Line::from(""),
-        Line::from("No shell/eval/interpolation is used."),
-        Line::from("External process only; this is not the embedded Terminal Drawer."),
-        Line::from("y CONFIRM start · c/Esc cancel"),
+        Line::from(tr(
+            app,
+            "No shell/eval/interpolation is used.",
+            "不使用 shell/eval/插值。",
+        )),
+        Line::from(tr(
+            app,
+            "External process only; this is not the embedded Terminal Drawer.",
+            "仅启动外部进程；这不是内嵌终端抽屉。",
+        )),
+        Line::from(tr(
+            app,
+            "y CONFIRM start · c/Esc cancel",
+            "y 确认启动 · c/Esc 取消",
+        )),
     ];
     let area = centered_fixed(92, 13, frame.area());
     frame.render_widget(Clear, area);
     frame.render_widget(
         Paragraph::new(lines)
-            .block(Block::bordered().title(" Launch Preset Plan "))
+            .block(Block::bordered().title(tr(
+                app,
+                " Launch Preset Plan ",
+                " 启动预设计划 ",
+            )))
             .wrap(Wrap { trim: false }),
         area,
     );
