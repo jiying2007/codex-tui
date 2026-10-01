@@ -1068,25 +1068,32 @@ impl AppState {
         })
     }
 
+    fn command_palette_thread_id(&self) -> Option<ThreadId> {
+        self.selected_local_target().and_then(|target| {
+            (target.kind == SourceKind::CodexThread).then(|| ThreadId::new(target.value))
+        })
+    }
+
     fn build_command_palette_choices(&self) -> Vec<CommandPaletteChoice> {
         let mut choices = vec![CommandPaletteChoice::Search];
+        let thread_id = self.command_palette_thread_id();
 
         if matches!(self.view, View::Registry | View::Board) {
             choices.push(CommandPaletteChoice::NextAttention);
         }
-        if self.current_thread_id().is_some() {
+        if thread_id.is_some() {
             choices.push(CommandPaletteChoice::QuickPrompt);
         }
         if !matches!(self.view, View::Board) {
             choices.push(CommandPaletteChoice::Board);
         }
-        if self.current_thread_id().is_some() && !matches!(self.view, View::Review(_)) {
+        if thread_id.is_some() && !matches!(self.view, View::Review(_)) {
             choices.push(CommandPaletteChoice::Review);
         }
-        if self.current_thread_id().is_some() && !matches!(self.view, View::Workspace(_)) {
+        if thread_id.is_some() && !matches!(self.view, View::Workspace(_)) {
             choices.push(CommandPaletteChoice::Workspace);
         }
-        if self.current_thread_id().is_some_and(|thread_id| {
+        if thread_id.as_ref().is_some_and(|thread_id| {
             self.git_context(thread_id)
                 .is_some_and(|context| context.repo.is_some())
         }) && !matches!(self.view, View::ManagedWorktrees(_))
@@ -5695,7 +5702,10 @@ mod tests {
         let registry_choices = app.command_palette_choices();
         assert!(registry_choices.contains(&CommandPaletteChoice::Search));
         assert!(registry_choices.contains(&CommandPaletteChoice::NextAttention));
+        assert!(registry_choices.contains(&CommandPaletteChoice::QuickPrompt));
         assert!(registry_choices.contains(&CommandPaletteChoice::Board));
+        assert!(registry_choices.contains(&CommandPaletteChoice::Review));
+        assert!(registry_choices.contains(&CommandPaletteChoice::Workspace));
         assert!(registry_choices.contains(&CommandPaletteChoice::TogglePin));
         assert!(registry_choices.contains(&CommandPaletteChoice::Help));
 
@@ -5718,6 +5728,18 @@ mod tests {
         assert!(scratch_choices.contains(&CommandPaletteChoice::Board));
         assert!(!scratch_choices.contains(&CommandPaletteChoice::TerminalDrawer));
         assert!(!scratch_choices.contains(&CommandPaletteChoice::CloseTerminalDrawer));
+    }
+
+    #[test]
+    fn command_palette_uses_thread_backed_board_selection_for_thread_commands() {
+        let mut app = app();
+        reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 1 });
+        reduce(&mut app, Action::OpenBoard);
+
+        let choices = app.command_palette_choices();
+        assert!(choices.contains(&CommandPaletteChoice::QuickPrompt));
+        assert!(choices.contains(&CommandPaletteChoice::Review));
+        assert!(choices.contains(&CommandPaletteChoice::Workspace));
     }
 
     #[test]
