@@ -32,6 +32,7 @@ use crate::store::LocalStateV1;
 use crate::terminal_drawer::TerminalSnapshot;
 use crate::text::sanitize_inline;
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+use std::time::Instant;
 
 const REGISTRY_RECENT_LIMIT: usize = 100;
 const CONVERSATION_CACHE_LIMIT: usize = 16;
@@ -3886,7 +3887,61 @@ fn collision_count_from_active_worktrees(
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct PlanningReconcilePhaseTimings {
+    pub(crate) setup_ms: f64,
+    pub(crate) thread_projection_ms: f64,
+    pub(crate) supplemental_projection_ms: f64,
+    pub(crate) sort_ms: f64,
+    pub(crate) index_commit_ms: f64,
+    pub(crate) rebuild_total_ms: f64,
+    pub(crate) selection_refresh_ms: f64,
+    pub(crate) total_ms: f64,
+}
+
+#[inline(always)]
+fn planning_phase_start<const PROFILE: bool>() -> Option<Instant> {
+    if PROFILE { Some(Instant::now()) } else { None }
+}
+
+#[inline(always)]
+fn planning_phase_elapsed<const PROFILE: bool>(started: Option<Instant>) -> f64 {
+    if PROFILE {
+        started
+            .expect("profiled planning phase start")
+            .elapsed()
+            .as_secs_f64()
+            * 1000.0
+    } else {
+        0.0
+    }
+}
+
 fn rebuild_planning(state: &mut AppState, now_unix_ms: u64) {
+    let _ = rebuild_planning_inner::<false>(state, now_unix_ms);
+}
+
+pub(crate) fn profile_planning_reconcile(
+    state: &mut AppState,
+    now_unix_ms: u64,
+) -> PlanningReconcilePhaseTimings {
+    let total_started = Instant::now();
+    let mut timings = rebuild_planning_inner::<true>(state, now_unix_ms);
+
+    let selection_started = Instant::now();
+    ensure_selection_visible(state);
+    timings.selection_refresh_ms = selection_started.elapsed().as_secs_f64() * 1000.0;
+    timings.total_ms = total_started.elapsed().as_secs_f64() * 1000.0;
+    timings
+}
+
+fn rebuild_planning_inner<const PROFILE: bool>(
+    state: &mut AppState,
+    now_unix_ms: u64,
+) -> PlanningReconcilePhaseTimings {
+    let rebuild_started = planning_phase_start::<PROFILE>();
+    let setup_started = planning_phase_start::<PROFILE>();
+
     let local_by_anchor = state
         .planning_snapshot
         .cards
@@ -3904,6 +3959,9 @@ fn rebuild_planning(state: &mut AppState, now_unix_ms: u64) {
         Vec::with_capacity(state.threads.len() + state.planning_snapshot.scratch.len());
     let active_worktrees = active_worktree_counts(state);
     let mut worktree_collision_counts = Vec::with_capacity(state.threads.len());
+
+    let setup_ms = planning_phase_elapsed::<PROFILE>(setup_started);
+    let thread_projection_started = planning_phase_start::<PROFILE>();
 
     for thread in &state.threads {
         let anchor = SourceRef::codex_thread(&thread.id);
@@ -3925,6 +3983,9 @@ fn rebuild_planning(state: &mut AppState, now_unix_ms: u64) {
         );
         projections.push(projection);
     }
+
+    let thread_projection_ms = planning_phase_elapsed::<PROFILE>(thread_projection_started);
+    let supplemental_projection_started = planning_phase_start::<PROFILE>();
 
     projections.extend(state.planning_snapshot.scratch.iter().map(|scratch| {
         let anchor = SourceRef {
@@ -3974,6 +4035,10 @@ fn rebuild_planning(state: &mut AppState, now_unix_ms: u64) {
         }
     }
 
+    let supplemental_projection_ms =
+        planning_phase_elapsed::<PROFILE>(supplemental_projection_started);
+    let sort_started = planning_phase_start::<PROFILE>();
+
     projections.sort_by(|left, right| {
         right
             .overlay
@@ -3990,6 +4055,9 @@ fn rebuild_planning(state: &mut AppState, now_unix_ms: u64) {
             .then_with(|| left.local_id.cmp(&right.local_id))
     });
 
+    let sort_ms = planning_phase_elapsed::<PROFILE>(sort_started);
+    let index_commit_started = planning_phase_start::<PROFILE>();
+
     state.worktree_collision_counts = worktree_collision_counts.into_iter().collect();
     state.work_card_by_thread = projections
         .iter()
@@ -3998,6 +4066,20 @@ fn rebuild_planning(state: &mut AppState, now_unix_ms: u64) {
         .map(|(index, card)| (card.anchor.value.clone(), index))
         .collect();
     state.work_cards = projections;
+
+    let index_commit_ms = planning_phase_elapsed::<PROFILE>(index_commit_started);
+    let rebuild_total_ms = planning_phase_elapsed::<PROFILE>(rebuild_started);
+
+    PlanningReconcilePhaseTimings {
+        setup_ms,
+        thread_projection_ms,
+        supplemental_projection_ms,
+        sort_ms,
+        index_commit_ms,
+        rebuild_total_ms,
+        selection_refresh_ms: 0.0,
+        total_ms: rebuild_total_ms,
+    }
 }
 
 fn clear_user_input_editor(state: &mut AppState) {
@@ -5549,6 +5631,26 @@ mod tests {
         assert_ne!(selected.anchor, SourceRef::codex_thread(&app.threads[0].id));
         assert!(!selected.snoozed);
         assert!(selected.needs_you());
+    }
+
+    #[test]
+    fn profiled_planning_reconcile_matches_normal_reducer_semantics() {
+        let threads = FakeBackend::scaled(64).snapshot().threads;
+        let mut normal = AppState::new(threads.clone());
+        let mut profiled = AppState::new(threads);
+
+        reduce(&mut normal, Action::ReconcilePlanning { now_unix_ms: 1 });
+        let timings = profile_planning_reconcile(&mut profiled, 1);
+
+        assert_eq!(profiled.work_cards, normal.work_cards);
+        assert_eq!(profiled.work_card_by_thread, normal.work_card_by_thread);
+        assert_eq!(
+            profiled.worktree_collision_counts,
+            normal.worktree_collision_counts
+        );
+        assert_eq!(profiled.selected, normal.selected);
+        assert!(timings.total_ms >= timings.rebuild_total_ms);
+        assert!(timings.rebuild_total_ms >= timings.thread_projection_ms);
     }
 
     #[test]
