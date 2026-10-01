@@ -1,6 +1,6 @@
 use anyhow::Result;
 use codex_tui::{
-    app::{Action, AppState, Effect, InputMode, ViewKind, reduce},
+    app::{Action, AppState, CommandPaletteChoice, Effect, InputMode, ViewKind, reduce},
     app_server::{self, ConversationEvent, RegistryHandle},
     backend::{BackendStatus, CodexBackend, FakeBackend},
     conversation::{InteractiveRequestKind, InteractiveResolution},
@@ -2005,6 +2005,23 @@ fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
             .unwrap_or_default();
     }
 
+    if app.command_palette_open {
+        if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('k') {
+            return reduce(app, Action::CloseCommandPalette);
+        }
+        return match key.code {
+            KeyCode::Esc => reduce(app, Action::CloseCommandPalette),
+            KeyCode::Char('j') | KeyCode::Down => reduce(app, Action::MoveCommandPalette(1)),
+            KeyCode::Char('k') | KeyCode::Up => reduce(app, Action::MoveCommandPalette(-1)),
+            KeyCode::Enter => {
+                let choice = app.command_palette_choice();
+                reduce(app, Action::CloseCommandPalette);
+                choice.map_or_else(Vec::new, |choice| handle_palette_choice(app, choice))
+            }
+            _ => vec![],
+        };
+    }
+
     if app.launch_menu_open {
         return match key.code {
             KeyCode::Esc => reduce(app, Action::CloseLaunchPresets),
@@ -2160,6 +2177,27 @@ fn terminal_key_bytes(key: KeyEvent) -> Option<Vec<u8>> {
     Some(bytes)
 }
 
+fn handle_palette_choice(app: &mut AppState, choice: CommandPaletteChoice) -> Vec<Effect> {
+    let command = match choice {
+        CommandPaletteChoice::Search => Command::Search,
+        CommandPaletteChoice::NextAttention => Command::NextAttention,
+        CommandPaletteChoice::QuickPrompt => Command::QuickPrompt,
+        CommandPaletteChoice::Board => Command::Board,
+        CommandPaletteChoice::Review => Command::Review,
+        CommandPaletteChoice::Workspace => Command::Workspace,
+        CommandPaletteChoice::ManagedWorktrees => Command::ManagedWorktrees,
+        CommandPaletteChoice::NewScratch => Command::New,
+        CommandPaletteChoice::Goal => Command::Goal,
+        CommandPaletteChoice::TogglePin => Command::TogglePin,
+        CommandPaletteChoice::Snooze => Command::Snooze,
+        CommandPaletteChoice::ContextActions => Command::ContextActions,
+        CommandPaletteChoice::TerminalDrawer => Command::TerminalDrawer,
+        CommandPaletteChoice::CloseTerminalDrawer => Command::CloseTerminalDrawer,
+        CommandPaletteChoice::Help => Command::Help,
+    };
+    handle_command(app, command)
+}
+
 fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
     let action = match command {
         Command::QuitOrInterrupt => match app.view_kind() {
@@ -2243,9 +2281,60 @@ fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
         Command::HotSlot(slot) => Action::UseHotSlot(slot),
         Command::ContextActions => Action::OpenContext,
         Command::Goal => Action::OpenGoalActions,
-        Command::CommandPalette | Command::OpenExternal => return vec![],
+        Command::CommandPalette => Action::OpenCommandPalette,
+        Command::OpenExternal => return vec![],
     };
     reduce(app, action)
+}
+
+#[cfg(test)]
+mod command_palette_input_tests {
+    use super::*;
+
+    fn app() -> AppState {
+        AppState::new(FakeBackend::seeded().snapshot().threads)
+    }
+
+    #[test]
+    fn command_palette_traps_navigation_and_executes_selected_command() {
+        let mut app = app();
+        let registry_selected = app.selected;
+
+        handle_command(&mut app, Command::CommandPalette);
+        assert!(app.command_palette_open);
+
+        let effects = handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE),
+        );
+        assert!(effects.is_empty());
+        assert_eq!(app.selected, registry_selected);
+        assert_eq!(app.command_palette_selected, 1);
+
+        let board_index = app
+            .command_palette_choices()
+            .iter()
+            .position(|choice| *choice == CommandPaletteChoice::Board)
+            .expect("Board palette entry");
+        app.command_palette_selected = board_index;
+
+        let effects = handle_key(&mut app, KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(effects.is_empty());
+        assert!(!app.command_palette_open);
+        assert_eq!(app.view_kind(), ViewKind::Board);
+    }
+
+    #[test]
+    fn ctrl_k_toggles_command_palette_when_application_owns_input() {
+        let mut app = app();
+        let ctrl_k = KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL);
+
+        assert!(handle_key(&mut app, ctrl_k).is_empty());
+        assert!(app.command_palette_open);
+
+        assert!(handle_key(&mut app, ctrl_k).is_empty());
+        assert!(!app.command_palette_open);
+    }
 }
 
 #[cfg(test)]
