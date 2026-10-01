@@ -69,8 +69,7 @@ pub fn run(
     let mut app = AppState::new(threads);
     let registry_construct_ms = construct_started.elapsed().as_secs_f64() * 1000.0;
 
-    let planning_reconcile =
-        sample_planning_reconcile(&mut app, warmup_iterations, iterations);
+    let planning_reconcile = sample_planning_reconcile(&mut app, warmup_iterations, iterations);
 
     let recent_projection = sample_projection(&app, warmup_iterations, iterations);
 
