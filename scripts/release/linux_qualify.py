@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pathlib
 import re
 import subprocess
@@ -25,13 +26,18 @@ def run(
     cwd: pathlib.Path,
     capture: bool = True,
     check: bool = True,
+    env_overrides=None,
 ) -> subprocess.CompletedProcess[str]:
+    environment = os.environ.copy()
+    if env_overrides:
+        environment.update(env_overrides)
     proc = subprocess.run(
         command,
         cwd=cwd,
         text=True,
         stdout=subprocess.PIPE if capture else None,
         stderr=subprocess.PIPE if capture else None,
+        env=environment,
     )
     if check and proc.returncode != 0:
         if proc.stdout:
@@ -140,7 +146,12 @@ def main() -> int:
         cwd=root,
         capture=False,
     )
-    run(["cargo", "build", "--release", "--locked"], cwd=root, capture=False)
+    run(
+        ["cargo", "build", "--release", "--locked"],
+        cwd=root,
+        capture=False,
+        env_overrides={"CODEX_TUI_GIT_SHA": commit_sha},
+    )
     binary = root / "target/release/codex-tui"
     if not binary.is_file():
         raise SystemExit(f"release binary missing: {binary}")
@@ -249,8 +260,11 @@ def main() -> int:
         capture=False,
     )
     support_manifest = support_dir / "manifest.json"
+    support_snapshot = support_dir / "snapshot.json"
     if not support_manifest.is_file():
         raise SystemExit("doctor bundle did not produce manifest.json")
+    if not support_snapshot.is_file():
+        raise SystemExit("doctor bundle did not produce snapshot.json")
 
     automated_path = output_dir / "automated-qualification.json"
     run(
@@ -269,6 +283,8 @@ def main() -> int:
             str(soak_path),
             "--support-manifest",
             str(support_manifest),
+            "--support-snapshot",
+            str(support_snapshot),
         ],
         cwd=root,
         capture=False,
@@ -412,6 +428,7 @@ def main() -> int:
         "scaleEvidence": str(scale_path),
         "soakEvidence": str(soak_path),
         "supportBundleManifest": str(support_manifest),
+        "supportBundleSnapshot": str(support_snapshot),
         "automatedQualification": str(automated_path),
         "performanceReport": str(perf_path),
         "performanceDiagnostics": {
