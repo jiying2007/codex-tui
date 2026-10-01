@@ -108,7 +108,7 @@ mod tests {
             .find("RestoreGuard::new")
             .expect("restore guard");
         let alternate = production
-            .find("EnterAlternateScreen")
+            .find("execute!(out, EnterAlternateScreen, cursor::Hide)?;")
             .expect("alternate screen setup");
         let terminal = production
             .find("Terminal::new(backend)?")
@@ -116,7 +116,7 @@ mod tests {
         let disarm = production.find("rollback.disarm()").expect("disarm");
 
         assert!(raw < guard);
-        assert!(guard < terminal);
+        assert!(guard < alternate);
         assert!(alternate < terminal);
         assert!(terminal < disarm);
     }
