@@ -57,6 +57,21 @@ fn operation_state_text(state: OperationState, language: UiLanguage) -> &'static
     }
 }
 
+fn build_thread_indexes(
+    threads: &[ThreadSummary],
+) -> (HashMap<String, usize>, BTreeMap<String, Vec<usize>>) {
+    let mut by_id = HashMap::with_capacity(threads.len());
+    let mut by_cwd = BTreeMap::<String, Vec<usize>>::new();
+    for (index, thread) in threads.iter().enumerate() {
+        by_id.insert(thread.id.0.clone(), index);
+        by_cwd
+            .entry(thread.metadata.cwd.clone())
+            .or_default()
+            .push(index);
+    }
+    (by_id, by_cwd)
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum View {
     Registry,
