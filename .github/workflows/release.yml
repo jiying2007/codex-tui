@@ -126,6 +126,11 @@ on:
         type: string
         required: false
         default: ""
+      performance_source_sha:
+        description: Stable diagnostic - exact candidate source SHA for retained performance evidence
+        type: string
+        required: false
+        default: ""
       performance_iterations:
         description: Stable diagnostic - retained resident-planning-10k sample count (>=200)
         type: string
@@ -293,6 +298,7 @@ jobs:
           WINDOWS_COMPAT_AT: ${{ inputs.windows_compat_observed_at }}
           WINDOWS_TERMINAL: ${{ inputs.windows_terminal }}
           WINDOWS_TERMINAL_AT: ${{ inputs.windows_terminal_observed_at }}
+          PERF_SOURCE_SHA: ${{ inputs.performance_source_sha }}
           PERF_ITERATIONS: ${{ inputs.performance_iterations }}
           PERF_P95: ${{ inputs.performance_p95_ms }}
           PERF_P99: ${{ inputs.performance_p99_ms }}
@@ -308,7 +314,7 @@ jobs:
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CI_RUN" > canonical-ci.json
           python3 scripts/release/validate_ci_run.py             --run-json canonical-ci.json             --commit "${{ github.sha }}"
 
-          python3 scripts/release/create_evidence.py             --output release-evidence.json             --compat-schema codex-tui/compat/v2             --version "$VERSION"             --commit "${{ github.sha }}"             --canonical-ci-run "$CI_RUN"             --automated-qualification qualification/automated-qualification.json             --linux-source-sha "$LINUX_SOURCE_SHA"             --linux-compat-sha256 "$LINUX_COMPAT_SHA"             --linux-compat-observed-at "$LINUX_COMPAT_AT"             --linux-terminal "$LINUX_TERMINAL"             --linux-terminal-observed-at "$LINUX_TERMINAL_AT"             --macos-source-sha "$MACOS_SOURCE_SHA"             --macos-compat-sha256 "$MACOS_COMPAT_SHA"             --macos-compat-observed-at "$MACOS_COMPAT_AT"             --macos-terminal "$MACOS_TERMINAL"             --macos-terminal-observed-at "$MACOS_TERMINAL_AT"             --windows-source-sha "$WINDOWS_SOURCE_SHA"             --windows-compat-sha256 "$WINDOWS_COMPAT_SHA"             --windows-compat-observed-at "$WINDOWS_COMPAT_AT"             --windows-terminal "$WINDOWS_TERMINAL"             --windows-terminal-observed-at "$WINDOWS_TERMINAL_AT"             --performance-iterations "$PERF_ITERATIONS"             --performance-p95-ms "$PERF_P95"             --performance-p99-ms "$PERF_P99"             --performance-source "$PERF_SOURCE"             --performance-observed-at "$PERF_AT"
+          python3 scripts/release/create_evidence.py             --output release-evidence.json             --compat-schema codex-tui/compat/v2             --version "$VERSION"             --commit "${{ github.sha }}"             --canonical-ci-run "$CI_RUN"             --automated-qualification qualification/automated-qualification.json             --linux-source-sha "$LINUX_SOURCE_SHA"             --linux-compat-sha256 "$LINUX_COMPAT_SHA"             --linux-compat-observed-at "$LINUX_COMPAT_AT"             --linux-terminal "$LINUX_TERMINAL"             --linux-terminal-observed-at "$LINUX_TERMINAL_AT"             --macos-source-sha "$MACOS_SOURCE_SHA"             --macos-compat-sha256 "$MACOS_COMPAT_SHA"             --macos-compat-observed-at "$MACOS_COMPAT_AT"             --macos-terminal "$MACOS_TERMINAL"             --macos-terminal-observed-at "$MACOS_TERMINAL_AT"             --windows-source-sha "$WINDOWS_SOURCE_SHA"             --windows-compat-sha256 "$WINDOWS_COMPAT_SHA"             --windows-compat-observed-at "$WINDOWS_COMPAT_AT"             --windows-terminal "$WINDOWS_TERMINAL"             --windows-terminal-observed-at "$WINDOWS_TERMINAL_AT"             --performance-source-sha "$PERF_SOURCE_SHA"             --performance-iterations "$PERF_ITERATIONS"             --performance-p95-ms "$PERF_P95"             --performance-p99-ms "$PERF_P99"             --performance-source "$PERF_SOURCE"             --performance-observed-at "$PERF_AT"
 
       - name: Verify release contract
         shell: bash
