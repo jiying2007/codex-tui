@@ -688,7 +688,7 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
         visible
             .iter()
             .fold((0_usize, 0_usize, 0_usize), |mut counts, index| {
-                match classify_cwd(&app.threads[*index].metadata.cwd) {
+                match app.cwd_locality(&app.threads[*index].metadata.cwd) {
                     CwdLocality::LocalDirectory => counts.0 += 1,
                     CwdLocality::ForeignWindows | CwdLocality::ForeignUnix => counts.1 += 1,
                     CwdLocality::NativeMissing => counts.2 += 1,
