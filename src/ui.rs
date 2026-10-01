@@ -1906,8 +1906,12 @@ fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area: R
 
     let Some(review) = app.git_reviews.get(thread_id) else {
         frame.render_widget(
-            Paragraph::new("Review has not been loaded.")
-                .block(Block::bordered().title(" Review ")),
+            Paragraph::new(tr(
+                app,
+                "Review has not been loaded.",
+                "评审尚未加载。",
+            ))
+            .block(Block::bordered().title(tr(app, " Review ", " 评审 "))),
             outer[0],
         );
         return;
@@ -1915,13 +1919,17 @@ fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area: R
 
     if review.observed_at_unix_ms == 0 {
         frame.render_widget(
-            Paragraph::new("Loading Git review…").block(Block::bordered().title(" Review ")),
+            Paragraph::new(tr(app, "Loading Git review…", "正在加载 Git 评审…"))
+                .block(Block::bordered().title(tr(app, " Review ", " 评审 "))),
             outer[0],
         );
     } else if let Some(error) = &review.error {
         frame.render_widget(
-            Paragraph::new(format!("Review unavailable: {error}"))
-                .block(Block::bordered().title(" Review ")),
+            Paragraph::new(format!(
+                "{}: {error}",
+                tr(app, "Review unavailable", "评审不可用")
+            ))
+            .block(Block::bordered().title(tr(app, " Review ", " 评审 "))),
             outer[0],
         );
     } else {
@@ -1948,11 +1956,18 @@ fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area: R
             .map(Line::from)
             .collect::<Vec<_>>();
         if diff_lines.is_empty() {
-            diff_lines.push(Line::from(
+            diff_lines.push(Line::from(tr(
+                app,
                 "No staged/unstaged tracked diff. Untracked files remain listed at left/top.",
-            ));
+                "没有已跟踪的暂存/未暂存 diff；未跟踪文件仍显示在左侧/顶部。",
+            )));
         }
 
+        let truncation = if review.truncated {
+            tr(app, " · truncated", " · 已截断")
+        } else {
+            ""
+        };
         if area.width >= 100 {
             let columns = Layout::default()
                 .direction(Direction::Horizontal)
@@ -1961,7 +1976,8 @@ fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area: R
             frame.render_widget(
                 Paragraph::new(files)
                     .block(Block::bordered().title(format!(
-                        " Changed files ({}){} ",
+                        " {} ({}){} ",
+                        tr(app, "Changed files", "变更文件"),
                         review.changes.len(),
                         forge_summary
                     )))
@@ -1971,13 +1987,10 @@ fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area: R
             frame.render_widget(
                 Paragraph::new(diff_lines)
                     .block(Block::bordered().title(format!(
-                        " Git diff · word={}{} ",
+                        " Git diff · {}={}{} ",
+                        tr(app, "word", "单词级"),
                         app.review_word_diff,
-                        if review.truncated {
-                            " · truncated"
-                        } else {
-                            ""
-                        }
+                        truncation
                     )))
                     .wrap(Wrap { trim: false })
                     .scroll((app.review_scroll, 0)),
@@ -1990,20 +2003,21 @@ fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area: R
                 .split(outer[0]);
             frame.render_widget(
                 Paragraph::new(files)
-                    .block(Block::bordered().title(format!(" Changed files{} ", forge_summary)))
+                    .block(Block::bordered().title(format!(
+                        " {}{} ",
+                        tr(app, "Changed files", "变更文件"),
+                        forge_summary
+                    )))
                     .wrap(Wrap { trim: false }),
                 rows[0],
             );
             frame.render_widget(
                 Paragraph::new(diff_lines)
                     .block(Block::bordered().title(format!(
-                        " Git diff · word={}{} ",
+                        " Git diff · {}={}{} ",
+                        tr(app, "word", "单词级"),
                         app.review_word_diff,
-                        if review.truncated {
-                            " · truncated"
-                        } else {
-                            ""
-                        }
+                        truncation
                     )))
                     .wrap(Wrap { trim: false })
                     .scroll((app.review_scroll, 0)),
@@ -2013,9 +2027,11 @@ fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area: R
     }
 
     frame.render_widget(
-        Paragraph::new(
+        Paragraph::new(tr(
+            app,
             "j/k file · PageUp/PageDown diff · w word-diff · e editor · . actions · Esc back",
-        ),
+            "j/k 文件 · PageUp/PageDown diff · w 单词级 diff · e 编辑器 · . 操作 · Esc 返回",
+        )),
         outer[1],
     );
 }
@@ -2033,13 +2049,19 @@ fn render_context_actions(frame: &mut Frame<'_>, app: &AppState) {
                 Style::default()
             };
             Line::from(Span::styled(
-                format!("{} {}", if selected { ">" } else { " " }, choice.label()),
+                format!(
+                    "{} {}",
+                    if selected { ">" } else { " " },
+                    context_choice_label(*choice, app.language)
+                ),
                 style,
             ))
         })
-        .chain(std::iter::once(Line::from(
+        .chain(std::iter::once(Line::from(tr(
+            app,
             "j/k move · Enter execute · Esc close",
-        )))
+            "j/k 移动 · Enter 执行 · Esc 关闭",
+        ))))
         .collect::<Vec<_>>();
     let height = u16::try_from(lines.len().saturating_add(2))
         .unwrap_or(18)
@@ -2048,7 +2070,7 @@ fn render_context_actions(frame: &mut Frame<'_>, app: &AppState) {
     frame.render_widget(Clear, area);
     frame.render_widget(
         Paragraph::new(lines)
-            .block(Block::bordered().title(" Actions "))
+            .block(Block::bordered().title(tr(app, " Actions ", " 操作 ")))
             .wrap(Wrap { trim: false }),
         area,
     );
@@ -2056,32 +2078,89 @@ fn render_context_actions(frame: &mut Frame<'_>, app: &AppState) {
 
 fn render_local_input_overlay(frame: &mut Frame<'_>, app: &AppState) {
     let (title, hint) = match app.input_mode {
-        InputMode::Note => (" Local note ", "Enter save · Esc cancel"),
-        InputMode::Snooze => (" Snooze ", "15m / 1h / 1d · Enter apply · Esc cancel"),
-        InputMode::SavedViewName => (" Save current view ", "Enter save · Esc cancel"),
+        InputMode::Note => (
+            tr(app, " Local note ", " 本地备注 "),
+            tr(app, "Enter save · Esc cancel", "Enter 保存 · Esc 取消"),
+        ),
+        InputMode::Snooze => (
+            tr(app, " Snooze ", " 稍后提醒 "),
+            tr(
+                app,
+                "15m / 1h / 1d · Enter apply · Esc cancel",
+                "15m / 1h / 1d · Enter 应用 · Esc 取消",
+            ),
+        ),
+        InputMode::SavedViewName => (
+            tr(app, " Save current view ", " 保存当前视图 "),
+            tr(app, "Enter save · Esc cancel", "Enter 保存 · Esc 取消"),
+        ),
         InputMode::BatchAddTag => (
-            " Batch visible · Add tag ",
-            "Enter creates frozen plan · Esc cancel",
+            tr(app, " Batch visible · Add tag ", " 批量当前可见项 · 添加标签 "),
+            tr(
+                app,
+                "Enter creates frozen plan · Esc cancel",
+                "Enter 创建冻结计划 · Esc 取消",
+            ),
         ),
         InputMode::BatchRemoveTag => (
-            " Batch visible · Remove tag ",
-            "Enter creates frozen plan · Esc cancel",
+            tr(
+                app,
+                " Batch visible · Remove tag ",
+                " 批量当前可见项 · 移除标签 ",
+            ),
+            tr(
+                app,
+                "Enter creates frozen plan · Esc cancel",
+                "Enter 创建冻结计划 · Esc 取消",
+            ),
         ),
         InputMode::BatchPriority => (
-            " Batch visible · Set priority ",
-            "integer · Enter creates frozen plan · Esc cancel",
+            tr(
+                app,
+                " Batch visible · Set priority ",
+                " 批量当前可见项 · 设置优先级 ",
+            ),
+            tr(
+                app,
+                "integer · Enter creates frozen plan · Esc cancel",
+                "整数 · Enter 创建冻结计划 · Esc 取消",
+            ),
         ),
         InputMode::BatchSnooze => (
-            " Batch visible · Snooze ",
-            "15m / 1h / 1d · Enter creates frozen plan · Esc cancel",
+            tr(
+                app,
+                " Batch visible · Snooze ",
+                " 批量当前可见项 · 稍后提醒 ",
+            ),
+            tr(
+                app,
+                "15m / 1h / 1d · Enter creates frozen plan · Esc cancel",
+                "15m / 1h / 1d · Enter 创建冻结计划 · Esc 取消",
+            ),
         ),
         InputMode::ForgeMergeRequestTitle => (
-            " Create GitLab merge request ",
-            "Enter creates a plan only · Esc cancel",
+            tr(
+                app,
+                " Create GitLab merge request ",
+                " 创建 GitLab 合并请求 ",
+            ),
+            tr(
+                app,
+                "Enter creates a plan only · Esc cancel",
+                "Enter 仅创建计划 · Esc 取消",
+            ),
         ),
         InputMode::ForgeComment => (
-            " Comment on GitLab merge request ",
-            "Enter creates a plan only · Esc cancel",
+            tr(
+                app,
+                " Comment on GitLab merge request ",
+                " 评论 GitLab 合并请求 ",
+            ),
+            tr(
+                app,
+                "Enter creates a plan only · Esc cancel",
+                "Enter 仅创建计划 · Esc 取消",
+            ),
         ),
         _ => return,
     };
