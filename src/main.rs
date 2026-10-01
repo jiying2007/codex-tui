@@ -1,8 +1,9 @@
 use anyhow::Result;
 use codex_tui::{
-    app::{Action, AppState, CommandPaletteChoice, Effect, InputMode, ViewKind, reduce},
+    app::{Action, AppState, Effect, InputMode, ViewKind, reduce},
     app_server::{self, ConversationEvent, RegistryHandle},
     backend::{BackendStatus, CodexBackend, FakeBackend},
+    command::Command,
     conversation::{InteractiveRequestKind, InteractiveResolution},
     domain::{CwdLocality, classify_cwd, display_cwd},
     forge::{self, ForgeEvent, ForgeHandle},
@@ -10,7 +11,7 @@ use codex_tui::{
     git::{self, GitEvent, GitHandle},
     goal::GoalStatus,
     i18n::{UiLanguage, pick},
-    keymap::{Command, command_for_key},
+    keymap::command_for_key,
     planning::{
         LocalNote, PlanningSnapshot, SavedView, ScratchState, SourceKind, SourceRef, WorkCardRecord,
     },
@@ -2185,28 +2186,11 @@ fn terminal_key_bytes(key: KeyEvent) -> Option<Vec<u8>> {
     Some(bytes)
 }
 
-fn handle_palette_choice(app: &mut AppState, choice: CommandPaletteChoice) -> Vec<Effect> {
-    let command = match choice {
-        CommandPaletteChoice::Search => Command::Search,
-        CommandPaletteChoice::NextAttention => Command::NextAttention,
-        CommandPaletteChoice::QuickPrompt => Command::QuickPrompt,
-        CommandPaletteChoice::Board => Command::Board,
-        CommandPaletteChoice::Review => Command::Review,
-        CommandPaletteChoice::Workspace => Command::Workspace,
-        CommandPaletteChoice::ManagedWorktrees => Command::ManagedWorktrees,
-        CommandPaletteChoice::NewScratch => Command::New,
-        CommandPaletteChoice::Goal => Command::Goal,
-        CommandPaletteChoice::TogglePin => Command::TogglePin,
-        CommandPaletteChoice::Snooze => Command::Snooze,
-        CommandPaletteChoice::ContextActions => Command::ContextActions,
-        CommandPaletteChoice::TerminalDrawer => Command::TerminalDrawer,
-        CommandPaletteChoice::CloseTerminalDrawer => Command::CloseTerminalDrawer,
-        CommandPaletteChoice::Help => Command::Help,
-    };
+fn handle_palette_choice(app: &mut AppState, command: Command) -> Vec<Effect> {
     handle_command(app, command)
 }
 
-fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
+fn action_for_command(app: &AppState, command: Command) -> Option<Action> {
     let action = match command {
         Command::QuitOrInterrupt => match app.view_kind() {
             ViewKind::Registry => Action::Quit,
@@ -2290,7 +2274,14 @@ fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
         Command::ContextActions => Action::OpenContext,
         Command::Goal => Action::OpenGoalActions,
         Command::CommandPalette => Action::OpenCommandPalette,
-        Command::OpenExternal => return vec![],
+        Command::OpenExternal => return None,
+    };
+    Some(action)
+}
+
+fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
+    let Some(action) = action_for_command(app, command) else {
+        return vec![];
     };
     reduce(app, action)
 }
@@ -2301,6 +2292,37 @@ mod command_palette_input_tests {
 
     fn app() -> AppState {
         AppState::new(FakeBackend::seeded().snapshot().threads)
+    }
+
+    #[test]
+    fn help_advertised_commands_have_a_reducer_action() {
+        let app = app();
+        for binding in codex_tui::keymap::HELP_BINDINGS {
+            assert!(
+                action_for_command(&app, binding.command).is_some(),
+                "advertised command {:?} has no reducer action",
+                binding.command
+            );
+        }
+    }
+
+    #[test]
+    fn help_and_search_complete_key_to_state_transitions() {
+        let mut app = app();
+
+        let effects = handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE),
+        );
+        assert!(effects.is_empty());
+        assert!(app.show_help);
+
+        let effects = handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('/'), KeyModifiers::NONE),
+        );
+        assert!(effects.is_empty());
+        assert_eq!(app.input_mode, InputMode::Search);
     }
 
     #[test]
@@ -2322,7 +2344,7 @@ mod command_palette_input_tests {
         let board_index = app
             .command_palette_choices()
             .iter()
-            .position(|choice| *choice == CommandPaletteChoice::Board)
+            .position(|choice| *choice == Command::Board)
             .expect("Board palette entry");
         app.command_palette_selected = board_index;
 

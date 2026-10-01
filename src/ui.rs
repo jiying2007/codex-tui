@@ -1,4 +1,5 @@
-use crate::app::{AppState, CommandPaletteChoice, ContextChoice, InputMode, View};
+use crate::app::{AppState, ContextChoice, InputMode, View};
+use crate::command::Command;
 use crate::conversation::{InteractiveRequest, InteractiveRequestKind};
 use crate::domain::{AttentionReason, CwdLocality, RuntimeStatus, ThreadSummary, display_cwd};
 use crate::forge::ForgeFreshness;
@@ -185,44 +186,10 @@ fn terminal_process_state_label(state: &TerminalProcessState, language: UiLangua
     }
 }
 
-fn command_palette_choice_label(
-    choice: CommandPaletteChoice,
-    language: UiLanguage,
-) -> &'static str {
-    match (choice, language) {
-        (CommandPaletteChoice::Search, UiLanguage::SimplifiedChinese) => "搜索",
-        (CommandPaletteChoice::NextAttention, UiLanguage::SimplifiedChinese) => "下一个待处理",
-        (CommandPaletteChoice::QuickPrompt, UiLanguage::SimplifiedChinese) => "快速消息",
-        (CommandPaletteChoice::Board, UiLanguage::SimplifiedChinese) => "打开看板",
-        (CommandPaletteChoice::Review, UiLanguage::SimplifiedChinese) => "打开评审",
-        (CommandPaletteChoice::Workspace, UiLanguage::SimplifiedChinese) => "打开工作区",
-        (CommandPaletteChoice::ManagedWorktrees, UiLanguage::SimplifiedChinese) => "受管 Worktrees",
-        (CommandPaletteChoice::NewScratch, UiLanguage::SimplifiedChinese) => "新建 Scratch",
-        (CommandPaletteChoice::Goal, UiLanguage::SimplifiedChinese) => "Goal 操作",
-        (CommandPaletteChoice::TogglePin, UiLanguage::SimplifiedChinese) => "切换固定",
-        (CommandPaletteChoice::Snooze, UiLanguage::SimplifiedChinese) => "稍后提醒",
-        (CommandPaletteChoice::ContextActions, UiLanguage::SimplifiedChinese) => "上下文操作",
-        (CommandPaletteChoice::TerminalDrawer, UiLanguage::SimplifiedChinese) => "打开终端抽屉",
-        (CommandPaletteChoice::CloseTerminalDrawer, UiLanguage::SimplifiedChinese) => {
-            "关闭终端抽屉"
-        }
-        (CommandPaletteChoice::Help, UiLanguage::SimplifiedChinese) => "帮助",
-        (CommandPaletteChoice::Search, UiLanguage::English) => "Search",
-        (CommandPaletteChoice::NextAttention, UiLanguage::English) => "Next attention",
-        (CommandPaletteChoice::QuickPrompt, UiLanguage::English) => "Quick Prompt",
-        (CommandPaletteChoice::Board, UiLanguage::English) => "Open Board",
-        (CommandPaletteChoice::Review, UiLanguage::English) => "Open Review",
-        (CommandPaletteChoice::Workspace, UiLanguage::English) => "Open Workspace",
-        (CommandPaletteChoice::ManagedWorktrees, UiLanguage::English) => "Managed Worktrees",
-        (CommandPaletteChoice::NewScratch, UiLanguage::English) => "New Scratch",
-        (CommandPaletteChoice::Goal, UiLanguage::English) => "Goal actions",
-        (CommandPaletteChoice::TogglePin, UiLanguage::English) => "Toggle pin",
-        (CommandPaletteChoice::Snooze, UiLanguage::English) => "Snooze",
-        (CommandPaletteChoice::ContextActions, UiLanguage::English) => "Context actions",
-        (CommandPaletteChoice::TerminalDrawer, UiLanguage::English) => "Open Terminal Drawer",
-        (CommandPaletteChoice::CloseTerminalDrawer, UiLanguage::English) => "Close Terminal Drawer",
-        (CommandPaletteChoice::Help, UiLanguage::English) => "Help",
-    }
+fn command_palette_choice_label(choice: Command, language: UiLanguage) -> &'static str {
+    choice
+        .palette_label(language.is_simplified_chinese())
+        .expect("command palette must only contain palette-capable commands")
 }
 
 fn context_choice_label(choice: ContextChoice, language: UiLanguage) -> &'static str {
@@ -2787,22 +2754,23 @@ fn centered_fixed(width: u16, height: u16, area: Rect) -> Rect {
 }
 
 const HELP_LINES: &[&str] = &[
-    "Global: ? help · Ctrl+K palette · / search · . actions · t terminal · T close terminal · Esc back",
-    "Registry: j/k · Enter · Space attention · / search · l local-only · g repo-only · h recent/all-history · p pin · e alias · x ack",
+    "Global: ? help · Ctrl+K palette · / search · . actions · Esc back",
+    "Registry: j/k · Enter · Space attention · l local-only · g repo-only · h recent/all-history · p pin · e alias · x ack",
     "Thread: a composer · y/n/c approval · i answer · Ctrl+C interrupt · r review",
     "Review: j/k file · w word-diff · e editor · . Forge actions · PageUp/PageDown · Esc",
-    "Workspace: Git + Forge · . actions/launch presets · r review · m worktrees · Esc",
+    "Workspace: . actions/launch presets · r review · m worktrees · Esc",
     "Managed Worktrees: n create · a adopt · d remove · x delete branch · y confirm",
     "Board: h/l stage · j/k item · Space attention · s snooze · = bind · 1–9 hot slot",
     "Board: Tab Saved View · . batch-local/context · Enter open · a Quick Prompt · n Scratch",
-    "Scratch: local-only detail · Esc Board",
+    "Scratch: Esc Board",
+    "Terminal drawer: t open · T close",
     "Terminal focus: keys go to PTY · F6 return to app · Ctrl+] alternate · Shift+PgUp/PgDn scrollback.",
     "Authority: Codex/Git/Forge stay canonical; codex-tui stores operator state only.",
 ];
 
 const HELP_LINES_ZH: &[&str] = &[
-    "全局: ? 帮助 · Ctrl+K 命令面板 · / 搜索 · . 操作 · t 终端 · T 关闭终端 · Esc 返回",
-    "任务中心: j/k 移动 · Enter 打开 · Space 待处理 · / 搜索 · l 仅本机 · g 仅仓库 · h 最近/全部历史 · p 固定 · e 别名 · x 已处理",
+    "全局: ? 帮助 · Ctrl+K 命令面板 · / 搜索 · . 操作 · Esc 返回",
+    "任务中心: j/k 移动 · Enter 打开 · Space 待处理 · l 仅本机 · g 仅仓库 · h 最近/全部历史 · p 固定 · e 别名 · x 已处理",
     "会话: a 编辑消息 · y/n/c 审批 · i 回答 · Ctrl+C 中断 · r 评审",
     "评审: j/k 文件 · w 单词级 diff · e 编辑器 · . Forge 操作 · PageUp/PageDown · Esc",
     "工作区: Git + Forge · . 操作/启动预设 · r 评审 · m worktree · Esc",
@@ -2810,6 +2778,7 @@ const HELP_LINES_ZH: &[&str] = &[
     "看板: h/l 阶段 · j/k 项目 · Space 待处理 · s 稍后提醒 · = 绑定 · 1–9 快捷槽",
     "看板: Tab 已保存视图 · . 本地批量/上下文 · Enter 打开 · a Quick Prompt · n Scratch",
     "Scratch: 仅本地详情 · Esc 返回看板",
+    "终端抽屉: t 打开 · T 关闭（Scratch 除外）",
     "终端聚焦: 按键发送给 PTY · F6 返回应用 · Ctrl+] 备用 · Shift+PgUp/PgDn 回滚",
     "权限边界: Codex/Git/Forge 保持权威来源；codex-tui 只保存操作员状态。",
 ];
@@ -2966,8 +2935,10 @@ mod tests {
     use super::*;
     use crate::app::AppState;
     use crate::backend::{CodexBackend, FakeBackend};
+    use crate::keymap::HELP_BINDINGS;
     use pretty_assertions::assert_eq;
     use ratatui::{Terminal, backend::TestBackend};
+    use std::collections::BTreeSet;
 
     fn render_snapshot(width: u16) -> String {
         let backend = TestBackend::new(width, 12);
@@ -2983,6 +2954,37 @@ mod tests {
             out.push('\n');
         }
         out
+    }
+
+    #[test]
+    fn english_help_tokens_exactly_match_the_executable_key_contract() {
+        let surfaces = HELP_BINDINGS
+            .iter()
+            .map(|binding| binding.surface)
+            .collect::<BTreeSet<_>>();
+        for surface in surfaces.iter() {
+            let expected = HELP_BINDINGS
+                .iter()
+                .filter(|binding| binding.surface == *surface)
+                .map(|binding| binding.token)
+                .collect::<BTreeSet<_>>();
+            let prefix = format!("{surface}:");
+            let advertised = HELP_LINES
+                .iter()
+                .filter(|line| line.starts_with(&prefix))
+                .flat_map(|line| {
+                    line.split_once(':')
+                        .map(|(_, tail)| tail)
+                        .unwrap_or_default()
+                        .split('·')
+                })
+                .filter_map(|segment| segment.split_whitespace().next())
+                .collect::<BTreeSet<_>>();
+            assert_eq!(
+                advertised, expected,
+                "Help/keymap contract drift on {surface}"
+            );
+        }
     }
 
     #[test]
@@ -3547,7 +3549,7 @@ mod tests {
     #[test]
     fn help_hints_match_locked_keyboard_commands() {
         use crate::app::ViewKind;
-        use crate::keymap::{Command, command_for_key};
+        use crate::{command::Command, keymap::command_for_key};
         use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
         let help = HELP_LINES.join("\n");
@@ -3571,13 +3573,13 @@ mod tests {
                 Command::ContextActions,
             ),
             (
-                "t terminal",
+                "Terminal drawer: t open",
                 KeyEvent::new(KeyCode::Char('t'), KeyModifiers::NONE),
                 ViewKind::Workspace,
                 Command::TerminalDrawer,
             ),
             (
-                "T close terminal",
+                "T close",
                 KeyEvent::new(KeyCode::Char('T'), KeyModifiers::NONE),
                 ViewKind::Workspace,
                 Command::CloseTerminalDrawer,

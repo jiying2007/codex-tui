@@ -1,5 +1,6 @@
 use crate::backend::BackendStatus;
 use crate::batch_local::{LocalBatchAction, LocalBatchPlan, parse_priority};
+use crate::command::Command;
 use crate::conversation::{
     ConversationPage, ConversationState, InteractiveRequest, InteractiveRequestKind,
     InteractiveResolution, RpcRequestId, UserInputQuestion,
@@ -156,25 +157,6 @@ pub enum ContextChoice {
     ForgeComment,
     ForgeApprove,
     ForgeMerge,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CommandPaletteChoice {
-    Search,
-    NextAttention,
-    QuickPrompt,
-    Board,
-    Review,
-    Workspace,
-    ManagedWorktrees,
-    NewScratch,
-    Goal,
-    TogglePin,
-    Snooze,
-    ContextActions,
-    TerminalDrawer,
-    CloseTerminalDrawer,
-    Help,
 }
 
 impl ContextChoice {
@@ -494,7 +476,7 @@ pub struct AppState {
     pub saved_view_template: Option<SavedView>,
     pub command_palette_open: bool,
     pub command_palette_selected: usize,
-    command_palette_items: Vec<CommandPaletteChoice>,
+    command_palette_items: Vec<Command>,
     pub context_open: bool,
     pub context_selected: usize,
     pub hot_slot_bind_pending: bool,
@@ -1115,60 +1097,60 @@ impl AppState {
         })
     }
 
-    fn build_command_palette_choices(&self) -> Vec<CommandPaletteChoice> {
-        let mut choices = vec![CommandPaletteChoice::Search];
+    fn build_command_palette_choices(&self) -> Vec<Command> {
+        let mut choices = vec![Command::Search];
         let thread_id = self.command_palette_thread_id();
 
         if matches!(self.view, View::Registry | View::Board) {
-            choices.push(CommandPaletteChoice::NextAttention);
+            choices.push(Command::NextAttention);
         }
         if thread_id.is_some() {
-            choices.push(CommandPaletteChoice::QuickPrompt);
+            choices.push(Command::QuickPrompt);
         }
         if !matches!(self.view, View::Board) {
-            choices.push(CommandPaletteChoice::Board);
+            choices.push(Command::Board);
         }
         if thread_id.is_some() && !matches!(self.view, View::Review(_)) {
-            choices.push(CommandPaletteChoice::Review);
+            choices.push(Command::Review);
         }
         if thread_id.is_some() && !matches!(self.view, View::Workspace(_)) {
-            choices.push(CommandPaletteChoice::Workspace);
+            choices.push(Command::Workspace);
         }
         if thread_id.as_ref().is_some_and(|thread_id| {
             self.git_context(thread_id)
                 .is_some_and(|context| context.repo.is_some())
         }) && !matches!(self.view, View::ManagedWorktrees(_))
         {
-            choices.push(CommandPaletteChoice::ManagedWorktrees);
+            choices.push(Command::ManagedWorktrees);
         }
 
-        choices.push(CommandPaletteChoice::NewScratch);
+        choices.push(Command::New);
 
         if matches!(self.view, View::Thread(_)) {
-            choices.push(CommandPaletteChoice::Goal);
+            choices.push(Command::Goal);
         }
         if matches!(self.view, View::Registry) && self.selected_thread().is_some() {
-            choices.push(CommandPaletteChoice::TogglePin);
+            choices.push(Command::TogglePin);
         }
         if self.selected_local_target().is_some() {
-            choices.push(CommandPaletteChoice::Snooze);
+            choices.push(Command::Snooze);
         }
         if !self.context_choices().is_empty() {
-            choices.push(CommandPaletteChoice::ContextActions);
+            choices.push(Command::ContextActions);
         }
         if !matches!(self.view, View::Scratch(_)) {
             choices.push(if self.terminal_drawer_open {
-                CommandPaletteChoice::CloseTerminalDrawer
+                Command::CloseTerminalDrawer
             } else {
-                CommandPaletteChoice::TerminalDrawer
+                Command::TerminalDrawer
             });
         }
 
-        choices.push(CommandPaletteChoice::Help);
+        choices.push(Command::Help);
         choices
     }
 
-    pub fn command_palette_choices(&self) -> Vec<CommandPaletteChoice> {
+    pub fn command_palette_choices(&self) -> Vec<Command> {
         if self.command_palette_open {
             self.command_palette_items.clone()
         } else {
@@ -1176,7 +1158,7 @@ impl AppState {
         }
     }
 
-    pub fn command_palette_choice(&self) -> Option<CommandPaletteChoice> {
+    pub fn command_palette_choice(&self) -> Option<Command> {
         self.command_palette_items
             .get(self.command_palette_selected)
             .copied()
@@ -5841,14 +5823,21 @@ mod tests {
     fn command_palette_is_contextual_and_wraps_selection() {
         let mut app = app();
         let registry_choices = app.command_palette_choices();
-        assert!(registry_choices.contains(&CommandPaletteChoice::Search));
-        assert!(registry_choices.contains(&CommandPaletteChoice::NextAttention));
-        assert!(registry_choices.contains(&CommandPaletteChoice::QuickPrompt));
-        assert!(registry_choices.contains(&CommandPaletteChoice::Board));
-        assert!(registry_choices.contains(&CommandPaletteChoice::Review));
-        assert!(registry_choices.contains(&CommandPaletteChoice::Workspace));
-        assert!(registry_choices.contains(&CommandPaletteChoice::TogglePin));
-        assert!(registry_choices.contains(&CommandPaletteChoice::Help));
+        assert!(
+            registry_choices
+                .iter()
+                .copied()
+                .all(Command::palette_capable),
+            "palette must be a projection of palette-capable Command values"
+        );
+        assert!(registry_choices.contains(&Command::Search));
+        assert!(registry_choices.contains(&Command::NextAttention));
+        assert!(registry_choices.contains(&Command::QuickPrompt));
+        assert!(registry_choices.contains(&Command::Board));
+        assert!(registry_choices.contains(&Command::Review));
+        assert!(registry_choices.contains(&Command::Workspace));
+        assert!(registry_choices.contains(&Command::TogglePin));
+        assert!(registry_choices.contains(&Command::Help));
 
         reduce(&mut app, Action::OpenCommandPalette);
         assert!(app.command_palette_open);
@@ -5866,9 +5855,9 @@ mod tests {
 
         app.view = View::Scratch("scratch:missing".into());
         let scratch_choices = app.command_palette_choices();
-        assert!(scratch_choices.contains(&CommandPaletteChoice::Board));
-        assert!(!scratch_choices.contains(&CommandPaletteChoice::TerminalDrawer));
-        assert!(!scratch_choices.contains(&CommandPaletteChoice::CloseTerminalDrawer));
+        assert!(scratch_choices.contains(&Command::Board));
+        assert!(!scratch_choices.contains(&Command::TerminalDrawer));
+        assert!(!scratch_choices.contains(&Command::CloseTerminalDrawer));
     }
 
     #[test]
@@ -5878,9 +5867,9 @@ mod tests {
         reduce(&mut app, Action::OpenBoard);
 
         let choices = app.command_palette_choices();
-        assert!(choices.contains(&CommandPaletteChoice::QuickPrompt));
-        assert!(choices.contains(&CommandPaletteChoice::Review));
-        assert!(choices.contains(&CommandPaletteChoice::Workspace));
+        assert!(choices.contains(&Command::QuickPrompt));
+        assert!(choices.contains(&Command::Review));
+        assert!(choices.contains(&Command::Workspace));
     }
 
     #[test]
@@ -5891,32 +5880,26 @@ mod tests {
         let toggle_pin_index = app
             .command_palette_choices()
             .iter()
-            .position(|choice| *choice == CommandPaletteChoice::TogglePin)
+            .position(|choice| *choice == Command::TogglePin)
             .expect("TogglePin palette entry");
         app.command_palette_selected = toggle_pin_index;
-        assert_eq!(
-            app.command_palette_choice(),
-            Some(CommandPaletteChoice::TogglePin)
-        );
+        assert_eq!(app.command_palette_choice(), Some(Command::TogglePin));
 
         app.threads.clear();
         app.rebuild_thread_indexes();
         assert!(
             !app.build_command_palette_choices()
-                .contains(&CommandPaletteChoice::TogglePin)
+                .contains(&Command::TogglePin)
         );
         assert_eq!(
             app.command_palette_choice(),
-            Some(CommandPaletteChoice::TogglePin),
+            Some(Command::TogglePin),
             "background state changes must not retarget the highlighted command"
         );
 
         reduce(&mut app, Action::CloseCommandPalette);
         assert!(app.command_palette_items.is_empty());
-        assert!(
-            !app.command_palette_choices()
-                .contains(&CommandPaletteChoice::TogglePin)
-        );
+        assert!(!app.command_palette_choices().contains(&Command::TogglePin));
     }
 
     #[test]
