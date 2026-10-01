@@ -43,7 +43,7 @@ impl OperatorStateWriteBehind {
     }
 
     fn is_due(&self) -> bool {
-        self.is_due_at(Instant::now());
+        self.is_due_at(Instant::now())
     }
 
     fn is_due_at(&self, now: Instant) -> bool {
