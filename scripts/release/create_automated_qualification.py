@@ -26,6 +26,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", required=True)
     parser.add_argument("--commit", required=True)
+    parser.add_argument("--failure-matrix", required=True)
     parser.add_argument("--scale", required=True)
     parser.add_argument("--soak", required=True)
     parser.add_argument("--support-manifest", required=True)
@@ -34,11 +35,23 @@ def main() -> int:
     if not HEX40.fullmatch(args.commit):
         raise SystemExit("commit must be exactly 40 hexadecimal characters")
 
+    failure_matrix_path = pathlib.Path(args.failure_matrix)
     scale_path = pathlib.Path(args.scale)
     soak_path = pathlib.Path(args.soak)
     support_path = pathlib.Path(args.support_manifest)
+    failure_matrix = json.loads(failure_matrix_path.read_text(encoding="utf-8"))
     scale = json.loads(scale_path.read_text(encoding="utf-8"))
     soak = json.loads(soak_path.read_text(encoding="utf-8"))
+
+    if failure_matrix.get("schema") != "codex-tui/failure-matrix/v1":
+        raise SystemExit("unexpected Failure Matrix schema")
+    cases = failure_matrix.get("cases")
+    if not isinstance(cases, list) or not cases:
+        raise SystemExit("Failure Matrix must contain cases")
+    for case in cases:
+        evidence = case.get("evidence")
+        if not isinstance(evidence, list) or not evidence:
+            raise SystemExit(f"Failure Matrix case {case.get('id')} has no evidence")
     support = json.loads(support_path.read_text(encoding="utf-8"))
 
     if scale.get("schema") != "codex-tui/scale-evidence/v4":
@@ -106,6 +119,7 @@ def main() -> int:
             "supportBundleRedaction": "pass",
         },
         "artifacts": {
+            "failureMatrixSha256": sha256(failure_matrix_path),
             "scaleEvidenceSha256": sha256(scale_path),
             "soakEvidenceSha256": sha256(soak_path),
             "supportManifestSha256": sha256(support_path),
