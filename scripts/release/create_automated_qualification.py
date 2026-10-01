@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import pathlib
 import re
 from datetime import datetime, timezone
@@ -25,6 +26,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", required=True)
     parser.add_argument("--commit", required=True)
+    parser.add_argument("--scale", required=True)
     parser.add_argument("--soak", required=True)
     parser.add_argument("--support-manifest", required=True)
     args = parser.parse_args()
@@ -32,10 +34,38 @@ def main() -> int:
     if not HEX40.fullmatch(args.commit):
         raise SystemExit("commit must be exactly 40 hexadecimal characters")
 
+    scale_path = pathlib.Path(args.scale)
     soak_path = pathlib.Path(args.soak)
     support_path = pathlib.Path(args.support_manifest)
+    scale = json.loads(scale_path.read_text(encoding="utf-8"))
     soak = json.loads(soak_path.read_text(encoding="utf-8"))
     support = json.loads(support_path.read_text(encoding="utf-8"))
+
+    if scale.get("schema") != "codex-tui/scale-evidence/v4":
+        raise SystemExit("unexpected scale evidence schema")
+    if scale.get("rows") != 50_000:
+        raise SystemExit("release scale evidence must cover exactly 50,000 rows")
+    if int(scale.get("warmupIterations", 0)) < 5:
+        raise SystemExit("release scale evidence requires at least 5 warmup iterations")
+    if int(scale.get("iterations", 0)) < 50:
+        raise SystemExit("release scale evidence requires at least 50 measured iterations")
+    registry_construct = scale.get("registryConstructMs")
+    if not isinstance(registry_construct, (int, float)) or not math.isfinite(registry_construct) or registry_construct < 0:
+        raise SystemExit("release scale registryConstructMs must be finite and nonnegative")
+    for name in (
+        "planningReconcile",
+        "recentProjection",
+        "allHistoryProjection",
+        "searchProjection",
+        "hostLocalProjection",
+    ):
+        timing = scale.get(name)
+        if not isinstance(timing, dict):
+            raise SystemExit(f"release scale evidence missing {name}")
+        for field in ("p50Ms", "p95Ms", "p99Ms", "maxMs"):
+            value = timing.get(field)
+            if not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
+                raise SystemExit(f"release scale {name}.{field} must be finite and nonnegative")
 
     if soak.get("schema") != "codex-tui/soak-evidence/v1":
         raise SystemExit("unexpected soak evidence schema")
@@ -64,17 +94,19 @@ def main() -> int:
         raise SystemExit("support bundle privacy contract missing: " + ", ".join(missing))
 
     receipt = {
-        "schema": "codex-tui/automated-qualification/v1",
+        "schema": "codex-tui/automated-qualification/v2",
         "sourceSha": args.commit.lower(),
         "observedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "gates": {
             "failureMatrix": "pass",
+            "scaleEvidence": "pass",
             "soakStructural": "pass",
             "uiContract": "pass",
             "stateMigrationRecovery": "pass",
             "supportBundleRedaction": "pass",
         },
         "artifacts": {
+            "scaleEvidenceSha256": sha256(scale_path),
             "soakEvidenceSha256": sha256(soak_path),
             "supportManifestSha256": sha256(support_path),
         },
