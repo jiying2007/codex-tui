@@ -4501,22 +4501,28 @@ mod tests {
             kept.0.clone(),
             GoalObservation {
                 thread_id: kept.clone(),
-                objective: Some("keep".into()),
+                objective: "keep".into(),
                 status: GoalStatus::Active,
                 token_budget: None,
                 tokens_used: 0,
                 time_used_seconds: 0,
+                created_at: 1,
+                updated_at: 1,
+                observed_at_unix_ms: 1,
             },
         );
         app.goals.insert(
             removed.0.clone(),
             GoalObservation {
                 thread_id: removed.clone(),
-                objective: Some("remove".into()),
+                objective: "remove".into(),
                 status: GoalStatus::Active,
                 token_budget: None,
                 tokens_used: 0,
                 time_used_seconds: 0,
+                created_at: 1,
+                updated_at: 1,
+                observed_at_unix_ms: 1,
             },
         );
 
