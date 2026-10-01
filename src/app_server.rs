@@ -755,11 +755,15 @@ async fn run_registry_actor(
                             loaded_supported,
                             &mut threads,
                             &mut status,
-                            goal_supported,
-                            &goal_probed,
-                            &mut goal_queued,
-                            &mut goal_probe_queue,
                         );
+                        if goal_supported != Some(false) {
+                            reset_eager_goal_queue(
+                                &threads,
+                                &goal_probed,
+                                &mut goal_queued,
+                                &mut goal_probe_queue,
+                            );
+                        }
                     }
                     Err(error) => {
                         status.error = Some(error.to_string());
