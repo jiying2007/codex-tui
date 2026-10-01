@@ -56,6 +56,7 @@ All notable codex-tui changes are recorded here.
 - upgraded scale evidence to schema v4 by splitting the planning index-commit phase into collision-index build, WorkCard thread-index build, and final WorkCard vector commit so the remaining 50k rebuild cost can be attributed before changing data structures.
 - stopped the 15-second Forge refresh timer from rebuilding the entire planning projection when no Forge probe was scheduled; pending-probe reconciliation remains unchanged, while fresh/pending Forge state no longer causes a periodic no-op WorkCard rebuild/render.
 - classified Registry drain changes by responsibility: conversation/history/interactive UI events no longer trigger Git projection refresh plus full planning reconciliation, while Registry snapshots still refresh Git + planning and Goal observations still reconcile planning.
+- extended drain classification to Git and mutation actors: Git review payloads, managed-worktree inventory updates and mutation notices render normally without triggering unrelated Forge/Git refresh plus full planning reconciliation; Git contexts and mutation receipts retain existing projection refresh semantics.
 
 ## [1.0.0] - 2026-09-30
 
