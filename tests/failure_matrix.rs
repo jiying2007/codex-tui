@@ -91,7 +91,9 @@ fn sqlite_busy_write_fails_within_bounded_deadline_without_partial_state() {
         "unexpected SQLite busy error: {error:#}"
     );
 
-    locker.execute_batch("ROLLBACK;").expect("release writer lock");
+    locker
+        .execute_batch("ROLLBACK;")
+        .expect("release writer lock");
     assert_eq!(
         store.load_state().expect("state after busy failure"),
         original,
