@@ -3,7 +3,9 @@ use crate::conversation::{InteractiveRequest, InteractiveRequestKind};
 use crate::domain::{CwdLocality, ThreadSummary, classify_cwd, display_cwd};
 use crate::git::presentation_diff_lines;
 use crate::i18n::{UiLanguage, pick};
-use crate::planning::{SavedViewLayout, WorkflowStage, apply_saved_view, saved_view_group_key};
+use crate::planning::{
+    SavedView, SavedViewLayout, WorkflowStage, apply_saved_view, saved_view_group_key,
+};
 use crate::pty::TerminalSize;
 use crate::text::{fit_display, sanitize_inline, truncate_display};
 use ratatui::{
@@ -83,6 +85,28 @@ fn context_choice_label(choice: ContextChoice, language: UiLanguage) -> &'static
         ContextChoice::ForgeComment => "Forge · 评论合并请求…",
         ContextChoice::ForgeApprove => "Forge · 批准合并请求",
         ContextChoice::ForgeMerge => "Forge · 合并合并请求",
+    }
+}
+
+fn saved_view_name<'a>(view: &'a SavedView, language: UiLanguage) -> &'a str {
+    if language == UiLanguage::English {
+        return &view.name;
+    }
+    match view.id.as_str() {
+        "builtin:all" => "全部工作",
+        "builtin:attention" => "需要你处理",
+        "builtin:review" => "需要评审",
+        "builtin:forge" => "Forge 工作",
+        _ => &view.name,
+    }
+}
+
+fn saved_view_layout_label(layout: SavedViewLayout, language: UiLanguage) -> &'static str {
+    match (layout, language) {
+        (SavedViewLayout::List, UiLanguage::SimplifiedChinese) => "列表",
+        (SavedViewLayout::Board, UiLanguage::SimplifiedChinese) => "看板",
+        (SavedViewLayout::ReviewQueue, UiLanguage::SimplifiedChinese) => "评审队列",
+        _ => layout.label(),
     }
 }
 
