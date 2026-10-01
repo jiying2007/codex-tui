@@ -315,7 +315,10 @@ pub fn validate_evidence(path: &Path, version: &str, commit_sha: &str) -> Result
         "stable performance fixture must be {PERFORMANCE_FIXTURE}"
     );
     anyhow::ensure!(
-        receipt.performance.source_sha.eq_ignore_ascii_case(commit_sha),
+        receipt
+            .performance
+            .source_sha
+            .eq_ignore_ascii_case(commit_sha),
         "stable performance evidence source SHA must match the release commit"
     );
     anyhow::ensure!(
