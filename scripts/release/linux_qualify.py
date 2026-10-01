@@ -16,7 +16,7 @@ STABLE_VERSION = re.compile(
 )
 TERMINAL_SCHEMA = "codex-tui/terminal-restoration/v1"
 COMPAT_SCHEMA = "codex-tui/compat/v2"
-PERFORMANCE_SCHEMA = "codex-tui/performance/v1"
+PERFORMANCE_SCHEMA = "codex-tui/performance/v2"
 
 
 def run(
@@ -130,6 +130,11 @@ def main() -> int:
         capture=False,
     )
 
+    run(
+        ["cargo", "test", "--locked", "--all-targets", "--all-features"],
+        cwd=root,
+        capture=False,
+    )
     run(["cargo", "build", "--release", "--locked"], cwd=root, capture=False)
     binary = root / "target/release/codex-tui"
     if not binary.is_file():
@@ -152,6 +157,59 @@ def main() -> int:
         raise SystemExit("compat summary schema mismatch")
     if compat_summary.get("readiness") != "ready":
         raise SystemExit("Linux compatibility is not ready")
+
+    soak_path = output_dir / "soak-evidence.json"
+    soak = run(
+        [
+            str(binary),
+            "soak",
+            "--rows",
+            "50000",
+            "--cycles",
+            "256",
+            "--json",
+        ],
+        cwd=root,
+    )
+    write_text_lf(soak_path, soak.stdout)
+
+    support_dir = output_dir / "support-bundle"
+    if support_dir.exists():
+        raise SystemExit(
+            f"support bundle destination already exists; remove the previous generated bundle: {support_dir}"
+        )
+    run(
+        [
+            str(binary),
+            "doctor",
+            "bundle",
+            "--output",
+            str(support_dir),
+        ],
+        cwd=root,
+        capture=False,
+    )
+    support_manifest = support_dir / "manifest.json"
+    if not support_manifest.is_file():
+        raise SystemExit("doctor bundle did not produce manifest.json")
+
+    automated_path = output_dir / "automated-qualification.json"
+    run(
+        [
+            sys.executable,
+            "scripts/release/create_automated_qualification.py",
+            "--output",
+            str(automated_path),
+            "--commit",
+            commit_sha,
+            "--soak",
+            str(soak_path),
+            "--support-manifest",
+            str(support_manifest),
+        ],
+        cwd=root,
+        capture=False,
+    )
 
     source = args.source.strip() or f"linux:{commit_sha[:12]}"
     perf_path = output_dir / "performance-linux.json"
@@ -178,10 +236,10 @@ def main() -> int:
         raise SystemExit("performance fixture mismatch")
     if performance.get("iterations", 0) < 200:
         raise SystemExit("performance sample count is below 200")
-    if performance.get("stableSloPass") is not True:
+    if performance.get("sampleQualified") is not True:
         raise SystemExit(
-            f"Linux performance SLO failed: p95={performance.get('p95Ms')} "
-            f"p99={performance.get('p99Ms')}"
+            "Linux performance diagnostic sample is invalid or too small: "
+            f"iterations={performance.get('iterations')}"
         )
 
     terminal_path = pathlib.Path(args.terminal_receipt).resolve()
@@ -212,6 +270,8 @@ def main() -> int:
             commit_sha,
             "--canonical-ci-run",
             str(args.canonical_ci_run),
+            "--automated-qualification",
+            str(automated_path),
             "--linux-compat-sha256",
             compat_summary["reportSha256"],
             "--linux-compat-observed-at",
@@ -262,15 +322,18 @@ def main() -> int:
         )
 
     summary = {
-        "schema": "codex-tui/linux-qualification/v1",
+        "schema": "codex-tui/linux-qualification/v2",
         "version": version,
         "commitSha": commit_sha,
         "canonicalCiRun": args.canonical_ci_run,
         "compatReport": str(compat_path),
         "compatReportSha256": compat_summary["reportSha256"],
         "terminalReceipt": str(terminal_path),
+        "soakEvidence": str(soak_path),
+        "supportBundleManifest": str(support_manifest),
+        "automatedQualification": str(automated_path),
         "performanceReport": str(perf_path),
-        "performance": {
+        "performanceDiagnostics": {
             "iterations": performance["iterations"],
             "p95Ms": performance["p95Ms"],
             "p99Ms": performance["p99Ms"],
