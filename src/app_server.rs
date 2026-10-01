@@ -1914,11 +1914,9 @@ mod tests {
         assert!(error.to_string().contains("capacity exceeded"));
         assert_eq!(queue.len(), RPC_QUEUED_MESSAGE_CAPACITY);
         assert_eq!(
-            queue.front().and_then(|message| {
-                message
-                    .pointer("/params/threadId")
-                    .and_then(Value::as_str)
-            }),
+            queue
+                .front()
+                .and_then(|message| message.pointer("/params/threadId").and_then(Value::as_str)),
             Some("0")
         );
     }
