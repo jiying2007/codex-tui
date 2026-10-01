@@ -948,10 +948,11 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
                     lines.push(Line::from(format!(
                         "{} · {}",
                         tr(app, "Git: degraded", "Git: 已降级"),
-                        context
-                            .error
-                            .as_deref()
-                            .unwrap_or_else(|| tr(app, "unknown error", "未知错误"))
+                        context.error.as_deref().unwrap_or_else(|| tr(
+                            app,
+                            "unknown error",
+                            "未知错误"
+                        ))
                     )));
                 }
                 Some(context) if !context.is_repository => {
@@ -1245,10 +1246,11 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area: R
             vec![Line::from(format!(
                 "{}: {}",
                 tr(app, "Conversation unavailable", "会话不可用"),
-                conversation
-                    .error
-                    .as_deref()
-                    .unwrap_or_else(|| tr(app, "unknown error", "未知错误"))
+                conversation.error.as_deref().unwrap_or_else(|| tr(
+                    app,
+                    "unknown error",
+                    "未知错误"
+                ))
             ))]
         }
         Some(conversation) if conversation.items.is_empty() => vec![Line::from(tr(
@@ -1716,11 +1718,7 @@ fn render_scratch(frame: &mut Frame<'_>, app: &AppState, scratch_id: &str, area:
     };
     frame.render_widget(
         Paragraph::new(lines)
-            .block(Block::bordered().title(tr(
-                app,
-                " ScratchWork ",
-                " 本地 ScratchWork ",
-            )))
+            .block(Block::bordered().title(tr(app, " ScratchWork ", " 本地 ScratchWork ")))
             .wrap(Wrap { trim: false }),
         chunks[0],
     );
@@ -1761,9 +1759,9 @@ fn render_workspace(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area
                 "{} · {}",
                 tr(app, "Git: degraded", "Git: 已降级"),
                 context
-                            .error
-                            .as_deref()
-                            .unwrap_or_else(|| tr(app, "unknown error", "未知错误"))
+                    .error
+                    .as_deref()
+                    .unwrap_or_else(|| tr(app, "unknown error", "未知错误"))
             )));
         }
         Some(context) if !context.is_repository => {
@@ -1924,10 +1922,14 @@ fn render_managed_worktrees(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
             let text = format!(
                 "{prefix} {} {} {}",
                 fit_display(ownership, 8),
-                fit_display(record
-                    .branch
-                    .as_deref()
-                    .unwrap_or_else(|| tr(app, "<detached>", "<分离 HEAD>")), 18),
+                fit_display(
+                    record.branch.as_deref().unwrap_or_else(|| tr(
+                        app,
+                        "<detached>",
+                        "<分离 HEAD>"
+                    )),
+                    18
+                ),
                 sanitize_inline(&record.canonical_path)
             );
             let style = if selected {
@@ -2878,7 +2880,9 @@ mod tests {
             }
             snapshot.push('\n');
         }
-        for glyph in ['任', '务', '中', '心', '已', '选', '择', '搜', '索', '未', '知'] {
+        for glyph in [
+            '任', '务', '中', '心', '已', '选', '择', '搜', '索', '未', '知',
+        ] {
             assert!(
                 snapshot.contains(glyph),
                 "missing localized glyph {glyph:?}"
