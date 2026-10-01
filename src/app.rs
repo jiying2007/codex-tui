@@ -1054,68 +1054,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         }
         Action::BackendStatus(status) => state.backend_status = status,
         Action::RefreshGitProjections => {
-            let mut effects = Vec::new();
-            let mut host_local_thread_ids = BTreeSet::new();
-            let mut threads_by_cwd = BTreeMap::<String, Vec<ThreadId>>::new();
-
-            for thread in &state.threads {
-                if !classify_cwd(&thread.metadata.cwd).terminal_usable() {
-                    continue;
-                }
-                host_local_thread_ids.insert(thread.id.0.clone());
-                threads_by_cwd
-                    .entry(thread.metadata.cwd.clone())
-                    .or_default()
-                    .push(thread.id.clone());
-            }
-
-            state
-                .git_contexts
-                .retain(|thread_id, _| host_local_thread_ids.contains(thread_id));
-            state
-                .forge_observations
-                .retain(|thread_id, _| host_local_thread_ids.contains(thread_id));
-
-            for (cwd, thread_ids) in threads_by_cwd {
-                let existing = thread_ids.iter().find_map(|thread_id| {
-                    state
-                        .git_contexts
-                        .get(&thread_id.0)
-                        .filter(|context| context.cwd == cwd)
-                        .cloned()
-                });
-
-                if let Some(existing) = existing {
-                    for thread_id in thread_ids {
-                        let needs_projection = state
-                            .git_contexts
-                            .get(&thread_id.0)
-                            .is_none_or(|context| context.cwd != cwd);
-                        if needs_projection {
-                            let mut projection = existing.clone();
-                            projection.thread_id = thread_id.clone();
-                            state.git_contexts.insert(thread_id.0, projection);
-                        }
-                    }
-                    continue;
-                }
-
-                let Some(leader) = thread_ids.first().cloned() else {
-                    continue;
-                };
-                for thread_id in thread_ids {
-                    state.git_contexts.insert(
-                        thread_id.0.clone(),
-                        GitContext::pending(thread_id, cwd.clone()),
-                    );
-                }
-                effects.push(Effect::ProbeGit {
-                    thread_id: leader,
-                    cwd,
-                });
-            }
-
-            return effects;
+            return refresh_git_projections(state);
         }
         Action::RefreshActiveGitProjections => {
             return refresh_active_git_projections(state);
@@ -2420,16 +2359,21 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::ToggleHostLocalFilter => {
             state.host_local_only = !state.host_local_only;
             ensure_selection_visible(state);
-            return vec![Effect::PersistOperatorState];
+            let mut effects = vec![Effect::PersistOperatorState];
+            effects.extend(refresh_git_projections(state));
+            return effects;
         }
         Action::ToggleRepoBackedFilter => {
             state.repo_backed_only = !state.repo_backed_only;
             ensure_selection_visible(state);
-            return vec![Effect::PersistOperatorState];
+            let mut effects = vec![Effect::PersistOperatorState];
+            effects.extend(refresh_git_projections(state));
+            return effects;
         }
         Action::ToggleAllHistory => {
             state.show_all_history = !state.show_all_history;
             ensure_selection_visible(state);
+            return refresh_git_projections(state);
         }
         Action::BeginSearch => {
             state.input_original.clone_from(&state.filter);
@@ -2891,9 +2835,13 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     return vec![Effect::PersistOperatorState];
                 }
             }
+            let was_search = mode == InputMode::Search;
             state.input_mode = InputMode::Normal;
             state.input_buffer.clear();
             state.input_original.clear();
+            if was_search {
+                return refresh_git_projections(state);
+            }
         }
         Action::CancelInput => {
             if matches!(
@@ -3084,6 +3032,125 @@ fn refresh_forge_projections(state: &mut AppState) -> Vec<Effect> {
             ForgeObservation::pending(thread_id.clone(), cwd.clone()),
         );
         effects.push(Effect::ProbeForge { thread_id, cwd });
+    }
+
+    effects
+}
+
+fn git_projection_target_ids(state: &AppState) -> Vec<ThreadId> {
+    let mut target_ids = Vec::new();
+    let mut seen = BTreeSet::new();
+    let visible = state.visible_indices();
+    let visible_limit = if state.filter.is_empty() && !state.show_all_history {
+        visible.len()
+    } else {
+        REGISTRY_RECENT_LIMIT.min(visible.len())
+    };
+
+    for index in visible.into_iter().take(visible_limit) {
+        let thread = &state.threads[index];
+        if seen.insert(thread.id.0.clone()) {
+            target_ids.push(thread.id.clone());
+        }
+    }
+
+    let selected_thread_id = match &state.view {
+        View::Registry => state.selected_thread_id(),
+        View::Thread(id) | View::Review(id) | View::Workspace(id) | View::ManagedWorktrees(id) => {
+            Some(id.clone())
+        }
+        View::Board => state.selected_planning_card().and_then(|card| {
+            (card.anchor.kind == SourceKind::CodexThread)
+                .then(|| ThreadId::new(card.anchor.value.clone()))
+        }),
+        View::Scratch(_) => None,
+    };
+    if let Some(thread_id) = selected_thread_id
+        && seen.insert(thread_id.0.clone())
+    {
+        target_ids.push(thread_id);
+    }
+
+    for thread in &state.threads {
+        if matches!(
+            thread.runtime,
+            RuntimeStatus::Working | RuntimeStatus::WaitingHuman
+        ) && seen.insert(thread.id.0.clone())
+        {
+            target_ids.push(thread.id.clone());
+        }
+    }
+
+    target_ids
+}
+
+fn refresh_git_projections(state: &mut AppState) -> Vec<Effect> {
+    let host_local_thread_ids = state
+        .threads
+        .iter()
+        .filter(|thread| classify_cwd(&thread.metadata.cwd).terminal_usable())
+        .map(|thread| thread.id.0.clone())
+        .collect::<BTreeSet<_>>();
+    state
+        .git_contexts
+        .retain(|thread_id, _| host_local_thread_ids.contains(thread_id));
+    state
+        .forge_observations
+        .retain(|thread_id, _| host_local_thread_ids.contains(thread_id));
+
+    let target_ids = git_projection_target_ids(state);
+    let mut threads_by_cwd = BTreeMap::<String, Vec<ThreadId>>::new();
+    for thread_id in target_ids {
+        let Some(thread) = state.threads.iter().find(|thread| thread.id == thread_id) else {
+            continue;
+        };
+        if !classify_cwd(&thread.metadata.cwd).terminal_usable() {
+            continue;
+        }
+        threads_by_cwd
+            .entry(thread.metadata.cwd.clone())
+            .or_default()
+            .push(thread_id);
+    }
+
+    let mut effects = Vec::new();
+    for (cwd, thread_ids) in threads_by_cwd {
+        let existing = thread_ids.iter().find_map(|thread_id| {
+            state
+                .git_contexts
+                .get(&thread_id.0)
+                .filter(|context| context.cwd == cwd)
+                .cloned()
+        });
+
+        if let Some(existing) = existing {
+            for thread_id in thread_ids {
+                let needs_projection = state
+                    .git_contexts
+                    .get(&thread_id.0)
+                    .is_none_or(|context| context.cwd != cwd);
+                if needs_projection {
+                    let mut projection = existing.clone();
+                    projection.thread_id = thread_id.clone();
+                    state.git_contexts.insert(thread_id.0, projection);
+                }
+            }
+            continue;
+        }
+
+        let Some(leader) = thread_ids.first().cloned() else {
+            continue;
+        };
+        for thread_id in thread_ids {
+            state.git_contexts.insert(
+                thread_id.0.clone(),
+                GitContext::pending(thread_id, cwd.clone()),
+            );
+        }
+        effects.push(Effect::ProbeGit {
+            thread_id: leader,
+            cwd,
+        });
     }
 
     effects
@@ -4524,6 +4591,27 @@ mod tests {
                 && card.title == "Investigate"
         }));
         assert_eq!(app.threads.len(), 4);
+    }
+
+    #[test]
+    fn git_projection_eager_work_is_bounded_by_recent_registry_scope() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let mut app = AppState::new(FakeBackend::scaled(150).snapshot().threads);
+        for (index, thread) in app.threads.iter_mut().enumerate() {
+            thread.runtime = RuntimeStatus::Inactive;
+            let cwd = root.path().join(format!("repo-{index:03}"));
+            std::fs::create_dir_all(&cwd).expect("create cwd");
+            thread.metadata.cwd = cwd.to_string_lossy().into_owned();
+        }
+
+        let effects = reduce(&mut app, Action::RefreshGitProjections);
+        assert_eq!(effects.len(), REGISTRY_RECENT_LIMIT);
+        assert_eq!(app.git_contexts.len(), REGISTRY_RECENT_LIMIT);
+
+        app.filter = "00149".into();
+        let effects = reduce(&mut app, Action::RefreshGitProjections);
+        assert_eq!(effects.len(), 1);
+        assert!(app.git_contexts.contains_key("synthetic-thread-00149"));
     }
 
     #[test]
