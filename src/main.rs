@@ -456,7 +456,11 @@ async fn doctor(scope: Option<&str>) -> Result<()> {
     println!("config: {}", store.config_path().display());
     println!("state: {}", store.db_path().display());
     println!("mouse: {}", config.ui.mouse);
-    println!("language: {} -> {}", config.ui.language.as_str(), config.ui.language.resolve().as_str());
+    println!(
+        "language: {} -> {}",
+        config.ui.language.as_str(),
+        config.ui.language.resolve().as_str()
+    );
 
     match store.load_state() {
         Ok(state) => println!("operator-schemaVersion: {}", state.schema_version),
