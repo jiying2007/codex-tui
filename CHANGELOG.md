@@ -39,6 +39,7 @@ All notable codex-tui changes are recorded here.
 - indexed threads with pending interactive requests so 10k Registry attention projection no longer scans the full pending-request vector per thread, while preserving multiple simultaneous requests per thread and request-id retargeting semantics.
 - hardened PTY teardown against bounded event-queue backpressure by releasing the receiver before joining the actor, and now emits `Ready` before reader/waiter producers can flood the queue.
 - made PTY handle teardown non-blocking even when the actor is stuck in synchronous terminal I/O: the handle now owns an out-of-band child killer, drops event backpressure first, signals termination independently of the bounded command queue, and detaches the actor instead of joining it on the UI thread.
+- made terminal startup transactional: once raw mode is enabled, an armed rollback guard restores raw mode, mouse capture, alternate screen and cursor state on every subsequent setup error before a `TerminalSession` can exist.
 
 ## [1.0.0] - 2026-09-30
 
