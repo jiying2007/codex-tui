@@ -663,27 +663,27 @@ fn registry_viewport(app: &AppState, area_height: u16) -> (Vec<usize>, RegistryV
 
 fn registry_history_label(
     language: UiLanguage,
-    registry_complete: bool,
+    hydrating: bool,
     has_filter: bool,
     show_all_history: bool,
 ) -> &'static str {
     if language.is_simplified_chinese() {
-        match (registry_complete, has_filter, show_all_history) {
-            (false, true, _) => "搜索（历史加载中）",
-            (false, false, true) => "全部历史（加载中）",
-            (false, false, false) => "最近（历史加载中）",
-            (true, true, _) => "搜索全部",
-            (true, false, true) => "全部历史",
-            (true, false, false) => "最近",
+        match (hydrating, has_filter, show_all_history) {
+            (true, true, _) => "搜索（历史加载中）",
+            (true, false, true) => "全部历史（加载中）",
+            (true, false, false) => "最近（历史加载中）",
+            (false, true, _) => "搜索全部",
+            (false, false, true) => "全部历史",
+            (false, false, false) => "最近",
         }
     } else {
-        match (registry_complete, has_filter, show_all_history) {
-            (false, true, _) => "SEARCH PARTIAL · HYDRATING",
-            (false, false, true) => "ALL HISTORY · HYDRATING",
-            (false, false, false) => "RECENT · HYDRATING",
-            (true, true, _) => "SEARCH ALL",
-            (true, false, true) => "ALL HISTORY",
-            (true, false, false) => "RECENT",
+        match (hydrating, has_filter, show_all_history) {
+            (true, true, _) => "SEARCH PARTIAL · HYDRATING",
+            (true, false, true) => "ALL HISTORY · HYDRATING",
+            (true, false, false) => "RECENT · HYDRATING",
+            (false, true, _) => "SEARCH ALL",
+            (false, false, true) => "ALL HISTORY",
+            (false, false, false) => "RECENT",
         }
     }
 }
@@ -781,7 +781,7 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
     };
     let history = registry_history_label(
         app.language,
-        app.backend_status.registry_complete,
+        app.backend_status.connected && !app.backend_status.registry_complete,
         !app.filter.is_empty(),
         app.show_all_history,
     );
@@ -2904,24 +2904,28 @@ mod tests {
     #[test]
     fn registry_history_label_distinguishes_partial_and_complete_history() {
         assert_eq!(
-            registry_history_label(UiLanguage::English, false, false, false),
+            registry_history_label(UiLanguage::English, true, false, false),
             "RECENT · HYDRATING"
         );
         assert_eq!(
-            registry_history_label(UiLanguage::English, false, true, false),
+            registry_history_label(UiLanguage::English, true, true, false),
             "SEARCH PARTIAL · HYDRATING"
         );
         assert_eq!(
-            registry_history_label(UiLanguage::English, true, true, false),
+            registry_history_label(UiLanguage::English, false, true, false),
             "SEARCH ALL"
         );
         assert_eq!(
-            registry_history_label(UiLanguage::SimplifiedChinese, false, false, true),
+            registry_history_label(UiLanguage::SimplifiedChinese, true, false, true),
             "全部历史（加载中）"
         );
         assert_eq!(
-            registry_history_label(UiLanguage::SimplifiedChinese, true, false, true),
+            registry_history_label(UiLanguage::SimplifiedChinese, false, false, true),
             "全部历史"
+        );
+        assert_eq!(
+            registry_history_label(UiLanguage::English, false, false, false),
+            "RECENT"
         );
     }
 
