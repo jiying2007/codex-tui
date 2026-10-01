@@ -3901,11 +3901,7 @@ pub(crate) struct PlanningReconcilePhaseTimings {
 
 #[inline(always)]
 fn planning_phase_start<const PROFILE: bool>() -> Option<Instant> {
-    if PROFILE {
-        Some(Instant::now())
-    } else {
-        None
-    }
+    if PROFILE { Some(Instant::now()) } else { None }
 }
 
 #[inline(always)]
