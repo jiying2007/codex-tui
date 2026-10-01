@@ -1567,35 +1567,44 @@ fn render_workspace(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area
     let thread = app.threads.iter().find(|thread| thread.id.0 == thread_id);
     let Some(thread) = thread else {
         frame.render_widget(
-            Paragraph::new("Thread no longer exists.")
-                .block(Block::bordered().title(" Workspace ")),
+            Paragraph::new(tr(app, "Thread no longer exists.", "会话已不存在。"))
+                .block(Block::bordered().title(tr(app, " Workspace ", " 工作区 "))),
             chunks[0],
         );
         return;
     };
 
     let mut lines = vec![
-        Line::from(format!("Thread: {}", thread.id)),
+        Line::from(format!("{}: {}", tr(app, "Thread", "会话"), thread.id)),
         Line::from(format!("Cwd: {}", thread.metadata.cwd)),
     ];
 
     match app.git_context(&thread.id) {
-        None => lines.push(Line::from("Git: not probed")),
+        None => lines.push(Line::from(tr(app, "Git: not probed", "Git: 未探测"))),
         Some(context) if context.observed_at_unix_ms == 0 => {
-            lines.push(Line::from("Git: probing…"));
+            lines.push(Line::from(tr(app, "Git: probing…", "Git: 探测中…")));
         }
         Some(context) if context.error.is_some() => {
             lines.push(Line::from(format!(
-                "Git: degraded · {}",
+                "{} · {}",
+                tr(app, "Git: degraded", "Git: 已降级"),
                 context.error.as_deref().unwrap_or("unknown error")
             )));
         }
         Some(context) if !context.is_repository => {
-            lines.push(Line::from("Git: not a repository"));
+            lines.push(Line::from(tr(
+                app,
+                "Git: not a repository",
+                "Git: 不是仓库",
+            )));
         }
         Some(context) => {
             if let Some(repo) = &context.repo {
-                lines.push(Line::from(format!("Repo root: {}", repo.primary_root)));
+                lines.push(Line::from(format!(
+                    "{}: {}",
+                    tr(app, "Repo root", "仓库根目录"),
+                    repo.primary_root
+                )));
                 lines.push(Line::from(format!(
                     "Git common dir: {}",
                     repo.git_common_dir
@@ -1605,32 +1614,46 @@ fn render_workspace(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area
                 lines.push(Line::from(format!("Worktree: {}", worktree.canonical_path)));
             }
             lines.push(Line::from(format!(
-                "Branch: {}",
+                "{}: {}",
+                tr(app, "Branch", "分支"),
                 context
                     .branch
                     .as_deref()
                     .or(context.head.as_deref())
                     .unwrap_or("<unknown>")
             )));
-            lines.push(Line::from(format!(
-                "Upstream: {} · ahead={} behind={}",
-                context.upstream.as_deref().unwrap_or("<none>"),
-                context.ahead,
-                context.behind
-            )));
-            lines.push(Line::from(format!(
-                "Dirty: {} · changed files={}",
-                context.dirty,
-                context.changes.len()
-            )));
+            lines.push(Line::from(if app.language.is_simplified_chinese() {
+                format!(
+                    "上游: {} · 领先={} 落后={}",
+                    context.upstream.as_deref().unwrap_or("<none>"),
+                    context.ahead,
+                    context.behind
+                )
+            } else {
+                format!(
+                    "Upstream: {} · ahead={} behind={}",
+                    context.upstream.as_deref().unwrap_or("<none>"),
+                    context.ahead,
+                    context.behind
+                )
+            }));
+            lines.push(Line::from(if app.language.is_simplified_chinese() {
+                format!("脏状态: {} · 变更文件={}", context.dirty, context.changes.len())
+            } else {
+                format!("Dirty: {} · changed files={}", context.dirty, context.changes.len())
+            }));
             let collisions = app.worktree_collision_count(&thread.id);
             if collisions > 0 {
-                lines.push(Line::from(format!(
-                    "WARNING: shared mutable checkout with {collisions} active thread(s)"
-                )));
+                lines.push(Line::from(if app.language.is_simplified_chinese() {
+                    format!("警告: 与 {collisions} 个活跃会话共享可变 checkout")
+                } else {
+                    format!(
+                        "WARNING: shared mutable checkout with {collisions} active thread(s)"
+                    )
+                }));
             }
             lines.push(Line::from(""));
-            lines.push(Line::from("Changed files:"));
+            lines.push(Line::from(tr(app, "Changed files:", "变更文件:")));
             lines.extend(context.changes.iter().take(100).map(|change| {
                 Line::from(format!(
                     "  {:2} {}",
@@ -1639,10 +1662,11 @@ fn render_workspace(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area
                 ))
             }));
             if context.changes.len() > 100 {
-                lines.push(Line::from(format!(
-                    "  … {} additional change(s)",
-                    context.changes.len() - 100
-                )));
+                lines.push(Line::from(if app.language.is_simplified_chinese() {
+                    format!("  … 另有 {} 个变更", context.changes.len() - 100)
+                } else {
+                    format!("  … {} additional change(s)", context.changes.len() - 100)
+                }));
             }
         }
     }
@@ -1652,12 +1676,20 @@ fn render_workspace(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area
 
     frame.render_widget(
         Paragraph::new(lines)
-            .block(Block::bordered().title(" Workspace · Git + Forge "))
+            .block(Block::bordered().title(tr(
+                app,
+                " Workspace · Git + Forge ",
+                " 工作区 · Git + Forge ",
+            )))
             .wrap(Wrap { trim: false }),
         chunks[0],
     );
     frame.render_widget(
-        Paragraph::new("r review · m managed worktrees · . actions · Esc back"),
+        Paragraph::new(tr(
+            app,
+            "r review · m managed worktrees · . actions · Esc back",
+            "r 评审 · m 受管 worktree · . 操作 · Esc 返回",
+        )),
         chunks[1],
     );
 }
@@ -1675,25 +1707,33 @@ fn render_managed_worktrees(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
 
     let mut lines = Vec::new();
     lines.push(Line::from(format!(
-        "Repository: {}",
+        "{}: {}",
+        tr(app, "Repository", "仓库"),
         repo.map(|repo| repo.primary_root.as_str())
-            .unwrap_or("<unavailable>")
+            .unwrap_or_else(|| tr(app, "<unavailable>", "<不可用>"))
     )));
     lines.push(Line::from(format!(
-        "Managed/adopted worktrees: {}",
+        "{}: {}",
+        tr(app, "Managed/adopted worktrees", "受管/已接管 worktree"),
         worktrees.len()
     )));
     lines.push(Line::from(""));
 
     if worktrees.is_empty() {
-        lines.push(Line::from(
+        lines.push(Line::from(tr(
+            app,
             "No managed/adopted worktrees for this repository.",
-        ));
+            "此仓库没有受管或已接管的 worktree。",
+        )));
     } else {
         for (index, record) in worktrees.iter().enumerate() {
             let selected = index == app.managed_selected;
             let prefix = if selected { ">" } else { " " };
-            let ownership = if record.adopted { "adopted" } else { "managed" };
+            let ownership = if record.adopted {
+                tr(app, "adopted", "已接管")
+            } else {
+                tr(app, "managed", "受管")
+            };
             let text = format!(
                 "{prefix} {} {} {}",
                 fit_display(ownership, 8),
@@ -1711,13 +1751,24 @@ fn render_managed_worktrees(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
 
     if let Some(plan) = &app.pending_operation {
         lines.push(Line::from(""));
-        lines.push(Line::from(
+        lines.push(Line::from(tr(
+            app,
             "CONFIRM REQUIRED — no mutation has executed yet.",
-        ));
-        lines.push(Line::from(format!("Operation: {}", plan.kind.label())));
+            "需要确认 — 尚未执行任何变更。",
+        )));
+        lines.push(Line::from(format!(
+            "{}: {}",
+            tr(app, "Operation", "操作"),
+            plan.kind.label()
+        )));
         lines.push(Line::from(format!("Cwd: {}", plan.cwd)));
         let command = if plan.argv.is_empty() {
-            "metadata-only adoption (no Git mutation)".to_string()
+            tr(
+                app,
+                "metadata-only adoption (no Git mutation)",
+                "仅接管元数据（不执行 Git 变更）",
+            )
+            .to_string()
         } else {
             let argv = plan
                 .argv
@@ -1727,43 +1778,60 @@ fn render_managed_worktrees(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
                 .join(" ");
             format!("git -C {:?} {argv}", plan.cwd)
         };
-        lines.push(Line::from(format!("Exact operation: {command}")));
         lines.push(Line::from(format!(
-            "Expected: {}",
+            "{}: {command}",
+            tr(app, "Exact operation", "精确操作")
+        )));
+        lines.push(Line::from(format!(
+            "{}: {}",
+            tr(app, "Expected", "预期结果"),
             plan.expected_side_effect
         )));
         if let Some(path) = &plan.target_worktree {
-            lines.push(Line::from(format!("Target worktree: {path}")));
+            lines.push(Line::from(format!(
+                "{}: {path}",
+                tr(app, "Target worktree", "目标 worktree")
+            )));
         }
         if let Some(branch) = &plan.target_branch {
-            lines.push(Line::from(format!("Target branch: {branch}")));
+            lines.push(Line::from(format!(
+                "{}: {branch}",
+                tr(app, "Target branch", "目标分支")
+            )));
         }
-        lines.push(Line::from("Preconditions:"));
+        lines.push(Line::from(tr(app, "Preconditions:", "前置条件:")));
         lines.extend(plan.preconditions.iter().map(|precondition| {
             Line::from(format!(
                 "  {} = {}",
                 precondition.key, precondition.expected
             ))
         }));
-        lines.push(Line::from("Press y to execute; c or Esc cancels."));
+        lines.push(Line::from(tr(
+            app,
+            "Press y to execute; c or Esc cancels.",
+            "按 y 执行；c 或 Esc 取消。",
+        )));
     }
 
     if let Some(receipt) = app.recent_operations.first() {
         lines.push(Line::from(""));
         lines.push(Line::from(format!(
-            "Latest receipt: {} · {:?}",
+            "{}: {} · {:?}",
+            tr(app, "Latest receipt", "最新回执"),
             receipt.plan.kind.label(),
             receipt.state
         )));
         if let Some(verification) = &receipt.verification {
             lines.push(Line::from(format!(
-                "Verified: {}",
+                "{}: {}",
+                tr(app, "Verified", "验证"),
                 truncate_display(verification, 90)
             )));
         }
         if let Some(failure) = &receipt.failure {
             lines.push(Line::from(format!(
-                "Failure: {}",
+                "{}: {}",
+                tr(app, "Failure", "失败"),
                 truncate_display(failure, 90)
             )));
         }
@@ -1772,39 +1840,60 @@ fn render_managed_worktrees(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
     if let Some(notice) = &app.mutation_notice {
         lines.push(Line::from(""));
         lines.push(Line::from(format!(
-            "Notice: {}",
+            "{}: {}",
+            tr(app, "Notice", "提示"),
             truncate_display(notice, 100)
         )));
     }
 
     frame.render_widget(
         Paragraph::new(lines)
-            .block(Block::bordered().title(" Managed Worktrees · Plan → Confirm → Verify "))
+            .block(Block::bordered().title(tr(
+                app,
+                " Managed Worktrees · Plan → Confirm → Verify ",
+                " 受管 Worktree · 计划 → 确认 → 验证 ",
+            )))
             .wrap(Wrap { trim: false }),
         outer[0],
     );
 
     let footer = match app.input_mode {
         InputMode::WorktreeCreateBranch => format!(
-            "new branch> {} · Enter next · Esc cancel",
-            app.input_buffer
+            "{}> {} · {}",
+            tr(app, "new branch", "新分支"),
+            app.input_buffer,
+            tr(app, "Enter next · Esc cancel", "Enter 下一步 · Esc 取消")
         ),
         InputMode::WorktreeCreatePath => format!(
-            "absolute worktree path> {} · Enter next · Esc cancel",
-            app.input_buffer
+            "{}> {} · {}",
+            tr(app, "absolute worktree path", "worktree 绝对路径"),
+            app.input_buffer,
+            tr(app, "Enter next · Esc cancel", "Enter 下一步 · Esc 取消")
         ),
         InputMode::WorktreeCreateStartPoint => format!(
-            "start point> {} · Enter plan · Esc cancel",
-            app.input_buffer
+            "{}> {} · {}",
+            tr(app, "start point", "起点"),
+            app.input_buffer,
+            tr(app, "Enter plan · Esc cancel", "Enter 生成计划 · Esc 取消")
         ),
         InputMode::WorktreeDeleteBranch => format!(
-            "branch to delete> {} · Enter plan · Esc cancel",
-            app.input_buffer
+            "{}> {} · {}",
+            tr(app, "branch to delete", "要删除的分支"),
+            app.input_buffer,
+            tr(app, "Enter plan · Esc cancel", "Enter 生成计划 · Esc 取消")
         ),
-        _ if app.pending_operation.is_some() => {
-            "y CONFIRM execute · c cancel plan · Esc cancel plan".into()
-        }
-        _ => "j/k select · n create · a adopt current · d remove selected · x delete branch · Esc back".into(),
+        _ if app.pending_operation.is_some() => tr(
+            app,
+            "y CONFIRM execute · c cancel plan · Esc cancel plan",
+            "y 确认执行 · c 取消计划 · Esc 取消计划",
+        )
+        .into(),
+        _ => tr(
+            app,
+            "j/k select · n create · a adopt current · d remove selected · x delete branch · Esc back",
+            "j/k 选择 · n 创建 · a 接管当前 · d 移除已选 · x 删除分支 · Esc 返回",
+        )
+        .into(),
     };
     frame.render_widget(Paragraph::new(footer), outer[1]);
 }
