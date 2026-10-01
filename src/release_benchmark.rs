@@ -21,6 +21,7 @@ pub const RETAINED_MIN_ITERATIONS: usize = 200;
 pub struct PerformanceBenchmarkReport {
     pub schema: &'static str,
     pub fixture: &'static str,
+    pub source_sha: &'static str,
     pub rows: usize,
     pub warmup_iterations: usize,
     pub iterations: usize,
@@ -65,6 +66,7 @@ pub fn run(
     PerformanceBenchmarkReport {
         schema: PERFORMANCE_SCHEMA,
         fixture: PERFORMANCE_FIXTURE,
+        source_sha: crate::compat::source_sha(),
         rows: cards.len(),
         warmup_iterations,
         iterations,
@@ -206,6 +208,7 @@ mod tests {
         let report = run(1, 3, "test".into());
         assert_eq!(report.schema, PERFORMANCE_SCHEMA);
         assert_eq!(report.fixture, PERFORMANCE_FIXTURE);
+        assert!(!report.source_sha.is_empty());
         assert_eq!(report.rows, 10_000);
         assert_eq!(report.iterations, 3);
         assert!(report.p50_ms >= 0.0);
