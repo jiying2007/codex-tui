@@ -316,8 +316,17 @@ fn try_recv_latest_snapshot(
 struct RegistryHydration {
     cursor: String,
     loaded_ids: Option<BTreeSet<String>>,
+    use_state_db_only: bool,
     optimized_query: bool,
     tombstones: BTreeSet<String>,
+}
+
+#[derive(Debug)]
+struct RegistryReconcile {
+    hydration: RegistryHydration,
+    candidate: BTreeMap<String, ThreadSummary>,
+    loaded_supported: bool,
+    live_overrides: BTreeSet<String>,
 }
 
 #[derive(Debug)]
@@ -501,6 +510,59 @@ fn observe_registry_hydration_message(hydration: &mut RegistryHydration, message
     }
 }
 
+fn observe_registry_reconcile_message(reconcile: &mut RegistryReconcile, message: &Value) {
+    let Some(method) = message.get("method").and_then(Value::as_str) else {
+        return;
+    };
+    let thread_id = if method == "thread/started" {
+        message.pointer("/params/thread/id").and_then(Value::as_str)
+    } else {
+        message.pointer("/params/threadId").and_then(Value::as_str)
+    };
+    let Some(thread_id) = thread_id else {
+        return;
+    };
+
+    match method {
+        "thread/started"
+        | "thread/status/changed"
+        | "thread/name/updated"
+        | "thread/project/updated"
+        | "turn/started"
+        | "turn/completed"
+        | "item/completed" => {
+            reconcile.live_overrides.insert(thread_id.to_string());
+        }
+        "thread/archived" | "thread/deleted" | "thread/unarchived" => {
+            reconcile.live_overrides.remove(thread_id);
+        }
+        _ => {}
+    }
+}
+
+fn finish_registry_reconcile(
+    mut reconcile: RegistryReconcile,
+    threads: &mut BTreeMap<String, ThreadSummary>,
+    status: &mut BackendStatus,
+) {
+    for thread_id in &reconcile.hydration.tombstones {
+        reconcile.candidate.remove(thread_id);
+    }
+    for thread_id in &reconcile.live_overrides {
+        if let Some(thread) = threads.get(thread_id) {
+            reconcile
+                .candidate
+                .insert(thread_id.clone(), thread.clone());
+        }
+    }
+    apply_full_registry_refresh(
+        reconcile.candidate.into_values().collect(),
+        reconcile.loaded_supported,
+        threads,
+        status,
+    );
+}
+
 async fn run_registry_actor(
     mut rpc: RpcSession,
     initial_threads: Vec<ThreadSummary>,
@@ -532,13 +594,15 @@ async fn run_registry_actor(
     let mut hydration_tick = tokio::time::interval(REGISTRY_HYDRATION_YIELD_INTERVAL);
     hydration_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut hydration_pending_publish = false;
+    let mut reconcile: Option<RegistryReconcile> = None;
 
     let mut goal_probe = tokio::time::interval(GOAL_PROBE_INTERVAL);
     goal_probe.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     goal_probe.tick().await;
 
     loop {
-        let hydration_can_advance = hydration.is_some() && !rpc.has_queued_messages();
+        let registry_page_can_advance =
+            (hydration.is_some() || reconcile.is_some()) && !rpc.has_queued_messages();
         tokio::select! {
             biased;
             command = command_rx.recv() => {
@@ -767,50 +831,92 @@ async fn run_registry_actor(
                     }
                 }
             }
-            _ = hydration_tick.tick(), if hydration_can_advance => {
-                let page_result = {
-                    let state = hydration.as_ref().expect("hydration state");
-                    load_registry_page(
+            _ = hydration_tick.tick(), if registry_page_can_advance => {
+                if let Some(state) = hydration.as_mut() {
+                    match load_registry_page(
                         &mut rpc,
                         Some(state.cursor.clone()),
-                        false,
+                        state.use_state_db_only,
                         state.optimized_query,
                         state.loaded_ids.as_ref(),
                     )
                     .await
-                };
+                    {
+                        Ok(page) => {
+                            let next_cursor = page.next_cursor;
+                            state.optimized_query = page.optimized_query;
+                            merge_registry_hydration_page(
+                                &mut threads,
+                                page.threads,
+                                &state.tombstones,
+                            );
+                            status.last_refresh_unix_ms = Some(now_unix_ms());
 
-                match page_result {
-                    Ok(page) => {
-                        let next_cursor = page.next_cursor;
-                        let optimized_query = page.optimized_query;
-                        let tombstones = &hydration.as_ref().expect("hydration state").tombstones;
-                        merge_registry_hydration_page(&mut threads, page.threads, tombstones);
-                        status.last_refresh_unix_ms = Some(now_unix_ms());
-
-                        if let Some(next_cursor) = next_cursor {
-                            let state = hydration.as_mut().expect("hydration state");
-                            state.cursor = next_cursor;
-                            state.optimized_query = optimized_query;
-                        } else {
-                            hydration = None;
-                            status.registry_complete = true;
-                            if goal_supported != Some(false) {
-                                reset_eager_goal_queue(
-                                    &threads,
-                                    &goal_probed,
-                                    &mut goal_queued,
-                                    &mut goal_probe_queue,
-                                );
+                            if let Some(next_cursor) = next_cursor {
+                                state.cursor = next_cursor;
+                            } else {
+                                hydration = None;
+                                status.registry_complete = true;
+                                if goal_supported != Some(false) {
+                                    reset_eager_goal_queue(
+                                        &threads,
+                                        &goal_probed,
+                                        &mut goal_queued,
+                                        &mut goal_probe_queue,
+                                    );
+                                }
                             }
+                            hydration_pending_publish = true;
+                            hydration_tick.reset();
                         }
-                        hydration_pending_publish = true;
-                        hydration_tick.reset();
+                        Err(error) => {
+                            status.error = Some(format!("Registry hydration failed: {error}"));
+                            hydration = None;
+                            hydration_pending_publish = true;
+                        }
                     }
-                    Err(error) => {
-                        status.error = Some(format!("Registry hydration failed: {error}"));
-                        hydration = None;
-                        hydration_pending_publish = true;
+                } else if let Some(reconcile_state) = reconcile.as_mut() {
+                    let state = &mut reconcile_state.hydration;
+                    match load_registry_page(
+                        &mut rpc,
+                        Some(state.cursor.clone()),
+                        state.use_state_db_only,
+                        state.optimized_query,
+                        state.loaded_ids.as_ref(),
+                    )
+                    .await
+                    {
+                        Ok(page) => {
+                            let next_cursor = page.next_cursor;
+                            state.optimized_query = page.optimized_query;
+                            merge_registry_hydration_page(
+                                &mut reconcile_state.candidate,
+                                page.threads,
+                                &state.tombstones,
+                            );
+
+                            if let Some(next_cursor) = next_cursor {
+                                state.cursor = next_cursor;
+                            } else {
+                                let finished = reconcile.take().expect("reconcile state");
+                                finish_registry_reconcile(finished, &mut threads, &mut status);
+                                if goal_supported != Some(false) {
+                                    reset_eager_goal_queue(
+                                        &threads,
+                                        &goal_probed,
+                                        &mut goal_queued,
+                                        &mut goal_probe_queue,
+                                    );
+                                }
+                                hydration_pending_publish = true;
+                            }
+                            hydration_tick.reset();
+                        }
+                        Err(error) => {
+                            status.error = Some(format!("Registry reconcile failed: {error}"));
+                            reconcile = None;
+                            hydration_pending_publish = true;
+                        }
                     }
                 }
             }
@@ -854,12 +960,12 @@ async fn run_registry_actor(
                     }
                 }
             }
-            _ = refresh.tick(), if hydration.is_none() => {
-                match load_registry(&mut rpc, true).await {
-                    Ok((fresh, loaded_supported)) => {
+            _ = refresh.tick(), if hydration.is_none() && reconcile.is_none() => {
+                match load_registry_with_page_limit(&mut rpc, true, Some(1)).await {
+                    Ok(load) if load.registry_complete => {
                         apply_full_registry_refresh(
-                            fresh,
-                            loaded_supported,
+                            load.threads,
+                            load.loaded_supported,
                             &mut threads,
                             &mut status,
                         );
@@ -871,19 +977,34 @@ async fn run_registry_actor(
                                 &mut goal_probe_queue,
                             );
                         }
+                        generation = generation.saturating_add(1);
+                        let _ = tx.send(snapshot(generation, &threads, &status));
+                    }
+                    Ok(load) => {
+                        reconcile = Some(RegistryReconcile {
+                            hydration: load.hydration.expect("incomplete Registry load"),
+                            candidate: by_id(load.threads),
+                            loaded_supported: load.loaded_supported,
+                            live_overrides: BTreeSet::new(),
+                        });
+                        hydration_tick.reset();
                     }
                     Err(error) => {
                         status.error = Some(error.to_string());
+                        generation = generation.saturating_add(1);
+                        let _ = tx.send(snapshot(generation, &threads, &status));
                     }
                 }
-                generation = generation.saturating_add(1);
-                let _ = tx.send(snapshot(generation, &threads, &status));
             }
             message = rpc.read_message() => {
                 match message {
                     Ok(Some(message)) => {
                         if let Some(hydration) = hydration.as_mut() {
                             observe_registry_hydration_message(hydration, &message);
+                        }
+                        if let Some(reconcile) = reconcile.as_mut() {
+                            observe_registry_hydration_message(&mut reconcile.hydration, &message);
+                            observe_registry_reconcile_message(reconcile, &message);
                         }
                         let registry_changed = match handle_unsolicited(
                             &mut rpc,
@@ -1021,16 +1142,6 @@ fn status_from_initialize(result: &Value) -> BackendStatus {
     }
 }
 
-async fn load_registry(
-    rpc: &mut RpcSession,
-    use_state_db_only: bool,
-) -> Result<(Vec<ThreadSummary>, bool)> {
-    let load = load_registry_with_page_limit(rpc, use_state_db_only, None).await?;
-    debug_assert!(load.registry_complete);
-    debug_assert!(load.hydration.is_none());
-    Ok((load.threads, load.loaded_supported))
-}
-
 async fn load_registry_page(
     rpc: &mut RpcSession,
     cursor: Option<String>,
@@ -1121,6 +1232,7 @@ async fn load_registry_with_page_limit(
                 hydration: Some(RegistryHydration {
                     cursor: next_cursor,
                     loaded_ids,
+                    use_state_db_only,
                     optimized_query,
                     tombstones: BTreeSet::new(),
                 }),
@@ -2213,7 +2325,7 @@ mod tests {
             .find("command = command_rx.recv()")
             .expect("command branch");
         let hydration = actor
-            .find("_ = hydration_tick.tick(), if hydration_can_advance")
+            .find("_ = hydration_tick.tick(), if registry_page_can_advance")
             .expect("hydration branch");
 
         assert!(
@@ -2265,6 +2377,7 @@ mod tests {
         let mut hydration = RegistryHydration {
             cursor: "next".into(),
             loaded_ids: None,
+            use_state_db_only: false,
             optimized_query: true,
             tombstones: BTreeSet::new(),
         };
@@ -2283,6 +2396,62 @@ mod tests {
             }),
         );
         assert!(!hydration.tombstones.contains("thread-1"));
+    }
+
+    #[test]
+    fn periodic_registry_reconcile_is_pagewise() {
+        let source = include_str!("app_server.rs");
+        let production = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("production source");
+        assert!(
+            production.contains("load_registry_with_page_limit(&mut rpc, true, Some(1)).await")
+        );
+        assert!(production.contains("reconcile: Option<RegistryReconcile>"));
+        assert!(!production.contains("_ = refresh.tick(), if hydration.is_none() =>"));
+    }
+
+    #[test]
+    fn reconcile_finalization_preserves_live_overrides_and_removals() {
+        let mut base = FakeBackend::scaled(3).snapshot().threads;
+        base[0].id = ThreadId::new("live");
+        base[0].title = "live-new".into();
+        base[0].metadata.updated_at = 30;
+        base[1].id = ThreadId::new("removed");
+        base[2].id = ThreadId::new("stable");
+
+        let live_threads = by_id(base.clone());
+
+        let mut stale_live = base[0].clone();
+        stale_live.title = "stale-candidate".into();
+        stale_live.metadata.updated_at = 10;
+        let candidate = BTreeMap::from([
+            ("live".to_string(), stale_live),
+            ("removed".to_string(), base[1].clone()),
+            ("stable".to_string(), base[2].clone()),
+        ]);
+
+        let reconcile = RegistryReconcile {
+            hydration: RegistryHydration {
+                cursor: "done".into(),
+                loaded_ids: None,
+                use_state_db_only: true,
+                optimized_query: true,
+                tombstones: BTreeSet::from(["removed".to_string()]),
+            },
+            candidate,
+            loaded_supported: true,
+            live_overrides: BTreeSet::from(["live".to_string()]),
+        };
+
+        let mut threads = live_threads;
+        let mut status = BackendStatus::fake();
+        finish_registry_reconcile(reconcile, &mut threads, &mut status);
+
+        assert_eq!(threads["live"].title, "live-new");
+        assert!(!threads.contains_key("removed"));
+        assert!(threads.contains_key("stable"));
     }
 
     #[test]
