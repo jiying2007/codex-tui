@@ -3090,9 +3090,6 @@ fn refresh_forge_projections(state: &mut AppState) -> Vec<Effect> {
 }
 
 fn refresh_active_git_projections(state: &AppState) -> Vec<Effect> {
-    let mut target_ids = Vec::new();
-    let mut seen_ids = BTreeSet::new();
-
     let selected_thread_id = match &state.view {
         View::Registry => state.selected_thread_id(),
         View::Thread(id) | View::Review(id) | View::Workspace(id) | View::ManagedWorktrees(id) => {
@@ -3104,32 +3101,40 @@ fn refresh_active_git_projections(state: &AppState) -> Vec<Effect> {
         }),
         View::Scratch(_) => None,
     };
+
+    let mut effects = Vec::new();
+    let mut seen_ids = BTreeSet::new();
+    let mut seen_cwds = BTreeSet::new();
+
+    let mut push_thread = |thread: &ThreadSummary| {
+        if !seen_ids.insert(thread.id.0.clone()) {
+            return;
+        }
+        let cwd = thread.metadata.cwd.clone();
+        if classify_cwd(&cwd).terminal_usable() && seen_cwds.insert(cwd.clone()) {
+            effects.push(Effect::ProbeGit {
+                thread_id: thread.id.clone(),
+                cwd,
+            });
+        }
+    };
+
     if let Some(thread_id) = selected_thread_id
-        && seen_ids.insert(thread_id.0.clone())
+        && let Some(thread) = state.threads.iter().find(|thread| thread.id == thread_id)
     {
-        target_ids.push(thread_id);
+        push_thread(thread);
     }
 
     for thread in &state.threads {
         if matches!(
             thread.runtime,
             RuntimeStatus::Working | RuntimeStatus::WaitingHuman
-        ) && seen_ids.insert(thread.id.0.clone())
-        {
-            target_ids.push(thread.id.clone());
+        ) {
+            push_thread(thread);
         }
     }
 
-    let mut seen_cwds = BTreeSet::new();
-    target_ids
-        .into_iter()
-        .filter_map(|thread_id| {
-            let thread = state.threads.iter().find(|thread| thread.id == thread_id)?;
-            let cwd = thread.metadata.cwd.clone();
-            (classify_cwd(&cwd).terminal_usable() && seen_cwds.insert(cwd.clone()))
-                .then_some(Effect::ProbeGit { thread_id, cwd })
-        })
-        .collect()
+    effects
 }
 
 fn propagate_git_context(state: &mut AppState, context: GitContext) {
