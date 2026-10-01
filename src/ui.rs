@@ -1380,7 +1380,9 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
                         let goal = card
                             .goal
                             .as_ref()
-                            .map(|goal| format!(" [{}]", goal_status_label(goal.status, app.language)))
+                            .map(|goal| {
+                                format!(" [{}]", goal_status_label(goal.status, app.language))
+                            })
                             .unwrap_or_default();
                         let text = format!(
                             "{}{}{} {}{}",
