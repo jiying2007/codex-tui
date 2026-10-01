@@ -46,6 +46,7 @@ All notable codex-tui changes are recorded here.
 - surfaced staged Registry hydration as explicit backend state: an initial one-page snapshot is marked incomplete only when App Server reports another page, Mission Control labels recent/all-history/search results as hydrating/partial until full history arrives, and successful full hydration or full diagnostic probing marks the Registry complete.
 - staged App Server Registry hydration for large histories: interactive startup now loads only the newest 200 threads for first paint, the Registry actor immediately hydrates the complete history afterward, `doctor codex` still performs a full probe, and full reconciliation fallback is reduced from every 30 seconds to every 5 minutes because lifecycle/status notifications remain the real-time authority.
 - decoupled durable per-thread pins, aliases and local unread markers from the currently hydrated Registry slice, so staged startup, temporary thread omission and later full-history hydration cannot drop operator overlays or persist a truncated local-state snapshot.
+- made staged Registry hydration cooperative instead of actor-blocking: startup retains the first-page cursor and query compatibility state, then fetches at most one additional page per actor turn with a 10ms yield; user commands are selected before the next hydration page, semantic notifications are drained before publishing pending page growth, newer live thread state wins over stale page data, and archive/delete tombstones prevent reintroduction during hydration.
 
 ## [1.0.0] - 2026-09-30
 
