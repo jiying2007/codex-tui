@@ -31,6 +31,7 @@ const GOAL_PROBE_INTERVAL: Duration = Duration::from_millis(250);
 const GOAL_EAGER_PROBE_LIMIT: usize = 100;
 const APP_SERVER_COMMAND_QUEUE_CAPACITY: usize = 64;
 const APP_SERVER_CONVERSATION_QUEUE_CAPACITY: usize = 256;
+const RPC_QUEUED_MESSAGE_CAPACITY: usize = 1024;
 const RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug)]
@@ -1607,6 +1608,40 @@ fn now_unix_ms() -> u64 {
     u64::try_from(millis).unwrap_or(u64::MAX)
 }
 
+fn should_queue_rpc_message(message: &Value) -> bool {
+    if message.get("id").is_some() && message.get("method").is_some() {
+        return true;
+    }
+
+    matches!(
+        message.get("method").and_then(Value::as_str),
+        Some(
+            "serverRequest/resolved"
+                | "thread/goal/updated"
+                | "thread/goal/cleared"
+                | "thread/started"
+                | "thread/status/changed"
+                | "thread/archived"
+                | "thread/deleted"
+                | "thread/unarchived"
+                | "thread/name/updated"
+                | "thread/project/updated"
+                | "turn/started"
+                | "turn/completed"
+                | "item/completed"
+        )
+    )
+}
+
+fn enqueue_rpc_message(queue: &mut VecDeque<Value>, message: Value) -> Result<()> {
+    anyhow::ensure!(
+        queue.len() < RPC_QUEUED_MESSAGE_CAPACITY,
+        "App Server queued-message capacity exceeded ({RPC_QUEUED_MESSAGE_CAPACITY})"
+    );
+    queue.push_back(message);
+    Ok(())
+}
+
 struct RpcSession {
     _child: Child,
     reader: Lines<BufReader<ChildStdout>>,
@@ -1700,8 +1735,8 @@ impl RpcSession {
                     .cloned()
                     .ok_or_else(|| anyhow!("{method} response missing result"));
             }
-            if message.get("method").is_some() {
-                self.queued_messages.push_back(message);
+            if should_queue_rpc_message(&message) {
+                enqueue_rpc_message(&mut self.queued_messages, message)?;
             }
         }
     }
@@ -1735,7 +1770,7 @@ impl RpcSession {
                 continue;
             }
             let value = serde_json::from_str(&line)
-                .with_context(|| format!("decode app-server JSON line: {line}"))?;
+                .with_context(|| format!("decode app-server JSON line ({} bytes)", line.len()))?;
             return Ok(Some(value));
         }
     }
@@ -1834,6 +1869,69 @@ mod tests {
             rx.recv().await,
             Some(ConversationEvent::GoalCleared(thread_id)) if thread_id.0 == "second"
         ));
+    }
+
+    #[test]
+    fn rpc_wait_queue_keeps_semantic_messages_and_drops_ignored_streaming_delta() {
+        assert!(!should_queue_rpc_message(&json!({
+            "method": "item/agentMessage/delta",
+            "params": {"threadId": "thread-1", "delta": "x"}
+        })));
+        assert!(should_queue_rpc_message(&json!({
+            "id": 42,
+            "method": "item/fileChange/requestApproval",
+            "params": {"threadId": "thread-1"}
+        })));
+        assert!(should_queue_rpc_message(&json!({
+            "method": "serverRequest/resolved",
+            "params": {"requestId": 42}
+        })));
+        assert!(should_queue_rpc_message(&json!({
+            "method": "thread/status/changed",
+            "params": {"threadId": "thread-1"}
+        })));
+        assert!(should_queue_rpc_message(&json!({
+            "method": "turn/completed",
+            "params": {"threadId": "thread-1"}
+        })));
+    }
+
+    #[test]
+    fn rpc_wait_queue_is_hard_bounded_without_dropping_existing_semantic_messages() {
+        let mut queue = VecDeque::new();
+        for index in 0..RPC_QUEUED_MESSAGE_CAPACITY {
+            enqueue_rpc_message(
+                &mut queue,
+                json!({"method": "turn/completed", "params": {"threadId": index.to_string()}}),
+            )
+            .expect("queue semantic message");
+        }
+        let error = enqueue_rpc_message(
+            &mut queue,
+            json!({"method": "thread/status/changed", "params": {"threadId": "overflow"}}),
+        )
+        .expect_err("bounded queue must fail closed");
+        assert!(error.to_string().contains("capacity exceeded"));
+        assert_eq!(queue.len(), RPC_QUEUED_MESSAGE_CAPACITY);
+        assert_eq!(
+            queue.front().and_then(|message| {
+                message
+                    .pointer("/params/threadId")
+                    .and_then(Value::as_str)
+            }),
+            Some("0")
+        );
+    }
+
+    #[test]
+    fn production_rpc_decode_error_does_not_echo_unbounded_wire_payload() {
+        let source = include_str!("app_server.rs");
+        let production = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("production source");
+        assert!(!production.contains("decode app-server JSON line: {line}"));
+        assert!(production.contains("decode app-server JSON line ({} bytes)"));
     }
 
     #[test]
