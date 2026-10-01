@@ -1,0 +1,53 @@
+name: scale-evidence
+
+on:
+  pull_request:
+    paths:
+      - "src/scale_evidence.rs"
+      - "src/release.rs"
+      - ".github/workflows/scale-evidence.yml"
+  push:
+    branches: [main]
+    paths:
+      - "src/scale_evidence.rs"
+      - "src/release.rs"
+      - ".github/workflows/scale-evidence.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-scale-evidence:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build locked release binary
+        run: cargo build --locked --release
+      - name: Capture 10k and 50k Registry evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p scale-evidence
+          for ROWS in 10000 50000; do
+            /usr/bin/time -v -o "scale-evidence/rss-${ROWS}.txt" \
+              ./target/release/codex-tui release scale \
+              --rows "${ROWS}" \
+              --warmup 5 \
+              --iterations 50 \
+              --source "github-actions:ubuntu-24.04" \
+              --json > "scale-evidence/report-${ROWS}.json"
+
+            echo "=== scale evidence ${ROWS} rows ==="
+            cat "scale-evidence/report-${ROWS}.json"
+            grep "Maximum resident set size" "scale-evidence/rss-${ROWS}.txt"
+          done
+      - name: Upload retained scale evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: scale-evidence-${{ github.sha }}
+          path: scale-evidence/
+          if-no-files-found: error
+          retention-days: 30
