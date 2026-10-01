@@ -3926,7 +3926,9 @@ mod tests {
         app.language = UiLanguage::SimplifiedChinese;
         app.view = View::Scratch("scratch:1".into());
 
-        let error = app.terminal_target_cwd().expect_err("scratch has no Codex cwd");
+        let error = app
+            .terminal_target_cwd()
+            .expect_err("scratch has no Codex cwd");
         assert_eq!(error, "终端抽屉不可用：未选择 Codex 会话");
     }
 
