@@ -21,6 +21,7 @@ All notable codex-tui changes are recorded here.
 - reduced Mission Control render work by computing Registry visibility and total match count in one projection pass and folding locality counts once.
 - hardened reducer routing so Context/Forge/Scratch/batch state drift fails closed with an operator notice instead of panicking the TUI.
 - added local UI language selection (`auto`, `en`, `zh-CN`) with locale auto-detection and Simplified Chinese coverage across daily TUI surfaces while preserving technical identifiers and upstream diagnostic text.
+- deduplicated Git projection probes by exact host-local cwd and fan out completed checkout state across historical threads sharing the same working directory.
 
 ## [1.0.0] - 2026-09-30
 
