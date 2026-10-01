@@ -4638,6 +4638,53 @@ mod tests {
     }
 
     #[test]
+    fn planning_rebuild_indexes_thread_cards_and_preserves_collision_counts() {
+        let mut app = app();
+        let repo = LocalRepoIdentity {
+            git_common_dir: "/repo/.git".into(),
+            primary_root: "/repo".into(),
+        };
+        for thread in app.threads.iter_mut().take(2) {
+            thread.runtime = RuntimeStatus::Working;
+            thread.metadata.cwd = "/repo".into();
+            let mut context = GitContext::pending(thread.id.clone(), "/repo");
+            context.is_repository = true;
+            context.repo = Some(repo.clone());
+            context.worktree = Some(crate::domain::WorktreeIdentity {
+                repo: repo.clone(),
+                canonical_path: "/repo".into(),
+                branch: Some("main".into()),
+                managed_by_codex_tui: false,
+            });
+            app.git_contexts.insert(thread.id.0.clone(), context);
+        }
+
+        reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 1 });
+
+        for thread in app.threads.iter().take(2) {
+            let card = app.work_card_for_thread(&thread.id).expect("indexed card");
+            assert!(
+                card.attention
+                    .contains(&crate::planning::PlanningAttention::ConflictRisk)
+            );
+            assert_eq!(app.worktree_collision_count(&thread.id), 1);
+        }
+        assert_eq!(app.work_card_by_thread.len(), app.threads.len());
+    }
+
+    #[test]
+    fn reconciled_10k_registry_keeps_recent_projection_bounded() {
+        let mut app = AppState::new(FakeBackend::scaled(10_000).snapshot().threads);
+        reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 1 });
+
+        let (visible, matched) = app.visible_indices_with_match_count();
+        assert_eq!(matched, 10_000);
+        assert!(visible.len() >= REGISTRY_RECENT_LIMIT);
+        assert!(visible.len() < 10_000);
+        assert_eq!(app.work_card_by_thread.len(), 10_000);
+    }
+
+    #[test]
     fn planning_reconciliation_keeps_workflow_and_attention_orthogonal() {
         let mut app = app();
         app.threads[0].runtime = RuntimeStatus::Working;
