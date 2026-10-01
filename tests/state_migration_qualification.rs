@@ -215,3 +215,64 @@ fn corrupt_restore_source_is_refused_without_touching_live_state() {
         expected_operator
     );
 }
+
+
+#[test]
+fn validated_backup_restores_over_corrupt_live_database_and_preserves_raw_image() {
+    let root = tempdir().expect("tempdir");
+    let expected_operator = install_v1_operator_fixture(root.path());
+    let store = SqliteStore::at(root.path());
+    assert_eq!(
+        store.load_state().expect("import operator"),
+        expected_operator
+    );
+    populate_planning(&store);
+    let expected_planning = store
+        .load_planning_snapshot()
+        .expect("planning before backup");
+
+    let backup = root.path().join("recovery").join("known-good.sqlite3");
+    store
+        .create_recovery_backup(&backup)
+        .expect("create known-good backup");
+
+    let corrupt_bytes = b"corrupt-live-database-retained-for-recovery";
+    fs::write(store.db_path(), corrupt_bytes).expect("corrupt live database");
+    for suffix in ["-wal", "-shm"] {
+        let sidecar = std::path::PathBuf::from(format!(
+            "{}{suffix}",
+            store.db_path().to_string_lossy()
+        ));
+        fs::write(&sidecar, format!("retained{suffix}")).expect("write retained sidecar");
+    }
+
+    let restore = store
+        .restore_recovery_backup(&backup)
+        .expect("validated backup must restore over corrupt live state");
+    let previous = restore
+        .previous_database
+        .expect("corrupt live database must be preserved");
+    assert_eq!(
+        fs::read(&previous).expect("read preserved corrupt database"),
+        corrupt_bytes
+    );
+    for suffix in ["-wal", "-shm"] {
+        let sidecar = std::path::PathBuf::from(format!(
+            "{}{suffix}",
+            previous.to_string_lossy()
+        ));
+        assert!(
+            sidecar.is_file(),
+            "pre-restore {suffix} sidecar must be preserved"
+        );
+    }
+
+    assert_eq!(
+        store.load_state().expect("restored operator"),
+        expected_operator
+    );
+    assert_eq!(
+        store.load_planning_snapshot().expect("restored planning"),
+        expected_planning
+    );
+}
