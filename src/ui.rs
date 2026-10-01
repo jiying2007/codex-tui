@@ -694,25 +694,29 @@ fn forge_context_lines(
     diagnostic_hint: bool,
 ) -> Vec<Line<'static>> {
     let Some(observation) = app.forge_observation(thread_id) else {
-        return diagnostic_hint
-            .then(|| vec![Line::from("Forge: not probed")])
-            .unwrap_or_default();
+        return if diagnostic_hint {
+            vec![Line::from("Forge: not probed")]
+        } else {
+            vec![]
+        };
     };
 
     if observation.observed_at_unix_ms == 0 {
-        return diagnostic_hint
-            .then(|| vec![Line::from("Forge: probing…")])
-            .unwrap_or_default();
+        return if diagnostic_hint {
+            vec![Line::from("Forge: probing…")]
+        } else {
+            vec![]
+        };
     }
 
     let Some(identity) = &observation.identity else {
-        return diagnostic_hint
-            .then(|| {
-                vec![Line::from(
-                    "Forge: unavailable · run codex-tui doctor forge for details",
-                )]
-            })
-            .unwrap_or_default();
+        return if diagnostic_hint {
+            vec![Line::from(
+                "Forge: unavailable · run codex-tui doctor forge for details",
+            )]
+        } else {
+            vec![]
+        };
     };
 
     let mut lines = vec![Line::from(format!(
