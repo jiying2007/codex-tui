@@ -55,9 +55,7 @@ pub const FAILURE_MATRIX: &[FailureCase] = &[
         expected: QualificationState::Degraded,
         max_recovery_ms: 1_000,
         writes_allowed: false,
-        evidence: &[
-            "app_server::tests::malformed_rpc_wire_line_is_rejected_fail_closed",
-        ],
+        evidence: &["app_server::tests::malformed_rpc_wire_line_is_rejected_fail_closed"],
     },
     FailureCase {
         id: "rpc-response-timeout",
@@ -66,9 +64,7 @@ pub const FAILURE_MATRIX: &[FailureCase] = &[
         expected: QualificationState::Degraded,
         max_recovery_ms: 6_000,
         writes_allowed: false,
-        evidence: &[
-            "app_server::tests::rpc_deadline_fails_closed_without_waiting_forever",
-        ],
+        evidence: &["app_server::tests::rpc_deadline_fails_closed_without_waiting_forever"],
     },
     FailureCase {
         id: "git-cwd-disappears",
@@ -77,9 +73,7 @@ pub const FAILURE_MATRIX: &[FailureCase] = &[
         expected: QualificationState::Degraded,
         max_recovery_ms: 4_000,
         writes_allowed: false,
-        evidence: &[
-            "missing_git_cwd_fails_closed_within_the_probe_deadline",
-        ],
+        evidence: &["missing_git_cwd_fails_closed_within_the_probe_deadline"],
     },
     FailureCase {
         id: "forge-unauthenticated",
@@ -88,9 +82,7 @@ pub const FAILURE_MATRIX: &[FailureCase] = &[
         expected: QualificationState::Degraded,
         max_recovery_ms: 6_000,
         writes_allowed: false,
-        evidence: &[
-            "forge::tests::unauthenticated_custom_forge_host_fails_closed",
-        ],
+        evidence: &["forge::tests::unauthenticated_custom_forge_host_fails_closed"],
     },
     FailureCase {
         id: "forge-command-timeout",
@@ -99,9 +91,7 @@ pub const FAILURE_MATRIX: &[FailureCase] = &[
         expected: QualificationState::Degraded,
         max_recovery_ms: 12_000,
         writes_allowed: false,
-        evidence: &[
-            "forge::tests::forge_command_deadline_fails_closed_without_hanging",
-        ],
+        evidence: &["forge::tests::forge_command_deadline_fails_closed_without_hanging"],
     },
     FailureCase {
         id: "sqlite-busy-or-write-failure",
@@ -110,9 +100,7 @@ pub const FAILURE_MATRIX: &[FailureCase] = &[
         expected: QualificationState::Degraded,
         max_recovery_ms: 3_000,
         writes_allowed: false,
-        evidence: &[
-            "sqlite_busy_write_fails_within_bounded_deadline_without_partial_state",
-        ],
+        evidence: &["sqlite_busy_write_fails_within_bounded_deadline_without_partial_state"],
     },
     FailureCase {
         id: "sqlite-corrupt",
@@ -121,9 +109,7 @@ pub const FAILURE_MATRIX: &[FailureCase] = &[
         expected: QualificationState::Blocked,
         max_recovery_ms: 3_000,
         writes_allowed: false,
-        evidence: &[
-            "corrupt_sqlite_is_not_reinitialized_or_overwritten",
-        ],
+        evidence: &["corrupt_sqlite_is_not_reinitialized_or_overwritten"],
     },
     FailureCase {
         id: "legacy-state-truncated",
@@ -132,9 +118,7 @@ pub const FAILURE_MATRIX: &[FailureCase] = &[
         expected: QualificationState::Blocked,
         max_recovery_ms: 3_000,
         writes_allowed: false,
-        evidence: &[
-            "truncated_legacy_state_is_preserved_for_recovery",
-        ],
+        evidence: &["truncated_legacy_state_is_preserved_for_recovery"],
     },
     FailureCase {
         id: "forward-store-schema",
@@ -155,9 +139,7 @@ pub const FAILURE_MATRIX: &[FailureCase] = &[
         expected: QualificationState::Degraded,
         max_recovery_ms: 3_000,
         writes_allowed: false,
-        evidence: &[
-            "invalid_pty_cwd_becomes_an_error_event_without_blocking_the_caller",
-        ],
+        evidence: &["invalid_pty_cwd_becomes_an_error_event_without_blocking_the_caller"],
     },
     FailureCase {
         id: "bounded-queue-backpressure",
@@ -246,7 +228,9 @@ mod tests {
                 case.id
             );
             assert!(
-                case.evidence.iter().all(|evidence| !evidence.trim().is_empty()),
+                case.evidence
+                    .iter()
+                    .all(|evidence| !evidence.trim().is_empty()),
                 "{} contains an empty evidence identifier",
                 case.id
             );
