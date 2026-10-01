@@ -3807,6 +3807,55 @@ mod tests {
     }
 
     #[test]
+    fn simplified_chinese_local_notice_follows_ui_language() {
+        let mut app = app();
+        app.language = UiLanguage::SimplifiedChinese;
+        let thread_id = app.threads[0].id.clone();
+        app.view = View::Thread(thread_id);
+
+        assert!(reduce(&mut app, Action::OpenManagedWorktrees).is_empty());
+        assert_eq!(
+            app.mutation_notice.as_deref(),
+            Some("当前会话不在 Git 仓库中")
+        );
+    }
+
+    #[test]
+    fn unicode_search_alias_and_composer_input_are_lossless() {
+        let mut app = app();
+        app.threads[0].title = "音频管线回归".into();
+
+        reduce(&mut app, Action::BeginSearch);
+        for character in "音频".chars() {
+            reduce(&mut app, Action::InputChar(character));
+        }
+        assert_eq!(app.visible_indices(), vec![0]);
+        reduce(&mut app, Action::CancelInput);
+
+        app.selected = 0;
+        reduce(&mut app, Action::BeginAlias);
+        for character in "主会话".chars() {
+            reduce(&mut app, Action::InputChar(character));
+        }
+        reduce(&mut app, Action::CommitInput);
+        assert_eq!(app.threads[0].alias.as_deref(), Some("主会话"));
+
+        reduce(&mut app, Action::OpenSelected);
+        reduce(&mut app, Action::QuickPrompt);
+        for character in "继续检查".chars() {
+            reduce(&mut app, Action::InputChar(character));
+        }
+        let thread_id = app.current_thread_id().expect("thread");
+        assert_eq!(
+            app.thread_ui
+                .get(&thread_id.0)
+                .expect("thread ui")
+                .draft,
+            "继续检查"
+        );
+    }
+
+    #[test]
     fn terminal_drawer_open_focus_and_close_are_explicit_effects() {
         let mut app = app();
         let cwd = std::env::current_dir()
