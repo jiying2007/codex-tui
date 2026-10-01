@@ -170,11 +170,7 @@ pub fn run_cli(args: &[String]) -> Result<i32> {
     Ok(0)
 }
 
-fn sample_projection(
-    app: &AppState,
-    warmup_iterations: usize,
-    iterations: usize,
-) -> TimingSummary {
+fn sample_projection(app: &AppState, warmup_iterations: usize, iterations: usize) -> TimingSummary {
     for _ in 0..warmup_iterations {
         black_box(app.visible_indices_with_match_count());
     }
