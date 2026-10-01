@@ -28,6 +28,8 @@ const PAGE_SIZE: u32 = 200;
 const REFRESH_INTERVAL: Duration = Duration::from_secs(30);
 const GOAL_PROBE_INTERVAL: Duration = Duration::from_millis(250);
 const GOAL_EAGER_PROBE_LIMIT: usize = 100;
+const APP_SERVER_COMMAND_QUEUE_CAPACITY: usize = 64;
+const APP_SERVER_CONVERSATION_QUEUE_CAPACITY: usize = 256;
 const RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug)]
@@ -192,8 +194,8 @@ pub enum ConversationEvent {
 
 pub struct RegistryHandle {
     rx: watch::Receiver<BackendSnapshot>,
-    conversation_rx: mpsc::UnboundedReceiver<ConversationEvent>,
-    command_tx: mpsc::UnboundedSender<BackendCommand>,
+    conversation_rx: mpsc::Receiver<ConversationEvent>,
+    command_tx: mpsc::Sender<BackendCommand>,
     task: JoinHandle<()>,
 }
 
@@ -277,10 +279,25 @@ impl RegistryHandle {
     }
 
     fn send_command(&self, command: BackendCommand) -> Result<()> {
-        self.command_tx
-            .send(command)
-            .map_err(|_| anyhow!("App Server actor is not available"))
+        queue_backend_command(&self.command_tx, command)
     }
+}
+
+fn queue_backend_command(
+    tx: &mpsc::Sender<BackendCommand>,
+    command: BackendCommand,
+) -> Result<()> {
+    tx.try_send(command).map_err(|error| match error {
+        mpsc::error::TrySendError::Full(_) => anyhow!("App Server actor queue is full"),
+        mpsc::error::TrySendError::Closed(_) => anyhow!("App Server actor is not available"),
+    })
+}
+
+async fn send_conversation_event(
+    tx: &mpsc::Sender<ConversationEvent>,
+    event: ConversationEvent,
+) {
+    let _ = tx.send(event).await;
 }
 
 impl Drop for RegistryHandle {
@@ -321,8 +338,9 @@ pub async fn start(codex_bin: Option<OsString>) -> Result<StartedRegistry> {
         status: status.clone(),
     };
     let (tx, rx) = watch::channel(initial.clone());
-    let (conversation_tx, conversation_rx) = mpsc::unbounded_channel();
-    let (command_tx, command_rx) = mpsc::unbounded_channel();
+    let (conversation_tx, conversation_rx) =
+        mpsc::channel(APP_SERVER_CONVERSATION_QUEUE_CAPACITY);
+    let (command_tx, command_rx) = mpsc::channel(APP_SERVER_COMMAND_QUEUE_CAPACITY);
     let task = tokio::spawn(run_registry_actor(
         rpc,
         threads,
@@ -385,8 +403,8 @@ async fn run_registry_actor(
     initial_threads: Vec<ThreadSummary>,
     mut status: BackendStatus,
     tx: watch::Sender<BackendSnapshot>,
-    conversation_tx: mpsc::UnboundedSender<ConversationEvent>,
-    mut command_rx: mpsc::UnboundedReceiver<BackendCommand>,
+    conversation_tx: mpsc::Sender<ConversationEvent>,
+    mut command_rx: mpsc::Receiver<BackendCommand>,
 ) {
     let mut generation = 0_u64;
     let mut threads = by_id(initial_threads);
@@ -440,13 +458,21 @@ async fn run_registry_actor(
                         .await
                         {
                             Ok(page) => {
-                                let _ = conversation_tx.send(ConversationEvent::OlderLoaded(page));
+                                send_conversation_event(
+                                    &conversation_tx,
+                                    ConversationEvent::OlderLoaded(page),
+                                )
+                                .await;
                             }
                             Err(error) => {
-                                let _ = conversation_tx.send(ConversationEvent::Failed {
-                                    thread_id,
-                                    error: error.to_string(),
-                                });
+                                send_conversation_event(
+                                    &conversation_tx,
+                                    ConversationEvent::Failed {
+                                        thread_id,
+                                        error: error.to_string(),
+                                    },
+                                )
+                                .await;
                             }
                         }
                     }
@@ -466,10 +492,14 @@ async fn run_registry_actor(
                         .await
                         {
                             Ok(turn_id) => {
-                                let _ = conversation_tx.send(ConversationEvent::PromptSubmitted {
-                                    thread_id: thread_id.clone(),
-                                    turn_id,
-                                });
+                                send_conversation_event(
+                                    &conversation_tx,
+                                    ConversationEvent::PromptSubmitted {
+                                        thread_id: thread_id.clone(),
+                                        turn_id,
+                                    },
+                                )
+                                .await;
                                 emit_conversation_load(
                                     &mut rpc,
                                     thread_id,
@@ -478,10 +508,14 @@ async fn run_registry_actor(
                                 .await;
                             }
                             Err(error) => {
-                                let _ = conversation_tx.send(ConversationEvent::Failed {
-                                    thread_id,
-                                    error: error.to_string(),
-                                });
+                                send_conversation_event(
+                                    &conversation_tx,
+                                    ConversationEvent::Failed {
+                                        thread_id,
+                                        error: error.to_string(),
+                                    },
+                                )
+                                .await;
                             }
                         }
                     }
@@ -496,10 +530,14 @@ async fn run_registry_actor(
                                 .await;
                             }
                             Err(error) => {
-                                let _ = conversation_tx.send(ConversationEvent::Failed {
-                                    thread_id,
-                                    error: error.to_string(),
-                                });
+                                send_conversation_event(
+                                    &conversation_tx,
+                                    ConversationEvent::Failed {
+                                        thread_id,
+                                        error: error.to_string(),
+                                    },
+                                )
+                                .await;
                             }
                         }
                     }
@@ -516,9 +554,11 @@ async fn run_registry_actor(
                         .await
                         {
                             Ok(()) => {
-                                let _ = conversation_tx.send(
+                                send_conversation_event(
+                                    &conversation_tx,
                                     ConversationEvent::InteractiveResolved { request_id },
-                                );
+                                )
+                                .await;
                             }
                             Err(error) => {
                                 status.error = Some(error.to_string());
@@ -531,13 +571,21 @@ async fn run_registry_actor(
                                 goal_supported = Some(true);
                                 goal_probed.insert(thread_id.0.clone());
                                 mark_goal_supported(&mut status);
-                                let _ = conversation_tx.send(ConversationEvent::GoalObserved(goal));
+                                send_conversation_event(
+                                    &conversation_tx,
+                                    ConversationEvent::GoalObserved(goal),
+                                )
+                                .await;
                             }
                             Ok(None) => {
                                 goal_supported = Some(true);
                                 goal_probed.insert(thread_id.0.clone());
                                 mark_goal_supported(&mut status);
-                                let _ = conversation_tx.send(ConversationEvent::GoalCleared(thread_id));
+                                send_conversation_event(
+                                    &conversation_tx,
+                                    ConversationEvent::GoalCleared(thread_id),
+                                )
+                                .await;
                             }
                             Err(error) if is_goal_unsupported(&error) => {
                                 goal_supported = Some(false);
@@ -567,7 +615,11 @@ async fn run_registry_actor(
                                 goal_supported = Some(true);
                                 goal_probed.insert(thread_id.0.clone());
                                 mark_goal_supported(&mut status);
-                                let _ = conversation_tx.send(ConversationEvent::GoalObserved(goal));
+                                send_conversation_event(
+                                    &conversation_tx,
+                                    ConversationEvent::GoalObserved(goal),
+                                )
+                                .await;
                             }
                             Err(error) if is_goal_unsupported(&error) => {
                                 goal_supported = Some(false);
@@ -586,7 +638,11 @@ async fn run_registry_actor(
                                 goal_supported = Some(true);
                                 goal_probed.insert(thread_id.0.clone());
                                 mark_goal_supported(&mut status);
-                                let _ = conversation_tx.send(ConversationEvent::GoalCleared(thread_id));
+                                send_conversation_event(
+                                    &conversation_tx,
+                                    ConversationEvent::GoalCleared(thread_id),
+                                )
+                                .await;
                             }
                             Err(error) if is_goal_unsupported(&error) => {
                                 goal_supported = Some(false);
@@ -612,15 +668,21 @@ async fn run_registry_actor(
                                 goal_supported = Some(true);
                                 goal_probed.insert(thread_id.0.clone());
                                 mark_goal_supported(&mut status);
-                                let _ = conversation_tx.send(ConversationEvent::GoalObserved(goal));
+                                send_conversation_event(
+                                    &conversation_tx,
+                                    ConversationEvent::GoalObserved(goal),
+                                )
+                                .await;
                             }
                             Ok(None) => {
                                 goal_supported = Some(true);
                                 goal_probed.insert(thread_id.0.clone());
                                 mark_goal_supported(&mut status);
-                                let _ = conversation_tx.send(
+                                send_conversation_event(
+                                    &conversation_tx,
                                     ConversationEvent::GoalCleared(thread_id),
-                                );
+                                )
+                                .await;
                             }
                             Err(error) if is_goal_unsupported(&error) => {
                                 goal_supported = Some(false);
@@ -929,17 +991,21 @@ async fn clear_goal(rpc: &mut RpcSession, thread_id: &ThreadId) -> Result<()> {
 async fn emit_conversation_load(
     rpc: &mut RpcSession,
     thread_id: ThreadId,
-    tx: &mpsc::UnboundedSender<ConversationEvent>,
+    tx: &mpsc::Sender<ConversationEvent>,
 ) {
     match load_conversation(rpc, thread_id.clone()).await {
         Ok(page) => {
-            let _ = tx.send(ConversationEvent::Loaded(page));
+            send_conversation_event(tx, ConversationEvent::Loaded(page)).await;
         }
         Err(error) => {
-            let _ = tx.send(ConversationEvent::Failed {
-                thread_id,
-                error: error.to_string(),
-            });
+            send_conversation_event(
+                tx,
+                ConversationEvent::Failed {
+                    thread_id,
+                    error: error.to_string(),
+                },
+            )
+            .await;
         }
     }
 }
@@ -1297,7 +1363,7 @@ async fn handle_unsolicited(
     threads: &mut BTreeMap<String, ThreadSummary>,
     pending_requests: &mut BTreeMap<RpcRequestId, PendingServerRequest>,
     watched_threads: &BTreeSet<String>,
-    conversation_tx: &mpsc::UnboundedSender<ConversationEvent>,
+    conversation_tx: &mpsc::Sender<ConversationEvent>,
 ) -> Result<bool> {
     if message.get("id").is_some() && message.get("method").is_some() {
         if let Some(request) = parse_interactive_request(&message)? {
@@ -1311,7 +1377,11 @@ async fn handle_unsolicited(
                 request.request_id.clone(),
                 PendingServerRequest { method, params },
             );
-            let _ = conversation_tx.send(ConversationEvent::InteractiveRequested(request));
+            send_conversation_event(
+                conversation_tx,
+                ConversationEvent::InteractiveRequested(request),
+            )
+            .await;
             return Ok(false);
         }
 
@@ -1350,20 +1420,24 @@ async fn handle_unsolicited(
             .transpose()?
         {
             pending_requests.remove(&request_id);
-            let _ = conversation_tx.send(ConversationEvent::InteractiveResolved { request_id });
+            send_conversation_event(
+                conversation_tx,
+                ConversationEvent::InteractiveResolved { request_id },
+            )
+            .await;
         }
         return Ok(false);
     }
 
     if method == "thread/goal/updated" {
         let goal = parse_goal_updated(params, now_unix_ms())?;
-        let _ = conversation_tx.send(ConversationEvent::GoalObserved(goal));
+        send_conversation_event(conversation_tx, ConversationEvent::GoalObserved(goal)).await;
         return Ok(false);
     }
 
     if method == "thread/goal/cleared" {
         let thread_id = parse_goal_cleared_thread(params)?;
-        let _ = conversation_tx.send(ConversationEvent::GoalCleared(thread_id));
+        send_conversation_event(conversation_tx, ConversationEvent::GoalCleared(thread_id)).await;
         return Ok(false);
     }
 
@@ -1645,6 +1719,34 @@ impl RpcSession {
 mod tests {
     use super::*;
     use crate::backend::{CodexBackend, FakeBackend};
+
+    #[test]
+    fn app_server_channels_are_bounded_in_production() {
+        let source = include_str!("app_server.rs");
+        let production = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("production source");
+        assert!(!production.contains("unbounded_channel"));
+        assert!(!production.contains("UnboundedSender"));
+        assert!(!production.contains("UnboundedReceiver"));
+    }
+
+    #[test]
+    fn app_server_command_queue_reports_backpressure() {
+        let (tx, _rx) = mpsc::channel(1);
+        queue_backend_command(
+            &tx,
+            BackendCommand::StopWatchingConversation(ThreadId::new("first")),
+        )
+        .expect("first command");
+        let error = queue_backend_command(
+            &tx,
+            BackendCommand::StopWatchingConversation(ThreadId::new("second")),
+        )
+        .expect_err("second command must hit bounded queue");
+        assert!(error.to_string().contains("queue is full"));
+    }
 
     #[test]
     fn registry_notifications_update_only_registry_relevant_state() {
