@@ -6,7 +6,9 @@ use crate::{
 };
 use anyhow::{Context, Result};
 use serde::Serialize;
-use std::{fs, time::Instant};
+#[cfg(target_os = "linux")]
+use std::fs;
+use std::time::Instant;
 
 pub const SOAK_EVIDENCE_SCHEMA: &str = "codex-tui/soak-evidence/v1";
 pub const DEFAULT_ROWS: usize = 10_000;
