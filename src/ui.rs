@@ -1314,7 +1314,7 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
                     Paragraph::new(lines)
                         .block(Block::bordered().title(format!(
                             " {} ({}) ",
-                            stage.label(),
+                            workflow_stage_label(*stage, app.language),
                             stage_cards.len()
                         )))
                         .wrap(Wrap { trim: false }),
@@ -1328,14 +1328,16 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
                 .visible_planning_cards()
                 .iter()
                 .enumerate()
-                .map(|(index, card)| planning_card_line(card, index == app.board_selected))
+                .map(|(index, card)| {
+                    planning_card_line(card, index == app.board_selected, app.language)
+                })
                 .collect::<Vec<_>>();
             frame.render_widget(
                 Paragraph::new(lines)
                     .block(Block::bordered().title(format!(
                         " {} · {} · {}/{} ",
-                        view.name,
-                        stage.label(),
+                        saved_view_name(&view, app.language),
+                        workflow_stage_label(stage, app.language),
                         app.board_stage_index + 1,
                         WorkflowStage::ALL.len()
                     )))
@@ -1353,17 +1355,25 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
                     lines.push(Line::from(format!("── {group} ──")));
                     previous_group = group;
                 }
-                lines.push(planning_card_line(card, index == app.board_selected));
+                lines.push(planning_card_line(
+                    card,
+                    index == app.board_selected,
+                    app.language,
+                ));
             }
             if lines.is_empty() {
-                lines.push(Line::from("No cards match this Saved View."));
+                lines.push(Line::from(tr(
+                    app,
+                    "No cards match this Saved View.",
+                    "没有符合当前已保存视图的卡片。",
+                )));
             }
             frame.render_widget(
                 Paragraph::new(lines)
                     .block(Block::bordered().title(format!(
                         " {} · {} ",
-                        view.name,
-                        view.layout.label()
+                        saved_view_name(&view, app.language),
+                        saved_view_layout_label(view.layout, app.language)
                     )))
                     .wrap(Wrap { trim: false }),
                 outer[0],
@@ -1373,28 +1383,51 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
 
     let input = if app.input_mode == InputMode::ScratchTitle {
         format!(
-            "new scratch> {} · Enter create · Esc cancel",
-            app.input_buffer
+            "{}> {} · {}",
+            tr(app, "new scratch", "新建 Scratch"),
+            app.input_buffer,
+            tr(app, "Enter create · Esc cancel", "Enter 创建 · Esc 取消")
         )
     } else if app.input_mode == InputMode::Snooze {
         format!(
-            "snooze> {} · 15m / 1h / 1d · Enter apply · Esc cancel",
-            app.input_buffer
+            "{}> {} · 15m / 1h / 1d · {}",
+            tr(app, "snooze", "稍后提醒"),
+            app.input_buffer,
+            tr(app, "Enter apply · Esc cancel", "Enter 应用 · Esc 取消")
         )
     } else if app.input_mode == InputMode::Note {
         format!(
-            "note> {} · Enter save · Esc cancel",
-            truncate_display(&app.input_buffer, 80)
+            "{}> {} · {}",
+            tr(app, "note", "备注"),
+            truncate_display(&app.input_buffer, 80),
+            tr(app, "Enter save · Esc cancel", "Enter 保存 · Esc 取消")
         )
     } else if app.input_mode == InputMode::SavedViewName {
         format!(
-            "view name> {} · Enter save · Esc cancel",
-            truncate_display(&app.input_buffer, 80)
+            "{}> {} · {}",
+            tr(app, "view name", "视图名称"),
+            truncate_display(&app.input_buffer, 80),
+            tr(app, "Enter save · Esc cancel", "Enter 保存 · Esc 取消")
         )
     } else if app.hot_slot_bind_pending {
-        "bind hot slot: press 1–9 · Esc cancels other input only".into()
+        tr(
+            app,
+            "bind hot slot: press 1–9 · Esc cancels other input only",
+            "绑定快捷槽：按 1–9 · Esc 仅取消其他输入",
+        )
+        .into()
     } else if let Some(error) = &app.planning_store_error {
-        format!("LOCAL STORE DEGRADED · {}", truncate_display(error, 80))
+        format!(
+            "{} · {}",
+            tr(app, "LOCAL STORE DEGRADED", "本地存储已降级"),
+            truncate_display(error, 80)
+        )
+    } else if app.language.is_simplified_chinese() {
+        format!(
+            "h/l 阶段 · j/k 项目 · Tab 视图 · Enter 打开 · Space 待处理 · s 稍后提醒 · = 绑定 · 1–9 跳转 · n Scratch · 视图 {}/{}",
+            app.planning_view_index + 1,
+            app.planning_views().len()
+        )
     } else {
         format!(
             "h/l stage · j/k item · Tab view · Enter open · Space attention · s snooze · = bind · 1–9 jump · n scratch · view {}/{}",
@@ -1405,7 +1438,11 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
     frame.render_widget(Paragraph::new(input), outer[1]);
 }
 
-fn planning_card_line(card: &crate::planning::WorkCardProjection, selected: bool) -> Line<'static> {
+fn planning_card_line(
+    card: &crate::planning::WorkCardProjection,
+    selected: bool,
+    language: UiLanguage,
+) -> Line<'static> {
     let attention = if card.needs_you() {
         card.attention
             .iter()
@@ -1413,15 +1450,18 @@ fn planning_card_line(card: &crate::planning::WorkCardProjection, selected: bool
             .collect::<Vec<_>>()
             .join(",")
     } else if card.snoozed && !card.attention.is_empty() {
-        "snoozed".into()
+        tr_language(language, "snoozed", "已稍后提醒").into()
     } else {
         "-".into()
     };
-    let source = match card.anchor.kind {
-        crate::planning::SourceKind::ScratchWork => "scratch",
-        crate::planning::SourceKind::CodexThread => "thread",
-        crate::planning::SourceKind::ForgeWorkItem => "forge",
-        _ => "link",
+    let source = match (card.anchor.kind.clone(), language) {
+        (crate::planning::SourceKind::ScratchWork, UiLanguage::SimplifiedChinese) => "草稿",
+        (crate::planning::SourceKind::CodexThread, UiLanguage::SimplifiedChinese) => "会话",
+        (crate::planning::SourceKind::ForgeWorkItem, UiLanguage::SimplifiedChinese) => "Forge",
+        (crate::planning::SourceKind::ScratchWork, UiLanguage::English) => "scratch",
+        (crate::planning::SourceKind::CodexThread, UiLanguage::English) => "thread",
+        (crate::planning::SourceKind::ForgeWorkItem, UiLanguage::English) => "forge",
+        _ => tr_language(language, "link", "链接"),
     };
     let goal = card
         .goal
@@ -1431,7 +1471,7 @@ fn planning_card_line(card: &crate::planning::WorkCardProjection, selected: bool
     let text = format!(
         "{} {} {} {} {} {}",
         if selected { ">" } else { " " },
-        fit_display(card.stage.label(), 7),
+        fit_display(workflow_stage_label(card.stage, language), 7),
         fit_display(&attention, 10),
         fit_display(goal, 12),
         fit_display(source, 8),
@@ -1458,29 +1498,53 @@ fn render_scratch(frame: &mut Frame<'_>, app: &AppState, scratch_id: &str, area:
     {
         vec![
             Line::from(format!("Scratch: {}", scratch.id)),
-            Line::from(format!("Title: {}", sanitize_inline(&scratch.title))),
             Line::from(format!(
-                "State: {:?} · priority={}",
+                "{}: {}",
+                tr(app, "Title", "标题"),
+                sanitize_inline(&scratch.title)
+            )),
+            Line::from(format!(
+                "{}: {:?} · {}={}",
+                tr(app, "State", "状态"),
                 scratch.state,
+                tr(app, "priority", "优先级"),
                 scratch
                     .priority
-                    .map_or_else(|| "none".into(), |value| value.to_string())
+                    .map_or_else(|| tr(app, "none", "无").into(), |value| value.to_string())
             )),
             Line::from(format!(
-                "Workspace: {}",
-                sanitize_inline(scratch.workspace.as_deref().unwrap_or("<none>"))
+                "{}: {}",
+                tr(app, "Workspace", "工作区"),
+                sanitize_inline(
+                    scratch
+                        .workspace
+                        .as_deref()
+                        .unwrap_or_else(|| tr(app, "<none>", "<无>"))
+                )
             )),
             Line::from(format!(
-                "Note: {}",
-                sanitize_inline(scratch.note.as_deref().unwrap_or("<empty>"))
+                "{}: {}",
+                tr(app, "Note", "备注"),
+                sanitize_inline(
+                    scratch
+                        .note
+                        .as_deref()
+                        .unwrap_or_else(|| tr(app, "<empty>", "<空>"))
+                )
             )),
             Line::from(""),
-            Line::from(
+            Line::from(tr(
+                app,
                 "Local ScratchWork only. It is not a Codex thread, Git work item, or forge issue.",
-            ),
+                "仅为本地 ScratchWork；它不是 Codex 会话、Git 工作项或 Forge Issue。",
+            )),
         ]
     } else {
-        vec![Line::from("ScratchWork no longer exists.")]
+        vec![Line::from(tr(
+            app,
+            "ScratchWork no longer exists.",
+            "ScratchWork 已不存在。",
+        ))]
     };
     frame.render_widget(
         Paragraph::new(lines)
@@ -1488,7 +1552,10 @@ fn render_scratch(frame: &mut Frame<'_>, app: &AppState, scratch_id: &str, area:
             .wrap(Wrap { trim: false }),
         chunks[0],
     );
-    frame.render_widget(Paragraph::new("Esc back to Board"), chunks[1]);
+    frame.render_widget(
+        Paragraph::new(tr(app, "Esc back to Board", "Esc 返回看板")),
+        chunks[1],
+    );
 }
 
 fn render_workspace(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area: Rect) {
