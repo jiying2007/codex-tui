@@ -26,6 +26,7 @@ pub mod scale_evidence;
 pub mod soak;
 pub mod sqlite_store;
 pub mod store;
+pub mod support_bundle;
 pub mod terminal;
 pub mod terminal_drawer;
 pub mod text;
