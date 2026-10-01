@@ -479,6 +479,33 @@ async fn main() -> Result<()> {
     }
 
     if args.first().is_some_and(|arg| arg == "doctor")
+        && args.get(1).is_some_and(|arg| arg == "bundle")
+    {
+        let mut output = None;
+        let mut index = 2usize;
+        while index < args.len() {
+            match args[index].as_str() {
+                "--output" => {
+                    index += 1;
+                    let Some(path) = args.get(index) else {
+                        eprintln!("usage: codex-tui doctor bundle [--output PATH]");
+                        std::process::exit(codex_tui::headless::EXIT_USAGE);
+                    };
+                    output = Some(std::path::PathBuf::from(path));
+                }
+                _ => {
+                    eprintln!("usage: codex-tui doctor bundle [--output PATH]");
+                    std::process::exit(codex_tui::headless::EXIT_USAGE);
+                }
+            }
+            index += 1;
+        }
+        let path = codex_tui::support_bundle::create(output).await?;
+        println!("support-bundle: {}", path.display());
+        return Ok(());
+    }
+
+    if args.first().is_some_and(|arg| arg == "doctor")
         && args.get(1).is_some_and(|arg| arg == "compat")
     {
         let flags = &args[2..];
