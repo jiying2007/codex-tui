@@ -9,6 +9,7 @@ use codex_tui::{
     forge_mutation::{ForgeMutationEvent, ForgeMutationHandle},
     git::{self, GitEvent, GitHandle},
     goal::GoalStatus,
+    i18n::{UiLanguage, pick},
     keymap::{Command, command_for_key},
     planning::{
         LocalNote, PlanningSnapshot, SavedView, ScratchState, SourceKind, SourceRef, WorkCardRecord,
@@ -798,13 +799,27 @@ async fn run_app(fake_mode: bool) -> Result<()> {
     if let Err(error) = services.mutations.recover() {
         reduce(
             &mut app,
-            Action::MutationNotice(format!("worktree recovery unavailable: {error}")),
+            Action::MutationNotice(format!(
+                "{}: {error}",
+                runtime_text(
+                    app.language,
+                    "worktree recovery unavailable",
+                    "worktree 恢复不可用",
+                )
+            )),
         );
     }
     if let Err(error) = services.forge_mutations.recover() {
         reduce(
             &mut app,
-            Action::MutationNotice(format!("forge mutation recovery unavailable: {error}")),
+            Action::MutationNotice(format!(
+                "{}: {error}",
+                runtime_text(
+                    app.language,
+                    "forge mutation recovery unavailable",
+                    "Forge 变更恢复不可用",
+                )
+            )),
         );
     }
     let initial_git_effects = reduce(&mut app, Action::RefreshGitProjections);
@@ -854,7 +869,12 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                     reduce(
                         &mut app,
                         Action::BackendStatus(backend_error_status(format!(
-                            "App Server connection task failed: {error}"
+                            "{}: {error}",
+                            runtime_text(
+                                app.language,
+                                "App Server connection task failed",
+                                "App Server 连接任务失败",
+                            )
                         ))),
                     );
                 }
@@ -1005,6 +1025,14 @@ async fn run_app(fake_mode: bool) -> Result<()> {
         reduce(&mut app, Action::PlanningStoreDegraded(Some(error)));
     }
     Ok(())
+}
+
+fn runtime_text(
+    language: UiLanguage,
+    english: &'static str,
+    simplified_chinese: &'static str,
+) -> &'static str {
+    pick(language, english, simplified_chinese)
 }
 
 fn backend_error_status(error: String) -> BackendStatus {
@@ -1255,7 +1283,14 @@ fn apply_effects(
                         reduce(app, Action::PlanningStoreDegraded(None));
                         reduce(
                             app,
-                            Action::MutationNotice(format!("local batch applied · {preview}")),
+                            Action::MutationNotice(format!(
+                                "{} · {preview}",
+                                runtime_text(
+                                    app.language,
+                                    "local batch applied",
+                                    "本地批量操作已应用",
+                                )
+                            )),
                         );
                     }
                     Err(error) => {
@@ -1281,7 +1316,12 @@ fn apply_effects(
                     reduce(
                         app,
                         Action::MutationNotice(format!(
-                            "launch preset config unavailable: {error:#}"
+                            "{}: {error:#}",
+                            runtime_text(
+                                app.language,
+                                "launch preset config unavailable",
+                                "启动预设配置不可用",
+                            )
                         )),
                     );
                 }
@@ -1303,7 +1343,12 @@ fn apply_effects(
                         reduce(
                             app,
                             Action::MutationNotice(format!(
-                                "cannot create launch preset plan: {error:#}"
+                                "{}: {error:#}",
+                                runtime_text(
+                                    app.language,
+                                    "cannot create launch preset plan",
+                                    "无法创建启动预设计划",
+                                )
                             )),
                         );
                     }
@@ -1314,7 +1359,12 @@ fn apply_effects(
                     reduce(
                         app,
                         Action::MutationNotice(format!(
-                            "launch preset started · {} · pid={pid}",
+                            "{} · {} · pid={pid}",
+                            runtime_text(
+                                app.language,
+                                "launch preset started",
+                                "启动预设已启动",
+                            ),
                             plan.name
                         )),
                     );
@@ -1322,7 +1372,14 @@ fn apply_effects(
                 Err(error) => {
                     reduce(
                         app,
-                        Action::MutationNotice(format!("launch preset failed: {error:#}")),
+                        Action::MutationNotice(format!(
+                            "{}: {error:#}",
+                            runtime_text(
+                                app.language,
+                                "launch preset failed",
+                                "启动预设失败",
+                            )
+                        )),
                     );
                 }
             },
@@ -1337,7 +1394,12 @@ fn apply_effects(
                         reduce(
                             app,
                             Action::MutationNotice(format!(
-                                "terminal drawer open failed: {error:#}"
+                                "{}: {error:#}",
+                                runtime_text(
+                                    app.language,
+                                    "terminal drawer open failed",
+                                    "终端抽屉打开失败",
+                                )
                             )),
                         );
                         reduce(app, Action::CloseTerminalDrawer);
@@ -1351,7 +1413,14 @@ fn apply_effects(
                 if let Err(error) = terminal_drawer.send_input(bytes) {
                     reduce(
                         app,
-                        Action::MutationNotice(format!("terminal input unavailable: {error:#}")),
+                        Action::MutationNotice(format!(
+                            "{}: {error:#}",
+                            runtime_text(
+                                app.language,
+                                "terminal input unavailable",
+                                "终端输入不可用",
+                            )
+                        )),
                     );
                 }
             }
@@ -1359,7 +1428,14 @@ fn apply_effects(
                 if let Err(error) = terminal_drawer.resize(size) {
                     reduce(
                         app,
-                        Action::MutationNotice(format!("terminal resize unavailable: {error:#}")),
+                        Action::MutationNotice(format!(
+                            "{}: {error:#}",
+                            runtime_text(
+                                app.language,
+                                "terminal resize unavailable",
+                                "终端调整大小不可用",
+                            )
+                        )),
                     );
                 } else {
                     reduce(app, Action::TerminalSnapshot(terminal_drawer.snapshot()));
@@ -1369,7 +1445,14 @@ fn apply_effects(
                 if let Err(error) = terminal_drawer.scroll(delta) {
                     reduce(
                         app,
-                        Action::MutationNotice(format!("terminal scroll unavailable: {error:#}")),
+                        Action::MutationNotice(format!(
+                            "{}: {error:#}",
+                            runtime_text(
+                                app.language,
+                                "terminal scroll unavailable",
+                                "终端滚动不可用",
+                            )
+                        )),
                     );
                 } else {
                     reduce(app, Action::TerminalSnapshot(terminal_drawer.snapshot()));
@@ -1382,7 +1465,12 @@ fn apply_effects(
                     reduce(
                         app,
                         Action::BackendStatus(backend_error_status(format!(
-                            "Goal refresh command failed: {error}"
+                            "{}: {error}",
+                            runtime_text(
+                                app.language,
+                                "Goal refresh command failed",
+                                "Goal 刷新命令失败",
+                            )
                         ))),
                     );
                 }
@@ -1398,7 +1486,12 @@ fn apply_effects(
                     reduce(
                         app,
                         Action::BackendStatus(backend_error_status(format!(
-                            "Goal update command failed: {error}"
+                            "{}: {error}",
+                            runtime_text(
+                                app.language,
+                                "Goal update command failed",
+                                "Goal 更新命令失败",
+                            )
                         ))),
                     );
                 }
@@ -1410,7 +1503,12 @@ fn apply_effects(
                     reduce(
                         app,
                         Action::BackendStatus(backend_error_status(format!(
-                            "Goal clear command failed: {error}"
+                            "{}: {error}",
+                            runtime_text(
+                                app.language,
+                                "Goal clear command failed",
+                                "Goal 清除命令失败",
+                            )
                         ))),
                     );
                 }
@@ -1420,7 +1518,12 @@ fn apply_effects(
                     reduce(
                         app,
                         Action::MutationNotice(format!(
-                            "managed-worktree inventory refresh failed: {error}"
+                            "{}: {error}",
+                            runtime_text(
+                                app.language,
+                                "managed-worktree inventory refresh failed",
+                                "受管 worktree 清单刷新失败",
+                            )
                         )),
                     );
                 }
@@ -1434,7 +1537,12 @@ fn apply_effects(
                     reduce(
                         app,
                         Action::MutationNotice(format!(
-                            "managed-worktree execution dispatch failed: {error}"
+                            "{}: {error}",
+                            runtime_text(
+                                app.language,
+                                "managed-worktree execution dispatch failed",
+                                "受管 worktree 执行分派失败",
+                            )
                         )),
                     );
                 }
@@ -1444,7 +1552,12 @@ fn apply_effects(
                     reduce(
                         app,
                         Action::MutationNotice(format!(
-                            "forge mutation execution dispatch failed: {error}"
+                            "{}: {error}",
+                            runtime_text(
+                                app.language,
+                                "forge mutation execution dispatch failed",
+                                "Forge 变更执行分派失败",
+                            )
                         )),
                     );
                 }
@@ -1533,7 +1646,12 @@ fn apply_effects(
                         app,
                         Action::ConversationFailed {
                             thread_id,
-                            error: "conversation backend unavailable".into(),
+                            error: runtime_text(
+                                app.language,
+                                "conversation backend unavailable",
+                                "会话后端不可用",
+                            )
+                            .into(),
                         },
                     );
                 }
@@ -1545,7 +1663,12 @@ fn apply_effects(
                     reduce(
                         app,
                         Action::BackendStatus(backend_error_status(format!(
-                            "stop conversation watch failed: {error}"
+                            "{}: {error}",
+                            runtime_text(
+                                app.language,
+                                "stop conversation watch failed",
+                                "停止会话监听失败",
+                            )
                         ))),
                     );
                 }
@@ -1593,7 +1716,12 @@ fn apply_effects(
                         app,
                         Action::ConversationFailed {
                             thread_id,
-                            error: "conversation backend unavailable".into(),
+                            error: runtime_text(
+                                app.language,
+                                "conversation backend unavailable",
+                                "会话后端不可用",
+                            )
+                            .into(),
                         },
                     );
                 }
@@ -1608,7 +1736,12 @@ fn apply_effects(
                     reduce(
                         app,
                         Action::BackendStatus(backend_error_status(format!(
-                            "resolve interactive request failed: {error}"
+                            "{}: {error}",
+                            runtime_text(
+                                app.language,
+                                "resolve interactive request failed",
+                                "处理交互请求失败",
+                            )
                         ))),
                     );
                 }
