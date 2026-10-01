@@ -378,6 +378,13 @@ fn eager_goal_probe_queue(
         .collect()
 }
 
+fn retain_current_goal_probes(
+    threads: &BTreeMap<String, ThreadSummary>,
+    goal_probed: &mut BTreeSet<String>,
+) {
+    goal_probed.retain(|thread_id| threads.contains_key(thread_id));
+}
+
 fn reset_eager_goal_queue(
     threads: &BTreeMap<String, ThreadSummary>,
     goal_probed: &BTreeSet<String>,
@@ -694,6 +701,7 @@ async fn run_registry_actor(
                 match load_registry(&mut rpc, true).await {
                     Ok((fresh, loaded_supported)) => {
                         threads = by_id(fresh);
+                        retain_current_goal_probes(&threads, &mut goal_probed);
                         if goal_supported != Some(false) {
                             reset_eager_goal_queue(
                                 &threads,
@@ -1859,6 +1867,31 @@ mod tests {
     #[test]
     fn registry_full_reconcile_is_low_frequency_fallback() {
         assert!(REFRESH_INTERVAL >= Duration::from_secs(30));
+    }
+
+    #[test]
+    fn full_registry_reconcile_prunes_stale_goal_probe_ids() {
+        let mut threads = BTreeMap::new();
+        let mut thread = FakeBackend::seeded()
+            .snapshot()
+            .threads
+            .into_iter()
+            .next()
+            .expect("thread");
+        thread.id = ThreadId::new("thread-current");
+        threads.insert(thread.id.0.clone(), thread);
+
+        let mut probed = ["thread-current".to_string(), "thread-stale".to_string()]
+            .into_iter()
+            .collect::<BTreeSet<_>>();
+        retain_current_goal_probes(&threads, &mut probed);
+
+        assert_eq!(
+            probed,
+            ["thread-current".to_string()]
+                .into_iter()
+                .collect::<BTreeSet<_>>()
+        );
     }
 
     #[test]
