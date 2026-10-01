@@ -1,6 +1,6 @@
 use crossterm::{
     cursor,
-    event::{DisableMouseCapture, EnableMouseCapture},
+    event::{DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
@@ -34,6 +34,7 @@ impl<F: FnOnce()> Drop for RestoreGuard<F> {
 fn restore_terminal(mouse: bool) {
     let _ = disable_raw_mode();
     let mut out = stdout();
+    let _ = execute!(out, DisableBracketedPaste);
     if mouse {
         let _ = execute!(out, DisableMouseCapture);
     }
@@ -51,6 +52,7 @@ impl TerminalSession {
         let mut rollback = RestoreGuard::new(move || restore_terminal(mouse));
         let mut out = stdout();
         execute!(out, EnterAlternateScreen, cursor::Hide)?;
+        let _ = execute!(out, EnableBracketedPaste);
         if mouse {
             execute!(out, EnableMouseCapture)?;
         }
@@ -111,6 +113,9 @@ mod tests {
         let alternate = production
             .find("execute!(out, EnterAlternateScreen, cursor::Hide)?;")
             .expect("alternate screen setup");
+        let bracketed_paste = production
+            .find("execute!(out, EnableBracketedPaste)")
+            .expect("bracketed paste setup");
         let terminal = production
             .find("Terminal::new(backend)?")
             .expect("terminal construction");
@@ -118,7 +123,9 @@ mod tests {
 
         assert!(raw < guard);
         assert!(guard < alternate);
-        assert!(alternate < terminal);
+        assert!(alternate < bracketed_paste);
+        assert!(bracketed_paste < terminal);
         assert!(terminal < disarm);
+        assert!(production.contains("DisableBracketedPaste"));
     }
 }
