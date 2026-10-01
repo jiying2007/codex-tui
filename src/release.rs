@@ -65,6 +65,7 @@ pub struct AutomatedQualificationGates {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AutomatedQualificationArtifacts {
+    pub failure_matrix_sha256: String,
     pub scale_evidence_sha256: String,
     pub soak_evidence_sha256: String,
     pub support_manifest_sha256: String,
@@ -367,6 +368,10 @@ fn validate_automated_qualification(
         );
     }
     anyhow::ensure!(
+        valid_sha256(&receipt.artifacts.failure_matrix_sha256),
+        "Failure Matrix SHA-256 must be 64 hexadecimal characters"
+    );
+    anyhow::ensure!(
         valid_sha256(&receipt.artifacts.scale_evidence_sha256),
         "scale evidence SHA-256 must be 64 hexadecimal characters"
     );
@@ -597,6 +602,7 @@ mod tests {
                 support_bundle_redaction: "pass".into(),
             },
             artifacts: AutomatedQualificationArtifacts {
+                failure_matrix_sha256: "a".repeat(64),
                 scale_evidence_sha256: "b".repeat(64),
                 soak_evidence_sha256: "c".repeat(64),
                 support_manifest_sha256: "d".repeat(64),
