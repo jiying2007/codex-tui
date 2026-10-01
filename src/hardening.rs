@@ -1,7 +1,7 @@
 use anyhow::{Result, bail};
 use serde::Serialize;
 
-pub const FAILURE_MATRIX_SCHEMA: &str = "codex-tui/failure-matrix/v1";
+pub const FAILURE_MATRIX_SCHEMA: &str = "codex-tui/failure-matrix/v2";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
