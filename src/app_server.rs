@@ -1142,16 +1142,6 @@ fn status_from_initialize(result: &Value) -> BackendStatus {
     }
 }
 
-async fn load_registry(
-    rpc: &mut RpcSession,
-    use_state_db_only: bool,
-) -> Result<(Vec<ThreadSummary>, bool)> {
-    let load = load_registry_with_page_limit(rpc, use_state_db_only, None).await?;
-    debug_assert!(load.registry_complete);
-    debug_assert!(load.hydration.is_none());
-    Ok((load.threads, load.loaded_supported))
-}
-
 async fn load_registry_page(
     rpc: &mut RpcSession,
     cursor: Option<String>,
