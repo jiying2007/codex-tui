@@ -1294,13 +1294,7 @@ async fn load_registry_with_page_limit(
     let mut pages = 0_usize;
 
     loop {
-        let page = load_registry_page(
-            rpc,
-            cursor,
-            use_state_db_only,
-            optimized_query,
-        )
-        .await?;
+        let page = load_registry_page(rpc, cursor, use_state_db_only, optimized_query).await?;
         optimized_query = page.optimized_query;
         threads.extend(page.threads);
         pages = pages.saturating_add(1);
