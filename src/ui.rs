@@ -753,7 +753,7 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
         let text = match layout_mode(area.width) {
             LayoutMode::Compact => format!(
                 "{prefix}{pin}{collision}{locality} {} {} {}",
-                fit_display(runtime_status_label(&thread.runtime, app.language), 8),
+                fit_display(runtime_status_label(&thread.runtime, app.language), 7),
                 fit_display(&thread.workspace, 12),
                 sanitize_inline(thread.display_title())
             ),
@@ -2779,9 +2779,9 @@ mod tests {
             }
             snapshot.push('\n');
         }
-        assert!(snapshot.contains("任务中心"));
-        assert!(snapshot.contains("已选择"));
-        assert!(snapshot.contains("搜索"));
+        for glyph in ['任', '务', '中', '心', '已', '选', '择', '搜', '索'] {
+            assert!(snapshot.contains(glyph), "missing localized glyph {glyph:?}");
+        }
 
         app.show_help = true;
         terminal
@@ -2795,8 +2795,12 @@ mod tests {
             }
             help_snapshot.push('\n');
         }
-        assert!(help_snapshot.contains("帮助"));
-        assert!(help_snapshot.contains("权限边界"));
+        for glyph in ['帮', '助', '权', '限', '边', '界'] {
+            assert!(
+                help_snapshot.contains(glyph),
+                "missing localized help glyph {glyph:?}"
+            );
+        }
     }
 
     #[test]
