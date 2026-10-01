@@ -40,7 +40,10 @@ pub struct SoakReport {
 }
 
 pub fn run(rows: usize, cycles: usize) -> Result<SoakReport> {
-    anyhow::ensure!(rows > 0 && rows <= MAX_ROWS, "--rows must be within 1..={MAX_ROWS}");
+    anyhow::ensure!(
+        rows > 0 && rows <= MAX_ROWS,
+        "--rows must be within 1..={MAX_ROWS}"
+    );
     anyhow::ensure!(
         cycles > 0 && cycles <= MAX_CYCLES,
         "--cycles must be within 1..={MAX_CYCLES}"
@@ -108,7 +111,7 @@ pub fn run(rows: usize, cycles: usize) -> Result<SoakReport> {
             fresh[index].metadata.updated_at = fresh[index]
                 .metadata
                 .updated_at
-                .saturating_add(cycle as u64 + 1);
+                .saturating_add(cycle as i64 + 1);
             fresh[index].title = format!("soak-update-{cycle}");
             reduce(&mut app, Action::ReplaceThreads(fresh));
             actions_applied += 1;
@@ -230,7 +233,10 @@ pub fn run_cli(args: &[String]) -> Result<i32> {
         println!("rss-start-kib: {:?}", report.rss_start_kib);
         println!("rss-peak-kib: {:?}", report.rss_peak_kib);
         println!("rss-end-kib: {:?}", report.rss_end_kib);
-        println!("longest-cycle-stall-ms: {:.3}", report.longest_cycle_stall_ms);
+        println!(
+            "longest-cycle-stall-ms: {:.3}",
+            report.longest_cycle_stall_ms
+        );
     }
 
     Ok(if report.structural_pass { 0 } else { 3 })
