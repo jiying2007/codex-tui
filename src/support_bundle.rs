@@ -197,7 +197,10 @@ pub async fn collect() -> SupportSnapshot {
         .error
         .as_ref()
         .map(|_| "forge-probe-degraded".to_string());
-    let provider = observation.identity.as_ref().map(|identity| identity.provider);
+    let provider = observation
+        .identity
+        .as_ref()
+        .map(|identity| identity.provider);
     let forge = ForgeSnapshot {
         client_name: forge_snapshot.client_name,
         client_version: forge_snapshot.client_version,
@@ -211,7 +214,10 @@ pub async fn collect() -> SupportSnapshot {
             .capabilities
             .into_iter()
             .map(|(capability, state)| {
-                (capability.label().to_string(), capability_state_label(state).into())
+                (
+                    capability.label().to_string(),
+                    capability_state_label(state).into(),
+                )
             })
             .collect(),
         recent_issues: observation.issues.len(),
