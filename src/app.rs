@@ -896,20 +896,17 @@ impl AppState {
             .collect()
     }
 
-    pub fn registry_match_count(&self) -> usize {
-        self.registry_matching_indices().len()
-    }
-
-    pub fn visible_indices(&self) -> Vec<usize> {
+    pub fn visible_indices_with_match_count(&self) -> (Vec<usize>, usize) {
         let matched = self.registry_matching_indices();
+        let matched_count = matched.len();
         if self.show_all_history
             || !self.filter.is_empty()
-            || matched.len() <= REGISTRY_RECENT_LIMIT
+            || matched_count <= REGISTRY_RECENT_LIMIT
         {
-            return matched;
+            return (matched, matched_count);
         }
 
-        matched
+        let visible = matched
             .into_iter()
             .enumerate()
             .filter_map(|(position, index)| {
@@ -918,7 +915,16 @@ impl AppState {
                     || self.thread_needs_attention(index))
                 .then_some(index)
             })
-            .collect()
+            .collect();
+        (visible, matched_count)
+    }
+
+    pub fn registry_match_count(&self) -> usize {
+        self.registry_matching_indices().len()
+    }
+
+    pub fn visible_indices(&self) -> Vec<usize> {
+        self.visible_indices_with_match_count().0
     }
 
     pub fn thread_needs_attention(&self, index: usize) -> bool {
@@ -3464,7 +3470,8 @@ mod tests {
         let mut app = AppState::new(FakeBackend::scaled(150).snapshot().threads);
         app.threads[149].pinned = true;
 
-        let visible = app.visible_indices();
+        let (visible, matched_count) = app.visible_indices_with_match_count();
+        assert_eq!(matched_count, 150);
         assert!(visible.len() > REGISTRY_RECENT_LIMIT);
         assert!(visible.len() < 150);
         assert!(visible.contains(&149));

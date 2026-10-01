@@ -18,6 +18,7 @@ All notable codex-tui changes are recorded here.
 - ordered Mission Control sessions by newest activity and bounded the default Registry to the recent 100 while retaining pinned/Needs You history, full-history search and an explicit all-history toggle;
 - reserved screen rows for Terminal Drawer instead of overlaying it on Mission Control/Thread/Review/Workspace/Board content, keeping scrollbars, footers and context visible;
 - reduced Mission Control Selected-detail noise, hid unavailable Forge internals from daily UI, and made custom Forge hosts require explicit gh/glab authentication instead of defaulting every non-GitHub host to GitLab.
+- reduced Mission Control render work by computing Registry visibility and total match count in one projection pass and folding locality counts once.
 
 ## [1.0.0] - 2026-09-30
 
