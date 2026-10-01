@@ -47,6 +47,8 @@ pub struct TerminalDrawerRuntime {
     size: TerminalSize,
     state: TerminalProcessState,
     query_tail: Vec<u8>,
+    mode_tail: Vec<u8>,
+    bracketed_paste: bool,
 }
 
 impl Default for TerminalDrawerRuntime {
@@ -65,6 +67,8 @@ impl Default for TerminalDrawerRuntime {
                 code: None,
             },
             query_tail: Vec::new(),
+            mode_tail: Vec::new(),
+            bracketed_paste: false,
         }
     }
 }
@@ -88,6 +92,8 @@ impl TerminalDrawerRuntime {
         self.size = size;
         self.state = TerminalProcessState::Starting;
         self.query_tail.clear();
+        self.mode_tail.clear();
+        self.bracketed_paste = false;
         Ok(())
     }
 
@@ -103,6 +109,8 @@ impl TerminalDrawerRuntime {
             code: None,
         };
         self.query_tail.clear();
+        self.mode_tail.clear();
+        self.bracketed_paste = false;
     }
 
     pub fn send_input(&self, bytes: Vec<u8>) -> Result<()> {
@@ -111,6 +119,14 @@ impl TerminalDrawerRuntime {
             .as_ref()
             .context("terminal drawer is not open")?;
         handle.send(PtyCommand::Input(bytes))
+    }
+
+    pub fn send_paste(&self, text: String) -> Result<()> {
+        let handle = self
+            .handle
+            .as_ref()
+            .context("terminal drawer is not open")?;
+        handle.send(PtyCommand::Input(encode_paste(&text, self.bracketed_paste)))
     }
 
     pub fn resize(&mut self, size: TerminalSize) -> Result<()> {
@@ -152,6 +168,8 @@ impl TerminalDrawerRuntime {
                     self.state = TerminalProcessState::Running;
                 }
                 PtyEvent::Output(bytes) => {
+                    self.bracketed_paste =
+                        vt_bracketed_paste_mode(&mut self.mode_tail, &bytes, self.bracketed_paste);
                     self.parser.process(&bytes);
                     let (cursor_row, cursor_col) = self.parser.screen().cursor_position();
                     for response in
@@ -199,6 +217,53 @@ impl TerminalDrawerRuntime {
             state: self.state.clone(),
         }
     }
+}
+
+fn encode_paste(text: &str, bracketed_paste: bool) -> Vec<u8> {
+    let mut bytes =
+        Vec::with_capacity(
+            text.len()
+                .saturating_add(if bracketed_paste { 12 } else { 0 }),
+        );
+    if bracketed_paste {
+        bytes.extend_from_slice(b"\x1b[200~");
+    }
+    bytes.extend_from_slice(text.as_bytes());
+    if bracketed_paste {
+        bytes.extend_from_slice(b"\x1b[201~");
+    }
+    bytes
+}
+
+pub fn vt_bracketed_paste_mode(tail: &mut Vec<u8>, bytes: &[u8], mut enabled: bool) -> bool {
+    const ENABLE: &[u8] = b"\x1b[?2004h";
+    const DISABLE: &[u8] = b"\x1b[?2004l";
+
+    let mut probe = Vec::with_capacity(tail.len().saturating_add(bytes.len()));
+    probe.extend_from_slice(tail);
+    probe.extend_from_slice(bytes);
+
+    let mut offset = 0;
+    while offset < probe.len() {
+        if probe[offset..].starts_with(ENABLE) {
+            enabled = true;
+            offset += ENABLE.len();
+            continue;
+        }
+        if probe[offset..].starts_with(DISABLE) {
+            enabled = false;
+            offset += DISABLE.len();
+            continue;
+        }
+        offset += 1;
+    }
+
+    let keep = probe
+        .len()
+        .min(ENABLE.len().max(DISABLE.len()).saturating_sub(1));
+    tail.clear();
+    tail.extend_from_slice(&probe[probe.len().saturating_sub(keep)..]);
+    enabled
 }
 
 pub fn vt_query_responses(
@@ -276,6 +341,28 @@ mod tests {
             vt_query_responses(&mut tail, b"6n", 2, 3),
             vec![b"\x1b[3;4R".to_vec()]
         );
+    }
+
+    #[test]
+    fn paste_encoding_only_adds_markers_when_child_enabled_bracketed_mode() {
+        assert_eq!(encode_paste("a\nb", false), b"a\nb");
+        assert_eq!(encode_paste("a\nb", true), b"\x1b[200~a\nb\x1b[201~");
+    }
+
+    #[test]
+    fn bracketed_paste_mode_tracks_enable_disable_across_split_chunks() {
+        let mut tail = Vec::new();
+        let mut enabled = false;
+
+        enabled = vt_bracketed_paste_mode(&mut tail, b"\x1b[?20", enabled);
+        assert!(!enabled);
+        enabled = vt_bracketed_paste_mode(&mut tail, b"04h", enabled);
+        assert!(enabled);
+
+        enabled = vt_bracketed_paste_mode(&mut tail, b"plain", enabled);
+        assert!(enabled);
+        enabled = vt_bracketed_paste_mode(&mut tail, b"\x1b[?2004l", enabled);
+        assert!(!enabled);
     }
 
     #[test]

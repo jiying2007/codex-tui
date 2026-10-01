@@ -30,6 +30,7 @@ use crate::planning::{
 use crate::pty::TerminalSize;
 use crate::store::LocalStateV1;
 use crate::terminal_drawer::TerminalSnapshot;
+use crate::text::sanitize_inline;
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
 const REGISTRY_RECENT_LIMIT: usize = 100;
@@ -285,6 +286,7 @@ pub enum Action {
     BeginSearch,
     BeginAlias,
     InputChar(char),
+    InputText(String),
     InputBackspace,
     CommitInput,
     CancelInput,
@@ -348,6 +350,7 @@ pub enum Effect {
     },
     CloseTerminalDrawer,
     TerminalInput(Vec<u8>),
+    TerminalPaste(String),
     TerminalResize(TerminalSize),
     TerminalScroll(i32),
     RefreshGoal(ThreadId),
@@ -2818,6 +2821,56 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 }
             }
         },
+        Action::InputText(text) => {
+            if text.is_empty() {
+                return vec![];
+            }
+            let text = normalize_pasted_input(state.input_mode, &text);
+            if text.is_empty() {
+                return vec![];
+            }
+            match state.input_mode {
+                InputMode::Normal => {}
+                InputMode::Composer => {
+                    if let Some(id) = state.current_thread_id().cloned() {
+                        state
+                            .thread_ui
+                            .entry(id.0)
+                            .or_default()
+                            .draft
+                            .push_str(&text);
+                        return vec![Effect::PersistOperatorStateDeferred];
+                    }
+                }
+                InputMode::Search
+                | InputMode::Alias
+                | InputMode::UserInput
+                | InputMode::ScratchTitle
+                | InputMode::Snooze
+                | InputMode::Note
+                | InputMode::SavedViewName
+                | InputMode::BatchAddTag
+                | InputMode::BatchRemoveTag
+                | InputMode::BatchPriority
+                | InputMode::BatchSnooze
+                | InputMode::GoalObjective
+                | InputMode::WorktreeCreateBranch
+                | InputMode::WorktreeCreatePath
+                | InputMode::WorktreeCreateStartPoint
+                | InputMode::WorktreeDeleteBranch
+                | InputMode::ForgeMergeRequestTitle
+                | InputMode::ForgeComment => {
+                    state.input_buffer.push_str(&text);
+                    if state.input_mode == InputMode::Search {
+                        state.filter.clone_from(&state.input_buffer);
+                        if filter_requires_locality(&state.filter) {
+                            state.reconcile_cwd_locality_cache(true);
+                        }
+                        ensure_selection_visible(state);
+                    }
+                }
+            }
+        }
         Action::InputBackspace => match state.input_mode {
             InputMode::Normal => {}
             InputMode::Composer => {
@@ -4002,6 +4055,31 @@ fn select_next_attention(state: &mut AppState) {
             state.selected = index;
             return;
         }
+    }
+}
+
+fn normalize_pasted_input(mode: InputMode, value: &str) -> String {
+    if matches!(
+        mode,
+        InputMode::Composer
+            | InputMode::UserInput
+            | InputMode::Note
+            | InputMode::GoalObjective
+            | InputMode::ForgeComment
+    ) {
+        let normalized = value.replace("\r\n", "\n").replace('\r', "\n");
+        normalized
+            .chars()
+            .map(|ch| {
+                if matches!(ch, '\n' | '\t') || !ch.is_control() {
+                    ch
+                } else {
+                    '\u{fffd}'
+                }
+            })
+            .collect()
+    } else {
+        sanitize_inline(value)
     }
 }
 
@@ -6112,6 +6190,29 @@ mod tests {
         let effects = reduce(&mut app, Action::TogglePin);
         assert!(effects.is_empty());
         assert_eq!(app.threads[0].pinned, original_pin);
+    }
+
+    #[test]
+    fn pasted_text_preserves_multiline_composer_and_sanitizes_single_line_search() {
+        let mut app = app();
+        reduce(&mut app, Action::OpenSelected);
+        reduce(&mut app, Action::QuickPrompt);
+
+        assert_eq!(
+            reduce(&mut app, Action::InputText("line1\r\nline2\u{0007}".into())),
+            vec![Effect::PersistOperatorStateDeferred]
+        );
+        let thread_id = app.current_thread_id().expect("thread");
+        assert_eq!(
+            app.thread_ui.get(&thread_id.0).expect("thread ui").draft,
+            "line1\nline2\u{fffd}"
+        );
+
+        reduce(&mut app, Action::CancelInput);
+        reduce(&mut app, Action::Back);
+        reduce(&mut app, Action::BeginSearch);
+        assert!(reduce(&mut app, Action::InputText("repo\nproject\tname".into())).is_empty());
+        assert_eq!(app.filter, "repo project name");
     }
 
     #[test]
