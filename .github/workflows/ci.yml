@@ -49,7 +49,26 @@ jobs:
 
           python scripts/release/create_terminal_receipt.py             --platform linux             --terminal ci-python38             --pass             --output "$OUT/terminal.json"
 
-          python scripts/release/create_evidence.py             --output "$OUT/evidence.json"             --compat-schema codex-tui/compat/v2             --version 1.0.0             --commit 0123456789abcdef0123456789abcdef01234567             --canonical-ci-run 1             --linux-compat-sha256 "$(printf 'a%.0s' {1..64})"             --linux-compat-observed-at 2026-09-30T00:00:00Z             --linux-terminal ci-python38             --linux-terminal-observed-at 2026-09-30T00:00:00Z             --performance-iterations 200             --performance-p95-ms 1             --performance-p99-ms 2             --performance-source ci-python38             --performance-observed-at 2026-09-30T00:00:00Z
+          cat > "$OUT/automated-qualification.json" <<'EOF'
+          {
+            "schema": "codex-tui/automated-qualification/v1",
+            "sourceSha": "0123456789abcdef0123456789abcdef01234567",
+            "observedAt": "2026-10-01T00:00:00Z",
+            "gates": {
+              "failureMatrix": "pass",
+              "soakStructural": "pass",
+              "uiContract": "pass",
+              "stateMigrationRecovery": "pass",
+              "supportBundleRedaction": "pass"
+            },
+            "artifacts": {
+              "soakEvidenceSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+              "supportManifestSha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+            }
+          }
+          EOF
+
+          python scripts/release/create_evidence.py             --output "$OUT/evidence.json"             --compat-schema codex-tui/compat/v2             --version 1.0.0             --commit 0123456789abcdef0123456789abcdef01234567             --canonical-ci-run 1             --automated-qualification "$OUT/automated-qualification.json"             --linux-compat-sha256 "$(printf 'a%.0s' {1..64})"             --linux-compat-observed-at 2026-09-30T00:00:00Z             --linux-terminal ci-python38             --linux-terminal-observed-at 2026-09-30T00:00:00Z             --performance-iterations 200             --performance-p95-ms 1             --performance-p99-ms 2             --performance-source ci-python38             --performance-observed-at 2026-09-30T00:00:00Z
 
           python scripts/release/extract_changelog.py             --version 1.0.0             --require-released             --output "$OUT/RELEASE_NOTES.md"
 
@@ -84,6 +103,7 @@ jobs:
           python scripts/release/checksums.py "$OUT"             --output "$OUT/SHA256SUMS"
 
           python scripts/release/capture_compat.py --help >/dev/null
+          python scripts/release/create_automated_qualification.py --help >/dev/null
           python scripts/release/generate_notices.py --help >/dev/null
           python scripts/release/package_release.py --help >/dev/null
           python scripts/release/verify_archive.py --help >/dev/null
