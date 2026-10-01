@@ -21,7 +21,7 @@ use std::process::Stdio;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter, Lines};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 
 const PAGE_SIZE: u32 = 200;
@@ -168,7 +168,7 @@ pub enum ConversationEvent {
 }
 
 pub struct RegistryHandle {
-    rx: mpsc::UnboundedReceiver<BackendSnapshot>,
+    rx: watch::Receiver<BackendSnapshot>,
     conversation_rx: mpsc::UnboundedReceiver<ConversationEvent>,
     command_tx: mpsc::UnboundedSender<BackendCommand>,
     task: JoinHandle<()>,
@@ -176,7 +176,7 @@ pub struct RegistryHandle {
 
 impl RegistryHandle {
     pub fn try_recv(&mut self) -> Option<BackendSnapshot> {
-        self.rx.try_recv().ok()
+        try_recv_latest_snapshot(&mut self.rx)
     }
 
     pub fn try_recv_conversation(&mut self) -> Option<ConversationEvent> {
@@ -266,6 +266,15 @@ impl Drop for RegistryHandle {
     }
 }
 
+fn try_recv_latest_snapshot(
+    receiver: &mut watch::Receiver<BackendSnapshot>,
+) -> Option<BackendSnapshot> {
+    match receiver.has_changed() {
+        Ok(true) => Some(receiver.borrow_and_update().clone()),
+        Ok(false) | Err(_) => None,
+    }
+}
+
 pub async fn start(codex_bin: Option<OsString>) -> Result<StartedRegistry> {
     let mut rpc = RpcSession::spawn(codex_bin).await?;
     let init = initialize(&mut rpc).await?;
@@ -288,7 +297,7 @@ pub async fn start(codex_bin: Option<OsString>) -> Result<StartedRegistry> {
         threads: threads.clone(),
         status: status.clone(),
     };
-    let (tx, rx) = mpsc::unbounded_channel();
+    let (tx, rx) = watch::channel(initial.clone());
     let (conversation_tx, conversation_rx) = mpsc::unbounded_channel();
     let (command_tx, command_rx) = mpsc::unbounded_channel();
     let task = tokio::spawn(run_registry_actor(
@@ -319,7 +328,7 @@ async fn run_registry_actor(
     mut rpc: RpcSession,
     initial_threads: Vec<ThreadSummary>,
     mut status: BackendStatus,
-    tx: mpsc::UnboundedSender<BackendSnapshot>,
+    tx: watch::Sender<BackendSnapshot>,
     conversation_tx: mpsc::UnboundedSender<ConversationEvent>,
     mut command_rx: mpsc::UnboundedReceiver<BackendCommand>,
 ) {
@@ -1511,6 +1520,37 @@ mod tests {
             message: "database unavailable".into(),
         });
         assert!(!is_goal_unsupported(&ordinary_failure));
+    }
+
+    #[test]
+    fn registry_snapshot_delivery_coalesces_to_latest_value() {
+        let initial = BackendSnapshot {
+            generation: 0,
+            threads: vec![],
+            status: BackendStatus::fake(),
+        };
+        let (tx, mut rx) = watch::channel(initial);
+
+        tx.send(BackendSnapshot {
+            generation: 1,
+            threads: vec![],
+            status: BackendStatus::fake(),
+        })
+        .expect("send generation 1");
+        tx.send(BackendSnapshot {
+            generation: 2,
+            threads: vec![],
+            status: BackendStatus::fake(),
+        })
+        .expect("send generation 2");
+
+        assert_eq!(
+            try_recv_latest_snapshot(&mut rx)
+                .expect("latest snapshot")
+                .generation,
+            2
+        );
+        assert!(try_recv_latest_snapshot(&mut rx).is_none());
     }
 
     #[test]
