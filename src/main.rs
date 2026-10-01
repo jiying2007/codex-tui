@@ -1007,15 +1007,18 @@ async fn run_app(fake_mode: bool) -> Result<()> {
 
         if last_forge_reconcile.elapsed() >= Duration::from_secs(15) {
             let effects = reduce(&mut app, Action::RefreshForgeProjections);
+            let forge_projection_changed = !effects.is_empty();
             apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
-            reduce(
-                &mut app,
-                Action::ReconcilePlanning {
-                    now_unix_ms: now_unix_ms(),
-                },
-            );
+            if forge_projection_changed {
+                reduce(
+                    &mut app,
+                    Action::ReconcilePlanning {
+                        now_unix_ms: now_unix_ms(),
+                    },
+                );
+                needs_render = true;
+            }
             last_forge_reconcile = Instant::now();
-            needs_render = true;
         }
 
         if let Some(fake) = fake_backend.as_mut()
