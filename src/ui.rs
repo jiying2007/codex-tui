@@ -179,20 +179,25 @@ fn render_terminal_drawer(frame: &mut Frame<'_>, app: &AppState) {
         .unwrap_or_else(|| "starting".into());
     let cwd = snapshot
         .map(|snapshot| snapshot.cwd.as_str())
-        .unwrap_or("<starting>");
+        .unwrap_or_else(|| tr(app, "<starting>", "<启动中>"));
     let focus = if app.terminal_focused {
-        "FOCUSED · F6 release · Ctrl+] alt"
+        tr(
+            app,
+            "FOCUSED · F6 release · Ctrl+] alt",
+            "已聚焦 · F6 返回应用 · Ctrl+] 备用",
+        )
     } else {
-        "unfocused · t focus · T close"
+        tr(app, "unfocused · t focus · T close", "未聚焦 · t 聚焦 · T 关闭")
     };
     let title = format!(
-        " Terminal Drawer · {focus} · {} · {} ",
+        " {} · {focus} · {} · {} ",
+        tr(app, "Terminal Drawer", "终端抽屉"),
         truncate_display(cwd, 44),
         truncate_display(&status, 36)
     );
 
     let lines = snapshot.map_or_else(
-        || vec![Line::from("Starting platform default terminal…")],
+        || vec![Line::from(tr(app, "Starting platform default terminal…", "正在启动平台默认终端…"))],
         |snapshot| {
             snapshot
                 .rows
@@ -243,54 +248,96 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
     }
 
     let status_line = match app.input_mode {
-        InputMode::Search => {
-            Line::from(format!("/{}  · Enter keep · Esc cancel", app.input_buffer))
-        }
-        InputMode::Alias => Line::from(format!(
-            "alias> {}  · Enter save · Esc cancel",
-            app.input_buffer
+        InputMode::Search => Line::from(format!(
+            "/{}  · {}",
+            app.input_buffer,
+            tr(app, "Enter keep · Esc cancel", "Enter 保留 · Esc 取消")
         )),
-        InputMode::Composer => Line::from("composer active in Thread view"),
-        InputMode::UserInput => Line::from("user-input answer active in Thread view"),
+        InputMode::Alias => Line::from(format!(
+            "alias> {}  · {}",
+            app.input_buffer,
+            tr(app, "Enter save · Esc cancel", "Enter 保存 · Esc 取消")
+        )),
+        InputMode::Composer => Line::from(tr(
+            app,
+            "composer active in Thread view",
+            "消息编辑器已在会话视图激活",
+        )),
+        InputMode::UserInput => Line::from(tr(
+            app,
+            "user-input answer active in Thread view",
+            "用户输入回答已在会话视图激活",
+        )),
         InputMode::ScratchTitle => Line::from(format!(
-            "new scratch> {}  · Enter create · Esc cancel",
-            app.input_buffer
+            "{}> {}  · {}",
+            tr(app, "new scratch", "新建 Scratch"),
+            app.input_buffer,
+            tr(app, "Enter create · Esc cancel", "Enter 创建 · Esc 取消")
         )),
         InputMode::Snooze => Line::from(format!(
-            "snooze> {}  · examples 15m / 1h / 1d · Enter apply · Esc cancel",
-            app.input_buffer
+            "{}> {}  · 15m / 1h / 1d · {}",
+            tr(app, "snooze", "稍后提醒"),
+            app.input_buffer,
+            tr(app, "Enter apply · Esc cancel", "Enter 应用 · Esc 取消")
         )),
         InputMode::Note => Line::from(format!(
-            "note> {}  · Enter save · Esc cancel",
-            truncate_display(&app.input_buffer, 60)
+            "{}> {}  · {}",
+            tr(app, "note", "备注"),
+            truncate_display(&app.input_buffer, 60),
+            tr(app, "Enter save · Esc cancel", "Enter 保存 · Esc 取消")
         )),
         InputMode::SavedViewName => Line::from(format!(
-            "view name> {}  · Enter save · Esc cancel",
-            truncate_display(&app.input_buffer, 60)
+            "{}> {}  · {}",
+            tr(app, "view name", "视图名称"),
+            truncate_display(&app.input_buffer, 60),
+            tr(app, "Enter save · Esc cancel", "Enter 保存 · Esc 取消")
         )),
         InputMode::BatchAddTag
         | InputMode::BatchRemoveTag
         | InputMode::BatchPriority
-        | InputMode::BatchSnooze => Line::from("batch-local input active in Board"),
-        InputMode::GoalObjective => Line::from("Goal objective editor active in Thread view"),
-        InputMode::ForgeMergeRequestTitle | InputMode::ForgeComment => {
-            Line::from("forge mutation input active in Review/Workspace")
-        }
+        | InputMode::BatchSnooze => Line::from(tr(
+            app,
+            "batch-local input active in Board",
+            "看板中的本地批量输入已激活",
+        )),
+        InputMode::GoalObjective => Line::from(tr(
+            app,
+            "Goal objective editor active in Thread view",
+            "Goal 目标编辑器已在会话视图激活",
+        )),
+        InputMode::ForgeMergeRequestTitle | InputMode::ForgeComment => Line::from(tr(
+            app,
+            "forge mutation input active in Review/Workspace",
+            "Forge 变更输入已在评审/工作区激活",
+        )),
         InputMode::WorktreeCreateBranch
         | InputMode::WorktreeCreatePath
         | InputMode::WorktreeCreateStartPoint
-        | InputMode::WorktreeDeleteBranch => Line::from("managed-worktree input active"),
+        | InputMode::WorktreeDeleteBranch => Line::from(tr(
+            app,
+            "managed-worktree input active",
+            "受管 worktree 输入已激活",
+        )),
         InputMode::Normal => {
             if let Some(notice) = &app.mutation_notice {
-                Line::from(format!("notice · {}", truncate_display(notice, 100)))
+                Line::from(format!(
+                    "{} · {}",
+                    tr(app, "notice", "提示"),
+                    truncate_display(notice, 100)
+                ))
             } else if let Some(error) = &app.backend_status.error {
                 Line::from(format!(
-                    "{} · offline/degraded · {}",
+                    "{} · {} · {}",
                     app.backend_status.source,
+                    tr(app, "offline/degraded", "离线/降级"),
                     truncate_display(error, 80)
                 ))
             } else if !app.backend_status.connected {
-                Line::from(format!("{} · offline", app.backend_status.source))
+                Line::from(format!(
+                    "{} · {}",
+                    app.backend_status.source,
+                    tr(app, "offline", "离线")
+                ))
             } else {
                 Line::from(registry_scope_status(app, area.width))
             }
@@ -298,24 +345,24 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
     };
     let footer = Paragraph::new(vec![
         Line::from(vec![
-            Span::raw("j/k move  "),
-            Span::raw("t terminal  "),
-            Span::raw("Space attention  "),
-            Span::raw("/ search  "),
-            Span::raw("l local-only  "),
-            Span::raw("g repo-only  "),
+            Span::raw(tr(app, "j/k move  ", "j/k 移动  ")),
+            Span::raw(tr(app, "t terminal  ", "t 终端  ")),
+            Span::raw(tr(app, "Space attention  ", "Space 待处理  ")),
+            Span::raw(tr(app, "/ search  ", "/ 搜索  ")),
+            Span::raw(tr(app, "l local-only  ", "l 仅本机  ")),
+            Span::raw(tr(app, "g repo-only  ", "g 仅仓库  ")),
             Span::raw(if app.show_all_history {
-                "h recent  "
+                tr(app, "h recent  ", "h 最近  ")
             } else {
-                "h all-history  "
+                tr(app, "h all-history  ", "h 全部历史  ")
             }),
-            Span::raw("p pin  "),
-            Span::raw("e alias  "),
-            Span::raw("x ack  "),
-            Span::raw("s snooze  "),
-            Span::raw("= bind / 1–9 jump  "),
-            Span::raw("! shared-worktree  "),
-            Span::raw("? help"),
+            Span::raw(tr(app, "p pin  ", "p 固定  ")),
+            Span::raw(tr(app, "e alias  ", "e 别名  ")),
+            Span::raw(tr(app, "x ack  ", "x 已处理  ")),
+            Span::raw(tr(app, "s snooze  ", "s 稍后提醒  ")),
+            Span::raw(tr(app, "= bind / 1–9 jump  ", "= 绑定 / 1–9 跳转  ")),
+            Span::raw(tr(app, "! shared-worktree  ", "! 共享-worktree  ")),
+            Span::raw(tr(app, "? help", "? 帮助")),
         ]),
         status_line,
     ]);
@@ -340,7 +387,8 @@ fn backend_home_label(app: &AppState) -> &str {
 
 fn registry_title(app: &AppState, width: u16) -> String {
     let raw = format!(
-        "Mission Control · {} · {}",
+        "{} · {} · {}",
+        tr(app, "Mission Control", "任务中心"),
         sanitize_inline(&app.backend_status.source),
         sanitize_inline(backend_platform_label(app))
     );
@@ -350,17 +398,17 @@ fn registry_title(app: &AppState, width: u16) -> String {
 
 fn selected_git_status(app: &AppState) -> &'static str {
     let Some(thread) = app.selected_thread() else {
-        return "none";
+        return tr(app, "none", "无");
     };
     if !classify_cwd(&thread.metadata.cwd).terminal_usable() {
-        return "skipped";
+        return tr(app, "skipped", "已跳过");
     }
     match app.git_context(&thread.id) {
-        None => "not-probed",
-        Some(context) if context.observed_at_unix_ms == 0 => "probing",
-        Some(context) if context.error.is_some() => "degraded",
-        Some(context) if context.is_repository => "repo",
-        Some(_) => "not-repo",
+        None => tr(app, "not-probed", "未探测"),
+        Some(context) if context.observed_at_unix_ms == 0 => tr(app, "probing", "探测中"),
+        Some(context) if context.error.is_some() => tr(app, "degraded", "降级"),
+        Some(context) if context.is_repository => tr(app, "repo", "仓库"),
+        Some(_) => tr(app, "not-repo", "非仓库"),
     }
 }
 
@@ -380,10 +428,17 @@ fn registry_scope_status(app: &AppState, width: u16) -> String {
         })
         .unwrap_or(("none", "blocked"));
     let git = selected_git_status(app);
-    let raw = format!(
-        "selected cwd: {locality} · terminal {terminal} · git {git} · Codex home: {}",
-        sanitize_inline(backend_home_label(app))
-    );
+    let raw = if app.language.is_simplified_chinese() {
+        format!(
+            "已选 cwd: {locality} · 终端 {terminal} · git {git} · Codex home: {}",
+            sanitize_inline(backend_home_label(app))
+        )
+    } else {
+        format!(
+            "selected cwd: {locality} · terminal {terminal} · git {git} · Codex home: {}",
+            sanitize_inline(backend_home_label(app))
+        )
+    };
     truncate_display(&raw, usize::from(width.saturating_sub(2)).max(1))
 }
 
