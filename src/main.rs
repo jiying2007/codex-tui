@@ -966,8 +966,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
             );
         }
 
-        let forge_mutation_changes =
-            drain_forge_mutations(&mut app, &mut services.forge_mutations);
+        let forge_mutation_changes = drain_forge_mutations(&mut app, &mut services.forge_mutations);
         needs_render |= forge_mutation_changes.any;
         if forge_mutation_changes.planning_projection {
             let effects = reduce(&mut app, Action::RefreshForgeProjections);
@@ -1257,10 +1256,7 @@ mod projection_drain_classification_tests {
             )
         )));
         assert!(!git_event_changes_planning(&GitEvent::Review(
-            codex_tui::git::GitReview::pending(
-                codex_tui::domain::ThreadId::new("thread"),
-                "/repo",
-            )
+            codex_tui::git::GitReview::pending(codex_tui::domain::ThreadId::new("thread"), "/repo",)
         )));
         assert!(!forge_mutation_event_changes_planning(
             &ForgeMutationEvent::Notice("fixture".into())
@@ -1268,9 +1264,9 @@ mod projection_drain_classification_tests {
         assert!(!mutation_event_changes_planning(
             &MutationEvent::ManagedWorktrees(vec![])
         ));
-        assert!(!mutation_event_changes_planning(
-            &MutationEvent::Notice("fixture".into())
-        ));
+        assert!(!mutation_event_changes_planning(&MutationEvent::Notice(
+            "fixture".into()
+        )));
     }
 }
 
