@@ -765,32 +765,69 @@ impl AppState {
             }),
             View::Scratch(_) => None,
         }
-        .ok_or_else(|| "terminal drawer unavailable: no Codex thread is selected".to_string())?;
+        .ok_or_else(|| {
+            local_text(
+                self.language,
+                "terminal drawer unavailable: no Codex thread is selected",
+                "终端抽屉不可用：未选择 Codex 会话",
+            )
+            .to_string()
+        })?;
 
         let thread = self
             .threads
             .iter()
             .find(|thread| thread.id == thread_id)
             .ok_or_else(|| {
-                "terminal drawer unavailable: selected Codex thread disappeared".to_string()
+                local_text(
+                    self.language,
+                    "terminal drawer unavailable: selected Codex thread disappeared",
+                    "终端抽屉不可用：所选 Codex 会话已消失",
+                )
+                .to_string()
             })?;
         let cwd = thread.metadata.cwd.trim();
         match classify_cwd(cwd) {
             CwdLocality::LocalDirectory => Ok(cwd.to_string()),
             CwdLocality::ForeignWindows => Err(
-                "terminal drawer unavailable: selected session has a Windows cwd and is not local to this Linux host; search local in Mission Control".into(),
+                local_text(
+                    self.language,
+                    "terminal drawer unavailable: selected session has a Windows cwd and is not local to this Linux host; search local in Mission Control",
+                    "终端抽屉不可用：所选会话使用 Windows cwd，不属于当前 Linux 主机；请在 Mission Control 中筛选本机会话",
+                )
+                .into(),
             ),
             CwdLocality::ForeignUnix => Err(
-                "terminal drawer unavailable: selected session has a Unix cwd and is not local to this Windows host; search local in Mission Control".into(),
+                local_text(
+                    self.language,
+                    "terminal drawer unavailable: selected session has a Unix cwd and is not local to this Windows host; search local in Mission Control",
+                    "终端抽屉不可用：所选会话使用 Unix cwd，不属于当前 Windows 主机；请在 Mission Control 中筛选本机会话",
+                )
+                .into(),
             ),
             CwdLocality::NativeMissing => Err(format!(
-                "terminal drawer unavailable: selected session cwd does not exist on this host: {cwd}"
+                "{}: {cwd}",
+                local_text(
+                    self.language,
+                    "terminal drawer unavailable: selected session cwd does not exist on this host",
+                    "终端抽屉不可用：所选会话 cwd 在本机不存在",
+                )
             )),
             CwdLocality::Relative => Err(format!(
-                "terminal drawer unavailable: selected session cwd is not absolute: {cwd}"
+                "{}: {cwd}",
+                local_text(
+                    self.language,
+                    "terminal drawer unavailable: selected session cwd is not absolute",
+                    "终端抽屉不可用：所选会话 cwd 不是绝对路径",
+                )
             )),
             CwdLocality::Empty => Err(
-                "terminal drawer unavailable: selected Codex thread has no cwd; search local in Mission Control".into(),
+                local_text(
+                    self.language,
+                    "terminal drawer unavailable: selected Codex thread has no cwd; search local in Mission Control",
+                    "终端抽屉不可用：所选 Codex 会话没有 cwd；请在 Mission Control 中筛选本机会话",
+                )
+                .into(),
             ),
         }
     }
@@ -2667,8 +2704,14 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                         state.mutation_notice = None;
                     }
                     Err(error) => {
-                        state.mutation_notice =
-                            Some(format!("cannot create forge mutation plan: {error:#}"));
+                        state.mutation_notice = Some(format!(
+                            "{}: {error:#}",
+                            local_text(
+                                state.language,
+                                "cannot create forge mutation plan",
+                                "无法创建 Forge 变更计划",
+                            )
+                        ));
                     }
                 }
                 return vec![];
@@ -2717,8 +2760,14 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                         state.mutation_notice = None;
                     }
                     Err(error) => {
-                        state.mutation_notice =
-                            Some(format!("cannot create forge mutation plan: {error:#}"));
+                        state.mutation_notice = Some(format!(
+                            "{}: {error:#}",
+                            local_text(
+                                state.language,
+                                "cannot create forge mutation plan",
+                                "无法创建 Forge 变更计划",
+                            )
+                        ));
                     }
                 }
                 return vec![];
@@ -3869,6 +3918,16 @@ mod tests {
         assert!(!app.terminal_drawer_open);
         assert!(!app.terminal_focused);
         assert!(app.terminal_snapshot.is_none());
+    }
+
+    #[test]
+    fn terminal_drawer_target_errors_follow_simplified_chinese_ui_language() {
+        let mut app = app();
+        app.language = UiLanguage::SimplifiedChinese;
+        app.view = View::Scratch("scratch:1".into());
+
+        let error = app.terminal_target_cwd().expect_err("scratch has no Codex cwd");
+        assert_eq!(error, "终端抽屉不可用：未选择 Codex 会话");
     }
 
     #[test]
