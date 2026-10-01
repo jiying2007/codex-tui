@@ -69,6 +69,11 @@ def main() -> int:
     parser.add_argument("--output-dir", default="release/evidence/linux")
     parser.add_argument("--source", default="")
     parser.add_argument("--github-repo", default="")
+    parser.add_argument(
+        "--dispatch",
+        action="store_true",
+        help="dispatch the stable publish=false GitHub workflow after local qualification passes",
+    )
     args = parser.parse_args()
 
     if not sys.platform.startswith("linux"):
@@ -321,6 +326,21 @@ def main() -> int:
             + ", ".join(verification.get("blockers", []))
         )
 
+    workflow_inputs = {
+        "channel": "stable",
+        "publish": "false",
+        "canonical_ci_run": str(args.canonical_ci_run),
+        "linux_compat_sha256": compat_summary["reportSha256"],
+        "linux_compat_observed_at": compat_summary["observedAt"],
+        "linux_terminal": terminal["terminal"],
+        "linux_terminal_observed_at": terminal["observedAt"],
+        "performance_iterations": str(performance["iterations"]),
+        "performance_p95_ms": str(performance["p95Ms"]),
+        "performance_p99_ms": str(performance["p99Ms"]),
+        "performance_source": performance["source"],
+        "performance_observed_at": performance["observedAt"],
+    }
+
     summary = {
         "schema": "codex-tui/linux-qualification/v2",
         "version": version,
@@ -341,13 +361,34 @@ def main() -> int:
         "releaseEvidence": str(evidence_path),
         "releaseVerification": str(verify_path),
         "localStableVerify": "pass",
-        "next": "Run GitHub release workflow: stable + publish=false on this exact SHA.",
+        "workflowInputs": workflow_inputs,
+        "next": (
+            "stable publish=false workflow dispatched"
+            if args.dispatch
+            else "rerun with --dispatch to start stable publish=false qualification"
+        ),
     }
     summary_path = output_dir / "qualification-summary.json"
     write_text_lf(
         summary_path,
         json.dumps(summary, indent=2, sort_keys=True) + "\n",
     )
+
+    if args.dispatch:
+        command = [
+            "gh",
+            "workflow",
+            "run",
+            "release.yml",
+            "--repo",
+            github_repo,
+            "--ref",
+            "main",
+        ]
+        for key, value in workflow_inputs.items():
+            command.extend(["-f", f"{key}={value}"])
+        run(command, cwd=root, capture=False)
+
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0
 
