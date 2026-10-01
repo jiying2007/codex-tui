@@ -31,6 +31,7 @@ def main() -> int:
     parser.add_argument("--commit", required=True)
     parser.add_argument("--canonical-ci-run", required=True, type=int)
     parser.add_argument("--automated-qualification", required=True)
+    parser.add_argument("--performance-source-sha", required=True)
     parser.add_argument("--performance-iterations", required=True, type=int)
     parser.add_argument("--performance-p95-ms", required=True, type=float)
     parser.add_argument("--performance-p99-ms", required=True, type=float)
@@ -97,6 +98,11 @@ def main() -> int:
             "observedAt": nonempty(terminal_at, f"{platform} terminal observed-at"),
         }
 
+    performance_source_sha = args.performance_source_sha.strip().lower()
+    if not HEX40.fullmatch(performance_source_sha):
+        raise SystemExit("--performance-source-sha must be exactly 40 hexadecimal characters")
+    if performance_source_sha != args.commit.lower():
+        raise SystemExit("performance source SHA mismatch")
     if args.performance_iterations < 200:
         raise SystemExit("stable performance diagnostics require at least 200 iterations")
     if args.performance_p95_ms < 0 or args.performance_p99_ms < 0:
@@ -135,6 +141,7 @@ def main() -> int:
         "performance": {
             "platform": PRIMARY_PLATFORM,
             "fixture": "resident-planning-10k",
+            "sourceSha": performance_source_sha,
             "iterations": args.performance_iterations,
             "p95Ms": args.performance_p95_ms,
             "p99Ms": args.performance_p99_ms,
