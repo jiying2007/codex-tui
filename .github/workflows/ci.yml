@@ -51,17 +51,19 @@ jobs:
 
           cat > "$OUT/automated-qualification.json" <<'EOF'
           {
-            "schema": "codex-tui/automated-qualification/v1",
+            "schema": "codex-tui/automated-qualification/v2",
             "sourceSha": "0123456789abcdef0123456789abcdef01234567",
             "observedAt": "2026-10-01T00:00:00Z",
             "gates": {
               "failureMatrix": "pass",
+              "scaleEvidence": "pass",
               "soakStructural": "pass",
               "uiContract": "pass",
               "stateMigrationRecovery": "pass",
               "supportBundleRedaction": "pass"
             },
             "artifacts": {
+              "scaleEvidenceSha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
               "soakEvidenceSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
               "supportManifestSha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
             }
