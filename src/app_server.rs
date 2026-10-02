@@ -790,6 +790,74 @@ async fn run_registry_actor(
                     return;
                 };
                 match command {
+                    BackendCommand::StartThread { cwd } => {
+                        match start_thread(&mut rpc, cwd).await {
+                            Ok(thread) => {
+                                let thread_id = thread.id.clone();
+                                threads.insert(thread_id.0.clone(), thread);
+                                mark_optional_capability(&mut status, "thread/start", true);
+                                generation = generation.saturating_add(1);
+                                let _ = tx.send(snapshot(generation, &threads, &status));
+                                send_conversation_event(
+                                    &conversation_tx,
+                                    ConversationEvent::ThreadCreated {
+                                        thread_id,
+                                        operation: "thread/start",
+                                    },
+                                )
+                                .await;
+                            }
+                            Err(error) => {
+                                if is_method_unsupported(&error, "thread/start") {
+                                    mark_optional_capability(&mut status, "thread/start", false);
+                                    generation = generation.saturating_add(1);
+                                    let _ = tx.send(snapshot(generation, &threads, &status));
+                                }
+                                send_conversation_event(
+                                    &conversation_tx,
+                                    ConversationEvent::ThreadLifecycleFailed {
+                                        operation: "thread/start",
+                                        error: error.to_string(),
+                                    },
+                                )
+                                .await;
+                            }
+                        }
+                    }
+                    BackendCommand::ForkThread { thread_id } => {
+                        match fork_thread(&mut rpc, thread_id).await {
+                            Ok(thread) => {
+                                let thread_id = thread.id.clone();
+                                threads.insert(thread_id.0.clone(), thread);
+                                mark_optional_capability(&mut status, "thread/fork", true);
+                                generation = generation.saturating_add(1);
+                                let _ = tx.send(snapshot(generation, &threads, &status));
+                                send_conversation_event(
+                                    &conversation_tx,
+                                    ConversationEvent::ThreadCreated {
+                                        thread_id,
+                                        operation: "thread/fork",
+                                    },
+                                )
+                                .await;
+                            }
+                            Err(error) => {
+                                if is_method_unsupported(&error, "thread/fork") {
+                                    mark_optional_capability(&mut status, "thread/fork", false);
+                                    generation = generation.saturating_add(1);
+                                    let _ = tx.send(snapshot(generation, &threads, &status));
+                                }
+                                send_conversation_event(
+                                    &conversation_tx,
+                                    ConversationEvent::ThreadLifecycleFailed {
+                                        operation: "thread/fork",
+                                        error: error.to_string(),
+                                    },
+                                )
+                                .await;
+                            }
+                        }
+                    }
                     BackendCommand::LoadConversation(thread_id) => {
                         watched_threads.insert(thread_id.0.clone());
                         emit_conversation_load(&mut rpc, thread_id, &conversation_tx).await;
