@@ -143,6 +143,10 @@ pub const fn sync_highlight_limit_bytes() -> usize {
     MAX_SYNC_HIGHLIGHT_BYTES
 }
 
+pub fn asset_acknowledgements_markdown() -> String {
+    two_face::acknowledgement::listing().to_md()
+}
+
 fn content_hash(lines: &[String]) -> u64 {
     let mut hasher = DefaultHasher::new();
     lines.hash(&mut hasher);
@@ -212,6 +216,14 @@ mod tests {
                 .highlight_lines(&["text".into()], 1, "definitely-not-a-syntax")
                 .is_none()
         );
+    }
+
+    #[test]
+    fn embedded_asset_acknowledgements_are_retained() {
+        let markdown = asset_acknowledgements_markdown();
+        assert!(markdown.contains("# Syntaxes"));
+        assert!(markdown.contains("# Themes"));
+        assert!(markdown.len() > 1_000);
     }
 
     #[test]
