@@ -4,7 +4,9 @@ use super::{
 };
 use crate::app::{AppState, InputMode};
 use crate::i18n::UiLanguage;
-use crate::planning::{SavedViewLayout, SourceKind, WorkflowStage, apply_saved_view, saved_view_group_key};
+use crate::planning::{
+    SavedViewLayout, SourceKind, WorkflowStage, apply_saved_view, saved_view_group_key,
+};
 use crate::text::{fit_display, sanitize_inline, truncate_display};
 use ratatui::{
     Frame,
@@ -41,12 +43,7 @@ fn scroll_offset(start: usize) -> u16 {
     start.min(u16::MAX as usize) as u16
 }
 
-fn render_scrollbar(
-    frame: &mut Frame<'_>,
-    area: Rect,
-    total: usize,
-    viewport: BoardViewport,
-) {
+fn render_scrollbar(frame: &mut Frame<'_>, area: Rect, total: usize, viewport: BoardViewport) {
     if total <= viewport.row_capacity || viewport.row_capacity == 0 || area.width == 0 {
         return;
     }
