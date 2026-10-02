@@ -243,8 +243,15 @@ pub(super) fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
     } else if app.hot_slot_bind_pending {
         tr(
             app,
-            "bind hot slot: press 1–9 · Esc cancels other input only",
-            "绑定快捷槽：按 1–9 · Esc 仅取消其他输入",
+            "bind hot slot: press 1–9 · Esc cancel",
+            "绑定快捷槽：按 1–9 · Esc 取消",
+        )
+        .into()
+    } else if app.link_hot_slot_pending.is_some() {
+        tr(
+            app,
+            "link WorkCard: press 1–9 · Esc cancel",
+            "关联 WorkCard：按 1–9 · Esc 取消",
         )
         .into()
     } else if let Some(error) = &app.planning_store_error {
