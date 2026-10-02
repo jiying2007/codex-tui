@@ -906,6 +906,7 @@ fn drain_git(app: &mut AppState, git: &mut GitHandle) -> ProjectionDrainChanges 
                 reduce(app, Action::GitContextLoaded(context));
             }
             GitEvent::Review(review) => {
+                codex_tui::syntax_highlight::prewarm_review_diff(&review);
                 reduce(app, Action::GitReviewLoaded(review));
             }
         }
