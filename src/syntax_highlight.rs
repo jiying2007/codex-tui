@@ -13,7 +13,7 @@ use two_face::{
         highlighting::{FontStyle, Style as SyntectStyle},
         parsing::SyntaxSet,
     },
-    theme::{EmbeddedThemeName, LazyThemeSet},
+    theme::{EmbeddedLazyThemeSet, EmbeddedThemeName},
 };
 
 const MAX_SYNC_HIGHLIGHT_BYTES: usize = 128 * 1024;
@@ -37,7 +37,7 @@ struct CacheEntry {
 
 pub struct SyntaxHighlighter {
     syntaxes: SyntaxSet,
-    themes: LazyThemeSet,
+    themes: EmbeddedLazyThemeSet,
     cache: VecDeque<CacheEntry>,
 }
 
@@ -90,7 +90,7 @@ impl SyntaxHighlighter {
             .syntaxes
             .find_syntax_by_extension(syntax_hint)
             .or_else(|| self.syntaxes.find_syntax_by_name(syntax_hint))?;
-        let theme = &self.themes[EmbeddedThemeName::Ansi];
+        let theme = self.themes.get(EmbeddedThemeName::Ansi);
         let mut highlighter = HighlightLines::new(syntax, theme);
         let mut highlighted = Vec::with_capacity(lines.len());
 
@@ -128,10 +128,7 @@ thread_local! {
         RefCell::new(SyntaxHighlighter::new());
 }
 
-pub fn highlight_review_diff(
-    lines: &[String],
-    revision: u64,
-) -> Option<Vec<Line<'static>>> {
+pub fn highlight_review_diff(lines: &[String], revision: u64) -> Option<Vec<Line<'static>>> {
     REVIEW_HIGHLIGHTER.with(|highlighter| {
         highlighter
             .borrow_mut()
