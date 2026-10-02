@@ -398,7 +398,7 @@ fn parse_query_terms(filter: &str) -> Option<Vec<QueryTerm>> {
     Some(terms)
 }
 
-fn card_matches_filter(card: &WorkCardProjection, filter: &str) -> bool {
+pub fn card_matches_filter(card: &WorkCardProjection, filter: &str) -> bool {
     let Some(terms) = parse_query_terms(filter) else {
         return false;
     };
@@ -491,13 +491,17 @@ fn card_matches_query_term(card: &WorkCardProjection, token: &str) -> bool {
     }
 
     let haystack = format!(
-        "{} {} {} {} {} {} {} {} {}",
+        "{} {} {} {} {} {} {} {} {} {} {} {}",
         card.title,
         card.workspace.as_deref().unwrap_or(""),
         card.stage.label(),
         card.goal
             .as_ref()
             .map(|goal| goal.objective.as_str())
+            .unwrap_or(""),
+        card.goal
+            .as_ref()
+            .map(|goal| goal.status.wire())
             .unwrap_or(""),
         card.attention
             .iter()
@@ -514,10 +518,34 @@ fn card_matches_query_term(card: &WorkCardProjection, token: &str) -> bool {
             .iter()
             .map(String::as_str)
             .collect::<Vec<_>>()
+            .join(" "),
+        card.overlay.note.as_deref().unwrap_or(""),
+        card.links
+            .iter()
+            .map(|link| link.source.value.as_str())
+            .chain(std::iter::once(card.anchor.value.as_str()))
+            .collect::<Vec<_>>()
             .join(" ")
     )
     .to_ascii_lowercase();
-    haystack.contains(token)
+    fuzzy_subsequence(token, &haystack)
+}
+
+fn fuzzy_subsequence(needle: &str, haystack: &str) -> bool {
+    if needle.is_empty() {
+        return true;
+    }
+    let mut remaining = needle.chars();
+    let mut current = remaining.next();
+    for candidate in haystack.chars() {
+        if current == Some(candidate) {
+            current = remaining.next();
+            if current.is_none() {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 fn parse_query_bool(value: &str) -> Option<bool> {
@@ -1096,6 +1124,40 @@ mod tests {
         );
         assert_eq!(links.len(), card.links.len());
     }
+    #[test]
+    fn free_text_search_covers_scratch_notes_links_and_tags() {
+        let scratch = ScratchWork {
+            id: "scratch-search".into(),
+            title: "Investigate wake miss".into(),
+            note: Some("far-field replay regression".into()),
+            workspace: Some("kws".into()),
+            priority: None,
+            state: ScratchState::Ready,
+            created_at_unix_ms: 1,
+            updated_at_unix_ms: 2,
+        };
+        let mut local = WorkCardRecord {
+            local_id: scratch.id.clone(),
+            anchor: SourceRef {
+                kind: SourceKind::ScratchWork,
+                value: scratch.id.clone(),
+            },
+            links: vec![WorkCardLink {
+                role: LinkRole::PrimaryThread,
+                source: SourceRef::codex_thread(&ThreadId::new("thread-remote-debug")),
+            }],
+            overlay: WorkCardOverlay::default(),
+        };
+        local.overlay.tags.insert("acoustic".into());
+        local.overlay.note = scratch.note.clone();
+        let card = reconcile_scratch_card_with_local(&scratch, Some(&local), 2);
+
+        assert!(card_matches_filter(&card, "farfield"));
+        assert!(card_matches_filter(&card, "remotedebug"));
+        assert!(card_matches_filter(&card, "acoustic"));
+        assert!(!card_matches_filter(&card, "unrelated"));
+    }
+
     #[test]
     fn builtin_attention_view_filters_attention_without_changing_stage() {
         let mut thread = first_thread();
