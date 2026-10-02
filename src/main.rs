@@ -170,6 +170,11 @@ async fn doctor(scope: Option<&str>) -> Result<()> {
         config.ui.language.resolve().as_str()
     );
     println!("notifications: {}", config.notifications.mode.label());
+    println!(
+        "presentation: {} · background-redraw-min={}ms",
+        config.ui.presentation.label(),
+        config.ui.presentation.background_redraw_interval_ms()
+    );
 
     match store.load_state() {
         Ok(state) => println!("operator-schemaVersion: {}", state.schema_version),
@@ -477,6 +482,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
     let config = bootstrap.config;
     let local = bootstrap.local;
     let notification_mode = config.notifications.mode;
+    let presentation_mode = config.ui.presentation;
 
     let mut fake_backend = fake_mode.then(FakeBackend::seeded);
     let mut registry: Option<RegistryHandle> = None;
@@ -546,6 +552,8 @@ async fn run_app(fake_mode: bool) -> Result<()> {
     let mut last_git_reconcile = Instant::now();
     let mut last_forge_reconcile = Instant::now();
     let mut needs_render = true;
+    let mut urgent_render = true;
+    let mut last_render = Instant::now();
 
     while !app.should_quit {
         let mut planning_dirty = false;
@@ -693,11 +701,15 @@ async fn run_app(fake_mode: bool) -> Result<()> {
             needs_render = true;
         }
 
-        if needs_render {
+        if needs_render
+            && presentation_mode.should_render(last_render.elapsed(), urgent_render)
+        {
             terminal
                 .terminal_mut()
                 .draw(|frame| ui::render(frame, &app))?;
             needs_render = false;
+            urgent_render = false;
+            last_render = Instant::now();
         }
 
         while event::poll(Duration::ZERO)? {
@@ -708,6 +720,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                         || matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat)
                     {
                         needs_render = true;
+                        urgent_render = true;
                     }
                     apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
                 }
@@ -715,11 +728,13 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                     let effects = handle_paste(&mut app, text);
                     if !effects.is_empty() {
                         needs_render = true;
+                        urgent_render = true;
                     }
                     apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
                 }
                 Event::Resize(cols, rows) => {
                     needs_render = true;
+                    urgent_render = true;
                     if app.terminal_drawer_open {
                         let effects = vec![Effect::TerminalResize(ui::terminal_drawer_pty_size(
                             cols, rows,
