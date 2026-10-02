@@ -29,6 +29,8 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Clear, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap},
 };
+use terminal::{render_terminal_drawer, terminal_process_state_label};
+pub use terminal::{terminal_drawer_pty_size, terminal_drawer_rect};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LayoutMode {
