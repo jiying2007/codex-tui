@@ -24,6 +24,7 @@ pub mod release;
 pub mod release_benchmark;
 pub mod scale_evidence;
 pub mod soak;
+pub(crate) mod sqlite_schema;
 pub mod sqlite_store;
 pub mod store;
 pub mod support_bundle;
