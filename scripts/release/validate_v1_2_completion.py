@@ -54,9 +54,6 @@ SOURCE_TOKENS = {
         "pub fn prewarm_review_diff",
         "pub fn cached_review_diff",
     ],
-    "src/ui.rs": [
-        "cached_review_diff(thread_id, review.observed_at_unix_ms, app.review_word_diff)",
-    ],
     "src/main.rs": [
         "prewarm_review_diff(&review)",
         "presentation_mode.should_render",
@@ -294,10 +291,25 @@ def main():
             "stable performance evidence is exact-SHA"
         )
 
-    ui_text = pathlib.Path("src/ui.rs").read_text(encoding="utf-8")
-    if "highlight_review_diff" in ui_text:
+    review_render_paths = [
+        pathlib.Path("src/ui.rs"),
+        pathlib.Path("src/ui/review.rs"),
+    ]
+    review_render_text = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in review_render_paths
+        if path.exists()
+    )
+    required_cached_lookup = (
+        "cached_review_diff(thread_id, review.observed_at_unix_ms, app.review_word_diff)"
+    )
+    if required_cached_lookup not in review_render_text:
+        raise SystemExit(
+            "Review render path must use the prewarmed cached_review_diff lookup"
+        )
+    if "highlight_review_diff" in review_render_text:
         raise SystemExit("Review render path must not call the old computing highlighter")
-    if "HighlightLines::new" in ui_text or ".highlight_line(" in ui_text:
+    if "HighlightLines::new" in review_render_text or ".highlight_line(" in review_render_text:
         raise SystemExit("Review render module must not perform syntect parsing")
 
     print(
