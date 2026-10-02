@@ -306,7 +306,7 @@ pub(crate) fn action_for_command(app: &AppState, command: Command) -> Option<Act
         Command::ContextActions => Action::OpenContext,
         Command::Goal => Action::OpenGoalActions,
         Command::CommandPalette => Action::OpenCommandPalette,
-        Command::OpenExternal => return None,
+        Command::OpenExternal => Action::OpenReviewExternal,
     };
     Some(action)
 }
