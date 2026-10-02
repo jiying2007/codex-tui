@@ -120,5 +120,32 @@
       "new core functionality lands only in extracted bounded modules",
       "canonical CI and hosted RC qualification remain green"
     ]
+  },
+  "phase": "maintainability-and-terminal-state-completion",
+  "automatedQualification": {
+    "schema": "codex-tui/automated-qualification/v3",
+    "exactSourceSha": true,
+    "requiredOnEveryMainSha": true,
+    "requiredGates": [
+      "failureMatrix",
+      "scaleEvidence",
+      "soakStructural",
+      "uiContract",
+      "stateMigrationRecovery",
+      "supportBundleRedaction"
+    ]
+  },
+  "developmentQualification": {
+    "schema": "codex-tui/development-qualification/v1",
+    "generatedForEveryMainSha": true,
+    "artifactName": "development-qualification",
+    "authority": "hosted-development-only",
+    "canSatisfyStable": false,
+    "requiredChecks": [
+      "automated-qualification",
+      "module-ratchet",
+      "protocol-replay"
+    ],
+    "securityGovernance": "dependency graph is governed by the separate security workflow and exact-checkout release gate"
   }
 }
