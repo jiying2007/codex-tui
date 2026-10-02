@@ -1,5 +1,7 @@
 pub mod app;
 pub mod app_server;
+pub(crate) mod app_server_registry;
+pub(crate) mod app_server_wire;
 pub mod backend;
 pub mod batch_local;
 pub mod codex_protocol;
