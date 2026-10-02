@@ -165,10 +165,20 @@ def validate_implemented_contracts():
     require_tokens(
         "src/app/lifecycle.rs",
         [
-            'lifecycle_capability_available("thread/start")',
-            'lifecycle_capability_available("thread/fork")',
+            "fn lifecycle_capability_available",
+            'self.backend_status.source != "fake"',
+            "optional_capabilities_missing",
             "plan_start_thread",
             "plan_fork_thread",
+        ],
+    )
+    require_tokens(
+        "src/app/context.rs",
+        [
+            'lifecycle_capability_available("thread/start")',
+            'lifecycle_capability_available("thread/fork")',
+            "ContextChoice::NewCodexThread",
+            "ContextChoice::ForkCodexThread",
         ],
     )
     require_tokens(
