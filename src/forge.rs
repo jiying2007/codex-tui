@@ -1,12 +1,12 @@
 use crate::domain::ThreadId;
 use crate::forge_github::{GitHubProvider, probe_github_with_remote};
+pub(crate) use crate::forge_types::default_capabilities;
 pub use crate::forge_types::{
     CapabilityState, ChangeRequestSummary, ForgeCapability, ForgeDoctorSnapshot, ForgeFreshness,
     ForgeFuture, ForgeIdentity, ForgeIssueSummary, ForgeObservation, ForgeProvider,
     ForgeProviderKind, ForgeReviewSummary, ForgeReviewTarget, IssueBoardSummary, PipelineSummary,
     RemoteIdentity,
 };
-pub(crate) use crate::forge_types::default_capabilities;
 use anyhow::{Context, Result, anyhow, bail};
 use serde::Deserialize;
 use std::collections::BTreeMap;
