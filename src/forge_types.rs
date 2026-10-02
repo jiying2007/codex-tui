@@ -1,10 +1,6 @@
 use crate::{domain::ThreadId, operation::now_unix_ms};
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::BTreeMap,
-    future::Future,
-    pin::Pin,
-};
+use std::{collections::BTreeMap, future::Future, pin::Pin};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -311,4 +307,3 @@ pub(crate) fn default_capabilities() -> BTreeMap<ForgeCapability, CapabilityStat
     .into_iter()
     .collect()
 }
-
