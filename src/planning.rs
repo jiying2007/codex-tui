@@ -1036,7 +1036,6 @@ mod tests {
         FakeBackend::seeded().snapshot().threads.remove(0)
     }
 
-
     #[test]
     fn projected_goal_and_worktree_links_are_stable_and_deduplicated() {
         let thread = first_thread();
