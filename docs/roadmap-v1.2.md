@@ -37,7 +37,7 @@ New implementation modules should normally stay below 800 LOC and trend toward t
 ## P1 after the P0 boundaries
 
 - expand the stable read-only headless surface;
-- add lightweight notifications without inventing a second workflow state machine;
+- add lightweight notifications without inventing a second workflow state machine; default off, bounded terminal/native-OS delivery, edge-triggered from existing projections;
 - implement the already-locked two-face + syntect highlighting choice behind a bounded/cached interface.
 
 ## Evidence-driven only

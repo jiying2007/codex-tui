@@ -8,6 +8,7 @@ use codex_tui::{
     forge_mutation::{ForgeMutationEvent, ForgeMutationHandle},
     git::{self, GitEvent, GitHandle},
     i18n::{UiLanguage, pick},
+    notification::NotificationMode,
     planning::PlanningSnapshot,
     sqlite_store::SqliteStore,
     store::LocalStore,
@@ -22,9 +23,11 @@ use std::process::Stdio;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 mod runtime_input;
+mod runtime_notifications;
 mod runtime_store;
 
 use runtime_input::{handle_key, handle_paste};
+use runtime_notifications::RuntimeNotifications;
 use runtime_store::RuntimeStore;
 
 #[cfg(test)]
@@ -41,18 +44,20 @@ struct RuntimeServices {
     forge: ForgeHandle,
     forge_mutations: ForgeMutationHandle,
     mutations: WorktreeMutationHandle,
+    notifications: RuntimeNotifications,
     terminal_drawer: TerminalDrawerRuntime,
     store: RuntimeStore,
 }
 
 impl RuntimeServices {
-    fn new(store: RuntimeStore) -> Self {
+    fn new(store: RuntimeStore, notification_mode: NotificationMode) -> Self {
         let sqlite = store.sqlite_clone();
         Self {
             git: GitHandle::start(),
             forge: ForgeHandle::start(),
             forge_mutations: ForgeMutationHandle::start(sqlite.clone()),
             mutations: WorktreeMutationHandle::start(sqlite),
+            notifications: RuntimeNotifications::start(notification_mode),
             terminal_drawer: TerminalDrawerRuntime::default(),
             store,
         }
@@ -164,6 +169,7 @@ async fn doctor(scope: Option<&str>) -> Result<()> {
         config.ui.language.as_str(),
         config.ui.language.resolve().as_str()
     );
+    println!("notifications: {}", config.notifications.mode.label());
 
     match store.load_state() {
         Ok(state) => println!("operator-schemaVersion: {}", state.schema_version),
@@ -470,6 +476,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
     let (store, bootstrap) = RuntimeStore::discover()?;
     let config = bootstrap.config;
     let local = bootstrap.local;
+    let notification_mode = config.notifications.mode;
 
     let mut fake_backend = fake_mode.then(FakeBackend::seeded);
     let mut registry: Option<RegistryHandle> = None;
@@ -497,7 +504,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
         },
     );
 
-    let mut services = RuntimeServices::new(store);
+    let mut services = RuntimeServices::new(store, notification_mode);
     let language = app.language;
     if let Err(error) = services.mutations.recover() {
         reduce(
@@ -532,6 +539,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
         &mut services,
         initial_git_effects,
     )?;
+    services.notifications.seed(&app);
 
     let mut terminal = TerminalSession::enter(config.ui.mouse)?;
     let mut last_fake_tick = Instant::now();
@@ -658,6 +666,30 @@ async fn run_app(fake_mode: bool) -> Result<()> {
         }
 
         if reconcile_planning_if_dirty(&mut app, planning_dirty, now_unix_ms()) {
+            needs_render = true;
+            if let Err(error) = services.notifications.observe(&app) {
+                reduce(
+                    &mut app,
+                    Action::MutationNotice(format!(
+                        "{}: {error}",
+                        runtime_text(
+                            language,
+                            "notification dispatch unavailable",
+                            "通知分派不可用",
+                        )
+                    )),
+                );
+            }
+        }
+
+        if let Some(notice) = services.notifications.try_notice() {
+            reduce(
+                &mut app,
+                Action::MutationNotice(format!(
+                    "{}: {notice}",
+                    runtime_text(language, "notification delivery degraded", "通知投递已降级",)
+                )),
+            );
             needs_render = true;
         }
 
@@ -990,6 +1022,7 @@ fn apply_effects(
         forge,
         forge_mutations,
         mutations,
+        notifications: _,
         terminal_drawer,
         store,
     } = services;
