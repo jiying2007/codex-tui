@@ -81,6 +81,23 @@ SOURCE_TOKENS = {
         "name: protocol-compatibility",
         "cargo test --locked --test protocol_replay",
     ],
+    ".github/workflows/development-qualification.yml": [
+        "Validate v1.2 scope completion",
+        "validate_v1_2_completion.py",
+        "release/v1.2-completion.json",
+        'receipt["scopeCompletion"]["status"] == "pass"',
+    ],
+    ".github/workflows/release.yml": [
+        "Validate v1.2 scope completion",
+        "validate_v1_2_completion.py",
+        "release/v1.2-completion.json",
+        "gate/DEVELOPMENT-COMPLETION.json",
+    ],
+    "scripts/release/create_development_qualification.py": [
+        'COMPLETION_SCHEMA = "codex-tui/v1.2-completion/v1"',
+        '"scopeCompletion": {',
+        '"manifestSha256": sha256(completion_path)',
+    ],
     ".github/workflows/security.yml": [
         "EmbarkStudios/cargo-deny-action@v2.0.20",
         "cargo audit",
