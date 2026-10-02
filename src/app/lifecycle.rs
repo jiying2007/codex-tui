@@ -123,3 +123,63 @@ impl AppState {
         self.mutation_notice = Some(format!("{operation} failed: {error}"));
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::backend::{BackendStatus, CodexBackend, FakeBackend};
+
+    fn connected_status() -> BackendStatus {
+        let mut status = BackendStatus::starting("codex-app-server");
+        status.connected = true;
+        status.registry_complete = true;
+        status
+    }
+
+    fn app_with_local_cwd() -> (AppState, tempfile::TempDir) {
+        let backend = FakeBackend::seeded();
+        let mut app = AppState::new(backend.snapshot().threads);
+        let dir = tempfile::tempdir().expect("tempdir");
+        app.threads[0].metadata.cwd = dir.path().to_string_lossy().into_owned();
+        app.backend_status = connected_status();
+        (app, dir)
+    }
+
+    #[test]
+    fn fake_backend_never_advertises_thread_lifecycle_actions() {
+        let backend = FakeBackend::seeded();
+        let snapshot = backend.snapshot();
+        let mut app = AppState::new(snapshot.threads);
+        app.backend_status = snapshot.status;
+        let choices = app.context_choices();
+        assert!(!choices.contains(&crate::app::ContextChoice::NewCodexThread));
+        assert!(!choices.contains(&crate::app::ContextChoice::ForkCodexThread));
+    }
+
+    #[test]
+    fn local_connected_thread_can_start_and_fork() {
+        let (mut app, _dir) = app_with_local_cwd();
+        let start = app.plan_start_thread();
+        assert!(matches!(
+            start.as_slice(),
+            [Effect::StartThread { cwd }] if !cwd.is_empty()
+        ));
+        let fork = app.plan_fork_thread();
+        assert!(matches!(
+            fork.as_slice(),
+            [Effect::ForkThread { thread_id }] if thread_id == &app.threads[0].id
+        ));
+    }
+
+    #[test]
+    fn observed_missing_capability_removes_context_action() {
+        let (app, _dir) = app_with_local_cwd();
+        let mut app = app;
+        app.backend_status
+            .optional_capabilities_missing
+            .push("thread/fork".into());
+        let choices = app.context_choices();
+        assert!(choices.contains(&crate::app::ContextChoice::NewCodexThread));
+        assert!(!choices.contains(&crate::app::ContextChoice::ForkCodexThread));
+    }
+}
