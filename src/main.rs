@@ -687,11 +687,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                 &mut app,
                 Action::MutationNotice(format!(
                     "{}: {notice}",
-                    runtime_text(
-                        language,
-                        "notification delivery degraded",
-                        "通知投递已降级",
-                    )
+                    runtime_text(language, "notification delivery degraded", "通知投递已降级",)
                 )),
             );
             needs_render = true;
