@@ -39,7 +39,7 @@ impl AppState {
         })
     }
 
-    fn build_command_palette_choices(&self) -> Vec<Command> {
+    pub(super) fn build_command_palette_choices(&self) -> Vec<Command> {
         let mut choices = vec![Command::Search];
         let thread_id = self.command_palette_thread_id();
 
