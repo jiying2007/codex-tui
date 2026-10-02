@@ -1,0 +1,26 @@
+{
+  "schema": "codex-tui/protocol-fixtures/v1",
+  "policy": "fixtures are secret-free protocol-shape assets replayed through production App Server decode and registry normalization; no model inference is required",
+  "fixtures": [
+    {
+      "id": "current-registry",
+      "path": "tests/fixtures/protocol/current/registry.jsonl",
+      "expectation": "pass"
+    },
+    {
+      "id": "previous-stable-registry",
+      "path": "tests/fixtures/protocol/previous-stable/registry.jsonl",
+      "expectation": "pass"
+    },
+    {
+      "id": "unknown-events-registry",
+      "path": "tests/fixtures/protocol/unknown-events/registry.jsonl",
+      "expectation": "fail-soft"
+    },
+    {
+      "id": "malformed-registry",
+      "path": "tests/fixtures/protocol/malformed/registry.jsonl",
+      "expectation": "fail-closed"
+    }
+  ]
+}
