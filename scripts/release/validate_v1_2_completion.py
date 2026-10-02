@@ -282,6 +282,18 @@ def main():
             raise SystemExit("completion contract source is missing: {}".format(path))
         require_tokens(path, tokens)
 
+    performance_workflow = pathlib.Path(
+        ".github/workflows/performance-diagnostics.yml"
+    ).read_text(encoding="utf-8")
+    push_section = performance_workflow.split("  pull_request:", 1)[0]
+    if "  push:\n    branches: [main]\n" not in push_section:
+        raise SystemExit("performance diagnostics must run on every main push")
+    if "    paths:" in push_section:
+        raise SystemExit(
+            "performance diagnostics main-push trigger must not be path-filtered; "
+            "stable performance evidence is exact-SHA"
+        )
+
     ui_text = pathlib.Path("src/ui.rs").read_text(encoding="utf-8")
     if "highlight_review_diff" in ui_text:
         raise SystemExit("Review render path must not call the old computing highlighter")
