@@ -2,11 +2,13 @@
 
 A local-first terminal workbench for managing multiple Codex projects and conversations.
 
-**License:** Apache-2.0 · **Stable release:** v1.0.0 · **Parked v1.1 candidate:** `release/v1.1-parked` · **Current development line:** v1.2.0 · **Tier 1:** Linux.
+**License:** Apache-2.0 · **Stable release:** v1.0.0 · **Parked v1.1 candidate:** `release/v1.1-parked` · **Stable-qualification line:** v1.2.0 · **Workflow-complete development checkpoint:** v1.3 · **Tier 1:** Linux.
 
 ## Development status
 
-v1.2 has reached development-scope completion and is frozen against new core functionality under `release/v1.2-completion.json`. Main continues to accept defect, security, compatibility, qualification-evidence, release-tooling and documentation changes while retaining exact-SHA hosted development qualification, architecture ratchets, protocol replay, dependency security governance and preview packaging. This is not stable readiness: v1.2 stable publication still requires the exact-SHA real Linux compatibility, controlling-TTY restoration, performance diagnostics and release evidence defined by `release/v1.2-criteria.json`. The parked v1.1 candidate remains separate.
+v1.2 remains the independent stable-qualification line. Its development scope is frozen under `release/v1.2-completion.json`, and stable publication still requires the exact-SHA real Linux compatibility, controlling-TTY restoration and release evidence defined by `release/v1.2-criteria.json`.
+
+The isolated `release/v1.3-development` line has now reached **development-scope completion** under `release/v1.3-completion.json`. It closes the Board/WorkCard/thread-lifecycle/search/SavedView/Review/long-thread/Command-Palette workflow gaps and retains exact-SHA UX render diagnostics plus a tighter v1.3 module ratchet. GitLab Issue Board projection and GitHub write parity are deliberately evidence-gated rather than falsely marked implemented. v1.3 is not a release authority yet: package/release authority remains with v1.2 until a future explicit 1.3 release-line migration.
 
 ## Product goal
 
