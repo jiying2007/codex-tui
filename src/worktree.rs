@@ -8,7 +8,7 @@ use crate::worktree_git::{
     branch_exists, canonical_path, list_worktrees, run_git_mutation, same_path, worktree_is_clean,
 };
 #[cfg(test)]
-use crate::worktree_git::{parse_worktree_porcelain, run_git};
+use crate::worktree_git::parse_worktree_porcelain;
 use anyhow::{Context, Result, anyhow};
 use std::collections::BTreeMap;
 use std::path::Path;
