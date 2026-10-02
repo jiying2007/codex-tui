@@ -1606,6 +1606,10 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.context_open = false;
             state.context_selected = 0;
 
+            if state.begin_saved_view_edit(choice) {
+                return vec![];
+            }
+
             if choice == ContextChoice::SaveCurrentView {
                 let mut template = state.active_saved_view();
                 template.id.clear();
@@ -2618,6 +2622,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::Snooze
             | InputMode::Note
             | InputMode::SavedViewName
+            | InputMode::SavedViewEdit
             | InputMode::BatchAddTag
             | InputMode::BatchRemoveTag
             | InputMode::BatchPriority
@@ -2696,6 +2701,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::Snooze
             | InputMode::Note
             | InputMode::SavedViewName
+            | InputMode::SavedViewEdit
             | InputMode::BatchAddTag
             | InputMode::BatchRemoveTag
             | InputMode::BatchPriority
@@ -2717,6 +2723,9 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             let mode = state.input_mode;
             if mode == InputMode::Search {
                 return state.commit_metadata_search();
+            }
+            if mode == InputMode::SavedViewEdit {
+                return state.commit_saved_view_edit();
             }
             if mode == InputMode::ForgeMergeRequestTitle {
                 let title = state.input_buffer.trim().to_string();
@@ -3164,6 +3173,10 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::CancelInput => {
             if state.input_mode == InputMode::Search {
                 return state.cancel_metadata_search();
+            }
+            if state.input_mode == InputMode::SavedViewEdit {
+                state.cancel_saved_view_edit();
+                return vec![];
             }
             if matches!(
                 state.input_mode,
