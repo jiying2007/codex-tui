@@ -6,10 +6,9 @@ use codex_tui::{
 
 #[test]
 fn current_registry_fixture_replays_through_production_normalization() {
-    let mut replay = ReplayBackend::from_jsonl(include_str!(
-        "fixtures/protocol/current/registry.jsonl"
-    ))
-    .expect("current replay");
+    let mut replay =
+        ReplayBackend::from_jsonl(include_str!("fixtures/protocol/current/registry.jsonl"))
+            .expect("current replay");
 
     assert_eq!(replay.frame_count(), 4);
     assert!(replay.snapshot().threads.is_empty());
@@ -62,10 +61,9 @@ fn unknown_registry_events_fail_soft_without_creating_fake_frames() {
 
 #[test]
 fn malformed_wire_fixture_fails_with_bounded_decode_context() {
-    let error = ReplayBackend::from_jsonl(include_str!(
-        "fixtures/protocol/malformed/registry.jsonl"
-    ))
-    .expect_err("malformed fixture must fail");
+    let error =
+        ReplayBackend::from_jsonl(include_str!("fixtures/protocol/malformed/registry.jsonl"))
+            .expect_err("malformed fixture must fail");
 
     let message = format!("{error:#}");
     assert!(message.contains("decode app-server JSON line"));
