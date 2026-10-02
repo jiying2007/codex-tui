@@ -13,10 +13,24 @@ use ratatui::{
 
 pub(super) fn render_command_palette(frame: &mut Frame<'_>, app: &AppState) {
     let choices = app.command_palette_choices();
-    let lines = choices
-        .iter()
-        .enumerate()
-        .map(|(index, choice)| {
+    let mut lines = vec![Line::from(format!(
+        "> {}",
+        if app.command_palette_query.is_empty() {
+            tr(app, "type to filter commands", "输入以筛选命令").to_string()
+        } else {
+            app.command_palette_query.clone()
+        }
+    ))];
+    lines.push(Line::from(""));
+
+    if choices.is_empty() {
+        lines.push(Line::from(tr(
+            app,
+            "No commands match the current query.",
+            "没有符合当前查询的命令。",
+        )));
+    } else {
+        lines.extend(choices.iter().enumerate().map(|(index, choice)| {
             let selected = index == app.command_palette_selected;
             let style = if selected {
                 Style::default().add_modifier(Modifier::REVERSED)
@@ -31,18 +45,20 @@ pub(super) fn render_command_palette(frame: &mut Frame<'_>, app: &AppState) {
                 ),
                 style,
             ))
-        })
-        .chain(std::iter::once(Line::from("")))
-        .chain(std::iter::once(Line::from(tr(
-            app,
-            "j/k move · Enter execute · Esc close · Ctrl+K toggle",
-            "j/k 移动 · Enter 执行 · Esc 关闭 · Ctrl+K 切换",
-        ))))
-        .collect::<Vec<_>>();
+        }));
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(tr(
+        app,
+        "type filter · ↑/↓ move · Backspace edit · Enter execute · Esc close · Ctrl+K toggle",
+        "输入筛选 · ↑/↓ 移动 · Backspace 删除 · Enter 执行 · Esc 关闭 · Ctrl+K 切换",
+    )));
+
     let height = u16::try_from(lines.len().saturating_add(2))
         .unwrap_or(20)
-        .clamp(7, 24);
-    let area = centered_fixed(72, height, frame.area());
+        .clamp(8, 24);
+    let area = centered_fixed(76, height, frame.area());
     frame.render_widget(Clear, area);
     frame.render_widget(
         Paragraph::new(lines)
