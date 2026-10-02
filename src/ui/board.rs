@@ -195,7 +195,8 @@ pub(super) fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
                     "没有符合当前已保存视图的卡片。",
                 )));
             }
-            let viewport = board_viewport(lines.len(), selected_line, outer[0].height);
+            let line_count = lines.len();
+            let viewport = board_viewport(line_count, selected_line, outer[0].height);
             frame.render_widget(
                 Paragraph::new(lines)
                     .block(Block::bordered().title(format!(
@@ -207,7 +208,7 @@ pub(super) fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
                     .scroll((scroll_offset(viewport.start), 0)),
                 outer[0],
             );
-            render_scrollbar(frame, outer[0], lines.len(), viewport);
+            render_scrollbar(frame, outer[0], line_count, viewport);
         }
     }
 
