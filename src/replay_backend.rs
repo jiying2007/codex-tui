@@ -1,5 +1,5 @@
 use crate::{
-    app_server,
+    app_server_registry,
     backend::{BackendFingerprint, BackendSnapshot, CodexBackend},
 };
 use anyhow::{Result, ensure};
@@ -12,7 +12,7 @@ pub struct ReplayBackend {
 
 impl ReplayBackend {
     pub fn from_jsonl(input: &str) -> Result<Self> {
-        let frames = app_server::replay_registry_jsonl(input)?;
+        let frames = app_server_registry::replay_registry_jsonl(input)?;
         ensure!(!frames.is_empty(), "replay fixture produced no frames");
         Ok(Self { frames, index: 0 })
     }
