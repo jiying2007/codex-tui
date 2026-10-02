@@ -135,8 +135,14 @@
     ],
     "v1_2": [
       "no open P0 maintainability defects",
-      "new core functionality lands only in extracted bounded modules",
+      "P0/P1/P2 completion contract validates against the source tree",
+      "new core functionality is frozen behind a new development plan",
       "canonical CI and hosted development qualification remain green"
+    ],
+    "P1": [
+      "stable read-only headless status, attention, board, Forge and managed-worktree surfaces are retained",
+      "notifications remain default-off, edge-triggered and bounded",
+      "Review syntax highlighting is bounded and prewarmed outside the render critical path"
     ]
   },
   "phase": "maintainability-and-terminal-state-completion",
@@ -162,7 +168,8 @@
     "requiredChecks": [
       "automated-qualification",
       "module-ratchet",
-      "protocol-replay"
+      "protocol-replay",
+      "scope-completion"
     ],
     "securityGovernance": "dependency graph is governed by the separate security workflow and exact-checkout release gate"
   }

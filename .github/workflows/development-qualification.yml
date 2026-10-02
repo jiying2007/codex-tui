@@ -9,8 +9,10 @@ on:
       - "scripts/release/create_development_qualification.py"
       - "scripts/release/create_automated_qualification.py"
       - "scripts/release/validate_v1_2_plan.py"
+      - "scripts/release/validate_v1_2_completion.py"
       - "scripts/architecture/check_module_ratchet.py"
       - "release/v1.2-plan.json"
+      - "release/v1.2-completion.json"
       - "release/v1.2-criteria.json"
       - "tests/protocol_replay.rs"
       - "tests/fixtures/protocol/**"
@@ -42,6 +44,9 @@ jobs:
 
       - name: Validate v1.2 development authority
         run: python scripts/release/validate_v1_2_plan.py
+
+      - name: Validate v1.2 scope completion
+        run: python scripts/release/validate_v1_2_completion.py
 
       - name: Enforce module ratchet
         run: python scripts/architecture/check_module_ratchet.py
@@ -81,6 +86,7 @@ jobs:
           cargo build --locked --release
 
           mkdir -p qualification
+          cp release/v1.2-completion.json qualification/v1.2-completion.json
           cargo test --locked --all-targets --all-features -- --list > qualification/test-list.txt
 
           ./target/release/codex-tui release failure-matrix --json             > qualification/failure-matrix.json
@@ -110,6 +116,9 @@ jobs:
           assert receipt["schema"] == "codex-tui/development-qualification/v1"
           assert receipt["targetVersion"] == "1.2.0"
           assert receipt["sourceSha"] == "${{ github.sha }}"
+          assert receipt["scopeCompletion"]["status"] == "pass"
+          assert receipt["scopeCompletion"]["stableReady"] is False
+          assert receipt["scopeCompletion"]["publicationAllowed"] is False
           assert receipt["repositoryAutomatedQualification"]["status"] == "pass"
           assert receipt["moduleRatchet"]["status"] == "pass"
           assert receipt["protocolReplay"]["status"] == "pass"

@@ -1,0 +1,115 @@
+{
+  "schema": "codex-tui/v1.2-completion/v1",
+  "targetVersion": "1.2.0",
+  "planSchema": "codex-tui/v1.2-plan/v1",
+  "featureCompletionBaselineSha": "57efe74813d47cb4088c1ddfde400ae6907f7b06",
+  "status": "development-scope-complete",
+  "stableReady": false,
+  "publicationAllowed": false,
+  "completedPriorities": {
+    "P0": [
+      "architecture-decomposition",
+      "replay-compatibility",
+      "dependency-security-governance"
+    ],
+    "P1": [
+      "headless-contract-completion",
+      "lightweight-notifications",
+      "syntax-highlighting"
+    ],
+    "P2": [
+      "accessibility-mature-mode"
+    ]
+  },
+  "evidence": {
+    "architecture-decomposition": {
+      "paths": [
+        "src/runtime_store.rs",
+        "src/runtime_input.rs",
+        "src/app/types.rs",
+        "src/ui/terminal.rs",
+        "src/ui/overlays.rs",
+        "src/app_server_registry.rs",
+        "src/app_server_wire.rs",
+        "src/sqlite_schema.rs",
+        "src/worktree_git.rs",
+        "src/forge_types.rs",
+        "release/v1.2-plan.json"
+      ]
+    },
+    "replay-compatibility": {
+      "paths": [
+        "src/replay_backend.rs",
+        "tests/protocol_replay.rs",
+        "tests/fixtures/protocol/manifest.json",
+        ".github/workflows/protocol-compatibility.yml"
+      ]
+    },
+    "dependency-security-governance": {
+      "paths": [
+        "deny.toml",
+        "Cargo.lock",
+        ".github/workflows/security.yml",
+        ".github/dependabot.yml"
+      ]
+    },
+    "headless-contract-completion": {
+      "paths": [
+        "src/headless.rs",
+        "src/headless/surfaces.rs"
+      ]
+    },
+    "lightweight-notifications": {
+      "paths": [
+        "src/notification.rs",
+        "src/runtime_notifications.rs",
+        "src/store.rs"
+      ]
+    },
+    "syntax-highlighting": {
+      "paths": [
+        "src/syntax_highlight.rs",
+        "src/ui.rs",
+        "src/main.rs",
+        "Cargo.toml",
+        "deny.toml"
+      ]
+    },
+    "accessibility-mature-mode": {
+      "paths": [
+        "src/presentation.rs",
+        "src/store.rs",
+        "src/main.rs",
+        "docs/implementation/v1.2-accessibility-mature-mode.md"
+      ]
+    }
+  },
+  "deferredUntilEvidence": [
+    "thread-queue",
+    "transcript-fts",
+    "native-gitlab-rest-graphql",
+    "extra-release-architectures",
+    "remote-app-server-targets"
+  ],
+  "frozenOptionalLayers": [
+    "team-server-rbac",
+    "web-mobile-companion",
+    "collaboration-service",
+    "generic-plugin-runtime",
+    "multi-agent-providers",
+    "job-workflow-engine"
+  ],
+  "freezePolicy": {
+    "newCoreFunctionality": "requires-new-development-plan",
+    "allowedChangeClasses": [
+      "defect-fix",
+      "security",
+      "compatibility",
+      "qualification-evidence",
+      "release-tooling",
+      "documentation"
+    ]
+  },
+  "stableAuthority": "release/v1.2-criteria.json",
+  "stableEvidencePolicy": "This completion manifest proves development-scope closure only. Stable publication remains governed by exact-SHA release-evidence/v4 plus the real-environment and packaging gates in release/v1.2-criteria.json."
+}

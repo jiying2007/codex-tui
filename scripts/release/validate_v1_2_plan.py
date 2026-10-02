@@ -83,6 +83,7 @@ def main() -> int:
         "automated-qualification",
         "module-ratchet",
         "protocol-replay",
+        "scope-completion",
     ]:
         raise SystemExit("development qualification required checks drifted")
 
@@ -97,6 +98,14 @@ def main() -> int:
         "dependency-security-governance",
     }:
         raise SystemExit("v1.2 P0 plan drifted")
+
+    phase_exit = plan.get("phaseExit")
+    if not isinstance(phase_exit, dict):
+        raise SystemExit("v1.2 phaseExit is missing")
+    for priority in ("P0", "P1", "P2", "v1_2"):
+        checks = phase_exit.get(priority)
+        if not isinstance(checks, list) or not checks:
+            raise SystemExit("v1.2 phaseExit.{} is missing".format(priority))
 
     deferred = plan.get("evidenceDrivenDeferred")
     frozen = plan.get("frozenOptionalLayers")
@@ -113,10 +122,12 @@ def main() -> int:
         "name: development-qualification",
         "branches: [main]",
         "validate_v1_2_plan.py",
+        "validate_v1_2_completion.py",
         "check_module_ratchet.py",
         "protocol_replay",
         "create_development_qualification.py",
         "development-qualification",
+        "scopeCompletion",
         "stableReady",
         "publicationAllowed",
     )

@@ -151,6 +151,9 @@ jobs:
           assert receipt["schema"] == "codex-tui/development-qualification/v1"
           assert receipt["targetVersion"] == "1.2.0"
           assert receipt["sourceSha"] == "0123456789abcdef0123456789abcdef01234567"
+          assert receipt["scopeCompletion"]["status"] == "pass"
+          assert receipt["scopeCompletion"]["stableReady"] is False
+          assert receipt["scopeCompletion"]["publicationAllowed"] is False
           assert receipt["repositoryAutomatedQualification"]["status"] == "pass"
           assert receipt["moduleRatchet"]["status"] == "pass"
           assert receipt["protocolReplay"]["status"] == "pass"
@@ -201,6 +204,7 @@ jobs:
           python scripts/release/capture_compat.py --help >/dev/null
           python scripts/release/capture_forge_capability.py --help >/dev/null
           python scripts/release/validate_v1_2_plan.py >/dev/null
+          python scripts/release/validate_v1_2_completion.py >/dev/null
 
           FAKE_FORGE="$OUT/fake-codex-tui"
           cat > "$FAKE_FORGE" <<'SH'

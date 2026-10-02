@@ -6,7 +6,7 @@ A local-first terminal workbench for managing multiple Codex projects and conver
 
 ## Development status
 
-v1.2 is the active maintainability and terminal-state-completion line. Main keeps exact-SHA hosted development qualification, architecture ratchets, protocol replay, dependency security governance and preview packaging. The parked v1.1 candidate remains separate and still requires its real Linux/TTY evidence before any v1.1 stable publication.
+v1.2 has reached development-scope completion and is frozen against new core functionality under `release/v1.2-completion.json`. Main continues to accept defect, security, compatibility, qualification-evidence, release-tooling and documentation changes while retaining exact-SHA hosted development qualification, architecture ratchets, protocol replay, dependency security governance and preview packaging. This is not stable readiness: v1.2 stable publication still requires the exact-SHA real Linux compatibility, controlling-TTY restoration, performance diagnostics and release evidence defined by `release/v1.2-criteria.json`. The parked v1.1 candidate remains separate.
 
 ## Product goal
 
@@ -268,10 +268,15 @@ See:
 - `docs/implementation/m7d1-accessibility.md`
 - `docs/implementation/m7d2-compatibility.md`
 - `docs/implementation/m7d3-release.md`
+- `docs/implementation/v1.2-accessibility-mature-mode.md`
+- `docs/roadmap-v1.2.md`
 - `docs/release/install-upgrade.md`
 - `docs/release/v1.1-rc-plan.md`
 - `docs/team-quickstart.md`
 - `docs/qualification/provider.md`
+- `release/v1.2-plan.json` — v1.2 development plan and phase exits
+- `release/v1.2-completion.json` — v1.2 development-scope completion/freeze contract; never stable authority
+- `release/v1.2-criteria.json` — v1.2 stable qualification authority
 - `release/v1.1-criteria.json` — current v1.1 qualification authority
 - `release/v1.1-rc-plan.json` — current RC freeze/deferred-real-evidence handoff contract
 - `release/v1.0-criteria.json` — historical v1.0 release record
