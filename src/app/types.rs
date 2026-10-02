@@ -211,6 +211,7 @@ pub enum Action {
     CloseCommandPalette,
     MoveCommandPalette(i32),
     CommandPaletteInputChar(char),
+    CommandPaletteInputText(String),
     CommandPaletteBackspace,
     OpenContext,
     CloseContext,
