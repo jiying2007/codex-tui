@@ -488,4 +488,3 @@ fn centered_fixed(width: u16, height: u16, area: Rect) -> Rect {
         height,
     }
 }
-
