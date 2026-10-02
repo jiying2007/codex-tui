@@ -1914,6 +1914,13 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     }];
                 }
                 ContextChoice::SaveCurrentView
+                | ContextChoice::EditViewName
+                | ContextChoice::EditViewSource
+                | ContextChoice::EditViewFilter
+                | ContextChoice::EditViewLayout
+                | ContextChoice::EditViewGroup
+                | ContextChoice::EditViewOrder
+                | ContextChoice::EditViewFields
                 | ContextChoice::DeleteCurrentView
                 | ContextChoice::BatchAddTag
                 | ContextChoice::BatchRemoveTag
