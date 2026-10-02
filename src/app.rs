@@ -38,12 +38,13 @@ use std::time::Instant;
 
 mod context;
 mod lifecycle;
+mod saved_view;
 mod search;
 mod types;
 
 use search::matches_filter_normalized_with_extra;
 
-pub use types::{Action, ContextChoice, Effect, InputMode, View, ViewKind};
+pub use types::{Action, ContextChoice, Effect, InputMode, SavedViewEditField, View, ViewKind};
 
 const REGISTRY_RECENT_LIMIT: usize = 100;
 const CONVERSATION_CACHE_LIMIT: usize = 16;
@@ -153,6 +154,7 @@ pub struct AppState {
     pub snooze_target: Option<SourceRef>,
     pub note_target: Option<SourceRef>,
     pub saved_view_template: Option<SavedView>,
+    pub saved_view_edit_field: Option<SavedViewEditField>,
     pub command_palette_open: bool,
     pub command_palette_selected: usize,
     command_palette_items: Vec<Command>,
@@ -272,6 +274,7 @@ impl AppState {
             snooze_target: None,
             note_target: None,
             saved_view_template: None,
+            saved_view_edit_field: None,
             command_palette_open: false,
             command_palette_selected: 0,
             command_palette_items: vec![],
