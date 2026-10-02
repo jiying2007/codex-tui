@@ -672,7 +672,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                     Action::MutationNotice(format!(
                         "{}: {error}",
                         runtime_text(
-                            app.language,
+                            language,
                             "notification dispatch unavailable",
                             "通知分派不可用",
                         )
@@ -682,7 +682,17 @@ async fn run_app(fake_mode: bool) -> Result<()> {
         }
 
         if let Some(notice) = services.notifications.try_notice() {
-            reduce(&mut app, Action::MutationNotice(notice));
+            reduce(
+                &mut app,
+                Action::MutationNotice(format!(
+                    "{}: {notice}",
+                    runtime_text(
+                        language,
+                        "notification delivery degraded",
+                        "通知投递已降级",
+                    )
+                )),
+            );
             needs_render = true;
         }
 
