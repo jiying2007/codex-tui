@@ -33,8 +33,7 @@ impl AppState {
             }
         }
         if self.lifecycle_thread_id().is_some() {
-            if self.lifecycle_cwd().is_some()
-                && self.lifecycle_capability_available("thread/start")
+            if self.lifecycle_cwd().is_some() && self.lifecycle_capability_available("thread/start")
             {
                 choices.push(ContextChoice::NewCodexThread);
             }
