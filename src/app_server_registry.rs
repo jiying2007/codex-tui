@@ -167,4 +167,3 @@ pub(crate) fn apply_registry_notification(
         _ => Ok(None),
     }
 }
-
