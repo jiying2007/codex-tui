@@ -77,6 +77,7 @@ All notable codex-tui changes are recorded here.
 - entered v1.1 RC code freeze with a machine-validated handoff contract: automated gates continue on every exact SHA, real Linux compatibility/TTY evidence is explicitly deferred and non-synthesizable, and internal GitLab evidence remains a separate team-reuse qualification.
 - strengthened stable real-environment evidence to source-bound v4: compat and terminal-restoration receipts now carry the exact candidate SHA, local qualification rejects cross-SHA receipts, and the cloud release verifier independently rejects replay of older RC evidence.
 - made shutdown durability fail visibly: if the final operator-state SQLite flush fails after the UI loop exits, codex-tui now returns the error after terminal restoration instead of silently reporting a successful exit with potentially stale deferred state.
+- added a hosted deferred-RC qualification path that runs on every main SHA, retains exact-SHA automated qualification, and explicitly reports real Linux/TTY/performance evidence as deferred instead of weakening stable publication gates.
 
 ## [1.0.0] - 2026-09-30
 
