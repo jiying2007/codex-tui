@@ -75,6 +75,7 @@ SOURCE_TOKENS = {
         "presentation: PresentationMode::Normal",
     ],
     "Cargo.toml": [
+        'default-run = "codex-tui"',
         'two-face = { version = "0.5.2", default-features = false, features = ["syntect-fancy"] }',
     ],
     ".github/workflows/protocol-compatibility.yml": [
