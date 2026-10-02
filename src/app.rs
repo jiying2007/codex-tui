@@ -36,6 +36,7 @@ use crate::text::sanitize_inline;
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::time::Instant;
 
+mod lifecycle;
 mod types;
 
 pub use types::{Action, ContextChoice, Effect, InputMode, View, ViewKind};
@@ -662,43 +663,6 @@ impl AppState {
                 value: id.clone(),
             }),
         }
-    }
-
-    fn lifecycle_thread_id(&self) -> Option<ThreadId> {
-        match &self.view {
-            View::Registry => self.selected_thread_id(),
-            View::Thread(id)
-            | View::Review(id)
-            | View::Workspace(id)
-            | View::ManagedWorktrees(id) => Some(id.clone()),
-            View::Board => self.selected_planning_card().and_then(|card| {
-                (card.anchor.kind == SourceKind::CodexThread)
-                    .then(|| ThreadId::new(card.anchor.value.clone()))
-            }),
-            View::Scratch(_) => None,
-        }
-    }
-
-    fn lifecycle_cwd(&self) -> Option<String> {
-        if matches!(self.view, View::ManagedWorktrees(_))
-            && let Some(record) = self.selected_managed_worktree()
-        {
-            return Some(record.canonical_path.clone());
-        }
-        let thread_id = self.lifecycle_thread_id()?;
-        self.thread_by_id(&thread_id)
-            .map(|thread| thread.metadata.cwd.clone())
-            .filter(|cwd| !cwd.trim().is_empty())
-    }
-
-    fn lifecycle_capability_available(&self, capability: &str) -> bool {
-        self.backend_status.connected
-            && self.backend_status.source != "fake"
-            && !self
-                .backend_status
-                .optional_capabilities_missing
-                .iter()
-                .any(|missing| missing == capability)
     }
 
     pub fn terminal_target_cwd(&self) -> Result<String, String> {
@@ -1507,25 +1471,10 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             thread_id,
             operation,
         } => {
-            if let Some(index) = state
-                .threads
-                .iter()
-                .position(|thread| thread.id == thread_id)
-            {
-                state.previous_target = state.current_thread_id().cloned();
-                state.selected = index;
-                state.thread_ui.entry(thread_id.0.clone()).or_default();
-                state.prepare_conversation(&thread_id);
-                state.view = View::Thread(thread_id.clone());
-                state.mutation_notice = Some(format!("{operation} succeeded"));
-                return vec![Effect::LoadConversation(thread_id)];
-            }
-            state.mutation_notice = Some(format!(
-                "{operation} succeeded; waiting for registry projection"
-            ));
+            return state.apply_thread_created(thread_id, operation);
         }
         Action::ThreadLifecycleFailed { operation, error } => {
-            state.mutation_notice = Some(format!("{operation} failed: {error}"));
+            state.apply_thread_lifecycle_failed(operation, error);
         }
         Action::OpenGoalActions => {
             if state.current_pending_request().is_some() {
@@ -1982,60 +1931,10 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     }];
                 }
                 ContextChoice::NewCodexThread => {
-                    let Some(cwd) = state.lifecycle_cwd() else {
-                        return vec![];
-                    };
-                    if classify_cwd(&cwd) != CwdLocality::LocalDirectory {
-                        state.mutation_notice = Some(
-                            local_text(
-                                state.language,
-                                "cannot start Codex thread: target cwd is not a local directory",
-                                "无法新建 Codex 会话：目标 cwd 不是本机目录",
-                            )
-                            .into(),
-                        );
-                        return vec![];
-                    }
-                    state.mutation_notice = Some(
-                        local_text(
-                            state.language,
-                            "starting Codex thread…",
-                            "正在新建 Codex 会话…",
-                        )
-                        .into(),
-                    );
-                    return vec![Effect::StartThread { cwd }];
+                    return state.plan_start_thread();
                 }
                 ContextChoice::ForkCodexThread => {
-                    let Some(thread_id) = state.lifecycle_thread_id() else {
-                        return vec![];
-                    };
-                    let Some(cwd) = state
-                        .thread_by_id(&thread_id)
-                        .map(|thread| thread.metadata.cwd.clone())
-                    else {
-                        return vec![];
-                    };
-                    if classify_cwd(&cwd) != CwdLocality::LocalDirectory {
-                        state.mutation_notice = Some(
-                            local_text(
-                                state.language,
-                                "cannot fork Codex thread: source cwd is not local",
-                                "无法派生 Codex 会话：源 cwd 不属于本机",
-                            )
-                            .into(),
-                        );
-                        return vec![];
-                    }
-                    state.mutation_notice = Some(
-                        local_text(
-                            state.language,
-                            "forking Codex thread…",
-                            "正在派生 Codex 会话…",
-                        )
-                        .into(),
-                    );
-                    return vec![Effect::ForkThread { thread_id }];
+                    return state.plan_fork_thread();
                 }
                 ContextChoice::ScratchInbox
                 | ContextChoice::ScratchReady
