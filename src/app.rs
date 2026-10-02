@@ -38,6 +38,7 @@ use std::time::Instant;
 
 mod context;
 mod lifecycle;
+mod review;
 mod saved_view;
 mod search;
 mod types;
@@ -2276,6 +2277,9 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 cwd: review.cwd.clone(),
                 path: change.path.clone(),
             }];
+        }
+        Action::OpenReviewExternal => {
+            return state.open_review_external();
         }
         Action::ConversationLoaded(page) => {
             let thread_id = page.thread_id.clone();
