@@ -258,6 +258,29 @@ jobs:
       - name: Check RustSec advisories
         run: cargo audit
 
+      - name: Retain dependency security receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p qualification
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          receipt = {
+              "schema": "codex-tui/security-governance/v1",
+              "sourceSha": os.environ["GITHUB_SHA"],
+              "cargoDeny": "pass",
+              "rustSec": "pass",
+              "authority": "exact-checkout-release-gate",
+          }
+          Path("qualification/security-governance.json").write_text(
+              json.dumps(receipt, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
       - name: Run exact-SHA automated hardening qualification
         shell: bash
         run: |
@@ -379,6 +402,7 @@ jobs:
           cp qualification/soak-evidence.json gate/soak-evidence.json
           cp qualification/support-bundle/manifest.json gate/support-bundle-manifest.json
           cp qualification/support-bundle/snapshot.json gate/support-bundle-snapshot.json
+          cp qualification/security-governance.json gate/security-governance.json
           cp release/v1.2-plan.json gate/DEVELOPMENT-PLAN.json
           if [ -f release-evidence.json ]; then
             cp release-evidence.json gate/release-evidence.json
