@@ -1503,6 +1503,30 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.goals.remove(&thread_id.0);
             state.goal_actions_open = false;
         }
+        Action::ThreadCreated {
+            thread_id,
+            operation,
+        } => {
+            if let Some(index) = state
+                .threads
+                .iter()
+                .position(|thread| thread.id == thread_id)
+            {
+                state.previous_target = state.current_thread_id().cloned();
+                state.selected = index;
+                state.thread_ui.entry(thread_id.0.clone()).or_default();
+                state.prepare_conversation(&thread_id);
+                state.view = View::Thread(thread_id.clone());
+                state.mutation_notice = Some(format!("{operation} succeeded"));
+                return vec![Effect::LoadConversation(thread_id)];
+            }
+            state.mutation_notice = Some(format!(
+                "{operation} succeeded; waiting for registry projection"
+            ));
+        }
+        Action::ThreadLifecycleFailed { operation, error } => {
+            state.mutation_notice = Some(format!("{operation} failed: {error}"));
+        }
         Action::OpenGoalActions => {
             if state.current_pending_request().is_some() {
                 return vec![];
