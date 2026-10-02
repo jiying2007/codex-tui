@@ -892,6 +892,16 @@ impl AppState {
                 ]);
             }
         }
+        if self.lifecycle_thread_id().is_some() {
+            if self.lifecycle_cwd().is_some()
+                && self.lifecycle_capability_available("thread/start")
+            {
+                choices.push(ContextChoice::NewCodexThread);
+            }
+            if self.lifecycle_capability_available("thread/fork") {
+                choices.push(ContextChoice::ForkCodexThread);
+            }
+        }
         if matches!(self.view, View::Board) {
             if !self.visible_planning_cards().is_empty() {
                 choices.extend([
