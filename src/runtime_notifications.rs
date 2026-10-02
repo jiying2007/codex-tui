@@ -1,21 +1,14 @@
 use anyhow::{Context, Result, anyhow};
 use codex_tui::{
     app::AppState,
-    notification::{
-        NotificationMode, NotificationObservation, NotificationTracker,
-    },
+    notification::{NotificationMode, NotificationObservation, NotificationTracker},
 };
 use std::{
     io::{self, Write},
     process::Stdio,
     time::Duration,
 };
-use tokio::{
-    process::Command,
-    sync::mpsc,
-    task::JoinHandle,
-    time::timeout,
-};
+use tokio::{process::Command, sync::mpsc, task::JoinHandle, time::timeout};
 
 const NOTIFICATION_QUEUE_CAPACITY: usize = 32;
 const NOTIFICATION_NOTICE_CAPACITY: usize = 16;
