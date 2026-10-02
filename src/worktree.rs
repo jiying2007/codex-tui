@@ -644,8 +644,8 @@ async fn recover_incomplete(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::worktree_git::parse_worktree_porcelain;
     use crate::operation::OperationPlan;
+    use crate::worktree_git::parse_worktree_porcelain;
     use tempfile::tempdir;
 
     fn git(cwd: &Path, args: &[&str]) {
