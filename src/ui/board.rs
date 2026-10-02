@@ -103,20 +103,29 @@ pub(super) fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
                             stage_index == app.board_stage_index && index == app.board_selected;
                         let attention = if card.needs_you() { "!" } else { " " };
                         let pin = if card.overlay.pinned { "*" } else { " " };
-                        let goal = card
-                            .goal
-                            .as_ref()
-                            .map(|goal| {
-                                format!(" [{}]", goal_status_label(goal.status, app.language))
-                            })
-                            .unwrap_or_default();
-                        let text = format!(
-                            "{}{}{} {}{}",
-                            if selected { ">" } else { " " },
-                            pin,
-                            attention,
-                            truncate_display(&sanitize_inline(&card.title), 20),
-                            goal
+                        let metadata =
+                            compact_card_metadata(card, &view.visible_fields, app.language);
+                        let raw = if metadata.is_empty() {
+                            format!(
+                                "{}{}{} {}",
+                                if selected { ">" } else { " " },
+                                pin,
+                                attention,
+                                sanitize_inline(&card.title)
+                            )
+                        } else {
+                            format!(
+                                "{}{}{} {} · {}",
+                                if selected { ">" } else { " " },
+                                pin,
+                                attention,
+                                sanitize_inline(&card.title),
+                                metadata
+                            )
+                        };
+                        let text = truncate_display(
+                            &raw,
+                            columns[stage_index].width.saturating_sub(2) as usize,
                         );
                         let style = if selected {
                             Style::default().add_modifier(Modifier::REVERSED)
@@ -148,7 +157,12 @@ pub(super) fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
                 .iter()
                 .enumerate()
                 .map(|(index, card)| {
-                    planning_card_line(card, index == app.board_selected, app.language)
+                    planning_card_line(
+                        card,
+                        index == app.board_selected,
+                        app.language,
+                        &view.visible_fields,
+                    )
                 })
                 .collect::<Vec<_>>();
             frame.render_widget(
@@ -184,6 +198,7 @@ pub(super) fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
                     card,
                     index == app.board_selected,
                     app.language,
+                    &view.visible_fields,
                 ));
             }
             if lines.is_empty() {
@@ -280,12 +295,11 @@ pub(super) fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
     frame.render_widget(Paragraph::new(input), outer[1]);
 }
 
-fn planning_card_line(
+fn attention_text(
     card: &crate::planning::WorkCardProjection,
-    selected: bool,
     language: UiLanguage,
-) -> Line<'static> {
-    let attention = if card.needs_you() {
+) -> String {
+    if card.needs_you() {
         card.attention
             .iter()
             .map(|reason| planning_attention_label(reason, language))
@@ -295,8 +309,14 @@ fn planning_card_line(
         tr_language(language, "snoozed", "已稍后提醒").into()
     } else {
         "-".into()
-    };
-    let source = match (card.anchor.kind.clone(), language) {
+    }
+}
+
+fn source_text(
+    card: &crate::planning::WorkCardProjection,
+    language: UiLanguage,
+) -> &'static str {
+    match (card.anchor.kind.clone(), language) {
         (SourceKind::ScratchWork, UiLanguage::SimplifiedChinese) => "草稿",
         (SourceKind::CodexThread, UiLanguage::SimplifiedChinese) => "会话",
         (SourceKind::ForgeWorkItem, UiLanguage::SimplifiedChinese) => "Forge",
@@ -304,21 +324,85 @@ fn planning_card_line(
         (SourceKind::CodexThread, UiLanguage::English) => "thread",
         (SourceKind::ForgeWorkItem, UiLanguage::English) => "forge",
         _ => tr_language(language, "link", "链接"),
+    }
+}
+
+fn saved_view_field_text(
+    card: &crate::planning::WorkCardProjection,
+    field: &str,
+    language: UiLanguage,
+) -> Option<String> {
+    Some(match field {
+        "stage" => fit_display(workflow_stage_label(card.stage, language), 7),
+        "attention" => fit_display(&attention_text(card, language), 10),
+        "workspace" => fit_display(card.workspace.as_deref().unwrap_or("-"), 14),
+        "source" => fit_display(source_text(card, language), 8),
+        "goal" => fit_display(
+            card.goal
+                .as_ref()
+                .map(|goal| goal_status_label(goal.status, language))
+                .unwrap_or("-"),
+            12,
+        ),
+        "priority" => fit_display(
+            &card
+                .overlay
+                .priority
+                .map(|priority| format!("p={priority}"))
+                .unwrap_or_else(|| "p=-".into()),
+            7,
+        ),
+        "branch" => fit_display(card.branch.as_deref().unwrap_or("-"), 14),
+        "forge" => fit_display(
+            card.forge_provider
+                .map(|provider| provider.label())
+                .unwrap_or("-"),
+            8,
+        ),
+        _ => return None,
+    })
+}
+
+fn compact_card_metadata(
+    card: &crate::planning::WorkCardProjection,
+    visible_fields: &[String],
+    language: UiLanguage,
+) -> String {
+    visible_fields
+        .iter()
+        .filter(|field| field.as_str() != "stage")
+        .filter_map(|field| saved_view_field_text(card, field, language))
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty() && value != "-")
+        .collect::<Vec<_>>()
+        .join(" · ")
+}
+
+fn planning_card_line(
+    card: &crate::planning::WorkCardProjection,
+    selected: bool,
+    language: UiLanguage,
+    visible_fields: &[String],
+) -> Line<'static> {
+    let metadata = visible_fields
+        .iter()
+        .filter_map(|field| saved_view_field_text(card, field, language))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let text = if metadata.is_empty() {
+        format!(
+            "{} {}",
+            if selected { ">" } else { " " },
+            sanitize_inline(&card.title)
+        )
+    } else {
+        format!(
+            "{} {} {}",
+            if selected { ">" } else { " " },
+            metadata,
+            sanitize_inline(&card.title)
+        )
     };
-    let goal = card
-        .goal
-        .as_ref()
-        .map(|goal| goal_status_label(goal.status, language))
-        .unwrap_or("-");
-    let text = format!(
-        "{} {} {} {} {} {}",
-        if selected { ">" } else { " " },
-        fit_display(workflow_stage_label(card.stage, language), 7),
-        fit_display(&attention, 10),
-        fit_display(goal, 12),
-        fit_display(source, 8),
-        sanitize_inline(&card.title)
-    );
     let style = if selected {
         Style::default().add_modifier(Modifier::REVERSED)
     } else {
