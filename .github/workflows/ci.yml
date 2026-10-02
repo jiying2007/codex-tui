@@ -205,6 +205,7 @@ jobs:
           python scripts/release/capture_forge_capability.py --help >/dev/null
           python scripts/release/validate_v1_2_plan.py >/dev/null
           python scripts/release/validate_v1_2_completion.py >/dev/null
+          python scripts/release/validate_v1_3_plan.py >/dev/null
 
           FAKE_FORGE="$OUT/fake-codex-tui"
           cat > "$FAKE_FORGE" <<'SH'

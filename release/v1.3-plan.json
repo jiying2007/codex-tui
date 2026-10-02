@@ -1,0 +1,95 @@
+{
+  "schema": "codex-tui/v1.3-development-plan/v1",
+  "target": "v1.3-workflow-completion-ux",
+  "baseSha": "cfed175ed1f3488c3a987f01d8c6b07292bf2553",
+  "integrationBranch": "release/v1.3-development",
+  "authority": "development-scope-only",
+  "principles": [
+    "preserve-codex-git-forge-authority",
+    "personal-first-local-first",
+    "no-fake-external-evidence",
+    "real-usage-ux-before-breadth",
+    "bounded-memory-and-render-work",
+    "capability-gated-upstream-features"
+  ],
+  "phases": {
+    "P0": [
+      "board-large-dataset-navigation",
+      "workcard-relationship-closure",
+      "codex-thread-create-fork-worktree-handoff",
+      "unified-metadata-search"
+    ],
+    "P1": [
+      "saved-view-editor",
+      "review-evidence-workspace-and-external-open",
+      "core-module-decomposition",
+      "long-thread-viewport-and-cache"
+    ],
+    "P2": [
+      "gitlab-issue-board-projection",
+      "github-safe-write-parity",
+      "fuzzy-command-palette",
+      "user-perceived-performance-evidence"
+    ]
+  },
+  "requiredOutcomes": {
+    "board": [
+      "selection-remains-visible-with-overflow",
+      "scrollbar-or-overflow-affordance",
+      "wide-and-narrow-layouts-covered"
+    ],
+    "workcard": [
+      "goal-and-worktree-links-projected",
+      "explicit-local-linking-supported",
+      "duplicate-local-projections-can-be-consolidated-without-changing-external-authority"
+    ],
+    "threadLifecycle": [
+      "create-or-fork-is-capability-gated",
+      "managed-worktree-handoff-is-explicit",
+      "unsupported-upstream-capability-fails-closed"
+    ],
+    "search": [
+      "thread-goal-git-forge-planning-metadata-searchable",
+      "scratch-and-forge-only-work-visible-from-planning-search",
+      "no-transcript-hydration-required"
+    ],
+    "savedViews": [
+      "name-source-filter-layout-group-order-fields-editable",
+      "invalid-query-fails-closed"
+    ],
+    "review": [
+      "git-diff-forge-review-and-check-evidence-shown-together",
+      "open-external-command-is-real-not-noop"
+    ],
+    "architecture": [
+      "new-v1.3-code-prefers-small-modules",
+      "no-v1.2-large-file-ceiling-regression"
+    ]
+  },
+  "deferred": [
+    "thread-queue-until-stable-upstream-capability",
+    "transcript-fts-until-measured-need",
+    "native-gitlab-transport-until-existing-hard-trigger",
+    "remote-app-server-targets",
+    "team-server-rbac",
+    "web-mobile-client",
+    "generic-plugin-runtime",
+    "multi-agent-abstraction",
+    "workflow-job-engine",
+    "cloud-sync"
+  ],
+  "exit": {
+    "openP0Defects": 0,
+    "p0Complete": true,
+    "p1Complete": true,
+    "p2Complete": "implemented-or-evidence-gated-with-explicit-rationale",
+    "canonicalCi": [
+      "linux",
+      "macos",
+      "windows",
+      "rust-1.88"
+    ],
+    "integrationBranchClean": true,
+    "fakeEvidenceCannotSatisfyRealEnvironmentGates": true
+  }
+}
