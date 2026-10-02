@@ -268,10 +268,15 @@ See:
 - `docs/implementation/m7d1-accessibility.md`
 - `docs/implementation/m7d2-compatibility.md`
 - `docs/implementation/m7d3-release.md`
+- `docs/implementation/v1.2-accessibility-mature-mode.md`
+- `docs/roadmap-v1.2.md`
 - `docs/release/install-upgrade.md`
 - `docs/release/v1.1-rc-plan.md`
 - `docs/team-quickstart.md`
 - `docs/qualification/provider.md`
+- `release/v1.2-plan.json` — v1.2 development plan and phase exits
+- `release/v1.2-completion.json` — v1.2 development-scope completion/freeze contract; never stable authority
+- `release/v1.2-criteria.json` — v1.2 stable qualification authority
 - `release/v1.1-criteria.json` — current v1.1 qualification authority
 - `release/v1.1-rc-plan.json` — current RC freeze/deferred-real-evidence handoff contract
 - `release/v1.0-criteria.json` — historical v1.0 release record
