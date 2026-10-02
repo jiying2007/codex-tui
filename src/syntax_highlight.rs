@@ -4,9 +4,9 @@ use ratatui::{
     text::{Line, Span},
 };
 use std::{
-    cell::RefCell,
     collections::VecDeque,
     hash::{DefaultHasher, Hash, Hasher},
+    sync::{LazyLock, Mutex},
 };
 use two_face::{
     re_exports::syntect::{
@@ -146,10 +146,8 @@ impl SyntaxHighlighter {
     }
 }
 
-thread_local! {
-    static REVIEW_HIGHLIGHTER: RefCell<SyntaxHighlighter> =
-        RefCell::new(SyntaxHighlighter::new());
-}
+static REVIEW_HIGHLIGHTER: LazyLock<Mutex<SyntaxHighlighter>> =
+    LazyLock::new(|| Mutex::new(SyntaxHighlighter::new()));
 
 fn review_revision(observed_at_unix_ms: u64, word_diff: bool) -> u64 {
     observed_at_unix_ms
@@ -161,18 +159,18 @@ pub fn prewarm_review_diff(review: &GitReview) {
     if review.observed_at_unix_ms == 0 || review.error.is_some() {
         return;
     }
-    REVIEW_HIGHLIGHTER.with(|highlighter| {
-        let mut highlighter = highlighter.borrow_mut();
-        for word_diff in [false, true] {
-            let lines = presentation_diff_lines(review, word_diff);
-            let _ = highlighter.highlight_lines(
-                &lines,
-                review_revision(review.observed_at_unix_ms, word_diff),
-                review.thread_id.0.as_str(),
-                REVIEW_SYNTAX,
-            );
-        }
-    });
+    let Ok(mut highlighter) = REVIEW_HIGHLIGHTER.lock() else {
+        return;
+    };
+    for word_diff in [false, true] {
+        let lines = presentation_diff_lines(review, word_diff);
+        let _ = highlighter.highlight_lines(
+            &lines,
+            review_revision(review.observed_at_unix_ms, word_diff),
+            review.thread_id.0.as_str(),
+            REVIEW_SYNTAX,
+        );
+    }
 }
 
 pub fn cached_review_diff(
@@ -180,13 +178,11 @@ pub fn cached_review_diff(
     observed_at_unix_ms: u64,
     word_diff: bool,
 ) -> Option<Vec<Line<'static>>> {
-    REVIEW_HIGHLIGHTER.with(|highlighter| {
-        highlighter.borrow_mut().cached_lines(
-            review_revision(observed_at_unix_ms, word_diff),
-            thread_id,
-            REVIEW_SYNTAX,
-        )
-    })
+    REVIEW_HIGHLIGHTER.lock().ok()?.cached_lines(
+        review_revision(observed_at_unix_ms, word_diff),
+        thread_id,
+        REVIEW_SYNTAX,
+    )
 }
 
 pub const fn sync_highlight_limit_bytes() -> usize {
