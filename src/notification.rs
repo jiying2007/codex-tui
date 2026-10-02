@@ -165,16 +165,11 @@ fn card_notification_kinds(card: &WorkCardProjection) -> BTreeSet<NotificationKi
     if card.attention.contains(&PlanningAttention::GoalBlocked) {
         kinds.insert(NotificationKind::GoalBlocked);
     }
-    if card
-        .attention
-        .contains(&PlanningAttention::PipelineFailed)
-    {
+    if card.attention.contains(&PlanningAttention::PipelineFailed) {
         kinds.insert(NotificationKind::PipelineFailed);
     }
     if card.attention.contains(&PlanningAttention::ReviewUnseen)
-        || card
-            .attention
-            .contains(&PlanningAttention::ChangeRequested)
+        || card.attention.contains(&PlanningAttention::ChangeRequested)
     {
         kinds.insert(NotificationKind::ReviewRequested);
     }
@@ -211,8 +206,10 @@ impl NotificationTracker {
 
         for (thread_id, (runtime, subject)) in &observation.runtimes {
             let completed = self.runtimes.get(thread_id).is_some_and(|(previous, _)| {
-                matches!(previous, RuntimeStatus::Working | RuntimeStatus::WaitingHuman)
-                    && *runtime == RuntimeStatus::Ready
+                matches!(
+                    previous,
+                    RuntimeStatus::Working | RuntimeStatus::WaitingHuman
+                ) && *runtime == RuntimeStatus::Ready
             });
             if completed {
                 let key = format!("completion:{thread_id}");
