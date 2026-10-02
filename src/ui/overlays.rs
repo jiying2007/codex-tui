@@ -1,6 +1,6 @@
 use super::{command_palette_choice_label, context_choice_label, tr};
 use crate::{
-    app::{AppState, InputMode},
+    app::{AppState, InputMode, SavedViewEditField},
     text::{sanitize_inline, truncate_display},
 };
 use ratatui::{
@@ -109,6 +109,41 @@ pub(super) fn render_local_input_overlay(frame: &mut Frame<'_>, app: &AppState) 
         InputMode::SavedViewName => (
             tr(app, " Save current view ", " 保存当前视图 "),
             tr(app, "Enter save · Esc cancel", "Enter 保存 · Esc 取消"),
+        ),
+        InputMode::SavedViewEdit => (
+            tr(app, " Edit SavedView ", " 编辑 SavedView "),
+            match app.saved_view_edit_field {
+                Some(SavedViewEditField::Name) => tr(
+                    app,
+                    "name · non-empty · Enter save · Esc cancel",
+                    "名称 · 不能为空 · Enter 保存 · Esc 取消",
+                ),
+                Some(SavedViewEditField::Source) => {
+                    "source · all | scratch | thread | forge · Enter save · Esc cancel"
+                }
+                Some(SavedViewEditField::Filter) => tr(
+                    app,
+                    "filter · SavedView query syntax · Enter save · Esc cancel",
+                    "过滤器 · SavedView 查询语法 · Enter 保存 · Esc 取消",
+                ),
+                Some(SavedViewEditField::Layout) => {
+                    "layout · list | board | review-queue · Enter save · Esc cancel"
+                }
+                Some(SavedViewEditField::GroupBy) => {
+                    "group · none | stage | workspace | source · Enter save · Esc cancel"
+                }
+                Some(SavedViewEditField::OrderBy) => {
+                    "order · priority | title | stage | workspace · Enter save · Esc cancel"
+                }
+                Some(SavedViewEditField::VisibleFields) => {
+                    "fields · stage,attention,workspace,source,goal,priority,branch,forge · Enter save · Esc cancel"
+                }
+                None => tr(
+                    app,
+                    "field unavailable · Esc cancel",
+                    "字段不可用 · Esc 取消",
+                ),
+            },
         ),
         InputMode::BatchAddTag => (
             tr(

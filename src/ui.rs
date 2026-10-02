@@ -202,6 +202,13 @@ fn context_choice_label(choice: ContextChoice, language: UiLanguage) -> &'static
         ContextChoice::ScratchDone => "Scratch → 完成",
         ContextChoice::DeleteScratch => "删除 ScratchWork",
         ContextChoice::SaveCurrentView => "保存当前视图…",
+        ContextChoice::EditViewName => "编辑已保存视图 · 名称…",
+        ContextChoice::EditViewSource => "编辑已保存视图 · 来源…",
+        ContextChoice::EditViewFilter => "编辑已保存视图 · 过滤器…",
+        ContextChoice::EditViewLayout => "编辑已保存视图 · 布局…",
+        ContextChoice::EditViewGroup => "编辑已保存视图 · 分组…",
+        ContextChoice::EditViewOrder => "编辑已保存视图 · 排序…",
+        ContextChoice::EditViewFields => "编辑已保存视图 · 字段…",
         ContextChoice::DeleteCurrentView => "删除当前已保存视图",
         ContextChoice::BatchAddTag => "批量当前可见项 · 添加标签…",
         ContextChoice::BatchRemoveTag => "批量当前可见项 · 移除标签…",
@@ -276,6 +283,7 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
         InputMode::Note
             | InputMode::Snooze
             | InputMode::SavedViewName
+            | InputMode::SavedViewEdit
             | InputMode::BatchAddTag
             | InputMode::BatchRemoveTag
             | InputMode::BatchPriority
@@ -373,6 +381,11 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
             tr(app, "view name", "视图名称"),
             truncate_display(&app.input_buffer, 60),
             tr(app, "Enter save · Esc cancel", "Enter 保存 · Esc 取消")
+        )),
+        InputMode::SavedViewEdit => Line::from(tr(
+            app,
+            "SavedView editor active in Board",
+            "SavedView 编辑器已在看板中激活",
         )),
         InputMode::BatchAddTag
         | InputMode::BatchRemoveTag

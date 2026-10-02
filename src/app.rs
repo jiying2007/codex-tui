@@ -38,12 +38,13 @@ use std::time::Instant;
 
 mod context;
 mod lifecycle;
+mod saved_view;
 mod search;
 mod types;
 
 use search::matches_filter_normalized_with_extra;
 
-pub use types::{Action, ContextChoice, Effect, InputMode, View, ViewKind};
+pub use types::{Action, ContextChoice, Effect, InputMode, SavedViewEditField, View, ViewKind};
 
 const REGISTRY_RECENT_LIMIT: usize = 100;
 const CONVERSATION_CACHE_LIMIT: usize = 16;
@@ -153,6 +154,7 @@ pub struct AppState {
     pub snooze_target: Option<SourceRef>,
     pub note_target: Option<SourceRef>,
     pub saved_view_template: Option<SavedView>,
+    pub saved_view_edit_field: Option<SavedViewEditField>,
     pub command_palette_open: bool,
     pub command_palette_selected: usize,
     command_palette_items: Vec<Command>,
@@ -272,6 +274,7 @@ impl AppState {
             snooze_target: None,
             note_target: None,
             saved_view_template: None,
+            saved_view_edit_field: None,
             command_palette_open: false,
             command_palette_selected: 0,
             command_palette_items: vec![],
@@ -1603,6 +1606,10 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.context_open = false;
             state.context_selected = 0;
 
+            if state.begin_saved_view_edit(choice) {
+                return vec![];
+            }
+
             if choice == ContextChoice::SaveCurrentView {
                 let mut template = state.active_saved_view();
                 template.id.clear();
@@ -1907,6 +1914,13 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     }];
                 }
                 ContextChoice::SaveCurrentView
+                | ContextChoice::EditViewName
+                | ContextChoice::EditViewSource
+                | ContextChoice::EditViewFilter
+                | ContextChoice::EditViewLayout
+                | ContextChoice::EditViewGroup
+                | ContextChoice::EditViewOrder
+                | ContextChoice::EditViewFields
                 | ContextChoice::DeleteCurrentView
                 | ContextChoice::BatchAddTag
                 | ContextChoice::BatchRemoveTag
@@ -2615,6 +2629,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::Snooze
             | InputMode::Note
             | InputMode::SavedViewName
+            | InputMode::SavedViewEdit
             | InputMode::BatchAddTag
             | InputMode::BatchRemoveTag
             | InputMode::BatchPriority
@@ -2660,6 +2675,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 | InputMode::Snooze
                 | InputMode::Note
                 | InputMode::SavedViewName
+                | InputMode::SavedViewEdit
                 | InputMode::BatchAddTag
                 | InputMode::BatchRemoveTag
                 | InputMode::BatchPriority
@@ -2693,6 +2709,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::Snooze
             | InputMode::Note
             | InputMode::SavedViewName
+            | InputMode::SavedViewEdit
             | InputMode::BatchAddTag
             | InputMode::BatchRemoveTag
             | InputMode::BatchPriority
@@ -2714,6 +2731,9 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             let mode = state.input_mode;
             if mode == InputMode::Search {
                 return state.commit_metadata_search();
+            }
+            if mode == InputMode::SavedViewEdit {
+                return state.commit_saved_view_edit();
             }
             if mode == InputMode::ForgeMergeRequestTitle {
                 let title = state.input_buffer.trim().to_string();
@@ -3161,6 +3181,10 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::CancelInput => {
             if state.input_mode == InputMode::Search {
                 return state.cancel_metadata_search();
+            }
+            if state.input_mode == InputMode::SavedViewEdit {
+                state.cancel_saved_view_edit();
+                return vec![];
             }
             if matches!(
                 state.input_mode,
