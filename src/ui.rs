@@ -194,6 +194,7 @@ fn context_choice_label(choice: ContextChoice, language: UiLanguage) -> &'static
         ContextChoice::Snooze => "稍后提醒…",
         ContextChoice::EditNote => "编辑本地备注…",
         ContextChoice::Bookmark => "添加书签",
+        ContextChoice::LinkHotSlot => "关联到快捷槽…",
         ContextChoice::ScratchInbox => "Scratch → 收件箱",
         ContextChoice::ScratchReady => "Scratch → 就绪",
         ContextChoice::ScratchDone => "Scratch → 完成",
