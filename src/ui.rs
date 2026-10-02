@@ -12,6 +12,7 @@ use crate::planning::{
     saved_view_group_key,
 };
 use crate::text::{fit_display, sanitize_inline, truncate_display};
+use crate::syntax_highlight::highlight_review_diff;
 
 mod overlays;
 mod terminal;
@@ -2097,10 +2098,13 @@ fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area: R
             })
             .collect::<Vec<_>>();
 
-        let mut diff_lines = presentation_diff_lines(review, app.review_word_diff)
-            .into_iter()
-            .map(Line::from)
-            .collect::<Vec<_>>();
+        let plain_diff_lines = presentation_diff_lines(review, app.review_word_diff);
+        let highlight_revision = review
+            .observed_at_unix_ms
+            .wrapping_mul(2)
+            .wrapping_add(u64::from(app.review_word_diff));
+        let mut diff_lines = highlight_review_diff(&plain_diff_lines, highlight_revision)
+            .unwrap_or_else(|| plain_diff_lines.into_iter().map(Line::from).collect());
         if diff_lines.is_empty() {
             diff_lines.push(Line::from(tr(
                 app,
