@@ -267,6 +267,7 @@ pub struct ConversationPage {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ConversationState {
     pub thread_id: ThreadId,
+    pub revision: u64,
     pub title: Option<String>,
     pub turns: Vec<ConversationTurn>,
     pub items: Vec<ConversationItem>,
@@ -281,6 +282,7 @@ impl ConversationState {
     pub fn loading(thread_id: ThreadId) -> Self {
         Self {
             thread_id,
+            revision: 0,
             title: None,
             turns: vec![],
             items: vec![],
@@ -301,6 +303,7 @@ impl ConversationState {
     }
 
     pub fn replace_page(&mut self, page: ConversationPage) {
+        self.revision = self.revision.saturating_add(1);
         self.title = page.title;
         self.turns = page.turns;
         self.items = page.items;
@@ -312,6 +315,7 @@ impl ConversationState {
     }
 
     pub fn prepend_page(&mut self, page: ConversationPage) {
+        self.revision = self.revision.saturating_add(1);
         let existing_turns = self
             .turns
             .iter()
