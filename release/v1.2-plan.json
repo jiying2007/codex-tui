@@ -109,7 +109,8 @@
     "src/forge_types.rs": 400,
     "src/headless.rs": 650,
     "src/headless/surfaces.rs": 550,
-    "src/notification.rs": 500
+    "src/notification.rs": 500,
+    "src/runtime_notifications.rs": 300
   },
   "phaseExit": {
     "P0": [
