@@ -701,9 +701,7 @@ async fn run_app(fake_mode: bool) -> Result<()> {
             needs_render = true;
         }
 
-        if needs_render
-            && presentation_mode.should_render(last_render.elapsed(), urgent_render)
-        {
+        if needs_render && presentation_mode.should_render(last_render.elapsed(), urgent_render) {
             terminal
                 .terminal_mut()
                 .draw(|frame| ui::render(frame, &app))?;
