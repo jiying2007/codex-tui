@@ -180,9 +180,14 @@ The TUI supports English and Simplified Chinese. The language is selected in the
 [ui]
 mouse = true
 language = "auto" # auto | en | zh-CN
+
+[notifications]
+mode = "off" # off | terminal | os
 ```
 
 `auto` is the default and follows the process locale in standard precedence order: `LC_ALL`, then `LC_MESSAGES`, then `LANG`. Simplified Chinese locales such as `zh_CN.UTF-8`, `zh_SG.UTF-8`, `zh-CN` or `zh-Hans` select Simplified Chinese. Known Traditional Chinese locales such as `zh-TW`, `zh-HK`, `zh-MO` and `zh-Hant` fall back to English rather than being mislabeled as Simplified Chinese. Other or unavailable locales also select English. Use `en` or `zh-CN` to pin the UI language explicitly. Technical identifiers and upstream error text remain unchanged so terminal output still matches Codex/Git/Forge diagnostics.
+
+Notifications are deliberately lightweight and opt-in. `off` is the default and preserves upgrade behavior. `terminal` emits a terminal bell only. `os` uses the native desktop notification command with a 3-second timeout and falls back to the terminal bell if delivery is unavailable. Notifications are edge-triggered from existing attention/Goal/Forge projections (approval, user input, Goal blocked, completion, pipeline failure, review requested); startup seeds current state without replaying historical alerts, and snooze suppresses routing without changing source status. No prompt text, tool output, credentials, external bridge, scheduler, or second workflow state machine is introduced.
 
 Normal startup launches a local `codex app-server --listen stdio://` connection after the first UI frame. Mission Control consumes App Server thread lifecycle/status notifications incrementally; the complete paginated registry is retained as an initial load and low-frequency reconciliation path rather than being rebuilt for every notification. Reconciliation requests canonical `recency_at` ordering and use the App Server state DB fast path after the complete initial scan, with automatic fallback for older servers that reject those optional parameters. Goal capability probing is eager only for the most recent 100 threads; older threads refresh Goal state explicitly when opened, avoiding an unbounded startup probe backlog. Mission Control stays metadata-first; opening a thread loads only the recent conversation page. Git checkout projection is deduplicated by exact cwd and the selected/active checkouts are refreshed every 10 seconds so branch/dirty state does not remain frozen after the initial probe. Thread View supports paginated history, persistent local drafts, turn start/steer/interrupt, approvals, user-input requests, and stable Codex Goal projection when the connected App Server supports it.
 
