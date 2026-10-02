@@ -30,7 +30,9 @@ fn mark_optional_capability(status: &mut BackendStatus, capability: &str, suppor
             .iter()
             .any(|value| value == capability)
         {
-            status.optional_capabilities_missing.push(capability.to_string());
+            status
+                .optional_capabilities_missing
+                .push(capability.to_string());
         }
     }
 }
