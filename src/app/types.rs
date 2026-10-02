@@ -9,7 +9,7 @@ use crate::{
     goal::{GoalObservation, GoalStatus},
     launch::{LaunchPlan, LaunchPreset},
     operation::{ManagedWorktreeRecord, OperationPlan, OperationReceipt},
-    planning::{PlanningSnapshot, SavedView, SourceRef},
+    planning::{LinkRole, PlanningSnapshot, SavedView, SourceRef},
     pty::TerminalSize,
     terminal_drawer::TerminalSnapshot,
 };
@@ -65,6 +65,7 @@ pub enum ContextChoice {
     Snooze,
     EditNote,
     Bookmark,
+    LinkHotSlot,
     NewCodexThread,
     ForkCodexThread,
     ScratchInbox,
@@ -96,6 +97,7 @@ impl ContextChoice {
             Self::Snooze => "Snooze attention…",
             Self::EditNote => "Edit local note…",
             Self::Bookmark => "Add local bookmark",
+            Self::LinkHotSlot => "Link to hot slot…",
             Self::NewCodexThread => "New Codex thread here",
             Self::ForkCodexThread => "Fork Codex thread",
             Self::ScratchInbox => "Scratch → Inbox",
@@ -201,6 +203,7 @@ pub enum Action {
     TerminalSnapshot(TerminalSnapshot),
     TerminalScroll(i32),
     BeginHotSlotBind,
+    BeginHotSlotLink,
     UseHotSlot(u8),
     MoveReview(i32),
     ScrollReviewBy(i16),
@@ -287,6 +290,11 @@ pub enum Effect {
     SetHotSlot {
         slot: u8,
         target: SourceRef,
+    },
+    LinkWorkCard {
+        anchor: SourceRef,
+        role: LinkRole,
+        source: SourceRef,
     },
     ApplyLocalBatch(Box<LocalBatchPlan>),
     LoadLaunchPresets {
