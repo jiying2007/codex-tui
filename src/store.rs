@@ -281,13 +281,15 @@ mod tests {
         ] {
             fs::write(
                 store.config_path(),
-                format!(
-                    "[ui]\nmouse = true\nlanguage = \"auto\"\npresentation = \"{wire}\"\n"
-                ),
+                format!("[ui]\nmouse = true\nlanguage = \"auto\"\npresentation = \"{wire}\"\n"),
             )
             .expect("write presentation config");
             assert_eq!(
-                store.load_config().expect("presentation config").ui.presentation,
+                store
+                    .load_config()
+                    .expect("presentation config")
+                    .ui
+                    .presentation,
                 expected
             );
         }
