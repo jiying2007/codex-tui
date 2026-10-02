@@ -1607,7 +1607,6 @@ fn open_external_editor(cwd: &str, relative_path: &str) -> Result<()> {
         .map_err(Into::into)
 }
 
-
 #[cfg(test)]
 mod command_palette_input_tests {
     use super::*;
