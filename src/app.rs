@@ -2675,6 +2675,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 | InputMode::Snooze
                 | InputMode::Note
                 | InputMode::SavedViewName
+                | InputMode::SavedViewEdit
                 | InputMode::BatchAddTag
                 | InputMode::BatchRemoveTag
                 | InputMode::BatchPriority
