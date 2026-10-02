@@ -38,7 +38,7 @@ New implementation modules should normally stay below 800 LOC and trend toward t
 
 - expand the stable read-only headless surface;
 - add lightweight notifications without inventing a second workflow state machine; default off, bounded terminal/native-OS delivery, edge-triggered from existing projections;
-- implement the already-locked two-face + syntect highlighting choice behind a bounded/cached interface.
+- implement the already-locked two-face + syntect highlighting choice behind a bounded/cached interface; use the pure-Rust fancy-regex backend, Review Diff syntax first, a 128 KiB synchronous cutoff and plain-text fallback.
 
 ## Evidence-driven only
 
