@@ -1,5 +1,5 @@
 use crate::domain::ThreadUiState;
-use crate::i18n::LanguagePreference;
+use crate::{i18n::LanguagePreference, notification::NotificationMode};
 use anyhow::{Context, Result};
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
@@ -31,9 +31,17 @@ impl Default for UiConfig {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NotificationsConfig {
+    #[serde(default)]
+    pub mode: NotificationMode,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AppConfig {
     #[serde(default)]
     pub ui: UiConfig,
+    #[serde(default)]
+    pub notifications: NotificationsConfig,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -183,6 +191,7 @@ mod tests {
         let config = store.load_config().expect("config");
         assert!(config.ui.mouse);
         assert_eq!(config.ui.language, LanguagePreference::Auto);
+        assert_eq!(config.notifications.mode, NotificationMode::Off);
 
         let mut state = LocalStateV1::default();
         state.pins.insert("thread-1".into());
@@ -196,6 +205,8 @@ mod tests {
         let state_text = fs::read_to_string(store.state_path()).expect("read state");
         assert!(config_text.contains("[ui]"));
         assert!(config_text.contains("language = \"auto\""));
+        assert!(config_text.contains("[notifications]"));
+        assert!(config_text.contains("mode = \"off\""));
         assert!(state_text.contains("\"schemaVersion\": 1"));
         assert!(state_text.contains("\"hostLocalOnly\": true"));
         assert!(state_text.contains("\"repoBackedOnly\": true"));
@@ -232,6 +243,46 @@ mod tests {
             store.load_config().expect("en config").ui.language,
             LanguagePreference::English
         );
+    }
+
+    #[test]
+    fn legacy_config_without_notifications_defaults_to_off() {
+        let root = tempdir().expect("tempdir");
+        let store = FileStore::at(root.path());
+        fs::create_dir_all(store.config_path().parent().expect("config parent"))
+            .expect("config dir");
+        fs::write(
+            store.config_path(),
+            "[ui]\nmouse = true\nlanguage = \"en\"\n",
+        )
+        .expect("write legacy config");
+
+        let config = store.load_config().expect("legacy config");
+        assert_eq!(config.notifications.mode, NotificationMode::Off);
+    }
+
+    #[test]
+    fn notification_mode_accepts_terminal_and_os_values() {
+        let root = tempdir().expect("tempdir");
+        let store = FileStore::at(root.path());
+        fs::create_dir_all(store.config_path().parent().expect("config parent"))
+            .expect("config dir");
+        for (wire, expected) in [
+            ("terminal", NotificationMode::Terminal),
+            ("os", NotificationMode::Os),
+        ] {
+            fs::write(
+                store.config_path(),
+                format!(
+                    "[ui]\nmouse = true\nlanguage = \"auto\"\n\n[notifications]\nmode = \"{wire}\"\n"
+                ),
+            )
+            .expect("write notification config");
+            assert_eq!(
+                store.load_config().expect("notification config").notifications.mode,
+                expected
+            );
+        }
     }
 
     #[test]
