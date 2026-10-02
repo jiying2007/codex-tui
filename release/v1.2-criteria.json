@@ -154,9 +154,10 @@
     "requiredChecks": [
       "automated-qualification",
       "module-ratchet",
-      "protocol-replay"
+      "protocol-replay",
+      "scope-completion"
     ],
-    "policy": "every main SHA retains repository-hosted development qualification; stable publication still requires release-evidence/v4 and real-environment evidence"
+    "policy": "every main SHA retains repository-hosted development qualification including the validated v1.2 scope-completion manifest; stable publication still requires release-evidence/v4 and real-environment evidence"
   },
   "deferredUntilEvidence": [
     "thread-queue",
