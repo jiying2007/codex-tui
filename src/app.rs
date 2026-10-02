@@ -1493,6 +1493,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::CommandPaletteInputChar(character) => {
             state.input_command_palette_char(character);
         }
+        Action::CommandPaletteInputText(text) => state.input_command_palette_text(text),
         Action::CommandPaletteBackspace => state.backspace_command_palette(),
         Action::OpenContext => {
             if !state.context_choices().is_empty() {
