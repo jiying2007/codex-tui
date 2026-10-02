@@ -132,7 +132,11 @@ pub(super) fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
 
     let ui = app.thread_ui.get(thread_id).cloned().unwrap_or_default();
     let pending_request = app.current_pending_request();
-    let effective_scroll = if pending_request.is_some() { 0 } else { ui.scroll };
+    let effective_scroll = if pending_request.is_some() {
+        0
+    } else {
+        ui.scroll
+    };
 
     let mut window_start = 0;
     let mut window_end = 0;
@@ -147,10 +151,11 @@ pub(super) fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
             vec![Line::from(format!(
                 "{}: {}",
                 tr(app, "Conversation unavailable", "会话不可用"),
-                conversation
-                    .error
-                    .as_deref()
-                    .unwrap_or_else(|| tr(app, "unknown error", "未知错误"))
+                conversation.error.as_deref().unwrap_or_else(|| tr(
+                    app,
+                    "unknown error",
+                    "未知错误"
+                ))
             ))]
         }
         Some(conversation) if conversation.items.is_empty() => vec![Line::from(tr(
