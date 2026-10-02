@@ -4,8 +4,6 @@ use crate::operation::{
     OperationState, now_unix_ms, scopes_overlap,
 };
 use crate::sqlite_store::SqliteStore;
-#[cfg(test)]
-use crate::worktree_git::parse_worktree_porcelain;
 use crate::worktree_git::{
     branch_exists, canonical_path, list_worktrees, run_git_mutation, same_path, worktree_is_clean,
 };
@@ -646,6 +644,7 @@ async fn recover_incomplete(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::worktree_git::parse_worktree_porcelain;
     use crate::operation::OperationPlan;
     use tempfile::tempdir;
 
