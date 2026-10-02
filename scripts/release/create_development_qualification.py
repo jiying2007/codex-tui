@@ -14,6 +14,7 @@ SCHEMA = "codex-tui/development-qualification/v1"
 PLAN_SCHEMA = "codex-tui/v1.2-plan/v1"
 AUTOMATED_SCHEMA = "codex-tui/automated-qualification/v3"
 PROTOCOL_SCHEMA = "codex-tui/protocol-fixtures/v1"
+COMPLETION_SCHEMA = "codex-tui/v1.2-completion/v1"
 HEX40 = re.compile(r"^[0-9a-fA-F]{40}$")
 
 
@@ -35,6 +36,7 @@ def main() -> int:
     )
     parser.add_argument("--output", required=True)
     parser.add_argument("--plan", default="release/v1.2-plan.json")
+    parser.add_argument("--completion", default="release/v1.2-completion.json")
     parser.add_argument("--automated-qualification", required=True)
     parser.add_argument(
         "--protocol-manifest", default="tests/fixtures/protocol/manifest.json"
@@ -47,9 +49,11 @@ def main() -> int:
         raise SystemExit("--commit must be exactly 40 hexadecimal characters")
 
     plan_path = pathlib.Path(args.plan)
+    completion_path = pathlib.Path(args.completion)
     automated_path = pathlib.Path(args.automated_qualification)
     protocol_path = pathlib.Path(args.protocol_manifest)
     plan = load(plan_path)
+    completion = load(completion_path)
     automated = load(automated_path)
     protocol = load(protocol_path)
 
@@ -57,6 +61,19 @@ def main() -> int:
         raise SystemExit(f"unexpected v1.2 plan schema: {plan.get('schema')!r}")
     if plan.get("targetVersion") != "1.2.0":
         raise SystemExit("development qualification requires targetVersion=1.2.0")
+    if completion.get("schema") != COMPLETION_SCHEMA:
+        raise SystemExit(
+            f"unexpected v1.2 completion schema: {completion.get('schema')!r}"
+        )
+    if completion.get("targetVersion") != plan.get("targetVersion"):
+        raise SystemExit("scope completion targetVersion drifted from v1.2 plan")
+    if completion.get("status") != "development-scope-complete":
+        raise SystemExit("scope completion status is not development-scope-complete")
+    if completion.get("stableReady") is not False:
+        raise SystemExit("scope completion must never claim stableReady")
+    if completion.get("publicationAllowed") is not False:
+        raise SystemExit("scope completion must never allow publication")
+
     if automated.get("schema") != AUTOMATED_SCHEMA:
         raise SystemExit(
             f"unexpected automated qualification schema: {automated.get('schema')!r}"
@@ -108,6 +125,14 @@ def main() -> int:
         "phase": plan.get("phase"),
         "observedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "planSha256": sha256(plan_path),
+        "scopeCompletion": {
+            "status": "pass",
+            "schema": completion["schema"],
+            "manifestSha256": sha256(completion_path),
+            "featureCompletionBaselineSha": completion["featureCompletionBaselineSha"],
+            "stableReady": False,
+            "publicationAllowed": False,
+        },
         "repositoryAutomatedQualification": {
             "status": "pass",
             "schema": automated["schema"],
