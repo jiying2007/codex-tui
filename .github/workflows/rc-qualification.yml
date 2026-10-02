@@ -3,6 +3,14 @@ name: rc-qualification
 on:
   push:
     branches: [main]
+  pull_request:
+    paths:
+      - ".github/workflows/rc-qualification.yml"
+      - "scripts/release/create_deferred_rc_status.py"
+      - "scripts/release/create_automated_qualification.py"
+      - "scripts/release/validate_rc_plan.py"
+      - "release/v1.1-rc-plan.json"
+      - "release/v1.1-criteria.json"
   workflow_dispatch:
 
 permissions:
