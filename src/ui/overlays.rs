@@ -110,47 +110,41 @@ pub(super) fn render_local_input_overlay(frame: &mut Frame<'_>, app: &AppState) 
             tr(app, " Save current view ", " 保存当前视图 "),
             tr(app, "Enter save · Esc cancel", "Enter 保存 · Esc 取消"),
         ),
-        InputMode::SavedViewEdit => {
-            let (field, hint) = match app.saved_view_edit_field {
-                Some(SavedViewEditField::Name) => (
-                    tr(app, "name", "名称"),
-                    tr(app, "non-empty", "不能为空"),
+        InputMode::SavedViewEdit => (
+            tr(app, " Edit SavedView ", " 编辑 SavedView "),
+            match app.saved_view_edit_field {
+                Some(SavedViewEditField::Name) => tr(
+                    app,
+                    "name · non-empty · Enter save · Esc cancel",
+                    "名称 · 不能为空 · Enter 保存 · Esc 取消",
                 ),
-                Some(SavedViewEditField::Source) => (
-                    tr(app, "source", "来源"),
-                    "all | scratch | thread | forge",
+                Some(SavedViewEditField::Source) => {
+                    "source · all | scratch | thread | forge · Enter save · Esc cancel"
+                }
+                Some(SavedViewEditField::Filter) => tr(
+                    app,
+                    "filter · SavedView query syntax · Enter save · Esc cancel",
+                    "过滤器 · SavedView 查询语法 · Enter 保存 · Esc 取消",
                 ),
-                Some(SavedViewEditField::Filter) => (
-                    tr(app, "filter", "过滤器"),
-                    tr(app, "SavedView query syntax", "SavedView 查询语法"),
+                Some(SavedViewEditField::Layout) => {
+                    "layout · list | board | review-queue · Enter save · Esc cancel"
+                }
+                Some(SavedViewEditField::GroupBy) => {
+                    "group · none | stage | workspace | source · Enter save · Esc cancel"
+                }
+                Some(SavedViewEditField::OrderBy) => {
+                    "order · priority | title | stage | workspace · Enter save · Esc cancel"
+                }
+                Some(SavedViewEditField::VisibleFields) => {
+                    "fields · stage,attention,workspace,source,goal,priority,branch,forge · Enter save · Esc cancel"
+                }
+                None => tr(
+                    app,
+                    "field unavailable · Esc cancel",
+                    "字段不可用 · Esc 取消",
                 ),
-                Some(SavedViewEditField::Layout) => (
-                    tr(app, "layout", "布局"),
-                    "list | board | review-queue",
-                ),
-                Some(SavedViewEditField::GroupBy) => (
-                    tr(app, "group", "分组"),
-                    "none | stage | workspace | source",
-                ),
-                Some(SavedViewEditField::OrderBy) => (
-                    tr(app, "order", "排序"),
-                    "priority | title | stage | workspace",
-                ),
-                Some(SavedViewEditField::VisibleFields) => (
-                    tr(app, "fields", "字段"),
-                    "stage,attention,workspace,source,goal,priority,branch,forge",
-                ),
-                None => (tr(app, "field", "字段"), ""),
-            };
-            (
-                format!(" {} · {} ", tr(app, " Edit SavedView ", " 编辑 SavedView "), field),
-                format!(
-                    "{} · {}",
-                    hint,
-                    tr(app, "Enter save · Esc cancel", "Enter 保存 · Esc 取消")
-                ),
-            )
-        }
+            },
+        ),
         InputMode::BatchAddTag => (
             tr(
                 app,
