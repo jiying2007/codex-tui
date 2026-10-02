@@ -11,8 +11,6 @@ on:
       - "scripts/release/**"
       - "scripts/architecture/**"
       - "deny.toml"
-      - "scripts/architecture/**"
-      - "deny.toml"
       - "tests/protocol_replay.rs"
       - "tests/fixtures/protocol/**"
       - "src/release.rs"
@@ -242,6 +240,9 @@ jobs:
       - name: Validate v1.2 development authority
         run: python3 scripts/release/validate_v1_2_plan.py
 
+      - name: Validate v1.2 scope completion
+        run: python3 scripts/release/validate_v1_2_completion.py
+
       - name: Enforce v1.2 module ratchet
         run: python3 scripts/architecture/check_module_ratchet.py
 
@@ -290,6 +291,7 @@ jobs:
           cargo build --locked --release
 
           mkdir -p qualification
+          cp release/v1.2-completion.json qualification/v1.2-completion.json
           cargo test --locked --all-targets --all-features -- --list > qualification/test-list.txt
           ./target/release/codex-tui release failure-matrix --json > qualification/failure-matrix.json
           python3 scripts/release/check_failure_evidence.py \
@@ -410,6 +412,7 @@ jobs:
           cp qualification/support-bundle/snapshot.json gate/support-bundle-snapshot.json
           cp qualification/security-governance.json gate/security-governance.json
           cp release/v1.2-plan.json gate/DEVELOPMENT-PLAN.json
+          cp release/v1.2-completion.json gate/DEVELOPMENT-COMPLETION.json
           if [ -f release-evidence.json ]; then
             cp release-evidence.json gate/release-evidence.json
           fi
