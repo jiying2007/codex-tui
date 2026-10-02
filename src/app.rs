@@ -2,8 +2,8 @@ use crate::backend::BackendStatus;
 use crate::batch_local::{LocalBatchAction, LocalBatchPlan, parse_priority};
 use crate::command::Command;
 use crate::conversation::{
-    ConversationPage, ConversationState, InteractiveRequest, InteractiveRequestKind,
-    InteractiveResolution, RpcRequestId, UserInputQuestion,
+    ConversationState, InteractiveRequest, InteractiveRequestKind, InteractiveResolution,
+    RpcRequestId, UserInputQuestion,
 };
 use crate::domain::{
     AttentionReason, CwdLocality, LocalRepoIdentity, RuntimeStatus, ThreadId, ThreadSummary,
