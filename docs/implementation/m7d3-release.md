@@ -72,9 +72,17 @@ It binds:
 - Linux retained `resident-planning-10k` p95/p99 diagnostic receipt with `sourceSha` equal to the release commit;
 - optional macOS/Windows Tier 2 retained receipts when available.
 
-The stable verifier requires at least 200 retained resident-planning-10k samples with finite nonnegative p95/p99 values, but v1.1 does not fail solely on hosted-runner latency thresholds. Compatibility report hashes and automated-qualification artifact hashes are exact SHA-256 values.
+The stable verifier requires at least 200 retained resident-planning-10k samples with finite nonnegative p95/p99 values, but v1.2 does not fail solely on hosted-runner latency thresholds. Compatibility report hashes and automated-qualification artifact hashes are exact SHA-256 values.
 
 The workflow independently calls the GitHub Actions API and verifies the supplied canonical CI run is the `ci` workflow on `main`, succeeded, and is bound to the release source SHA.
+
+## v1.2 hosted development qualification
+
+Every push to `main` retains a source-bound `codex-tui/development-qualification/v1` artifact. It combines the exact-SHA automated hardening receipt with the current module ratchet and retained App Server protocol replay fixtures.
+
+This hosted receipt is development authority only: it always records `stableReady=false` and `publicationAllowed=false`. It is never accepted in place of `codex-tui/release-evidence/v4`, so automated v1.2 development can continue without fabricating Linux compatibility, real controlling-TTY restoration or retained Linux performance evidence.
+
+The release gate independently rechecks the architecture ratchet, protocol replay, cargo-deny policy and RustSec advisories on the exact checkout before packaging.
 
 ## Locked dependency graph
 
@@ -170,9 +178,9 @@ Terminal-restoration evidence remains an explicit real-controlling-TTY smoke rec
 
 ## Versioned stable criteria
 
-Release qualification uses the current major.minor criteria file. For v1.1.0 the authority is `release/v1.1-criteria.json`, and archives expose it as `STABLE-CRITERIA.json`. `release/v1.0-criteria.json` remains only as the historical record for the published v1.0.0 line.
+Release qualification uses the current major.minor criteria file. For the active v1.2.0 line the authority is `release/v1.2-criteria.json`, and archives expose it as `STABLE-CRITERIA.json`. `release/v1.0-criteria.json` and `release/v1.1-criteria.json` remain historical line authorities; the parked v1.1 candidate is preserved separately on `release/v1.1-parked`.
 
-The repository is Apache-2.0 licensed and v1.0.0 was published on 2026-09-30. v1.1 stable publication is fail-closed on exact-commit automated hardening, canonical CI, Linux Tier 1 retained compatibility and real terminal restoration. macOS and Windows remain required in canonical CI and native package/archive smoke as Tier 2 automated-compatibility platforms; their real-environment retained receipts are optional.
+The repository is Apache-2.0 licensed and v1.0.0 was published on 2026-09-30. v1.2 stable publication is fail-closed on exact-commit automated hardening, architecture ratchet, protocol replay, dependency-security checks, canonical CI, Linux Tier 1 retained compatibility and real terminal restoration. macOS and Windows remain required in canonical CI and native package/archive smoke as Tier 2 automated-compatibility platforms; their real-environment retained receipts are optional.
 
 ## Non-goals
 
@@ -194,7 +202,7 @@ Stable-blocking real-world retained evidence:
 - Linux `compat/v2` readiness = READY;
 - Linux real controlling-TTY restoration smoke = PASS.
 
-Repository-internal stable gates are exact-SHA automated hardening plus canonical CI/package smoke. The Linux resident-planning-10k benchmark remains retained with >= 200 samples for diagnosis and trend comparison, but its hosted-runner p95/p99 values are not an independent v1.1 release blocker.
+Repository-internal stable gates are exact-SHA automated hardening plus canonical CI/package smoke. The Linux resident-planning-10k benchmark remains retained with >= 200 samples for diagnosis and trend comparison, but its hosted-runner p95/p99 values are not an independent v1.2 release blocker.
 
 macOS and Windows remain Tier 2 automated-compatibility platforms:
 
