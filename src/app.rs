@@ -5,6 +5,8 @@ use crate::conversation::{
     ConversationState, InteractiveRequest, InteractiveRequestKind, InteractiveResolution,
     RpcRequestId, UserInputQuestion,
 };
+#[cfg(test)]
+use crate::conversation::ConversationPage;
 use crate::domain::{
     AttentionReason, CwdLocality, LocalRepoIdentity, RuntimeStatus, ThreadId, ThreadSummary,
     ThreadUiState, classify_cwd, classify_cwd_without_io,
