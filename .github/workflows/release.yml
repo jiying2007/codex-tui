@@ -228,14 +228,31 @@ jobs:
           set -euo pipefail
           test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq .id)" = "$GITHUB_RUN_ID"
 
-      - name: Validate RC freeze and handoff contract
-        run: python3 scripts/release/validate_rc_plan.py
+      - name: Validate v1.2 development authority
+        run: python3 scripts/release/validate_v1_2_plan.py
+
+      - name: Enforce v1.2 module ratchet
+        run: python3 scripts/architecture/check_module_ratchet.py
+
+      - name: Check dependency policy
+        uses: EmbarkStudios/cargo-deny-action@v2.0.20
+        with:
+          command: check
+
+      - name: Install RustSec audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+
+      - name: Check RustSec advisories
+        run: cargo audit
 
       - name: Run exact-SHA automated hardening qualification
         shell: bash
         run: |
           set -euo pipefail
           cargo test --locked --all-targets --all-features
+          cargo test --locked --test protocol_replay
           cargo build --locked --release
 
           mkdir -p qualification
@@ -351,7 +368,7 @@ jobs:
           cp qualification/soak-evidence.json gate/soak-evidence.json
           cp qualification/support-bundle/manifest.json gate/support-bundle-manifest.json
           cp qualification/support-bundle/snapshot.json gate/support-bundle-snapshot.json
-          cp release/v1.1-rc-plan.json gate/RC-PLAN.json
+          cp release/v1.2-plan.json gate/DEVELOPMENT-PLAN.json
           if [ -f release-evidence.json ]; then
             cp release-evidence.json gate/release-evidence.json
           fi
