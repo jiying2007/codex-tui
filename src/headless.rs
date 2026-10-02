@@ -14,6 +14,8 @@ use anyhow::Result;
 use serde::Serialize;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+mod surfaces;
+
 pub const EXIT_OK: i32 = 0;
 pub const EXIT_USAGE: i32 = 2;
 pub const EXIT_DEGRADED: i32 = 3;
@@ -138,6 +140,11 @@ pub async fn run(args: &[String]) -> Result<i32> {
             print_work_snapshot(&snapshot, format)?;
             Ok(exit)
         }
+        "status" => surfaces::run_status(fake, fixture_10k, format).await,
+        "attention" => surfaces::run_attention(fake, fixture_10k, format).await,
+        "board" => surfaces::run_board(fake, fixture_10k, format).await,
+        "forge" => surfaces::run_forge(fake, format).await,
+        "worktrees" => surfaces::run_worktrees(fake, format),
         _ => {
             eprintln!("unknown headless command: {command}");
             print_usage();
@@ -472,7 +479,25 @@ fn print_work_snapshot(snapshot: &WorkSnapshot, format: OutputFormat) -> Result<
 }
 
 fn print_usage() {
-    eprintln!("usage: codex-tui headless <threads|work> [--json] [--fake|--fixture-10k]");
+    eprintln!(
+        "usage: codex-tui headless <threads|work|status|attention|board|forge|worktrees> \
+         [--json] [--fake|--fixture-10k]"
+    );
+}
+
+pub fn top_level_alias(args: &[String]) -> Option<Vec<String>> {
+    let (command, skip) = match args.first()?.as_str() {
+        "status" => ("status", 1),
+        "thread" if args.get(1).is_some_and(|arg| arg == "list") => ("threads", 2),
+        "attention" if args.get(1).is_some_and(|arg| arg == "list") => ("attention", 2),
+        "board" if args.get(1).is_some_and(|arg| arg == "list") => ("board", 2),
+        "forge" if args.get(1).is_some_and(|arg| arg == "status") => ("forge", 2),
+        "worktree" if args.get(1).is_some_and(|arg| arg == "list") => ("worktrees", 2),
+        _ => return None,
+    };
+    let mut mapped = vec![command.to_string()];
+    mapped.extend(args.iter().skip(skip).cloned());
+    Some(mapped)
 }
 
 fn now_unix_ms() -> u64 {
@@ -487,6 +512,27 @@ fn now_unix_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn terminal_state_top_level_aliases_are_read_only_headless_routes() {
+        let cases = [
+            (vec!["status"], vec!["status"]),
+            (vec!["thread", "list", "--json"], vec!["threads", "--json"]),
+            (
+                vec!["attention", "list", "--json"],
+                vec!["attention", "--json"],
+            ),
+            (vec!["board", "list"], vec!["board"]),
+            (vec!["forge", "status"], vec!["forge"]),
+            (vec!["worktree", "list"], vec!["worktrees"]),
+        ];
+        for (input, expected) in cases {
+            let input = input.into_iter().map(str::to_string).collect::<Vec<_>>();
+            let expected = expected.into_iter().map(str::to_string).collect::<Vec<_>>();
+            assert_eq!(top_level_alias(&input), Some(expected));
+        }
+        assert_eq!(top_level_alias(&["doctor".into(), "store".into()]), None);
+    }
 
     #[tokio::test]
     async fn fixture_10k_thread_snapshot_is_stable_and_not_degraded() {
