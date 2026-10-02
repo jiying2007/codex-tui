@@ -288,7 +288,10 @@ impl RuntimeStore {
         self.finish_planning_write(result, "ScratchWork")
     }
 
-    pub(crate) fn delete_scratch(&mut self, scratch_id: String) -> Result<PlanningSnapshot, String> {
+    pub(crate) fn delete_scratch(
+        &mut self,
+        scratch_id: String,
+    ) -> Result<PlanningSnapshot, String> {
         if !self.writable {
             return Err(self
                 .error
@@ -364,7 +367,11 @@ impl RuntimeStore {
         self.finish_planning_write(result, "SavedView delete")
     }
 
-    pub(crate) fn set_hot_slot(&mut self, slot: u8, target: SourceRef) -> Result<PlanningSnapshot, String> {
+    pub(crate) fn set_hot_slot(
+        &mut self,
+        slot: u8,
+        target: SourceRef,
+    ) -> Result<PlanningSnapshot, String> {
         if !self.writable {
             return Err(self
                 .error
@@ -412,7 +419,6 @@ impl RuntimeStore {
         }
     }
 }
-
 
 fn now_unix_ms() -> u64 {
     SystemTime::now()
