@@ -11,8 +11,6 @@ on:
       - "scripts/release/**"
       - "scripts/architecture/**"
       - "deny.toml"
-      - "tests/protocol_replay.rs"
-      - "tests/fixtures/protocol/**"
       - "src/release.rs"
       - "src/hardening.rs"
       - "src/soak.rs"
