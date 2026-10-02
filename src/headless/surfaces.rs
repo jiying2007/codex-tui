@@ -100,11 +100,7 @@ struct WorktreeSnapshot {
     worktrees: Vec<WorktreeRow>,
 }
 
-pub(super) async fn run_status(
-    fake: bool,
-    fixture_10k: bool,
-    format: OutputFormat,
-) -> Result<i32> {
+pub(super) async fn run_status(fake: bool, fixture_10k: bool, format: OutputFormat) -> Result<i32> {
     let work = super::build_work_snapshot(fake, fixture_10k).await;
     let mut stages = BTreeMap::new();
     for row in &work.work {
@@ -165,11 +161,7 @@ pub(super) async fn run_attention(
     })
 }
 
-pub(super) async fn run_board(
-    fake: bool,
-    fixture_10k: bool,
-    format: OutputFormat,
-) -> Result<i32> {
+pub(super) async fn run_board(fake: bool, fixture_10k: bool, format: OutputFormat) -> Result<i32> {
     let work = super::build_work_snapshot(fake, fixture_10k).await;
     let columns = ["inbox", "ready", "working", "review", "done"]
         .into_iter()
@@ -394,7 +386,12 @@ fn print_board(snapshot: &BoardSnapshot, format: OutputFormat) -> Result<()> {
             for column in &snapshot.columns {
                 println!("[{}] {}", column.stage, column.items.len());
                 for item in &column.items {
-                    println!("{}\t{}\t{}", item.local_id, item.attention.join(","), item.title);
+                    println!(
+                        "{}\t{}\t{}",
+                        item.local_id,
+                        item.attention.join(","),
+                        item.title
+                    );
                 }
             }
         }
@@ -409,7 +406,10 @@ fn print_forge(snapshot: &ForgeStatusSnapshot, format: OutputFormat) -> Result<(
             println!("schema: {}", snapshot.schema);
             println!("degraded: {}", snapshot.degraded);
             println!("cwd: {}", snapshot.cwd);
-            println!("provider: {}", snapshot.provider.as_deref().unwrap_or("unknown"));
+            println!(
+                "provider: {}",
+                snapshot.provider.as_deref().unwrap_or("unknown")
+            );
             println!(
                 "authenticated: {}",
                 snapshot
@@ -439,7 +439,11 @@ fn print_worktrees(snapshot: &WorktreeSnapshot, format: OutputFormat) -> Result<
                 println!(
                     "{}\t{}\t{}",
                     worktree.branch.as_deref().unwrap_or("<detached>"),
-                    if worktree.adopted { "adopted" } else { "created" },
+                    if worktree.adopted {
+                        "adopted"
+                    } else {
+                        "created"
+                    },
                     worktree.canonical_path
                 );
             }
@@ -463,19 +467,20 @@ mod tests {
 
         let columns = ["inbox", "ready", "working", "review", "done"]
             .into_iter()
-            .map(|stage| {
-                work.work
-                    .iter()
-                    .filter(|row| row.stage == stage)
-                    .count()
-            })
+            .map(|stage| work.work.iter().filter(|row| row.stage == stage).count())
             .collect::<Vec<_>>();
         assert_eq!(columns.iter().sum::<usize>(), work.work.len());
     }
 
     #[tokio::test]
     async fn fake_forge_and_worktrees_need_no_external_state() {
-        assert_eq!(run_forge(true, OutputFormat::Json).await.expect("forge"), EXIT_OK);
-        assert_eq!(run_worktrees(true, OutputFormat::Json).expect("worktrees"), EXIT_OK);
+        assert_eq!(
+            run_forge(true, OutputFormat::Json).await.expect("forge"),
+            EXIT_OK
+        );
+        assert_eq!(
+            run_worktrees(true, OutputFormat::Json).expect("worktrees"),
+            EXIT_OK
+        );
     }
 }
