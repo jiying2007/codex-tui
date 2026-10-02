@@ -393,7 +393,7 @@ jobs:
           if [ "$PUBLISH" = "true" ]; then
             ARGS+=(--publish)
           fi
-          cargo run --locked -- "${ARGS[@]}" > release-verification.json
+          cargo run --locked --bin codex-tui -- "${ARGS[@]}" > release-verification.json
 
           mkdir -p gate
           cp release-verification.json gate/release-verification.json

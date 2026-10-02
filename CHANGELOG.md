@@ -6,6 +6,7 @@ All notable codex-tui changes are recorded here.
 
 ### Maintainability
 
+- restored unambiguous `cargo run` / release verification after adding the syntax-asset helper binary by declaring `codex-tui` as the package default-run target and selecting it explicitly in the release gate.
 - closed the v1.2 P0/P1/P2 development scope with a machine-validated completion/freeze manifest; hosted qualification now SHA-256 binds that manifest while remaining explicitly non-stable authority.
 - moved Review syntax highlighting computation out of the render critical path: Git Review events prewarm both normal and word-diff variants into one process-level bounded cache, while render performs cache lookup only and falls back to plain Git diff on a miss.
 - added mature presentation modes: default `normal`, `quiet` background redraw coalescing at 100 ms, and `screen-reader` background redraw coalescing at 500 ms; direct keyboard/paste/resize interactions remain immediate and no second renderer is introduced.

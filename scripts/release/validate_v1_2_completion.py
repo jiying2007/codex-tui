@@ -75,6 +75,7 @@ SOURCE_TOKENS = {
         "presentation: PresentationMode::Normal",
     ],
     "Cargo.toml": [
+        'default-run = "codex-tui"',
         'two-face = { version = "0.5.2", default-features = false, features = ["syntect-fancy"] }',
     ],
     ".github/workflows/protocol-compatibility.yml": [
@@ -91,6 +92,7 @@ SOURCE_TOKENS = {
         "Validate v1.2 scope completion",
         "validate_v1_2_completion.py",
         "release/v1.2-completion.json",
+        "cargo run --locked --bin codex-tui --",
         "gate/DEVELOPMENT-COMPLETION.json",
     ],
     "scripts/release/create_development_qualification.py": [
