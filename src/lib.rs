@@ -10,6 +10,7 @@ pub mod compat;
 pub mod conversation;
 pub mod domain;
 pub mod forge;
+pub(crate) mod forge_types;
 pub mod forge_github;
 pub mod forge_mutation;
 pub mod git;
