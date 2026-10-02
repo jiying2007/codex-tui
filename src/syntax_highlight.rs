@@ -1,3 +1,4 @@
+use crate::git::{GitReview, presentation_diff_lines};
 use ratatui::{
     style::{Color, Modifier, Style},
     text::{Line, Span},
@@ -23,6 +24,7 @@ const REVIEW_THEME: &str = "ansi";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct CacheKey {
+    scope: String,
     revision: u64,
     syntax: String,
     theme: String,
@@ -60,6 +62,7 @@ impl SyntaxHighlighter {
         &mut self,
         lines: &[String],
         revision: u64,
+        scope: &str,
         syntax_hint: &str,
     ) -> Option<Vec<Line<'static>>> {
         if lines.is_empty() {
@@ -74,6 +77,7 @@ impl SyntaxHighlighter {
         }
 
         let key = CacheKey {
+            scope: scope.to_owned(),
             revision,
             syntax: syntax_hint.to_ascii_lowercase(),
             theme: REVIEW_THEME.into(),
@@ -117,6 +121,25 @@ impl SyntaxHighlighter {
         Some(highlighted)
     }
 
+    pub fn cached_lines(
+        &mut self,
+        revision: u64,
+        scope: &str,
+        syntax_hint: &str,
+    ) -> Option<Vec<Line<'static>>> {
+        let syntax = syntax_hint.to_ascii_lowercase();
+        let index = self.cache.iter().position(|entry| {
+            entry.key.revision == revision
+                && entry.key.scope == scope
+                && entry.key.syntax == syntax
+                && entry.key.theme == REVIEW_THEME
+        })?;
+        let entry = self.cache.remove(index)?;
+        let lines = entry.lines.clone();
+        self.cache.push_front(entry);
+        Some(lines)
+    }
+
     #[cfg(test)]
     fn cache_len(&self) -> usize {
         self.cache.len()
@@ -128,11 +151,41 @@ thread_local! {
         RefCell::new(SyntaxHighlighter::new());
 }
 
-pub fn highlight_review_diff(lines: &[String], revision: u64) -> Option<Vec<Line<'static>>> {
+fn review_revision(observed_at_unix_ms: u64, word_diff: bool) -> u64 {
+    observed_at_unix_ms
+        .wrapping_mul(2)
+        .wrapping_add(u64::from(word_diff))
+}
+
+pub fn prewarm_review_diff(review: &GitReview) {
+    if review.observed_at_unix_ms == 0 || review.error.is_some() {
+        return;
+    }
     REVIEW_HIGHLIGHTER.with(|highlighter| {
-        highlighter
-            .borrow_mut()
-            .highlight_lines(lines, revision, REVIEW_SYNTAX)
+        let mut highlighter = highlighter.borrow_mut();
+        for word_diff in [false, true] {
+            let lines = presentation_diff_lines(review, word_diff);
+            let _ = highlighter.highlight_lines(
+                &lines,
+                review_revision(review.observed_at_unix_ms, word_diff),
+                review.thread_id.0.as_str(),
+                REVIEW_SYNTAX,
+            );
+        }
+    });
+}
+
+pub fn cached_review_diff(
+    thread_id: &str,
+    observed_at_unix_ms: u64,
+    word_diff: bool,
+) -> Option<Vec<Line<'static>>> {
+    REVIEW_HIGHLIGHTER.with(|highlighter| {
+        highlighter.borrow_mut().cached_lines(
+            review_revision(observed_at_unix_ms, word_diff),
+            thread_id,
+            REVIEW_SYNTAX,
+        )
     })
 }
 
@@ -183,7 +236,7 @@ mod tests {
         ];
 
         let first = highlighter
-            .highlight_lines(&lines, 7, "diff")
+            .highlight_lines(&lines, 7, "test-scope", "diff")
             .expect("diff highlight");
         assert_eq!(first.len(), lines.len());
         let flattened = first
@@ -199,7 +252,7 @@ mod tests {
         assert_eq!(highlighter.cache_len(), 1);
 
         let second = highlighter
-            .highlight_lines(&lines, 7, "diff")
+            .highlight_lines(&lines, 7, "test-scope", "diff")
             .expect("cached diff highlight");
         assert_eq!(second, first);
         assert_eq!(highlighter.cache_len(), 1);
@@ -210,9 +263,31 @@ mod tests {
         let mut highlighter = SyntaxHighlighter::new();
         assert!(
             highlighter
-                .highlight_lines(&["text".into()], 1, "definitely-not-a-syntax")
+                .highlight_lines(&["text".into()], 1, "test-scope", "definitely-not-a-syntax")
                 .is_none()
         );
+    }
+
+    #[test]
+    fn cached_lookup_never_computes_on_miss() {
+        let mut highlighter = SyntaxHighlighter::new();
+        assert!(
+            highlighter
+                .cached_lines(11, "review:1", "diff")
+                .is_none()
+        );
+        assert_eq!(highlighter.cache_len(), 0);
+
+        let lines = vec!["+cached".into()];
+        highlighter
+            .highlight_lines(&lines, 11, "review:1", "diff")
+            .expect("prewarm");
+        assert!(
+            highlighter
+                .cached_lines(11, "review:1", "diff")
+                .is_some()
+        );
+        assert_eq!(highlighter.cache_len(), 1);
     }
 
     #[test]
@@ -227,7 +302,11 @@ mod tests {
     fn large_content_never_highlights_synchronously() {
         let mut highlighter = SyntaxHighlighter::new();
         let lines = vec!["x".repeat(sync_highlight_limit_bytes() + 1)];
-        assert!(highlighter.highlight_lines(&lines, 1, "diff").is_none());
+        assert!(
+            highlighter
+                .highlight_lines(&lines, 1, "test-scope", "diff")
+                .is_none()
+        );
         assert_eq!(highlighter.cache_len(), 0);
     }
 }
