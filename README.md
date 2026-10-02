@@ -6,7 +6,7 @@ A local-first terminal workbench for managing multiple Codex projects and conver
 
 ## Development status
 
-v1.2 is the active maintainability and terminal-state-completion line. Main keeps exact-SHA hosted development qualification, architecture ratchets, protocol replay, dependency security governance and preview packaging. The parked v1.1 candidate remains separate and still requires its real Linux/TTY evidence before any v1.1 stable publication.
+v1.2 has reached development-scope completion and is frozen against new core functionality under `release/v1.2-completion.json`. Main continues to accept defect, security, compatibility, qualification-evidence, release-tooling and documentation changes while retaining exact-SHA hosted development qualification, architecture ratchets, protocol replay, dependency security governance and preview packaging. This is not stable readiness: v1.2 stable publication still requires the exact-SHA real Linux compatibility, controlling-TTY restoration, performance diagnostics and release evidence defined by `release/v1.2-criteria.json`. The parked v1.1 candidate remains separate.
 
 ## Product goal
 
