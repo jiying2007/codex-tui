@@ -6,6 +6,7 @@ All notable codex-tui changes are recorded here.
 
 ### Maintainability
 
+- added lightweight opt-in notifications with `off` (default), terminal-bell and bounded native-OS delivery modes; routing is edge-triggered from existing attention/Goal/Forge projections, startup suppresses historical-alert replay, snooze affects routing only, and delivery failure never blocks the main workflow.
 - completed the first stable read-only headless contract expansion with status, attention, board, Forge and managed-worktree snapshots plus top-level `status`, `thread list`, `attention list`, `board list`, `forge status` and `worktree list` aliases; no headless mutation surface was added.
 - switched main from the parked v1.1 RC line to v1.2 Maintainability & Terminal-State Completion without reinterpreting missing v1.1 real-environment evidence as PASS;
 - added a canonical module no-growth ratchet and began behavior-preserving decomposition of runtime store/input routing, App Server wire/registry normalization, SQLite schema migration, Terminal Drawer and operator overlays, App action/effect/view types, worktree Git mechanics and Forge provider/domain types;
