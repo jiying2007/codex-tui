@@ -1,9 +1,11 @@
 use crate::backend::BackendStatus;
 use crate::batch_local::{LocalBatchAction, LocalBatchPlan, parse_priority};
 use crate::command::Command;
+#[cfg(test)]
+use crate::conversation::ConversationPage;
 use crate::conversation::{
-    ConversationPage, ConversationState, InteractiveRequest, InteractiveRequestKind,
-    InteractiveResolution, RpcRequestId, UserInputQuestion,
+    ConversationState, InteractiveRequest, InteractiveRequestKind, InteractiveResolution,
+    RpcRequestId, UserInputQuestion,
 };
 use crate::domain::{
     AttentionReason, CwdLocality, LocalRepoIdentity, RuntimeStatus, ThreadId, ThreadSummary,
@@ -11,7 +13,7 @@ use crate::domain::{
 };
 use crate::forge::{
     CapabilityState, ChangeRequestSummary, ForgeCapability, ForgeIdentity, ForgeObservation,
-    ForgeProviderKind, ForgeReviewSummary, ForgeReviewTarget,
+    ForgeProviderKind, ForgeReviewTarget,
 };
 use crate::forge_mutation::{ForgeMutationPlan, ForgeMutationReceipt, ForgeMutationRequest};
 use crate::git::{GitContext, GitReview};
@@ -28,12 +30,15 @@ use crate::planning::{
     forge_issue_source_ref, reconcile_forge_issue_card, reconcile_scratch_card_with_local,
     reconcile_thread_card_with_goal_and_forge,
 };
-use crate::pty::TerminalSize;
 use crate::store::LocalStateV1;
 use crate::terminal_drawer::TerminalSnapshot;
 use crate::text::sanitize_inline;
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::time::Instant;
+
+mod types;
+
+pub use types::{Action, ContextChoice, Effect, InputMode, View, ViewKind};
 
 const REGISTRY_RECENT_LIMIT: usize = 100;
 const CONVERSATION_CACHE_LIMIT: usize = 16;
@@ -83,337 +88,6 @@ fn build_thread_indexes(
             .push(index);
     }
     (by_id, by_cwd)
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum View {
-    Registry,
-    Thread(ThreadId),
-    Review(ThreadId),
-    Workspace(ThreadId),
-    ManagedWorktrees(ThreadId),
-    Board,
-    Scratch(String),
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ViewKind {
-    Registry,
-    Thread,
-    Review,
-    Workspace,
-    ManagedWorktrees,
-    Board,
-    Scratch,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum InputMode {
-    Normal,
-    Search,
-    Alias,
-    Composer,
-    UserInput,
-    ScratchTitle,
-    Snooze,
-    Note,
-    SavedViewName,
-    BatchAddTag,
-    BatchRemoveTag,
-    BatchPriority,
-    BatchSnooze,
-    GoalObjective,
-    WorktreeCreateBranch,
-    WorktreeCreatePath,
-    WorktreeCreateStartPoint,
-    WorktreeDeleteBranch,
-    ForgeMergeRequestTitle,
-    ForgeComment,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ContextChoice {
-    Snooze,
-    EditNote,
-    Bookmark,
-    ScratchInbox,
-    ScratchReady,
-    ScratchDone,
-    DeleteScratch,
-    SaveCurrentView,
-    DeleteCurrentView,
-    BatchAddTag,
-    BatchRemoveTag,
-    BatchSetPriority,
-    BatchClearPriority,
-    BatchMarkReady,
-    BatchClearReady,
-    BatchMarkDone,
-    BatchReopen,
-    BatchSnooze,
-    BatchClearSnooze,
-    LaunchPreset,
-    ForgeCreateMergeRequest,
-    ForgeComment,
-    ForgeApprove,
-    ForgeMerge,
-}
-
-impl ContextChoice {
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Snooze => "Snooze attention…",
-            Self::EditNote => "Edit local note…",
-            Self::Bookmark => "Add local bookmark",
-            Self::ScratchInbox => "Scratch → Inbox",
-            Self::ScratchReady => "Scratch → Ready",
-            Self::ScratchDone => "Scratch → Done",
-            Self::DeleteScratch => "Delete local ScratchWork",
-            Self::SaveCurrentView => "Save current view as…",
-            Self::DeleteCurrentView => "Delete current SavedView",
-            Self::BatchAddTag => "Batch visible · Add tag…",
-            Self::BatchRemoveTag => "Batch visible · Remove tag…",
-            Self::BatchSetPriority => "Batch visible · Set priority…",
-            Self::BatchClearPriority => "Batch visible · Clear priority",
-            Self::BatchMarkReady => "Batch visible · Mark ready",
-            Self::BatchClearReady => "Batch visible · Clear ready",
-            Self::BatchMarkDone => "Batch visible · Acknowledge done",
-            Self::BatchReopen => "Batch visible · Reopen",
-            Self::BatchSnooze => "Batch visible · Snooze…",
-            Self::BatchClearSnooze => "Batch visible · Clear snooze",
-            Self::LaunchPreset => "Launch repository preset…",
-            Self::ForgeCreateMergeRequest => "Forge · Create merge request…",
-            Self::ForgeComment => "Forge · Comment on merge request…",
-            Self::ForgeApprove => "Forge · Approve merge request",
-            Self::ForgeMerge => "Forge · Merge merge request",
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Action {
-    ReplaceThreads(Vec<ThreadSummary>),
-    BackendStatus(BackendStatus),
-    RefreshGitProjections,
-    RefreshActiveGitProjections,
-    RefreshForgeProjections,
-    GitContextLoaded(GitContext),
-    ForgeObservationLoaded(ForgeObservation),
-    ForgeReviewLoaded(ForgeReviewSummary),
-    GitReviewLoaded(GitReview),
-    ReviewError {
-        thread_id: ThreadId,
-        error: String,
-    },
-    PlanningSnapshotLoaded(PlanningSnapshot),
-    ReconcilePlanning {
-        now_unix_ms: u64,
-    },
-    PlanningStoreDegraded(Option<String>),
-    GoalObserved(GoalObservation),
-    GoalCleared(ThreadId),
-    OpenGoalActions,
-    CloseGoalActions,
-    OpenManagedWorktrees,
-    ManagedWorktreesLoaded(Vec<ManagedWorktreeRecord>),
-    MutationReceipt(Box<OperationReceipt>),
-    ForgeMutationReceipt(Box<ForgeMutationReceipt>),
-    MutationNotice(String),
-    MoveManagedWorktree(i32),
-    BeginCreateWorktree,
-    BeginAdoptCurrentWorktree,
-    BeginRemoveManagedWorktree,
-    BeginDeleteBranch,
-    ConfirmPendingOperation,
-    CancelPendingOperation,
-    BeginGoalObjective,
-    SetGoalStatus(GoalStatus),
-    ClearGoal,
-    OpenReview,
-    OpenWorkspace,
-    OpenBoard,
-    MoveBoardColumn(i32),
-    MovePlanningSelection(i32),
-    CycleSavedView(i32),
-    OpenPlanningSelected,
-    BeginScratch,
-    BeginSnooze,
-    OpenCommandPalette,
-    CloseCommandPalette,
-    MoveCommandPalette(i32),
-    OpenContext,
-    CloseContext,
-    MoveContext(i32),
-    ExecuteContext,
-    LaunchPresetsLoaded {
-        repo_root: String,
-        thread_cwd: String,
-        presets: Vec<LaunchPreset>,
-    },
-    CloseLaunchPresets,
-    MoveLaunchPreset(i32),
-    SelectLaunchPreset,
-    LaunchPlanPrepared(LaunchPlan),
-    ToggleTerminalDrawer,
-    CloseTerminalDrawer,
-    SetTerminalFocus(bool),
-    TerminalSnapshot(TerminalSnapshot),
-    TerminalScroll(i32),
-    BeginHotSlotBind,
-    UseHotSlot(u8),
-    MoveReview(i32),
-    ScrollReviewBy(i16),
-    ToggleReviewWordDiff,
-    OpenReviewExternalEditor,
-    ConversationLoaded(ConversationPage),
-    OlderConversationLoaded(ConversationPage),
-    ConversationFailed {
-        thread_id: ThreadId,
-        error: String,
-    },
-    PromptSubmitted {
-        thread_id: ThreadId,
-    },
-    InteractiveRequested(InteractiveRequest),
-    InteractiveResolved {
-        request_id: RpcRequestId,
-    },
-    ResolvePending(InteractiveResolution),
-    BeginUserInput,
-    MoveSelection(i32),
-    OpenSelected,
-    Back,
-    NextAttention,
-    QuickPrompt,
-    InterruptCurrent,
-    ToggleHelp,
-    SetDraft(String),
-    ScrollBy(i16),
-    ToggleFollow,
-    MarkUnread,
-    TogglePin,
-    AcknowledgeAttention,
-    ToggleHostLocalFilter,
-    ToggleRepoBackedFilter,
-    ToggleAllHistory,
-    BeginSearch,
-    BeginAlias,
-    InputChar(char),
-    InputText(String),
-    InputBackspace,
-    CommitInput,
-    CancelInput,
-    Quit,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Effect {
-    PersistOperatorState,
-    PersistOperatorStateDeferred,
-    CreateScratch {
-        title: String,
-        workspace: Option<String>,
-    },
-    SnoozeWorkCard {
-        anchor: SourceRef,
-        duration_ms: u64,
-    },
-    SaveSourceNote {
-        owner: SourceRef,
-        text: String,
-    },
-    UpdateScratchNote {
-        scratch_id: String,
-        note: Option<String>,
-    },
-    CreateBookmark {
-        source: SourceRef,
-        label: Option<String>,
-    },
-    UpdateScratchState {
-        scratch_id: String,
-        state: crate::planning::ScratchState,
-    },
-    DeleteScratch {
-        scratch_id: String,
-    },
-    SaveSavedView {
-        view: SavedView,
-    },
-    DeleteSavedView {
-        view_id: String,
-    },
-    SetHotSlot {
-        slot: u8,
-        target: SourceRef,
-    },
-    ApplyLocalBatch(Box<LocalBatchPlan>),
-    LoadLaunchPresets {
-        repo_root: String,
-        thread_cwd: String,
-    },
-    PrepareLaunchPreset {
-        preset: LaunchPreset,
-        repo_root: String,
-        thread_cwd: String,
-    },
-    ExecuteLaunchPreset(Box<LaunchPlan>),
-    OpenTerminalDrawer {
-        cwd: String,
-    },
-    CloseTerminalDrawer,
-    TerminalInput(Vec<u8>),
-    TerminalPaste(String),
-    TerminalResize(TerminalSize),
-    TerminalScroll(i32),
-    RefreshGoal(ThreadId),
-    SetGoal {
-        thread_id: ThreadId,
-        objective: Option<String>,
-        status: Option<GoalStatus>,
-    },
-    ClearGoal(ThreadId),
-    RefreshManagedWorktrees,
-    ExecuteOperation(Box<OperationPlan>),
-    ExecuteForgeOperation(Box<ForgeMutationRequest>),
-    ProbeGit {
-        thread_id: ThreadId,
-        cwd: String,
-    },
-    ProbeForge {
-        thread_id: ThreadId,
-        cwd: String,
-    },
-    ProbeForgeReview(ForgeReviewTarget),
-    LoadGitReview {
-        thread_id: ThreadId,
-        cwd: String,
-    },
-    OpenExternalEditor {
-        thread_id: ThreadId,
-        cwd: String,
-        path: String,
-    },
-    LoadConversation(ThreadId),
-    StopWatchingConversation(ThreadId),
-    LoadOlderConversation {
-        thread_id: ThreadId,
-        turn_cursor: Option<String>,
-        item_cursor: Option<String>,
-    },
-    SubmitPrompt {
-        thread_id: ThreadId,
-        text: String,
-        active_turn_id: Option<String>,
-    },
-    InterruptTurn {
-        thread_id: ThreadId,
-        turn_id: String,
-    },
-    ResolveInteractive {
-        request_id: RpcRequestId,
-        resolution: InteractiveResolution,
-    },
 }
 
 #[derive(Clone, Debug)]
