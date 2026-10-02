@@ -7,10 +7,7 @@ use crate::git::presentation_diff_lines;
 use crate::goal::GoalStatus;
 use crate::i18n::{UiLanguage, pick};
 use crate::operation::OperationState;
-use crate::planning::{
-    PlanningAttention, SavedView, SavedViewLayout, ScratchState, WorkflowStage, apply_saved_view,
-    saved_view_group_key,
-};
+use crate::planning::{PlanningAttention, SavedView, SavedViewLayout, ScratchState, WorkflowStage};
 use crate::syntax_highlight::cached_review_diff;
 use crate::text::{fit_display, sanitize_inline, truncate_display};
 
