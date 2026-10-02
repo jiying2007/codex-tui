@@ -1685,31 +1685,29 @@ mod command_palette_input_tests {
     }
 
     #[test]
-    fn command_palette_traps_navigation_and_executes_selected_command() {
+    fn command_palette_types_filter_and_executes_selected_command() {
         let mut app = app();
         let registry_selected = app.selected;
 
         handle_command(&mut app, Command::CommandPalette);
         assert!(app.command_palette_open);
 
-        let effects = handle_key(
-            &mut app,
-            KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE),
-        );
-        assert!(effects.is_empty());
+        for character in "board".chars() {
+            let effects = handle_key(
+                &mut app,
+                KeyEvent::new(KeyCode::Char(character), KeyModifiers::NONE),
+            );
+            assert!(effects.is_empty());
+        }
         assert_eq!(app.selected, registry_selected);
-        assert_eq!(app.command_palette_selected, 1);
-
-        let board_index = app
-            .command_palette_choices()
-            .iter()
-            .position(|choice| *choice == Command::Board)
-            .expect("Board palette entry");
-        app.command_palette_selected = board_index;
+        assert_eq!(app.command_palette_query, "board");
+        assert_eq!(app.command_palette_choices(), vec![Command::Board]);
+        assert_eq!(app.command_palette_selected, 0);
 
         let effects = handle_key(&mut app, KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         assert!(effects.is_empty());
         assert!(!app.command_palette_open);
+        assert!(app.command_palette_query.is_empty());
         assert_eq!(app.view_kind(), ViewKind::Board);
     }
 

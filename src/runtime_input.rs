@@ -14,6 +14,9 @@ pub(crate) fn handle_paste(app: &mut AppState, text: String) -> Vec<Effect> {
     if app.terminal_focused {
         return vec![Effect::TerminalPaste(text)];
     }
+    if app.command_palette_open {
+        return reduce(app, Action::CommandPaletteInputText(text));
+    }
     if app.input_mode != InputMode::Normal {
         return reduce(app, Action::InputText(text));
     }
@@ -52,12 +55,20 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
         }
         return match key.code {
             KeyCode::Esc => reduce(app, Action::CloseCommandPalette),
-            KeyCode::Char('j') | KeyCode::Down => reduce(app, Action::MoveCommandPalette(1)),
-            KeyCode::Char('k') | KeyCode::Up => reduce(app, Action::MoveCommandPalette(-1)),
+            KeyCode::Down => reduce(app, Action::MoveCommandPalette(1)),
+            KeyCode::Up => reduce(app, Action::MoveCommandPalette(-1)),
+            KeyCode::Backspace => reduce(app, Action::CommandPaletteBackspace),
             KeyCode::Enter => {
                 let choice = app.command_palette_choice();
                 reduce(app, Action::CloseCommandPalette);
                 choice.map_or_else(Vec::new, |choice| handle_palette_choice(app, choice))
+            }
+            KeyCode::Char(character)
+                if !key.modifiers.intersects(
+                    KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER,
+                ) =>
+            {
+                reduce(app, Action::CommandPaletteInputChar(character))
             }
             _ => vec![],
         };
