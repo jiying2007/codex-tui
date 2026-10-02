@@ -2247,13 +2247,14 @@ mod tests {
 
     #[test]
     fn production_rpc_decode_error_does_not_echo_unbounded_wire_payload() {
-        let source = include_str!("app_server.rs");
-        let production = source
+        let actor = include_str!("app_server.rs")
             .split("#[cfg(test)]")
             .next()
-            .expect("production source");
-        assert!(!production.contains("decode app-server JSON line: {line}"));
-        assert!(production.contains("decode app-server JSON line ({} bytes)"));
+            .expect("production actor source");
+        let wire = include_str!("app_server_wire.rs");
+        assert!(actor.contains("decode_wire_line"));
+        assert!(!wire.contains("decode app-server JSON line: {line}"));
+        assert!(wire.contains("decode app-server JSON line ({} bytes)"));
     }
 
     #[test]
