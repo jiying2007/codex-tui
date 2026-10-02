@@ -2,7 +2,7 @@ use anyhow::{Context, Result, anyhow};
 use codex_tui::{
     app::AppState,
     notification::{
-        NotificationEvent, NotificationMode, NotificationObservation, NotificationTracker,
+        NotificationMode, NotificationObservation, NotificationTracker,
     },
 };
 use std::{
