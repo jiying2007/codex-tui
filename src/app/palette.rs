@@ -169,7 +169,7 @@ mod tests {
     fn palette_query_fuzzy_matches_english_label() {
         let mut app = app();
         app.open_command_palette();
-        app.command_palette_query = "srch".into();
+        app.command_palette_query = "sear".into();
         assert_eq!(app.command_palette_choices(), vec![Command::Search]);
     }
 
