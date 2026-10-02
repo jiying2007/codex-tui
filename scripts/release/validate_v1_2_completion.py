@@ -100,6 +100,13 @@ SOURCE_TOKENS = {
         '"scopeCompletion": {',
         '"manifestSha256": sha256(completion_path)',
     ],
+    ".github/workflows/performance-diagnostics.yml": [
+        "name: performance-diagnostics",
+        "CODEX_TUI_GIT_SHA: ${{ github.sha }}",
+        "release benchmark",
+        "--iterations 200",
+        "actions/upload-artifact@v7",
+    ],
     ".github/workflows/security.yml": [
         "EmbarkStudios/cargo-deny-action@v2.0.20",
         "cargo audit",

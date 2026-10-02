@@ -1,0 +1,89 @@
+name: performance-diagnostics
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/performance-diagnostics.yml"
+      - "src/release_benchmark.rs"
+      - "src/planning.rs"
+      - "src/backend.rs"
+      - "src/compat.rs"
+      - "release/v1.2-criteria.json"
+      - "Cargo.toml"
+      - "Cargo.lock"
+  pull_request:
+    paths:
+      - ".github/workflows/performance-diagnostics.yml"
+      - "src/release_benchmark.rs"
+      - "src/planning.rs"
+      - "src/backend.rs"
+      - "src/compat.rs"
+      - "release/v1.2-criteria.json"
+      - "Cargo.toml"
+      - "Cargo.lock"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: performance-diagnostics-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  retained-performance:
+    name: resident-planning-10k
+    runs-on: ubuntu-24.04
+    env:
+      CODEX_TUI_GIT_SHA: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build exact source
+        run: cargo build --locked --release --bin codex-tui
+
+      - name: Capture retained 200-sample diagnostic
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./target/release/codex-tui release benchmark \
+            --warmup 20 \
+            --iterations 200 \
+            --source "github-hosted:ubuntu-24.04" \
+            --json | tee performance-diagnostics.json
+
+      - name: Validate exact-SHA diagnostic
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import math
+          import os
+
+          with open("performance-diagnostics.json", encoding="utf-8") as handle:
+              report = json.load(handle)
+
+          assert report["schema"] == "codex-tui/performance/v2"
+          assert report["fixture"] == "resident-planning-10k"
+          assert report["sourceSha"] == os.environ["GITHUB_SHA"]
+          assert report["rows"] == 10_000
+          assert report["warmupIterations"] >= 1
+          assert report["iterations"] >= 200
+          assert report["source"] == "github-hosted:ubuntu-24.04"
+          assert report["sampleQualified"] is True
+          for key in ("p50Ms", "p95Ms", "p99Ms", "maxMs"):
+              value = float(report[key])
+              assert math.isfinite(value) and value >= 0.0
+          assert report["p50Ms"] <= report["p95Ms"] <= report["p99Ms"] <= report["maxMs"]
+          PY
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: performance-diagnostics-${{ github.sha }}
+          path: performance-diagnostics.json
+          if-no-files-found: error
+          retention-days: 90

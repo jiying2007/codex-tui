@@ -6,6 +6,7 @@ on:
     paths:
       - ".github/workflows/release.yml"
       - ".github/workflows/development-qualification.yml"
+      - ".github/workflows/performance-diagnostics.yml"
       - ".github/workflows/protocol-compatibility.yml"
       - ".github/workflows/security.yml"
       - "scripts/release/**"
