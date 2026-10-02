@@ -320,6 +320,11 @@ jobs:
             --support-manifest qualification/support-bundle/manifest.json \
             --support-snapshot qualification/support-bundle/snapshot.json
 
+          python3 scripts/release/create_development_qualification.py \
+            --output qualification/development-qualification.json \
+            --automated-qualification qualification/automated-qualification.json \
+            --commit "${{ github.sha }}"
+
       - name: Validate stable publication notes
         if: inputs.channel == 'stable' && inputs.publish == true
         run: >
@@ -396,6 +401,7 @@ jobs:
           SERIES="${SERIES%.*}"
           cp "release/v${SERIES}-criteria.json" gate/STABLE-CRITERIA.json
           cp qualification/automated-qualification.json gate/automated-qualification.json
+          cp qualification/development-qualification.json gate/development-qualification.json
           cp qualification/failure-matrix.json gate/failure-matrix.json
           cp qualification/test-list.txt gate/failure-evidence-test-list.txt
           cp qualification/scale-evidence.json gate/scale-evidence.json
