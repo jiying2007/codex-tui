@@ -21,7 +21,7 @@ jobs:
   soak:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Build exact source
@@ -32,7 +32,7 @@ jobs:
           set -euo pipefail
           ./target/release/codex-tui soak             --rows "${{ inputs.rows || '50000' }}"             --cycles "${{ inputs.cycles || '256' }}"             --json | tee soak-evidence.json
       - name: Retain evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: soak-evidence-${{ github.sha }}
           path: soak-evidence.json
