@@ -70,9 +70,14 @@
       "id": "accessibility-mature-mode",
       "priority": "P2",
       "outcomes": [
-        "quiet presentation",
-        "reduced redraw",
-        "screen-reader-oriented presentation"
+        "normal presentation preserves existing immediate redraw behavior",
+        "quiet presentation coalesces background-only redraws to at most 10 Hz",
+        "screen-reader-oriented presentation coalesces background-only redraws to at most 2 Hz"
+      ],
+      "constraints": [
+        "keyboard, paste and resize interactions remain immediate",
+        "no second renderer or screen-reader protocol layer",
+        "Codex, Git and forge authority boundaries remain unchanged"
       ]
     }
   ],
@@ -112,7 +117,8 @@
     "src/notification.rs": 500,
     "src/runtime_notifications.rs": 300,
     "src/syntax_highlight.rs": 500,
-    "src/bin/syntax-asset-notices.rs": 100
+    "src/bin/syntax-asset-notices.rs": 100,
+    "src/presentation.rs": 150
   },
   "phaseExit": {
     "P0": [
@@ -121,6 +127,11 @@
       "App Server wire/registry replay boundaries are extracted",
       "SQLite schema/migration, worktree Git mechanics and Forge provider types are extracted",
       "Replay compatibility and dependency security governance are retained and green"
+    ],
+    "P2": [
+      "normal, quiet and screen-reader presentation policies are configuration-compatible",
+      "background redraw coalescing never delays direct operator input",
+      "presentation policy remains a bounded module with no second renderer"
     ],
     "v1_2": [
       "no open P0 maintainability defects",
