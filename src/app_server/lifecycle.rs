@@ -12,7 +12,7 @@ fn is_method_unsupported(error: &anyhow::Error, method: &str) -> bool {
     let Some(source) = error.downcast_ref::<RpcResponseError>() else {
         return false;
     };
-    source.method == method && matches!(source.code, Some(-32601 | -32600 | -32602))
+    source.method == method && matches!(source.code, Some(-32602..=-32600))
 }
 
 fn mark_optional_capability(status: &mut BackendStatus, capability: &str, supported: bool) {
