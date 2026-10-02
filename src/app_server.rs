@@ -91,6 +91,66 @@ fn mark_goal_unsupported(status: &mut BackendStatus) {
     }
 }
 
+fn is_method_unsupported(error: &anyhow::Error, method: &str) -> bool {
+    let Some(source) = error.downcast_ref::<RpcResponseError>() else {
+        return false;
+    };
+    source.method == method && matches!(source.code, Some(-32601 | -32600 | -32602))
+}
+
+fn mark_optional_capability(status: &mut BackendStatus, capability: &str, supported: bool) {
+    if supported {
+        if !status.capabilities.iter().any(|value| value == capability) {
+            status.capabilities.push(capability.to_string());
+        }
+        status
+            .optional_capabilities_missing
+            .retain(|value| value != capability);
+    } else {
+        status.capabilities.retain(|value| value != capability);
+        if !status
+            .optional_capabilities_missing
+            .iter()
+            .any(|value| value == capability)
+        {
+            status.optional_capabilities_missing.push(capability.to_string());
+        }
+    }
+}
+
+fn parse_lifecycle_thread(result: Value, operation: &str) -> Result<ThreadSummary> {
+    let value = result
+        .get("thread")
+        .cloned()
+        .with_context(|| format!("{operation} response missing thread"))?;
+    let thread: ThreadWire =
+        serde_json::from_value(value).with_context(|| format!("decode {operation} thread"))?;
+    Ok(normalize_thread(thread, None))
+}
+
+async fn start_thread(rpc: &mut RpcSession, cwd: String) -> Result<ThreadSummary> {
+    anyhow::ensure!(!cwd.trim().is_empty(), "thread/start cwd is empty");
+    let result = rpc
+        .request("thread/start", json!({ "cwd": cwd }))
+        .await
+        .context("start Codex thread")?;
+    parse_lifecycle_thread(result, "thread/start")
+}
+
+async fn fork_thread(rpc: &mut RpcSession, thread_id: ThreadId) -> Result<ThreadSummary> {
+    let result = rpc
+        .request(
+            "thread/fork",
+            json!({
+                "threadId": thread_id.0,
+                "excludeTurns": true
+            }),
+        )
+        .await
+        .context("fork Codex thread")?;
+    parse_lifecycle_thread(result, "thread/fork")
+}
+
 fn is_history_pagination_unsupported(error: &anyhow::Error) -> bool {
     let Some(source) = error.downcast_ref::<RpcResponseError>() else {
         return false;
