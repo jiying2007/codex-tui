@@ -52,6 +52,7 @@ impl NotificationKind {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NotificationEvent {
     pub key: String,
+    pub item_id: String,
     pub kind: NotificationKind,
     pub subject: String,
 }
@@ -80,6 +81,7 @@ impl NotificationEvent {
 #[derive(Clone, Debug, Default)]
 pub struct NotificationObservation {
     active: BTreeMap<String, NotificationEvent>,
+    known_items: BTreeSet<String>,
     runtimes: BTreeMap<String, (RuntimeStatus, String)>,
     goals: BTreeMap<String, (GoalStatus, String)>,
 }
@@ -119,12 +121,17 @@ impl NotificationObservation {
             })
             .collect();
 
+        let known_items = cards
+            .iter()
+            .map(|card| card.local_id.clone())
+            .collect::<BTreeSet<_>>();
         let mut active = BTreeMap::new();
         for card in cards.iter().filter(|card| !card.snoozed) {
             let subject = card.title.clone();
             for kind in card_notification_kinds(card) {
                 let event = NotificationEvent {
                     key: format!("{}:{}", kind.label(), card.local_id),
+                    item_id: card.local_id.clone(),
                     kind,
                     subject: subject.clone(),
                 };
@@ -134,6 +141,7 @@ impl NotificationObservation {
 
         Self {
             active,
+            known_items,
             runtimes,
             goals,
         }
@@ -177,6 +185,7 @@ fn card_notification_kinds(card: &WorkCardProjection) -> BTreeSet<NotificationKi
 pub struct NotificationTracker {
     initialized: bool,
     active: BTreeMap<String, NotificationEvent>,
+    known_items: BTreeSet<String>,
     runtimes: BTreeMap<String, (RuntimeStatus, String)>,
     goals: BTreeMap<String, (GoalStatus, String)>,
 }
@@ -186,6 +195,7 @@ impl NotificationTracker {
         if !self.initialized {
             self.initialized = true;
             self.active = observation.active;
+            self.known_items = observation.known_items;
             self.runtimes = observation.runtimes;
             self.goals = observation.goals;
             return vec![];
@@ -194,7 +204,7 @@ impl NotificationTracker {
         let mut emitted = BTreeMap::<String, NotificationEvent>::new();
 
         for (key, event) in &observation.active {
-            if !self.active.contains_key(key) {
+            if !self.active.contains_key(key) && self.known_items.contains(&event.item_id) {
                 emitted.insert(key.clone(), event.clone());
             }
         }
@@ -210,6 +220,7 @@ impl NotificationTracker {
                     key.clone(),
                     NotificationEvent {
                         key,
+                        item_id: thread_id.clone(),
                         kind: NotificationKind::Completion,
                         subject: subject.clone(),
                     },
@@ -229,6 +240,7 @@ impl NotificationTracker {
                     key.clone(),
                     NotificationEvent {
                         key,
+                        item_id: thread_id.clone(),
                         kind: NotificationKind::Completion,
                         subject: subject.clone(),
                     },
@@ -237,6 +249,7 @@ impl NotificationTracker {
         }
 
         self.active = observation.active;
+        self.known_items = observation.known_items;
         self.runtimes = observation.runtimes;
         self.goals = observation.goals;
         emitted.into_values().collect()
@@ -362,6 +375,34 @@ mod tests {
             )],
         ));
         assert_eq!(repeated.len(), 1);
+    }
+
+    #[test]
+    fn newly_discovered_card_seeds_attention_before_future_edges() {
+        let mut tracker = NotificationTracker::default();
+        tracker.advance(observation(vec![], vec![]));
+
+        let historical = tracker.advance(observation(
+            vec![],
+            vec![card(
+                "late",
+                &[PlanningAttention::PipelineFailed],
+                false,
+            )],
+        ));
+        assert!(historical.is_empty());
+
+        tracker.advance(observation(vec![], vec![card("late", &[], false)]));
+        let fresh = tracker.advance(observation(
+            vec![],
+            vec![card(
+                "late",
+                &[PlanningAttention::PipelineFailed],
+                false,
+            )],
+        ));
+        assert_eq!(fresh.len(), 1);
+        assert_eq!(fresh[0].kind, NotificationKind::PipelineFailed);
     }
 
     #[test]
