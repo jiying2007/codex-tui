@@ -1,7 +1,7 @@
 # v1.3 Workflow Completion & UX
 
 Date: 2026-10-02
-Status: active development plan
+Status: development-scope complete and frozen
 Base: v1.2 development-complete checkpoint `cfed175ed1f3488c3a987f01d8c6b07292bf2553`
 Integration branch: `release/v1.3-development`
 
@@ -68,3 +68,26 @@ v1.3 development is complete only when:
 - Linux/macOS/Windows canonical CI and Rust 1.88 remain green;
 - the integration branch has no open P0 defect;
 - v1.2 stable evidence remains independently reproducible from its frozen checkpoint.
+
+
+## Development-complete checkpoint
+
+Feature-completion baseline: `8ea619fcbceba514ccc5f8f906446a3726968eae`.
+
+P0 and P1 are implemented. P2 closes as follows:
+
+- fuzzy Command Palette: implemented with a frozen contextual command set, bilingual fuzzy filtering, typed/pasted query input and explicit empty-result handling;
+- user-perceived render evidence: implemented with exact-SHA 10k Board/Thread diagnostics, 20 warmups and 200 samples;
+- GitLab Issue Board projection: evidence-gated. The normal GitLab refresh is deliberately capped at four `glab` API subprocesses, and the current board summary does not contain honest list/card membership projection data. Board probing remains observable through Doctor rather than silently crossing the native-transport trigger;
+- GitHub safe-write parity: evidence-gated. GitHub remains read-only until provider-specific mutation preflight/verification exists; the existing GitLab mutation contract continues to reject non-GitLab identities.
+
+The v1.3 freeze contract permits only defect, security, compatibility, qualification-evidence, release-tooling and documentation changes. New core functionality requires a new development plan.
+
+Retained UX diagnostics for the feature baseline:
+
+- workflow run `37039083082`;
+- artifact `11240639945`;
+- Board 10k render: p50 15.834 ms, p95 16.609 ms, p99 17.870 ms, max 19.566 ms;
+- Thread 10k render: p50 0.312 ms, p95 0.328 ms, p99 0.334 ms, max 0.361 ms.
+
+These hosted timings are diagnostic evidence, not stable release latency gates.
