@@ -94,14 +94,16 @@
   "moduleRatchet": {
     "src/app.rs": 7000,
     "src/ui.rs": 3700,
-    "src/app_server.rs": 2900,
+    "src/app_server.rs": 2780,
     "src/main.rs": 1900,
     "src/sqlite_store.rs": 2400,
     "src/forge.rs": 1700,
     "src/worktree.rs": 1200,
     "src/release.rs": 1050,
     "src/runtime_store.rs": 550,
-    "src/runtime_input.rs": 400
+    "src/runtime_input.rs": 400,
+    "src/app_server_registry.rs": 250,
+    "src/app_server_wire.rs": 100
   },
   "phaseExit": {
     "P0": [
