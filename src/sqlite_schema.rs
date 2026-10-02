@@ -179,4 +179,3 @@ pub(crate) fn ensure_schema(conn: &mut Connection) -> Result<()> {
 
     Ok(())
 }
-
