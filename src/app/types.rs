@@ -344,4 +344,3 @@ pub enum Effect {
         resolution: InteractiveResolution,
     },
 }
-
