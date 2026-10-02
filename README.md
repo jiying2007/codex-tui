@@ -153,8 +153,19 @@ cargo run -- headless threads
 cargo run -- headless threads --json
 cargo run -- headless work
 cargo run -- headless work --json
+cargo run -- headless status --json
+cargo run -- headless attention --json
+cargo run -- headless board --json
+cargo run -- headless forge --json
+cargo run -- headless worktrees --json
+cargo run -- status --json
+cargo run -- thread list --json
+cargo run -- attention list --json
+cargo run -- board list --json
+cargo run -- forge status --json
+cargo run -- worktree list --json
 cargo run -- headless threads --fixture-10k
-cargo run -- release verify --channel preview --tag v1.1.0-preview.1 --commit "$(git rev-parse HEAD)" --json
+cargo run -- release verify --channel preview --tag v1.2.0-preview.1 --commit "$(git rev-parse HEAD)" --json
 cargo run -- release benchmark --iterations 200 --source retained-runner --json
 cargo run -- release failure-matrix --json
 cargo run -- soak --rows 50000 --cycles 256 --json
@@ -185,11 +196,11 @@ M6b adds explicit GitLab merge-request mutations from Review / Workspace context
 
 M6c completes the normalized forge layer with a GitHub.com read-only provider. Exact `github.com` and `gitlab.com` remotes use their canonical providers; custom forge hosts are resolved from explicit `gh`/`glab` authentication instead of assuming every non-GitHub host is GitLab. A normal GitHub refresh uses four `gh api` calls (repository, Issues, open Pull Requests, Actions runs), while reviews and bounded GraphQL review threads load only in Review. GitHub capabilities degrade independently and no GitHub write path is introduced.
 
-M7a establishes a read-only automation and scale baseline. `headless threads` and `headless work` emit stable text or secret-safe JSON snapshots with explicit degraded exit codes. `doctor compat` reports local OS/architecture, SQLite, Codex, Git, `glab`, and `gh` compatibility without remote forge API probes. `--fixture-10k` provides deterministic scale data, while the Divan benchmark target measures resident 10k planning filters plus recent/search/host-local Registry projections without turning noisy hosted-runner timings into release gates.
+M7a establishes a read-only automation and scale baseline. v1.2 extends that stable surface with `status`, `thread list`, `attention list`, `board list`, `forge status` and `worktree list` top-level aliases plus equivalent `headless` commands. They emit text or secret-safe JSON snapshots with explicit degraded exit codes and introduce no mutating headless path. `doctor compat` reports local OS/architecture, SQLite, Codex, Git, `glab`, and `gh` compatibility without remote forge API probes. `--fixture-10k` provides deterministic scale data, while the Divan benchmark target measures resident 10k planning filters plus recent/search/host-local Registry projections without turning noisy hosted-runner timings into release gates.
 
 M7b3 adds repository-shared `.codex-tui.toml` launch presets as a deliberately narrow argv-only feature. Presets are selected from Workspace/Review context actions, shown as an exact cwd/argv plan, and require explicit confirmation before codex-tui starts the external process. The config has no shell string, env templating, chaining, hooks or scheduler semantics; common shell executables are rejected.
 
-M7d3 adds a fail-closed release path: publication is manually dispatched, while release-pipeline changes on main automatically run a non-publishing preview self-test. Preview and stable identity derive from the Cargo version; Cargo.lock pins candidates; Linux/macOS/Windows build native archives and smoke the extracted binary; runtime dependency licenses/notices and SHA-256 manifests are retained. v1.0.0 was published as the first stable release on 2026-09-30, and main now carries the v1.1.0 development line. v1.1 preview and stable qualification are bound to the exact source SHA and require the Failure Matrix, 50k scale-v4 evidence, 50k structural soak, UI command contract, state migration/recovery and support-bundle redaction gates. Stable publication additionally requires canonical CI plus real Linux Tier 1 compatibility and controlling-TTY restoration evidence. The retained 10k p95/p99 benchmark uses at least 200 samples as diagnostic evidence; hosted-runner latency thresholds do not block v1.1. macOS/Windows remain Tier 2 automated-compatibility targets across the v1 stable line.
+M7d3 adds a fail-closed release path: publication is manually dispatched, while release-pipeline changes on main automatically run a non-publishing preview self-test. Preview and stable identity derive from the Cargo version; Cargo.lock pins candidates; Linux/macOS/Windows build native archives and smoke the extracted binary; runtime dependency licenses/notices and SHA-256 manifests are retained. v1.0.0 was published as the first stable release on 2026-09-30. The v1.1 candidate is parked on `release/v1.1-parked`, while main now carries the v1.2.0 development line. v1.2 preview and stable qualification are bound to the exact source SHA and require the Failure Matrix, 50k scale-v4 evidence, 50k structural soak, UI command contract, state migration/recovery and support-bundle redaction gates. Stable publication additionally requires canonical CI plus real Linux Tier 1 compatibility and controlling-TTY restoration evidence. The retained 10k p95/p99 benchmark uses at least 200 samples as diagnostic evidence; hosted-runner latency thresholds do not block v1.1. macOS/Windows remain Tier 2 automated-compatibility targets across the v1 stable line.
 
 ## Status
 
@@ -214,7 +225,8 @@ M7d3 adds a fail-closed release path: publication is manually dispatched, while 
 - M7d2 compatibility matrix + Doctor evidence contract: implemented as `compat/v2` with required/optional readiness and retained-evidence metadata.
 - M7d3 stable/preview release hardening: implemented with locked three-platform packaging, archive smoke, notices/checksums, and fail-closed stable evidence gates.
 - v1.0.0 stable release: published on 2026-09-30 with Linux Tier 1 retained evidence and three-platform native package/archive smoke.
-- v1.1.0 development line: active on main; new changes are tracked under the Unreleased changelog section.
+- v1.1.0 candidate: parked on `release/v1.1-parked`; its historical real-environment qualification remains separate.
+- v1.2.0 development line: active on main with hosted development qualification, architecture ratchets, protocol replay and dependency-security governance.
 
 Architecture and product research are archived under `docs/research/`.
 Implementation design lives under `docs/design/`.
