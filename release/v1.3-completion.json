@@ -1,0 +1,183 @@
+{
+  "schema": "codex-tui/v1.3-completion/v1",
+  "target": "v1.3-workflow-completion-ux",
+  "featureCompletionBaselineSha": "8ea619fcbceba514ccc5f8f906446a3726968eae",
+  "status": "development-scope-complete",
+  "stableReady": false,
+  "publicationAllowed": false,
+  "releaseAuthority": "not-opened",
+  "releaseAuthorityNote": "v1.2 stable remains independently frozen; this v1.3 checkpoint is development-complete only and does not change package/release authority",
+  "completed": {
+    "P0": [
+      {
+        "id": "board-large-dataset-navigation",
+        "status": "implemented",
+        "evidencePaths": [
+          "src/ui/board.rs"
+        ]
+      },
+      {
+        "id": "workcard-relationship-closure",
+        "status": "implemented",
+        "evidencePaths": [
+          "src/planning.rs",
+          "src/app/context.rs",
+          "src/runtime_planning.rs",
+          "src/sqlite_store.rs"
+        ]
+      },
+      {
+        "id": "codex-thread-create-fork-worktree-handoff",
+        "status": "implemented",
+        "evidencePaths": [
+          "src/app/lifecycle.rs",
+          "src/app_server/lifecycle.rs",
+          "src/app_server.rs"
+        ]
+      },
+      {
+        "id": "unified-metadata-search",
+        "status": "implemented",
+        "evidencePaths": [
+          "src/app/search.rs",
+          "src/planning.rs"
+        ]
+      }
+    ],
+    "P1": [
+      {
+        "id": "saved-view-editor",
+        "status": "implemented",
+        "evidencePaths": [
+          "src/app/saved_view.rs",
+          "src/ui/board.rs",
+          "src/ui/overlays.rs"
+        ]
+      },
+      {
+        "id": "review-evidence-workspace-and-external-open",
+        "status": "implemented",
+        "evidencePaths": [
+          "src/app/review.rs",
+          "src/ui/review.rs",
+          "src/runtime_external.rs",
+          "src/keymap.rs"
+        ]
+      },
+      {
+        "id": "core-module-decomposition",
+        "status": "implemented",
+        "evidencePaths": [
+          "src/app/context.rs",
+          "src/app/lifecycle.rs",
+          "src/app/review.rs",
+          "src/app/saved_view.rs",
+          "src/app/search.rs",
+          "src/app/palette.rs",
+          "src/ui/board.rs",
+          "src/ui/review.rs",
+          "src/ui/thread.rs",
+          "src/runtime_planning.rs",
+          "src/runtime_external.rs"
+        ]
+      },
+      {
+        "id": "long-thread-viewport-and-cache",
+        "status": "implemented",
+        "evidencePaths": [
+          "src/conversation.rs",
+          "src/ui/thread.rs"
+        ]
+      }
+    ],
+    "P2": [
+      {
+        "id": "gitlab-issue-board-projection",
+        "status": "evidence-gated",
+        "decisionRef": "release/v1.3-plan.json#evidenceGatedDecisions.gitlab-issue-board-projection"
+      },
+      {
+        "id": "github-safe-write-parity",
+        "status": "evidence-gated",
+        "decisionRef": "release/v1.3-plan.json#evidenceGatedDecisions.github-safe-write-parity"
+      },
+      {
+        "id": "fuzzy-command-palette",
+        "status": "implemented",
+        "evidencePaths": [
+          "src/app/palette.rs",
+          "src/runtime_input.rs",
+          "src/ui/overlays.rs"
+        ]
+      },
+      {
+        "id": "user-perceived-performance-evidence",
+        "status": "implemented",
+        "evidencePaths": [
+          "src/bin/ux-performance-evidence.rs",
+          ".github/workflows/ux-performance-diagnostics.yml"
+        ]
+      }
+    ]
+  },
+  "uxPerformanceEvidence": {
+    "sourceSha": "8ea619fcbceba514ccc5f8f906446a3726968eae",
+    "workflowRunId": 37039083082,
+    "artifactId": 11240639945,
+    "source": "github-hosted:ubuntu-24.04",
+    "terminal": {
+      "width": 160,
+      "height": 50
+    },
+    "rows": 10000,
+    "warmupIterations": 20,
+    "iterations": 200,
+    "sampleQualified": true,
+    "diagnosticOnly": true,
+    "board10kRender": {
+      "p50Ms": 15.833906,
+      "p95Ms": 16.609052,
+      "p99Ms": 17.869878,
+      "maxMs": 19.566197
+    },
+    "thread10kRender": {
+      "p50Ms": 0.312222,
+      "p95Ms": 0.327975,
+      "p99Ms": 0.333723,
+      "maxMs": 0.360884
+    }
+  },
+  "architecture": {
+    "v1_2CeilingsNotRaised": true,
+    "v1_3RatchetAuthority": "release/v1.3-plan.json#moduleRatchet",
+    "notableCurrentLoc": {
+      "src/app.rs": 6468,
+      "src/ui.rs": 2459,
+      "src/app_server.rs": 2776,
+      "src/main.rs": 1866
+    }
+  },
+  "freezePolicy": {
+    "newCoreFunctionality": "requires-new-development-plan",
+    "allowedChangeClasses": [
+      "defect-fix",
+      "security",
+      "compatibility",
+      "qualification-evidence",
+      "release-tooling",
+      "documentation"
+    ]
+  },
+  "inheritedDeferrals": [
+    "thread-queue-until-stable-upstream-capability",
+    "transcript-fts-until-measured-need",
+    "native-gitlab-transport-until-existing-hard-trigger",
+    "remote-app-server-targets",
+    "team-server-rbac",
+    "web-mobile-client",
+    "generic-plugin-runtime",
+    "multi-agent-abstraction",
+    "workflow-job-engine",
+    "cloud-sync"
+  ]
+}

@@ -1,0 +1,94 @@
+name: v1.3-development-qualification
+
+on:
+  push:
+    branches:
+      - release/v1.3-development
+  pull_request:
+    paths:
+      - ".github/workflows/v1.3-development-qualification.yml"
+      - "release/v1.3-plan.json"
+      - "release/v1.3-completion.json"
+      - "scripts/release/validate_v1_3_plan.py"
+      - "scripts/release/validate_v1_3_completion.py"
+      - "scripts/architecture/check_module_ratchet.py"
+      - "src/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    name: v1.3-development-completion
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.88.0
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.8"
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Validate plan and completion
+        run: |
+          set -euo pipefail
+          python scripts/release/validate_v1_3_plan.py
+          python scripts/release/validate_v1_3_completion.py
+          python scripts/architecture/check_module_ratchet.py release/v1.3-plan.json
+
+      - name: Verify Rust 1.88 source compatibility
+        run: cargo check --locked --all-targets --all-features
+
+      - name: Create exact-SHA qualification receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p qualification
+          python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          completion_path = Path("release/v1.3-completion.json")
+          completion_bytes = completion_path.read_bytes()
+          completion = json.loads(completion_bytes.decode("utf-8"))
+          receipt = {
+              "schema": "codex-tui/v1.3-development-qualification/v1",
+              "sourceSha": os.environ["GITHUB_SHA"],
+              "target": completion["target"],
+              "featureCompletionBaselineSha": completion["featureCompletionBaselineSha"],
+              "completionSha256": hashlib.sha256(completion_bytes).hexdigest(),
+              "authority": "hosted-development-only",
+              "stableReady": False,
+              "publicationAllowed": False,
+              "gates": {
+                  "plan": "pass",
+                  "scopeCompletion": "pass",
+                  "moduleRatchet": "pass",
+                  "rust188": "pass",
+                  "providerEvidenceGates": "pass",
+              },
+          }
+          Path("qualification/v1.3-development-qualification.json").write_text(
+              json.dumps(receipt, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          print(json.dumps(receipt, indent=2, sort_keys=True))
+          PY
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: v1.3-development-qualification-${{ github.sha }}
+          path: qualification/v1.3-development-qualification.json
+          if-no-files-found: error
+          retention-days: 90
