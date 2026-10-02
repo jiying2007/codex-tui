@@ -726,10 +726,8 @@ async fn run_app(fake_mode: bool) -> Result<()> {
                 }
                 Event::Paste(text) => {
                     let effects = handle_paste(&mut app, text);
-                    if !effects.is_empty() {
-                        needs_render = true;
-                        urgent_render = true;
-                    }
+                    needs_render = true;
+                    urgent_render = true;
                     apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
                 }
                 Event::Resize(cols, rows) => {
