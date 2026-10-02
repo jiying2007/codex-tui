@@ -279,7 +279,11 @@ mod tests {
             )
             .expect("write notification config");
             assert_eq!(
-                store.load_config().expect("notification config").notifications.mode,
+                store
+                    .load_config()
+                    .expect("notification config")
+                    .notifications
+                    .mode,
                 expected
             );
         }
