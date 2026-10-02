@@ -20,6 +20,7 @@ pub mod headless;
 pub mod i18n;
 pub mod keymap;
 pub mod launch;
+pub mod notification;
 pub mod operation;
 pub mod planning;
 pub mod pty;
