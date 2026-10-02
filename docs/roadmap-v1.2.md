@@ -40,6 +40,16 @@ New implementation modules should normally stay below 800 LOC and trend toward t
 - add lightweight notifications without inventing a second workflow state machine; default off, bounded terminal/native-OS delivery, edge-triggered from existing projections;
 - implement the already-locked two-face + syntect highlighting choice behind a bounded/cached interface; use the pure-Rust fancy-regex backend, Review Diff syntax first, a 128 KiB synchronous cutoff and plain-text fallback.
 
+## P2 mature accessibility mode
+
+P2 stays inside the existing Ratatui renderer and event loop. The local `[ui]` config gains a presentation mode:
+
+- `normal` preserves the existing immediate redraw behavior;
+- `quiet` coalesces background-only redraws to a 100 ms minimum interval;
+- `screen-reader` coalesces background-only redraws to a 500 ms minimum interval.
+
+Keyboard, paste and resize interactions always bypass the background throttle. The mode does not add a second renderer, screen-reader protocol, new persisted workflow state or new product authority. Existing textual focus/attention labels, keyboard reachability and grapheme-safe rendering remain the semantic accessibility base.
+
 ## Evidence-driven only
 
 Thread Queue, transcript FTS, native GitLab REST/GraphQL, extra package architectures and remote targets stay deferred until measured need or upstream capability justifies them.

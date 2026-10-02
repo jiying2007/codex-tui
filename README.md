@@ -180,12 +180,15 @@ The TUI supports English and Simplified Chinese. The language is selected in the
 [ui]
 mouse = true
 language = "auto" # auto | en | zh-CN
+presentation = "normal" # normal | quiet | screen-reader
 
 [notifications]
 mode = "off" # off | terminal | os
 ```
 
 `auto` is the default and follows the process locale in standard precedence order: `LC_ALL`, then `LC_MESSAGES`, then `LANG`. Simplified Chinese locales such as `zh_CN.UTF-8`, `zh_SG.UTF-8`, `zh-CN` or `zh-Hans` select Simplified Chinese. Known Traditional Chinese locales such as `zh-TW`, `zh-HK`, `zh-MO` and `zh-Hant` fall back to English rather than being mislabeled as Simplified Chinese. Other or unavailable locales also select English. Use `en` or `zh-CN` to pin the UI language explicitly. Technical identifiers and upstream error text remain unchanged so terminal output still matches Codex/Git/Forge diagnostics.
+
+`presentation = "normal"` preserves the existing render cadence. `quiet` coalesces background-only redraws to at most 10 Hz, while `screen-reader` uses a 500 ms minimum interval for background redraws to reduce repeated terminal updates. Keyboard, paste and terminal-resize interactions remain immediate in every mode. This is a screen-reader-oriented terminal presentation policy, not a second renderer or assistive-technology protocol layer.
 
 Notifications are deliberately lightweight and opt-in. `off` is the default and preserves upgrade behavior. `terminal` emits a terminal bell only. `os` uses the native desktop notification command with a 3-second timeout and falls back to the terminal bell if delivery is unavailable. Notifications are edge-triggered from existing attention/Goal/Forge projections (approval, user input, Goal blocked, completion, pipeline failure, review requested); startup seeds current state without replaying historical alerts, and snooze suppresses routing without changing source status. No prompt text, tool output, credentials, external bridge, scheduler, or second workflow state machine is introduced.
 

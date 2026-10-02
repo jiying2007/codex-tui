@@ -1,5 +1,7 @@
 use crate::domain::ThreadUiState;
-use crate::{i18n::LanguagePreference, notification::NotificationMode};
+use crate::{
+    i18n::LanguagePreference, notification::NotificationMode, presentation::PresentationMode,
+};
 use anyhow::{Context, Result};
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
@@ -15,6 +17,8 @@ pub struct UiConfig {
     pub mouse: bool,
     #[serde(default)]
     pub language: LanguagePreference,
+    #[serde(default)]
+    pub presentation: PresentationMode,
 }
 
 const fn default_true() -> bool {
@@ -26,6 +30,7 @@ impl Default for UiConfig {
         Self {
             mouse: true,
             language: LanguagePreference::Auto,
+            presentation: PresentationMode::Normal,
         }
     }
 }
@@ -191,6 +196,7 @@ mod tests {
         let config = store.load_config().expect("config");
         assert!(config.ui.mouse);
         assert_eq!(config.ui.language, LanguagePreference::Auto);
+        assert_eq!(config.ui.presentation, PresentationMode::Normal);
         assert_eq!(config.notifications.mode, NotificationMode::Off);
 
         let mut state = LocalStateV1::default();
@@ -205,6 +211,7 @@ mod tests {
         let state_text = fs::read_to_string(store.state_path()).expect("read state");
         assert!(config_text.contains("[ui]"));
         assert!(config_text.contains("language = \"auto\""));
+        assert!(config_text.contains("presentation = \"normal\""));
         assert!(config_text.contains("[notifications]"));
         assert!(config_text.contains("mode = \"off\""));
         assert!(state_text.contains("\"schemaVersion\": 1"));
@@ -258,7 +265,34 @@ mod tests {
         .expect("write legacy config");
 
         let config = store.load_config().expect("legacy config");
+        assert_eq!(config.ui.presentation, PresentationMode::Normal);
         assert_eq!(config.notifications.mode, NotificationMode::Off);
+    }
+
+    #[test]
+    fn presentation_mode_accepts_quiet_and_screen_reader_values() {
+        let root = tempdir().expect("tempdir");
+        let store = FileStore::at(root.path());
+        fs::create_dir_all(store.config_path().parent().expect("config parent"))
+            .expect("config dir");
+        for (wire, expected) in [
+            ("quiet", PresentationMode::Quiet),
+            ("screen-reader", PresentationMode::ScreenReader),
+        ] {
+            fs::write(
+                store.config_path(),
+                format!("[ui]\nmouse = true\nlanguage = \"auto\"\npresentation = \"{wire}\"\n"),
+            )
+            .expect("write presentation config");
+            assert_eq!(
+                store
+                    .load_config()
+                    .expect("presentation config")
+                    .ui
+                    .presentation,
+                expected
+            );
+        }
     }
 
     #[test]
