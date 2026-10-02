@@ -37,6 +37,16 @@ pub enum ViewKind {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SavedViewEditField {
+    Name,
+    Source,
+    Filter,
+    Layout,
+    GroupBy,
+    OrderBy,
+    VisibleFields,
+}
+
 pub enum InputMode {
     Normal,
     Search,
@@ -47,6 +57,7 @@ pub enum InputMode {
     Snooze,
     Note,
     SavedViewName,
+    SavedViewEdit,
     BatchAddTag,
     BatchRemoveTag,
     BatchPriority,
@@ -73,6 +84,13 @@ pub enum ContextChoice {
     ScratchDone,
     DeleteScratch,
     SaveCurrentView,
+    EditViewName,
+    EditViewSource,
+    EditViewFilter,
+    EditViewLayout,
+    EditViewGroup,
+    EditViewOrder,
+    EditViewFields,
     DeleteCurrentView,
     BatchAddTag,
     BatchRemoveTag,
@@ -105,6 +123,13 @@ impl ContextChoice {
             Self::ScratchDone => "Scratch → Done",
             Self::DeleteScratch => "Delete local ScratchWork",
             Self::SaveCurrentView => "Save current view as…",
+            Self::EditViewName => "Edit SavedView · name…",
+            Self::EditViewSource => "Edit SavedView · source…",
+            Self::EditViewFilter => "Edit SavedView · filter…",
+            Self::EditViewLayout => "Edit SavedView · layout…",
+            Self::EditViewGroup => "Edit SavedView · group…",
+            Self::EditViewOrder => "Edit SavedView · order…",
+            Self::EditViewFields => "Edit SavedView · fields…",
             Self::DeleteCurrentView => "Delete current SavedView",
             Self::BatchAddTag => "Batch visible · Add tag…",
             Self::BatchRemoveTag => "Batch visible · Remove tag…",
