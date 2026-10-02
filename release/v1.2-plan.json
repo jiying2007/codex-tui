@@ -92,8 +92,8 @@
     "job-workflow-engine"
   ],
   "moduleRatchet": {
-    "src/app.rs": 7000,
-    "src/ui.rs": 3700,
+    "src/app.rs": 6650,
+    "src/ui.rs": 3100,
     "src/app_server.rs": 2780,
     "src/main.rs": 1900,
     "src/sqlite_store.rs": 2250,
@@ -110,15 +110,43 @@
   },
   "phaseExit": {
     "P0": [
-      "ratchet enforced in canonical CI",
-      "runtime/main first extraction merged",
-      "Replay compatibility path retained",
-      "dependency security governance green"
+      "canonical CI enforces the current no-growth ratchet",
+      "runtime store and input routing are extracted",
+      "App Server wire/registry replay boundaries are extracted",
+      "SQLite schema/migration, worktree Git mechanics and Forge provider types are extracted",
+      "Replay compatibility and dependency security governance are retained and green"
     ],
     "v1_2": [
       "no open P0 maintainability defects",
       "new core functionality lands only in extracted bounded modules",
-      "canonical CI and hosted RC qualification remain green"
+      "canonical CI and hosted development qualification remain green"
     ]
+  },
+  "phase": "maintainability-and-terminal-state-completion",
+  "automatedQualification": {
+    "schema": "codex-tui/automated-qualification/v3",
+    "exactSourceSha": true,
+    "requiredOnEveryMainSha": true,
+    "requiredGates": [
+      "failureMatrix",
+      "scaleEvidence",
+      "soakStructural",
+      "uiContract",
+      "stateMigrationRecovery",
+      "supportBundleRedaction"
+    ]
+  },
+  "developmentQualification": {
+    "schema": "codex-tui/development-qualification/v1",
+    "generatedForEveryMainSha": true,
+    "artifactName": "development-qualification",
+    "authority": "hosted-development-only",
+    "canSatisfyStable": false,
+    "requiredChecks": [
+      "automated-qualification",
+      "module-ratchet",
+      "protocol-replay"
+    ],
+    "securityGovernance": "dependency graph is governed by the separate security workflow and exact-checkout release gate"
   }
 }

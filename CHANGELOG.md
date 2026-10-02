@@ -2,6 +2,17 @@
 
 All notable codex-tui changes are recorded here.
 
+## [1.2.0] - Unreleased
+
+### Maintainability
+
+- switched main from the parked v1.1 RC line to v1.2 Maintainability & Terminal-State Completion without reinterpreting missing v1.1 real-environment evidence as PASS;
+- added a canonical module no-growth ratchet and began behavior-preserving decomposition of runtime store/input routing, App Server wire/registry normalization, SQLite schema migration, Terminal Drawer and operator overlays, App action/effect/view types, worktree Git mechanics and Forge provider/domain types;
+- added deterministic App Server protocol replay through the production wire/registry normalization path with current, previous-stable, unknown-event and malformed retained fixtures plus scheduled compatibility qualification;
+- added cargo-deny, RustSec cargo-audit and reviewed Dependabot governance for Cargo and GitHub Actions;
+- advanced the active package line to 1.2.0 with a dedicated hosted development-qualification receipt that is exact-SHA but explicitly cannot satisfy stable publication;
+- switched the release gate to v1.2 authority and exact-checkout architecture, protocol and dependency-security checks while preserving release-evidence/v4 as the only stable real-environment evidence authority.
+
 ## [1.1.0] - Unreleased
 
 ### Development

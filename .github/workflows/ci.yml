@@ -90,7 +90,7 @@ jobs:
           {
             "schema": "codex-tui/support-bundle/v1",
             "build": {
-              "productVersion": "1.1.0",
+              "productVersion": "1.2.0",
               "sourceSha": "0123456789abcdef0123456789abcdef01234567"
             }
           }
@@ -138,33 +138,25 @@ jobs:
           assert all(re.fullmatch(r"[0-9a-f]{64}", value) for value in receipt["artifacts"].values())
           PY
 
-          python scripts/release/create_deferred_rc_status.py \
-            --output "$OUT/deferred-rc-status.json" \
+          python scripts/release/create_development_qualification.py \
+            --output "$OUT/development-qualification.json" \
             --automated-qualification "$OUT/automated-qualification.json" \
             --commit 0123456789abcdef0123456789abcdef01234567
 
-          python - "$OUT/deferred-rc-status.json" <<'PY'
+          python - "$OUT/development-qualification.json" <<'PY'
           import json
           import sys
 
           receipt = json.load(open(sys.argv[1], encoding="utf-8"))
-          assert receipt["schema"] == "codex-tui/deferred-rc-qualification/v1"
+          assert receipt["schema"] == "codex-tui/development-qualification/v1"
+          assert receipt["targetVersion"] == "1.2.0"
           assert receipt["sourceSha"] == "0123456789abcdef0123456789abcdef01234567"
           assert receipt["repositoryAutomatedQualification"]["status"] == "pass"
+          assert receipt["moduleRatchet"]["status"] == "pass"
+          assert receipt["protocolReplay"]["status"] == "pass"
           assert receipt["stableReady"] is False
           assert receipt["publicationAllowed"] is False
-          assert receipt["authority"] == "hosted-automated-only"
-          assert set(receipt["stableBlockers"]) == {
-              "linux-compatibility",
-              "linux-terminal-restoration",
-              "linux-performance-diagnostics",
-          }
-          assert receipt["teamReuseBlockers"] == ["internal-gitlab-provider"]
-          assert all(
-              item["status"] == "deferred-external"
-              and item["canBeSynthesized"] is False
-              for item in receipt["deferredEvidence"]
-          )
+          assert receipt["authority"] == "hosted-development-only"
           PY
 
           python scripts/release/create_evidence.py             --output "$OUT/evidence.json"             --compat-schema codex-tui/compat/v2             --version 1.0.0             --commit 0123456789abcdef0123456789abcdef01234567             --canonical-ci-run 1             --automated-qualification "$OUT/automated-qualification.json"             --linux-source-sha 0123456789abcdef0123456789abcdef01234567             --linux-compat-sha256 "$(printf 'a%.0s' {1..64})"             --linux-compat-observed-at 2026-09-30T00:00:00Z             --linux-terminal ci-python38             --linux-terminal-observed-at 2026-09-30T00:00:00Z             --performance-source-sha 0123456789abcdef0123456789abcdef01234567             --performance-iterations 200             --performance-p95-ms 1             --performance-p99-ms 2             --performance-source ci-python38             --performance-observed-at 2026-09-30T00:00:00Z
@@ -208,7 +200,7 @@ jobs:
 
           python scripts/release/capture_compat.py --help >/dev/null
           python scripts/release/capture_forge_capability.py --help >/dev/null
-          python scripts/release/validate_rc_plan.py >/dev/null
+          python scripts/release/validate_v1_2_plan.py >/dev/null
 
           FAKE_FORGE="$OUT/fake-codex-tui"
           cat > "$FAKE_FORGE" <<'SH'

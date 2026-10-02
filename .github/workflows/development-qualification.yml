@@ -1,0 +1,127 @@
+name: development-qualification
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - ".github/workflows/development-qualification.yml"
+      - "scripts/release/create_development_qualification.py"
+      - "scripts/release/create_automated_qualification.py"
+      - "scripts/release/validate_v1_2_plan.py"
+      - "scripts/architecture/check_module_ratchet.py"
+      - "release/v1.2-plan.json"
+      - "release/v1.2-criteria.json"
+      - "tests/protocol_replay.rs"
+      - "tests/fixtures/protocol/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: development-qualification-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  qualify:
+    name: hosted-development-qualification
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.8"
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Validate v1.2 development authority
+        run: python scripts/release/validate_v1_2_plan.py
+
+      - name: Enforce module ratchet
+        run: python scripts/architecture/check_module_ratchet.py
+
+      - name: Record security governance authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p qualification
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          receipt = {
+              "schema": "codex-tui/security-governance-reference/v1",
+              "sourceSha": os.environ["GITHUB_SHA"],
+              "status": "separate-authority",
+              "workflow": "security",
+              "releaseGateRechecks": True,
+          }
+          Path("qualification/security-governance-reference.json").write_text(
+              json.dumps(receipt, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Run exact-SHA automated qualification
+        shell: bash
+        env:
+          CODEX_TUI_GIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          cargo test --locked --all-targets --all-features
+          cargo test --locked --test protocol_replay
+          cargo build --locked --release
+
+          mkdir -p qualification
+          cargo test --locked --all-targets --all-features -- --list > qualification/test-list.txt
+
+          ./target/release/codex-tui release failure-matrix --json             > qualification/failure-matrix.json
+
+          python scripts/release/check_failure_evidence.py             --matrix qualification/failure-matrix.json             --test-list qualification/test-list.txt
+
+          ./target/release/codex-tui release scale             --rows 50000             --warmup 5             --iterations 50             --source "development-qualification:ubuntu-24.04"             --json > qualification/scale-evidence.json
+
+          ./target/release/codex-tui soak             --rows 50000             --cycles 256             --json > qualification/soak-evidence.json
+
+          ./target/release/codex-tui doctor bundle             --output qualification/support-bundle
+
+          python scripts/release/create_automated_qualification.py             --output qualification/automated-qualification.json             --commit "${{ github.sha }}"             --failure-matrix qualification/failure-matrix.json             --scale qualification/scale-evidence.json             --soak qualification/soak-evidence.json             --support-manifest qualification/support-bundle/manifest.json             --support-snapshot qualification/support-bundle/snapshot.json
+
+          python scripts/release/create_development_qualification.py             --output qualification/development-qualification.json             --automated-qualification qualification/automated-qualification.json             --commit "${{ github.sha }}"
+
+      - name: Assert development receipt never claims stable readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+
+          path = "qualification/development-qualification.json"
+          receipt = json.load(open(path, encoding="utf-8"))
+
+          assert receipt["schema"] == "codex-tui/development-qualification/v1"
+          assert receipt["targetVersion"] == "1.2.0"
+          assert receipt["sourceSha"] == "${{ github.sha }}"
+          assert receipt["repositoryAutomatedQualification"]["status"] == "pass"
+          assert receipt["moduleRatchet"]["status"] == "pass"
+          assert receipt["protocolReplay"]["status"] == "pass"
+          assert receipt["securityGovernance"]["status"] == "separate-authority"
+          assert receipt["stableReady"] is False
+          assert receipt["publicationAllowed"] is False
+          assert receipt["authority"] == "hosted-development-only"
+          PY
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: development-qualification
+          path: qualification/
+          if-no-files-found: error
+          retention-days: 30

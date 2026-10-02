@@ -2,7 +2,11 @@
 
 A local-first terminal workbench for managing multiple Codex projects and conversations.
 
-**License:** Apache-2.0 · **Stable release:** v1.0.0 · **Current development line:** v1.1.0 · **Tier 1:** Linux.
+**License:** Apache-2.0 · **Stable release:** v1.0.0 · **Parked v1.1 candidate:** `release/v1.1-parked` · **Current development line:** v1.2.0 · **Tier 1:** Linux.
+
+## Development status
+
+v1.2 is the active maintainability and terminal-state-completion line. Main keeps exact-SHA hosted development qualification, architecture ratchets, protocol replay, dependency security governance and preview packaging. The parked v1.1 candidate remains separate and still requires its real Linux/TTY evidence before any v1.1 stable publication.
 
 ## Product goal
 
