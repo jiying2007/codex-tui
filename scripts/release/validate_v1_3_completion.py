@@ -146,8 +146,12 @@ def validate_implemented_contracts():
             "validate_saved_view_filter",
         ],
     )
-    if "transcript" in read("src/app/search.rs").lower():
-        raise SystemExit("unified metadata search must not depend on transcript hydration")
+    search_text = read("src/app/search.rs")
+    production_search = search_text.split("#[cfg(test)]", 1)[0]
+    if "crate::conversation" in production_search or ".conversations" in production_search:
+        raise SystemExit(
+            "unified metadata search must not hydrate or inspect conversation transcript state"
+        )
     require_tokens(
         "src/app/search.rs",
         [
