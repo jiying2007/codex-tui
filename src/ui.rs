@@ -194,6 +194,7 @@ fn context_choice_label(choice: ContextChoice, language: UiLanguage) -> &'static
         ContextChoice::Snooze => "稍后提醒…",
         ContextChoice::EditNote => "编辑本地备注…",
         ContextChoice::Bookmark => "添加书签",
+        ContextChoice::LinkHotSlot => "关联到快捷槽…",
         ContextChoice::NewCodexThread => "在此新建 Codex 会话",
         ContextChoice::ForkCodexThread => "派生 Codex 会话",
         ContextChoice::ScratchInbox => "Scratch → 收件箱",
@@ -400,7 +401,13 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
             "受管 worktree 输入已激活",
         )),
         InputMode::Normal => {
-            if let Some(notice) = &app.mutation_notice {
+            if app.link_hot_slot_pending.is_some() {
+                Line::from(tr(
+                    app,
+                    "link WorkCard: press 1–9 · Esc cancel",
+                    "关联 WorkCard：按 1–9 · Esc 取消",
+                ))
+            } else if let Some(notice) = &app.mutation_notice {
                 Line::from(format!(
                     "{} · {}",
                     tr(app, "notice", "提示"),
