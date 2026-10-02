@@ -1,0 +1,3 @@
+{"method":"thread/started","emittedAtMs":1000,"params":{"thread":{"id":"thread-unknown","preview":"Unknown-event fixture","updatedAt":1,"status":{"type":"idle"},"cwd":"/work/unknown","source":"cli"}}}
+{"method":"future/thread/teleported","emittedAtMs":1500,"params":{"threadId":"thread-unknown","mystery":true}}
+{"method":"thread/status/changed","emittedAtMs":2000,"params":{"threadId":"thread-unknown","status":{"type":"active","activeFlags":[]}}}
