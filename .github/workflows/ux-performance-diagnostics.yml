@@ -1,0 +1,103 @@
+name: ux-performance-diagnostics
+
+on:
+  push:
+    branches:
+      - release/v1.3-development
+    paths:
+      - ".github/workflows/ux-performance-diagnostics.yml"
+      - "src/app/**"
+      - "src/app.rs"
+      - "src/conversation.rs"
+      - "src/planning.rs"
+      - "src/ui/**"
+      - "src/ui.rs"
+      - "src/bin/ux-performance-evidence.rs"
+      - "Cargo.lock"
+      - "Cargo.toml"
+  pull_request:
+    paths:
+      - ".github/workflows/ux-performance-diagnostics.yml"
+      - "src/app/**"
+      - "src/app.rs"
+      - "src/conversation.rs"
+      - "src/planning.rs"
+      - "src/ui/**"
+      - "src/ui.rs"
+      - "src/bin/ux-performance-evidence.rs"
+      - "Cargo.lock"
+      - "Cargo.toml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnostics:
+    name: ux-render-10k
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build exact-source benchmark
+        run: cargo build --locked --release --bin ux-performance-evidence
+
+      - name: Capture Board and Thread render evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p qualification
+          ./target/release/ux-performance-evidence \
+            --source-sha "$GITHUB_SHA" \
+            --source "github-hosted:ubuntu-24.04" \
+            --rows 10000 \
+            --warmup 20 \
+            --iterations 200 \
+            > qualification/ux-performance.json
+
+      - name: Validate diagnostic evidence
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          import math
+          import os
+
+          path = "qualification/ux-performance.json"
+          evidence = json.load(open(path, encoding="utf-8"))
+          assert evidence["schema"] == "codex-tui/ux-performance/v1"
+          assert evidence["sourceSha"] == os.environ["GITHUB_SHA"]
+          assert evidence["source"] == "github-hosted:ubuntu-24.04"
+          assert evidence["rows"] == 10000
+          assert evidence["warmupIterations"] >= 20
+          assert evidence["iterations"] >= 200
+          assert evidence["sampleQualified"] is True
+          assert evidence["terminal"] == {"width": 160, "height": 50}
+          assert set(evidence["benchmarks"]) == {
+              "board10kRender",
+              "thread10kRender",
+          }
+          for name, metrics in evidence["benchmarks"].items():
+              values = [
+                  metrics["p50Ms"],
+                  metrics["p95Ms"],
+                  metrics["p99Ms"],
+                  metrics["maxMs"],
+              ]
+              assert all(isinstance(value, (int, float)) for value in values), name
+              assert all(math.isfinite(value) and value >= 0 for value in values), name
+              assert values == sorted(values), (name, values)
+          print(json.dumps(evidence, indent=2, sort_keys=True))
+          PY
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ux-performance-${{ github.sha }}
+          path: qualification/ux-performance.json
+          if-no-files-found: error
+          retention-days: 90
