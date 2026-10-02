@@ -33,6 +33,7 @@ pub(crate) mod sqlite_schema;
 pub mod sqlite_store;
 pub mod store;
 pub mod support_bundle;
+pub mod syntax_highlight;
 pub mod terminal;
 pub mod terminal_drawer;
 pub mod text;
