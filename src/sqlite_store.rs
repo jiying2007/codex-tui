@@ -5,8 +5,8 @@ use crate::planning::{
     Bookmark, HotSlot, LocalNote, PlanningSnapshot, SavedView, ScratchState, ScratchWork,
     SourceKind, SourceRef, WorkCardLink, WorkCardOverlay, WorkCardRecord,
 };
+use crate::sqlite_schema::{DB_SCHEMA_VERSION, configure_connection, ensure_schema};
 use crate::store::{AppConfig, FileStore, LocalStateV1, LocalStore};
-use crate::sqlite_schema::{configure_connection, ensure_schema, DB_SCHEMA_VERSION};
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde::Serialize;
