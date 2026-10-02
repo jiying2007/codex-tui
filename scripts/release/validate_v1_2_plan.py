@@ -122,10 +122,12 @@ def main() -> int:
         "name: development-qualification",
         "branches: [main]",
         "validate_v1_2_plan.py",
+        "validate_v1_2_completion.py",
         "check_module_ratchet.py",
         "protocol_replay",
         "create_development_qualification.py",
         "development-qualification",
+        "scopeCompletion",
         "stableReady",
         "publicationAllowed",
     )
