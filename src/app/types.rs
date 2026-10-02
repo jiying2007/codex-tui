@@ -47,6 +47,7 @@ pub enum SavedViewEditField {
     VisibleFields,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InputMode {
     Normal,
     Search,
