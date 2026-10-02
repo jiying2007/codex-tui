@@ -133,11 +133,12 @@
     }
   ],
   "frozenNonGoals": [
-    "registry-paging-or-registry-sqlite-index",
-    "native-gitlab-rest-graphql",
     "team-server-rbac",
-    "generic-plugin-system",
-    "generic-multi-agent-framework",
+    "web-mobile-companion",
+    "collaboration-service",
+    "generic-plugin-runtime",
+    "multi-agent-providers",
+    "job-workflow-engine",
     "terminal-drawer-as-tmux-replacement"
   ],
   "realEnvironmentEvidence": {
