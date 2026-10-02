@@ -19,12 +19,17 @@ def main() -> int:
     )
     parser.add_argument("--plan", default="release/v1.1-rc-plan.json")
     parser.add_argument("--criteria", default="release/v1.1-criteria.json")
+    parser.add_argument(
+        "--workflow", default=".github/workflows/rc-qualification.yml"
+    )
     args = parser.parse_args()
 
     plan_path = pathlib.Path(args.plan)
     criteria_path = pathlib.Path(args.criteria)
+    workflow_path = pathlib.Path(args.workflow)
     plan = load(plan_path)
     criteria = load(criteria_path)
+    workflow = workflow_path.read_text(encoding="utf-8")
 
     if plan.get("schema") != PLAN_SCHEMA:
         raise SystemExit(f"unexpected RC plan schema: {plan.get('schema')!r}")
@@ -34,6 +39,36 @@ def main() -> int:
     real_evidence = criteria.get("realEnvironmentEvidence")
     if not isinstance(real_evidence, dict) or real_evidence.get("exactSourceSha") is not True:
         raise SystemExit("stable criteria must require exact-SHA real-environment evidence")
+
+    deferred_receipt = plan.get("deferredQualificationReceipt")
+    if not isinstance(deferred_receipt, dict):
+        raise SystemExit("RC plan must define deferredQualificationReceipt")
+    if deferred_receipt.get("schema") != "codex-tui/deferred-rc-qualification/v1":
+        raise SystemExit("unexpected deferred RC qualification schema")
+    if deferred_receipt.get("generatedForEveryMainSha") is not True:
+        raise SystemExit("deferred RC qualification must run for every main SHA")
+    if deferred_receipt.get("authority") != "hosted-automated-only":
+        raise SystemExit("deferred RC qualification authority must remain hosted-automated-only")
+    if deferred_receipt.get("canSatisfyStable") is not False:
+        raise SystemExit("deferred RC qualification must never satisfy stable release evidence")
+    if deferred_receipt.get("artifactName") != "rc-qualification":
+        raise SystemExit("deferred RC qualification artifact name drifted")
+
+    required_workflow_tokens = (
+        "name: rc-qualification",
+        "push:",
+        "branches: [main]",
+        "create_automated_qualification.py",
+        "create_deferred_rc_status.py",
+        "stableReady",
+        "publicationAllowed",
+        "name: rc-qualification",
+    )
+    missing_workflow = [token for token in required_workflow_tokens if token not in workflow]
+    if missing_workflow:
+        raise SystemExit(
+            "RC qualification workflow contract missing: " + ", ".join(missing_workflow)
+        )
 
     candidate = plan.get("candidatePolicy")
     if not isinstance(candidate, dict) or candidate.get("codeFreeze") is not True:
@@ -107,7 +142,7 @@ def main() -> int:
     print(
         "VALID RC plan "
         f"{plan['targetVersion']}: automated gates bound; "
-        "stable real evidence deferred without synthesis"
+        "hosted receipt retained; stable real evidence deferred without synthesis"
     )
     return 0
 

@@ -94,5 +94,13 @@
     "generic-plugin-system",
     "generic-multi-agent-framework",
     "terminal-drawer-as-tmux-replacement"
-  ]
+  ],
+  "deferredQualificationReceipt": {
+    "schema": "codex-tui/deferred-rc-qualification/v1",
+    "generatedForEveryMainSha": true,
+    "authority": "hosted-automated-only",
+    "canSatisfyStable": false,
+    "artifactName": "rc-qualification",
+    "policy": "records exact-SHA repository automated PASS while preserving real-environment evidence as DEFERRED_EXTERNAL; it must never be accepted as codex-tui/release-evidence/v4"
+  }
 }

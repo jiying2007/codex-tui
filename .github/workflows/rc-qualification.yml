@@ -1,0 +1,97 @@
+name: rc-qualification
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - ".github/workflows/rc-qualification.yml"
+      - "scripts/release/create_deferred_rc_status.py"
+      - "scripts/release/create_automated_qualification.py"
+      - "scripts/release/validate_rc_plan.py"
+      - "release/v1.1-rc-plan.json"
+      - "release/v1.1-criteria.json"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rc-qualification-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  qualify:
+    name: hosted-rc-qualification
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.8"
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Validate RC freeze and handoff contract
+        run: python scripts/release/validate_rc_plan.py
+
+      - name: Run exact-SHA automated qualification
+        shell: bash
+        env:
+          CODEX_TUI_GIT_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+
+          cargo test --locked --all-targets --all-features
+          cargo build --locked --release
+
+          mkdir -p qualification
+          cargo test --locked --all-targets --all-features -- --list > qualification/test-list.txt
+
+          ./target/release/codex-tui release failure-matrix --json             > qualification/failure-matrix.json
+
+          python scripts/release/check_failure_evidence.py             --matrix qualification/failure-matrix.json             --test-list qualification/test-list.txt
+
+          ./target/release/codex-tui release scale             --rows 50000             --warmup 5             --iterations 50             --source "rc-qualification:ubuntu-24.04"             --json > qualification/scale-evidence.json
+
+          ./target/release/codex-tui soak             --rows 50000             --cycles 256             --json > qualification/soak-evidence.json
+
+          ./target/release/codex-tui doctor bundle             --output qualification/support-bundle
+
+          python scripts/release/create_automated_qualification.py             --output qualification/automated-qualification.json             --commit "${{ github.sha }}"             --failure-matrix qualification/failure-matrix.json             --scale qualification/scale-evidence.json             --soak qualification/soak-evidence.json             --support-manifest qualification/support-bundle/manifest.json             --support-snapshot qualification/support-bundle/snapshot.json
+
+          python scripts/release/create_deferred_rc_status.py             --output qualification/deferred-rc-status.json             --automated-qualification qualification/automated-qualification.json             --commit "${{ github.sha }}"
+
+      - name: Assert deferred receipt never claims stable readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+
+          path = "qualification/deferred-rc-status.json"
+          receipt = json.load(open(path, encoding="utf-8"))
+
+          assert receipt["schema"] == "codex-tui/deferred-rc-qualification/v1"
+          assert receipt["sourceSha"] == "${{ github.sha }}"
+          assert receipt["repositoryAutomatedQualification"]["status"] == "pass"
+          assert receipt["stableReady"] is False
+          assert receipt["publicationAllowed"] is False
+          assert receipt["stableBlockers"]
+          assert all(
+              item["canBeSynthesized"] is False
+              for item in receipt["deferredEvidence"]
+          )
+          PY
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rc-qualification
+          path: qualification/
+          if-no-files-found: error
+          retention-days: 30
