@@ -16,7 +16,10 @@ fn tr<'a>(app: &AppState, english: &'a str, simplified_chinese: &'a str) -> &'a 
     pick(app.language, english, simplified_chinese)
 }
 
-pub(super) fn terminal_process_state_label(state: &TerminalProcessState, language: UiLanguage) -> String {
+pub(super) fn terminal_process_state_label(
+    state: &TerminalProcessState,
+    language: UiLanguage,
+) -> String {
     match (state, language) {
         (TerminalProcessState::Starting, UiLanguage::SimplifiedChinese) => "启动中".into(),
         (TerminalProcessState::Running, UiLanguage::SimplifiedChinese) => "运行中".into(),
@@ -121,4 +124,3 @@ pub(super) fn render_terminal_drawer(frame: &mut Frame<'_>, app: &AppState) {
         frame.set_cursor_position((cursor_x, cursor_y));
     }
 }
-
