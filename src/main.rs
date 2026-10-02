@@ -169,6 +169,7 @@ async fn doctor(scope: Option<&str>) -> Result<()> {
         config.ui.language.as_str(),
         config.ui.language.resolve().as_str()
     );
+    println!("notifications: {}", config.notifications.mode.label());
 
     match store.load_state() {
         Ok(state) => println!("operator-schemaVersion: {}", state.schema_version),
