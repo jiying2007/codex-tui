@@ -22,6 +22,7 @@ pub mod planning;
 pub mod pty;
 pub mod release;
 pub mod release_benchmark;
+pub mod replay_backend;
 pub mod scale_evidence;
 pub mod soak;
 pub mod sqlite_store;
