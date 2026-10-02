@@ -856,7 +856,9 @@ impl AppState {
                 ContextChoice::EditNote,
                 ContextChoice::Bookmark,
             ]);
-            if state_has_linkable_hot_slot(self, &target) {
+            if matches!(self.view, View::Registry | View::Board)
+                && state_has_linkable_hot_slot(self, &target)
+            {
                 choices.push(ContextChoice::LinkHotSlot);
             }
             if target.kind == SourceKind::ScratchWork {
