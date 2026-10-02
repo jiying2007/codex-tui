@@ -3990,14 +3990,6 @@ fn filter_requires_locality(query: &str) -> bool {
     query.split_whitespace().any(is_locality_filter_token)
 }
 
-fn matches_filter_normalized(
-    thread: &ThreadSummary,
-    query: &str,
-    locality: Option<CwdLocality>,
-) -> bool {
-    matches_filter_normalized_with_extra(thread, query, locality, &[])
-}
-
 fn fuzzy_subsequence(needle: &str, haystack: &str) -> bool {
     if needle.is_empty() {
         return true;
