@@ -1,10 +1,5 @@
 use anyhow::{Context, Result, anyhow};
-use std::{
-    ffi::OsStr,
-    path::PathBuf,
-    process::Stdio,
-    time::Duration,
-};
+use std::{ffi::OsStr, path::PathBuf, process::Stdio, time::Duration};
 use tokio::{
     io::{AsyncRead, AsyncReadExt},
     process::Command,
@@ -180,4 +175,3 @@ pub(crate) fn same_path(left: &str, right: &str) -> bool {
         left == right
     }
 }
-
