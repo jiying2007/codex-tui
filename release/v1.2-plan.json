@@ -98,13 +98,14 @@
     "src/main.rs": 1900,
     "src/sqlite_store.rs": 2250,
     "src/forge.rs": 1700,
-    "src/worktree.rs": 1200,
+    "src/worktree.rs": 1050,
     "src/release.rs": 1050,
     "src/runtime_store.rs": 550,
     "src/runtime_input.rs": 400,
     "src/app_server_registry.rs": 250,
     "src/app_server_wire.rs": 100,
-    "src/sqlite_schema.rs": 250
+    "src/sqlite_schema.rs": 250,
+    "src/worktree_git.rs": 250
   },
   "phaseExit": {
     "P0": [
