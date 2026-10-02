@@ -11,7 +11,7 @@ use crate::domain::{
 };
 use crate::forge::{
     CapabilityState, ChangeRequestSummary, ForgeCapability, ForgeIdentity, ForgeObservation,
-    ForgeProviderKind, ForgeReviewSummary, ForgeReviewTarget,
+    ForgeProviderKind, ForgeReviewTarget,
 };
 use crate::forge_mutation::{ForgeMutationPlan, ForgeMutationReceipt, ForgeMutationRequest};
 use crate::git::{GitContext, GitReview};
@@ -28,7 +28,6 @@ use crate::planning::{
     forge_issue_source_ref, reconcile_forge_issue_card, reconcile_scratch_card_with_local,
     reconcile_thread_card_with_goal_and_forge,
 };
-use crate::pty::TerminalSize;
 use crate::store::LocalStateV1;
 use crate::terminal_drawer::TerminalSnapshot;
 use crate::text::sanitize_inline;
