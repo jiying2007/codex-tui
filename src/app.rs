@@ -1957,6 +1957,62 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                         label,
                     }];
                 }
+                ContextChoice::NewCodexThread => {
+                    let Some(cwd) = state.lifecycle_cwd() else {
+                        return vec![];
+                    };
+                    if classify_cwd(&cwd) != CwdLocality::LocalDirectory {
+                        state.mutation_notice = Some(
+                            local_text(
+                                state.language,
+                                "cannot start Codex thread: target cwd is not a local directory",
+                                "无法新建 Codex 会话：目标 cwd 不是本机目录",
+                            )
+                            .into(),
+                        );
+                        return vec![];
+                    }
+                    state.mutation_notice = Some(
+                        local_text(
+                            state.language,
+                            "starting Codex thread…",
+                            "正在新建 Codex 会话…",
+                        )
+                        .into(),
+                    );
+                    return vec![Effect::StartThread { cwd }];
+                }
+                ContextChoice::ForkCodexThread => {
+                    let Some(thread_id) = state.lifecycle_thread_id() else {
+                        return vec![];
+                    };
+                    let Some(cwd) = state
+                        .thread_by_id(&thread_id)
+                        .map(|thread| thread.metadata.cwd.clone())
+                    else {
+                        return vec![];
+                    };
+                    if classify_cwd(&cwd) != CwdLocality::LocalDirectory {
+                        state.mutation_notice = Some(
+                            local_text(
+                                state.language,
+                                "cannot fork Codex thread: source cwd is not local",
+                                "无法派生 Codex 会话：源 cwd 不属于本机",
+                            )
+                            .into(),
+                        );
+                        return vec![];
+                    }
+                    state.mutation_notice = Some(
+                        local_text(
+                            state.language,
+                            "forking Codex thread…",
+                            "正在派生 Codex 会话…",
+                        )
+                        .into(),
+                    );
+                    return vec![Effect::ForkThread { thread_id }];
+                }
                 ContextChoice::ScratchInbox
                 | ContextChoice::ScratchReady
                 | ContextChoice::ScratchDone => {
