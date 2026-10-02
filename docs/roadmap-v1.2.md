@@ -46,4 +46,4 @@ Thread Queue, transcript FTS, native GitLab REST/GraphQL, extra package architec
 
 ## v1.1 relationship
 
-v1.1 remains a parked RC with hosted automated qualification and real-environment evidence deferred. v1.2 work does not reinterpret missing v1.1 real evidence as PASS. If v1.1 is published later, it must still use exact-SHA real evidence under its existing stable criteria.
+v1.1 remains a parked candidate on `release/v1.1-parked` with its historical RC authority intact. v1.2 main uses a separate hosted development qualification and does not reinterpret missing v1.1 real evidence as PASS. If v1.1 is published later, it must still use exact-SHA real evidence under its existing stable criteria.
