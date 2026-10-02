@@ -1,0 +1,28 @@
+name: lockfile-refresh
+
+on:
+  pull_request:
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/lockfile-refresh.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  generate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Resolve lockfile without changing dependency policy
+        run: cargo metadata --format-version=1 >/dev/null
+      - name: Show lockfile delta
+        run: git diff -- Cargo.lock
+      - uses: actions/upload-artifact@v7
+        with:
+          name: syntax-lockfile
+          path: Cargo.lock
+          if-no-files-found: error
+          retention-days: 1
