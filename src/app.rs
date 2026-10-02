@@ -25,7 +25,7 @@ use crate::operation::{
     mutation_scope_for_thread, now_unix_ms,
 };
 use crate::planning::{
-    PlanningSnapshot, ReconcileInput, SavedView, SavedViewLayout, SourceKind, SourceRef,
+    LinkRole, PlanningSnapshot, ReconcileInput, SavedView, SavedViewLayout, SourceKind, SourceRef,
     WorkCardProjection, WorkflowStage, apply_saved_view, builtin_saved_views,
     forge_issue_source_ref, reconcile_forge_issue_card, reconcile_scratch_card_with_local,
     reconcile_thread_card_with_goal_and_forge,
@@ -155,6 +155,7 @@ pub struct AppState {
     pub context_open: bool,
     pub context_selected: usize,
     pub hot_slot_bind_pending: bool,
+    pub link_hot_slot_pending: Option<SourceRef>,
     pub review_selected: usize,
     pub review_scroll: u16,
     pub review_word_diff: bool,
@@ -184,6 +185,14 @@ struct ForgeMutationTarget {
     branch: String,
     identity: ForgeIdentity,
     change_request: Option<ChangeRequestSummary>,
+}
+
+fn state_has_linkable_hot_slot(state: &AppState, anchor: &SourceRef) -> bool {
+    state
+        .planning_snapshot
+        .hot_slots
+        .iter()
+        .any(|slot| slot.target != *anchor)
 }
 
 impl AppState {
@@ -271,6 +280,7 @@ impl AppState {
             context_open: false,
             context_selected: 0,
             hot_slot_bind_pending: false,
+            link_hot_slot_pending: None,
             review_selected: 0,
             review_scroll: 0,
             review_word_diff: false,
@@ -847,6 +857,11 @@ impl AppState {
                 ContextChoice::EditNote,
                 ContextChoice::Bookmark,
             ]);
+            if matches!(self.view, View::Registry | View::Board)
+                && state_has_linkable_hot_slot(self, &target)
+            {
+                choices.push(ContextChoice::LinkHotSlot);
+            }
             if target.kind == SourceKind::ScratchWork {
                 choices.extend([
                     ContextChoice::ScratchInbox,
@@ -1930,6 +1945,11 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                         label,
                     }];
                 }
+                ContextChoice::LinkHotSlot => {
+                    state.hot_slot_bind_pending = false;
+                    state.link_hot_slot_pending = Some(target);
+                    return vec![];
+                }
                 ContextChoice::NewCodexThread => {
                     return state.plan_start_thread();
                 }
@@ -2106,7 +2126,12 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
         }
         Action::BeginHotSlotBind => {
+            state.link_hot_slot_pending = None;
             state.hot_slot_bind_pending = state.selected_local_target().is_some();
+        }
+        Action::BeginHotSlotLink => {
+            state.hot_slot_bind_pending = false;
+            state.link_hot_slot_pending = state.selected_local_target();
         }
         Action::UseHotSlot(slot) => {
             if state.hot_slot_bind_pending {
@@ -2126,6 +2151,31 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             let Some(target) = target else {
                 return vec![];
             };
+            if let Some(anchor) = state.link_hot_slot_pending.take() {
+                if anchor == target {
+                    state.mutation_notice = Some(
+                        local_text(
+                            state.language,
+                            "cannot link a WorkCard to itself",
+                            "不能将 WorkCard 关联到自身",
+                        )
+                        .into(),
+                    );
+                    return vec![];
+                }
+                let role = if target.kind == SourceKind::CodexThread
+                    && anchor.kind != SourceKind::CodexThread
+                {
+                    LinkRole::PrimaryThread
+                } else {
+                    LinkRole::RelatedWorkItem
+                };
+                return vec![Effect::LinkWorkCard {
+                    anchor,
+                    role,
+                    source: target,
+                }];
+            }
             match target.kind {
                 SourceKind::CodexThread => {
                     let id = ThreadId::new(target.value);
@@ -2463,6 +2513,9 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
             if state.hot_slot_bind_pending {
                 state.hot_slot_bind_pending = false;
+                return vec![];
+            }
+            if state.link_hot_slot_pending.take().is_some() {
                 return vec![];
             }
             if matches!(state.view, View::Scratch(_)) {
