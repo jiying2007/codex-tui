@@ -144,6 +144,12 @@ impl AppState {
         self.command_palette_selected = 0;
     }
 
+    pub(super) fn input_command_palette_text(&mut self, text: String) {
+        self.command_palette_query
+            .extend(text.chars().filter(|character| !character.is_control()));
+        self.command_palette_selected = 0;
+    }
+
     pub(super) fn backspace_command_palette(&mut self) {
         self.command_palette_query.pop();
         self.command_palette_selected = 0;
