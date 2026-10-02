@@ -172,6 +172,17 @@ def main():
     if completion.get("completedPriorities") != groups:
         raise SystemExit("completion manifest does not cover every P0/P1/P2 priority exactly")
 
+    expected_checks = [
+        "automated-qualification",
+        "module-ratchet",
+        "protocol-replay",
+        "scope-completion",
+    ]
+    if plan.get("developmentQualification", {}).get("requiredChecks") != expected_checks:
+        raise SystemExit("v1.2 plan development qualification checks drifted")
+    if criteria.get("developmentQualification", {}).get("requiredChecks") != expected_checks:
+        raise SystemExit("v1.2 stable criteria development qualification checks drifted")
+
     all_ids = [item for group in groups.values() for item in group]
     evidence = completion.get("evidence")
     if not isinstance(evidence, dict) or set(evidence) != set(all_ids):
