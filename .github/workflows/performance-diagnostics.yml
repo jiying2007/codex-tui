@@ -3,15 +3,6 @@ name: performance-diagnostics
 on:
   push:
     branches: [main]
-    paths:
-      - ".github/workflows/performance-diagnostics.yml"
-      - "src/release_benchmark.rs"
-      - "src/planning.rs"
-      - "src/backend.rs"
-      - "src/compat.rs"
-      - "release/v1.2-criteria.json"
-      - "Cargo.toml"
-      - "Cargo.lock"
   pull_request:
     paths:
       - ".github/workflows/performance-diagnostics.yml"
