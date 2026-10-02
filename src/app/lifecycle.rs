@@ -104,7 +104,11 @@ impl AppState {
         thread_id: ThreadId,
         operation: String,
     ) -> Vec<Effect> {
-        if let Some(index) = self.threads.iter().position(|thread| thread.id == thread_id) {
+        if let Some(index) = self
+            .threads
+            .iter()
+            .position(|thread| thread.id == thread_id)
+        {
             self.previous_target = self.current_thread_id().cloned();
             self.selected = index;
             self.thread_ui.entry(thread_id.0.clone()).or_default();
