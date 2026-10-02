@@ -2524,12 +2524,24 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     return vec![];
                 }
 
+                let max_scroll = state
+                    .conversations
+                    .get(&id.0)
+                    .filter(|conversation| !conversation.loading && !conversation.items.is_empty())
+                    .map(|conversation| {
+                        conversation
+                            .items
+                            .len()
+                            .saturating_sub(1)
+                            .min(u16::MAX as usize) as u16
+                    })
+                    .unwrap_or(u16::MAX);
                 let ui = state.thread_ui.entry(id.0).or_default();
                 ui.follow = false;
                 ui.scroll = if delta.is_negative() {
                     ui.scroll.saturating_sub(delta.unsigned_abs())
                 } else {
-                    ui.scroll.saturating_add(delta as u16)
+                    ui.scroll.saturating_add(delta as u16).min(max_scroll)
                 };
                 return vec![Effect::PersistOperatorStateDeferred];
             }
