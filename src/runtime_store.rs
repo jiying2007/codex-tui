@@ -1,7 +1,8 @@
 use anyhow::{Context, Result};
 use codex_tui::{
     planning::{
-        LocalNote, PlanningSnapshot, SavedView, ScratchState, SourceKind, SourceRef, WorkCardRecord,
+        LinkRole, LocalNote, PlanningSnapshot, SavedView, ScratchState, SourceKind, SourceRef,
+        WorkCardLink, WorkCardRecord,
     },
     sqlite_store::SqliteStore,
     store::{AppConfig, LocalStateV1, LocalStore},
@@ -194,6 +195,24 @@ impl RuntimeStore {
         let until = now_unix_ms().saturating_add(duration_ms);
         self.mutate_work_card(anchor, |card| {
             card.overlay.snooze_until_unix_ms = Some(until);
+        })
+    }
+
+    pub(crate) fn link_work_card(
+        &mut self,
+        anchor: SourceRef,
+        role: LinkRole,
+        source: SourceRef,
+    ) -> Result<PlanningSnapshot, String> {
+        if anchor == source {
+            return Err("cannot link a WorkCard to itself".into());
+        }
+        self.mutate_work_card(anchor, |card| {
+            if let Some(existing) = card.links.iter_mut().find(|link| link.source == source) {
+                existing.role = role;
+            } else {
+                card.links.push(WorkCardLink { role, source });
+            }
         })
     }
 
