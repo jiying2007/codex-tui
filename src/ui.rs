@@ -382,6 +382,11 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
             truncate_display(&app.input_buffer, 60),
             tr(app, "Enter save · Esc cancel", "Enter 保存 · Esc 取消")
         )),
+        InputMode::SavedViewEdit => Line::from(tr(
+            app,
+            "SavedView editor active in Board",
+            "SavedView 编辑器已在看板中激活",
+        )),
         InputMode::BatchAddTag
         | InputMode::BatchRemoveTag
         | InputMode::BatchPriority
