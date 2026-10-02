@@ -6,7 +6,7 @@ All notable codex-tui changes are recorded here.
 
 ### Maintainability
 
-- added an exact-SHA GitHub-hosted 200-sample `resident-planning-10k` performance-diagnostics workflow; it retains source-bound p50/p95/p99/max evidence for stable handoff without turning hosted-runner latency into a threshold gate.
+- added an exact-SHA GitHub-hosted 200-sample `resident-planning-10k` performance-diagnostics workflow on every main SHA; it retains source-bound p50/p95/p99/max evidence for stable handoff without turning hosted-runner latency into a threshold gate.
 - restored unambiguous `cargo run` / release verification after adding the syntax-asset helper binary by declaring `codex-tui` as the package default-run target and selecting it explicitly in the release gate.
 - closed the v1.2 P0/P1/P2 development scope with a machine-validated completion/freeze manifest; hosted qualification now SHA-256 binds that manifest while remaining explicitly non-stable authority.
 - moved Review syntax highlighting computation out of the render critical path: Git Review events prewarm both normal and word-diff variants into one process-level bounded cache, while render performs cache lookup only and falls back to plain Git diff on a miss.
