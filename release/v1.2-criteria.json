@@ -129,7 +129,7 @@
     {
       "id": "dependency-security",
       "authority": "release gate and security workflow",
-      "evidence": "cargo-deny policy and RustSec cargo-audit pass for the locked dependency graph"
+      "evidence": "exact-checkout release gate reruns cargo-deny and cargo-audit and retains codex-tui/security-governance/v1 bound to the release SHA; the scheduled/PR security workflow provides earlier advisory feedback"
     }
   ],
   "frozenNonGoals": [
