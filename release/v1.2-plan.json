@@ -96,10 +96,11 @@
     "src/ui.rs": 3700,
     "src/app_server.rs": 2900,
     "src/main.rs": 2600,
-    "src/sqlite_store.rs": 2400,
+    "src/sqlite_store.rs": 2250,
     "src/forge.rs": 1700,
     "src/worktree.rs": 1200,
-    "src/release.rs": 1050
+    "src/release.rs": 1050,
+    "src/sqlite_schema.rs": 250
   },
   "phaseExit": {
     "P0": [
