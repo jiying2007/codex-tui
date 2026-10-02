@@ -643,7 +643,6 @@ async fn recover_incomplete(
     Ok(())
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
