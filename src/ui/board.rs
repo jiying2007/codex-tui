@@ -295,10 +295,7 @@ pub(super) fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
     frame.render_widget(Paragraph::new(input), outer[1]);
 }
 
-fn attention_text(
-    card: &crate::planning::WorkCardProjection,
-    language: UiLanguage,
-) -> String {
+fn attention_text(card: &crate::planning::WorkCardProjection, language: UiLanguage) -> String {
     if card.needs_you() {
         card.attention
             .iter()
@@ -312,10 +309,7 @@ fn attention_text(
     }
 }
 
-fn source_text(
-    card: &crate::planning::WorkCardProjection,
-    language: UiLanguage,
-) -> &'static str {
+fn source_text(card: &crate::planning::WorkCardProjection, language: UiLanguage) -> &'static str {
     match (card.anchor.kind.clone(), language) {
         (SourceKind::ScratchWork, UiLanguage::SimplifiedChinese) => "草稿",
         (SourceKind::CodexThread, UiLanguage::SimplifiedChinese) => "会话",
