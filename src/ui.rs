@@ -399,7 +399,13 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
             "受管 worktree 输入已激活",
         )),
         InputMode::Normal => {
-            if let Some(notice) = &app.mutation_notice {
+            if app.link_hot_slot_pending.is_some() {
+                Line::from(tr(
+                    app,
+                    "link WorkCard: press 1–9 · Esc cancel",
+                    "关联 WorkCard：按 1–9 · Esc 取消",
+                ))
+            } else if let Some(notice) = &app.mutation_notice {
                 Line::from(format!(
                     "{} · {}",
                     tr(app, "notice", "提示"),
