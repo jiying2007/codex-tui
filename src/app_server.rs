@@ -1,7 +1,7 @@
+use crate::app_server_registry::{apply_registry_notification, by_id, snapshot};
+use crate::app_server_wire::decode_wire_line;
 use crate::backend::{BackendSnapshot, BackendStatus};
-use crate::codex_protocol::{
-    ThreadWire, apply_status, normalize_thread, parse_loaded_list, parse_thread_list,
-};
+use crate::codex_protocol::{normalize_thread, parse_loaded_list, parse_thread_list};
 use crate::conversation::{
     ConversationPage, InteractiveRequest, InteractiveResolution, RpcRequestId, merge_history,
     parse_interactive_request, parse_items_page, parse_legacy_thread_read, parse_thread_title,
@@ -1180,78 +1180,6 @@ async fn run_registry_actor(
     }
 }
 
-fn by_id(threads: Vec<ThreadSummary>) -> BTreeMap<String, ThreadSummary> {
-    threads
-        .into_iter()
-        .map(|thread| (thread.id.0.clone(), thread))
-        .collect()
-}
-
-fn snapshot(
-    generation: u64,
-    threads: &BTreeMap<String, ThreadSummary>,
-    status: &BackendStatus,
-) -> BackendSnapshot {
-    let mut ordered = threads.values().cloned().collect::<Vec<_>>();
-    ordered.sort_by(|left, right| {
-        right
-            .metadata
-            .updated_at
-            .cmp(&left.metadata.updated_at)
-            .then_with(|| right.id.0.cmp(&left.id.0))
-    });
-    BackendSnapshot {
-        generation,
-        threads: ordered,
-        status: status.clone(),
-    }
-}
-
-pub(crate) fn replay_registry_jsonl(input: &str) -> Result<Vec<BackendSnapshot>> {
-    let mut threads = BTreeMap::new();
-    let status = BackendStatus {
-        source: "replay-app-server".into(),
-        connected: true,
-        version: Some("fixture".into()),
-        platform: None,
-        codex_home: None,
-        capabilities: vec!["registry-replay".into()],
-        optional_capabilities_missing: vec![],
-        registry_complete: true,
-        last_refresh_unix_ms: None,
-        error: None,
-    };
-    let mut generation = 0_u64;
-    let mut frames = vec![snapshot(generation, &threads, &status)];
-
-    for raw in input.lines() {
-        let line = raw.trim();
-        if line.is_empty() {
-            continue;
-        }
-        let message = decode_wire_line(line)?;
-        let emitted_at_seconds = message
-            .get("emittedAtMs")
-            .and_then(Value::as_u64)
-            .and_then(|millis| i64::try_from(millis / 1_000).ok());
-        let Some(method) = message.get("method").and_then(Value::as_str) else {
-            continue;
-        };
-        let Some(params) = message.get("params") else {
-            continue;
-        };
-
-        if apply_registry_notification(method, params, emitted_at_seconds, &mut threads)?
-            == Some(true)
-        {
-            generation = generation.saturating_add(1);
-            frames.push(snapshot(generation, &threads, &status));
-        }
-    }
-
-    Ok(frames)
-}
-
 async fn initialize(rpc: &mut RpcSession) -> Result<Value> {
     let result = rpc
         .request(
@@ -1765,94 +1693,6 @@ struct PendingServerRequest {
     params: Value,
 }
 
-fn apply_registry_notification(
-    method: &str,
-    params: &Value,
-    emitted_at_seconds: Option<i64>,
-    threads: &mut BTreeMap<String, ThreadSummary>,
-) -> Result<Option<bool>> {
-    if method == "thread/started" {
-        let wire: ThreadWire = serde_json::from_value(
-            params
-                .get("thread")
-                .cloned()
-                .context("thread/started notification missing thread")?,
-        )
-        .context("decode thread/started thread")?;
-        let mut summary = normalize_thread(wire, None);
-        summary.metadata.loaded = Some(true);
-        threads.insert(summary.id.0.clone(), summary);
-        return Ok(Some(true));
-    }
-
-    let Some(thread_id) = params.get("threadId").and_then(Value::as_str) else {
-        return Ok(None);
-    };
-
-    match method {
-        "thread/status/changed" => {
-            let Some(status) = params.get("status") else {
-                return Ok(Some(false));
-            };
-            let Some(thread) = threads.get_mut(thread_id) else {
-                return Ok(Some(false));
-            };
-            apply_status(thread, status);
-            thread.metadata.loaded = match status.get("type").and_then(Value::as_str) {
-                Some("notLoaded") => Some(false),
-                Some("active" | "idle") => Some(true),
-                _ => thread.metadata.loaded,
-            };
-            if let Some(updated_at) = emitted_at_seconds {
-                thread.metadata.updated_at = thread.metadata.updated_at.max(updated_at);
-            }
-            Ok(Some(true))
-        }
-        "thread/archived" | "thread/deleted" => Ok(Some(threads.remove(thread_id).is_some())),
-        "thread/unarchived" => Ok(Some(false)),
-        "thread/name/updated" => {
-            let Some(thread) = threads.get_mut(thread_id) else {
-                return Ok(Some(false));
-            };
-            let Some(name) = params
-                .get("threadName")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|name| !name.is_empty())
-            else {
-                return Ok(Some(false));
-            };
-            thread.title = name.to_string();
-            if let Some(updated_at) = emitted_at_seconds {
-                thread.metadata.updated_at = thread.metadata.updated_at.max(updated_at);
-            }
-            Ok(Some(true))
-        }
-        "thread/project/updated" => {
-            let Some(thread) = threads.get_mut(thread_id) else {
-                return Ok(Some(false));
-            };
-            let Some(project_id) = params
-                .get("projectId")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|project_id| !project_id.is_empty())
-            else {
-                return Ok(Some(false));
-            };
-            thread.metadata.project_id = Some(project_id.to_string());
-            thread.workspace = format!("project:{project_id}");
-            thread.metadata.workspace_key = format!("project:{project_id}");
-            thread.metadata.workspace_basis = "codex-project".into();
-            if let Some(updated_at) = emitted_at_seconds {
-                thread.metadata.updated_at = thread.metadata.updated_at.max(updated_at);
-            }
-            Ok(Some(true))
-        }
-        _ => Ok(None),
-    }
-}
-
 async fn handle_unsolicited(
     rpc: &mut RpcSession,
     message: Value,
@@ -2094,11 +1934,6 @@ async fn with_rpc_deadline<T>(
 
 fn rpc_message_or_closed(message: Option<Value>, method: &str) -> Result<Value> {
     message.ok_or_else(|| anyhow!("codex app-server closed while waiting for {method}"))
-}
-
-fn decode_wire_line(line: &str) -> Result<Value> {
-    serde_json::from_str(line)
-        .with_context(|| format!("decode app-server JSON line ({} bytes)", line.len()))
 }
 
 struct RpcSession {
@@ -2412,13 +2247,14 @@ mod tests {
 
     #[test]
     fn production_rpc_decode_error_does_not_echo_unbounded_wire_payload() {
-        let source = include_str!("app_server.rs");
-        let production = source
+        let actor = include_str!("app_server.rs")
             .split("#[cfg(test)]")
             .next()
-            .expect("production source");
-        assert!(!production.contains("decode app-server JSON line: {line}"));
-        assert!(production.contains("decode app-server JSON line ({} bytes)"));
+            .expect("production actor source");
+        let wire = include_str!("app_server_wire.rs");
+        assert!(actor.contains("decode_wire_line"));
+        assert!(!wire.contains("decode app-server JSON line: {line}"));
+        assert!(wire.contains("decode app-server JSON line ({} bytes)"));
     }
 
     #[test]
