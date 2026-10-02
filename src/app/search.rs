@@ -176,12 +176,12 @@ impl AppState {
             ensure_selection_visible(self);
         }
 
-        if let Some(return_view) = self.search_return_view.take()
-            && self.search_return_view_is_valid(&return_view)
-        {
-            self.view = return_view;
-        } else if self.search_return_view.is_some() {
-            search_watch_to_release = origin_thread_id;
+        if let Some(return_view) = self.search_return_view.take() {
+            if self.search_return_view_is_valid(&return_view) {
+                self.view = return_view;
+            } else {
+                search_watch_to_release = origin_thread_id;
+            }
         }
 
         self.search_planning = false;
