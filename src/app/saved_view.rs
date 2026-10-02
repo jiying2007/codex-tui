@@ -1,6 +1,4 @@
-use super::{
-    AppState, ContextChoice, Effect, InputMode, SavedViewEditField, local_text,
-};
+use super::{AppState, ContextChoice, Effect, InputMode, SavedViewEditField, local_text};
 use crate::planning::{SavedView, SavedViewLayout, validate_saved_view_filter};
 use anyhow::{Result, anyhow};
 use std::collections::BTreeSet;
@@ -63,7 +61,10 @@ fn parse_visible_fields(value: &str) -> Result<Vec<String>> {
             VISIBLE_FIELDS.contains(&field.as_str()),
             "unsupported visible field: {field}"
         );
-        anyhow::ensure!(unique.insert(field.clone()), "duplicate visible field: {field}");
+        anyhow::ensure!(
+            unique.insert(field.clone()),
+            "duplicate visible field: {field}"
+        );
     }
     Ok(fields)
 }
@@ -171,11 +172,7 @@ impl AppState {
         if let Err(error) = apply_saved_view_edit(&mut view, field, &self.input_buffer) {
             self.mutation_notice = Some(format!(
                 "{}: {error}",
-                local_text(
-                    self.language,
-                    "invalid SavedView value",
-                    "SavedView 值无效",
-                )
+                local_text(self.language, "invalid SavedView value", "SavedView 值无效",)
             ));
             return vec![];
         }
@@ -230,25 +227,19 @@ mod tests {
         assert_eq!(view.layout, SavedViewLayout::List);
         assert_eq!(view.group_by.as_deref(), Some("workspace"));
         assert_eq!(view.order_by.as_deref(), Some("title"));
-        assert_eq!(
-            view.visible_fields,
-            vec!["workspace", "priority", "branch"]
-        );
+        assert_eq!(view.visible_fields, vec!["workspace", "priority", "branch"]);
     }
 
     #[test]
     fn invalid_editor_values_fail_closed() {
         let mut view = view();
-        assert!(
-            apply_saved_view_edit(&mut view, SavedViewEditField::Layout, "grid").is_err()
-        );
+        assert!(apply_saved_view_edit(&mut view, SavedViewEditField::Layout, "grid").is_err());
         assert!(
             apply_saved_view_edit(&mut view, SavedViewEditField::VisibleFields, "stage,secret")
                 .is_err()
         );
         assert!(
-            apply_saved_view_edit(&mut view, SavedViewEditField::Filter, "\"unterminated")
-                .is_err()
+            apply_saved_view_edit(&mut view, SavedViewEditField::Filter, "\"unterminated").is_err()
         );
     }
 }
