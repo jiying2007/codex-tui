@@ -34,6 +34,11 @@ def main() -> int:
         raise SystemExit(f"unexpected v1.2 plan schema: {plan.get('schema')!r}")
     if plan.get("targetVersion") != "1.2.0":
         raise SystemExit("v1.2 plan targetVersion must be 1.2.0")
+
+    cargo_text = pathlib.Path("Cargo.toml").read_text(encoding="utf-8")
+    package_prefix = cargo_text.split("[dependencies]", 1)[0]
+    if 'version = "1.2.0"' not in package_prefix:
+        raise SystemExit("Cargo package version must match the v1.2 development line")
     if criteria.get("stableVersion") != plan.get("targetVersion"):
         raise SystemExit("v1.2 plan targetVersion does not match stable criteria")
     if plan.get("phase") != "maintainability-and-terminal-state-completion":
