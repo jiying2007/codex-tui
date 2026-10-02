@@ -50,6 +50,12 @@ P2 stays inside the existing Ratatui renderer and event loop. The local `[ui]` c
 
 Keyboard, paste and resize interactions always bypass the background throttle. The mode does not add a second renderer, screen-reader protocol, new persisted workflow state or new product authority. Existing textual focus/attention labels, keyboard reachability and grapheme-safe rendering remain the semantic accessibility base.
 
+## Completion and freeze
+
+P0, P1 and P2 are closed by the machine-readable `release/v1.2-completion.json` contract. `scripts/release/validate_v1_2_completion.py` cross-checks every planned priority against retained source evidence, verifies the render-path/highlighting and accessibility constraints directly, and requires the deferred/frozen sets to remain aligned with stable criteria.
+
+After this point, v1.2 does not accept new core functionality without a new development plan. Allowed changes are defect fixes, security, compatibility, qualification evidence, release tooling and documentation. Hosted development qualification binds the completion manifest SHA-256 but remains non-stable authority: `stableReady=false` and `publicationAllowed=false` are invariant.
+
 ## Evidence-driven only
 
 Thread Queue, transcript FTS, native GitLab REST/GraphQL, extra package architectures and remote targets stay deferred until measured need or upstream capability justifies them.
