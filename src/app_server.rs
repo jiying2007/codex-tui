@@ -24,6 +24,8 @@ use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 
+mod lifecycle;
+
 const PAGE_SIZE: u32 = 200;
 const STARTUP_REGISTRY_PAGE_LIMIT: usize = 1;
 const REGISTRY_HYDRATION_YIELD_INTERVAL: Duration = Duration::from_millis(10);
@@ -147,6 +149,12 @@ pub struct StartedRegistry {
 
 #[derive(Clone, Debug)]
 pub enum BackendCommand {
+    StartThread {
+        cwd: String,
+    },
+    ForkThread {
+        thread_id: ThreadId,
+    },
     LoadConversation(ThreadId),
     StopWatchingConversation(ThreadId),
     LoadOlderConversation {
@@ -178,6 +186,14 @@ pub enum BackendCommand {
 
 #[derive(Clone, Debug)]
 pub enum ConversationEvent {
+    ThreadCreated {
+        thread_id: ThreadId,
+        operation: &'static str,
+    },
+    ThreadLifecycleFailed {
+        operation: &'static str,
+        error: String,
+    },
     Loaded(ConversationPage),
     OlderLoaded(ConversationPage),
     PromptSubmitted {
@@ -210,6 +226,14 @@ impl RegistryHandle {
 
     pub fn try_recv_conversation(&mut self) -> Option<ConversationEvent> {
         self.conversation_rx.try_recv().ok()
+    }
+
+    pub fn start_thread(&self, cwd: String) -> Result<()> {
+        self.send_command(BackendCommand::StartThread { cwd })
+    }
+
+    pub fn fork_thread(&self, thread_id: ThreadId) -> Result<()> {
+        self.send_command(BackendCommand::ForkThread { thread_id })
     }
 
     pub fn load_conversation(&self, thread_id: ThreadId) -> Result<()> {
@@ -708,6 +732,30 @@ async fn run_registry_actor(
                     return;
                 };
                 match command {
+                    BackendCommand::StartThread { cwd } => {
+                        lifecycle::handle_start_thread(
+                            &mut rpc,
+                            cwd,
+                            &mut threads,
+                            &mut status,
+                            &mut generation,
+                            &tx,
+                            &conversation_tx,
+                        )
+                        .await;
+                    }
+                    BackendCommand::ForkThread { thread_id } => {
+                        lifecycle::handle_fork_thread(
+                            &mut rpc,
+                            thread_id,
+                            &mut threads,
+                            &mut status,
+                            &mut generation,
+                            &tx,
+                            &conversation_tx,
+                        )
+                        .await;
+                    }
                     BackendCommand::LoadConversation(thread_id) => {
                         watched_threads.insert(thread_id.0.clone());
                         emit_conversation_load(&mut rpc, thread_id, &conversation_tx).await;
