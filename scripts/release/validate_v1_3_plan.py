@@ -23,6 +23,38 @@ EXPECTED_P2 = {
     "fuzzy-command-palette",
     "user-perceived-performance-evidence",
 }
+REQUIRED_RATCHET = {
+    "src/app.rs",
+    "src/ui.rs",
+    "src/app_server.rs",
+    "src/main.rs",
+    "src/app/context.rs",
+    "src/app/lifecycle.rs",
+    "src/app/review.rs",
+    "src/app/saved_view.rs",
+    "src/app/search.rs",
+    "src/app/palette.rs",
+    "src/app_server/lifecycle.rs",
+    "src/ui/board.rs",
+    "src/ui/review.rs",
+    "src/ui/thread.rs",
+    "src/runtime_external.rs",
+    "src/runtime_planning.rs",
+    "src/bin/ux-performance-evidence.rs",
+}
+EXPECTED_GATED = {
+    "gitlab-issue-board-projection",
+    "github-safe-write-parity",
+}
+EXPECTED_FREEZE_CLASSES = {
+    "defect-fix",
+    "security",
+    "compatibility",
+    "qualification-evidence",
+    "release-tooling",
+    "documentation",
+}
+
 REQUIRED_DEFERRED = {
     "thread-queue-until-stable-upstream-capability",
     "transcript-fts-until-measured-need",
@@ -40,6 +72,18 @@ def main() -> None:
     assert set(plan["phases"]["P1"]) == EXPECTED_P1
     assert set(plan["phases"]["P2"]) == EXPECTED_P2
     assert REQUIRED_DEFERRED <= set(plan["deferred"])
+    assert REQUIRED_RATCHET <= set(plan["moduleRatchet"])
+    assert all(
+        isinstance(value, int) and value > 0
+        for value in plan["moduleRatchet"].values()
+    )
+    assert set(plan["evidenceGatedDecisions"]) == EXPECTED_GATED
+    assert all(
+        plan["evidenceGatedDecisions"][item]["status"] == "evidence-gated"
+        for item in EXPECTED_GATED
+    )
+    assert plan["freezePolicy"]["newCoreFunctionality"] == "requires-new-development-plan"
+    assert set(plan["freezePolicy"]["allowedChangeClasses"]) == EXPECTED_FREEZE_CLASSES
     assert plan["exit"]["openP0Defects"] == 0
     assert plan["exit"]["p0Complete"] is True
     assert plan["exit"]["p1Complete"] is True
