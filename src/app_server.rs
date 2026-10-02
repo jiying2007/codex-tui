@@ -1,7 +1,7 @@
 use crate::app_server_registry::{apply_registry_notification, by_id, snapshot};
 use crate::app_server_wire::decode_wire_line;
 use crate::backend::{BackendSnapshot, BackendStatus};
-use crate::codex_protocol::{ThreadWire, normalize_thread, parse_loaded_list, parse_thread_list};
+use crate::codex_protocol::{normalize_thread, parse_loaded_list, parse_thread_list};
 use crate::conversation::{
     ConversationPage, InteractiveRequest, InteractiveResolution, RpcRequestId, merge_history,
     parse_interactive_request, parse_items_page, parse_legacy_thread_read, parse_thread_title,
@@ -23,6 +23,8 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter, Lines};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
+
+mod lifecycle;
 
 const PAGE_SIZE: u32 = 200;
 const STARTUP_REGISTRY_PAGE_LIMIT: usize = 1;
@@ -89,66 +91,6 @@ fn mark_goal_unsupported(status: &mut BackendStatus) {
         }
         status.capabilities.retain(|value| value != capability);
     }
-}
-
-fn is_method_unsupported(error: &anyhow::Error, method: &str) -> bool {
-    let Some(source) = error.downcast_ref::<RpcResponseError>() else {
-        return false;
-    };
-    source.method == method && matches!(source.code, Some(-32601 | -32600 | -32602))
-}
-
-fn mark_optional_capability(status: &mut BackendStatus, capability: &str, supported: bool) {
-    if supported {
-        if !status.capabilities.iter().any(|value| value == capability) {
-            status.capabilities.push(capability.to_string());
-        }
-        status
-            .optional_capabilities_missing
-            .retain(|value| value != capability);
-    } else {
-        status.capabilities.retain(|value| value != capability);
-        if !status
-            .optional_capabilities_missing
-            .iter()
-            .any(|value| value == capability)
-        {
-            status.optional_capabilities_missing.push(capability.to_string());
-        }
-    }
-}
-
-fn parse_lifecycle_thread(result: Value, operation: &str) -> Result<ThreadSummary> {
-    let value = result
-        .get("thread")
-        .cloned()
-        .with_context(|| format!("{operation} response missing thread"))?;
-    let thread: ThreadWire =
-        serde_json::from_value(value).with_context(|| format!("decode {operation} thread"))?;
-    Ok(normalize_thread(thread, None))
-}
-
-async fn start_thread(rpc: &mut RpcSession, cwd: String) -> Result<ThreadSummary> {
-    anyhow::ensure!(!cwd.trim().is_empty(), "thread/start cwd is empty");
-    let result = rpc
-        .request("thread/start", json!({ "cwd": cwd }))
-        .await
-        .context("start Codex thread")?;
-    parse_lifecycle_thread(result, "thread/start")
-}
-
-async fn fork_thread(rpc: &mut RpcSession, thread_id: ThreadId) -> Result<ThreadSummary> {
-    let result = rpc
-        .request(
-            "thread/fork",
-            json!({
-                "threadId": thread_id.0,
-                "excludeTurns": true
-            }),
-        )
-        .await
-        .context("fork Codex thread")?;
-    parse_lifecycle_thread(result, "thread/fork")
 }
 
 fn is_history_pagination_unsupported(error: &anyhow::Error) -> bool {
@@ -791,72 +733,28 @@ async fn run_registry_actor(
                 };
                 match command {
                     BackendCommand::StartThread { cwd } => {
-                        match start_thread(&mut rpc, cwd).await {
-                            Ok(thread) => {
-                                let thread_id = thread.id.clone();
-                                threads.insert(thread_id.0.clone(), thread);
-                                mark_optional_capability(&mut status, "thread/start", true);
-                                generation = generation.saturating_add(1);
-                                let _ = tx.send(snapshot(generation, &threads, &status));
-                                send_conversation_event(
-                                    &conversation_tx,
-                                    ConversationEvent::ThreadCreated {
-                                        thread_id,
-                                        operation: "thread/start",
-                                    },
-                                )
-                                .await;
-                            }
-                            Err(error) => {
-                                if is_method_unsupported(&error, "thread/start") {
-                                    mark_optional_capability(&mut status, "thread/start", false);
-                                    generation = generation.saturating_add(1);
-                                    let _ = tx.send(snapshot(generation, &threads, &status));
-                                }
-                                send_conversation_event(
-                                    &conversation_tx,
-                                    ConversationEvent::ThreadLifecycleFailed {
-                                        operation: "thread/start",
-                                        error: error.to_string(),
-                                    },
-                                )
-                                .await;
-                            }
-                        }
+                        lifecycle::handle_start_thread(
+                            &mut rpc,
+                            cwd,
+                            &mut threads,
+                            &mut status,
+                            &mut generation,
+                            &tx,
+                            &conversation_tx,
+                        )
+                        .await;
                     }
                     BackendCommand::ForkThread { thread_id } => {
-                        match fork_thread(&mut rpc, thread_id).await {
-                            Ok(thread) => {
-                                let thread_id = thread.id.clone();
-                                threads.insert(thread_id.0.clone(), thread);
-                                mark_optional_capability(&mut status, "thread/fork", true);
-                                generation = generation.saturating_add(1);
-                                let _ = tx.send(snapshot(generation, &threads, &status));
-                                send_conversation_event(
-                                    &conversation_tx,
-                                    ConversationEvent::ThreadCreated {
-                                        thread_id,
-                                        operation: "thread/fork",
-                                    },
-                                )
-                                .await;
-                            }
-                            Err(error) => {
-                                if is_method_unsupported(&error, "thread/fork") {
-                                    mark_optional_capability(&mut status, "thread/fork", false);
-                                    generation = generation.saturating_add(1);
-                                    let _ = tx.send(snapshot(generation, &threads, &status));
-                                }
-                                send_conversation_event(
-                                    &conversation_tx,
-                                    ConversationEvent::ThreadLifecycleFailed {
-                                        operation: "thread/fork",
-                                        error: error.to_string(),
-                                    },
-                                )
-                                .await;
-                            }
-                        }
+                        lifecycle::handle_fork_thread(
+                            &mut rpc,
+                            thread_id,
+                            &mut threads,
+                            &mut status,
+                            &mut generation,
+                            &tx,
+                            &conversation_tx,
+                        )
+                        .await;
                     }
                     BackendCommand::LoadConversation(thread_id) => {
                         watched_threads.insert(thread_id.0.clone());
