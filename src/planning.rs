@@ -398,6 +398,10 @@ fn parse_query_terms(filter: &str) -> Option<Vec<QueryTerm>> {
     Some(terms)
 }
 
+pub fn validate_saved_view_filter(filter: &str) -> bool {
+    parse_query_terms(filter).is_some()
+}
+
 pub fn card_matches_filter(card: &WorkCardProjection, filter: &str) -> bool {
     let Some(terms) = parse_query_terms(filter) else {
         return false;
