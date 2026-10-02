@@ -46,6 +46,29 @@ jobs:
       - name: Enforce module ratchet
         run: python scripts/architecture/check_module_ratchet.py
 
+      - name: Record security governance authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p qualification
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          receipt = {
+              "schema": "codex-tui/security-governance-reference/v1",
+              "sourceSha": os.environ["GITHUB_SHA"],
+              "status": "separate-authority",
+              "workflow": "security",
+              "releaseGateRechecks": True,
+          }
+          Path("qualification/security-governance-reference.json").write_text(
+              json.dumps(receipt, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+          PY
+
       - name: Run exact-SHA automated qualification
         shell: bash
         env:
