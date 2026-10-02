@@ -74,10 +74,7 @@ pub(crate) fn apply_planning_effect(
     true
 }
 
-pub(crate) fn apply_store_result(
-    app: &mut AppState,
-    result: Result<PlanningSnapshot, String>,
-) {
+pub(crate) fn apply_store_result(app: &mut AppState, result: Result<PlanningSnapshot, String>) {
     match result {
         Ok(snapshot) => {
             reduce(app, Action::PlanningSnapshotLoaded(snapshot));
@@ -94,4 +91,3 @@ pub(crate) fn apply_store_result(
         }
     }
 }
-
