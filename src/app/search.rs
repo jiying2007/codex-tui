@@ -230,3 +230,75 @@ pub(super) fn matches_filter_normalized_with_extra(
         }
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::{Action, reduce};
+    use crate::backend::{CodexBackend, FakeBackend};
+    use crate::goal::{GoalObservation, GoalStatus};
+
+    fn app() -> AppState {
+        AppState::new(FakeBackend::seeded().snapshot().threads)
+    }
+
+    #[test]
+    fn registry_search_matches_goal_metadata_without_transcript_hydration() {
+        let mut app = app();
+        let thread_id = app.threads[0].id.clone();
+        app.goals.insert(
+            thread_id.0.clone(),
+            GoalObservation {
+                thread_id: thread_id.clone(),
+                objective: "Workflow completion UX".into(),
+                status: GoalStatus::Active,
+                token_budget: Some(10_000),
+                tokens_used: 10,
+                time_used_seconds: 5,
+                created_at: 1,
+                updated_at: 2,
+                observed_at_unix_ms: 3,
+            },
+        );
+        app.filter = "wrkflwux".into();
+
+        let visible = app.visible_indices();
+        assert!(visible.iter().any(|index| app.threads[*index].id == thread_id));
+        assert!(app.conversations.is_empty());
+    }
+
+    #[test]
+    fn board_search_stays_on_board_and_cancel_restores_query() {
+        let mut app = app();
+        reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 10 });
+        reduce(&mut app, Action::OpenBoard);
+        app.planning_filter = "existing".into();
+
+        reduce(&mut app, Action::BeginSearch);
+        assert!(matches!(app.view, View::Board));
+        assert!(app.search_planning);
+        assert_eq!(app.input_buffer, "existing");
+
+        reduce(&mut app, Action::InputText(" extra".into()));
+        assert_eq!(app.planning_filter, "existing extra");
+
+        reduce(&mut app, Action::CancelInput);
+        assert_eq!(app.planning_filter, "existing");
+        assert!(matches!(app.view, View::Board));
+        assert!(!app.search_planning);
+    }
+
+    #[test]
+    fn invalid_search_origin_releases_conversation_watch() {
+        let mut app = app();
+        let thread_id = app.threads[0].id.clone();
+        app.view = View::Thread(thread_id.clone());
+        app.begin_metadata_search();
+        app.threads.remove(0);
+        app.rebuild_thread_indexes();
+
+        let effects = app.cancel_metadata_search();
+        assert_eq!(effects, vec![Effect::StopWatchingConversation(thread_id)]);
+        assert!(matches!(app.view, View::Registry));
+    }
+}
