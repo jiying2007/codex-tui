@@ -1,0 +1,28 @@
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:17"
+      timezone: "Asia/Singapore"
+    open-pull-requests-limit: 5
+    groups:
+      rust-runtime:
+        dependency-type: production
+      rust-development:
+        dependency-type: development
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "04:47"
+      timezone: "Asia/Singapore"
+    open-pull-requests-limit: 5
+    groups:
+      github-actions:
+        patterns:
+          - "*"
