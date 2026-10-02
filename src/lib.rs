@@ -36,3 +36,4 @@ pub mod terminal_drawer;
 pub mod text;
 pub mod ui;
 pub mod worktree;
+pub(crate) mod worktree_git;
