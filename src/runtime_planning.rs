@@ -49,6 +49,13 @@ pub(crate) fn apply_planning_effect(
         Effect::SetHotSlot { slot, target } => {
             apply_store_result(app, store.set_hot_slot(slot, target));
         }
+        Effect::LinkWorkCard {
+            anchor,
+            role,
+            source,
+        } => {
+            apply_store_result(app, store.link_work_card(anchor, role, source));
+        }
         Effect::ApplyLocalBatch(plan) => {
             let preview = plan.preview();
             match store.apply_local_batch(&plan) {
