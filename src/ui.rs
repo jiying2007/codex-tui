@@ -11,8 +11,8 @@ use crate::planning::{
     PlanningAttention, SavedView, SavedViewLayout, ScratchState, WorkflowStage, apply_saved_view,
     saved_view_group_key,
 };
-use crate::text::{fit_display, sanitize_inline, truncate_display};
 use crate::syntax_highlight::highlight_review_diff;
+use crate::text::{fit_display, sanitize_inline, truncate_display};
 
 mod overlays;
 mod terminal;
