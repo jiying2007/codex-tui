@@ -1,0 +1,2 @@
+{"method":"thread/started","emittedAtMs":1000,"params":{"thread":{"id":"thread-previous","preview":"Legacy prompt","updatedAt":1,"status":{"type":"notLoaded"},"cwd":"/work/legacy-repo","source":"cli"}}}
+{"method":"thread/status/changed","emittedAtMs":2000,"params":{"threadId":"thread-previous","status":{"type":"idle"}}}
