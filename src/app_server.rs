@@ -1,7 +1,7 @@
 use crate::app_server_registry::{apply_registry_notification, by_id, snapshot};
 use crate::app_server_wire::decode_wire_line;
 use crate::backend::{BackendSnapshot, BackendStatus};
-use crate::codex_protocol::{normalize_thread, parse_loaded_list, parse_thread_list};
+use crate::codex_protocol::{ThreadWire, normalize_thread, parse_loaded_list, parse_thread_list};
 use crate::conversation::{
     ConversationPage, InteractiveRequest, InteractiveResolution, RpcRequestId, merge_history,
     parse_interactive_request, parse_items_page, parse_legacy_thread_read, parse_thread_title,
@@ -147,6 +147,12 @@ pub struct StartedRegistry {
 
 #[derive(Clone, Debug)]
 pub enum BackendCommand {
+    StartThread {
+        cwd: String,
+    },
+    ForkThread {
+        thread_id: ThreadId,
+    },
     LoadConversation(ThreadId),
     StopWatchingConversation(ThreadId),
     LoadOlderConversation {
@@ -178,6 +184,14 @@ pub enum BackendCommand {
 
 #[derive(Clone, Debug)]
 pub enum ConversationEvent {
+    ThreadCreated {
+        thread_id: ThreadId,
+        operation: &'static str,
+    },
+    ThreadLifecycleFailed {
+        operation: &'static str,
+        error: String,
+    },
     Loaded(ConversationPage),
     OlderLoaded(ConversationPage),
     PromptSubmitted {
@@ -210,6 +224,14 @@ impl RegistryHandle {
 
     pub fn try_recv_conversation(&mut self) -> Option<ConversationEvent> {
         self.conversation_rx.try_recv().ok()
+    }
+
+    pub fn start_thread(&self, cwd: String) -> Result<()> {
+        self.send_command(BackendCommand::StartThread { cwd })
+    }
+
+    pub fn fork_thread(&self, thread_id: ThreadId) -> Result<()> {
+        self.send_command(BackendCommand::ForkThread { thread_id })
     }
 
     pub fn load_conversation(&self, thread_id: ThreadId) -> Result<()> {
