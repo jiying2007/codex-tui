@@ -664,6 +664,43 @@ impl AppState {
         }
     }
 
+    fn lifecycle_thread_id(&self) -> Option<ThreadId> {
+        match &self.view {
+            View::Registry => self.selected_thread_id(),
+            View::Thread(id)
+            | View::Review(id)
+            | View::Workspace(id)
+            | View::ManagedWorktrees(id) => Some(id.clone()),
+            View::Board => self.selected_planning_card().and_then(|card| {
+                (card.anchor.kind == SourceKind::CodexThread)
+                    .then(|| ThreadId::new(card.anchor.value.clone()))
+            }),
+            View::Scratch(_) => None,
+        }
+    }
+
+    fn lifecycle_cwd(&self) -> Option<String> {
+        if matches!(self.view, View::ManagedWorktrees(_))
+            && let Some(record) = self.selected_managed_worktree()
+        {
+            return Some(record.canonical_path.clone());
+        }
+        let thread_id = self.lifecycle_thread_id()?;
+        self.thread_by_id(&thread_id)
+            .map(|thread| thread.metadata.cwd.clone())
+            .filter(|cwd| !cwd.trim().is_empty())
+    }
+
+    fn lifecycle_capability_available(&self, capability: &str) -> bool {
+        self.backend_status.connected
+            && self.backend_status.source != "fake"
+            && !self
+                .backend_status
+                .optional_capabilities_missing
+                .iter()
+                .any(|missing| missing == capability)
+    }
+
     pub fn terminal_target_cwd(&self) -> Result<String, String> {
         let thread_id = match &self.view {
             View::Registry => self.selected_thread_id(),
