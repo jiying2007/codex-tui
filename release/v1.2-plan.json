@@ -1,0 +1,117 @@
+{
+  "schema": "codex-tui/v1.2-plan/v1",
+  "targetVersion": "1.2.0",
+  "theme": "maintainability-and-terminal-state-completion",
+  "invariant": "preserve authority boundaries and existing product behavior while reducing structural risk before new mature-core features",
+  "entryMainSha": "0fe3d3ea2c45cc76730e03d7078cc655c563557c",
+  "priorities": [
+    {
+      "id": "architecture-decomposition",
+      "priority": "P0",
+      "outcomes": [
+        "split app, ui, app-server, runtime, sqlite, forge and worktree responsibilities",
+        "no implementation module grows beyond its retained ratchet ceiling",
+        "newly extracted implementation modules target <=800 LOC and should trend toward <=500 LOC"
+      ],
+      "behaviorChangeAllowed": false
+    },
+    {
+      "id": "replay-compatibility",
+      "priority": "P0",
+      "outcomes": [
+        "ReplayBackend or equivalent deterministic protocol replay boundary",
+        "retained protocol generations for malformed, unknown-event and supported payload shapes",
+        "scheduled compatibility qualification without paid model inference"
+      ]
+    },
+    {
+      "id": "dependency-security-governance",
+      "priority": "P0",
+      "outcomes": [
+        "cargo-deny policy",
+        "RustSec/cargo-audit gate",
+        "dependency updater",
+        "minimal permissions retained"
+      ]
+    },
+    {
+      "id": "headless-contract-completion",
+      "priority": "P1",
+      "outcomes": [
+        "status",
+        "attention-list",
+        "board-list",
+        "forge-status",
+        "worktree-list"
+      ],
+      "mutatingSurfaceDeferred": true
+    },
+    {
+      "id": "lightweight-notifications",
+      "priority": "P1",
+      "outcomes": [
+        "off",
+        "terminal-only",
+        "os-notification"
+      ],
+      "externalBridgeDeferred": true
+    },
+    {
+      "id": "syntax-highlighting",
+      "priority": "P1",
+      "lockedChoice": "two-face + syntect pure-Rust fancy-regex",
+      "constraints": [
+        "Review/code preview only",
+        "large-content plain-text fallback",
+        "cache outside render critical path"
+      ]
+    },
+    {
+      "id": "accessibility-mature-mode",
+      "priority": "P2",
+      "outcomes": [
+        "quiet presentation",
+        "reduced redraw",
+        "screen-reader-oriented presentation"
+      ]
+    }
+  ],
+  "evidenceDrivenDeferred": [
+    "thread-queue",
+    "transcript-fts",
+    "native-gitlab-rest-graphql",
+    "extra-release-architectures",
+    "remote-app-server-targets"
+  ],
+  "frozenOptionalLayers": [
+    "team-server-rbac",
+    "web-mobile-companion",
+    "collaboration-service",
+    "generic-plugin-runtime",
+    "multi-agent-providers",
+    "job-workflow-engine"
+  ],
+  "moduleRatchet": {
+    "src/app.rs": 7000,
+    "src/ui.rs": 3700,
+    "src/app_server.rs": 2900,
+    "src/main.rs": 2600,
+    "src/sqlite_store.rs": 2400,
+    "src/forge.rs": 1700,
+    "src/worktree.rs": 1200,
+    "src/release.rs": 1050
+  },
+  "phaseExit": {
+    "P0": [
+      "ratchet enforced in canonical CI",
+      "runtime/main first extraction merged",
+      "Replay compatibility path retained",
+      "dependency security governance green"
+    ],
+    "v1_2": [
+      "no open P0 maintainability defects",
+      "new core functionality lands only in extracted bounded modules",
+      "canonical CI and hosted RC qualification remain green"
+    ]
+  }
+}
