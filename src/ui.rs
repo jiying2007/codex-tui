@@ -15,13 +15,8 @@ use crate::text::{fit_display, sanitize_inline, truncate_display};
 
 mod terminal;
 
-pub use terminal::{terminal_drawer_pty_size, terminal_drawer_rect};
-use terminal::{render_terminal_drawer, terminal_process_state_label};
 #[cfg(test)]
-use crate::{
-    pty::TerminalSize,
-    terminal_drawer::TerminalProcessState,
-};
+use crate::{pty::TerminalSize, terminal_drawer::TerminalProcessState};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
