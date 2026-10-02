@@ -1,12 +1,12 @@
 use crate::backend::BackendStatus;
 use crate::batch_local::{LocalBatchAction, LocalBatchPlan, parse_priority};
 use crate::command::Command;
+#[cfg(test)]
+use crate::conversation::ConversationPage;
 use crate::conversation::{
     ConversationState, InteractiveRequest, InteractiveRequestKind, InteractiveResolution,
     RpcRequestId, UserInputQuestion,
 };
-#[cfg(test)]
-use crate::conversation::ConversationPage;
 use crate::domain::{
     AttentionReason, CwdLocality, LocalRepoIdentity, RuntimeStatus, ThreadId, ThreadSummary,
     ThreadUiState, classify_cwd, classify_cwd_without_io,
