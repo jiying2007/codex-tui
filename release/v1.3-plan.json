@@ -91,5 +91,77 @@
     ],
     "integrationBranchClean": true,
     "fakeEvidenceCannotSatisfyRealEnvironmentGates": true
+  },
+  "moduleRatchet": {
+    "src/app.rs": 6500,
+    "src/ui.rs": 2500,
+    "src/app_server.rs": 2780,
+    "src/main.rs": 1900,
+    "src/sqlite_store.rs": 2250,
+    "src/forge.rs": 1400,
+    "src/worktree.rs": 1050,
+    "src/release.rs": 1050,
+    "src/runtime_store.rs": 550,
+    "src/runtime_input.rs": 400,
+    "src/conversation.rs": 900,
+    "src/app/context.rs": 150,
+    "src/app/lifecycle.rs": 250,
+    "src/app/review.rs": 100,
+    "src/app/saved_view.rs": 300,
+    "src/app/search.rs": 350,
+    "src/app/palette.rs": 250,
+    "src/app_server/lifecycle.rs": 300,
+    "src/ui/board.rs": 500,
+    "src/ui/review.rs": 350,
+    "src/ui/thread.rs": 450,
+    "src/runtime_external.rs": 120,
+    "src/runtime_planning.rs": 150,
+    "src/bin/ux-performance-evidence.rs": 220
+  },
+  "evidenceGatedDecisions": {
+    "gitlab-issue-board-projection": {
+      "status": "evidence-gated",
+      "rationale": [
+        "normal GitLab refresh is intentionally capped at four glab API subprocesses",
+        "adding board probing to normal refresh would cross the existing native-transport hard trigger",
+        "current IssueBoardSummary exposes board identity only and cannot honestly project list/card membership"
+      ],
+      "retainedBehavior": [
+        "GitLab issue boards remain observable through doctor capability probing",
+        "normal Forge observation does not claim board membership projection"
+      ],
+      "reopenWhen": [
+        "native GitLab transport hard trigger fires",
+        "bounded board-membership projection becomes available without violating refresh budget",
+        "real usage proves issue-board membership is required"
+      ]
+    },
+    "github-safe-write-parity": {
+      "status": "evidence-gated",
+      "rationale": [
+        "current mutation preflight and recovery semantics are GitLab-specific",
+        "reusing GitLab numeric project-id and merge-request checks for GitHub would weaken fail-closed behavior",
+        "internal primary Forge remains GitLab so unsafe symmetry has lower value than preserving mutation safety"
+      ],
+      "retainedBehavior": [
+        "GitHub projection and review remain read-only",
+        "mutation planning refuses non-GitLab provider identity"
+      ],
+      "reopenWhen": [
+        "provider-specific GitHub preflight and verification contract is implemented",
+        "real GitHub mutation demand is measured"
+      ]
+    }
+  },
+  "freezePolicy": {
+    "newCoreFunctionality": "requires-new-development-plan",
+    "allowedChangeClasses": [
+      "defect-fix",
+      "security",
+      "compatibility",
+      "qualification-evidence",
+      "release-tooling",
+      "documentation"
+    ]
   }
 }
