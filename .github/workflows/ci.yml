@@ -206,6 +206,7 @@ jobs:
           python scripts/release/validate_v1_2_plan.py >/dev/null
           python scripts/release/validate_v1_2_completion.py >/dev/null
           python scripts/release/validate_v1_3_plan.py >/dev/null
+          python scripts/release/validate_v1_3_completion.py >/dev/null
 
           FAKE_FORGE="$OUT/fake-codex-tui"
           cat > "$FAKE_FORGE" <<'SH'
@@ -297,6 +298,8 @@ jobs:
         run: python -c "import pathlib, py_compile; [py_compile.compile(str(p), doraise=True) for p in pathlib.Path('scripts').rglob('*.py')]"
       - name: Enforce v1.2 module no-growth ratchet
         run: python scripts/architecture/check_module_ratchet.py
+      - name: Enforce v1.3 module no-growth ratchet
+        run: python scripts/architecture/check_module_ratchet.py release/v1.3-plan.json
       - run: cargo fmt --all -- --check
       - run: cargo clippy --locked --all-targets --all-features -- -D warnings
       - run: cargo test --locked --all-targets --all-features
