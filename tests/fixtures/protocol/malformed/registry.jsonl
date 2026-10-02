@@ -1,0 +1,2 @@
+{"method":"thread/started","params":{"thread":{"id":"ok","preview":"ok","updatedAt":1,"status":{"type":"idle"},"cwd":"/work/ok","source":"cli"}}}
+THIS_IS_NOT_VALID_JSON_PAYLOAD

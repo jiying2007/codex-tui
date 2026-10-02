@@ -1207,6 +1207,51 @@ fn snapshot(
     }
 }
 
+pub(crate) fn replay_registry_jsonl(input: &str) -> Result<Vec<BackendSnapshot>> {
+    let mut threads = BTreeMap::new();
+    let status = BackendStatus {
+        source: "replay-app-server".into(),
+        connected: true,
+        version: Some("fixture".into()),
+        platform: None,
+        codex_home: None,
+        capabilities: vec!["registry-replay".into()],
+        optional_capabilities_missing: vec![],
+        registry_complete: true,
+        last_refresh_unix_ms: None,
+        error: None,
+    };
+    let mut generation = 0_u64;
+    let mut frames = vec![snapshot(generation, &threads, &status)];
+
+    for raw in input.lines() {
+        let line = raw.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let message = decode_wire_line(line)?;
+        let emitted_at_seconds = message
+            .get("emittedAtMs")
+            .and_then(Value::as_u64)
+            .and_then(|millis| i64::try_from(millis / 1_000).ok());
+        let Some(method) = message.get("method").and_then(Value::as_str) else {
+            continue;
+        };
+        let Some(params) = message.get("params") else {
+            continue;
+        };
+
+        if apply_registry_notification(method, params, emitted_at_seconds, &mut threads)?
+            == Some(true)
+        {
+            generation = generation.saturating_add(1);
+            frames.push(snapshot(generation, &threads, &status));
+        }
+    }
+
+    Ok(frames)
+}
+
 async fn initialize(rpc: &mut RpcSession) -> Result<Value> {
     let result = rpc
         .request(

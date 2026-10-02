@@ -1,0 +1,58 @@
+name: protocol-compatibility
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/app_server.rs"
+      - "src/codex_protocol.rs"
+      - "src/replay_backend.rs"
+      - "src/domain.rs"
+      - "tests/protocol_replay.rs"
+      - "tests/fixtures/protocol/**"
+      - ".github/workflows/protocol-compatibility.yml"
+  pull_request:
+    paths:
+      - "src/app_server.rs"
+      - "src/codex_protocol.rs"
+      - "src/replay_backend.rs"
+      - "src/domain.rs"
+      - "tests/protocol_replay.rs"
+      - "tests/fixtures/protocol/**"
+      - ".github/workflows/protocol-compatibility.yml"
+  schedule:
+    - cron: "41 2 * * 3"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: protocol-compatibility-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  replay:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Validate retained protocol fixture manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import pathlib
+
+          manifest = json.load(open("tests/fixtures/protocol/manifest.json", encoding="utf-8"))
+          assert manifest["schema"] == "codex-tui/protocol-fixtures/v1"
+          assert len(manifest["fixtures"]) >= 4
+          for fixture in manifest["fixtures"]:
+              path = pathlib.Path(fixture["path"])
+              assert path.is_file(), path
+              assert path.stat().st_size > 0, path
+          PY
+      - name: Replay App Server protocol fixtures
+        run: cargo test --locked --test protocol_replay
