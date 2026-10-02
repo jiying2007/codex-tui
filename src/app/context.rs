@@ -58,7 +58,16 @@ impl AppState {
             }
             choices.push(ContextChoice::SaveCurrentView);
             if self.active_saved_view().id.starts_with("view:") {
-                choices.push(ContextChoice::DeleteCurrentView);
+                choices.extend([
+                    ContextChoice::EditViewName,
+                    ContextChoice::EditViewSource,
+                    ContextChoice::EditViewFilter,
+                    ContextChoice::EditViewLayout,
+                    ContextChoice::EditViewGroup,
+                    ContextChoice::EditViewOrder,
+                    ContextChoice::EditViewFields,
+                    ContextChoice::DeleteCurrentView,
+                ]);
             }
         }
         if matches!(self.view, View::Workspace(_) | View::Review(_))
