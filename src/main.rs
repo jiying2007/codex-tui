@@ -1,9 +1,8 @@
 use anyhow::Result;
 use codex_tui::{
-    app::{Action, AppState, Effect, InputMode, ViewKind, reduce},
+    app::{Action, AppState, Effect, reduce},
     app_server::{self, ConversationEvent, RegistryHandle},
     backend::{BackendStatus, CodexBackend, FakeBackend},
-    command::Command,
     domain::{CwdLocality, classify_cwd, display_cwd},
     forge::{self, ForgeEvent, ForgeHandle},
     forge_mutation::{ForgeMutationEvent, ForgeMutationHandle},
@@ -17,7 +16,7 @@ use codex_tui::{
     ui,
     worktree::{MutationEvent, MutationRequest, WorktreeMutationHandle},
 };
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crossterm::event::{self, Event, KeyEventKind};
 use std::path::Path;
 use std::process::Stdio;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -25,8 +24,18 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 mod runtime_input;
 mod runtime_store;
 
-use runtime_input::{action_for_command, handle_command, handle_key, handle_paste};
+use runtime_input::{handle_key, handle_paste};
 use runtime_store::RuntimeStore;
+
+#[cfg(test)]
+use codex_tui::{
+    app::{InputMode, ViewKind},
+    command::Command,
+};
+#[cfg(test)]
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+#[cfg(test)]
+use runtime_input::{action_for_command, handle_command};
 struct RuntimeServices {
     git: GitHandle,
     forge: ForgeHandle,
