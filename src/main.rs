@@ -1089,6 +1089,7 @@ fn apply_effects(
             | Effect::SaveSavedView { .. }
             | Effect::DeleteSavedView { .. }
             | Effect::SetHotSlot { .. }
+            | Effect::LinkWorkCard { .. }
             | Effect::ApplyLocalBatch(_)) => {
                 let handled = runtime_planning::apply_planning_effect(app, store, effect);
                 debug_assert!(handled);
