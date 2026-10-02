@@ -316,6 +316,20 @@ mod tests {
         NotificationObservation::from_projection(&threads, &cards, &BTreeMap::new())
     }
 
+    fn goal(thread_id: &str, status: GoalStatus) -> GoalObservation {
+        GoalObservation {
+            thread_id: ThreadId(thread_id.into()),
+            objective: format!("Goal {thread_id}"),
+            status,
+            token_budget: None,
+            tokens_used: 0,
+            time_used_seconds: 0,
+            created_at: 1,
+            updated_at: 1,
+            observed_at_unix_ms: 1,
+        }
+    }
+
     #[test]
     fn initial_projection_seeds_without_notifying_historical_attention() {
         let mut tracker = NotificationTracker::default();
@@ -421,6 +435,69 @@ mod tests {
             )],
         ));
         assert!(events.is_empty());
+    }
+
+    #[test]
+    fn projection_maps_goal_pipeline_and_review_attention_without_duplicates() {
+        let cards = vec![
+            card("goal", &[PlanningAttention::GoalBlocked], false),
+            card("pipe", &[PlanningAttention::PipelineFailed], false),
+            card(
+                "review",
+                &[
+                    PlanningAttention::ReviewUnseen,
+                    PlanningAttention::ChangeRequested,
+                ],
+                false,
+            ),
+        ];
+        let observation = NotificationObservation::from_projection(
+            &[],
+            &cards,
+            &BTreeMap::new(),
+        );
+        let kinds = observation
+            .active
+            .values()
+            .map(|event| event.kind)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            kinds,
+            BTreeSet::from([
+                NotificationKind::GoalBlocked,
+                NotificationKind::PipelineFailed,
+                NotificationKind::ReviewRequested,
+            ])
+        );
+        assert_eq!(
+            observation
+                .active
+                .values()
+                .filter(|event| event.kind == NotificationKind::ReviewRequested)
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn goal_completion_is_edge_triggered_and_deduplicated_by_thread() {
+        let mut tracker = NotificationTracker::default();
+        let threads = vec![thread("1", RuntimeStatus::Working)];
+        tracker.advance(NotificationObservation::from_projection(
+            &threads,
+            &[],
+            &BTreeMap::from([("1".into(), goal("1", GoalStatus::Active))]),
+        ));
+
+        let ready = vec![thread("1", RuntimeStatus::Ready)];
+        let events = tracker.advance(NotificationObservation::from_projection(
+            &ready,
+            &[],
+            &BTreeMap::from([("1".into(), goal("1", GoalStatus::Complete))]),
+        ));
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].kind, NotificationKind::Completion);
+        assert_eq!(events[0].key, "completion:1");
     }
 
     #[test]
