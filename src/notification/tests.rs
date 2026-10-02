@@ -1,9 +1,7 @@
 use super::*;
 use crate::{
     domain::{ThreadId, ThreadMetadata},
-    planning::{
-        Freshness, Provenance, SourceRef, WorkCardOverlay, WorkflowStage,
-    },
+    planning::{Freshness, Provenance, SourceRef, WorkCardOverlay, WorkflowStage},
 };
 
 fn thread(id: &str, runtime: RuntimeStatus) -> ThreadSummary {
@@ -75,11 +73,7 @@ fn initial_projection_seeds_without_notifying_historical_attention() {
     let mut tracker = NotificationTracker::default();
     let events = tracker.advance(observation(
         vec![thread("1", RuntimeStatus::WaitingHuman)],
-        vec![card(
-            "1",
-            &[PlanningAttention::ApprovalRequired],
-            false,
-        )],
+        vec![card("1", &[PlanningAttention::ApprovalRequired], false)],
     ));
     assert!(events.is_empty());
 }
@@ -94,11 +88,7 @@ fn attention_is_edge_triggered_and_can_reappear_after_clearing() {
 
     let first = tracker.advance(observation(
         vec![thread("1", RuntimeStatus::WaitingHuman)],
-        vec![card(
-            "1",
-            &[PlanningAttention::ApprovalRequired],
-            false,
-        )],
+        vec![card("1", &[PlanningAttention::ApprovalRequired], false)],
     ));
     assert_eq!(first.len(), 1);
     assert_eq!(first[0].kind, NotificationKind::ApprovalRequired);
@@ -107,11 +97,7 @@ fn attention_is_edge_triggered_and_can_reappear_after_clearing() {
         tracker
             .advance(observation(
                 vec![thread("1", RuntimeStatus::WaitingHuman)],
-                vec![card(
-                    "1",
-                    &[PlanningAttention::ApprovalRequired],
-                    false,
-                )],
+                vec![card("1", &[PlanningAttention::ApprovalRequired], false,)],
             ))
             .is_empty()
     );
@@ -122,11 +108,7 @@ fn attention_is_edge_triggered_and_can_reappear_after_clearing() {
     ));
     let repeated = tracker.advance(observation(
         vec![thread("1", RuntimeStatus::WaitingHuman)],
-        vec![card(
-            "1",
-            &[PlanningAttention::ApprovalRequired],
-            false,
-        )],
+        vec![card("1", &[PlanningAttention::ApprovalRequired], false)],
     ));
     assert_eq!(repeated.len(), 1);
 }
@@ -138,22 +120,14 @@ fn newly_discovered_card_seeds_attention_before_future_edges() {
 
     let historical = tracker.advance(observation(
         vec![],
-        vec![card(
-            "late",
-            &[PlanningAttention::PipelineFailed],
-            false,
-        )],
+        vec![card("late", &[PlanningAttention::PipelineFailed], false)],
     ));
     assert!(historical.is_empty());
 
     tracker.advance(observation(vec![], vec![card("late", &[], false)]));
     let fresh = tracker.advance(observation(
         vec![],
-        vec![card(
-            "late",
-            &[PlanningAttention::PipelineFailed],
-            false,
-        )],
+        vec![card("late", &[PlanningAttention::PipelineFailed], false)],
     ));
     assert_eq!(fresh.len(), 1);
     assert_eq!(fresh[0].kind, NotificationKind::PipelineFailed);
@@ -168,11 +142,7 @@ fn snooze_suppresses_routing_without_rewriting_attention() {
     ));
     let events = tracker.advance(observation(
         vec![thread("1", RuntimeStatus::WaitingHuman)],
-        vec![card(
-            "1",
-            &[PlanningAttention::UserInputRequired],
-            true,
-        )],
+        vec![card("1", &[PlanningAttention::UserInputRequired], true)],
     ));
     assert!(events.is_empty());
 }
@@ -191,11 +161,7 @@ fn projection_maps_goal_pipeline_and_review_attention_without_duplicates() {
             false,
         ),
     ];
-    let observation = NotificationObservation::from_projection(
-        &[],
-        &cards,
-        &BTreeMap::new(),
-    );
+    let observation = NotificationObservation::from_projection(&[], &cards, &BTreeMap::new());
     let kinds = observation
         .active
         .values()
