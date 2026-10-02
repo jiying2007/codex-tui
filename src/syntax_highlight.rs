@@ -271,22 +271,14 @@ mod tests {
     #[test]
     fn cached_lookup_never_computes_on_miss() {
         let mut highlighter = SyntaxHighlighter::new();
-        assert!(
-            highlighter
-                .cached_lines(11, "review:1", "diff")
-                .is_none()
-        );
+        assert!(highlighter.cached_lines(11, "review:1", "diff").is_none());
         assert_eq!(highlighter.cache_len(), 0);
 
         let lines = vec!["+cached".into()];
         highlighter
             .highlight_lines(&lines, 11, "review:1", "diff")
             .expect("prewarm");
-        assert!(
-            highlighter
-                .cached_lines(11, "review:1", "diff")
-                .is_some()
-        );
+        assert!(highlighter.cached_lines(11, "review:1", "diff").is_some());
         assert_eq!(highlighter.cache_len(), 1);
     }
 
