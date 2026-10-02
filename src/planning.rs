@@ -583,6 +583,13 @@ pub fn reconcile_thread_card_with_goal(
     reconcile_thread_card_with_goal_and_forge(input, goal, None)
 }
 
+fn push_link_if_missing(links: &mut Vec<WorkCardLink>, role: LinkRole, source: SourceRef) {
+    if links.iter().any(|link| link.source == source) {
+        return;
+    }
+    links.push(WorkCardLink { role, source });
+}
+
 pub fn reconcile_thread_card_with_goal_and_forge(
     input: ReconcileInput<'_>,
     goal: Option<&GoalObservation>,
@@ -704,6 +711,26 @@ pub fn reconcile_thread_card_with_goal_and_forge(
     }
 
     let mut links = local.links;
+    if let Some(goal) = goal {
+        push_link_if_missing(
+            &mut links,
+            LinkRole::Goal,
+            SourceRef {
+                kind: SourceKind::Goal,
+                value: goal.thread_id.0.clone(),
+            },
+        );
+    }
+    if let Some(worktree) = input.git.and_then(|git| git.worktree.as_ref()) {
+        push_link_if_missing(
+            &mut links,
+            LinkRole::Worktree,
+            SourceRef {
+                kind: SourceKind::Worktree,
+                value: worktree.canonical_path.clone(),
+            },
+        );
+    }
     if let Some(forge) = forge {
         let identity = forge.identity.as_ref();
         provenance.push(Provenance {
@@ -727,12 +754,7 @@ pub fn reconcile_thread_card_with_goal_and_forge(
                 kind: SourceKind::ChangeRequest,
                 value: identity.change_request_source_ref(change_request.iid),
             };
-            if !links.iter().any(|link| link.source == source) {
-                links.push(WorkCardLink {
-                    role: LinkRole::ChangeRequest,
-                    source,
-                });
-            }
+            push_link_if_missing(&mut links, LinkRole::ChangeRequest, source);
         }
     }
 
@@ -1014,6 +1036,67 @@ mod tests {
         FakeBackend::seeded().snapshot().threads.remove(0)
     }
 
+
+    #[test]
+    fn projected_goal_and_worktree_links_are_stable_and_deduplicated() {
+        let thread = first_thread();
+        let goal = GoalObservation {
+            thread_id: thread.id.clone(),
+            objective: "Ship v1.3".into(),
+            status: GoalStatus::Active,
+            token_budget: Some(10_000),
+            tokens_used: 100,
+            time_used_seconds: 10,
+            created_at: 1,
+            updated_at: 2,
+            observed_at_unix_ms: 100,
+        };
+        let repo = crate::domain::LocalRepoIdentity {
+            git_common_dir: "/repo/.git".into(),
+            primary_root: "/repo".into(),
+        };
+        let mut git = GitContext::pending(thread.id.clone(), "/repo");
+        git.is_repository = true;
+        git.worktree = Some(crate::domain::WorktreeIdentity {
+            repo,
+            canonical_path: "/repo".into(),
+            branch: Some("feature".into()),
+            managed_by_codex_tui: true,
+        });
+        let card = reconcile_thread_card_with_goal(
+            ReconcileInput {
+                thread: &thread,
+                git: Some(&git),
+                local: None,
+                collision_count: 0,
+                backend_observed_at_unix_ms: Some(100),
+                backend_error: None,
+                now_unix_ms: 100,
+            },
+            Some(&goal),
+        );
+        assert!(card.links.iter().any(|link| {
+            link.role == LinkRole::Goal
+                && link.source.kind == SourceKind::Goal
+                && link.source.value == thread.id.0
+        }));
+        assert!(card.links.iter().any(|link| {
+            link.role == LinkRole::Worktree
+                && link.source.kind == SourceKind::Worktree
+                && link.source.value == "/repo"
+        }));
+
+        let mut links = card.links.clone();
+        push_link_if_missing(
+            &mut links,
+            LinkRole::Goal,
+            SourceRef {
+                kind: SourceKind::Goal,
+                value: thread.id.0.clone(),
+            },
+        );
+        assert_eq!(links.len(), card.links.len());
+    }
     #[test]
     fn builtin_attention_view_filters_attention_without_changing_stage() {
         let mut thread = first_thread();
