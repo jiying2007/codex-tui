@@ -6,8 +6,10 @@ All notable codex-tui changes are recorded here.
 
 ### Maintainability
 
+- closed the v1.2 P0/P1/P2 development scope with a machine-validated completion/freeze manifest; hosted qualification now SHA-256 binds that manifest while remaining explicitly non-stable authority.
+- moved Review syntax highlighting computation out of the render critical path: Git Review events prewarm both normal and word-diff variants into one process-level bounded cache, while render performs cache lookup only and falls back to plain Git diff on a miss.
 - added mature presentation modes: default `normal`, `quiet` background redraw coalescing at 100 ms, and `screen-reader` background redraw coalescing at 500 ms; direct keyboard/paste/resize interactions remain immediate and no second renderer is introduced.
-- implemented the locked two-face + syntect/fancy-regex Review highlighting boundary with a 128 KiB synchronous cutoff, eight-entry revision/syntax/theme/content cache and unconditional plain-text fallback; Git remains the authoritative diff source.
+- implemented the locked two-face + syntect/fancy-regex Review highlighting boundary with a 128 KiB synchronous cutoff, eight-entry scoped/revision/syntax/theme/content cache and unconditional plain-text fallback; Git remains the authoritative diff source.
 - added lightweight opt-in notifications with `off` (default), terminal-bell and bounded native-OS delivery modes; routing is edge-triggered from existing attention/Goal/Forge projections, startup suppresses historical-alert replay, snooze affects routing only, and delivery failure never blocks the main workflow.
 - completed the first stable read-only headless contract expansion with status, attention, board, Forge and managed-worktree snapshots plus top-level `status`, `thread list`, `attention list`, `board list`, `forge status` and `worktree list` aliases; no headless mutation surface was added.
 - switched main from the parked v1.1 RC line to v1.2 Maintainability & Terminal-State Completion without reinterpreting missing v1.1 real-environment evidence as PASS;
