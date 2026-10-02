@@ -110,7 +110,9 @@
     "src/headless.rs": 650,
     "src/headless/surfaces.rs": 550,
     "src/notification.rs": 500,
-    "src/runtime_notifications.rs": 300
+    "src/runtime_notifications.rs": 300,
+    "src/syntax_highlight.rs": 500,
+    "src/bin/syntax-asset-notices.rs": 100
   },
   "phaseExit": {
     "P0": [

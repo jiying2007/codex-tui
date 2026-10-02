@@ -91,6 +91,29 @@ def read_license(path: pathlib.Path) -> str:
     return data.decode("utf-8", errors="replace").replace("\r\n", "\n").replace("\r", "\n")
 
 
+def embedded_asset_notices(package_names: set[str]) -> str | None:
+    if "two-face" not in package_names:
+        return None
+    proc = subprocess.run(
+        [
+            "cargo",
+            "run",
+            "--release",
+            "--locked",
+            "--quiet",
+            "--bin",
+            "syntax-asset-notices",
+        ],
+        check=True,
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    text = proc.stdout.replace("\r\n", "\n").replace("\r", "\n").strip()
+    if "# Syntaxes" not in text or "# Themes" not in text:
+        raise RuntimeError("two-face embedded asset acknowledgements are incomplete")
+    return text
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", required=True)
@@ -122,6 +145,10 @@ def main() -> int:
         for error in errors:
             print(f"ERROR: {error}", file=sys.stderr)
         return 2
+
+    asset_notices = embedded_asset_notices(
+        {package["name"] for package, _files in rows}
+    )
 
     output = pathlib.Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -163,6 +190,17 @@ def main() -> int:
                 ]
             )
         parts.append("")
+
+    if asset_notices:
+        parts.extend(
+            [
+                "Embedded syntax/theme asset acknowledgements",
+                "-------------------------------------------",
+                "",
+                asset_notices,
+                "",
+            ]
+        )
 
     write_text_lf(output, "\n".join(parts).rstrip() + "\n")
     print(f"WROTE {output} ({len(rows)} runtime dependency packages)")

@@ -21,6 +21,7 @@ similar = "2"
 tempfile = "3"
 tokio = { version = "1", features = ["io-util", "macros", "process", "rt-multi-thread", "sync", "time"] }
 toml = "1.1"
+two-face = { version = "0.5.2", default-features = false, features = ["syntect-fancy"] }
 unicode-segmentation = "1"
 unicode-width = "0.2"
 vt100 = "0.16.2"
