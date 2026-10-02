@@ -6,6 +6,7 @@ All notable codex-tui changes are recorded here.
 
 ### Maintainability
 
+- completed the first stable read-only headless contract expansion with status, attention, board, Forge and managed-worktree snapshots plus top-level `status`, `thread list`, `attention list`, `board list`, `forge status` and `worktree list` aliases; no headless mutation surface was added.
 - switched main from the parked v1.1 RC line to v1.2 Maintainability & Terminal-State Completion without reinterpreting missing v1.1 real-environment evidence as PASS;
 - added a canonical module no-growth ratchet and began behavior-preserving decomposition of runtime store/input routing, App Server wire/registry normalization, SQLite schema migration, Terminal Drawer and operator overlays, App action/effect/view types, worktree Git mechanics and Forge provider/domain types;
 - added deterministic App Server protocol replay through the production wire/registry normalization path with current, previous-stable, unknown-event and malformed retained fixtures plus scheduled compatibility qualification;
