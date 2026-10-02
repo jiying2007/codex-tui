@@ -38,7 +38,10 @@ use std::time::Instant;
 
 mod context;
 mod lifecycle;
+mod search;
 mod types;
+
+use search::matches_filter_normalized_with_extra;
 
 pub use types::{Action, ContextChoice, Effect, InputMode, View, ViewKind};
 
@@ -171,6 +174,8 @@ pub struct AppState {
     pub language: UiLanguage,
     pub acknowledged_attention: BTreeSet<String>,
     pub filter: String,
+    pub planning_filter: String,
+    search_planning: bool,
     pub host_local_only: bool,
     pub repo_backed_only: bool,
     pub show_all_history: bool,
@@ -288,6 +293,8 @@ impl AppState {
             language: UiLanguage::English,
             acknowledged_attention: BTreeSet::new(),
             filter: String::new(),
+            planning_filter: String::new(),
+            search_planning: false,
             host_local_only: false,
             repo_backed_only: false,
             show_all_history: false,
@@ -483,7 +490,8 @@ impl AppState {
     ) -> bool {
         let locality = filter_requires_locality(normalized_query)
             .then(|| self.cwd_locality(&thread.metadata.cwd));
-        matches_filter_normalized(thread, normalized_query, locality)
+        let extra_fields = self.thread_search_extra_fields(thread);
+        matches_filter_normalized_with_extra(thread, normalized_query, locality, &extra_fields)
             && (!self.host_local_only
                 || self.cwd_locality(&thread.metadata.cwd) == CwdLocality::LocalDirectory)
             && self.thread_matches_repo_scope(thread)
@@ -608,7 +616,7 @@ impl AppState {
 
     pub fn visible_planning_cards(&self) -> Vec<&WorkCardProjection> {
         let view = self.active_saved_view();
-        let mut cards = apply_saved_view(&self.work_cards, &view);
+        let mut cards = self.planning_cards_for_active_view();
         if view.layout == SavedViewLayout::Board {
             let stage = WorkflowStage::ALL[self.board_stage_index % WorkflowStage::ALL.len()];
             cards.retain(|card| card.stage == stage);
@@ -2576,20 +2584,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.show_all_history = !state.show_all_history;
             ensure_selection_visible(state);
         }
-        Action::BeginSearch => {
-            state.search_return_view = if matches!(state.view, View::Registry) {
-                None
-            } else {
-                Some(state.view.clone())
-            };
-            if state.search_return_view.is_some() {
-                state.view = View::Registry;
-                ensure_selection_visible(state);
-            }
-            state.input_original.clone_from(&state.filter);
-            state.input_buffer.clone_from(&state.filter);
-            state.input_mode = InputMode::Search;
-        }
+        Action::BeginSearch => state.begin_metadata_search(),
         Action::BeginAlias => {
             if let Some(alias) = state
                 .selected_thread()
@@ -2633,11 +2628,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::ForgeComment => {
                 state.input_buffer.push(character);
                 if state.input_mode == InputMode::Search {
-                    state.filter.clone_from(&state.input_buffer);
-                    if filter_requires_locality(&state.filter) {
-                        state.reconcile_cwd_locality_cache(true);
-                    }
-                    ensure_selection_visible(state);
+                    state.update_search_filter_from_buffer();
                 }
             }
         },
@@ -2682,11 +2673,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 | InputMode::ForgeComment => {
                     state.input_buffer.push_str(&text);
                     if state.input_mode == InputMode::Search {
-                        state.filter.clone_from(&state.input_buffer);
-                        if filter_requires_locality(&state.filter) {
-                            state.reconcile_cwd_locality_cache(true);
-                        }
-                        ensure_selection_visible(state);
+                        state.update_search_filter_from_buffer();
                     }
                 }
             }
@@ -2719,16 +2706,15 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::ForgeComment => {
                 state.input_buffer.pop();
                 if state.input_mode == InputMode::Search {
-                    state.filter.clone_from(&state.input_buffer);
-                    if filter_requires_locality(&state.filter) {
-                        state.reconcile_cwd_locality_cache(true);
-                    }
-                    ensure_selection_visible(state);
+                    state.update_search_filter_from_buffer();
                 }
             }
         },
         Action::CommitInput => {
             let mode = state.input_mode;
+            if mode == InputMode::Search {
+                return state.commit_metadata_search();
+            }
             if mode == InputMode::ForgeMergeRequestTitle {
                 let title = state.input_buffer.trim().to_string();
                 if title.is_empty() {
@@ -3168,22 +3154,14 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     return vec![Effect::PersistOperatorState];
                 }
             }
-            let was_search = mode == InputMode::Search;
             state.input_mode = InputMode::Normal;
             state.input_buffer.clear();
             state.input_original.clear();
-            if was_search {
-                let origin_thread_id = state.search_origin_thread_id();
-                state.search_return_view = None;
-                let mut effects = refresh_git_projections(state);
-                if let Some(thread_id) = origin_thread_id {
-                    effects.push(Effect::StopWatchingConversation(thread_id));
-                }
-                return effects;
-            }
         }
         Action::CancelInput => {
-            let mut search_watch_to_release = None;
+            if state.input_mode == InputMode::Search {
+                return state.cancel_metadata_search();
+            }
             if matches!(
                 state.input_mode,
                 InputMode::BatchAddTag
@@ -3233,27 +3211,12 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             if state.input_mode == InputMode::SavedViewName {
                 state.saved_view_template = None;
             }
-            if state.input_mode == InputMode::Search {
-                let origin_thread_id = state.search_origin_thread_id();
-                state.filter.clone_from(&state.input_original);
-                ensure_selection_visible(state);
-                if let Some(return_view) = state.search_return_view.take() {
-                    if state.search_return_view_is_valid(&return_view) {
-                        state.view = return_view;
-                    } else {
-                        search_watch_to_release = origin_thread_id;
-                    }
-                }
-            }
             if state.input_mode == InputMode::UserInput {
                 clear_user_input_editor(state);
             } else {
                 state.input_mode = InputMode::Normal;
                 state.input_buffer.clear();
                 state.input_original.clear();
-            }
-            if let Some(thread_id) = search_watch_to_release {
-                return vec![Effect::StopWatchingConversation(thread_id)];
             }
         }
         Action::Quit => state.should_quit = true,
@@ -4032,30 +3995,7 @@ fn matches_filter_normalized(
     query: &str,
     locality: Option<CwdLocality>,
 ) -> bool {
-    if query.is_empty() {
-        return true;
-    }
-
-    let fields = [
-        thread.id.0.as_str(),
-        thread.display_title(),
-        thread.title.as_str(),
-        thread.workspace.as_str(),
-        thread.metadata.cwd.as_str(),
-        thread.metadata.source.as_str(),
-        thread.metadata.workspace_key.as_str(),
-        thread.metadata.model.as_deref().unwrap_or_default(),
-        thread.metadata.project_id.as_deref().unwrap_or_default(),
-    ]
-    .map(str::to_lowercase);
-
-    query.split_whitespace().all(|token| {
-        if is_locality_filter_token(token) {
-            locality.is_some_and(|locality| token == locality.label())
-        } else {
-            fields.iter().any(|field| fuzzy_subsequence(token, field))
-        }
-    })
+    matches_filter_normalized_with_extra(thread, query, locality, &[])
 }
 
 fn fuzzy_subsequence(needle: &str, haystack: &str) -> bool {
