@@ -1,0 +1,3 @@
+{"method":"thread/started","emittedAtMs":1000,"params":{"thread":{"id":"thread-current","name":"","preview":"Current prompt\nsecond line","projectId":"proj-current","model":"gpt-5.6","updatedAt":1,"recencyAt":2,"status":{"type":"idle"},"cwd":"/workspace/current","source":"cli","gitInfo":{"originUrl":"https://github.com/example/current.git"}}}}
+{"method":"thread/status/changed","emittedAtMs":3000,"params":{"threadId":"thread-current","status":{"type":"active","activeFlags":["waitingOnApproval"]}}}
+{"method":"thread/name/updated","emittedAtMs":4000,"params":{"threadId":"thread-current","threadName":"Current renamed"}}
