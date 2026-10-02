@@ -3,9 +3,7 @@ use super::{
     fuzzy_subsequence, is_locality_filter_token, refresh_git_projections,
 };
 use crate::domain::{CwdLocality, ThreadSummary};
-use crate::planning::{
-    SourceRef, WorkCardProjection, apply_saved_view, card_matches_filter,
-};
+use crate::planning::{SourceRef, WorkCardProjection, apply_saved_view, card_matches_filter};
 
 impl AppState {
     pub(super) fn thread_search_extra_fields(&self, thread: &ThreadSummary) -> Vec<String> {
@@ -263,7 +261,11 @@ mod tests {
         app.filter = "wrkflwux".into();
 
         let visible = app.visible_indices();
-        assert!(visible.iter().any(|index| app.threads[*index].id == thread_id));
+        assert!(
+            visible
+                .iter()
+                .any(|index| app.threads[*index].id == thread_id)
+        );
         assert!(app.conversations.is_empty());
     }
 
