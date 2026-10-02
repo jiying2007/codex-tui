@@ -18,14 +18,15 @@ use codex_tui::{
 };
 use crossterm::event::{self, Event, KeyEventKind};
 use std::path::Path;
-use std::process::Stdio;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+mod runtime_external;
 mod runtime_input;
 mod runtime_notifications;
 mod runtime_planning;
 mod runtime_store;
 
+use runtime_external::{open_external_editor, open_external_url};
 use runtime_input::{handle_key, handle_paste};
 use runtime_notifications::RuntimeNotifications;
 use runtime_store::RuntimeStore;
@@ -1434,6 +1435,21 @@ fn apply_effects(
                     );
                 }
             }
+            Effect::OpenExternalUrl { url } => {
+                if let Err(error) = open_external_url(&url) {
+                    reduce(
+                        app,
+                        Action::MutationNotice(format!(
+                            "{}: {error:#}",
+                            runtime_text(
+                                app.language,
+                                "open external target failed",
+                                "打开外部目标失败",
+                            )
+                        )),
+                    );
+                }
+            }
             Effect::StartThread { cwd } => {
                 if let Some(registry) = registry {
                     if let Err(error) = registry.start_thread(cwd) {
@@ -1627,26 +1643,6 @@ fn now_unix_ms() -> u64 {
         .as_millis()
         .try_into()
         .unwrap_or(u64::MAX)
-}
-
-fn open_external_editor(cwd: &str, relative_path: &str) -> Result<()> {
-    let editor =
-        std::env::var_os("CODEX_TUI_EDITOR").unwrap_or_else(|| std::ffi::OsString::from("code"));
-    if editor.to_string_lossy().trim().is_empty() {
-        anyhow::bail!("CODEX_TUI_EDITOR is empty");
-    }
-    let path = Path::new(cwd).join(relative_path);
-    if !path.exists() {
-        anyhow::bail!("selected path does not exist: {}", path.display());
-    }
-    std::process::Command::new(editor)
-        .arg(path)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .map(|_| ())
-        .map_err(Into::into)
 }
 
 #[cfg(test)]
