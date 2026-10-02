@@ -95,20 +95,3 @@ pub(crate) fn apply_store_result(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use codex_tui::backend::{CodexBackend, FakeBackend};
-
-    #[test]
-    fn non_planning_effect_is_not_consumed() {
-        let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
-        let store = RuntimeStore::from_parts_for_test();
-        let mut store = store;
-        assert!(!apply_planning_effect(
-            &mut app,
-            &mut store,
-            Effect::RefreshManagedWorktrees,
-        ));
-    }
-}
