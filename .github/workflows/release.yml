@@ -5,7 +5,12 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/release.yml"
+      - ".github/workflows/development-qualification.yml"
+      - ".github/workflows/protocol-compatibility.yml"
+      - ".github/workflows/security.yml"
       - "scripts/release/**"
+      - "scripts/architecture/**"
+      - "deny.toml"
       - "scripts/architecture/**"
       - "deny.toml"
       - "tests/protocol_replay.rs"
@@ -20,6 +25,8 @@ on:
       - "src/keymap.rs"
       - "tests/failure_matrix.rs"
       - "tests/state_migration_qualification.rs"
+      - "tests/protocol_replay.rs"
+      - "tests/fixtures/protocol/**"
       - "release/**"
       - "CHANGELOG.md"
       - "docs/release/**"
