@@ -4,9 +4,7 @@ use super::{
 };
 use crate::app::{AppState, InputMode};
 use crate::i18n::UiLanguage;
-use crate::planning::{
-    SavedViewLayout, SourceKind, WorkflowStage, apply_saved_view, saved_view_group_key,
-};
+use crate::planning::{SavedViewLayout, SourceKind, WorkflowStage, saved_view_group_key};
 use crate::text::{fit_display, sanitize_inline, truncate_display};
 use ratatui::{
     Frame,
@@ -83,7 +81,7 @@ pub(super) fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
                 .direction(Direction::Horizontal)
                 .constraints([Constraint::Ratio(1, 5); 5])
                 .split(outer[0]);
-            let filtered = apply_saved_view(&app.work_cards, &view);
+            let filtered = app.planning_cards_for_active_view();
 
             for (stage_index, stage) in WorkflowStage::ALL.iter().enumerate() {
                 let stage_cards = filtered
@@ -212,7 +210,13 @@ pub(super) fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
         }
     }
 
-    let input = if app.input_mode == InputMode::ScratchTitle {
+    let input = if app.input_mode == InputMode::Search {
+        format!(
+            "/{} · {}",
+            app.input_buffer,
+            tr(app, "Enter keep · Esc cancel", "Enter 保留 · Esc 取消")
+        )
+    } else if app.input_mode == InputMode::ScratchTitle {
         format!(
             "{}> {} · {}",
             tr(app, "new scratch", "新建 Scratch"),
