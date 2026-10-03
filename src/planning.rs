@@ -43,6 +43,20 @@ pub enum LinkRole {
     RelatedWorkItem,
 }
 
+impl LinkRole {
+    pub const fn label(&self) -> &'static str {
+        match self {
+            Self::PrimaryThread => "primary-thread",
+            Self::ExperimentThread => "experiment-thread",
+            Self::ReviewThread => "review-thread",
+            Self::Goal => "goal",
+            Self::Worktree => "worktree",
+            Self::ChangeRequest => "change-request",
+            Self::RelatedWorkItem => "related-work-item",
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WorkCardLink {
     pub role: LinkRole,
@@ -459,6 +473,14 @@ fn card_matches_query_term(card: &WorkCardProjection, token: &str) -> bool {
                 goal.objective.to_ascii_lowercase().contains(value)
                     || goal.status.wire().to_ascii_lowercase().contains(value)
             }),
+            "link" | "related" => card.links.iter().any(|link| {
+                link.role.label().contains(value)
+                    || link.source.value.to_ascii_lowercase().contains(value)
+            }),
+            "worktree" => card.links.iter().any(|link| {
+                link.role == LinkRole::Worktree
+                    && link.source.value.to_ascii_lowercase().contains(value)
+            }),
             "attention" => match value {
                 "any" => !card.attention.is_empty(),
                 "none" => card.attention.is_empty(),
@@ -509,12 +531,20 @@ fn card_matches_query_term(card: &WorkCardProjection, token: &str) -> bool {
             .map(ForgeProviderKind::label)
             .unwrap_or(""),
         card.change_request_state.as_deref().unwrap_or(""),
-        card.overlay
-            .tags
-            .iter()
-            .map(String::as_str)
-            .collect::<Vec<_>>()
-            .join(" ")
+        format!(
+            "{} {}",
+            card.overlay
+                .tags
+                .iter()
+                .map(String::as_str)
+                .collect::<Vec<_>>()
+                .join(" "),
+            card.links
+                .iter()
+                .map(|link| format!("{} {}", link.role.label(), link.source.value))
+                .collect::<Vec<_>>()
+                .join(" ")
+        )
     )
     .to_ascii_lowercase();
     haystack.contains(token)
@@ -704,6 +734,26 @@ pub fn reconcile_thread_card_with_goal_and_forge(
     }
 
     let mut links = local.links;
+    if let Some(goal) = goal {
+        push_link_if_missing(
+            &mut links,
+            LinkRole::Goal,
+            SourceRef {
+                kind: SourceKind::Goal,
+                value: goal.thread_id.0.clone(),
+            },
+        );
+    }
+    if let Some(worktree) = input.git.and_then(|git| git.worktree.as_ref()) {
+        push_link_if_missing(
+            &mut links,
+            LinkRole::Worktree,
+            SourceRef {
+                kind: SourceKind::Worktree,
+                value: worktree.canonical_path.clone(),
+            },
+        );
+    }
     if let Some(forge) = forge {
         let identity = forge.identity.as_ref();
         provenance.push(Provenance {
@@ -727,12 +777,7 @@ pub fn reconcile_thread_card_with_goal_and_forge(
                 kind: SourceKind::ChangeRequest,
                 value: identity.change_request_source_ref(change_request.iid),
             };
-            if !links.iter().any(|link| link.source == source) {
-                links.push(WorkCardLink {
-                    role: LinkRole::ChangeRequest,
-                    source,
-                });
-            }
+            push_link_if_missing(&mut links, LinkRole::ChangeRequest, source);
         }
     }
 
@@ -755,6 +800,15 @@ pub fn reconcile_thread_card_with_goal_and_forge(
         links,
         goal: goal.cloned(),
         provenance,
+    }
+}
+
+fn push_link_if_missing(links: &mut Vec<WorkCardLink>, role: LinkRole, source: SourceRef) {
+    if !links
+        .iter()
+        .any(|link| link.role == role && link.source == source)
+    {
+        links.push(WorkCardLink { role, source });
     }
 }
 
