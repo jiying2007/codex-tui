@@ -1500,9 +1500,11 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
                     .copied()
                     .filter(|card| card.stage == *stage)
                     .collect::<Vec<_>>();
-                let selected = (stage_index == app.board_stage_index)
-                    .then_some(app.board_selected)
-                    .unwrap_or(0);
+                let selected = if stage_index == app.board_stage_index {
+                    app.board_selected
+                } else {
+                    0
+                };
                 let viewport =
                     board_viewport(stage_cards.len(), selected, columns[stage_index].height);
                 let lines = stage_cards
