@@ -33,7 +33,9 @@ use crate::planning::{
 use crate::store::LocalStateV1;
 use crate::terminal_drawer::TerminalSnapshot;
 use crate::text::sanitize_inline;
-use crate::transcript_search::{TranscriptSearchHit, TranscriptSearchResults, TranscriptSearchSource};
+use crate::transcript_search::{
+    TranscriptSearchHit, TranscriptSearchResults, TranscriptSearchSource,
+};
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::time::Instant;
 
@@ -2701,9 +2703,9 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             if len == 0 {
                 state.transcript_search_selected = 0;
             } else {
-                state.transcript_search_selected =
-                    (state.transcript_search_selected as i32 + delta)
-                        .rem_euclid(len as i32) as usize;
+                state.transcript_search_selected = (state.transcript_search_selected as i32 + delta)
+                    .rem_euclid(len as i32)
+                    as usize;
             }
         }
         Action::OpenTranscriptSearchSelected => {
