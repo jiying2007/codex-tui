@@ -208,7 +208,6 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::app_server_target::{
         AppServerConfig, AppServerTargetConfig, ResolvedAppServerTarget,
     };
