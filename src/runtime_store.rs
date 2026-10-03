@@ -1,10 +1,12 @@
 use anyhow::{Context, Result};
 use codex_tui::{
+    conversation::ConversationPage,
     planning::{
         LocalNote, PlanningSnapshot, SavedView, ScratchState, SourceKind, SourceRef, WorkCardRecord,
     },
     sqlite_store::SqliteStore,
     store::{AppConfig, LocalStateV1, LocalStore},
+    transcript_search::TranscriptSearchResults,
 };
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -137,6 +139,23 @@ impl RuntimeStore {
 
     pub(crate) fn sqlite_clone(&self) -> SqliteStore {
         self.sqlite.clone()
+    }
+
+    pub(crate) fn index_conversation_page(&self, page: &ConversationPage) -> Option<String> {
+        self.sqlite
+            .index_conversation_page(page)
+            .err()
+            .map(|error| format!("derived transcript index unavailable: {error:#}"))
+    }
+
+    pub(crate) fn search_transcript(
+        &self,
+        query: &str,
+        limit: usize,
+    ) -> Result<TranscriptSearchResults, String> {
+        self.sqlite
+            .search_transcript(query, limit)
+            .map_err(|error| format!("local transcript search unavailable: {error:#}"))
     }
 
     pub(crate) fn mutate_work_card<F>(
