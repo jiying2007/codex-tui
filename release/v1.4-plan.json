@@ -1,0 +1,197 @@
+{
+  "schema": "codex-tui/v1.4-plan/v1",
+  "targetVersion": "1.4.0",
+  "theme": "workflow-completion-reconciliation",
+  "entryMainSha": "01e1f3d20d7b234b1ff17f85cc05321450e9fcf5",
+  "stablePredecessor": {
+    "version": "1.3.0",
+    "checkpoint": "release/v1.3-search-multitarget-complete",
+    "completion": "release/v1.3-completion.json",
+    "criteria": "release/v1.3-criteria.json"
+  },
+  "referenceLine": {
+    "branch": "release/v1.3-development-complete",
+    "mergeBaseSha": "cfed175ed1f3488c3a987f01d8c6b07292bf2553",
+    "policy": "behavioral source only; do not merge its stale release authority or overwrite current 1.3 Search & Multi-Target code"
+  },
+  "invariant": "Preserve every v1.3 Search & Multi-Target capability while reconciling the remaining workflow-completion UX gaps. Codex remains conversation/queue authority, Git remains code authority, Forge remains delivery authority, and SQLite stores only local derived/operator state.",
+  "priorities": [
+    {
+      "id": "board-large-dataset-navigation",
+      "priority": "P0",
+      "outcomes": [
+        "Board renders only the selected viewport instead of all cards",
+        "vertical scrollbar and selection remain coherent for 10k work items",
+        "Terminal Drawer reserved rows do not hide Board navigation"
+      ]
+    },
+    {
+      "id": "workcard-relationship-closure",
+      "priority": "P0",
+      "outcomes": [
+        "WorkCards explicitly represent Goal, Worktree and ChangeRequest relationships",
+        "relationship-aware reconciliation remains derived from Codex/Git/Forge authorities",
+        "relationship metadata is searchable and visible without creating a second task authority"
+      ]
+    },
+    {
+      "id": "codex-thread-lifecycle-handoff",
+      "priority": "P0",
+      "outcomes": [
+        "thread/start and thread/fork are capability-gated upstream operations",
+        "new/forked threads can hand off to the existing managed-worktree workflow",
+        "unsupported App Servers fail soft without breaking normal threads"
+      ]
+    },
+    {
+      "id": "unified-metadata-search",
+      "priority": "P0",
+      "outcomes": [
+        "global metadata search includes thread identity, cwd, project, Goal, Forge, WorkCard and relationship fields",
+        "metadata search does not hydrate transcript bodies",
+        "existing full-history transcript search remains a separate Ctrl+F surface"
+      ]
+    },
+    {
+      "id": "saved-view-editor",
+      "priority": "P1",
+      "outcomes": [
+        "create/edit/delete local Saved Views for source/filter/layout/group/order/visible fields",
+        "invalid filters fail before persistence",
+        "built-in views remain immutable"
+      ]
+    },
+    {
+      "id": "review-evidence-and-external-open",
+      "priority": "P1",
+      "outcomes": [
+        "Review surfaces explicit pipeline/approval evidence",
+        "review change can open in external editor",
+        "Forge change request can open in system browser through bounded platform adapters"
+      ]
+    },
+    {
+      "id": "long-thread-viewport-cache",
+      "priority": "P1",
+      "outcomes": [
+        "Thread rendering uses a bounded visible item window",
+        "presentation cache is revision-bound and invalidated on conversation changes",
+        "large conversations no longer rebuild full presentation on every frame"
+      ]
+    },
+    {
+      "id": "fuzzy-command-palette",
+      "priority": "P1",
+      "outcomes": [
+        "Ctrl+K palette accepts typed and pasted query text",
+        "fuzzy ranking/filtering is bilingual and works on the frozen contextual command set",
+        "empty results are explicit and Enter cannot retarget silently"
+      ]
+    },
+    {
+      "id": "core-module-decomposition",
+      "priority": "P2",
+      "outcomes": [
+        "extract workflow-completion responsibilities from mature app/ui/main monoliths",
+        "new modules receive explicit no-growth ratchets",
+        "v1.3 Search/Queue/Remote/GitHub-write behavior remains regression-covered"
+      ]
+    },
+    {
+      "id": "user-perceived-performance-evidence",
+      "priority": "P2",
+      "outcomes": [
+        "exact-SHA 10k Board and Thread render diagnostics run in CI",
+        "20 warmups and at least 200 samples retain p50/p95/p99/max",
+        "hosted timings remain diagnostic unless a later policy explicitly creates thresholds"
+      ]
+    }
+  ],
+  "evidenceGatedDecisions": {
+    "gitlab-issue-board-projection": {
+      "status": "evidence-gated",
+      "rationale": [
+        "normal GitLab refresh remains intentionally bounded",
+        "board membership projection must not silently cross the native-transport trigger",
+        "current provider data does not justify claiming card/list membership authority"
+      ],
+      "reopenWhen": [
+        "native GitLab transport trigger fires",
+        "bounded membership projection is available without violating refresh budget",
+        "real usage demonstrates issue-board membership is required"
+      ]
+    }
+  },
+  "nonGoals": [
+    "native-gitlab-rest-graphql-without-measured-trigger",
+    "headless-mutation-api",
+    "github-enterprise-auto-detection",
+    "external-notification-bridge",
+    "team-server-rbac",
+    "web-mobile-companion",
+    "collaboration-service",
+    "generic-plugin-runtime",
+    "multi-agent-providers",
+    "job-workflow-engine",
+    "cloud-sync"
+  ],
+  "completionOrder": [
+    "board-large-dataset-navigation",
+    "workcard-relationship-closure",
+    "codex-thread-lifecycle-handoff",
+    "unified-metadata-search",
+    "saved-view-editor",
+    "review-evidence-and-external-open",
+    "long-thread-viewport-cache",
+    "fuzzy-command-palette",
+    "core-module-decomposition",
+    "user-perceived-performance-evidence"
+  ],
+  "moduleRatchet": {
+    "src/app.rs": 7350,
+    "src/ui.rs": 3450,
+    "src/app_server.rs": 3450,
+    "src/main.rs": 2200,
+    "src/sqlite_store.rs": 2550,
+    "src/forge.rs": 1400,
+    "src/worktree.rs": 1050,
+    "src/release.rs": 1050,
+    "src/runtime_store.rs": 600,
+    "src/runtime_input.rs": 450,
+    "src/app_server_registry.rs": 250,
+    "src/app_server_wire.rs": 100,
+    "src/sqlite_schema.rs": 250,
+    "src/worktree_git.rs": 250,
+    "src/forge_types.rs": 400,
+    "src/headless.rs": 650,
+    "src/headless/surfaces.rs": 550,
+    "src/notification.rs": 500,
+    "src/runtime_notifications.rs": 300,
+    "src/syntax_highlight.rs": 500,
+    "src/bin/syntax-asset-notices.rs": 100,
+    "src/presentation.rs": 150,
+    "src/transcript_search.rs": 350,
+    "src/thread_queue.rs": 400,
+    "src/app_server_target.rs": 350,
+    "src/app_server_transport.rs": 500,
+    "src/forge_github_mutation.rs": 650,
+    "src/forge_mutation.rs": 1550,
+    "src/forge_github_mutation/tests.rs": 180,
+    "src/forge_github_mutation/api.rs": 120,
+    "src/conversation.rs": 900
+  },
+  "ratchetPolicy": {
+    "baseline": "inherit v1.3 Search & Multi-Target ceilings; feature work may only add bounded module-specific ceilings",
+    "extractionPreference": "port behavior, not stale branch structure; extract only when it reduces mature-module growth",
+    "noRegression": "Search/Queue/Remote/GitHub-safe-mutation modules and contracts may not be weakened"
+  },
+  "developmentQualification": {
+    "schema": "codex-tui/development-qualification/v1",
+    "authority": "hosted-development-only",
+    "activeScopeStatus": "in-progress-until-v1.4-completion",
+    "stableAuthority": false
+  },
+  "freezePolicy": {
+    "afterCompletion": "new-core-functionality-requires-new-development-plan"
+  }
+}
