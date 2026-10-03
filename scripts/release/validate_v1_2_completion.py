@@ -83,10 +83,12 @@ SOURCE_TOKENS = {
         "cargo test --locked --test protocol_replay",
     ],
     ".github/workflows/development-qualification.yml": [
-        "Validate v1.2 scope completion",
+        "name: development-qualification",
+        "create_development_qualification.py",
         "validate_v1_2_completion.py",
         "release/v1.2-completion.json",
-        'receipt["scopeCompletion"]["status"] == "pass"',
+        "stableReady",
+        "publicationAllowed",
     ],
     ".github/workflows/release.yml": [
         "Validate v1.2 scope completion",
@@ -96,8 +98,8 @@ SOURCE_TOKENS = {
         "gate/DEVELOPMENT-COMPLETION.json",
     ],
     "scripts/release/create_development_qualification.py": [
-        'COMPLETION_SCHEMA = "codex-tui/v1.2-completion/v1"',
-        '"scopeCompletion": {',
+        'V12_COMPLETION_SCHEMA = "codex-tui/v1.2-completion/v1"',
+        '"scopeCompletion": scope,',
         '"manifestSha256": sha256(completion_path)',
     ],
     ".github/workflows/performance-diagnostics.yml": [
