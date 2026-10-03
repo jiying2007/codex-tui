@@ -246,10 +246,11 @@ mod tests {
         );
         assert!(ResolvedAppServerTarget::resolve(&config, None).is_err());
 
+        let absolute_socket = std::env::temp_dir().join("codex.sock");
         config.targets.insert(
             "remote".into(),
             AppServerTargetConfig::UnixSocket {
-                path: "/tmp/codex.sock".into(),
+                path: absolute_socket.to_string_lossy().into_owned(),
             },
         );
         assert!(matches!(
