@@ -8,8 +8,10 @@ use tokio::net::TcpStream;
 #[cfg(unix)]
 use tokio::net::UnixStream;
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
+#[cfg(unix)]
+use tokio_tungstenite::client_async;
 use tokio_tungstenite::{
-    MaybeTlsStream, WebSocketStream, client_async, connect_async,
+    MaybeTlsStream, WebSocketStream, connect_async,
     tungstenite::{
         Message,
         client::IntoClientRequest,
@@ -19,9 +21,9 @@ use tokio_tungstenite::{
 
 enum Transport {
     Stdio {
-        _child: Child,
-        reader: Lines<BufReader<ChildStdout>>,
-        writer: BufWriter<ChildStdin>,
+        _child: Box<Child>,
+        reader: Box<Lines<BufReader<ChildStdout>>>,
+        writer: Box<BufWriter<ChildStdin>>,
     },
     WebSocket {
         stream: Box<WebSocketStream<MaybeTlsStream<TcpStream>>>,
@@ -63,9 +65,9 @@ impl AppServerTransport {
                     });
                 }
                 Transport::Stdio {
-                    _child: child,
-                    reader: BufReader::new(stdout).lines(),
-                    writer: BufWriter::new(stdin),
+                    _child: Box::new(child),
+                    reader: Box::new(BufReader::new(stdout).lines()),
+                    writer: Box::new(BufWriter::new(stdin)),
                 }
             }
             ResolvedAppServerEndpoint::WebSocket { url, auth_token } => {
