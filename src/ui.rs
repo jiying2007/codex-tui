@@ -3,7 +3,6 @@ use crate::command::Command;
 use crate::conversation::{InteractiveRequest, InteractiveRequestKind};
 use crate::domain::{AttentionReason, CwdLocality, RuntimeStatus, ThreadSummary, display_cwd};
 use crate::forge::ForgeFreshness;
-use crate::git::presentation_diff_lines;
 use crate::goal::GoalStatus;
 use crate::i18n::{UiLanguage, pick};
 use crate::operation::OperationState;
@@ -11,10 +10,10 @@ use crate::planning::{
     PlanningAttention, SavedView, SavedViewLayout, ScratchState, WorkflowStage, apply_saved_view,
     saved_view_group_key,
 };
-use crate::syntax_highlight::cached_review_diff;
 use crate::text::{fit_display, sanitize_inline, truncate_display};
 
 mod overlays;
+mod review;
 mod terminal;
 
 #[cfg(test)]
@@ -251,7 +250,7 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
     match &app.view {
         View::Registry => render_registry(frame, app, content_area),
         View::Thread(id) => render_thread(frame, app, id.0.as_str(), content_area),
-        View::Review(id) => render_review(frame, app, id.0.as_str(), content_area),
+        View::Review(id) => review::render_review(frame, app, id.0.as_str(), content_area),
         View::Workspace(id) => render_workspace(frame, app, id.0.as_str(), content_area),
         View::ManagedWorktrees(id) => {
             render_managed_worktrees(frame, app, id.0.as_str(), content_area);
@@ -1013,53 +1012,6 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
     Paragraph::new(lines)
         .block(Block::bordered().title(tr(app, " Selected ", " 已选择 ")))
         .wrap(Wrap { trim: false })
-}
-
-fn forge_review_label(app: &AppState, thread_id: &str) -> String {
-    let Some(review) = app
-        .forge_observations
-        .get(thread_id)
-        .and_then(|observation| observation.review.as_ref())
-    else {
-        return String::new();
-    };
-
-    let approvals = if review.approvals_available {
-        match (review.approvals_required, review.approvals_left) {
-            (Some(required), Some(left)) if app.language.is_simplified_chinese() => {
-                format!(" · 批准 剩余 {left}/{required}")
-            }
-            (Some(required), Some(left)) => format!(" · approvals {left} left/{required}"),
-            _ if app.language.is_simplified_chinese() => {
-                format!(" · 批准 {}", review.approved_by_count)
-            }
-            _ => format!(" · approvals {}", review.approved_by_count),
-        }
-    } else {
-        tr(app, " · approvals n/a", " · 批准 n/a").into()
-    };
-    let changes_requested = if review.changes_requested_by_count > 0 {
-        if app.language.is_simplified_chinese() {
-            format!(" · 请求修改 {}", review.changes_requested_by_count)
-        } else {
-            format!(" · changes requested {}", review.changes_requested_by_count)
-        }
-    } else {
-        String::new()
-    };
-    let discussions = if review.discussions_available {
-        if app.language.is_simplified_chinese() {
-            format!(" · 未解决讨论 {}", review.unresolved_discussions)
-        } else {
-            format!(" · unresolved {}", review.unresolved_discussions)
-        }
-    } else {
-        tr(app, " · discussions n/a", " · 讨论 n/a").into()
-    };
-    format!(
-        " · CR {}{}{}{}",
-        review.change_request_iid, approvals, changes_requested, discussions
-    )
 }
 
 fn forge_context_lines(
@@ -2230,149 +2182,11 @@ fn render_managed_worktrees(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
     frame.render_widget(Paragraph::new(footer), outer[1]);
 }
 
-fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area: Rect) {
-    let outer = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(4), Constraint::Length(1)])
-        .split(area);
-
-    let Some(review) = app.git_reviews.get(thread_id) else {
-        frame.render_widget(
-            Paragraph::new(tr(app, "Review has not been loaded.", "评审尚未加载。"))
-                .block(Block::bordered().title(tr(app, " Review ", " 评审 "))),
-            outer[0],
-        );
-        return;
-    };
-
-    if review.observed_at_unix_ms == 0 {
-        frame.render_widget(
-            Paragraph::new(tr(app, "Loading Git review…", "正在加载 Git 评审…"))
-                .block(Block::bordered().title(tr(app, " Review ", " 评审 "))),
-            outer[0],
-        );
-    } else if let Some(error) = &review.error {
-        frame.render_widget(
-            Paragraph::new(format!(
-                "{}: {error}",
-                tr(app, "Review unavailable", "评审不可用")
-            ))
-            .block(Block::bordered().title(tr(app, " Review ", " 评审 "))),
-            outer[0],
-        );
-    } else {
-        let forge_summary = forge_review_label(app, thread_id);
-        let files = review
-            .changes
-            .iter()
-            .enumerate()
-            .map(|(index, change)| {
-                let selected = index == app.review_selected;
-                let prefix = if selected { ">" } else { " " };
-                let text = format!("{prefix} {:2} {}", change.status_label(), change.path);
-                let style = if selected {
-                    Style::default().add_modifier(Modifier::REVERSED)
-                } else {
-                    Style::default()
-                };
-                Line::from(Span::styled(text, style))
-            })
-            .collect::<Vec<_>>();
-
-        let mut diff_lines =
-            cached_review_diff(thread_id, review.observed_at_unix_ms, app.review_word_diff)
-                .unwrap_or_else(|| {
-                    presentation_diff_lines(review, app.review_word_diff)
-                        .into_iter()
-                        .map(Line::from)
-                        .collect()
-                });
-        if diff_lines.is_empty() {
-            diff_lines.push(Line::from(tr(
-                app,
-                "No staged/unstaged tracked diff. Untracked files remain listed at left/top.",
-                "没有已跟踪的暂存/未暂存 diff；未跟踪文件仍显示在左侧/顶部。",
-            )));
-        }
-
-        let truncation = if review.truncated {
-            tr(app, " · truncated", " · 已截断")
-        } else {
-            ""
-        };
-        if area.width >= 100 {
-            let columns = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(32), Constraint::Percentage(68)])
-                .split(outer[0]);
-            frame.render_widget(
-                Paragraph::new(files)
-                    .block(Block::bordered().title(format!(
-                        " {} ({}){} ",
-                        tr(app, "Changed files", "变更文件"),
-                        review.changes.len(),
-                        forge_summary
-                    )))
-                    .wrap(Wrap { trim: false }),
-                columns[0],
-            );
-            frame.render_widget(
-                Paragraph::new(diff_lines)
-                    .block(Block::bordered().title(format!(
-                        " Git diff · {}={}{} ",
-                        tr(app, "word", "单词级"),
-                        app.review_word_diff,
-                        truncation
-                    )))
-                    .wrap(Wrap { trim: false })
-                    .scroll((app.review_scroll, 0)),
-                columns[1],
-            );
-        } else {
-            let rows = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Length(6), Constraint::Min(4)])
-                .split(outer[0]);
-            frame.render_widget(
-                Paragraph::new(files)
-                    .block(Block::bordered().title(format!(
-                        " {}{} ",
-                        tr(app, "Changed files", "变更文件"),
-                        forge_summary
-                    )))
-                    .wrap(Wrap { trim: false }),
-                rows[0],
-            );
-            frame.render_widget(
-                Paragraph::new(diff_lines)
-                    .block(Block::bordered().title(format!(
-                        " Git diff · {}={}{} ",
-                        tr(app, "word", "单词级"),
-                        app.review_word_diff,
-                        truncation
-                    )))
-                    .wrap(Wrap { trim: false })
-                    .scroll((app.review_scroll, 0)),
-                rows[1],
-            );
-        }
-    }
-
-    frame.render_widget(
-        Paragraph::new(tr(
-            app,
-            "j/k file · PageUp/PageDown diff · w word-diff · e editor · . actions · Esc back",
-            "j/k 文件 · PageUp/PageDown diff · w 单词级 diff · e 编辑器 · . 操作 · Esc 返回",
-        )),
-        outer[1],
-    );
-}
-
 const HELP_LINES: &[&str] = &[
     "Global: ? help · Ctrl+K palette · / search · Ctrl+F transcript · . actions · Esc back",
     "Registry: j/k · Enter · Space attention · l local-only · g repo-only · h recent/all-history · p pin · e alias · x ack",
     "Thread: a composer · q Thread Queue · y/n/c approval · i answer · Ctrl+C interrupt · r review",
-    "Review: j/k file · w word-diff · e editor · . Forge actions · PageUp/PageDown · Esc",
+    "Review: j/k file · w word-diff · e editor · o external · . Forge actions · PageUp/PageDown · Esc",
     "Workspace: . actions/launch presets · r review · m worktrees · Esc",
     "Managed Worktrees: n create · a adopt · d remove · x delete branch · y confirm",
     "Board: h/l stage · j/k item · Space attention · s snooze · = bind · 1–9 hot slot",
@@ -2387,7 +2201,7 @@ const HELP_LINES_ZH: &[&str] = &[
     "全局: ? 帮助 · Ctrl+K 命令面板 · / 搜索 · . 操作 · Esc 返回",
     "任务中心: j/k 移动 · Enter 打开 · Space 待处理 · l 仅本机 · g 仅仓库 · h 最近/全部历史 · p 固定 · e 别名 · x 已处理",
     "会话: a 编辑消息 · y/n/c 审批 · i 回答 · Ctrl+C 中断 · r 评审",
-    "评审: j/k 文件 · w 单词级 diff · e 编辑器 · . Forge 操作 · PageUp/PageDown · Esc",
+    "评审: j/k 文件 · w 单词级 diff · e 编辑器 · o 外部打开 · . Forge 操作 · PageUp/PageDown · Esc",
     "工作区: Git + Forge · . 操作/启动预设 · r 评审 · m worktree · Esc",
     "受管 Worktree: n 创建 · a 接管 · d 移除 · x 删除分支 · y 确认",
     "看板: h/l 阶段 · j/k 项目 · Space 待处理 · s 稍后提醒 · = 绑定 · 1–9 快捷槽",
