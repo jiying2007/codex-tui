@@ -66,11 +66,47 @@ def github_repo_from_cargo(root: pathlib.Path) -> str:
     return match.group(1)
 
 
+def select_canonical_ci_run(payload: dict, commit_sha: str) -> dict:
+    runs = payload.get("workflow_runs")
+    if not isinstance(runs, list):
+        raise SystemExit("GitHub Actions response is missing workflow_runs")
+
+    commit = commit_sha.strip().lower()
+    candidates = [
+        item
+        for item in runs
+        if isinstance(item, dict)
+        and item.get("name") == "ci"
+        and item.get("path") == ".github/workflows/ci.yml"
+        and item.get("event") == "push"
+        and item.get("status") == "completed"
+        and item.get("conclusion") == "success"
+        and item.get("head_branch") == "main"
+        and str(item.get("head_sha", "")).lower() == commit
+        and isinstance(item.get("id"), int)
+        and item["id"] > 0
+    ]
+    if not candidates:
+        raise SystemExit(
+            "no successful canonical ci push run found for current main HEAD; "
+            "wait for canonical CI to finish or pass --canonical-ci-run explicitly"
+        )
+    return max(candidates, key=lambda item: item["id"])
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Run the Linux Tier-1 stable qualification chain."
     )
-    parser.add_argument("--canonical-ci-run", required=True, type=int)
+    parser.add_argument(
+        "--canonical-ci-run",
+        type=int,
+        default=0,
+        help=(
+            "successful canonical main CI run ID; omit to auto-discover the "
+            "latest successful ci push run bound to current HEAD"
+        ),
+    )
     parser.add_argument("--terminal-receipt", required=True)
     parser.add_argument("--output-dir", default="release/evidence/linux")
     parser.add_argument("--source", default="")
@@ -84,8 +120,8 @@ def main() -> int:
 
     if not sys.platform.startswith("linux"):
         raise SystemExit("linux_qualify.py must run on Linux")
-    if args.canonical_ci_run <= 0:
-        raise SystemExit("--canonical-ci-run must be nonzero")
+    if args.canonical_ci_run < 0:
+        raise SystemExit("--canonical-ci-run must be zero/omitted or a positive integer")
 
     root = pathlib.Path.cwd().resolve()
     output_dir = (root / args.output_dir).resolve()
@@ -119,15 +155,33 @@ def main() -> int:
 
     github_repo = args.github_repo.strip() or github_repo_from_cargo(root)
     ci_json = output_dir / "canonical-ci.json"
-    ci = run(
-        [
-            "gh",
-            "api",
-            f"repos/{github_repo}/actions/runs/{args.canonical_ci_run}",
-        ],
-        cwd=root,
-    )
-    write_text_lf(ci_json, ci.stdout)
+    canonical_ci_run = args.canonical_ci_run
+    if canonical_ci_run > 0:
+        ci = run(
+            [
+                "gh",
+                "api",
+                f"repos/{github_repo}/actions/runs/{canonical_ci_run}",
+            ],
+            cwd=root,
+        )
+        write_text_lf(ci_json, ci.stdout)
+    else:
+        listed = run(
+            [
+                "gh",
+                "api",
+                f"repos/{github_repo}/actions/runs?branch=main&event=push&per_page=100",
+            ],
+            cwd=root,
+        )
+        selected = select_canonical_ci_run(json.loads(listed.stdout), commit_sha)
+        canonical_ci_run = selected["id"]
+        write_text_lf(
+            ci_json,
+            json.dumps(selected, indent=2, sort_keys=True) + "\n",
+        )
+        print(f"AUTO canonical CI run: {canonical_ci_run}", file=sys.stderr)
     run(
         [
             sys.executable,
@@ -356,7 +410,7 @@ def main() -> int:
             "--commit",
             commit_sha,
             "--canonical-ci-run",
-            str(args.canonical_ci_run),
+            str(canonical_ci_run),
             "--automated-qualification",
             str(automated_path),
             "--linux-source-sha",
@@ -415,7 +469,7 @@ def main() -> int:
     workflow_inputs = {
         "channel": "stable",
         "publish": "false",
-        "canonical_ci_run": str(args.canonical_ci_run),
+        "canonical_ci_run": str(canonical_ci_run),
         "linux_compat_sha256": compat_summary["reportSha256"],
         "linux_compat_observed_at": compat_summary["observedAt"],
         "linux_terminal": terminal["terminal"],
@@ -432,7 +486,7 @@ def main() -> int:
         "schema": "codex-tui/linux-qualification/v2",
         "version": version,
         "commitSha": commit_sha,
-        "canonicalCiRun": args.canonical_ci_run,
+        "canonicalCiRun": canonical_ci_run,
         "compatReport": str(compat_path),
         "compatReportSha256": compat_summary["reportSha256"],
         "realEvidenceSourceSha": commit_sha,

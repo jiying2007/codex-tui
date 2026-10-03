@@ -6,6 +6,7 @@ All notable codex-tui changes are recorded here.
 
 ### Maintainability
 
+- removed another manual stable-qualification input: Linux qualification now auto-discovers the latest successful canonical `ci` push run bound to the exact current main SHA, while retaining an explicit run-ID override for diagnosis.
 - added a fail-closed stable publication helper that reconstructs `publish=true` workflow inputs from the successful prior stable dry-run's immutable `release-gate` artifact, validates clean/live/protected main, released CHANGELOG and tag absence, and only dispatches when explicitly requested.
 - made stable qualification fail closed if `main` has moved away from the exact release SHA, and made stable publication require live `main.protected=true` before any GitHub Release can be created.
 - kept the release workflow within GitHub's 25-input `workflow_dispatch` limit by deriving Linux evidence `sourceSha` from the exact workflow commit instead of accepting a redundant input, and added a canonical CI budget guard.
