@@ -1,5 +1,4 @@
 use crate::app::{AppState, ContextChoice, InputMode, View};
-use crate::command::Command;
 use crate::conversation::{InteractiveRequest, InteractiveRequestKind};
 use crate::domain::{AttentionReason, CwdLocality, RuntimeStatus, ThreadSummary, display_cwd};
 use crate::forge::ForgeFreshness;
@@ -181,12 +180,6 @@ fn operation_state_label(state: OperationState, language: UiLanguage) -> &'stati
         (OperationState::Failed, UiLanguage::English) => "failed",
         (OperationState::OutcomeUnknown, UiLanguage::English) => "outcome unknown",
     }
-}
-
-fn command_palette_choice_label(choice: Command, language: UiLanguage) -> &'static str {
-    choice
-        .palette_label(language.is_simplified_chinese())
-        .expect("command palette must only contain palette-capable commands")
 }
 
 fn context_choice_label(choice: ContextChoice, language: UiLanguage) -> &'static str {
