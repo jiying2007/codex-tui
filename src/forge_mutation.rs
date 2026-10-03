@@ -1316,6 +1316,17 @@ mod tests {
         }
     }
 
+    fn github_identity() -> ForgeIdentity {
+        ForgeIdentity {
+            provider: ForgeProviderKind::GitHub,
+            host: "github.com".into(),
+            project_id: "123".into(),
+            path_with_namespace: "octo/repo".into(),
+            web_url: "https://github.com/octo/repo".into(),
+            default_branch: Some("main".into()),
+        }
+    }
+
     #[test]
     fn mutation_coordinator_channels_are_bounded() {
         let source = include_str!("forge_mutation.rs");
@@ -1461,6 +1472,37 @@ mod tests {
         .expect("decode approval-state fixture");
 
         assert_eq!(unsatisfied_required_approval_rules(&state), 1);
+    }
+
+    #[test]
+    fn github_plans_reuse_confirmation_contract_and_provider_identity() {
+        let create = ForgeMutationPlan::create_merge_request(
+            &github_identity(),
+            "/repo".into(),
+            "feature/github".into(),
+            "main".into(),
+            "Ship GitHub support".into(),
+            1,
+        )
+        .expect("GitHub create plan");
+        assert_eq!(create.provider, ForgeProviderKind::GitHub);
+        assert!(create.expected_side_effect.contains("GitHub pull request"));
+        assert!(create.preconditions.iter().any(|condition| {
+            condition.key == "provider" && condition.expected == "github"
+        }));
+
+        let approve = ForgeMutationPlan::approve_merge_request(
+            &github_identity(),
+            "/repo".into(),
+            7,
+            "feature/github".into(),
+            "main".into(),
+            2,
+        )
+        .expect("GitHub approve plan");
+        assert!(approve.preconditions.iter().any(|condition| {
+            condition.key == "head-sha-revalidated" && condition.expected == "true"
+        }));
     }
 
     #[test]
