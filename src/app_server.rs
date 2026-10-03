@@ -973,6 +973,7 @@ async fn run_registry_actor(
                                 status.error = Some(format!("Goal clear failed: {error}"));
                             }
                         }
+                    }
                     BackendCommand::SearchTranscript(query) => {
                         match search_transcript(&mut rpc, query.clone()).await {
                             Ok(results) => {
@@ -997,7 +998,6 @@ async fn run_registry_actor(
                                 .await;
                             }
                         }
-                    }
                     }
                 }
             }
