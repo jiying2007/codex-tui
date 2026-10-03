@@ -77,6 +77,35 @@ python3 scripts/release/finalize_release.py --write
 
 The helper changes only the matching `Unreleased` heading; it never commits, pushes, tags or publishes. Review the diff, commit/push normally, then wait for fresh exact-SHA CI, development qualification, performance diagnostics and release preview before collecting real-environment evidence.
 
+## Main branch protection
+
+Stable publication requires live `main.protected=true`. For this personal-first repository, the retained default policy is:
+
+- require the four canonical PR CI checks: `rust-1.88-msrv`, `ubuntu-24.04`, `macos-latest`, `windows-latest`;
+- require the branch to be up to date before merge;
+- apply protection to administrators as well;
+- block force pushes;
+- block branch deletion;
+- do not require approving reviews, which would make a single-maintainer repository self-blocking.
+
+Preview the exact GitHub REST payload without changing repository settings:
+
+```bash
+python3 scripts/release/configure_main_protection.py
+```
+
+The helper first requires clean local `main` to equal GitHub `main`, verifies the current exact-SHA canonical checks are successful and produced by GitHub Actions, and validates that the local CI workflow still declares the expected MSRV/platform matrix.
+
+Only after reviewing the emitted plan, apply it with an explicit repository confirmation:
+
+```bash
+python3 scripts/release/configure_main_protection.py \
+  --apply \
+  --confirm-repository jiying2007/codex-tui
+```
+
+The apply path uses GitHub's branch-protection REST endpoint and therefore requires a locally authenticated `gh` credential with repository Administration write permission. It re-reads the applied policy and branch metadata and fails unless administrators are protected, all canonical checks are required, force pushes/deletion are disabled, and `main.protected=true`.
+
 ## Project license
 
 The release verifier intentionally does not select a project license.
