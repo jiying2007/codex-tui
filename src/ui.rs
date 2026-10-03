@@ -1548,12 +1548,7 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
                         .wrap(Wrap { trim: false }),
                     columns[stage_index],
                 );
-                render_board_scrollbar(
-                    frame,
-                    columns[stage_index],
-                    stage_cards.len(),
-                    viewport,
-                );
+                render_board_scrollbar(frame, columns[stage_index], stage_cards.len(), viewport);
             }
         }
         SavedViewLayout::Board => {
