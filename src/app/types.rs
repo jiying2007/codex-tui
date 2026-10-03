@@ -12,6 +12,8 @@ use crate::{
     planning::{PlanningSnapshot, SavedView, SourceRef},
     pty::TerminalSize,
     terminal_drawer::TerminalSnapshot,
+    thread_queue::{ThreadQueueMutation, ThreadQueueSnapshot},
+    transcript_search::{TranscriptSearchHit, TranscriptSearchResults},
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -40,6 +42,9 @@ pub enum ViewKind {
 pub enum InputMode {
     Normal,
     Search,
+    TranscriptSearch,
+    ThreadQueueAdd,
+    ThreadQueueEdit,
     Alias,
     Composer,
     UserInput,
@@ -143,6 +148,20 @@ pub enum Action {
     GoalCleared(ThreadId),
     OpenGoalActions,
     CloseGoalActions,
+    OpenThreadQueue,
+    CloseThreadQueue,
+    ThreadQueueLoaded(ThreadQueueSnapshot),
+    ThreadQueueFailed {
+        thread_id: ThreadId,
+        error: String,
+    },
+    MoveThreadQueue(i32),
+    BeginThreadQueueAdd,
+    BeginThreadQueueEdit,
+    BeginThreadQueueDelete,
+    BeginThreadQueueStart,
+    ReorderThreadQueue(i32),
+    RefreshThreadQueue,
     OpenManagedWorktrees,
     ManagedWorktreesLoaded(Vec<ManagedWorktreeRecord>),
     MutationReceipt(Box<OperationReceipt>),
@@ -196,6 +215,19 @@ pub enum Action {
     OpenReviewExternalEditor,
     ConversationLoaded(ConversationPage),
     OlderConversationLoaded(ConversationPage),
+    BeginTranscriptSearch,
+    TranscriptSearchLoaded(TranscriptSearchResults),
+    TranscriptSearchLoadedPage {
+        page: ConversationPage,
+        item_id: String,
+    },
+    TranscriptSearchServerFailed {
+        query: String,
+        error: String,
+    },
+    CloseTranscriptSearch,
+    MoveTranscriptSearch(i32),
+    OpenTranscriptSearchSelected,
     ConversationFailed {
         thread_id: ThreadId,
         error: String,
@@ -296,6 +328,9 @@ pub enum Effect {
     TerminalResize(TerminalSize),
     TerminalScroll(i32),
     RefreshGoal(ThreadId),
+    RefreshThreadQueue(ThreadId),
+    StopWatchingThreadQueue(ThreadId),
+    MutateThreadQueue(ThreadQueueMutation),
     SetGoal {
         thread_id: ThreadId,
         objective: Option<String>,
@@ -325,6 +360,10 @@ pub enum Effect {
     },
     LoadConversation(ThreadId),
     StopWatchingConversation(ThreadId),
+    SearchTranscript {
+        query: String,
+    },
+    JumpToTranscriptHit(TranscriptSearchHit),
     LoadOlderConversation {
         thread_id: ThreadId,
         turn_cursor: Option<String>,

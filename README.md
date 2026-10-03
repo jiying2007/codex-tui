@@ -2,11 +2,11 @@
 
 A local-first terminal workbench for managing multiple Codex projects and conversations.
 
-**License:** Apache-2.0 · **Stable release:** v1.0.0 · **Parked v1.1 candidate:** `release/v1.1-parked` · **Current development line:** v1.2.0 · **Tier 1:** Linux.
+**License:** Apache-2.0 · **Stable release:** v1.0.0 · **Parked v1.1 candidate:** `release/v1.1-parked` · **Current development line:** v1.3.0 · **Tier 1:** Linux.
 
 ## Development status
 
-v1.2 has reached development-scope completion and is frozen against new core functionality under `release/v1.2-completion.json`. Main continues to accept defect, security, compatibility, qualification-evidence, release-tooling and documentation changes while retaining exact-SHA hosted development qualification, architecture ratchets, protocol replay, dependency security governance and preview packaging. This is not stable readiness: v1.2 stable publication still requires the exact-SHA real Linux compatibility, controlling-TTY restoration, performance diagnostics and release evidence defined by `release/v1.2-criteria.json`. The parked v1.1 candidate remains separate.
+v1.3 has reached development-scope completion and is frozen against new core functionality under `release/v1.3-completion.json`. The line combines full-history transcript search, upstream Thread Queue, named local/remote App Server targets and safe GitHub pull-request mutations while retaining the v1.2 hardening baseline. Main continues to accept only defect, security, compatibility, qualification-evidence, release-tooling and documentation changes until a new development plan is opened. This is not stable readiness: v1.3 stable publication still requires exact-SHA real Linux compatibility, controlling-TTY restoration, performance diagnostics and release evidence defined by `release/v1.3-criteria.json`. The v1.2 completion checkpoint and parked v1.1 candidate remain historical and separate.
 
 ## Product goal
 
@@ -134,7 +134,7 @@ Requirements:
 - Rust stable (MSRV 1.88)
 - a working `codex` executable on `PATH` for live registry mode
 - optional `glab` authenticated to the repository's GitLab host for GitLab integration
-- optional `gh` authenticated to `github.com` for the M6c GitHub read-only provider
+- optional `gh` authenticated to the repository's GitHub host for GitHub projection and explicitly confirmed pull-request mutations
 
 Commands:
 
@@ -165,12 +165,20 @@ cargo run -- board list --json
 cargo run -- forge status --json
 cargo run -- worktree list --json
 cargo run -- headless threads --fixture-10k
-cargo run -- release verify --channel preview --tag v1.2.0-preview.1 --commit "$(git rev-parse HEAD)" --json
+cargo run -- release verify --channel preview --tag v1.3.0-preview.1 --commit "$(git rev-parse HEAD)" --json
 cargo run -- release benchmark --iterations 200 --source retained-runner --json
 cargo run -- release failure-matrix --json
 cargo run -- soak --rows 50000 --cycles 256 --json
 cargo run -- --fake
 ```
+
+### Transcript history search
+
+Press `Ctrl+F` to search conversation history. Current App Server builds are used as
+full-history authority through `thread/search` + `thread/searchOccurrences`; a
+derived local SQLite index gives immediate fallback results for transcript pages that
+codex-tui has already observed. Reasoning/tool-internal content is not written to the
+local transcript index.
 
 ### Language / 语言
 
@@ -184,6 +192,9 @@ presentation = "normal" # normal | quiet | screen-reader
 
 [notifications]
 mode = "off" # off | terminal | os
+
+[app_server]
+active = "local" # implicit local stdio target; no target table is required
 ```
 
 `auto` is the default and follows the process locale in standard precedence order: `LC_ALL`, then `LC_MESSAGES`, then `LANG`. Simplified Chinese locales such as `zh_CN.UTF-8`, `zh_SG.UTF-8`, `zh-CN` or `zh-Hans` select Simplified Chinese. Known Traditional Chinese locales such as `zh-TW`, `zh-HK`, `zh-MO` and `zh-Hant` fall back to English rather than being mislabeled as Simplified Chinese. Other or unavailable locales also select English. Use `en` or `zh-CN` to pin the UI language explicitly. Technical identifiers and upstream error text remain unchanged so terminal output still matches Codex/Git/Forge diagnostics.
@@ -192,9 +203,45 @@ mode = "off" # off | terminal | os
 
 Notifications are deliberately lightweight and opt-in. `off` is the default and preserves upgrade behavior. `terminal` emits a terminal bell only. `os` uses the native desktop notification command with a 3-second timeout and falls back to the terminal bell if delivery is unavailable. Notifications are edge-triggered from existing attention/Goal/Forge projections (approval, user input, Goal blocked, completion, pipeline failure, review requested); startup seeds current state without replaying historical alerts, and snooze suppresses routing without changing source status. No prompt text, tool output, credentials, external bridge, scheduler, or second workflow state machine is introduced.
 
-Normal startup launches a local `codex app-server --listen stdio://` connection after the first UI frame. Mission Control consumes App Server thread lifecycle/status notifications incrementally; the complete paginated registry is retained as an initial load and low-frequency reconciliation path rather than being rebuilt for every notification. Reconciliation requests canonical `recency_at` ordering and use the App Server state DB fast path after the complete initial scan, with automatic fallback for older servers that reject those optional parameters. Goal capability probing is eager only for the most recent 100 threads; older threads refresh Goal state explicitly when opened, avoiding an unbounded startup probe backlog. Mission Control stays metadata-first; opening a thread loads only the recent conversation page. Git checkout projection is deduplicated by exact cwd and the selected/active checkouts are refreshed every 10 seconds so branch/dirty state does not remain frozen after the initial probe. Thread View supports paginated history, persistent local drafts, turn start/steer/interrupt, approvals, user-input requests, and stable Codex Goal projection when the connected App Server supports it.
+Normal startup selects `[app_server].active` and defaults to the implicit `local` target, which launches `codex app-server --listen stdio://` after the first UI frame. `--target NAME` overrides the active target for one invocation. Mission Control consumes App Server thread lifecycle/status notifications incrementally; the complete paginated registry is retained as an initial load and low-frequency reconciliation path rather than being rebuilt for every notification. Reconciliation requests canonical `recency_at` ordering and use the App Server state DB fast path after the complete initial scan, with automatic fallback for older servers that reject those optional parameters. Goal capability probing is eager only for the most recent 100 threads; older threads refresh Goal state explicitly when opened, avoiding an unbounded startup probe backlog. Mission Control stays metadata-first; opening a thread loads only the recent conversation page. Git checkout projection is deduplicated by exact cwd and the selected/active checkouts are refreshed every 10 seconds so branch/dirty state does not remain frozen after the initial probe. Thread View supports paginated history, persistent local drafts, turn start/steer/interrupt, approvals, user-input requests, and stable Codex Goal projection when the connected App Server supports it.
 
 Personal planning state is stored locally in SQLite: WorkCard relationships/overlays, ScratchWork, Saved Views, notes, bookmarks, snooze and hot slots. Canonical Codex conversations/Goals and Git state are never copied into SQLite.
+
+### Named App Server targets
+
+The default requires no extra configuration. Named targets can point at a different local Codex binary, a WebSocket endpoint, or a Unix socket:
+
+```toml
+[app_server]
+active = "remote-dev"
+
+[app_server.targets.local-alt]
+transport = "stdio"
+codex_bin = "/opt/codex/bin/codex"
+
+[app_server.targets.remote-dev]
+transport = "websocket"
+url = "wss://codex-dev.example.com/rpc"
+auth_token_env = "CODEX_DEV_APP_SERVER_TOKEN"
+
+[app_server.targets.local-daemon]
+transport = "unix-socket"
+path = "/run/user/1000/codex/app-server.sock"
+```
+
+Use `codex-tui --target local-alt` for a one-run override, or
+`codex-tui doctor codex --target remote-dev` to verify a target. Bearer token
+values are never stored in codex-tui config: only the environment-variable name
+is retained. Token-bearing `ws://` is accepted only for loopback; use
+`wss://` through a TLS proxy for authenticated remote access. Codex's direct
+listener supports `ws://IP:PORT` and `unix://`; codex-tui additionally
+supports `wss://` as the client side of a TLS-proxied listener.
+
+The backend status source includes the selected target name and transport. Doctor
+output prints a sanitized endpoint with WebSocket credentials/query/fragment
+removed.
+
+Thread Queue is projected directly from the experimental Codex App Server queue API. Press `q` in Thread View to inspect/add/edit/reorder/start/delete queued submissions. The queue is never persisted locally; older App Servers degrade this surface without blocking normal conversation use. Mixed/multimodal queued inputs can be started/deleted/reordered but are intentionally not text-edited by codex-tui.
 
 `--fake` is a deterministic development/fixture mode; it is never an automatic fallback for a failed real backend.
 
@@ -202,13 +249,13 @@ M6a adds an asynchronous read-only GitLab projection. A normal forge refresh sta
 
 M6b adds explicit GitLab merge-request mutations from Review / Workspace context actions (`.`): create MR, comment, approve, and merge. Every write is plan-first and requires explicit confirmation. Approve/merge revalidate the exact MR HEAD SHA immediately before execution; merge never requests force/policy bypass. Comment bodies remain memory-only and are not stored in SQLite. Uncertain external outcomes remain `OutcomeUnknown` and are never blindly retried.
 
-M6c completes the normalized forge layer with a GitHub.com read-only provider. Exact `github.com` and `gitlab.com` remotes use their canonical providers; custom forge hosts are resolved from explicit `gh`/`glab` authentication instead of assuming every non-GitHub host is GitLab. A normal GitHub refresh uses four `gh api` calls (repository, Issues, open Pull Requests, Actions runs), while reviews and bounded GraphQL review threads load only in Review. GitHub capabilities degrade independently and no GitHub write path is introduced.
+M6c established the normalized GitHub read-only provider. v1.3 extends that same forge mutation contract to GitHub pull requests: create, comment, approve, and merge remain plan-first and require explicit confirmation. Approve/merge re-read and compare the exact pull-request HEAD immediately before the write; merge sends only the guarded `sha` and never requests force, bypass, or policy overrides. Comment bodies remain memory-only. Uncertain GitHub outcomes become `OutcomeUnknown` and are reconciled without blind retry. Read projection remains bounded (repository, Issues, open Pull Requests, Actions runs; reviews and bounded GraphQL review threads only in Review).
 
 M7a establishes a read-only automation and scale baseline. v1.2 extends that stable surface with `status`, `thread list`, `attention list`, `board list`, `forge status` and `worktree list` top-level aliases plus equivalent `headless` commands. They emit text or secret-safe JSON snapshots with explicit degraded exit codes and introduce no mutating headless path. `doctor compat` reports local OS/architecture, SQLite, Codex, Git, `glab`, and `gh` compatibility without remote forge API probes. `--fixture-10k` provides deterministic scale data, while the Divan benchmark target measures resident 10k planning filters plus recent/search/host-local Registry projections without turning noisy hosted-runner timings into release gates.
 
 M7b3 adds repository-shared `.codex-tui.toml` launch presets as a deliberately narrow argv-only feature. Presets are selected from Workspace/Review context actions, shown as an exact cwd/argv plan, and require explicit confirmation before codex-tui starts the external process. The config has no shell string, env templating, chaining, hooks or scheduler semantics; common shell executables are rejected.
 
-M7d3 adds a fail-closed release path: publication is manually dispatched, while release-pipeline changes on main automatically run a non-publishing preview self-test. Preview and stable identity derive from the Cargo version; Cargo.lock pins candidates; Linux/macOS/Windows build native archives and smoke the extracted binary; runtime dependency licenses/notices and SHA-256 manifests are retained. v1.0.0 was published as the first stable release on 2026-09-30. The v1.1 candidate is parked on `release/v1.1-parked`, while main now carries the v1.2.0 development line. v1.2 preview and stable qualification are bound to the exact source SHA and require the Failure Matrix, 50k scale-v4 evidence, 50k structural soak, UI command contract, state migration/recovery and support-bundle redaction gates. Stable publication additionally requires canonical CI plus real Linux Tier 1 compatibility and controlling-TTY restoration evidence. The retained 10k p95/p99 benchmark uses at least 200 samples as diagnostic evidence; hosted-runner latency thresholds do not block v1.1. macOS/Windows remain Tier 2 automated-compatibility targets across the v1 stable line.
+M7d3 adds a fail-closed release path: publication is manually dispatched, while release-pipeline changes on main automatically run a non-publishing preview self-test. Preview and stable identity derive from the Cargo version; Cargo.lock pins candidates; Linux/macOS/Windows build native archives and smoke the extracted binary; runtime dependency licenses/notices and SHA-256 manifests are retained. v1.0.0 was published as the first stable release on 2026-09-30. The v1.1 candidate is parked on `release/v1.1-parked`; v1.2 remains a historical development-complete checkpoint; main now carries the v1.3.0 development-complete line. v1.3 preview and stable qualification are bound to the exact source SHA and require the Failure Matrix, 50k scale-v4 evidence, 50k structural soak, UI command contract, state migration/recovery, support-bundle redaction, protocol replay and dependency-security gates. Stable publication additionally requires canonical CI plus real Linux Tier 1 compatibility and controlling-TTY restoration evidence. The retained 10k p95/p99 benchmark uses at least 200 samples as diagnostic evidence rather than a noisy hosted-runner latency threshold. macOS/Windows remain Tier 2 automated-compatibility targets across the v1 stable line.
 
 ## Status
 
@@ -234,7 +281,8 @@ M7d3 adds a fail-closed release path: publication is manually dispatched, while 
 - M7d3 stable/preview release hardening: implemented with locked three-platform packaging, archive smoke, notices/checksums, and fail-closed stable evidence gates.
 - v1.0.0 stable release: published on 2026-09-30 with Linux Tier 1 retained evidence and three-platform native package/archive smoke.
 - v1.1.0 candidate: parked on `release/v1.1-parked`; its historical real-environment qualification remains separate.
-- v1.2.0 development line: active on main with hosted development qualification, architecture ratchets, protocol replay and dependency-security governance.
+- v1.2.0 checkpoint: development-scope complete and retained as historical authority; not published as stable.
+- v1.3.0 development line: scope complete with transcript search, Thread Queue, named App Server targets and safe GitHub mutations; stable readiness remains externally gated.
 
 Architecture and product research are archived under `docs/research/`.
 Implementation design lives under `docs/design/`.
@@ -268,6 +316,10 @@ See:
 - `docs/implementation/m7d1-accessibility.md`
 - `docs/implementation/m7d2-compatibility.md`
 - `docs/implementation/m7d3-release.md`
+- `docs/implementation/v1.3-transcript-search.md`
+- `docs/implementation/v1.3-thread-queue.md`
+- `docs/implementation/v1.3-remote-app-server-targets.md`
+- `docs/implementation/v1.3-github-safe-mutations.md`
 - `docs/implementation/v1.2-accessibility-mature-mode.md`
 - `docs/roadmap-v1.2.md`
 - `docs/release/install-upgrade.md`
@@ -277,6 +329,9 @@ See:
 - `release/v1.2-plan.json` — v1.2 development plan and phase exits
 - `release/v1.2-completion.json` — v1.2 development-scope completion/freeze contract; never stable authority
 - `release/v1.2-criteria.json` — v1.2 stable qualification authority
+- `release/v1.3-plan.json` — v1.3 Search & Multi-Target development plan
+- `release/v1.3-completion.json` — v1.3 development-scope completion/freeze contract; never stable authority
+- `release/v1.3-criteria.json` — v1.3 stable qualification authority
 - `release/v1.1-criteria.json` — current v1.1 qualification authority
 - `release/v1.1-rc-plan.json` — current RC freeze/deferred-real-evidence handoff contract
 - `release/v1.0-criteria.json` — historical v1.0 release record

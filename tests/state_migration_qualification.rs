@@ -41,6 +41,8 @@ fn v1_config_fixture_preserves_settings_and_defaults_new_fields() {
     let config = legacy.load_config().expect("load v1 config");
     assert!(!config.ui.mouse);
     assert_eq!(config.ui.language.as_str(), "auto");
+    assert_eq!(config.app_server.active, "local");
+    assert!(config.app_server.targets.is_empty());
 }
 
 fn populate_planning(store: &SqliteStore) {
@@ -107,6 +109,8 @@ fn v1_operator_and_sqlite_schema_upgrade_preserve_user_state_idempotently() {
             "DROP TABLE managed_worktrees;
              DROP TABLE operation_receipts;
              DROP TABLE forge_mutation_receipts;
+             DROP TABLE IF EXISTS transcript_fts;
+             DROP TABLE IF EXISTS transcript_documents;
              PRAGMA user_version = 1;",
         )
         .expect("create retained schema-v1 fixture");
@@ -114,8 +118,20 @@ fn v1_operator_and_sqlite_schema_upgrade_preserve_user_state_idempotently() {
 
     let reopened = SqliteStore::at(root.path());
     let health = reopened.health().expect("migrate schema 1 -> latest");
-    assert_eq!(health.schema_version, 3);
+    assert_eq!(health.schema_version, 4);
     assert_eq!(health.integrity, "ok");
+    {
+        let conn = Connection::open(reopened.db_path()).expect("inspect migrated schema");
+        let transcript_tables: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master
+                 WHERE name IN ('transcript_documents', 'transcript_fts')",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count transcript search tables");
+        assert_eq!(transcript_tables, 2);
+    }
     assert_eq!(
         reopened.load_state().expect("operator after migration"),
         expected_operator
@@ -133,7 +149,7 @@ fn v1_operator_and_sqlite_schema_upgrade_preserve_user_state_idempotently() {
             .health()
             .expect("idempotent reopen")
             .schema_version,
-        3
+        4
     );
     assert_eq!(
         reopened_again.load_state().expect("idempotent operator"),
@@ -165,7 +181,7 @@ fn backup_restore_round_trip_preserves_operator_and_planning_state() {
     let receipt = store
         .create_recovery_backup(&backup)
         .expect("create recovery backup");
-    assert_eq!(receipt.schema_version, 3);
+    assert_eq!(receipt.schema_version, 4);
     assert!(receipt.bytes > 0);
     assert!(backup.is_file());
 
@@ -181,7 +197,7 @@ fn backup_restore_round_trip_preserves_operator_and_planning_state() {
     let restore = store
         .restore_recovery_backup(&backup)
         .expect("restore recovery backup");
-    assert_eq!(restore.schema_version, 3);
+    assert_eq!(restore.schema_version, 4);
     let previous = restore
         .previous_database
         .expect("pre-restore database retained");

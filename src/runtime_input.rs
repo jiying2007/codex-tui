@@ -83,6 +83,43 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
         };
     }
 
+    if app.thread_queue_open && app.input_mode == InputMode::Normal {
+        if app.pending_thread_queue_mutation.is_some() {
+            return match key.code {
+                KeyCode::Char('y') => reduce(app, Action::ConfirmPendingOperation),
+                KeyCode::Char('c') | KeyCode::Esc => reduce(app, Action::CancelPendingOperation),
+                _ => vec![],
+            };
+        }
+        return match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => reduce(app, Action::CloseThreadQueue),
+            KeyCode::Char('j') | KeyCode::Down => reduce(app, Action::MoveThreadQueue(1)),
+            KeyCode::Char('k') | KeyCode::Up => reduce(app, Action::MoveThreadQueue(-1)),
+            KeyCode::Char('n') => reduce(app, Action::BeginThreadQueueAdd),
+            KeyCode::Char('e') => reduce(app, Action::BeginThreadQueueEdit),
+            KeyCode::Char('x') => reduce(app, Action::BeginThreadQueueDelete),
+            KeyCode::Char('s') => reduce(app, Action::BeginThreadQueueStart),
+            KeyCode::Char('[') => reduce(app, Action::ReorderThreadQueue(-1)),
+            KeyCode::Char(']') => reduce(app, Action::ReorderThreadQueue(1)),
+            KeyCode::Char('r') => reduce(app, Action::RefreshThreadQueue),
+            _ => vec![],
+        };
+    }
+
+    if app.transcript_search_open {
+        if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('f') {
+            reduce(app, Action::CloseTranscriptSearch);
+            return reduce(app, Action::BeginTranscriptSearch);
+        }
+        return match key.code {
+            KeyCode::Esc => reduce(app, Action::CloseTranscriptSearch),
+            KeyCode::Char('j') | KeyCode::Down => reduce(app, Action::MoveTranscriptSearch(1)),
+            KeyCode::Char('k') | KeyCode::Up => reduce(app, Action::MoveTranscriptSearch(-1)),
+            KeyCode::Enter => reduce(app, Action::OpenTranscriptSearchSelected),
+            _ => vec![],
+        };
+    }
+
     if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('c') {
         return handle_command(app, Command::QuitOrInterrupt);
     }
@@ -236,6 +273,8 @@ pub(crate) fn action_for_command(app: &AppState, command: Command) -> Option<Act
         Command::Back => Action::Back,
         Command::Help => Action::ToggleHelp,
         Command::Search => Action::BeginSearch,
+        Command::TranscriptSearch => Action::BeginTranscriptSearch,
+        Command::ThreadQueue => Action::OpenThreadQueue,
         Command::ToggleHostLocalFilter => Action::ToggleHostLocalFilter,
         Command::ToggleRepoBackedFilter => Action::ToggleRepoBackedFilter,
         Command::ToggleAllHistory => Action::ToggleAllHistory,

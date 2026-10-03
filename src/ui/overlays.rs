@@ -94,6 +94,30 @@ pub(super) fn render_context_actions(frame: &mut Frame<'_>, app: &AppState) {
 
 pub(super) fn render_local_input_overlay(frame: &mut Frame<'_>, app: &AppState) {
     let (title, hint) = match app.input_mode {
+        InputMode::TranscriptSearch => (
+            tr(app, " Search transcript history ", " 搜索会话全文 "),
+            tr(
+                app,
+                "Enter search · Esc cancel · App Server preferred, local index fallback",
+                "Enter 搜索 · Esc 取消 · 优先 App Server，本地索引回退",
+            ),
+        ),
+        InputMode::ThreadQueueAdd => (
+            tr(app, " Add queued prompt ", " 添加队列提示词 "),
+            tr(
+                app,
+                "Enter submit to Codex queue · Esc cancel",
+                "Enter 提交到 Codex 队列 · Esc 取消",
+            ),
+        ),
+        InputMode::ThreadQueueEdit => (
+            tr(app, " Edit queued prompt ", " 编辑队列提示词 "),
+            tr(
+                app,
+                "Enter replace text input · Esc cancel",
+                "Enter 替换文本输入 · Esc 取消",
+            ),
+        ),
         InputMode::Note => (
             tr(app, " Local note ", " 本地备注 "),
             tr(app, "Enter save · Esc cancel", "Enter 保存 · Esc 取消"),
@@ -161,8 +185,8 @@ pub(super) fn render_local_input_overlay(frame: &mut Frame<'_>, app: &AppState) 
         InputMode::ForgeMergeRequestTitle => (
             tr(
                 app,
-                " Create GitLab merge request ",
-                " 创建 GitLab 合并请求 ",
+                " Create forge change request ",
+                " 创建 Forge 变更请求 ",
             ),
             tr(
                 app,
@@ -173,8 +197,8 @@ pub(super) fn render_local_input_overlay(frame: &mut Frame<'_>, app: &AppState) 
         InputMode::ForgeComment => (
             tr(
                 app,
-                " Comment on GitLab merge request ",
-                " 评论 GitLab 合并请求 ",
+                " Comment on forge change request ",
+                " 评论 Forge 变更请求 ",
             ),
             tr(
                 app,
@@ -198,6 +222,232 @@ pub(super) fn render_local_input_overlay(frame: &mut Frame<'_>, app: &AppState) 
     );
 }
 
+pub(super) fn render_transcript_search(frame: &mut Frame<'_>, app: &AppState) {
+    if !app.transcript_search_open {
+        return;
+    }
+
+    let source = app.transcript_search_source_label();
+    let mut lines = vec![Line::from(format!(
+        "{}: {} · {}: {}{}",
+        tr(app, "Query", "查询"),
+        sanitize_inline(&app.transcript_search_query),
+        tr(app, "Source", "来源"),
+        source,
+        if app.transcript_search_loading {
+            tr(app, " · upgrading…", " · 正在升级到服务端结果…")
+        } else {
+            ""
+        }
+    ))];
+
+    if let Some(error) = app.transcript_search_error.as_deref() {
+        lines.push(Line::from(format!(
+            "{}: {}",
+            tr(app, "Server note", "服务端提示"),
+            truncate_display(&sanitize_inline(error), 92)
+        )));
+    }
+
+    match app.transcript_search_results.as_ref() {
+        Some(results) if results.hits.is_empty() => {
+            lines.push(Line::from(""));
+            lines.push(Line::from(tr(
+                app,
+                "No transcript matches in the available search authority.",
+                "当前可用搜索来源中没有匹配的会话内容。",
+            )));
+        }
+        Some(results) => {
+            lines.push(Line::from(""));
+            let window_start = app
+                .transcript_search_selected
+                .saturating_sub(8)
+                .min(results.hits.len().saturating_sub(18));
+            for (index, hit) in results.hits.iter().enumerate().skip(window_start).take(18) {
+                let selected = index == app.transcript_search_selected;
+                let style = if selected {
+                    Style::default().add_modifier(Modifier::REVERSED)
+                } else {
+                    Style::default()
+                };
+                let thread_title = app
+                    .threads
+                    .iter()
+                    .find(|thread| thread.id == hit.thread_id)
+                    .map(|thread| thread.display_title())
+                    .unwrap_or_else(|| hit.thread_id.0.as_str());
+                let location = match (&hit.turn_id, &hit.item_id) {
+                    (Some(turn), Some(item)) => format!(
+                        "{} / {}",
+                        truncate_display(turn, 16),
+                        truncate_display(item, 16)
+                    ),
+                    _ => tr(app, "thread match", "会话匹配").to_string(),
+                };
+                lines.push(Line::from(Span::styled(
+                    format!(
+                        "{} {} · {} · {}",
+                        if selected { ">" } else { " " },
+                        truncate_display(thread_title, 32),
+                        location,
+                        truncate_display(&sanitize_inline(&hit.snippet), 72)
+                    ),
+                    style,
+                )));
+            }
+            if results.hits.len() > 18 {
+                let first = window_start + 1;
+                let last = (window_start + 18).min(results.hits.len());
+                lines.push(Line::from(if app.language.is_simplified_chinese() {
+                    format!("  显示 {first}-{last} / {} 条结果", results.hits.len())
+                } else {
+                    format!(
+                        "  showing {first}-{last} / {} result(s)",
+                        results.hits.len()
+                    )
+                }));
+            }
+        }
+        None => {
+            lines.push(Line::from(""));
+            lines.push(Line::from(tr(
+                app,
+                "Searching local transcript index and App Server…",
+                "正在搜索本地会话索引和 App Server…",
+            )));
+        }
+    }
+
+    lines.extend([
+        Line::from(""),
+        Line::from(tr(
+            app,
+            "j/k move · Enter open exact result · Ctrl+F new search · Esc close",
+            "j/k 移动 · Enter 打开精确结果 · Ctrl+F 重新搜索 · Esc 关闭",
+        )),
+    ]);
+
+    let height = u16::try_from(lines.len().saturating_add(2))
+        .unwrap_or(24)
+        .clamp(9, 26);
+    let area = centered_fixed(96, height, frame.area());
+    frame.render_widget(Clear, area);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(Block::bordered().title(tr(app, " Transcript Search ", " 会话全文搜索 ")))
+            .wrap(Wrap { trim: false }),
+        area,
+    );
+}
+
+pub(super) fn render_thread_queue(frame: &mut Frame<'_>, app: &AppState) {
+    if !app.thread_queue_open {
+        return;
+    }
+
+    let mut lines = Vec::new();
+    if app.thread_queue_loading {
+        lines.push(Line::from(tr(
+            app,
+            "Refreshing from Codex App Server…",
+            "正在从 Codex App Server 刷新…",
+        )));
+    }
+    if let Some(error) = app.thread_queue_error.as_deref() {
+        lines.push(Line::from(format!(
+            "{}: {}",
+            tr(app, "Queue note", "队列提示"),
+            truncate_display(&sanitize_inline(error), 92)
+        )));
+    }
+
+    match app.thread_queue_snapshot.as_ref() {
+        Some(snapshot) if snapshot.submissions.is_empty() => {
+            lines.push(Line::from(""));
+            lines.push(Line::from(tr(app, "Queue is empty.", "队列为空。")));
+        }
+        Some(snapshot) => {
+            let start = app
+                .thread_queue_selected
+                .saturating_sub(8)
+                .min(snapshot.submissions.len().saturating_sub(18));
+            for (index, submission) in snapshot.submissions.iter().enumerate().skip(start).take(18)
+            {
+                let selected = index == app.thread_queue_selected;
+                let style = if selected {
+                    Style::default().add_modifier(Modifier::REVERSED)
+                } else {
+                    Style::default()
+                };
+                let mode = if submission.editable_text.is_some() {
+                    tr(app, "text", "文本")
+                } else {
+                    tr(app, "mixed", "混合")
+                };
+                lines.push(Line::from(Span::styled(
+                    format!(
+                        "{} {:>2}. [{}] {}",
+                        if selected { ">" } else { " " },
+                        index + 1,
+                        mode,
+                        truncate_display(&sanitize_inline(&submission.summary), 78)
+                    ),
+                    style,
+                )));
+            }
+            if snapshot.submissions.len() > 18 {
+                lines.push(Line::from(format!(
+                    "{} {}/{}",
+                    tr(app, "Selected", "已选"),
+                    app.thread_queue_selected + 1,
+                    snapshot.submissions.len()
+                )));
+            }
+        }
+        None => {
+            lines.push(Line::from(""));
+            lines.push(Line::from(tr(
+                app,
+                "Queue has not been loaded yet.",
+                "队列尚未加载。",
+            )));
+        }
+    }
+
+    lines.push(Line::from(""));
+    if let Some(pending) = app.pending_thread_queue_mutation.as_ref() {
+        lines.push(Line::from(if app.language.is_simplified_chinese() {
+            format!("确认 {}？y 执行 · c/Esc 取消", pending.label())
+        } else {
+            format!("Confirm {}? y execute · c/Esc cancel", pending.label())
+        }));
+    } else {
+        lines.push(Line::from(tr(
+            app,
+            "j/k move · n add · e edit text · [/] reorder · s start · x delete · r refresh · q/Esc close",
+            "j/k 移动 · n 添加 · e 编辑文本 · [/] 重排 · s 启动 · x 删除 · r 刷新 · q/Esc 关闭",
+        )));
+        lines.push(Line::from(tr(
+            app,
+            "start/delete require confirmation; mixed-input items are intentionally not text-editable",
+            "启动/删除需要确认；混合输入队列项不会按文本方式编辑",
+        )));
+    }
+
+    let height = u16::try_from(lines.len().saturating_add(2))
+        .unwrap_or(24)
+        .clamp(9, 27);
+    let area = centered_fixed(100, height, frame.area());
+    frame.render_widget(Clear, area);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(Block::bordered().title(tr(app, " Thread Queue ", " 会话队列 ")))
+            .wrap(Wrap { trim: false }),
+        area,
+    );
+}
+
 pub(super) fn render_forge_mutation_confirmation(frame: &mut Frame<'_>, app: &AppState) {
     let Some(plan) = &app.pending_forge_operation else {
         return;
@@ -206,8 +456,8 @@ pub(super) fn render_forge_mutation_confirmation(frame: &mut Frame<'_>, app: &Ap
     let mut lines = vec![
         Line::from(tr(
             app,
-            "CONFIRM REQUIRED — no GitLab mutation has executed yet.",
-            "需要确认 — 尚未执行任何 GitLab 变更。",
+            "CONFIRM REQUIRED — no forge mutation has executed yet.",
+            "需要确认 — 尚未执行任何 Forge 变更。",
         )),
         Line::from(format!(
             "{}: {}",

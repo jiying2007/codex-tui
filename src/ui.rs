@@ -22,7 +22,7 @@ use crate::{pty::TerminalSize, terminal_drawer::TerminalProcessState};
 use overlays::{
     render_command_palette, render_context_actions, render_forge_mutation_confirmation,
     render_launch_confirmation, render_launch_presets, render_local_batch_confirmation,
-    render_local_input_overlay,
+    render_local_input_overlay, render_thread_queue, render_transcript_search,
 };
 use ratatui::{
     Frame,
@@ -258,6 +258,12 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
     if app.terminal_drawer_open {
         render_terminal_drawer(frame, app);
     }
+    if app.transcript_search_open {
+        render_transcript_search(frame, app);
+    }
+    if app.thread_queue_open {
+        render_thread_queue(frame, app);
+    }
     if app.command_palette_open {
         render_command_palette(frame, app);
     }
@@ -272,7 +278,10 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
     }
     if matches!(
         app.input_mode,
-        InputMode::Note
+        InputMode::TranscriptSearch
+            | InputMode::ThreadQueueAdd
+            | InputMode::ThreadQueueEdit
+            | InputMode::Note
             | InputMode::Snooze
             | InputMode::SavedViewName
             | InputMode::BatchAddTag
@@ -333,6 +342,21 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
             "/{}  · {}",
             app.input_buffer,
             tr(app, "Enter keep · Esc cancel", "Enter 保留 · Esc 取消")
+        )),
+        InputMode::TranscriptSearch => Line::from(format!(
+            "Ctrl+F> {}  · {}",
+            app.input_buffer,
+            tr(
+                app,
+                "Enter full-history search · Esc cancel",
+                "Enter 全历史搜索 · Esc 取消"
+            )
+        )),
+        InputMode::ThreadQueueAdd | InputMode::ThreadQueueEdit => Line::from(format!(
+            "{}> {}  · {}",
+            tr(app, "queue", "队列"),
+            truncate_display(&app.input_buffer, 60),
+            tr(app, "Enter submit · Esc cancel", "Enter 提交 · Esc 取消")
         )),
         InputMode::Alias => Line::from(format!(
             "alias> {}  · {}",
@@ -436,6 +460,7 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
             Span::raw(tr(app, "t terminal  ", "t 终端  ")),
             Span::raw(tr(app, "Space attention  ", "Space 待处理  ")),
             Span::raw(tr(app, "/ search  ", "/ 搜索  ")),
+            Span::raw(tr(app, "Ctrl+F history  ", "Ctrl+F 全文  ")),
             Span::raw(tr(app, "l local-only  ", "l 仅本机  ")),
             Span::raw(tr(app, "g repo-only  ", "g 仅仓库  ")),
             Span::raw(if app.show_all_history {
@@ -1226,11 +1251,23 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area: R
                     .as_deref()
                     .map(|value| format!(" [{value}]"))
                     .unwrap_or_default();
-                Line::from(format!(
+                let text = format!(
                     "{:>5}{status} {}",
                     item.kind.label(),
                     item.text.replace('\n', " ")
-                ))
+                );
+                let is_search_target =
+                    app.transcript_search_active_hit
+                        .as_ref()
+                        .is_some_and(|hit| {
+                            hit.thread_id.0 == thread_id
+                                && hit.item_id.as_deref() == Some(item.item_id.as_str())
+                        });
+                if is_search_target {
+                    Line::styled(text, Style::default().add_modifier(Modifier::REVERSED))
+                } else {
+                    Line::from(text)
+                }
             })
             .collect(),
         None => vec![Line::from(tr(
@@ -2188,9 +2225,9 @@ fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area: R
 }
 
 const HELP_LINES: &[&str] = &[
-    "Global: ? help · Ctrl+K palette · / search · . actions · Esc back",
+    "Global: ? help · Ctrl+K palette · / search · Ctrl+F transcript · . actions · Esc back",
     "Registry: j/k · Enter · Space attention · l local-only · g repo-only · h recent/all-history · p pin · e alias · x ack",
-    "Thread: a composer · y/n/c approval · i answer · Ctrl+C interrupt · r review",
+    "Thread: a composer · q Thread Queue · y/n/c approval · i answer · Ctrl+C interrupt · r review",
     "Review: j/k file · w word-diff · e editor · . Forge actions · PageUp/PageDown · Esc",
     "Workspace: . actions/launch presets · r review · m worktrees · Esc",
     "Managed Worktrees: n create · a adopt · d remove · x delete branch · y confirm",

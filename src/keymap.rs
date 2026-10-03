@@ -23,6 +23,7 @@ pub const HELP_BINDINGS: &[HelpBinding] = &[
     HelpBinding { surface: "Global", scope: HelpScope::AllViews, token: "?", code: KeyCode::Char('?'), modifiers: KeyModifiers::NONE, command: Command::Help },
     HelpBinding { surface: "Global", scope: HelpScope::AllViews, token: "Ctrl+K", code: KeyCode::Char('k'), modifiers: KeyModifiers::CONTROL, command: Command::CommandPalette },
     HelpBinding { surface: "Global", scope: HelpScope::AllViews, token: "/", code: KeyCode::Char('/'), modifiers: KeyModifiers::NONE, command: Command::Search },
+    HelpBinding { surface: "Global", scope: HelpScope::AllViews, token: "Ctrl+F", code: KeyCode::Char('f'), modifiers: KeyModifiers::CONTROL, command: Command::TranscriptSearch },
     HelpBinding { surface: "Global", scope: HelpScope::AllViews, token: ".", code: KeyCode::Char('.'), modifiers: KeyModifiers::NONE, command: Command::ContextActions },
     HelpBinding { surface: "Global", scope: HelpScope::AllViews, token: "Esc", code: KeyCode::Esc, modifiers: KeyModifiers::NONE, command: Command::Back },
     HelpBinding { surface: "Terminal drawer", scope: HelpScope::NonScratch, token: "t", code: KeyCode::Char('t'), modifiers: KeyModifiers::NONE, command: Command::TerminalDrawer },
@@ -44,6 +45,7 @@ pub const HELP_BINDINGS: &[HelpBinding] = &[
     HelpBinding { surface: "Thread", scope: HelpScope::View(ViewKind::Thread), token: "i", code: KeyCode::Char('i'), modifiers: KeyModifiers::NONE, command: Command::AnswerPending },
     HelpBinding { surface: "Thread", scope: HelpScope::View(ViewKind::Thread), token: "Ctrl+C", code: KeyCode::Char('c'), modifiers: KeyModifiers::CONTROL, command: Command::QuitOrInterrupt },
     HelpBinding { surface: "Thread", scope: HelpScope::View(ViewKind::Thread), token: "r", code: KeyCode::Char('r'), modifiers: KeyModifiers::NONE, command: Command::Review },
+    HelpBinding { surface: "Thread", scope: HelpScope::View(ViewKind::Thread), token: "q", code: KeyCode::Char('q'), modifiers: KeyModifiers::NONE, command: Command::ThreadQueue },
     HelpBinding { surface: "Review", scope: HelpScope::View(ViewKind::Review), token: "j/k", code: KeyCode::Char('j'), modifiers: KeyModifiers::NONE, command: Command::Next },
     HelpBinding { surface: "Review", scope: HelpScope::View(ViewKind::Review), token: "j/k", code: KeyCode::Char('k'), modifiers: KeyModifiers::NONE, command: Command::Previous },
     HelpBinding { surface: "Review", scope: HelpScope::View(ViewKind::Review), token: "w", code: KeyCode::Char('w'), modifiers: KeyModifiers::NONE, command: Command::ToggleWordDiff },
@@ -88,6 +90,9 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
     }
     if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('k') {
         return Some(Command::CommandPalette);
+    }
+    if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('f') {
+        return Some(Command::TranscriptSearch);
     }
 
     match (view, key.code) {
@@ -145,6 +150,7 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
         (ViewKind::Thread, KeyCode::Char('w')) => Some(Command::Workspace),
         (ViewKind::Thread, KeyCode::Char('m')) => Some(Command::ManagedWorktrees),
         (ViewKind::Thread, KeyCode::Char('g')) => Some(Command::Goal),
+        (ViewKind::Thread, KeyCode::Char('q')) => Some(Command::ThreadQueue),
         (ViewKind::Thread, KeyCode::PageUp) => Some(Command::PageUp),
         (ViewKind::Thread, KeyCode::PageDown) => Some(Command::PageDown),
         (ViewKind::Review, KeyCode::Char('j') | KeyCode::Down) => Some(Command::Next),

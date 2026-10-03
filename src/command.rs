@@ -5,6 +5,8 @@ pub enum Command {
     Help,
     CommandPalette,
     Search,
+    TranscriptSearch,
+    ThreadQueue,
     ToggleHostLocalFilter,
     ToggleRepoBackedFilter,
     ToggleAllHistory,
@@ -54,6 +56,10 @@ impl Command {
         Some(match (self, simplified_chinese) {
             (Self::Search, false) => "Search",
             (Self::Search, true) => "搜索",
+            (Self::TranscriptSearch, false) => "Search transcript history",
+            (Self::TranscriptSearch, true) => "搜索会话全文",
+            (Self::ThreadQueue, false) => "Open Thread Queue",
+            (Self::ThreadQueue, true) => "打开会话队列",
             (Self::NextAttention, false) => "Next attention",
             (Self::NextAttention, true) => "下一个待处理",
             (Self::QuickPrompt, false) => "Quick Prompt",
@@ -99,6 +105,8 @@ mod tests {
     fn palette_capability_has_labels_in_both_languages() {
         for command in [
             Command::Search,
+            Command::TranscriptSearch,
+            Command::ThreadQueue,
             Command::NextAttention,
             Command::QuickPrompt,
             Command::Board,
