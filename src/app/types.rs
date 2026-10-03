@@ -200,6 +200,10 @@ pub enum Action {
     OlderConversationLoaded(ConversationPage),
     BeginTranscriptSearch,
     TranscriptSearchLoaded(TranscriptSearchResults),
+    TranscriptSearchLoadedPage {
+        page: ConversationPage,
+        item_id: String,
+    },
     TranscriptSearchServerFailed {
         query: String,
         error: String,
