@@ -204,6 +204,8 @@ Normal startup launches a local `codex app-server --listen stdio://` connection 
 
 Personal planning state is stored locally in SQLite: WorkCard relationships/overlays, ScratchWork, Saved Views, notes, bookmarks, snooze and hot slots. Canonical Codex conversations/Goals and Git state are never copied into SQLite.
 
+Thread Queue is projected directly from the experimental Codex App Server queue API. Press `q` in Thread View to inspect/add/edit/reorder/start/delete queued submissions. The queue is never persisted locally; older App Servers degrade this surface without blocking normal conversation use. Mixed/multimodal queued inputs can be started/deleted/reordered but are intentionally not text-edited by codex-tui.
+
 `--fake` is a deterministic development/fixture mode; it is never an automatic fallback for a failed real backend.
 
 M6a adds an asynchronous read-only GitLab projection. A normal forge refresh stays within four `glab api` calls (project, recent Issues, open MRs, recent Pipelines); approval/discussion details are loaded only when Review is opened. Forge observations remain derived and carry freshness/provenance. GitLab Issues appear as deduplicated WorkCards, while matching MRs/Pipelines enrich the corresponding Codex thread card. Forge failure never blocks Codex/Git operation.
