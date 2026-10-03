@@ -2,6 +2,7 @@ use crate::forge::{
     ForgeIdentity, ForgeProviderKind, glab_api_json, glab_api_mutation_json,
     percent_encode_component,
 };
+use crate::forge_github_mutation::{GitHubAppliedResult, GitHubPreflight, GitHubReconciledOutcome};
 use crate::operation::{OperationState, new_operation_id, now_unix_ms};
 use crate::sqlite_store::SqliteStore;
 use anyhow::{Context, Result, anyhow};
@@ -98,10 +99,11 @@ impl ForgeMutationPlan {
             title: Some(title.clone()),
             payload_bytes: None,
             expected_side_effect: format!(
-                "create one GitLab merge request {source_branch} -> {target_branch} titled {title:?}"
+                "create one {} {source_branch} -> {target_branch} titled {title:?}",
+                change_request_name(identity.provider)
             ),
             preconditions: vec![
-                precondition("provider", "gitlab"),
+                precondition("provider", identity.provider.label()),
                 precondition("project-identity-current", "true"),
                 precondition("default-branch-unchanged", "true"),
                 precondition("source-branch-exists", "true"),
@@ -142,10 +144,11 @@ impl ForgeMutationPlan {
             title: None,
             payload_bytes: Some(payload_bytes),
             expected_side_effect: format!(
-                "post one {payload_bytes}-byte comment to GitLab MR !{change_request_iid}"
+                "post one {payload_bytes}-byte comment to {} #{change_request_iid}",
+                change_request_name(identity.provider)
             ),
             preconditions: vec![
-                precondition("provider", "gitlab"),
+                precondition("provider", identity.provider.label()),
                 precondition("project-identity-current", "true"),
                 precondition("merge-request-open", "true"),
                 precondition("source-target-unchanged", "true"),
@@ -170,7 +173,7 @@ impl ForgeMutationPlan {
                 change_request_iid,
                 source_branch,
                 target_branch,
-                expected: "approve exact GitLab merge request as the authenticated user",
+                expected: "approve exact forge change request as the authenticated user",
                 planned_at_unix_ms,
             },
         )
@@ -192,7 +195,7 @@ impl ForgeMutationPlan {
                 change_request_iid,
                 source_branch,
                 target_branch,
-                expected: "merge exact GitLab merge request under standard project policy",
+                expected: "merge exact forge change request under standard project policy",
                 planned_at_unix_ms,
             },
         )?;
@@ -248,7 +251,7 @@ fn mr_plan(identity: &ForgeIdentity, cwd: String, spec: MrPlanSpec) -> Result<Fo
         payload_bytes: None,
         expected_side_effect: format!("{}: !{}", spec.expected, spec.change_request_iid),
         preconditions: vec![
-            precondition("provider", "gitlab"),
+            precondition("provider", identity.provider.label()),
             precondition("project-identity-current", "true"),
             precondition("merge-request-open", "true"),
             precondition("source-target-unchanged", "true"),
@@ -259,21 +262,36 @@ fn mr_plan(identity: &ForgeIdentity, cwd: String, spec: MrPlanSpec) -> Result<Fo
 }
 
 fn ensure_identity(identity: &ForgeIdentity) -> Result<()> {
-    anyhow::ensure!(
-        identity.provider == ForgeProviderKind::GitLab,
-        "M6b supports GitLab mutations only"
-    );
-    anyhow::ensure!(!identity.host.trim().is_empty(), "GitLab host is empty");
+    anyhow::ensure!(!identity.host.trim().is_empty(), "forge host is empty");
     anyhow::ensure!(
         !identity.project_id.trim().is_empty()
             && identity.project_id.chars().all(|ch| ch.is_ascii_digit()),
-        "GitLab project id must be numeric"
+        "forge project/repository id must be numeric"
     );
     anyhow::ensure!(
         !identity.path_with_namespace.trim().is_empty(),
-        "GitLab project path is empty"
+        "forge project/repository path is empty"
     );
+    match identity.provider {
+        ForgeProviderKind::GitLab => {}
+        ForgeProviderKind::GitHub => {
+            let mut parts = identity.path_with_namespace.split('/');
+            let owner = parts.next().unwrap_or_default().trim();
+            let repo = parts.next().unwrap_or_default().trim();
+            anyhow::ensure!(
+                !owner.is_empty() && !repo.is_empty() && parts.next().is_none(),
+                "GitHub repository path must be exactly owner/repo"
+            );
+        }
+    }
     Ok(())
+}
+
+const fn change_request_name(provider: ForgeProviderKind) -> &'static str {
+    match provider {
+        ForgeProviderKind::GitLab => "GitLab merge request",
+        ForgeProviderKind::GitHub => "GitHub pull request",
+    }
 }
 
 fn required_text(label: &str, value: String) -> Result<String> {
@@ -500,6 +518,7 @@ async fn execute_with_project_lock(
 struct Preflight {
     authenticated_user_id: Option<u64>,
     merge_request_sha: Option<String>,
+    github: Option<GitHubPreflight>,
     already_satisfied: Option<(String, String)>,
 }
 
@@ -684,10 +703,15 @@ struct GitLabApprovalRuleState {
 }
 
 async fn validate_preconditions(plan: &ForgeMutationPlan) -> Result<Preflight> {
-    anyhow::ensure!(
-        plan.provider == ForgeProviderKind::GitLab,
-        "unsupported forge provider"
-    );
+    if plan.provider == ForgeProviderKind::GitHub {
+        let github = crate::forge_github_mutation::validate_preconditions(plan).await?;
+        return Ok(Preflight {
+            authenticated_user_id: None,
+            merge_request_sha: github.head_sha.clone(),
+            already_satisfied: github.already_satisfied.clone(),
+            github: Some(github),
+        });
+    }
     let project: GitLabProjectCheck =
         glab_api_json(&plan.cwd, &plan.host, &project_endpoint(plan)).await?;
     anyhow::ensure!(
@@ -727,6 +751,7 @@ async fn validate_preconditions(plan: &ForgeMutationPlan) -> Result<Preflight> {
             Ok(Preflight {
                 authenticated_user_id: None,
                 merge_request_sha: None,
+                github: None,
                 already_satisfied: None,
             })
         }
@@ -735,6 +760,7 @@ async fn validate_preconditions(plan: &ForgeMutationPlan) -> Result<Preflight> {
             Ok(Preflight {
                 authenticated_user_id: None,
                 merge_request_sha: None,
+                github: None,
                 already_satisfied: None,
             })
         }
@@ -751,6 +777,7 @@ async fn validate_preconditions(plan: &ForgeMutationPlan) -> Result<Preflight> {
                 return Ok(Preflight {
                     authenticated_user_id: Some(user.id),
                     merge_request_sha: Some(sha),
+                    github: None,
                     already_satisfied: Some((
                         mr_ref(plan, mr.iid),
                         "authenticated GitLab user is already present in approved_by".into(),
@@ -760,6 +787,7 @@ async fn validate_preconditions(plan: &ForgeMutationPlan) -> Result<Preflight> {
             Ok(Preflight {
                 authenticated_user_id: Some(user.id),
                 merge_request_sha: Some(sha),
+                github: None,
                 already_satisfied: None,
             })
         }
@@ -812,6 +840,7 @@ async fn validate_preconditions(plan: &ForgeMutationPlan) -> Result<Preflight> {
             Ok(Preflight {
                 authenticated_user_id: None,
                 merge_request_sha: Some(sha),
+                github: None,
                 already_satisfied: None,
             })
         }
@@ -926,6 +955,7 @@ enum AppliedResult {
     Note(u64),
     Approval(u64),
     Merge(u64),
+    GitHub(GitHubAppliedResult),
 }
 
 async fn execute_mutation(
@@ -933,6 +963,15 @@ async fn execute_mutation(
     preflight: &Preflight,
 ) -> Result<AppliedResult> {
     let plan = &request.plan;
+    if plan.provider == ForgeProviderKind::GitHub {
+        let github = preflight
+            .github
+            .as_ref()
+            .context("GitHub mutation preflight is missing")?;
+        return crate::forge_github_mutation::execute_mutation(request, github)
+            .await
+            .map(AppliedResult::GitHub);
+    }
     match plan.kind {
         ForgeMutationKind::CreateMergeRequest => {
             let source = plan
@@ -1028,6 +1067,9 @@ async fn verify_success(
 ) -> Result<(String, String)> {
     let plan = &request.plan;
     match applied {
+        AppliedResult::GitHub(applied) => {
+            crate::forge_github_mutation::verify_success(request, applied).await
+        }
         AppliedResult::MergeRequest(iid) => {
             let mr = get_mr(plan, iid).await?;
             let source = plan.source_branch.as_deref().context("missing source")?;
@@ -1129,6 +1171,18 @@ enum ReconciledOutcome {
 }
 
 async fn reconcile_outcome(plan: &ForgeMutationPlan) -> Result<ReconciledOutcome> {
+    if plan.provider == ForgeProviderKind::GitHub {
+        return match crate::forge_github_mutation::reconcile_outcome(plan).await? {
+            GitHubReconciledOutcome::Succeeded {
+                result_ref,
+                verification,
+            } => Ok(ReconciledOutcome::Succeeded {
+                result_ref,
+                verification,
+            }),
+            GitHubReconciledOutcome::Unknown(reason) => Ok(ReconciledOutcome::Unknown(reason)),
+        };
+    }
     match plan.kind {
         ForgeMutationKind::CreateMergeRequest => {
             let source = plan
@@ -1254,6 +1308,17 @@ mod tests {
             project_id: "42".into(),
             path_with_namespace: "team/repo".into(),
             web_url: "https://gitlab.example.com/team/repo".into(),
+            default_branch: Some("main".into()),
+        }
+    }
+
+    fn github_identity() -> ForgeIdentity {
+        ForgeIdentity {
+            provider: ForgeProviderKind::GitHub,
+            host: "github.com".into(),
+            project_id: "123".into(),
+            path_with_namespace: "octo/repo".into(),
+            web_url: "https://github.com/octo/repo".into(),
             default_branch: Some("main".into()),
         }
     }
@@ -1403,6 +1468,40 @@ mod tests {
         .expect("decode approval-state fixture");
 
         assert_eq!(unsatisfied_required_approval_rules(&state), 1);
+    }
+
+    #[test]
+    fn github_plans_reuse_confirmation_contract_and_provider_identity() {
+        let create = ForgeMutationPlan::create_merge_request(
+            &github_identity(),
+            "/repo".into(),
+            "feature/github".into(),
+            "main".into(),
+            "Ship GitHub support".into(),
+            1,
+        )
+        .expect("GitHub create plan");
+        assert_eq!(create.provider, ForgeProviderKind::GitHub);
+        assert!(create.expected_side_effect.contains("GitHub pull request"));
+        assert!(
+            create
+                .preconditions
+                .iter()
+                .any(|condition| { condition.key == "provider" && condition.expected == "github" })
+        );
+
+        let approve = ForgeMutationPlan::approve_merge_request(
+            &github_identity(),
+            "/repo".into(),
+            7,
+            "feature/github".into(),
+            "main".into(),
+            2,
+        )
+        .expect("GitHub approve plan");
+        assert!(approve.preconditions.iter().any(|condition| {
+            condition.key == "head-sha-revalidated" && condition.expected == "true"
+        }));
     }
 
     #[test]

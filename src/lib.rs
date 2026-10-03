@@ -13,6 +13,7 @@ pub mod conversation;
 pub mod domain;
 pub mod forge;
 pub mod forge_github;
+pub(crate) mod forge_github_mutation;
 pub mod forge_mutation;
 pub(crate) mod forge_types;
 pub mod git;

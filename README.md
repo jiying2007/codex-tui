@@ -134,7 +134,7 @@ Requirements:
 - Rust stable (MSRV 1.88)
 - a working `codex` executable on `PATH` for live registry mode
 - optional `glab` authenticated to the repository's GitLab host for GitLab integration
-- optional `gh` authenticated to `github.com` for the M6c GitHub read-only provider
+- optional `gh` authenticated to the repository's GitHub host for GitHub projection and explicitly confirmed pull-request mutations
 
 Commands:
 
@@ -249,7 +249,7 @@ M6a adds an asynchronous read-only GitLab projection. A normal forge refresh sta
 
 M6b adds explicit GitLab merge-request mutations from Review / Workspace context actions (`.`): create MR, comment, approve, and merge. Every write is plan-first and requires explicit confirmation. Approve/merge revalidate the exact MR HEAD SHA immediately before execution; merge never requests force/policy bypass. Comment bodies remain memory-only and are not stored in SQLite. Uncertain external outcomes remain `OutcomeUnknown` and are never blindly retried.
 
-M6c completes the normalized forge layer with a GitHub.com read-only provider. Exact `github.com` and `gitlab.com` remotes use their canonical providers; custom forge hosts are resolved from explicit `gh`/`glab` authentication instead of assuming every non-GitHub host is GitLab. A normal GitHub refresh uses four `gh api` calls (repository, Issues, open Pull Requests, Actions runs), while reviews and bounded GraphQL review threads load only in Review. GitHub capabilities degrade independently and no GitHub write path is introduced.
+M6c established the normalized GitHub read-only provider. v1.3 extends that same forge mutation contract to GitHub pull requests: create, comment, approve, and merge remain plan-first and require explicit confirmation. Approve/merge re-read and compare the exact pull-request HEAD immediately before the write; merge sends only the guarded `sha` and never requests force, bypass, or policy overrides. Comment bodies remain memory-only. Uncertain GitHub outcomes become `OutcomeUnknown` and are reconciled without blind retry. Read projection remains bounded (repository, Issues, open Pull Requests, Actions runs; reviews and bounded GraphQL review threads only in Review).
 
 M7a establishes a read-only automation and scale baseline. v1.2 extends that stable surface with `status`, `thread list`, `attention list`, `board list`, `forge status` and `worktree list` top-level aliases plus equivalent `headless` commands. They emit text or secret-safe JSON snapshots with explicit degraded exit codes and introduce no mutating headless path. `doctor compat` reports local OS/architecture, SQLite, Codex, Git, `glab`, and `gh` compatibility without remote forge API probes. `--fixture-10k` provides deterministic scale data, while the Divan benchmark target measures resident 10k planning filters plus recent/search/host-local Registry projections without turning noisy hosted-runner timings into release gates.
 
