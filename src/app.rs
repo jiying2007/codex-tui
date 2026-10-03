@@ -33,6 +33,7 @@ use crate::planning::{
 use crate::store::LocalStateV1;
 use crate::terminal_drawer::TerminalSnapshot;
 use crate::text::sanitize_inline;
+use crate::transcript_search::{TranscriptSearchHit, TranscriptSearchResults, TranscriptSearchSource};
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::time::Instant;
 
@@ -171,6 +172,13 @@ pub struct AppState {
     pub host_local_only: bool,
     pub repo_backed_only: bool,
     pub show_all_history: bool,
+    pub transcript_search_open: bool,
+    pub transcript_search_query: String,
+    pub transcript_search_results: Option<TranscriptSearchResults>,
+    pub transcript_search_selected: usize,
+    pub transcript_search_loading: bool,
+    pub transcript_search_error: Option<String>,
+    pub transcript_search_active_hit: Option<TranscriptSearchHit>,
     pub input_mode: InputMode,
     pub input_buffer: String,
     input_original: String,
@@ -287,11 +295,31 @@ impl AppState {
             host_local_only: false,
             repo_backed_only: false,
             show_all_history: false,
+            transcript_search_open: false,
+            transcript_search_query: String::new(),
+            transcript_search_results: None,
+            transcript_search_selected: 0,
+            transcript_search_loading: false,
+            transcript_search_error: None,
+            transcript_search_active_hit: None,
             input_mode: InputMode::Normal,
             input_buffer: String::new(),
             input_original: String::new(),
             search_return_view: None,
         }
+    }
+
+    pub fn transcript_search_hit(&self) -> Option<&TranscriptSearchHit> {
+        self.transcript_search_results
+            .as_ref()
+            .and_then(|results| results.hits.get(self.transcript_search_selected))
+    }
+
+    pub fn transcript_search_source_label(&self) -> &'static str {
+        self.transcript_search_results
+            .as_ref()
+            .map(|results| results.source.label())
+            .unwrap_or("pending")
     }
 
     fn prepare_conversation(&mut self, thread_id: &ThreadId) {
@@ -772,7 +800,7 @@ impl AppState {
     }
 
     fn build_command_palette_choices(&self) -> Vec<Command> {
-        let mut choices = vec![Command::Search];
+        let mut choices = vec![Command::Search, Command::TranscriptSearch];
         let thread_id = self.command_palette_thread_id();
 
         if matches!(self.view, View::Registry | View::Board) {
@@ -2289,6 +2317,24 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 .prepend_page(page);
             state.touch_conversation_cache(&thread_id);
         }
+        Action::TranscriptSearchLoadedPage { page, item_id } => {
+            let thread_id = page.thread_id.clone();
+            let key = thread_id.0.clone();
+            let target_index = page
+                .items
+                .iter()
+                .position(|item| item.item_id == item_id)
+                .unwrap_or(0);
+            state
+                .conversations
+                .entry(key)
+                .or_insert_with(|| ConversationState::loading(thread_id.clone()))
+                .replace_page(page);
+            let ui = state.thread_ui.entry(thread_id.0.clone()).or_default();
+            ui.follow = false;
+            ui.scroll = u16::try_from(target_index.saturating_sub(2)).unwrap_or(u16::MAX);
+            state.touch_conversation_cache(&thread_id);
+        }
         Action::ConversationFailed { thread_id, error } => {
             let conversation = state
                 .conversations
@@ -2601,6 +2647,93 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.input_buffer.clone_from(&state.filter);
             state.input_mode = InputMode::Search;
         }
+        Action::BeginTranscriptSearch => {
+            state.input_buffer.clear();
+            state.input_original.clear();
+            state.input_mode = InputMode::TranscriptSearch;
+            state.transcript_search_error = None;
+        }
+        Action::TranscriptSearchLoaded(results) => {
+            if results.query == state.transcript_search_query {
+                let replace = state
+                    .transcript_search_results
+                    .as_ref()
+                    .is_none_or(|current| {
+                        current.source != TranscriptSearchSource::AppServer
+                            || results.source == TranscriptSearchSource::AppServer
+                    });
+                if replace {
+                    if results.source == TranscriptSearchSource::AppServer {
+                        state.transcript_search_loading = false;
+                        state.transcript_search_error = None;
+                    }
+                    state.transcript_search_results = Some(results);
+                    let len = state
+                        .transcript_search_results
+                        .as_ref()
+                        .map(|results| results.hits.len())
+                        .unwrap_or(0);
+                    if len == 0 {
+                        state.transcript_search_selected = 0;
+                    } else {
+                        state.transcript_search_selected =
+                            state.transcript_search_selected.min(len - 1);
+                    }
+                }
+            }
+        }
+        Action::TranscriptSearchServerFailed { query, error } => {
+            if query == state.transcript_search_query {
+                state.transcript_search_loading = false;
+                state.transcript_search_error = Some(error);
+            }
+        }
+        Action::CloseTranscriptSearch => {
+            state.transcript_search_open = false;
+            state.transcript_search_selected = 0;
+        }
+        Action::MoveTranscriptSearch(delta) => {
+            let len = state
+                .transcript_search_results
+                .as_ref()
+                .map(|results| results.hits.len())
+                .unwrap_or(0);
+            if len == 0 {
+                state.transcript_search_selected = 0;
+            } else {
+                state.transcript_search_selected =
+                    (state.transcript_search_selected as i32 + delta)
+                        .rem_euclid(len as i32) as usize;
+            }
+        }
+        Action::OpenTranscriptSearchSelected => {
+            let Some(hit) = state.transcript_search_hit().cloned() else {
+                return vec![];
+            };
+            let thread_id = hit.thread_id.clone();
+            if !state.threads.iter().any(|thread| thread.id == thread_id) {
+                state.transcript_search_error = Some(
+                    local_text(
+                        state.language,
+                        "search result thread is no longer present in the Registry",
+                        "搜索结果对应的会话已不在当前 Registry 中",
+                    )
+                    .into(),
+                );
+                return vec![];
+            }
+            state.transcript_search_open = false;
+            state.previous_target = state.current_thread_id().cloned();
+            state.thread_ui.entry(thread_id.0.clone()).or_default();
+            state.prepare_conversation(&thread_id);
+            state.view = View::Thread(thread_id.clone());
+            state.transcript_search_active_hit = Some(hit.clone());
+            return if hit.turn_id.is_some() && hit.item_id.is_some() {
+                vec![Effect::JumpToTranscriptHit(hit)]
+            } else {
+                vec![Effect::LoadConversation(thread_id)]
+            };
+        }
         Action::BeginAlias => {
             if let Some(alias) = state
                 .selected_thread()
@@ -2625,6 +2758,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 }
             }
             InputMode::Search
+            | InputMode::TranscriptSearch
             | InputMode::Alias
             | InputMode::UserInput
             | InputMode::ScratchTitle
@@ -2711,6 +2845,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 }
             }
             InputMode::Search
+            | InputMode::TranscriptSearch
             | InputMode::Alias
             | InputMode::UserInput
             | InputMode::ScratchTitle
@@ -2740,6 +2875,21 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         },
         Action::CommitInput => {
             let mode = state.input_mode;
+            if mode == InputMode::TranscriptSearch {
+                let query = state.input_buffer.trim().to_string();
+                if query.is_empty() {
+                    return vec![];
+                }
+                state.input_mode = InputMode::Normal;
+                state.input_buffer.clear();
+                state.transcript_search_open = true;
+                state.transcript_search_query.clone_from(&query);
+                state.transcript_search_results = None;
+                state.transcript_search_selected = 0;
+                state.transcript_search_loading = true;
+                state.transcript_search_error = None;
+                return vec![Effect::SearchTranscript { query }];
+            }
             if mode == InputMode::ForgeMergeRequestTitle {
                 let title = state.input_buffer.trim().to_string();
                 if title.is_empty() {
@@ -3195,6 +3345,11 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         }
         Action::CancelInput => {
             let mut search_watch_to_release = None;
+            if state.input_mode == InputMode::TranscriptSearch {
+                state.input_mode = InputMode::Normal;
+                state.input_buffer.clear();
+                return vec![];
+            }
             if matches!(
                 state.input_mode,
                 InputMode::BatchAddTag
