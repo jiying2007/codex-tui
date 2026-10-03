@@ -229,7 +229,7 @@ pub(super) fn render_transcript_search(frame: &mut Frame<'_>, app: &AppState) {
         lines.push(Line::from(format!(
             "{}: {}",
             tr(app, "Server note", "服务端提示"),
-            truncate_display(error, 92)
+            truncate_display(&sanitize_inline(error), 92)
         )));
     }
 
