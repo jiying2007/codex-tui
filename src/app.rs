@@ -542,7 +542,7 @@ impl AppState {
             },
             normalized_query,
         ) && (!self.host_local_only
-                || self.cwd_locality(&thread.metadata.cwd) == CwdLocality::LocalDirectory)
+            || self.cwd_locality(&thread.metadata.cwd) == CwdLocality::LocalDirectory)
             && self.thread_matches_repo_scope(thread)
     }
 
