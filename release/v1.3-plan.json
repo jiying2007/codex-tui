@@ -1,0 +1,98 @@
+{
+  "schema": "codex-tui/v1.3-plan/v1",
+  "targetVersion": "1.3.0",
+  "theme": "search-and-multi-target",
+  "entryMainSha": "cc0fbc0cd40ff3e3d2ecffd9f7dbe7a17e8b9b22",
+  "versionActivation": {
+    "policy": "activate-package-version-at-development-completion",
+    "developmentPackageVersion": "1.2.0",
+    "finalPackageVersion": "1.3.0",
+    "rationale": "keep the completed v1.2 release authority intact while v1.3 core work is incomplete"
+  },
+  "invariant": "Codex remains conversation/queue authority, Git remains code authority, Forge remains review/delivery authority, and SQLite stores only local search/index/operator acceleration state",
+  "priorities": [
+    {
+      "id": "transcript-search",
+      "priority": "P0",
+      "outcomes": [
+        "capability-first App Server thread/search and thread/searchOccurrences integration",
+        "local SQLite FTS5 fallback/index accelerator for conversation pages already observed by codex-tui",
+        "search results preserve thread/turn/item identity and never become canonical transcript authority",
+        "bounded result counts and secret-safe diagnostics"
+      ],
+      "authority": "Codex App Server when available; local FTS is derived cache only"
+    },
+    {
+      "id": "thread-queue",
+      "priority": "P0",
+      "outcomes": [
+        "experimental App Server queue capability handshake",
+        "queue list/add/update/delete/reorder/start operations",
+        "thread/queue/changed driven refresh",
+        "bilingual keyboard-accessible Thread Queue surface",
+        "unsupported servers degrade without blocking normal thread operation"
+      ],
+      "authority": "Codex App Server"
+    },
+    {
+      "id": "remote-app-server-targets",
+      "priority": "P1",
+      "outcomes": [
+        "named local and remote Codex targets in local TOML config",
+        "local stdio remains zero-config default",
+        "ws/wss explicit remote App Server transport",
+        "unix socket target bridged through official codex app-server proxy when configured",
+        "active target provenance visible in diagnostics and normal backend status",
+        "target selection never becomes a shared/team authority"
+      ],
+      "authority": "local operator configuration + remote Codex App Server"
+    },
+    {
+      "id": "github-safe-mutations",
+      "priority": "P1",
+      "outcomes": [
+        "GitHub create PR/comment/approve/merge behind normalized Forge mutation plan",
+        "plan-first explicit confirmation retained",
+        "approve/merge revalidate exact pull-request HEAD before mutation",
+        "merge never requests force or policy bypass",
+        "uncertain external outcomes remain OutcomeUnknown and are never blindly retried"
+      ],
+      "authority": "GitHub"
+    }
+  ],
+  "completionOrder": [
+    "transcript-search",
+    "thread-queue",
+    "remote-app-server-targets",
+    "github-safe-mutations"
+  ],
+  "nonGoals": [
+    "native-gitlab-rest-graphql-without-measured-trigger",
+    "headless-mutation-api",
+    "github-enterprise-auto-detection",
+    "external-notification-bridge",
+    "team-server-rbac",
+    "web-mobile-companion",
+    "collaboration-service",
+    "generic-plugin-runtime",
+    "multi-agent-providers",
+    "job-workflow-engine"
+  ],
+  "phaseExit": {
+    "P0": [
+      "full-history search uses upstream capability when available and derived local FTS fallback otherwise",
+      "queue operations are capability-gated and upstream-authoritative",
+      "both P0 features have protocol/parser/store/reducer/UI tests and fail-soft degradation"
+    ],
+    "P1": [
+      "named remote targets preserve local default and expose provenance",
+      "GitHub writes use the same plan-confirm-revalidate-receipt safety model as GitLab"
+    ],
+    "v1_3": [
+      "Cargo and stable criteria advance to 1.3.0 only after all four capabilities are complete",
+      "fresh-main canonical CI, development qualification, performance diagnostics and release preview are green",
+      "v1.3 completion manifest freezes new core scope behind a subsequent development plan"
+    ]
+  },
+  "frozenV1_2Checkpoint": "release/v1.2-development-complete"
+}

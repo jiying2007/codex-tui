@@ -475,6 +475,7 @@ jobs:
           python scripts/release/finalize_release.py --help >/dev/null
           python scripts/release/terminal_smoke.py --help >/dev/null
           python scripts/release/configure_main_protection.py --help >/dev/null
+          python scripts/release/validate_v1_3_plan.py
           python scripts/release/linux_qualify.py --help >/dev/null
           PYTHONPATH=scripts/release python - <<'PY'
           import configure_main_protection as p
