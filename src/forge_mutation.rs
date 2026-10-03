@@ -1068,10 +1068,10 @@ async fn verify_success(
     applied: AppliedResult,
 ) -> Result<(String, String)> {
     let plan = &request.plan;
-    if let AppliedResult::GitHub(applied) = applied {
-        return crate::forge_github_mutation::verify_success(request, applied).await;
-    }
     match applied {
+        AppliedResult::GitHub(applied) => {
+            crate::forge_github_mutation::verify_success(request, applied).await
+        }
         AppliedResult::MergeRequest(iid) => {
             let mr = get_mr(plan, iid).await?;
             let source = plan.source_branch.as_deref().context("missing source")?;
