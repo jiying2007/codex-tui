@@ -326,6 +326,23 @@ jobs:
             --automated-qualification qualification/automated-qualification.json \
             --commit "${{ github.sha }}"
 
+      - name: Validate current stable branch state
+        if: inputs.channel == 'stable'
+        shell: bash
+        env:
+          PUBLISH: ${{ inputs.publish || false }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/branches/main" > current-main.json
+          ARGS=(
+            --branch-json current-main.json
+            --commit "${{ github.sha }}"
+          )
+          if [ "$PUBLISH" = "true" ]; then
+            ARGS+=(--require-protected)
+          fi
+          python3 scripts/release/validate_release_branch_state.py "${ARGS[@]}"
+
       - name: Validate stable publication notes
         if: inputs.channel == 'stable' && inputs.publish == true
         run: >
