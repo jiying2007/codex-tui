@@ -12,6 +12,9 @@ use crate::goal::{
     GoalObservation, GoalStatus, parse_goal_cleared_thread, parse_goal_get, parse_goal_set,
     parse_goal_updated,
 };
+use crate::thread_queue::{
+    THREAD_QUEUE_PAGE_LIMIT, ThreadQueueMutation, ThreadQueueSnapshot, parse_queue_list, text_input,
+};
 use crate::transcript_search::{
     TRANSCRIPT_SEARCH_OCCURRENCE_LIMIT, TRANSCRIPT_SEARCH_RESULT_LIMIT,
     TRANSCRIPT_SEARCH_THREAD_LIMIT, TranscriptSearchResults, TranscriptSearchSource,
@@ -40,6 +43,7 @@ const APP_SERVER_COMMAND_QUEUE_CAPACITY: usize = 64;
 const APP_SERVER_CONVERSATION_QUEUE_CAPACITY: usize = 256;
 const RPC_QUEUED_MESSAGE_CAPACITY: usize = 1024;
 const RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+const THREAD_QUEUE_MAX_PAGES: usize = 10;
 
 #[derive(Debug)]
 struct RpcResponseError {
@@ -91,6 +95,29 @@ fn mark_optional_capability(status: &mut BackendStatus, capability: &str, suppor
                 .optional_capabilities_missing
                 .push(capability.to_string());
         }
+    }
+}
+
+fn is_thread_queue_unsupported(error: &anyhow::Error) -> bool {
+    let Some(source) = error.downcast_ref::<RpcResponseError>() else {
+        return false;
+    };
+    source.code == Some(-32601)
+        || (matches!(source.code, Some(-32600 | -32602)) && {
+            let message = source.message.to_ascii_lowercase();
+            message.contains("thread/queue")
+                || message.contains("experimental")
+                || message.contains("unknown method")
+        })
+}
+
+fn thread_queue_mutation_capability(mutation: &ThreadQueueMutation) -> &'static str {
+    match mutation {
+        ThreadQueueMutation::Add { .. } => "thread/queue/add",
+        ThreadQueueMutation::Update { .. } => "thread/queue/update",
+        ThreadQueueMutation::Delete { .. } => "thread/queue/delete",
+        ThreadQueueMutation::Reorder { .. } => "thread/queue/reorder",
+        ThreadQueueMutation::Start { .. } => "thread/queue/start",
     }
 }
 
@@ -216,6 +243,9 @@ pub enum BackendCommand {
     ClearGoal(ThreadId),
     SearchTranscript(String),
     JumpToTranscriptHit(crate::transcript_search::TranscriptSearchHit),
+    RefreshThreadQueue(ThreadId),
+    StopWatchingThreadQueue(ThreadId),
+    MutateThreadQueue(ThreadQueueMutation),
 }
 
 #[derive(Clone, Debug)]
@@ -239,6 +269,11 @@ pub enum ConversationEvent {
     },
     TranscriptSearchFailed {
         query: String,
+        error: String,
+    },
+    ThreadQueueLoaded(ThreadQueueSnapshot),
+    ThreadQueueFailed {
+        thread_id: ThreadId,
         error: String,
     },
     Failed {
@@ -342,6 +377,18 @@ impl RegistryHandle {
         hit: crate::transcript_search::TranscriptSearchHit,
     ) -> Result<()> {
         self.send_command(BackendCommand::JumpToTranscriptHit(hit))
+    }
+
+    pub fn refresh_thread_queue(&self, thread_id: ThreadId) -> Result<()> {
+        self.send_command(BackendCommand::RefreshThreadQueue(thread_id))
+    }
+
+    pub fn stop_watching_thread_queue(&self, thread_id: ThreadId) -> Result<()> {
+        self.send_command(BackendCommand::StopWatchingThreadQueue(thread_id))
+    }
+
+    pub fn mutate_thread_queue(&self, mutation: ThreadQueueMutation) -> Result<()> {
+        self.send_command(BackendCommand::MutateThreadQueue(mutation))
     }
 
     fn send_command(&self, command: BackendCommand) -> Result<()> {
@@ -734,6 +781,7 @@ async fn run_registry_actor(
     let mut threads = by_id(initial_threads);
     let mut pending_requests: BTreeMap<RpcRequestId, PendingServerRequest> = BTreeMap::new();
     let mut watched_threads = BTreeSet::new();
+    let mut watched_queue_threads = BTreeSet::new();
     let mut goal_supported: Option<bool> = None;
     let mut goal_probed = BTreeSet::new();
     let mut goal_queued = BTreeSet::new();
@@ -1041,6 +1089,86 @@ async fn run_registry_actor(
                             }
                         }
                     }
+                    BackendCommand::RefreshThreadQueue(thread_id) => {
+                        watched_queue_threads.insert(thread_id.0.clone());
+                        match load_thread_queue(&mut rpc, thread_id.clone()).await {
+                            Ok(snapshot) => {
+                                mark_optional_capability(&mut status, "thread/queue/list", true);
+                                send_conversation_event(
+                                    &conversation_tx,
+                                    ConversationEvent::ThreadQueueLoaded(snapshot),
+                                )
+                                .await;
+                            }
+                            Err(error) => {
+                                if is_thread_queue_unsupported(&error) {
+                                    mark_optional_capability(
+                                        &mut status,
+                                        "thread/queue/list",
+                                        false,
+                                    );
+                                }
+                                send_conversation_event(
+                                    &conversation_tx,
+                                    ConversationEvent::ThreadQueueFailed {
+                                        thread_id,
+                                        error: error.to_string(),
+                                    },
+                                )
+                                .await;
+                            }
+                        }
+                    }
+                    BackendCommand::StopWatchingThreadQueue(thread_id) => {
+                        watched_queue_threads.remove(&thread_id.0);
+                    }
+                    BackendCommand::MutateThreadQueue(mutation) => {
+                        let capability = thread_queue_mutation_capability(&mutation);
+                        let thread_id = thread_queue_mutation_thread_id(&mutation).clone();
+                        watched_queue_threads.insert(thread_id.0.clone());
+                        match execute_thread_queue_mutation(&mut rpc, &mutation).await {
+                            Ok(()) => {
+                                mark_optional_capability(&mut status, capability, true);
+                                match load_thread_queue(&mut rpc, thread_id.clone()).await {
+                                    Ok(snapshot) => {
+                                        mark_optional_capability(
+                                            &mut status,
+                                            "thread/queue/list",
+                                            true,
+                                        );
+                                        send_conversation_event(
+                                            &conversation_tx,
+                                            ConversationEvent::ThreadQueueLoaded(snapshot),
+                                        )
+                                        .await;
+                                    }
+                                    Err(error) => {
+                                        send_conversation_event(
+                                            &conversation_tx,
+                                            ConversationEvent::ThreadQueueFailed {
+                                                thread_id,
+                                                error: error.to_string(),
+                                            },
+                                        )
+                                        .await;
+                                    }
+                                }
+                            }
+                            Err(error) => {
+                                if is_thread_queue_unsupported(&error) {
+                                    mark_optional_capability(&mut status, capability, false);
+                                }
+                                send_conversation_event(
+                                    &conversation_tx,
+                                    ConversationEvent::ThreadQueueFailed {
+                                        thread_id,
+                                        error: error.to_string(),
+                                    },
+                                )
+                                .await;
+                            }
+                        }
+                    }
                 }
             }
             _ = hydration_tick.tick(), if registry_page_can_advance => {
@@ -1252,6 +1380,7 @@ async fn run_registry_actor(
                             &mut threads,
                             &mut pending_requests,
                             &watched_threads,
+                            &watched_queue_threads,
                             &conversation_tx,
                         )
                         .await
@@ -1784,6 +1913,139 @@ async fn load_conversation(rpc: &mut RpcSession, thread_id: ThreadId) -> Result<
     ))
 }
 
+fn thread_queue_mutation_thread_id(mutation: &ThreadQueueMutation) -> &ThreadId {
+    match mutation {
+        ThreadQueueMutation::Add { thread_id, .. }
+        | ThreadQueueMutation::Update { thread_id, .. }
+        | ThreadQueueMutation::Delete { thread_id, .. }
+        | ThreadQueueMutation::Reorder { thread_id, .. }
+        | ThreadQueueMutation::Start { thread_id, .. } => thread_id,
+    }
+}
+
+async fn load_thread_queue(
+    rpc: &mut RpcSession,
+    thread_id: ThreadId,
+) -> Result<ThreadQueueSnapshot> {
+    let mut cursor: Option<String> = None;
+    let mut submissions = Vec::new();
+
+    for page_index in 0..THREAD_QUEUE_MAX_PAGES {
+        let result = rpc
+            .request(
+                "thread/queue/list",
+                json!({
+                    "threadId": thread_id.0,
+                    "cursor": cursor,
+                    "limit": THREAD_QUEUE_PAGE_LIMIT
+                }),
+            )
+            .await
+            .context("list thread queue")?;
+        let page = parse_queue_list(thread_id.clone(), result)?;
+        submissions.extend(page.submissions);
+        cursor = page.next_cursor;
+        if cursor.is_none() {
+            return Ok(ThreadQueueSnapshot {
+                thread_id,
+                submissions,
+                next_cursor: None,
+            });
+        }
+        if page_index + 1 == THREAD_QUEUE_MAX_PAGES {
+            anyhow::bail!(
+                "thread queue exceeds bounded pagination limit of {} entries",
+                THREAD_QUEUE_MAX_PAGES * THREAD_QUEUE_PAGE_LIMIT as usize
+            );
+        }
+    }
+
+    unreachable!("bounded queue pagination always returns or errors")
+}
+
+async fn execute_thread_queue_mutation(
+    rpc: &mut RpcSession,
+    mutation: &ThreadQueueMutation,
+) -> Result<()> {
+    match mutation {
+        ThreadQueueMutation::Add {
+            thread_id,
+            text,
+            client_user_message_id,
+        } => {
+            rpc.request(
+                "thread/queue/add",
+                json!({
+                    "threadId": thread_id.0,
+                    "input": [text_input(text)],
+                    "clientUserMessageId": client_user_message_id
+                }),
+            )
+            .await
+            .context("add thread queue submission")?;
+        }
+        ThreadQueueMutation::Update {
+            thread_id,
+            queued_submission_id,
+            text,
+        } => {
+            rpc.request(
+                "thread/queue/update",
+                json!({
+                    "threadId": thread_id.0,
+                    "queuedSubmissionId": queued_submission_id,
+                    "input": [text_input(text)]
+                }),
+            )
+            .await
+            .context("update thread queue submission")?;
+        }
+        ThreadQueueMutation::Delete {
+            thread_id,
+            queued_submission_id,
+        } => {
+            rpc.request(
+                "thread/queue/delete",
+                json!({
+                    "threadId": thread_id.0,
+                    "queuedSubmissionId": queued_submission_id
+                }),
+            )
+            .await
+            .context("delete thread queue submission")?;
+        }
+        ThreadQueueMutation::Reorder {
+            thread_id,
+            queued_submission_ids,
+        } => {
+            rpc.request(
+                "thread/queue/reorder",
+                json!({
+                    "threadId": thread_id.0,
+                    "queuedSubmissionIds": queued_submission_ids
+                }),
+            )
+            .await
+            .context("reorder thread queue")?;
+        }
+        ThreadQueueMutation::Start {
+            thread_id,
+            queued_submission_id,
+        } => {
+            rpc.request(
+                "thread/queue/start",
+                json!({
+                    "threadId": thread_id.0,
+                    "queuedSubmissionId": queued_submission_id
+                }),
+            )
+            .await
+            .context("start queued submission")?;
+        }
+    }
+    Ok(())
+}
+
 async fn search_transcript(rpc: &mut RpcSession, query: String) -> Result<TranscriptSearchResults> {
     let query = query.trim().to_string();
     anyhow::ensure!(!query.is_empty(), "transcript search query is empty");
@@ -1934,6 +2196,7 @@ async fn handle_unsolicited(
     threads: &mut BTreeMap<String, ThreadSummary>,
     pending_requests: &mut BTreeMap<RpcRequestId, PendingServerRequest>,
     watched_threads: &BTreeSet<String>,
+    watched_queue_threads: &BTreeSet<String>,
     conversation_tx: &mpsc::Sender<ConversationEvent>,
 ) -> Result<bool> {
     if message.get("id").is_some() && message.get("method").is_some() {
@@ -2009,6 +2272,36 @@ async fn handle_unsolicited(
     if method == "thread/goal/cleared" {
         let thread_id = parse_goal_cleared_thread(params)?;
         send_conversation_event(conversation_tx, ConversationEvent::GoalCleared(thread_id)).await;
+        return Ok(false);
+    }
+
+    if method == "thread/queue/changed" {
+        let thread_id = params
+            .get("threadId")
+            .and_then(Value::as_str)
+            .context("thread/queue/changed missing threadId")?;
+        if watched_queue_threads.contains(thread_id) {
+            let id = ThreadId::new(thread_id);
+            match load_thread_queue(rpc, id.clone()).await {
+                Ok(snapshot) => {
+                    send_conversation_event(
+                        conversation_tx,
+                        ConversationEvent::ThreadQueueLoaded(snapshot),
+                    )
+                    .await;
+                }
+                Err(error) => {
+                    send_conversation_event(
+                        conversation_tx,
+                        ConversationEvent::ThreadQueueFailed {
+                            thread_id: id,
+                            error: error.to_string(),
+                        },
+                    )
+                    .await;
+                }
+            }
+        }
         return Ok(false);
     }
 
@@ -2134,6 +2427,7 @@ fn should_queue_rpc_message(message: &Value) -> bool {
             "serverRequest/resolved"
                 | "thread/goal/updated"
                 | "thread/goal/cleared"
+                | "thread/queue/changed"
                 | "thread/started"
                 | "thread/status/changed"
                 | "thread/archived"
