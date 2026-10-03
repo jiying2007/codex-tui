@@ -24,7 +24,7 @@ enum Transport {
         writer: BufWriter<ChildStdin>,
     },
     WebSocket {
-        stream: WebSocketStream<MaybeTlsStream<TcpStream>>,
+        stream: Box<WebSocketStream<MaybeTlsStream<TcpStream>>>,
     },
     #[cfg(unix)]
     UnixSocket { stream: WebSocketStream<UnixStream> },
@@ -85,7 +85,9 @@ impl AppServerTransport {
                         target.diagnostic_endpoint()
                     )
                 })?;
-                Transport::WebSocket { stream }
+                Transport::WebSocket {
+                    stream: Box::new(stream),
+                }
             }
             ResolvedAppServerEndpoint::UnixSocket { path } => {
                 #[cfg(unix)]
@@ -124,7 +126,7 @@ impl AppServerTransport {
                     .context("decode App Server stdio JSON")
                     .map(Some);
             },
-            Transport::WebSocket { stream } => read_websocket_json(stream).await,
+            Transport::WebSocket { stream } => read_websocket_json(stream.as_mut()).await,
             #[cfg(unix)]
             Transport::UnixSocket { stream } => read_websocket_json(stream).await,
         }
@@ -142,7 +144,7 @@ impl AppServerTransport {
                     .context("write App Server stdio")?;
                 writer.flush().await.context("flush App Server stdio")
             }
-            Transport::WebSocket { stream } => write_websocket_json(stream, value).await,
+            Transport::WebSocket { stream } => write_websocket_json(stream.as_mut(), value).await,
             #[cfg(unix)]
             Transport::UnixSocket { stream } => write_websocket_json(stream, value).await,
         }
@@ -197,8 +199,10 @@ mod tests {
 
     #[test]
     fn remote_target_error_context_never_formats_bearer_token() {
-        let mut config = AppServerConfig::default();
-        config.active = "remote".into();
+        let mut config = AppServerConfig {
+            active: "remote".into(),
+            ..AppServerConfig::default()
+        };
         config.targets.insert(
             "remote".into(),
             AppServerTargetConfig::Websocket {
