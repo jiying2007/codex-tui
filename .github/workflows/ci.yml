@@ -472,7 +472,62 @@ jobs:
           python scripts/release/validate_stable_dry_run.py --help >/dev/null
           python scripts/release/validate_release_branch_state.py --help >/dev/null
           python scripts/release/stable_publish.py --help >/dev/null
+          python scripts/release/finalize_release.py --help >/dev/null
+          python scripts/release/terminal_smoke.py --help >/dev/null
           python scripts/release/linux_qualify.py --help >/dev/null
+          PYTHONPATH=scripts/release python - <<'PY'
+          import termios
+
+          import finalize_release
+          import terminal_smoke
+
+          sample = "# Changelog\n\n## [1.2.0] - Unreleased\n\n### Maintainability\n\n- item\n"
+          finalized = finalize_release.finalize_changelog_text(
+              sample,
+              "1.2.0",
+              "2026-10-03",
+          )
+          assert "## [1.2.0] - 2026-10-03" in finalized
+          assert "Unreleased" not in finalized
+
+          for bad_version in ("0.9.0", "1.2.0-rc.1"):
+              try:
+                  finalize_release.finalize_changelog_text(
+                      sample,
+                      bad_version,
+                      "2026-10-03",
+                  )
+              except SystemExit:
+                  pass
+              else:
+                  raise AssertionError("expected non-stable release version to fail")
+
+          try:
+              finalize_release.finalize_changelog_text(
+                  sample + "\n## [1.2.0] - 2026-10-02\n",
+                  "1.2.0",
+                  "2026-10-03",
+              )
+          except SystemExit:
+              pass
+          else:
+              raise AssertionError("expected duplicate release heading to fail")
+
+          restored = termios.ICANON | termios.ECHO | termios.ISIG
+          terminal_smoke.validate_restored_lflag(restored)
+          try:
+              terminal_smoke.validate_restored_lflag(
+                  termios.ICANON | termios.ISIG
+              )
+          except SystemExit:
+              pass
+          else:
+              raise AssertionError("expected missing ECHO to fail")
+          assert terminal_smoke.terminal_label(
+              "/dev/pts/9",
+              "manual-terminal-label",
+          ) == "manual-terminal-label"
+          PY
           PYTHONPATH=scripts/release python - <<'PY'
           import linux_qualify as q
 

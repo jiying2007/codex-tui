@@ -59,6 +59,24 @@ This performs a non-publishing preflight: clean/main/origin SHA agreement, absen
 
 An existing tag is treated as a collision and publishing fails closed.
 
+### Final release-notes transition
+
+The active development line intentionally keeps `CHANGELOG.md` at `## [X.Y.Z] - Unreleased` until real qualification is ready to begin. Finalization is explicit and dry-run by default:
+
+```bash
+python3 scripts/release/finalize_release.py
+```
+
+The preflight requires a clean local `main`, exact `origin/main` agreement, a stable Cargo version and no existing stable tag. It renders the proposed current-UTC release date and validates that the resulting CHANGELOG section is acceptable to `extract_changelog.py --require-released`.
+
+Only when ready to create the final release-notes change:
+
+```bash
+python3 scripts/release/finalize_release.py --write
+```
+
+The helper changes only the matching `Unreleased` heading; it never commits, pushes, tags or publishes. Review the diff, commit/push normally, then wait for fresh exact-SHA CI, development qualification, performance diagnostics and release preview before collecting real-environment evidence.
+
 ## Project license
 
 The release verifier intentionally does not select a project license.
@@ -190,6 +208,22 @@ python3 scripts/release/capture_compat.py \
 The compatibility helper refuses anything other than `readiness=ready`, requires the report `sourceSha` to equal the expected candidate SHA, and prints the report SHA-256 and observation timestamp used by stable evidence.
 
 Terminal-restoration evidence remains an explicit real-controlling-TTY smoke receipt; it is not synthesized by CI.
+
+For Linux Tier 1, use the two-phase helper so the receipt is bound to the same real controlling TTY and exact main SHA without manually typing the SHA or terminal identifier:
+
+```bash
+python3 scripts/release/terminal_smoke.py prepare
+```
+
+The prepare step requires stdin/stdout/stderr plus `/dev/tty` to be real TTYs, requires clean `main == origin/main`, verifies the parent terminal already has `ICANON/ECHO/ISIG`, writes an ignored pending manifest under `release/evidence/linux/`, and prints the exact `CODEX_TUI_GIT_SHA=... cargo run --release --locked --bin codex-tui` candidate command plus the documented interactive procedure.
+
+After completing the real Drawer/resize/Ctrl-C/focus/normal-exit/abnormal-exit observations and verifying cursor, echo and line editing in the parent terminal:
+
+```bash
+python3 scripts/release/terminal_smoke.py record-pass --pass
+```
+
+`record-pass` must run on the same controlling TTY and exact SHA, rechecks clean/live main plus `ICANON/ECHO/ISIG`, and then delegates to `create_terminal_receipt.py`. The explicit `--pass` remains mandatory because software cannot honestly infer the user-observed cursor and line-editing restoration.
 
 ## Versioned stable criteria
 
