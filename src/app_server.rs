@@ -2490,11 +2490,6 @@ impl RpcSession {
         })
     }
 
-    async fn spawn(codex_bin: Option<OsString>) -> Result<Self> {
-        let target = ResolvedAppServerTarget::implicit_local(codex_bin);
-        Self::connect(&target).await
-    }
-
     async fn request(&mut self, method: &str, params: Value) -> Result<Value> {
         with_rpc_deadline(
             method,
