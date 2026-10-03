@@ -643,3 +643,20 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --locked --all-targets --all-features -- -D warnings
       - run: cargo test --locked --all-targets --all-features
+
+
+  lock-refresh:
+    name: v1.3-remote-lock-refresh
+    if: github.event_name == 'pull_request' && github.head_ref == 'v1.3/remote-app-server-targets'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Resolve only manifest-required lock changes
+        run: cargo check --all-targets --all-features
+      - uses: actions/upload-artifact@v7
+        with:
+          name: v1.3-remote-cargo-lock
+          path: Cargo.lock
+          if-no-files-found: error
+          retention-days: 1
