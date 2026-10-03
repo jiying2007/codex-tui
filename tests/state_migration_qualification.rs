@@ -41,6 +41,8 @@ fn v1_config_fixture_preserves_settings_and_defaults_new_fields() {
     let config = legacy.load_config().expect("load v1 config");
     assert!(!config.ui.mouse);
     assert_eq!(config.ui.language.as_str(), "auto");
+    assert_eq!(config.app_server.active, "local");
+    assert!(config.app_server.targets.is_empty());
 }
 
 fn populate_planning(store: &SqliteStore) {

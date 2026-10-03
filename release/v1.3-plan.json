@@ -120,6 +120,8 @@
     "src/presentation.rs": 150,
     "src/transcript_search.rs": 350,
     "src/thread_queue.rs": 400,
+    "src/app_server_target.rs": 350,
+    "src/app_server_transport.rs": 500,
     "src/forge_github_mutation.rs": 650,
     "src/forge_mutation.rs": 1550,
     "src/forge_github_mutation/tests.rs": 180,
