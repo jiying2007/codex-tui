@@ -648,20 +648,28 @@ jobs:
   lock-refresh:
     name: v1.3-remote-lock-refresh
     if: github.event_name == 'pull_request' && github.head_ref == 'v1.3/remote-app-server-targets'
+    permissions:
+      contents: write
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.head_ref }}
       - uses: dtolnay/rust-toolchain@stable
-      - name: Resolve only manifest-required lock changes
+      - name: Resolve and commit only manifest-required lock changes
         shell: bash
         run: |
+          set -euo pipefail
           set +e
           cargo check --all-targets --all-features
+          set -e
           test -s Cargo.lock
-          exit 0
-      - uses: actions/upload-artifact@v7
-        with:
-          name: v1.3-remote-cargo-lock
-          path: Cargo.lock
-          if-no-files-found: error
-          retention-days: 1
+          git add -- Cargo.lock
+          if git diff --cached --quiet; then
+            echo "Cargo.lock already matches Cargo.toml"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "build(targets): refresh Cargo.lock"
+          git push origin "HEAD:${{ github.head_ref }}"
