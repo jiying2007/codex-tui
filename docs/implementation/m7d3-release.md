@@ -42,6 +42,8 @@ Manual release dispatch must use `main`. The workflow computes the tag from the 
 
 Stable publication is explicitly two-phase. A `stable + publish=true` dispatch must provide `stable_qualification_run`, the run ID of a successful prior `stable + publish=false` release workflow. The publication run downloads that prior run's immutable `release-gate` artifact and verifies that it was a workflow-dispatch run on `main`, succeeded on the same exact source SHA, reported a valid stable verification with `publish=false`, and used the same canonical CI plus retained compatibility, terminal-restoration and performance evidence. The automated qualification receipt may differ because it is regenerated independently on each exact-SHA release run.
 
+Stable qualification also reads the live `main` branch metadata and refuses to continue if `main` has moved away from the workflow's exact source SHA. Stable publication additionally requires `main.protected=true`, so branch protection cannot remain a documentation-only prerequisite. Detailed protection policy (for example force-push/deletion restrictions and required canonical PR checks) still remains repository configuration authority outside the release workflow.
+
 The Linux evidence source SHA is not a manual dispatch input: the workflow derives it directly from `github.sha`. This both tightens exact-source binding and keeps the dispatch contract within GitHub's top-level input budget.
 
 `publish=true` additionally creates the GitHub Release only after every prior job succeeds and, for stable, the prior dry-run qualification has been validated.
