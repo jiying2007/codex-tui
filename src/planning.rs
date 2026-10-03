@@ -1399,7 +1399,7 @@ mod tests {
         }));
         assert!(card_matches_filter(&card, "link:goal"));
         assert!(card_matches_filter(&card, "worktree:/repo"));
-        assert!(card_matches_filter(&card, "feature"));
+        assert!(card_matches_filter(&card, "repo"));
 
         let mut links = card.links.clone();
         push_link_if_missing(
