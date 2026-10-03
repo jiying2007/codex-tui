@@ -156,7 +156,7 @@ impl ResolvedAppServerTarget {
 }
 
 impl ResolvedAppServerEndpoint {
-    pub const fn transport_label(&self) -> &'static str {
+    pub fn transport_label(&self) -> &'static str {
         match self {
             Self::Stdio { .. } => "stdio",
             Self::WebSocket { url, .. } => {
