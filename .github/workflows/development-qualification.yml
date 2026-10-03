@@ -8,12 +8,12 @@ on:
       - ".github/workflows/development-qualification.yml"
       - "scripts/release/create_development_qualification.py"
       - "scripts/release/create_automated_qualification.py"
-      - "scripts/release/validate_v1_2_plan.py"
+      - "scripts/release/validate_v1_3_plan.py"
       - "scripts/release/validate_v1_2_completion.py"
       - "scripts/architecture/check_module_ratchet.py"
-      - "release/v1.2-plan.json"
+      - "release/v1.3-plan.json"
+      - "release/v1.3-completion.json"
       - "release/v1.2-completion.json"
-      - "release/v1.2-criteria.json"
       - "tests/protocol_replay.rs"
       - "tests/fixtures/protocol/**"
   workflow_dispatch:
@@ -42,10 +42,10 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Validate v1.2 development authority
-        run: python scripts/release/validate_v1_2_plan.py
+      - name: Validate v1.3 development authority
+        run: python scripts/release/validate_v1_3_plan.py
 
-      - name: Validate v1.2 scope completion
+      - name: Validate retained v1.2 predecessor completion
         run: python scripts/release/validate_v1_2_completion.py
 
       - name: Enforce module ratchet
@@ -86,7 +86,11 @@ jobs:
           cargo build --locked --release
 
           mkdir -p qualification
-          cp release/v1.2-completion.json qualification/v1.2-completion.json
+          cp release/v1.3-plan.json qualification/v1.3-plan.json
+          cp release/v1.2-completion.json qualification/v1.2-predecessor-completion.json
+          if [ -f release/v1.3-completion.json ]; then
+            cp release/v1.3-completion.json qualification/v1.3-completion.json
+          fi
           cargo test --locked --all-targets --all-features -- --list > qualification/test-list.txt
 
           ./target/release/codex-tui release failure-matrix --json             > qualification/failure-matrix.json
@@ -114,9 +118,10 @@ jobs:
           receipt = json.load(open(path, encoding="utf-8"))
 
           assert receipt["schema"] == "codex-tui/development-qualification/v1"
-          assert receipt["targetVersion"] == "1.2.0"
+          assert receipt["targetVersion"] == "1.3.0"
+          assert receipt["planSchema"] == "codex-tui/v1.3-plan/v1"
           assert receipt["sourceSha"] == "${{ github.sha }}"
-          assert receipt["scopeCompletion"]["status"] == "pass"
+          assert receipt["scopeCompletion"]["status"] in {"in-progress", "pass"}
           assert receipt["scopeCompletion"]["stableReady"] is False
           assert receipt["scopeCompletion"]["publicationAllowed"] is False
           assert receipt["repositoryAutomatedQualification"]["status"] == "pass"
