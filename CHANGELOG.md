@@ -6,6 +6,8 @@ All notable codex-tui changes are recorded here.
 
 ### Maintainability
 
+- added a dry-run-first release finalization helper that changes only the active stable CHANGELOG heading when explicitly invoked with `--write`, after clean-main/origin/tag and released-section validation.
+- added a two-phase Linux real-TTY evidence helper: prepare binds the exact main SHA and controlling TTY before the manual smoke, while record-pass requires explicit human PASS, same TTY/SHA and restored `ICANON/ECHO/ISIG` before creating the retained terminal receipt.
 - removed another manual stable-qualification input: Linux qualification now auto-discovers the latest successful canonical `ci` push run bound to the exact current main SHA, while retaining an explicit run-ID override for diagnosis.
 - added a fail-closed stable publication helper that reconstructs `publish=true` workflow inputs from the successful prior stable dry-run's immutable `release-gate` artifact, validates clean/live/protected main, released CHANGELOG and tag absence, and only dispatches when explicitly requested.
 - made stable qualification fail closed if `main` has moved away from the exact release SHA, and made stable publication require live `main.protected=true` before any GitHub Release can be created.
