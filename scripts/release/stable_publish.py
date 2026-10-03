@@ -13,6 +13,9 @@ import tempfile
 from _compat import cargo_package, write_text_lf
 
 HEX40 = re.compile(r"^[0-9a-fA-F]{40}$")
+STABLE_VERSION = re.compile(
+    r"^[1-9][0-9]*\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)$"
+)
 RELEASE_EVIDENCE_SCHEMA = "codex-tui/release-evidence/v4"
 PRIMARY_PLATFORM = "linux"
 SECONDARY_PLATFORMS = ("macos", "windows")
@@ -225,6 +228,11 @@ def main() -> int:
 
     package = cargo_package(root)
     version = nonempty(package.get("version"), "Cargo package version")
+    if not STABLE_VERSION.fullmatch(version):
+        raise SystemExit(
+            "stable publication requires a release version X.Y.Z with major >= 1; "
+            f"got {version}"
+        )
     tag = f"v{version}"
     github_repo = args.github_repo.strip() or github_repo_from_cargo(root)
 
