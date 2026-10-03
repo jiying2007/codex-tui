@@ -244,6 +244,12 @@ pub enum BackendCommand {
     RefreshThreadQueue(ThreadId),
     StopWatchingThreadQueue(ThreadId),
     MutateThreadQueue(ThreadQueueMutation),
+    StartThread {
+        cwd: String,
+    },
+    ForkThread {
+        thread_id: ThreadId,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -272,6 +278,14 @@ pub enum ConversationEvent {
     ThreadQueueLoaded(ThreadQueueSnapshot),
     ThreadQueueFailed {
         thread_id: ThreadId,
+        error: String,
+    },
+    ThreadCreated {
+        thread_id: ThreadId,
+        operation: String,
+    },
+    ThreadLifecycleFailed {
+        operation: String,
         error: String,
     },
     Failed {
@@ -387,6 +401,14 @@ impl RegistryHandle {
 
     pub fn mutate_thread_queue(&self, mutation: ThreadQueueMutation) -> Result<()> {
         self.send_command(BackendCommand::MutateThreadQueue(mutation))
+    }
+
+    pub fn start_thread(&self, cwd: String) -> Result<()> {
+        self.send_command(BackendCommand::StartThread { cwd })
+    }
+
+    pub fn fork_thread(&self, thread_id: ThreadId) -> Result<()> {
+        self.send_command(BackendCommand::ForkThread { thread_id })
     }
 
     fn send_command(&self, command: BackendCommand) -> Result<()> {
@@ -1178,6 +1200,30 @@ async fn run_registry_actor(
                                 .await;
                             }
                         }
+                    BackendCommand::StartThread { cwd } => {
+                        lifecycle::handle_start_thread(
+                            &mut rpc,
+                            cwd,
+                            &mut threads,
+                            &mut status,
+                            &mut generation,
+                            &tx,
+                            &conversation_tx,
+                        )
+                        .await;
+                    }
+                    BackendCommand::ForkThread { thread_id } => {
+                        lifecycle::handle_fork_thread(
+                            &mut rpc,
+                            thread_id,
+                            &mut threads,
+                            &mut status,
+                            &mut generation,
+                            &tx,
+                            &conversation_tx,
+                        )
+                        .await;
+                    }
                     }
                 }
             }
