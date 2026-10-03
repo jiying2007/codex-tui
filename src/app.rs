@@ -5866,11 +5866,12 @@ mod tests {
     }
 
     #[test]
-    fn board_context_can_save_but_not_delete_builtin_views() {
+    fn board_context_creates_structured_copy_and_keeps_builtin_immutable() {
         let mut app = app();
         reduce(&mut app, Action::OpenBoard);
         let choices = app.context_choices();
         assert!(choices.contains(&ContextChoice::SaveCurrentView));
+        assert!(!choices.contains(&ContextChoice::EditCurrentView));
         assert!(!choices.contains(&ContextChoice::DeleteCurrentView));
 
         reduce(&mut app, Action::OpenContext);
@@ -5881,8 +5882,52 @@ mod tests {
             .expect("save view action");
         app.context_selected = save_index;
         reduce(&mut app, Action::ExecuteContext);
-        assert_eq!(app.input_mode, InputMode::SavedViewField);
-        assert!(app.saved_view_template.is_some());
+
+        let editor = app.saved_view_editor.as_ref().expect("structured editor");
+        assert!(editor.creating);
+        assert!(editor.draft.id.is_empty());
+        assert_eq!(app.input_mode, InputMode::Normal);
+    }
+
+    #[test]
+    fn saved_view_editor_validates_before_write_and_custom_views_are_editable() {
+        let mut app = app();
+        reduce(&mut app, Action::OpenBoard);
+        app.saved_view_editor = Some(SavedViewEditor::create_from(&app.active_saved_view()));
+        app.saved_view_editor
+            .as_mut()
+            .expect("editor")
+            .draft
+            .filter = "unknown:value".into();
+
+        assert!(reduce(&mut app, Action::SaveSavedViewEditor).is_empty());
+        assert!(app.saved_view_editor.is_some());
+        assert!(app.saved_view_editor_error.is_some());
+
+        let editor = app.saved_view_editor.as_mut().expect("editor");
+        editor.draft.filter = "stage:review".into();
+        editor.draft.name = "Review only".into();
+        let effects = reduce(&mut app, Action::SaveSavedViewEditor);
+        assert!(matches!(
+            effects.as_slice(),
+            [Effect::SaveSavedView { view }]
+                if view.name == "Review only" && view.filter == "stage:review"
+        ));
+
+        app.planning_snapshot.saved_views.push(SavedView {
+            id: "view:7".into(),
+            name: "Custom".into(),
+            source_scope: "all".into(),
+            filter: String::new(),
+            group_by: Some("workspace".into()),
+            order_by: Some("priority".into()),
+            layout: SavedViewLayout::List,
+            visible_fields: vec!["stage".into()],
+        });
+        app.planning_view_index = builtin_saved_views().len();
+        let choices = app.context_choices();
+        assert!(choices.contains(&ContextChoice::EditCurrentView));
+        assert!(choices.contains(&ContextChoice::DeleteCurrentView));
     }
 
     #[test]
