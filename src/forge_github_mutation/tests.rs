@@ -35,10 +35,7 @@ fn github_pull_fixture_requires_exact_head_sha() {
         "base": {"ref": "main", "sha": "abcdef"}
     }))
     .expect("pull");
-    assert_eq!(
-        required_head_sha(&pull).expect("sha"),
-        "0123456789abcdef"
-    );
+    assert_eq!(required_head_sha(&pull).expect("sha"), "0123456789abcdef");
 }
 
 #[test]
@@ -63,7 +60,10 @@ fn github_change_reference_uses_numeric_repository_identity() {
 
 #[test]
 fn repository_path_is_exact_owner_repo() {
-    assert_eq!(split_repository_path("octo/repo").unwrap(), ("octo", "repo"));
+    assert_eq!(
+        split_repository_path("octo/repo").unwrap(),
+        ("octo", "repo")
+    );
     assert!(split_repository_path("org/sub/repo").is_err());
     assert!(split_repository_path("repo").is_err());
 }
