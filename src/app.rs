@@ -802,9 +802,6 @@ impl AppState {
         let branch = context.branch.clone()?;
         let observation = self.forge_observation(thread_id)?;
         let identity = observation.identity.clone()?;
-        if identity.provider != ForgeProviderKind::GitLab {
-            return None;
-        }
         let change_request = observation.change_request_for_branch(&branch).cloned();
         Some(ForgeMutationTarget {
             cwd: context.cwd.clone(),
@@ -2017,8 +2014,8 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                             state.mutation_notice = Some(
                                 local_text(
                                     state.language,
-                                    "current branch has no open merge request",
-                                    "当前分支没有打开的合并请求",
+                                    "current branch has no open forge change request",
+                                    "当前分支没有打开的 Forge 变更请求",
                                 )
                                 .into(),
                             );
@@ -3130,8 +3127,8 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     state.mutation_notice = Some(
                         local_text(
                             state.language,
-                            "GitLab default branch is unavailable; create-MR plan refused",
-                            "GitLab 默认分支不可用；已拒绝创建合并请求计划",
+                            "forge default branch is unavailable; create change-request plan refused",
+                            "Forge 默认分支不可用；已拒绝创建变更请求计划",
                         )
                         .into(),
                     );
