@@ -188,7 +188,8 @@
     "src/app/review.rs": 140,
     "src/ui/review.rs": 300,
     "src/runtime_external.rs": 100,
-    "src/ui/thread.rs": 430
+    "src/ui/thread.rs": 430,
+    "src/app/palette.rs": 420
   },
   "ratchetPolicy": {
     "baseline": "inherit v1.3 Search & Multi-Target ceilings; feature work may only add bounded module-specific ceilings",
