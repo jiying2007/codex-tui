@@ -45,6 +45,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::time::Instant;
 
 mod lifecycle;
+mod review;
 mod types;
 
 pub use types::{Action, ContextChoice, Effect, InputMode, View, ViewKind};
@@ -2584,6 +2585,9 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 cwd: review.cwd.clone(),
                 path: change.path.clone(),
             }];
+        }
+        Action::OpenReviewExternal => {
+            return state.open_review_external();
         }
         Action::ConversationLoaded(page) => {
             let thread_id = page.thread_id.clone();
