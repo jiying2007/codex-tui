@@ -386,3 +386,57 @@ pub(crate) fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect
     };
     reduce(app, action)
 }
+
+
+#[cfg(test)]
+mod fuzzy_palette_input_tests {
+    use super::*;
+    use codex_tui::backend::{CodexBackend, FakeBackend};
+
+    fn app() -> AppState {
+        AppState::new(FakeBackend::seeded().snapshot().threads)
+    }
+
+    #[test]
+    fn palette_accepts_typed_and_pasted_query_text() {
+        let mut app = app();
+        reduce(&mut app, Action::OpenCommandPalette);
+        assert!(app.command_palette_open);
+
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('b'), KeyModifiers::NONE),
+        );
+        handle_paste(&mut app, "oard".into());
+        assert_eq!(app.command_palette_query, "board");
+        assert_eq!(app.command_palette_choice(), Some(Command::Board));
+    }
+
+    #[test]
+    fn empty_result_enter_keeps_palette_open_and_executes_nothing() {
+        let mut app = app();
+        reduce(&mut app, Action::OpenCommandPalette);
+        handle_paste(&mut app, "definitely-no-command".into());
+        assert!(app.command_palette_choices().is_empty());
+
+        let effects = handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+        );
+        assert!(effects.is_empty());
+        assert!(app.command_palette_open);
+    }
+
+    #[test]
+    fn arrow_navigation_does_not_modify_query() {
+        let mut app = app();
+        reduce(&mut app, Action::OpenCommandPalette);
+        handle_paste(&mut app, "o".into());
+        let query = app.command_palette_query.clone();
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
+        );
+        assert_eq!(app.command_palette_query, query);
+    }
+}
