@@ -91,8 +91,9 @@ impl SavedViewEditor {
     }
 
     pub fn field(&self) -> SavedViewEditorField {
-        SavedViewEditorField::ALL
-            [self.selected_field.min(SavedViewEditorField::ALL.len().saturating_sub(1))]
+        SavedViewEditorField::ALL[self
+            .selected_field
+            .min(SavedViewEditorField::ALL.len().saturating_sub(1))]
     }
 
     pub fn move_field(&mut self, delta: i32) {
@@ -121,7 +122,10 @@ impl SavedViewEditor {
                 self.draft.visible_fields = parse_visible_fields(&value)?;
             }
             field => {
-                return Err(format!("{} is not a text-editable Saved View field", field.label()));
+                return Err(format!(
+                    "{} is not a text-editable Saved View field",
+                    field.label()
+                ));
             }
         }
         Ok(())
@@ -139,13 +143,19 @@ impl SavedViewEditor {
             }
             SavedViewEditorField::GroupBy => {
                 let current = self.draft.group_by.as_deref();
-                let index = GROUP_BY.iter().position(|value| *value == current).unwrap_or(0);
+                let index = GROUP_BY
+                    .iter()
+                    .position(|value| *value == current)
+                    .unwrap_or(0);
                 self.draft.group_by =
                     GROUP_BY[cycle_index(index, GROUP_BY.len(), delta)].map(ToOwned::to_owned);
             }
             SavedViewEditorField::OrderBy => {
                 let current = self.draft.order_by.as_deref();
-                let index = ORDER_BY.iter().position(|value| *value == current).unwrap_or(0);
+                let index = ORDER_BY
+                    .iter()
+                    .position(|value| *value == current)
+                    .unwrap_or(0);
                 self.draft.order_by =
                     ORDER_BY[cycle_index(index, ORDER_BY.len(), delta)].map(ToOwned::to_owned);
             }
@@ -188,7 +198,10 @@ pub fn validate_saved_view(view: &SavedView) -> Result<(), String> {
         return Err("Saved View name must be 80 characters or fewer".into());
     }
     if !SOURCE_SCOPES.contains(&view.source_scope.as_str()) {
-        return Err(format!("unsupported Saved View source scope: {}", view.source_scope));
+        return Err(format!(
+            "unsupported Saved View source scope: {}",
+            view.source_scope
+        ));
     }
     validate_filter(&view.filter)?;
     if !GROUP_BY.contains(&view.group_by.as_deref()) {
@@ -227,7 +240,9 @@ fn validate_filter(filter: &str) -> Result<(), String> {
             .split_once(':')
             .ok_or_else(|| "invalid Saved View filter term".to_string())?;
         if value.is_empty() {
-            return Err(format!("Saved View filter field {field:?} requires a value"));
+            return Err(format!(
+                "Saved View filter field {field:?} requires a value"
+            ));
         }
         let valid = match field {
             "status" => matches!(value, "needs-you" | "snoozed" | "active"),
@@ -305,7 +320,11 @@ fn parse_filter_terms(filter: &str) -> Option<Vec<String>> {
 
 fn parse_visible_fields(value: &str) -> Result<Vec<String>, String> {
     let mut fields = Vec::new();
-    for field in value.split(',').map(str::trim).filter(|value| !value.is_empty()) {
+    for field in value
+        .split(',')
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
         let normalized = field.to_ascii_lowercase();
         if !SAVED_VIEW_VISIBLE_FIELDS.contains(&normalized.as_str()) {
             return Err(format!("unsupported Saved View visible field: {field}"));
