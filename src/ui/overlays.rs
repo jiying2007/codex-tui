@@ -286,7 +286,10 @@ pub(super) fn render_transcript_search(frame: &mut Frame<'_>, app: &AppState) {
                 lines.push(Line::from(if app.language.is_simplified_chinese() {
                     format!("  显示 {first}-{last} / {} 条结果", results.hits.len())
                 } else {
-                    format!("  showing {first}-{last} / {} result(s)", results.hits.len())
+                    format!(
+                        "  showing {first}-{last} / {} result(s)",
+                        results.hits.len()
+                    )
                 }));
             }
         }
@@ -316,11 +319,7 @@ pub(super) fn render_transcript_search(frame: &mut Frame<'_>, app: &AppState) {
     frame.render_widget(Clear, area);
     frame.render_widget(
         Paragraph::new(lines)
-            .block(Block::bordered().title(tr(
-                app,
-                " Transcript Search ",
-                " 会话全文搜索 ",
-            )))
+            .block(Block::bordered().title(tr(app, " Transcript Search ", " 会话全文搜索 ")))
             .wrap(Wrap { trim: false }),
         area,
     );
