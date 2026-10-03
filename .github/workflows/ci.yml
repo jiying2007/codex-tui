@@ -481,14 +481,7 @@ jobs:
           import finalize_release
           import terminal_smoke
 
-          sample = """# Changelog
-
-## [1.2.0] - Unreleased
-
-### Maintainability
-
-- item
-"""
+          sample = "# Changelog\\n\\n## [1.2.0] - Unreleased\\n\\n### Maintainability\\n\\n- item\\n"
           finalized = finalize_release.finalize_changelog_text(
               sample,
               "1.2.0",
