@@ -398,7 +398,48 @@ jobs:
           python scripts/release/package_release.py --help >/dev/null
           python scripts/release/verify_archive.py --help >/dev/null
           python scripts/release/validate_ci_run.py --help >/dev/null
+          cat > "$OUT/main-unprotected.json" <<'EOF'
+          {
+            "name": "main",
+            "commit": {"sha": "0123456789abcdef0123456789abcdef01234567"},
+            "protected": false
+          }
+          EOF
+
+          cat > "$OUT/main-protected.json" <<'EOF'
+          {
+            "name": "main",
+            "commit": {"sha": "0123456789abcdef0123456789abcdef01234567"},
+            "protected": true
+          }
+          EOF
+
+          python scripts/release/validate_release_branch_state.py \
+            --branch-json "$OUT/main-unprotected.json" \
+            --commit 0123456789abcdef0123456789abcdef01234567
+
+          python scripts/release/validate_release_branch_state.py \
+            --branch-json "$OUT/main-protected.json" \
+            --commit 0123456789abcdef0123456789abcdef01234567 \
+            --require-protected
+
+          if python scripts/release/validate_release_branch_state.py \
+            --branch-json "$OUT/main-unprotected.json" \
+            --commit 0123456789abcdef0123456789abcdef01234567 \
+            --require-protected; then
+            echo "expected stable publication on an unprotected main branch to fail" >&2
+            exit 1
+          fi
+
+          if python scripts/release/validate_release_branch_state.py \
+            --branch-json "$OUT/main-protected.json" \
+            --commit 1123456789abcdef0123456789abcdef01234567; then
+            echo "expected stable qualification after main drift to fail" >&2
+            exit 1
+          fi
+
           python scripts/release/validate_stable_dry_run.py --help >/dev/null
+          python scripts/release/validate_release_branch_state.py --help >/dev/null
           python scripts/release/linux_qualify.py --help >/dev/null
           PYTHONPATH=scripts/release python -c 'import linux_qualify as q; assert q.stable_version_allowed("1.0.0"); assert q.stable_version_allowed("1.1.0"); assert q.stable_version_allowed("2.3.4"); assert not q.stable_version_allowed("0.9.0"); assert not q.stable_version_allowed("1.1.0-rc.1"); assert not q.stable_version_allowed("01.1.0")'
       - name: Verify Python scripts parse
