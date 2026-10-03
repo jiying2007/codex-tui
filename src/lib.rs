@@ -30,6 +30,7 @@ pub mod planning;
 pub mod presentation;
 pub mod pty;
 pub mod release;
+pub mod saved_view_editor;
 pub mod release_benchmark;
 pub mod replay_backend;
 pub mod runtime_lifecycle;
