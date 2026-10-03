@@ -2258,6 +2258,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 ContextChoice::NewCodexThread
                 | ContextChoice::ForkCodexThread
                 | ContextChoice::SaveCurrentView
+                | ContextChoice::EditCurrentView
                 | ContextChoice::DeleteCurrentView
                 | ContextChoice::BatchAddTag
                 | ContextChoice::BatchRemoveTag
