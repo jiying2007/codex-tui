@@ -59,6 +59,11 @@ on:
         type: string
         required: false
         default: "0"
+      stable_qualification_run:
+        description: Stable publish=true only - successful prior stable publish=false release run ID on this exact commit/evidence
+        type: string
+        required: false
+        default: "0"
       linux_source_sha:
         description: Stable only - exact candidate source SHA for paired real-environment evidence
         type: string
@@ -415,6 +420,36 @@ jobs:
           if [ -f release-evidence.json ]; then
             cp release-evidence.json gate/release-evidence.json
           fi
+
+      - name: Require prior stable dry-run before publication
+        if: inputs.channel == 'stable' && inputs.publish == true
+        shell: bash
+        env:
+          STABLE_QUALIFICATION_RUN: ${{ inputs.stable_qualification_run }}
+          VERSION: ${{ steps.meta.outputs.version }}
+          TAG: ${{ steps.meta.outputs.tag }}
+        run: |
+          set -euo pipefail
+          [[ "$STABLE_QUALIFICATION_RUN" =~ ^[1-9][0-9]*$ ]] || {
+            echo "stable publish=true requires stable_qualification_run from a successful prior stable publish=false run" >&2
+            exit 1
+          }
+
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$STABLE_QUALIFICATION_RUN" > prior-stable-run.json
+          rm -rf prior-stable-gate
+          gh run download "$STABLE_QUALIFICATION_RUN" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name release-gate \
+            --dir prior-stable-gate
+
+          python3 scripts/release/validate_stable_dry_run.py \
+            --run-json prior-stable-run.json \
+            --verification prior-stable-gate/release-verification.json \
+            --evidence prior-stable-gate/release-evidence.json \
+            --current-evidence release-evidence.json \
+            --commit "${{ github.sha }}" \
+            --version "$VERSION" \
+            --tag "$TAG"
 
       - uses: actions/upload-artifact@v7
         with:

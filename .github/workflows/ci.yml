@@ -164,6 +164,81 @@ jobs:
 
           python scripts/release/create_evidence.py             --output "$OUT/evidence.json"             --compat-schema codex-tui/compat/v2             --version 1.0.0             --commit 0123456789abcdef0123456789abcdef01234567             --canonical-ci-run 1             --automated-qualification "$OUT/automated-qualification.json"             --linux-source-sha 0123456789abcdef0123456789abcdef01234567             --linux-compat-sha256 "$(printf 'a%.0s' {1..64})"             --linux-compat-observed-at 2026-09-30T00:00:00Z             --linux-terminal ci-python38             --linux-terminal-observed-at 2026-09-30T00:00:00Z             --performance-source-sha 0123456789abcdef0123456789abcdef01234567             --performance-iterations 200             --performance-p95-ms 1             --performance-p99-ms 2             --performance-source ci-python38             --performance-observed-at 2026-09-30T00:00:00Z
 
+          cat > "$OUT/prior-stable-run.json" <<'EOF'
+          {
+            "id": 77,
+            "name": "release",
+            "path": ".github/workflows/release.yml",
+            "event": "workflow_dispatch",
+            "conclusion": "success",
+            "head_branch": "main",
+            "head_sha": "0123456789abcdef0123456789abcdef01234567"
+          }
+          EOF
+
+          cat > "$OUT/prior-stable-verification.json" <<'EOF'
+          {
+            "schema": "codex-tui/release-verification/v1",
+            "channel": "stable",
+            "tag": "v1.0.0",
+            "version": "1.0.0",
+            "commitSha": "0123456789abcdef0123456789abcdef01234567",
+            "publish": false,
+            "valid": true,
+            "blockers": [],
+            "cargoLockPresent": true,
+            "changelogVersionPresent": true,
+            "projectLicensePresent": true,
+            "stableCriteriaPresent": true,
+            "evidenceStatus": "verified"
+          }
+          EOF
+
+          python - "$OUT/evidence.json" "$OUT/prior-stable-evidence.json" <<'PY'
+          import copy
+          import json
+          import sys
+
+          evidence = json.load(open(sys.argv[1], encoding="utf-8"))
+          evidence = copy.deepcopy(evidence)
+          evidence["automatedQualification"]["artifacts"]["scaleEvidenceSha256"] = "b" * 64
+          with open(sys.argv[2], "w", encoding="utf-8", newline="\n") as handle:
+              json.dump(evidence, handle, indent=2, sort_keys=True)
+              handle.write("\n")
+          PY
+
+          python scripts/release/validate_stable_dry_run.py \
+            --run-json "$OUT/prior-stable-run.json" \
+            --verification "$OUT/prior-stable-verification.json" \
+            --evidence "$OUT/prior-stable-evidence.json" \
+            --current-evidence "$OUT/evidence.json" \
+            --commit 0123456789abcdef0123456789abcdef01234567 \
+            --version 1.0.0 \
+            --tag v1.0.0
+
+          python - "$OUT/evidence.json" "$OUT/evidence-drift.json" <<'PY'
+          import json
+          import sys
+
+          evidence = json.load(open(sys.argv[1], encoding="utf-8"))
+          evidence["performance"]["p95Ms"] = 9.0
+          with open(sys.argv[2], "w", encoding="utf-8", newline="\n") as handle:
+              json.dump(evidence, handle, indent=2, sort_keys=True)
+              handle.write("\n")
+          PY
+
+          if python scripts/release/validate_stable_dry_run.py \
+            --run-json "$OUT/prior-stable-run.json" \
+            --verification "$OUT/prior-stable-verification.json" \
+            --evidence "$OUT/prior-stable-evidence.json" \
+            --current-evidence "$OUT/evidence-drift.json" \
+            --commit 0123456789abcdef0123456789abcdef01234567 \
+            --version 1.0.0 \
+            --tag v1.0.0; then
+            echo "expected stable dry-run evidence drift validation to fail" >&2
+            exit 1
+          fi
+
           if python scripts/release/create_evidence.py             --output "$OUT/evidence-mismatch.json"             --compat-schema codex-tui/compat/v2             --version 1.0.0             --commit 0123456789abcdef0123456789abcdef01234567             --canonical-ci-run 1             --automated-qualification "$OUT/automated-qualification.json"             --linux-source-sha 1123456789abcdef0123456789abcdef01234567             --linux-compat-sha256 "$(printf 'a%.0s' {1..64})"             --linux-compat-observed-at 2026-09-30T00:00:00Z             --linux-terminal ci-python38             --linux-terminal-observed-at 2026-09-30T00:00:00Z             --performance-source-sha 0123456789abcdef0123456789abcdef01234567             --performance-iterations 200             --performance-p95-ms 1             --performance-p99-ms 2             --performance-source ci-python38             --performance-observed-at 2026-09-30T00:00:00Z; then
             echo "expected cross-SHA real evidence to fail" >&2
             exit 1
@@ -290,6 +365,7 @@ jobs:
           python scripts/release/package_release.py --help >/dev/null
           python scripts/release/verify_archive.py --help >/dev/null
           python scripts/release/validate_ci_run.py --help >/dev/null
+          python scripts/release/validate_stable_dry_run.py --help >/dev/null
           python scripts/release/linux_qualify.py --help >/dev/null
           PYTHONPATH=scripts/release python -c 'import linux_qualify as q; assert q.stable_version_allowed("1.0.0"); assert q.stable_version_allowed("1.1.0"); assert q.stable_version_allowed("2.3.4"); assert not q.stable_version_allowed("0.9.0"); assert not q.stable_version_allowed("1.1.0-rc.1"); assert not q.stable_version_allowed("01.1.0")'
       - name: Verify Python scripts parse
