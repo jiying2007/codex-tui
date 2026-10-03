@@ -416,7 +416,6 @@ def main() -> int:
         "channel": "stable",
         "publish": "false",
         "canonical_ci_run": str(args.canonical_ci_run),
-        "linux_source_sha": commit_sha,
         "linux_compat_sha256": compat_summary["reportSha256"],
         "linux_compat_observed_at": compat_summary["observedAt"],
         "linux_terminal": terminal["terminal"],
