@@ -1648,9 +1648,9 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
     } else if app.input_mode == InputMode::SavedViewField {
         format!(
             "{}> {} · {}",
-            tr(app, "view name", "视图名称"),
+            tr(app, "view field", "视图字段"),
             truncate_display(&app.input_buffer, 80),
-            tr(app, "Enter save · Esc cancel", "Enter 保存 · Esc 取消")
+            tr(app, "Enter apply field · Esc cancel", "Enter 应用字段 · Esc 取消")
         )
     } else if app.hot_slot_bind_pending {
         tr(
