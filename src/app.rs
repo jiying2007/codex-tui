@@ -2808,6 +2808,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     }
                 }
                 InputMode::Search
+                | InputMode::TranscriptSearch
                 | InputMode::Alias
                 | InputMode::UserInput
                 | InputMode::ScratchTitle
