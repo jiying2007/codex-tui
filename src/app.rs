@@ -45,6 +45,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::time::Instant;
 
 mod lifecycle;
+mod palette;
 mod review;
 mod types;
 
@@ -167,6 +168,7 @@ pub struct AppState {
     pub saved_view_editor_error: Option<String>,
     pub command_palette_open: bool,
     pub command_palette_selected: usize,
+    pub command_palette_query: String,
     command_palette_items: Vec<Command>,
     pub context_open: bool,
     pub context_selected: usize,
@@ -297,6 +299,7 @@ impl AppState {
             saved_view_editor_error: None,
             command_palette_open: false,
             command_palette_selected: 0,
+            command_palette_query: String::new(),
             command_palette_items: vec![],
             context_open: false,
             context_selected: 0,
@@ -825,80 +828,6 @@ impl AppState {
             identity,
             change_request,
         })
-    }
-
-    fn command_palette_thread_id(&self) -> Option<ThreadId> {
-        self.selected_local_target().and_then(|target| {
-            (target.kind == SourceKind::CodexThread).then(|| ThreadId::new(target.value))
-        })
-    }
-
-    fn build_command_palette_choices(&self) -> Vec<Command> {
-        let mut choices = vec![Command::Search, Command::TranscriptSearch];
-        let thread_id = self.command_palette_thread_id();
-
-        if matches!(self.view, View::Registry | View::Board) {
-            choices.push(Command::NextAttention);
-        }
-        if thread_id.is_some() {
-            choices.push(Command::QuickPrompt);
-        }
-        if !matches!(self.view, View::Board) {
-            choices.push(Command::Board);
-        }
-        if thread_id.is_some() && !matches!(self.view, View::Review(_)) {
-            choices.push(Command::Review);
-        }
-        if thread_id.is_some() && !matches!(self.view, View::Workspace(_)) {
-            choices.push(Command::Workspace);
-        }
-        if thread_id.as_ref().is_some_and(|thread_id| {
-            self.git_context(thread_id)
-                .is_some_and(|context| context.repo.is_some())
-        }) && !matches!(self.view, View::ManagedWorktrees(_))
-        {
-            choices.push(Command::ManagedWorktrees);
-        }
-
-        choices.push(Command::New);
-
-        if matches!(self.view, View::Thread(_)) {
-            choices.push(Command::Goal);
-            choices.push(Command::ThreadQueue);
-        }
-        if matches!(self.view, View::Registry) && self.selected_thread().is_some() {
-            choices.push(Command::TogglePin);
-        }
-        if self.selected_local_target().is_some() {
-            choices.push(Command::Snooze);
-        }
-        if !self.context_choices().is_empty() {
-            choices.push(Command::ContextActions);
-        }
-        if !matches!(self.view, View::Scratch(_)) {
-            choices.push(if self.terminal_drawer_open {
-                Command::CloseTerminalDrawer
-            } else {
-                Command::TerminalDrawer
-            });
-        }
-
-        choices.push(Command::Help);
-        choices
-    }
-
-    pub fn command_palette_choices(&self) -> Vec<Command> {
-        if self.command_palette_open {
-            self.command_palette_items.clone()
-        } else {
-            self.build_command_palette_choices()
-        }
-    }
-
-    pub fn command_palette_choice(&self) -> Option<Command> {
-        self.command_palette_items
-            .get(self.command_palette_selected)
-            .copied()
     }
 
     pub fn context_choices(&self) -> Vec<ContextChoice> {
@@ -1898,29 +1827,14 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.input_buffer.clear();
             state.input_mode = InputMode::ScratchTitle;
         }
-        Action::OpenCommandPalette => {
-            let choices = state.build_command_palette_choices();
-            if !choices.is_empty() {
-                state.command_palette_items = choices;
-                state.command_palette_open = true;
-                state.command_palette_selected = 0;
-                state.show_help = false;
-            }
+        Action::OpenCommandPalette => state.open_command_palette(),
+        Action::CloseCommandPalette => state.close_command_palette(),
+        Action::MoveCommandPalette(delta) => state.move_command_palette(delta),
+        Action::CommandPaletteInputChar(character) => {
+            state.input_command_palette_char(character);
         }
-        Action::CloseCommandPalette => {
-            state.command_palette_open = false;
-            state.command_palette_selected = 0;
-            state.command_palette_items.clear();
-        }
-        Action::MoveCommandPalette(delta) => {
-            let len = state.command_palette_items.len();
-            if len == 0 {
-                state.command_palette_selected = 0;
-            } else {
-                state.command_palette_selected =
-                    (state.command_palette_selected as i32 + delta).rem_euclid(len as i32) as usize;
-            }
-        }
+        Action::CommandPaletteInputText(text) => state.input_command_palette_text(text),
+        Action::CommandPaletteBackspace => state.backspace_command_palette(),
         Action::OpenContext => {
             if !state.context_choices().is_empty() {
                 state.context_open = true;
