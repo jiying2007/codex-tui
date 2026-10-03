@@ -512,8 +512,21 @@ fn card_matches_query_term(card: &WorkCardProjection, token: &str) -> bool {
         };
     }
 
+    let tags = card
+        .overlay
+        .tags
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join(" ");
+    let links = card
+        .links
+        .iter()
+        .map(|link| format!("{} {}", link.role.label(), link.source.value))
+        .collect::<Vec<_>>()
+        .join(" ");
     let haystack = format!(
-        "{} {} {} {} {} {} {} {} {}",
+        "{} {} {} {} {} {} {} {} {} {}",
         card.title,
         card.workspace.as_deref().unwrap_or(""),
         card.stage.label(),
@@ -531,20 +544,8 @@ fn card_matches_query_term(card: &WorkCardProjection, token: &str) -> bool {
             .map(ForgeProviderKind::label)
             .unwrap_or(""),
         card.change_request_state.as_deref().unwrap_or(""),
-        format!(
-            "{} {}",
-            card.overlay
-                .tags
-                .iter()
-                .map(String::as_str)
-                .collect::<Vec<_>>()
-                .join(" "),
-            card.links
-                .iter()
-                .map(|link| format!("{} {}", link.role.label(), link.source.value))
-                .collect::<Vec<_>>()
-                .join(" ")
-        )
+        tags,
+        links,
     )
     .to_ascii_lowercase();
     haystack.contains(token)
