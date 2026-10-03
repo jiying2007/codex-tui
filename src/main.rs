@@ -2,6 +2,7 @@ use anyhow::Result;
 use codex_tui::{
     app::{Action, AppState, Effect, reduce},
     app_server::{self, ConversationEvent, RegistryHandle},
+    app_server_target::ResolvedAppServerTarget,
     backend::{BackendStatus, CodexBackend, FakeBackend},
     domain::{CwdLocality, classify_cwd, display_cwd},
     forge::{self, ForgeEvent, ForgeHandle},
@@ -66,7 +67,7 @@ impl RuntimeServices {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let args = std::env::args().skip(1).collect::<Vec<_>>();
+    let mut args = std::env::args().skip(1).collect::<Vec<_>>();
 
     if matches!(args.as_slice(), [arg] if arg == "--version" || arg == "version") {
         println!("codex-tui {}", env!("CARGO_PKG_VERSION"));
@@ -148,17 +149,35 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
+    let target_override = take_value_flag(&mut args, "--target")?;
+
     if args.first().is_some_and(|arg| arg == "doctor") {
-        return doctor(args.get(1).map(String::as_str)).await;
+        return doctor(args.get(1).map(String::as_str), target_override.as_deref()).await;
     }
 
     let fake_mode = args.iter().any(|arg| arg == "--fake");
-    run_app(fake_mode).await
+    run_app(fake_mode, target_override.as_deref()).await
 }
 
-async fn doctor(scope: Option<&str>) -> Result<()> {
+fn take_value_flag(args: &mut Vec<String>, flag: &str) -> Result<Option<String>> {
+    let Some(index) = args.iter().position(|arg| arg == flag) else {
+        return Ok(None);
+    };
+    anyhow::ensure!(
+        args.iter().skip(index + 1).all(|arg| arg != flag),
+        "{flag} may be provided only once"
+    );
+    anyhow::ensure!(index + 1 < args.len(), "{flag} requires a target name");
+    let value = args.remove(index + 1);
+    args.remove(index);
+    anyhow::ensure!(!value.trim().is_empty(), "{flag} target name must not be empty");
+    Ok(Some(value))
+}
+
+async fn doctor(scope: Option<&str>, target_override: Option<&str>) -> Result<()> {
     let store = SqliteStore::discover()?;
     let config = store.load_config()?;
+    let target = ResolvedAppServerTarget::resolve(&config.app_server, target_override)?;
 
     println!("codex-tui {}", env!("CARGO_PKG_VERSION"));
     println!("config: {}", store.config_path().display());
@@ -170,6 +189,8 @@ async fn doctor(scope: Option<&str>) -> Result<()> {
         config.ui.language.resolve().as_str()
     );
     println!("notifications: {}", config.notifications.mode.label());
+    println!("app-server-target: {}", target.name);
+    println!("app-server-endpoint: {}", target.diagnostic_endpoint());
     println!(
         "presentation: {} · background-redraw-min={}ms",
         config.ui.presentation.label(),
@@ -383,7 +404,7 @@ async fn doctor(scope: Option<&str>) -> Result<()> {
             Err(error) => println!("launch-config: DEGRADED · {error:#}"),
         }
     } else if scope == Some("codex") {
-        match app_server::probe(None).await {
+        match app_server::probe_target(target).await {
             Ok(snapshot) => {
                 print_backend_status(&snapshot.status);
                 println!(
@@ -477,10 +498,18 @@ fn print_backend_status(status: &BackendStatus) {
     }
 }
 
-async fn run_app(fake_mode: bool) -> Result<()> {
+async fn run_app(fake_mode: bool, target_override: Option<&str>) -> Result<()> {
     let (store, bootstrap) = RuntimeStore::discover()?;
     let config = bootstrap.config;
     let local = bootstrap.local;
+    let app_server_target = if fake_mode {
+        None
+    } else {
+        Some(ResolvedAppServerTarget::resolve(
+            &config.app_server,
+            target_override,
+        )?)
+    };
     let notification_mode = config.notifications.mode;
     let presentation_mode = config.ui.presentation;
 
@@ -494,9 +523,11 @@ async fn run_app(fake_mode: bool) -> Result<()> {
         app.backend_status = snapshot.status;
         app
     } else {
-        connect_task = Some(tokio::spawn(app_server::start(None)));
+        let target = app_server_target.expect("non-fake mode target");
+        let status_source = target.status_source();
+        connect_task = Some(tokio::spawn(app_server::start_target(target)));
         let mut app = AppState::new(vec![]);
-        app.backend_status = BackendStatus::starting("codex-app-server");
+        app.backend_status = BackendStatus::starting(status_source);
         app
     };
     app.language = config.ui.language.resolve();
