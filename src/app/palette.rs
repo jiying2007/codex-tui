@@ -3,6 +3,8 @@ use crate::command::Command;
 use crate::domain::ThreadId;
 use crate::planning::SourceKind;
 
+const MAX_PALETTE_QUERY_CHARS: usize = 256;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct CommandPaletteMatch {
     pub(crate) command: Command,
@@ -37,7 +39,7 @@ fn is_boundary(previous: Option<char>) -> bool {
 }
 
 fn score_positions(label: &[char], query: &[char], positions: &[usize]) -> i32 {
-    let mut score = i32::try_from(query.len()).unwrap_or(i32::MAX / 8) * 50;
+    let mut score = i32::try_from(query.len()).unwrap_or(256) * 50;
     if positions.first() == Some(&0) {
         score += 160;
     }
@@ -300,15 +302,22 @@ impl AppState {
     }
 
     pub(super) fn input_command_palette_char(&mut self, character: char) {
-        if !character.is_control() {
+        if !character.is_control()
+            && self.command_palette_query.chars().count() < MAX_PALETTE_QUERY_CHARS
+        {
             self.command_palette_query.push(character);
             self.command_palette_selected = 0;
         }
     }
 
     pub(super) fn input_command_palette_text(&mut self, text: String) {
-        self.command_palette_query
-            .extend(text.chars().filter(|character| !character.is_control()));
+        let remaining = MAX_PALETTE_QUERY_CHARS
+            .saturating_sub(self.command_palette_query.chars().count());
+        self.command_palette_query.extend(
+            text.chars()
+                .filter(|character| !character.is_control())
+                .take(remaining),
+        );
         self.command_palette_selected = 0;
     }
 
@@ -352,6 +361,15 @@ mod tests {
     fn match_positions_are_retained_for_highlight() {
         let matched = fuzzy_match("ob", "Open Board").expect("match");
         assert_eq!(matched.positions, vec![0, 5]);
+    }
+
+    #[test]
+    fn pasted_query_is_control_free_and_bounded() {
+        let mut app = app();
+        app.open_command_palette();
+        app.input_command_palette_text(format!("{}\nsecret", "x".repeat(400)));
+        assert_eq!(app.command_palette_query.chars().count(), MAX_PALETTE_QUERY_CHARS);
+        assert!(!app.command_palette_query.contains('\n'));
     }
 
     #[test]
