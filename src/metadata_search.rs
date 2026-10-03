@@ -135,8 +135,8 @@ fn goal_fields_match(goal: &GoalObservation, token: &str) -> bool {
 }
 
 fn forge_fields_match(forge: &ForgeObservation, token: &str) -> bool {
-    if let Some(identity) = &forge.identity {
-        if [
+    if let Some(identity) = &forge.identity
+        && [
             identity.provider.label(),
             identity.host.as_str(),
             identity.project_id.as_str(),
@@ -145,9 +145,8 @@ fn forge_fields_match(forge: &ForgeObservation, token: &str) -> bool {
         ]
         .into_iter()
         .any(|field| fuzzy_subsequence(token, field))
-        {
-            return true;
-        }
+    {
+        return true;
     }
 
     forge.issues.iter().any(|issue| {
