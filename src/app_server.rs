@@ -1200,6 +1200,7 @@ async fn run_registry_actor(
                                 .await;
                             }
                         }
+                    }
                     BackendCommand::StartThread { cwd } => {
                         lifecycle::handle_start_thread(
                             &mut rpc,
@@ -1223,7 +1224,6 @@ async fn run_registry_actor(
                             &conversation_tx,
                         )
                         .await;
-                    }
                     }
                 }
             }
