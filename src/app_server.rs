@@ -2594,6 +2594,7 @@ impl RpcSession {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app_server_wire::decode_wire_line;
     use crate::backend::{CodexBackend, FakeBackend};
 
     #[test]
