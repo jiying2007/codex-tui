@@ -121,7 +121,8 @@
     "src/transcript_search.rs": 350,
     "src/thread_queue.rs": 400,
     "src/forge_github_mutation.rs": 650,
-    "src/forge_mutation.rs": 1550
+    "src/forge_mutation.rs": 1550,
+    "src/forge_github_mutation/tests.rs": 180
   },
   "ratchetPolicy": {
     "baseline": "v1.2 retained ceilings are inherited unless a v1.3 feature requires bounded growth",
