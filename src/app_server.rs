@@ -12,6 +12,11 @@ use crate::goal::{
     GoalObservation, GoalStatus, parse_goal_cleared_thread, parse_goal_get, parse_goal_set,
     parse_goal_updated,
 };
+use crate::transcript_search::{
+    TRANSCRIPT_SEARCH_OCCURRENCE_LIMIT, TRANSCRIPT_SEARCH_RESULT_LIMIT,
+    TRANSCRIPT_SEARCH_THREAD_LIMIT, TranscriptSearchResults, TranscriptSearchSource,
+    parse_search_occurrences, parse_thread_search, thread_level_hit,
+};
 use anyhow::{Context, Result, anyhow};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -53,6 +58,38 @@ impl fmt::Display for RpcResponseError {
 }
 
 impl std::error::Error for RpcResponseError {}
+
+fn is_transcript_search_unsupported(error: &anyhow::Error) -> bool {
+    let Some(source) = error.downcast_ref::<RpcResponseError>() else {
+        return false;
+    };
+    source.code == Some(-32601)
+        || (matches!(source.code, Some(-32600 | -32602))
+            && {
+                let message = source.message.to_ascii_lowercase();
+                message.contains("thread/search")
+                    || message.contains("experimental")
+                    || message.contains("unknown method")
+            })
+}
+
+fn mark_optional_capability(status: &mut BackendStatus, capability: &str, supported: bool) {
+    if supported {
+        if !status.capabilities.iter().any(|value| value == capability) {
+            status.capabilities.push(capability.to_string());
+        }
+        status.optional_capabilities_missing.retain(|value| value != capability);
+    } else {
+        status.capabilities.retain(|value| value != capability);
+        if !status
+            .optional_capabilities_missing
+            .iter()
+            .any(|value| value == capability)
+        {
+            status.optional_capabilities_missing.push(capability.to_string());
+        }
+    }
+}
 
 fn is_goal_unsupported(error: &anyhow::Error) -> bool {
     let Some(source) = error.downcast_ref::<RpcResponseError>() else {
@@ -174,6 +211,7 @@ pub enum BackendCommand {
         status: Option<GoalStatus>,
     },
     ClearGoal(ThreadId),
+    SearchTranscript(String),
 }
 
 #[derive(Clone, Debug)]
@@ -190,6 +228,11 @@ pub enum ConversationEvent {
     },
     GoalObserved(GoalObservation),
     GoalCleared(ThreadId),
+    TranscriptSearchLoaded(TranscriptSearchResults),
+    TranscriptSearchFailed {
+        query: String,
+        error: String,
+    },
     Failed {
         thread_id: ThreadId,
         error: String,
@@ -280,6 +323,10 @@ impl RegistryHandle {
 
     pub fn clear_goal(&self, thread_id: ThreadId) -> Result<()> {
         self.send_command(BackendCommand::ClearGoal(thread_id))
+    }
+
+    pub fn search_transcript(&self, query: String) -> Result<()> {
+        self.send_command(BackendCommand::SearchTranscript(query))
     }
 
     fn send_command(&self, command: BackendCommand) -> Result<()> {
@@ -926,6 +973,31 @@ async fn run_registry_actor(
                                 status.error = Some(format!("Goal clear failed: {error}"));
                             }
                         }
+                    BackendCommand::SearchTranscript(query) => {
+                        match search_transcript(&mut rpc, query.clone()).await {
+                            Ok(results) => {
+                                mark_optional_capability(&mut status, "thread/search", true);
+                                send_conversation_event(
+                                    &conversation_tx,
+                                    ConversationEvent::TranscriptSearchLoaded(results),
+                                )
+                                .await;
+                            }
+                            Err(error) => {
+                                if is_transcript_search_unsupported(&error) {
+                                    mark_optional_capability(&mut status, "thread/search", false);
+                                }
+                                send_conversation_event(
+                                    &conversation_tx,
+                                    ConversationEvent::TranscriptSearchFailed {
+                                        query,
+                                        error: error.to_string(),
+                                    },
+                                )
+                                .await;
+                            }
+                        }
+                    }
                     }
                 }
             }
@@ -1191,7 +1263,7 @@ async fn initialize(rpc: &mut RpcSession) -> Result<Value> {
                     "version": env!("CARGO_PKG_VERSION")
                 },
                 "capabilities": {
-                    "experimentalApi": false
+                    "experimentalApi": true
                 }
             }),
         )
@@ -1668,6 +1740,77 @@ async fn load_conversation(rpc: &mut RpcSession, thread_id: ThreadId) -> Result<
         next_turn_cursor,
         next_item_cursor,
     ))
+}
+
+async fn search_transcript(
+    rpc: &mut RpcSession,
+    query: String,
+) -> Result<TranscriptSearchResults> {
+    let query = query.trim().to_string();
+    anyhow::ensure!(!query.is_empty(), "transcript search query is empty");
+
+    let result = rpc
+        .request(
+            "thread/search",
+            json!({
+                "cursor": null,
+                "limit": TRANSCRIPT_SEARCH_THREAD_LIMIT,
+                "sortKey": "recency_at",
+                "sortDirection": "desc",
+                "archived": false,
+                "searchTerm": query
+            }),
+        )
+        .await
+        .context("search persisted Codex threads")?;
+    let (candidates, next_cursor) = parse_thread_search(result)?;
+    let mut hits = Vec::new();
+
+    for candidate in candidates {
+        if hits.len() >= TRANSCRIPT_SEARCH_RESULT_LIMIT {
+            break;
+        }
+        let occurrence = rpc
+            .request(
+                "thread/searchOccurrences",
+                json!({
+                    "threadId": candidate.thread_id.0,
+                    "searchTerm": query,
+                    "cursor": null,
+                    "limit": TRANSCRIPT_SEARCH_OCCURRENCE_LIMIT
+                }),
+            )
+            .await;
+
+        match occurrence {
+            Ok(result) => {
+                let (mut exact, _) =
+                    parse_search_occurrences(candidate.thread_id.clone(), result)?;
+                if exact.is_empty() {
+                    hits.push(thread_level_hit(candidate));
+                } else {
+                    let remaining = TRANSCRIPT_SEARCH_RESULT_LIMIT.saturating_sub(hits.len());
+                    exact.truncate(remaining);
+                    hits.extend(exact);
+                }
+            }
+            Err(error) if is_transcript_search_unsupported(&error) => {
+                hits.push(thread_level_hit(candidate));
+            }
+            Err(_) => {
+                // Thread-level search is still authoritative even if occurrence lookup
+                // fails for one row. Preserve the result instead of failing the search.
+                hits.push(thread_level_hit(candidate));
+            }
+        }
+    }
+
+    Ok(TranscriptSearchResults {
+        query,
+        source: TranscriptSearchSource::AppServer,
+        hits,
+        complete: next_cursor.is_none(),
+    })
 }
 
 async fn load_legacy_conversation(
