@@ -2750,9 +2750,12 @@ mod tests {
             .next()
             .expect("production actor source");
         let wire = include_str!("app_server_wire.rs");
-        assert!(actor.contains("decode_wire_line"));
+        let transport = include_str!("app_server_transport.rs");
+        assert!(actor.contains("self.transport.read_json"));
         assert!(!wire.contains("decode app-server JSON line: {line}"));
         assert!(wire.contains("decode app-server JSON line ({} bytes)"));
+        assert!(!transport.contains("decode App Server stdio JSON: {line}"));
+        assert!(transport.contains("decode App Server stdio JSON"));
     }
 
     #[test]
