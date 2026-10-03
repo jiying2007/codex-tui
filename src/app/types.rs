@@ -232,6 +232,7 @@ pub enum Action {
     ScrollReviewBy(i16),
     ToggleReviewWordDiff,
     OpenReviewExternalEditor,
+    OpenReviewExternal,
     ConversationLoaded(ConversationPage),
     OlderConversationLoaded(ConversationPage),
     BeginTranscriptSearch,
@@ -376,6 +377,9 @@ pub enum Effect {
         thread_id: ThreadId,
         cwd: String,
         path: String,
+    },
+    OpenExternalUrl {
+        url: String,
     },
     StartThread {
         cwd: String,
