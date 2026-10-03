@@ -233,7 +233,6 @@ After the real-TTY smoke receipt exists, run from a clean `main` checkout of the
 
 ```bash
 python3 scripts/release/linux_qualify.py \
-  --canonical-ci-run <successful-main-ci-run-id> \
   --terminal-receipt release/evidence/linux/terminal-linux.json \
   --source <retained-linux-machine-id>
 
@@ -244,7 +243,7 @@ python3 scripts/release/linux_qualify.py \
 It performs:
 
 1. clean-main / exact-SHA validation;
-2. canonical GitHub CI run validation;
+2. automatic discovery and validation of the latest successful canonical `ci` push run bound to the exact current `main` SHA; `--canonical-ci-run <id>` remains an explicit diagnostic override;
 3. locked all-target tests plus release build;
 4. Linux READY compatibility capture + SHA-256;
 5. exact-SHA 50k scale-v4 capture with registry construction, planning reconcile and recent/all-history/search/host-local distributions;
