@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 pub const THREAD_QUEUE_PAGE_LIMIT: u32 = 100;
 pub const THREAD_QUEUE_TEXT_LIMIT: usize = 64 * 1024;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct QueuedSubmission {
     pub id: String,
     pub client_user_message_id: String,
@@ -15,7 +15,7 @@ pub struct QueuedSubmission {
     pub editable_text: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ThreadQueueSnapshot {
     pub thread_id: ThreadId,
     pub submissions: Vec<QueuedSubmission>,
@@ -59,11 +59,7 @@ impl ThreadQueueMutation {
         })
     }
 
-    pub fn update(
-        thread_id: ThreadId,
-        queued_submission_id: String,
-        text: String,
-    ) -> Result<Self> {
+    pub fn update(thread_id: ThreadId, queued_submission_id: String, text: String) -> Result<Self> {
         let text = validate_text(text)?;
         anyhow::ensure!(
             !queued_submission_id.trim().is_empty(),
@@ -281,11 +277,8 @@ mod tests {
     fn mutations_validate_text_and_reorder_identity() {
         assert!(ThreadQueueMutation::add(ThreadId::new("t"), " ".into(), 1).is_err());
         assert!(
-            ThreadQueueMutation::reorder(
-                ThreadId::new("t"),
-                vec!["one".into(), "one".into()]
-            )
-            .is_err()
+            ThreadQueueMutation::reorder(ThreadId::new("t"), vec!["one".into(), "one".into()])
+                .is_err()
         );
         let mutation =
             ThreadQueueMutation::start(ThreadId::new("t"), "queued-1".into()).expect("start");
