@@ -828,8 +828,11 @@ struct RegistryDrainChanges {
 
 fn conversation_event_changes_planning(event: &ConversationEvent) -> bool {
     match event {
-        ConversationEvent::GoalObserved(_) | ConversationEvent::GoalCleared(_) => true,
-        ConversationEvent::Loaded(_)
+        ConversationEvent::GoalObserved(_)
+        | ConversationEvent::GoalCleared(_)
+        | ConversationEvent::ThreadCreated { .. } => true,
+        ConversationEvent::ThreadLifecycleFailed { .. }
+        | ConversationEvent::Loaded(_)
         | ConversationEvent::OlderLoaded(_)
         | ConversationEvent::TranscriptSearchLoaded(_)
         | ConversationEvent::TranscriptSearchJumpLoaded { .. }
@@ -862,6 +865,37 @@ fn drain_registry(
     while let Some(event) = registry.try_recv_conversation() {
         changes.planning |= conversation_event_changes_planning(&event);
         match event {
+            ConversationEvent::ThreadCreated {
+                thread_id,
+                operation,
+            } => {
+                let effects = reduce(
+                    app,
+                    Action::ThreadCreated {
+                        thread_id,
+                        operation,
+                    },
+                );
+                for effect in effects {
+                    if let Effect::LoadConversation(thread_id) = effect
+                        && let Err(error) = registry.load_conversation(thread_id.clone())
+                    {
+                        reduce(
+                            app,
+                            Action::ConversationFailed {
+                                thread_id,
+                                error: error.to_string(),
+                            },
+                        );
+                    }
+                }
+            }
+            ConversationEvent::ThreadLifecycleFailed { operation, error } => {
+                reduce(
+                    app,
+                    Action::ThreadLifecycleFailed { operation, error },
+                );
+            }
             ConversationEvent::Loaded(page) => {
                 if let Some(error) = store.index_conversation_page(&page) {
                     reduce(app, Action::MutationNotice(error));
@@ -1675,6 +1709,58 @@ fn apply_effects(
                                 app.language,
                                 "App Server Thread Queue unavailable",
                                 "App Server 会话队列不可用",
+                            )
+                            .into(),
+                        },
+                    );
+                }
+            }
+            Effect::StartThread { cwd } => {
+                if let Some(registry) = registry {
+                    if let Err(error) = registry.start_thread(cwd) {
+                        reduce(
+                            app,
+                            Action::ThreadLifecycleFailed {
+                                operation: "thread/start".into(),
+                                error: error.to_string(),
+                            },
+                        );
+                    }
+                } else {
+                    reduce(
+                        app,
+                        Action::ThreadLifecycleFailed {
+                            operation: "thread/start".into(),
+                            error: runtime_text(
+                                app.language,
+                                "conversation backend unavailable",
+                                "会话后端不可用",
+                            )
+                            .into(),
+                        },
+                    );
+                }
+            }
+            Effect::ForkThread { thread_id } => {
+                if let Some(registry) = registry {
+                    if let Err(error) = registry.fork_thread(thread_id) {
+                        reduce(
+                            app,
+                            Action::ThreadLifecycleFailed {
+                                operation: "thread/fork".into(),
+                                error: error.to_string(),
+                            },
+                        );
+                    }
+                } else {
+                    reduce(
+                        app,
+                        Action::ThreadLifecycleFailed {
+                            operation: "thread/fork".into(),
+                            error: runtime_text(
+                                app.language,
+                                "conversation backend unavailable",
+                                "会话后端不可用",
                             )
                             .into(),
                         },
