@@ -180,7 +180,8 @@
     "src/forge_github_mutation/api.rs": 120,
     "src/conversation.rs": 900,
     "src/app/lifecycle.rs": 220,
-    "src/app_server/lifecycle.rs": 230
+    "src/app_server/lifecycle.rs": 230,
+    "src/runtime_lifecycle.rs": 120
   },
   "ratchetPolicy": {
     "baseline": "inherit v1.3 Search & Multi-Target ceilings; feature work may only add bounded module-specific ceilings",
