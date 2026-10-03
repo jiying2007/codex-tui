@@ -5895,11 +5895,7 @@ mod tests {
         let mut app = app();
         reduce(&mut app, Action::OpenBoard);
         app.saved_view_editor = Some(SavedViewEditor::create_from(&app.active_saved_view()));
-        app.saved_view_editor
-            .as_mut()
-            .expect("editor")
-            .draft
-            .filter = "unknown:value".into();
+        app.saved_view_editor.as_mut().expect("editor").draft.filter = "unknown:value".into();
 
         assert!(reduce(&mut app, Action::SaveSavedViewEditor).is_empty());
         assert!(app.saved_view_editor.is_some());
