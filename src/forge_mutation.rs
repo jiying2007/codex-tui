@@ -2,6 +2,9 @@ use crate::forge::{
     ForgeIdentity, ForgeProviderKind, glab_api_json, glab_api_mutation_json,
     percent_encode_component,
 };
+use crate::forge_github_mutation::{
+    GitHubAppliedResult, GitHubPreflight, GitHubReconciledOutcome,
+};
 use crate::operation::{OperationState, new_operation_id, now_unix_ms};
 use crate::sqlite_store::SqliteStore;
 use anyhow::{Context, Result, anyhow};
@@ -98,10 +101,11 @@ impl ForgeMutationPlan {
             title: Some(title.clone()),
             payload_bytes: None,
             expected_side_effect: format!(
-                "create one GitLab merge request {source_branch} -> {target_branch} titled {title:?}"
+                "create one {} {source_branch} -> {target_branch} titled {title:?}",
+                change_request_name(identity.provider)
             ),
             preconditions: vec![
-                precondition("provider", "gitlab"),
+                precondition("provider", identity.provider.label()),
                 precondition("project-identity-current", "true"),
                 precondition("default-branch-unchanged", "true"),
                 precondition("source-branch-exists", "true"),
@@ -142,10 +146,11 @@ impl ForgeMutationPlan {
             title: None,
             payload_bytes: Some(payload_bytes),
             expected_side_effect: format!(
-                "post one {payload_bytes}-byte comment to GitLab MR !{change_request_iid}"
+                "post one {payload_bytes}-byte comment to {} #{change_request_iid}",
+                change_request_name(identity.provider)
             ),
             preconditions: vec![
-                precondition("provider", "gitlab"),
+                precondition("provider", identity.provider.label()),
                 precondition("project-identity-current", "true"),
                 precondition("merge-request-open", "true"),
                 precondition("source-target-unchanged", "true"),
@@ -170,7 +175,7 @@ impl ForgeMutationPlan {
                 change_request_iid,
                 source_branch,
                 target_branch,
-                expected: "approve exact GitLab merge request as the authenticated user",
+                expected: "approve exact forge change request as the authenticated user",
                 planned_at_unix_ms,
             },
         )
@@ -192,7 +197,7 @@ impl ForgeMutationPlan {
                 change_request_iid,
                 source_branch,
                 target_branch,
-                expected: "merge exact GitLab merge request under standard project policy",
+                expected: "merge exact forge change request under standard project policy",
                 planned_at_unix_ms,
             },
         )?;
@@ -248,7 +253,7 @@ fn mr_plan(identity: &ForgeIdentity, cwd: String, spec: MrPlanSpec) -> Result<Fo
         payload_bytes: None,
         expected_side_effect: format!("{}: !{}", spec.expected, spec.change_request_iid),
         preconditions: vec![
-            precondition("provider", "gitlab"),
+            precondition("provider", identity.provider.label()),
             precondition("project-identity-current", "true"),
             precondition("merge-request-open", "true"),
             precondition("source-target-unchanged", "true"),
@@ -259,21 +264,36 @@ fn mr_plan(identity: &ForgeIdentity, cwd: String, spec: MrPlanSpec) -> Result<Fo
 }
 
 fn ensure_identity(identity: &ForgeIdentity) -> Result<()> {
-    anyhow::ensure!(
-        identity.provider == ForgeProviderKind::GitLab,
-        "M6b supports GitLab mutations only"
-    );
-    anyhow::ensure!(!identity.host.trim().is_empty(), "GitLab host is empty");
+    anyhow::ensure!(!identity.host.trim().is_empty(), "forge host is empty");
     anyhow::ensure!(
         !identity.project_id.trim().is_empty()
             && identity.project_id.chars().all(|ch| ch.is_ascii_digit()),
-        "GitLab project id must be numeric"
+        "forge project/repository id must be numeric"
     );
     anyhow::ensure!(
         !identity.path_with_namespace.trim().is_empty(),
-        "GitLab project path is empty"
+        "forge project/repository path is empty"
     );
+    match identity.provider {
+        ForgeProviderKind::GitLab => {}
+        ForgeProviderKind::GitHub => {
+            let mut parts = identity.path_with_namespace.split('/');
+            let owner = parts.next().unwrap_or_default().trim();
+            let repo = parts.next().unwrap_or_default().trim();
+            anyhow::ensure!(
+                !owner.is_empty() && !repo.is_empty() && parts.next().is_none(),
+                "GitHub repository path must be exactly owner/repo"
+            );
+        }
+    }
     Ok(())
+}
+
+const fn change_request_name(provider: ForgeProviderKind) -> &'static str {
+    match provider {
+        ForgeProviderKind::GitLab => "GitLab merge request",
+        ForgeProviderKind::GitHub => "GitHub pull request",
+    }
 }
 
 fn required_text(label: &str, value: String) -> Result<String> {
