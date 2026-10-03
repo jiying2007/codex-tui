@@ -37,7 +37,9 @@ fn token_matches(context: &MetadataSearchContext<'_>, token: &str) -> bool {
             "thread" => thread_fields_match(context.thread, value),
             "cwd" => fuzzy_subsequence(value, &context.thread.metadata.cwd),
             "project" => project_fields_match(context, value),
-            "goal" => context.goal.is_some_and(|goal| goal_fields_match(goal, value)),
+            "goal" => context
+                .goal
+                .is_some_and(|goal| goal_fields_match(goal, value)),
             "forge" => context
                 .forge
                 .is_some_and(|forge| forge_fields_match(forge, value)),
@@ -49,8 +51,7 @@ fn token_matches(context: &MetadataSearchContext<'_>, token: &str) -> bool {
                 .is_some_and(|card| work_card_links_match(card, value)),
             "worktree" => context.card.is_some_and(|card| {
                 card.links.iter().any(|link| {
-                    link.role == LinkRole::Worktree
-                        && fuzzy_subsequence(value, &link.source.value)
+                    link.role == LinkRole::Worktree && fuzzy_subsequence(value, &link.source.value)
                 })
             }),
             "stage" => context
@@ -178,7 +179,9 @@ fn work_card_fields_match(card: &WorkCardProjection, token: &str) -> bool {
         card.overlay.note.as_deref().unwrap_or_default(),
         source_kind_label(&card.anchor.kind),
         card.anchor.value.as_str(),
-        card.forge_provider.map(|provider| provider.label()).unwrap_or_default(),
+        card.forge_provider
+            .map(|provider| provider.label())
+            .unwrap_or_default(),
         card.change_request_state.as_deref().unwrap_or_default(),
     ]
     .into_iter()
@@ -374,10 +377,10 @@ mod tests {
             "stage:review",
             "local customer",
         ] {
-            assert!(matches_metadata_query(
-                MetadataSearchContext { ..context },
-                query
-            ), "{query}");
+            assert!(
+                matches_metadata_query(MetadataSearchContext { ..context }, query),
+                "{query}"
+            );
         }
     }
 
@@ -392,7 +395,10 @@ mod tests {
             forge: Some(&forge),
             card: Some(&card),
         };
-        assert!(!matches_metadata_query(context, "private-transcript-sentinel"));
+        assert!(!matches_metadata_query(
+            context,
+            "private-transcript-sentinel"
+        ));
     }
 
     #[test]
