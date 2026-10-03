@@ -365,18 +365,15 @@ pub(super) fn render_thread_queue(frame: &mut Frame<'_>, app: &AppState) {
     match app.thread_queue_snapshot.as_ref() {
         Some(snapshot) if snapshot.submissions.is_empty() => {
             lines.push(Line::from(""));
-            lines.push(Line::from(tr(
-                app,
-                "Queue is empty.",
-                "队列为空。",
-            )));
+            lines.push(Line::from(tr(app, "Queue is empty.", "队列为空。")));
         }
         Some(snapshot) => {
             let start = app
                 .thread_queue_selected
                 .saturating_sub(8)
                 .min(snapshot.submissions.len().saturating_sub(18));
-            for (index, submission) in snapshot.submissions.iter().enumerate().skip(start).take(18) {
+            for (index, submission) in snapshot.submissions.iter().enumerate().skip(start).take(18)
+            {
                 let selected = index == app.thread_queue_selected;
                 let style = if selected {
                     Style::default().add_modifier(Modifier::REVERSED)
@@ -421,15 +418,9 @@ pub(super) fn render_thread_queue(frame: &mut Frame<'_>, app: &AppState) {
     lines.push(Line::from(""));
     if let Some(pending) = app.pending_thread_queue_mutation.as_ref() {
         lines.push(Line::from(if app.language.is_simplified_chinese() {
-            format!(
-                "确认 {}？y 执行 · c/Esc 取消",
-                pending.label()
-            )
+            format!("确认 {}？y 执行 · c/Esc 取消", pending.label())
         } else {
-            format!(
-                "Confirm {}? y execute · c/Esc cancel",
-                pending.label()
-            )
+            format!("Confirm {}? y execute · c/Esc cancel", pending.label())
         }));
     } else {
         lines.push(Line::from(tr(
