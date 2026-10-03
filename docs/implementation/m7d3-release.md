@@ -40,7 +40,9 @@ Manual release dispatch must use `main`. The workflow computes the tag from the 
 
 `publish=false` performs validation, three-platform build/package/smoke and emits a retained release-bundle artifact without creating a Git tag or GitHub Release.
 
-`publish=true` additionally creates the GitHub Release only after every prior job succeeds.
+Stable publication is explicitly two-phase. A `stable + publish=true` dispatch must provide `stable_qualification_run`, the run ID of a successful prior `stable + publish=false` release workflow. The publication run downloads that prior run's immutable `release-gate` artifact and verifies that it was a workflow-dispatch run on `main`, succeeded on the same exact source SHA, reported a valid stable verification with `publish=false`, and used the same canonical CI plus retained compatibility, terminal-restoration and performance evidence. The automated qualification receipt may differ because it is regenerated independently on each exact-SHA release run.
+
+`publish=true` additionally creates the GitHub Release only after every prior job succeeds and, for stable, the prior dry-run qualification has been validated.
 
 An existing tag is treated as a collision and publishing fails closed.
 
