@@ -42,7 +42,7 @@
   "performance": {
     "fixture": "resident-planning-10k",
     "iterationsMin": 200,
-    "policy": "retain p95/p99 as diagnostic evidence; sourceSha must equal the exact release commit; v1.2 does not fail stable solely on hosted-runner wall-clock thresholds",
+    "policy": "retain p95/p99 as diagnostic evidence; sourceSha must equal the exact release commit; v1.3 does not fail stable solely on hosted-runner wall-clock thresholds",
     "sourceBound": true
   },
   "requiredGates": [
