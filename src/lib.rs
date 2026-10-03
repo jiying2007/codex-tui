@@ -37,6 +37,7 @@ pub mod support_bundle;
 pub mod syntax_highlight;
 pub mod terminal;
 pub mod terminal_drawer;
+pub mod transcript_search;
 pub mod text;
 pub mod ui;
 pub mod worktree;
