@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use rusqlite::Connection;
 
-pub(crate) const DB_SCHEMA_VERSION: i64 = 3;
+pub(crate) const DB_SCHEMA_VERSION: i64 = 4;
 
 pub(crate) fn configure_connection(conn: &Connection) -> Result<()> {
     conn.execute_batch(
@@ -175,7 +175,46 @@ pub(crate) fn ensure_schema(conn: &mut Connection) -> Result<()> {
         )
         .context("upgrade SQLite schema v2 -> v3")?;
         tx.commit().context("commit SQLite schema v3")?;
+        version = 3;
     }
+
+    if version == 3 {
+        let tx = conn
+            .transaction()
+            .context("begin SQLite schema v4 migration")?;
+        tx.execute_batch(
+            "CREATE TABLE transcript_documents (
+                thread_id TEXT NOT NULL,
+                turn_id TEXT NOT NULL,
+                item_id TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                title TEXT,
+                text TEXT NOT NULL,
+                observed_at_unix_ms INTEGER NOT NULL,
+                PRIMARY KEY(thread_id, turn_id, item_id)
+             );
+             CREATE INDEX transcript_documents_thread_idx
+                 ON transcript_documents(thread_id);
+             PRAGMA user_version = 4;",
+        )
+        .context("upgrade SQLite schema v3 -> v4")?;
+        tx.commit().context("commit SQLite schema v4")?;
+    }
+
+    // FTS is a derived acceleration layer. The bundled distribution includes FTS5,
+    // but a system SQLite without the extension must not make operator state unusable.
+    // Search falls back to bounded LIKE over transcript_documents when this is absent.
+    let _ = conn.execute_batch(
+        "CREATE VIRTUAL TABLE IF NOT EXISTS transcript_fts USING fts5(
+            thread_id UNINDEXED,
+            turn_id UNINDEXED,
+            item_id UNINDEXED,
+            kind UNINDEXED,
+            title,
+            text,
+            tokenize='trigram'
+         );",
+    );
 
     Ok(())
 }
