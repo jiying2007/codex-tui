@@ -6,6 +6,7 @@ All notable codex-tui changes are recorded here.
 
 ### Maintainability
 
+- added a dry-run-first main branch-protection helper for the personal-first stable policy: four canonical PR CI checks, strict merge freshness, administrator enforcement, and force-push/deletion denial; applying requires explicit repository confirmation and local GitHub Administration permission.
 - added a dry-run-first release finalization helper that changes only the active stable CHANGELOG heading when explicitly invoked with `--write`, after clean-main/origin/tag and released-section validation.
 - added a two-phase Linux real-TTY evidence helper: prepare binds the exact main SHA and controlling TTY before the manual smoke, while record-pass requires explicit human PASS, same TTY/SHA and restored `ICANON/ECHO/ISIG` before creating the retained terminal receipt.
 - removed another manual stable-qualification input: Linux qualification now auto-discovers the latest successful canonical `ci` push run bound to the exact current main SHA, while retaining an explicit run-ID override for diagnosis.
