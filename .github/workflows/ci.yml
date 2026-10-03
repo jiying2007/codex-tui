@@ -474,7 +474,56 @@ jobs:
           python scripts/release/stable_publish.py --help >/dev/null
           python scripts/release/finalize_release.py --help >/dev/null
           python scripts/release/terminal_smoke.py --help >/dev/null
+          python scripts/release/configure_main_protection.py --help >/dev/null
           python scripts/release/linux_qualify.py --help >/dev/null
+          PYTHONPATH=scripts/release python - <<'PY'
+          import configure_main_protection as p
+
+          policy = p.protection_payload()
+          assert policy["required_status_checks"]["strict"] is True
+          assert tuple(policy["required_status_checks"]["contexts"]) == p.REQUIRED_CHECKS
+          assert policy["enforce_admins"] is True
+          assert policy["required_pull_request_reviews"] is None
+          assert policy["restrictions"] is None
+          assert policy["allow_force_pushes"] is False
+          assert policy["allow_deletions"] is False
+
+          ci_text = open(".github/workflows/ci.yml", encoding="utf-8").read()
+          p.validate_ci_contract(ci_text)
+
+          sha = "0123456789abcdef0123456789abcdef01234567"
+          checks = {
+              "check_runs": [
+                  {
+                      "name": name,
+                      "status": "completed",
+                      "conclusion": "success",
+                      "app": {"slug": "github-actions", "id": 15368},
+                  }
+                  for name in p.REQUIRED_CHECKS
+              ]
+          }
+          assert p.validate_check_runs(checks, sha) == 15368
+
+          broken = {"check_runs": checks["check_runs"][:-1]}
+          try:
+              p.validate_check_runs(broken, sha)
+          except SystemExit:
+              pass
+          else:
+              raise AssertionError("expected missing canonical check to fail")
+
+          applied = {
+              "required_status_checks": {
+                  "strict": True,
+                  "contexts": list(p.REQUIRED_CHECKS),
+              },
+              "enforce_admins": {"enabled": True},
+              "allow_force_pushes": {"enabled": False},
+              "allow_deletions": {"enabled": False},
+          }
+          p.validate_applied_protection(applied)
+          PY
           PYTHONPATH=scripts/release python - <<'PY'
           import termios
 
