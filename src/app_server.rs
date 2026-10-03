@@ -1788,59 +1788,69 @@ async fn search_transcript(
     let query = query.trim().to_string();
     anyhow::ensure!(!query.is_empty(), "transcript search query is empty");
 
-    let result = rpc
-        .request(
-            "thread/search",
-            json!({
-                "cursor": null,
-                "limit": TRANSCRIPT_SEARCH_THREAD_LIMIT,
-                "sortKey": "recency_at",
-                "sortDirection": "desc",
-                "archived": false,
-                "searchTerm": query
-            }),
-        )
-        .await
-        .context("search persisted Codex threads")?;
-    let (candidates, next_cursor) = parse_thread_search(result)?;
+    let mut cursor: Option<String> = None;
     let mut hits = Vec::new();
+    let mut complete = false;
 
-    for candidate in candidates {
-        if hits.len() >= TRANSCRIPT_SEARCH_RESULT_LIMIT {
-            break;
-        }
-        let occurrence = rpc
+    while hits.len() < TRANSCRIPT_SEARCH_RESULT_LIMIT {
+        let result = rpc
             .request(
-                "thread/searchOccurrences",
+                "thread/search",
                 json!({
-                    "threadId": candidate.thread_id.0,
-                    "searchTerm": query,
-                    "cursor": null,
-                    "limit": TRANSCRIPT_SEARCH_OCCURRENCE_LIMIT
+                    "cursor": cursor,
+                    "limit": TRANSCRIPT_SEARCH_THREAD_LIMIT,
+                    "sortKey": "recency_at",
+                    "sortDirection": "desc",
+                    "searchTerm": query
                 }),
             )
-            .await;
+            .await
+            .context("search persisted Codex threads")?;
+        let (candidates, next_cursor) = parse_thread_search(result)?;
 
-        match occurrence {
-            Ok(result) => {
-                let (mut exact, _) =
-                    parse_search_occurrences(candidate.thread_id.clone(), result)?;
-                if exact.is_empty() {
+        for candidate in candidates {
+            if hits.len() >= TRANSCRIPT_SEARCH_RESULT_LIMIT {
+                break;
+            }
+            let occurrence = rpc
+                .request(
+                    "thread/searchOccurrences",
+                    json!({
+                        "threadId": candidate.thread_id.0,
+                        "searchTerm": query,
+                        "cursor": null,
+                        "limit": TRANSCRIPT_SEARCH_OCCURRENCE_LIMIT
+                    }),
+                )
+                .await;
+
+            match occurrence {
+                Ok(result) => {
+                    let (mut exact, _) =
+                        parse_search_occurrences(candidate.thread_id.clone(), result)?;
+                    if exact.is_empty() {
+                        hits.push(thread_level_hit(candidate));
+                    } else {
+                        let remaining = TRANSCRIPT_SEARCH_RESULT_LIMIT.saturating_sub(hits.len());
+                        exact.truncate(remaining);
+                        hits.extend(exact);
+                    }
+                }
+                Err(error) if is_transcript_search_unsupported(&error) => {
                     hits.push(thread_level_hit(candidate));
-                } else {
-                    let remaining = TRANSCRIPT_SEARCH_RESULT_LIMIT.saturating_sub(hits.len());
-                    exact.truncate(remaining);
-                    hits.extend(exact);
+                }
+                Err(_) => {
+                    // Thread-level search is still authoritative even if occurrence lookup
+                    // fails for one row. Preserve the result instead of failing the search.
+                    hits.push(thread_level_hit(candidate));
                 }
             }
-            Err(error) if is_transcript_search_unsupported(&error) => {
-                hits.push(thread_level_hit(candidate));
-            }
-            Err(_) => {
-                // Thread-level search is still authoritative even if occurrence lookup
-                // fails for one row. Preserve the result instead of failing the search.
-                hits.push(thread_level_hit(candidate));
-            }
+        }
+
+        cursor = next_cursor;
+        if cursor.is_none() {
+            complete = true;
+            break;
         }
     }
 
@@ -1848,7 +1858,7 @@ async fn search_transcript(
         query,
         source: TranscriptSearchSource::AppServer,
         hits,
-        complete: next_cursor.is_none(),
+        complete,
     })
 }
 
