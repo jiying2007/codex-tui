@@ -6821,6 +6821,107 @@ mod tests {
         thread_id
     }
 
+    fn seed_github_mutation_target(app: &mut AppState, with_pull_request: bool) -> ThreadId {
+        use crate::forge::{
+            ChangeRequestSummary, ForgeFreshness, ForgeIdentity, ForgeObservation,
+            ForgeProviderKind,
+        };
+
+        let thread_id = app.threads[0].id.clone();
+        app.threads[0].metadata.cwd = "/repo".into();
+        let mut git = GitContext::pending(thread_id.clone(), "/repo");
+        git.is_repository = true;
+        git.branch = Some("feature/github".into());
+        git.observed_at_unix_ms = 100;
+        app.git_contexts.insert(thread_id.0.clone(), git);
+
+        let change_requests = with_pull_request
+            .then(|| ChangeRequestSummary {
+                iid: 9,
+                title: "GitHub PR".into(),
+                state: "open".into(),
+                source_branch: "feature/github".into(),
+                target_branch: "main".into(),
+                web_url: "https://github.com/octo/repo/pull/9".into(),
+                updated_at: None,
+                draft: false,
+                detailed_merge_status: None,
+                blocking_discussions_resolved: None,
+            })
+            .into_iter()
+            .collect();
+
+        app.forge_observations.insert(
+            thread_id.0.clone(),
+            ForgeObservation {
+                thread_id: thread_id.clone(),
+                cwd: "/repo".into(),
+                remote_name: Some("origin".into()),
+                remote_url: Some("git@github.com:octo/repo.git".into()),
+                identity: Some(ForgeIdentity {
+                    provider: ForgeProviderKind::GitHub,
+                    host: "github.com".into(),
+                    project_id: "123".into(),
+                    path_with_namespace: "octo/repo".into(),
+                    web_url: "https://github.com/octo/repo".into(),
+                    default_branch: Some("main".into()),
+                }),
+                capabilities: BTreeMap::new(),
+                issues: vec![],
+                change_requests,
+                pipelines: vec![],
+                review: None,
+                observed_at_unix_ms: 100,
+                freshness: ForgeFreshness::Fresh,
+                error: None,
+            },
+        );
+        app.view = View::Workspace(thread_id.clone());
+        thread_id
+    }
+
+    #[test]
+    fn github_pull_request_is_plan_only_until_explicit_confirmation() {
+        let mut app = app();
+        seed_github_mutation_target(&mut app, false);
+
+        let choices = app.context_choices();
+        assert!(choices.contains(&ContextChoice::ForgeCreateMergeRequest));
+        app.context_selected = choices
+            .iter()
+            .position(|choice| *choice == ContextChoice::ForgeCreateMergeRequest)
+            .expect("create GitHub PR choice");
+        assert!(reduce(&mut app, Action::ExecuteContext).is_empty());
+
+        for ch in "Ship GitHub mutations".chars() {
+            reduce(&mut app, Action::InputChar(ch));
+        }
+        assert!(reduce(&mut app, Action::CommitInput).is_empty());
+
+        let plan = app.pending_forge_operation.clone().expect("GitHub plan");
+        assert_eq!(plan.provider, ForgeProviderKind::GitHub);
+        assert_eq!(plan.source_branch.as_deref(), Some("feature/github"));
+        assert!(plan.expected_side_effect.contains("GitHub pull request"));
+
+        let effects = reduce(&mut app, Action::ConfirmPendingOperation);
+        assert!(matches!(
+            effects.as_slice(),
+            [Effect::ExecuteForgeOperation(request)]
+                if request.plan.provider == ForgeProviderKind::GitHub
+        ));
+    }
+
+    #[test]
+    fn github_existing_pull_exposes_comment_approve_and_merge_actions() {
+        let mut app = app();
+        seed_github_mutation_target(&mut app, true);
+        let choices = app.context_choices();
+        assert!(choices.contains(&ContextChoice::ForgeComment));
+        assert!(choices.contains(&ContextChoice::ForgeApprove));
+        assert!(choices.contains(&ContextChoice::ForgeMerge));
+        assert!(!choices.contains(&ContextChoice::ForgeCreateMergeRequest));
+    }
+
     #[test]
     fn create_merge_request_is_plan_only_until_explicit_confirmation() {
         let mut app = app();
