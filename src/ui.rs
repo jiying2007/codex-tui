@@ -22,7 +22,8 @@ use crate::{pty::TerminalSize, terminal_drawer::TerminalProcessState};
 use overlays::{
     render_command_palette, render_context_actions, render_forge_mutation_confirmation,
     render_launch_confirmation, render_launch_presets, render_local_batch_confirmation,
-    render_local_input_overlay, render_thread_queue, render_transcript_search,
+    render_local_input_overlay, render_saved_view_editor, render_thread_queue,
+    render_transcript_search,
 };
 use ratatui::{
     Frame,
@@ -201,6 +202,7 @@ fn context_choice_label(choice: ContextChoice, language: UiLanguage) -> &'static
         ContextChoice::ScratchDone => "Scratch → 完成",
         ContextChoice::DeleteScratch => "删除 ScratchWork",
         ContextChoice::SaveCurrentView => "保存当前视图…",
+        ContextChoice::EditCurrentView => "编辑当前已保存视图…",
         ContextChoice::DeleteCurrentView => "删除当前已保存视图",
         ContextChoice::BatchAddTag => "批量当前可见项 · 添加标签…",
         ContextChoice::BatchRemoveTag => "批量当前可见项 · 移除标签…",
@@ -266,6 +268,9 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
     if app.thread_queue_open {
         render_thread_queue(frame, app);
     }
+    if app.saved_view_editor.is_some() {
+        render_saved_view_editor(frame, app);
+    }
     if app.command_palette_open {
         render_command_palette(frame, app);
     }
@@ -285,7 +290,7 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
             | InputMode::ThreadQueueEdit
             | InputMode::Note
             | InputMode::Snooze
-            | InputMode::SavedViewName
+            | InputMode::SavedViewField
             | InputMode::BatchAddTag
             | InputMode::BatchRemoveTag
             | InputMode::BatchPriority
@@ -393,7 +398,7 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
             truncate_display(&app.input_buffer, 60),
             tr(app, "Enter save · Esc cancel", "Enter 保存 · Esc 取消")
         )),
-        InputMode::SavedViewName => Line::from(format!(
+        InputMode::SavedViewField => Line::from(format!(
             "{}> {}  · {}",
             tr(app, "view name", "视图名称"),
             truncate_display(&app.input_buffer, 60),
@@ -1517,29 +1522,7 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
                     .map(|(index, card)| {
                         let selected =
                             stage_index == app.board_stage_index && index == app.board_selected;
-                        let attention = if card.needs_you() { "!" } else { " " };
-                        let pin = if card.overlay.pinned { "*" } else { " " };
-                        let goal = card
-                            .goal
-                            .as_ref()
-                            .map(|goal| {
-                                format!(" [{}]", goal_status_label(goal.status, app.language))
-                            })
-                            .unwrap_or_default();
-                        let text = format!(
-                            "{}{}{} {}{}",
-                            if selected { ">" } else { " " },
-                            pin,
-                            attention,
-                            truncate_display(&sanitize_inline(&card.title), 20),
-                            goal
-                        );
-                        let style = if selected {
-                            Style::default().add_modifier(Modifier::REVERSED)
-                        } else {
-                            Style::default()
-                        };
-                        Line::from(Span::styled(text, style))
+                        planning_card_line(card, selected, app.language, &view.visible_fields)
                     })
                     .collect::<Vec<_>>();
                 frame.render_widget(
@@ -1565,7 +1548,12 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
                 .skip(viewport.start)
                 .take(viewport.row_capacity)
                 .map(|(index, card)| {
-                    planning_card_line(card, index == app.board_selected, app.language)
+                    planning_card_line(
+                        card,
+                        index == app.board_selected,
+                        app.language,
+                        &view.visible_fields,
+                    )
                 })
                 .collect::<Vec<_>>();
             frame.render_widget(
@@ -1600,6 +1588,7 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
                     card,
                     index == app.board_selected,
                     app.language,
+                    &view.visible_fields,
                 ));
             }
             if lines.is_empty() {
@@ -1651,12 +1640,16 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
             truncate_display(&app.input_buffer, 80),
             tr(app, "Enter save · Esc cancel", "Enter 保存 · Esc 取消")
         )
-    } else if app.input_mode == InputMode::SavedViewName {
+    } else if app.input_mode == InputMode::SavedViewField {
         format!(
             "{}> {} · {}",
-            tr(app, "view name", "视图名称"),
+            tr(app, "view field", "视图字段"),
             truncate_display(&app.input_buffer, 80),
-            tr(app, "Enter save · Esc cancel", "Enter 保存 · Esc 取消")
+            tr(
+                app,
+                "Enter apply field · Esc cancel",
+                "Enter 应用字段 · Esc 取消"
+            )
         )
     } else if app.hot_slot_bind_pending {
         tr(
@@ -1691,47 +1684,115 @@ fn planning_card_line(
     card: &crate::planning::WorkCardProjection,
     selected: bool,
     language: UiLanguage,
+    visible_fields: &[String],
 ) -> Line<'static> {
-    let attention = if card.needs_you() {
-        card.attention
-            .iter()
-            .map(|reason| planning_attention_label(reason, language))
-            .collect::<Vec<_>>()
-            .join(",")
-    } else if card.snoozed && !card.attention.is_empty() {
-        tr_language(language, "snoozed", "已稍后提醒").into()
+    let values = visible_fields
+        .iter()
+        .filter_map(|field| planning_card_field(card, field, language))
+        .collect::<Vec<_>>();
+    let metadata = values.join(" · ");
+    let text = if metadata.is_empty() {
+        format!(
+            "{} {}",
+            if selected { ">" } else { " " },
+            sanitize_inline(&card.title)
+        )
     } else {
-        "-".into()
+        format!(
+            "{} {} · {}",
+            if selected { ">" } else { " " },
+            sanitize_inline(&card.title),
+            metadata
+        )
     };
-    let source = match (card.anchor.kind.clone(), language) {
-        (crate::planning::SourceKind::ScratchWork, UiLanguage::SimplifiedChinese) => "草稿",
-        (crate::planning::SourceKind::CodexThread, UiLanguage::SimplifiedChinese) => "会话",
-        (crate::planning::SourceKind::ForgeWorkItem, UiLanguage::SimplifiedChinese) => "Forge",
-        (crate::planning::SourceKind::ScratchWork, UiLanguage::English) => "scratch",
-        (crate::planning::SourceKind::CodexThread, UiLanguage::English) => "thread",
-        (crate::planning::SourceKind::ForgeWorkItem, UiLanguage::English) => "forge",
-        _ => tr_language(language, "link", "链接"),
-    };
-    let goal = card
-        .goal
-        .as_ref()
-        .map(|goal| goal_status_label(goal.status, language))
-        .unwrap_or("-");
-    let text = format!(
-        "{} {} {} {} {} {}",
-        if selected { ">" } else { " " },
-        fit_display(workflow_stage_label(card.stage, language), 7),
-        fit_display(&attention, 10),
-        fit_display(goal, 12),
-        fit_display(source, 8),
-        sanitize_inline(&card.title)
-    );
     let style = if selected {
         Style::default().add_modifier(Modifier::REVERSED)
     } else {
         Style::default()
     };
     Line::from(Span::styled(text, style))
+}
+
+fn planning_card_field(
+    card: &crate::planning::WorkCardProjection,
+    field: &str,
+    language: UiLanguage,
+) -> Option<String> {
+    match field {
+        "stage" => Some(workflow_stage_label(card.stage, language).to_string()),
+        "attention" => Some(if card.needs_you() {
+            card.attention
+                .iter()
+                .map(|reason| planning_attention_label(reason, language))
+                .collect::<Vec<_>>()
+                .join(",")
+        } else if card.snoozed && !card.attention.is_empty() {
+            tr_language(language, "snoozed", "已稍后提醒").into()
+        } else {
+            "-".into()
+        }),
+        "goal" => Some(
+            card.goal
+                .as_ref()
+                .map(|goal| goal_status_label(goal.status, language).to_string())
+                .unwrap_or_else(|| "-".into()),
+        ),
+        "source" => Some(
+            match (card.anchor.kind.clone(), language) {
+                (crate::planning::SourceKind::ScratchWork, UiLanguage::SimplifiedChinese) => "草稿",
+                (crate::planning::SourceKind::CodexThread, UiLanguage::SimplifiedChinese) => "会话",
+                (crate::planning::SourceKind::ForgeWorkItem, UiLanguage::SimplifiedChinese) => {
+                    "Forge"
+                }
+                (crate::planning::SourceKind::ScratchWork, UiLanguage::English) => "scratch",
+                (crate::planning::SourceKind::CodexThread, UiLanguage::English) => "thread",
+                (crate::planning::SourceKind::ForgeWorkItem, UiLanguage::English) => "forge",
+                _ => tr_language(language, "link", "链接"),
+            }
+            .into(),
+        ),
+        "workspace" => Some(
+            card.workspace
+                .as_deref()
+                .map(sanitize_inline)
+                .filter(|value| !value.is_empty())
+                .unwrap_or_else(|| "-".into()),
+        ),
+        "branch" => Some(
+            card.branch
+                .as_deref()
+                .map(sanitize_inline)
+                .filter(|value| !value.is_empty())
+                .unwrap_or_else(|| "-".into()),
+        ),
+        "forge" => Some(
+            card.forge_provider
+                .map(|provider| provider.label().to_string())
+                .unwrap_or_else(|| "-".into()),
+        ),
+        "change-request" => Some(
+            card.change_request_state
+                .as_deref()
+                .map(|state| {
+                    if card.change_request_draft {
+                        format!("{state}/draft")
+                    } else {
+                        state.to_string()
+                    }
+                })
+                .unwrap_or_else(|| "-".into()),
+        ),
+        "relationships" => Some(if card.links.is_empty() {
+            "-".into()
+        } else {
+            card.links
+                .iter()
+                .map(|link| link.role.label())
+                .collect::<Vec<_>>()
+                .join(",")
+        }),
+        _ => None,
+    }
 }
 
 fn render_scratch(frame: &mut Frame<'_>, app: &AppState, scratch_id: &str, area: Rect) {

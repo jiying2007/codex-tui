@@ -33,6 +33,7 @@ pub mod release;
 pub mod release_benchmark;
 pub mod replay_backend;
 pub mod runtime_lifecycle;
+pub mod saved_view_editor;
 pub mod scale_evidence;
 pub mod soak;
 pub(crate) mod sqlite_schema;

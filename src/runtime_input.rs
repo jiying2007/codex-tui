@@ -63,6 +63,23 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
         };
     }
 
+    if app.saved_view_editor.is_some() && app.input_mode == InputMode::Normal {
+        return match key.code {
+            KeyCode::Esc => reduce(app, Action::CloseSavedViewEditor),
+            KeyCode::Char('j') | KeyCode::Down => reduce(app, Action::MoveSavedViewEditorField(1)),
+            KeyCode::Char('k') | KeyCode::Up => reduce(app, Action::MoveSavedViewEditorField(-1)),
+            KeyCode::Left | KeyCode::Char('h') => {
+                reduce(app, Action::CycleSavedViewEditorValue(-1))
+            }
+            KeyCode::Right | KeyCode::Char('l') => {
+                reduce(app, Action::CycleSavedViewEditorValue(1))
+            }
+            KeyCode::Enter => reduce(app, Action::BeginSavedViewFieldEdit),
+            KeyCode::Char('s') => reduce(app, Action::SaveSavedViewEditor),
+            _ => vec![],
+        };
+    }
+
     if app.launch_menu_open {
         return match key.code {
             KeyCode::Esc => reduce(app, Action::CloseLaunchPresets),

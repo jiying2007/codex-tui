@@ -33,6 +33,7 @@ use crate::planning::{
     forge_issue_source_ref, reconcile_forge_issue_card, reconcile_scratch_card_with_local,
     reconcile_thread_card_with_goal_and_forge,
 };
+use crate::saved_view_editor::SavedViewEditor;
 use crate::store::LocalStateV1;
 use crate::terminal_drawer::TerminalSnapshot;
 use crate::text::sanitize_inline;
@@ -161,7 +162,8 @@ pub struct AppState {
     pub new_scratch_workspace: Option<String>,
     pub snooze_target: Option<SourceRef>,
     pub note_target: Option<SourceRef>,
-    pub saved_view_template: Option<SavedView>,
+    pub saved_view_editor: Option<SavedViewEditor>,
+    pub saved_view_editor_error: Option<String>,
     pub command_palette_open: bool,
     pub command_palette_selected: usize,
     command_palette_items: Vec<Command>,
@@ -290,7 +292,8 @@ impl AppState {
             new_scratch_workspace: None,
             snooze_target: None,
             note_target: None,
-            saved_view_template: None,
+            saved_view_editor: None,
+            saved_view_editor_error: None,
             command_palette_open: false,
             command_palette_selected: 0,
             command_palette_items: vec![],
@@ -943,6 +946,7 @@ impl AppState {
             }
             choices.push(ContextChoice::SaveCurrentView);
             if self.active_saved_view().id.starts_with("view:") {
+                choices.push(ContextChoice::EditCurrentView);
                 choices.push(ContextChoice::DeleteCurrentView);
             }
         }
@@ -1802,6 +1806,50 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
             state.board_selected = 0;
         }
+        Action::CloseSavedViewEditor => {
+            state.saved_view_editor = None;
+            state.saved_view_editor_error = None;
+            if state.input_mode == InputMode::SavedViewField {
+                state.input_mode = InputMode::Normal;
+                state.input_buffer.clear();
+            }
+        }
+        Action::MoveSavedViewEditorField(delta) => {
+            if let Some(editor) = state.saved_view_editor.as_mut() {
+                editor.move_field(delta);
+                state.saved_view_editor_error = None;
+            }
+        }
+        Action::CycleSavedViewEditorValue(delta) => {
+            if let Some(editor) = state.saved_view_editor.as_mut() {
+                editor.cycle_value(delta);
+                state.saved_view_editor_error = None;
+            }
+        }
+        Action::BeginSavedViewFieldEdit => {
+            if let Some(editor) = state.saved_view_editor.as_ref()
+                && let Some(value) = editor.begin_text_value()
+            {
+                state.input_buffer = value;
+                state.input_mode = InputMode::SavedViewField;
+                state.saved_view_editor_error = None;
+            }
+        }
+        Action::SaveSavedViewEditor => {
+            let Some(editor) = state.saved_view_editor.as_ref() else {
+                return vec![];
+            };
+            if let Err(error) = editor.validate() {
+                state.saved_view_editor_error = Some(error);
+                return vec![];
+            }
+            let view = editor.draft.clone();
+            state.saved_view_editor = None;
+            state.saved_view_editor_error = None;
+            state.input_mode = InputMode::Normal;
+            state.input_buffer.clear();
+            return vec![Effect::SaveSavedView { view }];
+        }
         Action::OpenPlanningSelected => {
             let Some(card) = state.selected_planning_card().cloned() else {
                 return vec![];
@@ -1907,11 +1955,20 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
 
             if choice == ContextChoice::SaveCurrentView {
-                let mut template = state.active_saved_view();
-                template.id.clear();
-                state.input_buffer = format!("{} Copy", template.name);
-                state.saved_view_template = Some(template);
-                state.input_mode = InputMode::SavedViewName;
+                state.saved_view_editor =
+                    Some(SavedViewEditor::create_from(&state.active_saved_view()));
+                state.saved_view_editor_error = None;
+                state.show_help = false;
+                return vec![];
+            }
+            if choice == ContextChoice::EditCurrentView {
+                match SavedViewEditor::edit(&state.active_saved_view()) {
+                    Ok(editor) => {
+                        state.saved_view_editor = Some(editor);
+                        state.saved_view_editor_error = None;
+                    }
+                    Err(error) => state.saved_view_editor_error = Some(error),
+                }
                 return vec![];
             }
             if choice == ContextChoice::DeleteCurrentView {
@@ -2201,6 +2258,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 ContextChoice::NewCodexThread
                 | ContextChoice::ForkCodexThread
                 | ContextChoice::SaveCurrentView
+                | ContextChoice::EditCurrentView
                 | ContextChoice::DeleteCurrentView
                 | ContextChoice::BatchAddTag
                 | ContextChoice::BatchRemoveTag
@@ -2985,7 +3043,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::ScratchTitle
             | InputMode::Snooze
             | InputMode::Note
-            | InputMode::SavedViewName
+            | InputMode::SavedViewField
             | InputMode::BatchAddTag
             | InputMode::BatchRemoveTag
             | InputMode::BatchPriority
@@ -3037,7 +3095,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 | InputMode::ScratchTitle
                 | InputMode::Snooze
                 | InputMode::Note
-                | InputMode::SavedViewName
+                | InputMode::SavedViewField
                 | InputMode::BatchAddTag
                 | InputMode::BatchRemoveTag
                 | InputMode::BatchPriority
@@ -3077,7 +3135,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::ScratchTitle
             | InputMode::Snooze
             | InputMode::Note
-            | InputMode::SavedViewName
+            | InputMode::SavedViewField
             | InputMode::BatchAddTag
             | InputMode::BatchRemoveTag
             | InputMode::BatchPriority
@@ -3437,20 +3495,19 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 state.input_buffer.clear();
                 return vec![Effect::CreateScratch { title, workspace }];
             }
-            if mode == InputMode::SavedViewName {
-                let name = state.input_buffer.trim().to_string();
-                let Some(mut view) = state.saved_view_template.take() else {
-                    state.input_mode = InputMode::Normal;
-                    state.input_buffer.clear();
-                    return vec![];
-                };
-                if name.is_empty() {
-                    return vec![];
-                }
-                view.name = name;
+            if mode == InputMode::SavedViewField {
+                let value = state.input_buffer.clone();
                 state.input_mode = InputMode::Normal;
                 state.input_buffer.clear();
-                return vec![Effect::SaveSavedView { view }];
+                let Some(editor) = state.saved_view_editor.as_mut() else {
+                    return vec![];
+                };
+                if let Err(error) = editor.commit_text_value(value) {
+                    state.saved_view_editor_error = Some(error);
+                } else {
+                    state.saved_view_editor_error = None;
+                }
+                return vec![];
             }
             if mode == InputMode::Note {
                 let text = state.input_buffer.trim().to_string();
@@ -3663,8 +3720,10 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             if state.input_mode == InputMode::Note {
                 state.note_target = None;
             }
-            if state.input_mode == InputMode::SavedViewName {
-                state.saved_view_template = None;
+            if state.input_mode == InputMode::SavedViewField {
+                state.input_mode = InputMode::Normal;
+                state.input_buffer.clear();
+                return vec![];
             }
             if state.input_mode == InputMode::Search {
                 let origin_thread_id = state.search_origin_thread_id();
@@ -5808,11 +5867,12 @@ mod tests {
     }
 
     #[test]
-    fn board_context_can_save_but_not_delete_builtin_views() {
+    fn board_context_creates_structured_copy_and_keeps_builtin_immutable() {
         let mut app = app();
         reduce(&mut app, Action::OpenBoard);
         let choices = app.context_choices();
         assert!(choices.contains(&ContextChoice::SaveCurrentView));
+        assert!(!choices.contains(&ContextChoice::EditCurrentView));
         assert!(!choices.contains(&ContextChoice::DeleteCurrentView));
 
         reduce(&mut app, Action::OpenContext);
@@ -5823,8 +5883,48 @@ mod tests {
             .expect("save view action");
         app.context_selected = save_index;
         reduce(&mut app, Action::ExecuteContext);
-        assert_eq!(app.input_mode, InputMode::SavedViewName);
-        assert!(app.saved_view_template.is_some());
+
+        let editor = app.saved_view_editor.as_ref().expect("structured editor");
+        assert!(editor.creating);
+        assert!(editor.draft.id.is_empty());
+        assert_eq!(app.input_mode, InputMode::Normal);
+    }
+
+    #[test]
+    fn saved_view_editor_validates_before_write_and_custom_views_are_editable() {
+        let mut app = app();
+        reduce(&mut app, Action::OpenBoard);
+        app.saved_view_editor = Some(SavedViewEditor::create_from(&app.active_saved_view()));
+        app.saved_view_editor.as_mut().expect("editor").draft.filter = "unknown:value".into();
+
+        assert!(reduce(&mut app, Action::SaveSavedViewEditor).is_empty());
+        assert!(app.saved_view_editor.is_some());
+        assert!(app.saved_view_editor_error.is_some());
+
+        let editor = app.saved_view_editor.as_mut().expect("editor");
+        editor.draft.filter = "stage:review".into();
+        editor.draft.name = "Review only".into();
+        let effects = reduce(&mut app, Action::SaveSavedViewEditor);
+        assert!(matches!(
+            effects.as_slice(),
+            [Effect::SaveSavedView { view }]
+                if view.name == "Review only" && view.filter == "stage:review"
+        ));
+
+        app.planning_snapshot.saved_views.push(SavedView {
+            id: "view:7".into(),
+            name: "Custom".into(),
+            source_scope: "all".into(),
+            filter: String::new(),
+            group_by: Some("workspace".into()),
+            order_by: Some("priority".into()),
+            layout: SavedViewLayout::List,
+            visible_fields: vec!["stage".into()],
+        });
+        app.planning_view_index = builtin_saved_views().len();
+        let choices = app.context_choices();
+        assert!(choices.contains(&ContextChoice::EditCurrentView));
+        assert!(choices.contains(&ContextChoice::DeleteCurrentView));
     }
 
     #[test]

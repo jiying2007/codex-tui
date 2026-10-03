@@ -130,9 +130,13 @@ pub(super) fn render_local_input_overlay(frame: &mut Frame<'_>, app: &AppState) 
                 "15m / 1h / 1d · Enter 应用 · Esc 取消",
             ),
         ),
-        InputMode::SavedViewName => (
-            tr(app, " Save current view ", " 保存当前视图 "),
-            tr(app, "Enter save · Esc cancel", "Enter 保存 · Esc 取消"),
+        InputMode::SavedViewField => (
+            tr(app, " Edit Saved View field ", " 编辑已保存视图字段 "),
+            tr(
+                app,
+                "Enter apply field · Esc cancel",
+                "Enter 应用字段 · Esc 取消",
+            ),
         ),
         InputMode::BatchAddTag => (
             tr(
@@ -336,6 +340,103 @@ pub(super) fn render_transcript_search(frame: &mut Frame<'_>, app: &AppState) {
     frame.render_widget(
         Paragraph::new(lines)
             .block(Block::bordered().title(tr(app, " Transcript Search ", " 会话全文搜索 ")))
+            .wrap(Wrap { trim: false }),
+        area,
+    );
+}
+
+pub(super) fn render_saved_view_editor(frame: &mut Frame<'_>, app: &AppState) {
+    let Some(editor) = app.saved_view_editor.as_ref() else {
+        return;
+    };
+    let draft = &editor.draft;
+    let field_value = |index: usize| -> String {
+        match crate::saved_view_editor::SavedViewEditorField::ALL[index] {
+            crate::saved_view_editor::SavedViewEditorField::Name => draft.name.clone(),
+            crate::saved_view_editor::SavedViewEditorField::SourceScope => {
+                draft.source_scope.clone()
+            }
+            crate::saved_view_editor::SavedViewEditorField::Filter => {
+                if draft.filter.is_empty() {
+                    "<none>".into()
+                } else {
+                    draft.filter.clone()
+                }
+            }
+            crate::saved_view_editor::SavedViewEditorField::GroupBy => {
+                draft.group_by.clone().unwrap_or_else(|| "<none>".into())
+            }
+            crate::saved_view_editor::SavedViewEditorField::OrderBy => {
+                draft.order_by.clone().unwrap_or_else(|| "<none>".into())
+            }
+            crate::saved_view_editor::SavedViewEditorField::Layout => {
+                draft.layout.label().to_string()
+            }
+            crate::saved_view_editor::SavedViewEditorField::VisibleFields => {
+                draft.visible_fields.join(",")
+            }
+        }
+    };
+
+    let mut lines = vec![Line::from(if editor.creating {
+        tr(app, "New custom Saved View", "新建自定义已保存视图")
+    } else {
+        tr(app, "Edit custom Saved View", "编辑自定义已保存视图")
+    })];
+    lines.push(Line::from(""));
+
+    for (index, field) in crate::saved_view_editor::SavedViewEditorField::ALL
+        .iter()
+        .enumerate()
+    {
+        let selected = index == editor.selected_field;
+        let style = if selected {
+            Style::default().add_modifier(Modifier::REVERSED)
+        } else {
+            Style::default()
+        };
+        lines.push(Line::from(Span::styled(
+            format!(
+                "{} {:<14} {}",
+                if selected { ">" } else { " " },
+                field.label(),
+                truncate_display(&sanitize_inline(&field_value(index)), 70)
+            ),
+            style,
+        )));
+    }
+
+    if let Some(error) = app.saved_view_editor_error.as_deref() {
+        lines.push(Line::from(""));
+        lines.push(Line::from(format!(
+            "{}: {}",
+            tr(app, "Validation", "校验"),
+            truncate_display(&sanitize_inline(error), 92)
+        )));
+    }
+
+    lines.extend([
+        Line::from(""),
+        Line::from(tr(
+            app,
+            "j/k field · h/l cycle enum · Enter edit text field · s save · Esc cancel",
+            "j/k 选择字段 · h/l 切换枚举 · Enter 编辑文本字段 · s 保存 · Esc 取消",
+        )),
+        Line::from(tr(
+            app,
+            "built-in views are immutable; Save as creates a local custom copy",
+            "内置视图不可修改；另存为会创建本地自定义副本",
+        )),
+    ]);
+
+    let height = u16::try_from(lines.len().saturating_add(2))
+        .unwrap_or(18)
+        .clamp(12, 22);
+    let area = centered_fixed(100, height, frame.area());
+    frame.render_widget(Clear, area);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(Block::bordered().title(tr(app, " Saved View Editor ", " 已保存视图编辑器 ")))
             .wrap(Wrap { trim: false }),
         area,
     );
