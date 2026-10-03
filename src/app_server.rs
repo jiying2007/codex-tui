@@ -64,13 +64,12 @@ fn is_transcript_search_unsupported(error: &anyhow::Error) -> bool {
         return false;
     };
     source.code == Some(-32601)
-        || (matches!(source.code, Some(-32600 | -32602))
-            && {
-                let message = source.message.to_ascii_lowercase();
-                message.contains("thread/search")
-                    || message.contains("experimental")
-                    || message.contains("unknown method")
-            })
+        || (matches!(source.code, Some(-32600 | -32602)) && {
+            let message = source.message.to_ascii_lowercase();
+            message.contains("thread/search")
+                || message.contains("experimental")
+                || message.contains("unknown method")
+        })
 }
 
 fn mark_optional_capability(status: &mut BackendStatus, capability: &str, supported: bool) {
@@ -78,7 +77,9 @@ fn mark_optional_capability(status: &mut BackendStatus, capability: &str, suppor
         if !status.capabilities.iter().any(|value| value == capability) {
             status.capabilities.push(capability.to_string());
         }
-        status.optional_capabilities_missing.retain(|value| value != capability);
+        status
+            .optional_capabilities_missing
+            .retain(|value| value != capability);
     } else {
         status.capabilities.retain(|value| value != capability);
         if !status
@@ -86,7 +87,9 @@ fn mark_optional_capability(status: &mut BackendStatus, capability: &str, suppor
             .iter()
             .any(|value| value == capability)
         {
-            status.optional_capabilities_missing.push(capability.to_string());
+            status
+                .optional_capabilities_missing
+                .push(capability.to_string());
         }
     }
 }
@@ -1781,10 +1784,7 @@ async fn load_conversation(rpc: &mut RpcSession, thread_id: ThreadId) -> Result<
     ))
 }
 
-async fn search_transcript(
-    rpc: &mut RpcSession,
-    query: String,
-) -> Result<TranscriptSearchResults> {
+async fn search_transcript(rpc: &mut RpcSession, query: String) -> Result<TranscriptSearchResults> {
     let query = query.trim().to_string();
     anyhow::ensure!(!query.is_empty(), "transcript search query is empty");
 
