@@ -172,6 +172,14 @@ cargo run -- soak --rows 50000 --cycles 256 --json
 cargo run -- --fake
 ```
 
+### Transcript history search
+
+Press `Ctrl+F` to search conversation history. Current App Server builds are used as
+full-history authority through `thread/search` + `thread/searchOccurrences`; a
+derived local SQLite index gives immediate fallback results for transcript pages that
+codex-tui has already observed. Reasoning/tool-internal content is not written to the
+local transcript index.
+
 ### Language / 语言
 
 The TUI supports English and Simplified Chinese. The language is selected in the local config printed by `codex-tui doctor`:
