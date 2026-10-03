@@ -438,9 +438,9 @@ pub(crate) async fn reconcile_outcome(
                         .into(),
                 ))
             } else {
-                Ok(GitHubReconciledOutcome::Unknown(format!(
-                    "GitHub pull request is closed but not merged after uncertain outcome"
-                )))
+                Ok(GitHubReconciledOutcome::Unknown(
+                    "GitHub pull request is closed but not merged after uncertain outcome".into(),
+                ))
             }
         }
     }
@@ -643,7 +643,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::forge::{ForgeIdentity, ForgeProviderKind};
+    use crate::forge::ForgeProviderKind;
 
     fn plan(kind: ForgeMutationKind) -> ForgeMutationPlan {
         ForgeMutationPlan {
