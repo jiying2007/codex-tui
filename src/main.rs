@@ -11,6 +11,7 @@ use codex_tui::{
     i18n::{UiLanguage, pick},
     notification::NotificationMode,
     planning::PlanningSnapshot,
+    runtime_lifecycle,
     sqlite_store::SqliteStore,
     store::LocalStore,
     terminal::TerminalSession,
@@ -1716,56 +1717,10 @@ fn apply_effects(
                 }
             }
             Effect::StartThread { cwd } => {
-                if let Some(registry) = registry {
-                    if let Err(error) = registry.start_thread(cwd) {
-                        reduce(
-                            app,
-                            Action::ThreadLifecycleFailed {
-                                operation: "thread/start".into(),
-                                error: error.to_string(),
-                            },
-                        );
-                    }
-                } else {
-                    reduce(
-                        app,
-                        Action::ThreadLifecycleFailed {
-                            operation: "thread/start".into(),
-                            error: runtime_text(
-                                app.language,
-                                "conversation backend unavailable",
-                                "会话后端不可用",
-                            )
-                            .into(),
-                        },
-                    );
-                }
+                runtime_lifecycle::start_thread(app, registry, cwd);
             }
             Effect::ForkThread { thread_id } => {
-                if let Some(registry) = registry {
-                    if let Err(error) = registry.fork_thread(thread_id) {
-                        reduce(
-                            app,
-                            Action::ThreadLifecycleFailed {
-                                operation: "thread/fork".into(),
-                                error: error.to_string(),
-                            },
-                        );
-                    }
-                } else {
-                    reduce(
-                        app,
-                        Action::ThreadLifecycleFailed {
-                            operation: "thread/fork".into(),
-                            error: runtime_text(
-                                app.language,
-                                "conversation backend unavailable",
-                                "会话后端不可用",
-                            )
-                            .into(),
-                        },
-                    );
-                }
+                runtime_lifecycle::fork_thread(app, registry, thread_id);
             }
             Effect::LoadConversation(thread_id) => {
                 if let Some(registry) = registry {
