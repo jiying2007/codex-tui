@@ -100,9 +100,13 @@ impl ResolvedAppServerTarget {
                 let auth_token = match auth_token_env.as_deref().map(str::trim) {
                     Some("") => anyhow::bail!("auth_token_env must not be empty"),
                     Some(name) => {
-                        let token = std::env::var(name)
-                            .with_context(|| format!("App Server token environment {name:?} is not set"))?;
-                        anyhow::ensure!(!token.trim().is_empty(), "App Server token environment {name:?} is empty");
+                        let token = std::env::var(name).with_context(|| {
+                            format!("App Server token environment {name:?} is not set")
+                        })?;
+                        anyhow::ensure!(
+                            !token.trim().is_empty(),
+                            "App Server token environment {name:?} is empty"
+                        );
                         anyhow::ensure!(
                             websocket_url_supports_auth(&url),
                             "bearer authentication requires wss:// or a loopback ws:// endpoint"
@@ -177,7 +181,10 @@ fn validate_websocket_url(raw: &str) -> Result<Url> {
         matches!(url.scheme(), "ws" | "wss"),
         "App Server WebSocket URL must use ws:// or wss://"
     );
-    anyhow::ensure!(url.host_str().is_some(), "App Server WebSocket URL requires a host");
+    anyhow::ensure!(
+        url.host_str().is_some(),
+        "App Server WebSocket URL requires a host"
+    );
     anyhow::ensure!(
         url.username().is_empty() && url.password().is_none(),
         "App Server WebSocket URL must not embed credentials; use auth_token_env"
@@ -195,7 +202,8 @@ fn websocket_url_supports_auth(url: &Url) -> bool {
     if host.eq_ignore_ascii_case("localhost") {
         return true;
     }
-    host.parse::<IpAddr>().is_ok_and(|address| address.is_loopback())
+    host.parse::<IpAddr>()
+        .is_ok_and(|address| address.is_loopback())
 }
 
 fn sanitize_websocket_url(raw: &str) -> String {
