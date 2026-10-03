@@ -1348,6 +1348,72 @@ mod tests {
     }
 
     #[test]
+    fn projected_goal_and_worktree_links_are_stable_and_deduplicated() {
+        let thread = first_thread();
+        let goal = GoalObservation {
+            thread_id: thread.id.clone(),
+            objective: "Ship v1.4".into(),
+            status: GoalStatus::Active,
+            token_budget: Some(10_000),
+            tokens_used: 100,
+            time_used_seconds: 10,
+            created_at: 1,
+            updated_at: 2,
+            observed_at_unix_ms: 100,
+        };
+        let repo = crate::domain::LocalRepoIdentity {
+            git_common_dir: "/repo/.git".into(),
+            primary_root: "/repo".into(),
+        };
+        let mut git = GitContext::pending(thread.id.clone(), "/repo");
+        git.is_repository = true;
+        git.worktree = Some(crate::domain::WorktreeIdentity {
+            repo,
+            canonical_path: "/repo".into(),
+            branch: Some("feature".into()),
+            managed_by_codex_tui: true,
+        });
+
+        let card = reconcile_thread_card_with_goal(
+            ReconcileInput {
+                thread: &thread,
+                git: Some(&git),
+                local: None,
+                collision_count: 0,
+                backend_observed_at_unix_ms: Some(100),
+                backend_error: None,
+                now_unix_ms: 100,
+            },
+            Some(&goal),
+        );
+
+        assert!(card.links.iter().any(|link| {
+            link.role == LinkRole::Goal
+                && link.source.kind == SourceKind::Goal
+                && link.source.value == thread.id.0
+        }));
+        assert!(card.links.iter().any(|link| {
+            link.role == LinkRole::Worktree
+                && link.source.kind == SourceKind::Worktree
+                && link.source.value == "/repo"
+        }));
+        assert!(card_matches_filter(&card, "link:goal"));
+        assert!(card_matches_filter(&card, "worktree:/repo"));
+        assert!(card_matches_filter(&card, "feature"));
+
+        let mut links = card.links.clone();
+        push_link_if_missing(
+            &mut links,
+            LinkRole::Goal,
+            SourceRef {
+                kind: SourceKind::Goal,
+                value: thread.id.0.clone(),
+            },
+        );
+        assert_eq!(links.len(), card.links.len());
+    }
+
+    #[test]
     fn blocked_and_limited_goals_are_attention_not_workflow_columns() {
         let thread = first_thread();
         for (status, attention) in [
