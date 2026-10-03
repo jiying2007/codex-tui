@@ -6,6 +6,7 @@ All notable codex-tui changes are recorded here.
 
 ### Maintainability
 
+- enforced two-phase stable publication: `stable + publish=true` now requires a successful prior `stable + publish=false` release run on the exact same source SHA and unchanged canonical CI / real-environment / performance evidence; the publish run still regenerates automated qualification independently.
 - added an exact-SHA GitHub-hosted 200-sample `resident-planning-10k` performance-diagnostics workflow on every main SHA; it retains source-bound p50/p95/p99/max evidence for stable handoff without turning hosted-runner latency into a threshold gate.
 - restored unambiguous `cargo run` / release verification after adding the syntax-asset helper binary by declaring `codex-tui` as the package default-run target and selecting it explicitly in the release gate.
 - closed the v1.2 P0/P1/P2 development scope with a machine-validated completion/freeze manifest; hosted qualification now SHA-256 binds that manifest while remaining explicitly non-stable authority.
