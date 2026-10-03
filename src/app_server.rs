@@ -212,6 +212,7 @@ pub enum BackendCommand {
     },
     ClearGoal(ThreadId),
     SearchTranscript(String),
+    JumpToTranscriptHit(crate::transcript_search::TranscriptSearchHit),
 }
 
 #[derive(Clone, Debug)]
@@ -229,6 +230,10 @@ pub enum ConversationEvent {
     GoalObserved(GoalObservation),
     GoalCleared(ThreadId),
     TranscriptSearchLoaded(TranscriptSearchResults),
+    TranscriptSearchJumpLoaded {
+        page: ConversationPage,
+        item_id: String,
+    },
     TranscriptSearchFailed {
         query: String,
         error: String,
@@ -327,6 +332,13 @@ impl RegistryHandle {
 
     pub fn search_transcript(&self, query: String) -> Result<()> {
         self.send_command(BackendCommand::SearchTranscript(query))
+    }
+
+    pub fn jump_to_transcript_hit(
+        &self,
+        hit: crate::transcript_search::TranscriptSearchHit,
+    ) -> Result<()> {
+        self.send_command(BackendCommand::JumpToTranscriptHit(hit))
     }
 
     fn send_command(&self, command: BackendCommand) -> Result<()> {
@@ -998,6 +1010,33 @@ async fn run_registry_actor(
                                 .await;
                             }
                         }
+                    BackendCommand::JumpToTranscriptHit(hit) => {
+                        let thread_id = hit.thread_id.clone();
+                        watched_threads.insert(thread_id.0.clone());
+                        match load_transcript_hit(&mut rpc, &hit).await {
+                            Ok(page) => {
+                                let item_id = hit.item_id.clone().unwrap_or_default();
+                                send_conversation_event(
+                                    &conversation_tx,
+                                    ConversationEvent::TranscriptSearchJumpLoaded {
+                                        page,
+                                        item_id,
+                                    },
+                                )
+                                .await;
+                            }
+                            Err(error) => {
+                                send_conversation_event(
+                                    &conversation_tx,
+                                    ConversationEvent::Failed {
+                                        thread_id,
+                                        error: error.to_string(),
+                                    },
+                                )
+                                .await;
+                            }
+                        }
+                    }
                     }
                 }
             }
@@ -1811,6 +1850,49 @@ async fn search_transcript(
         hits,
         complete: next_cursor.is_none(),
     })
+}
+
+async fn load_transcript_hit(
+    rpc: &mut RpcSession,
+    hit: &crate::transcript_search::TranscriptSearchHit,
+) -> Result<ConversationPage> {
+    let Some(turn_id) = hit.turn_id.as_deref() else {
+        return load_conversation(rpc, hit.thread_id.clone()).await;
+    };
+    let metadata = rpc
+        .request(
+            "thread/read",
+            json!({
+                "threadId": hit.thread_id.0,
+                "includeTurns": false
+            }),
+        )
+        .await
+        .context("read transcript search thread metadata")?;
+    let title = parse_thread_title(&metadata);
+
+    let result = rpc
+        .request(
+            "thread/items/list",
+            json!({
+                "threadId": hit.thread_id.0,
+                "turnId": turn_id,
+                "cursor": null,
+                "limit": 200,
+                "sortDirection": "asc"
+            }),
+        )
+        .await
+        .context("load transcript search turn items")?;
+    let (items, _) = parse_items_page(result)?;
+    Ok(merge_history(
+        hit.thread_id.clone(),
+        title,
+        vec![],
+        items,
+        None,
+        None,
+    ))
 }
 
 async fn load_legacy_conversation(
