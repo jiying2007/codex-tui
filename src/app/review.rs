@@ -31,9 +31,7 @@ impl AppState {
 mod tests {
     use super::*;
     use crate::backend::{CodexBackend, FakeBackend};
-    use crate::forge::{
-        ChangeRequestSummary, ForgeIdentity, ForgeObservation, ForgeProviderKind,
-    };
+    use crate::forge::{ChangeRequestSummary, ForgeIdentity, ForgeObservation, ForgeProviderKind};
     use crate::git::GitContext;
 
     #[test]
