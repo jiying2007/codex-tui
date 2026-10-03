@@ -234,8 +234,10 @@ mod tests {
 
     #[test]
     fn named_unix_target_requires_absolute_path() {
-        let mut config = AppServerConfig::default();
-        config.active = "remote".into();
+        let mut config = AppServerConfig {
+            active: "remote".into(),
+            ..AppServerConfig::default()
+        };
         config.targets.insert(
             "remote".into(),
             AppServerTargetConfig::UnixSocket {
