@@ -165,6 +165,33 @@ mod tests {
     }
 
     #[test]
+    fn managed_worktree_selection_becomes_new_thread_cwd() {
+        let (mut app, dir) = app_with_local_cwd();
+        let selected_path = dir.path().join("feature");
+        std::fs::create_dir_all(&selected_path).expect("create worktree fixture");
+        app.managed_worktrees = vec![crate::operation::ManagedWorktreeRecord {
+            repo: crate::domain::LocalRepoIdentity {
+                git_common_dir: dir.path().join(".git").to_string_lossy().into_owned(),
+                primary_root: dir.path().to_string_lossy().into_owned(),
+            },
+            canonical_path: selected_path.to_string_lossy().into_owned(),
+            branch: Some("feature".into()),
+            created_by_operation_id: "op-test".into(),
+            adopted: false,
+            created_at_unix_ms: 1,
+            last_verified_at_unix_ms: 1,
+        }];
+        app.managed_selected = 0;
+        app.view = View::ManagedWorktrees(app.threads[0].id.clone());
+
+        let effects = app.plan_start_thread();
+        assert!(matches!(
+            effects.as_slice(),
+            [Effect::StartThread { cwd }] if cwd == &selected_path.to_string_lossy()
+        ));
+    }
+
+    #[test]
     fn observed_missing_fork_capability_disables_only_fork() {
         let (mut app, _dir) = app_with_local_cwd();
         app.backend_status
