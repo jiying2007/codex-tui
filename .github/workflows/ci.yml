@@ -197,6 +197,37 @@ jobs:
 
           python scripts/release/create_evidence.py             --output "$OUT/evidence.json"             --compat-schema codex-tui/compat/v2             --version 1.0.0             --commit 0123456789abcdef0123456789abcdef01234567             --canonical-ci-run 1             --automated-qualification "$OUT/automated-qualification.json"             --linux-source-sha 0123456789abcdef0123456789abcdef01234567             --linux-compat-sha256 "$(printf 'a%.0s' {1..64})"             --linux-compat-observed-at 2026-09-30T00:00:00Z             --linux-terminal ci-python38             --linux-terminal-observed-at 2026-09-30T00:00:00Z             --performance-source-sha 0123456789abcdef0123456789abcdef01234567             --performance-iterations 200             --performance-p95-ms 1             --performance-p99-ms 2             --performance-source ci-python38             --performance-observed-at 2026-09-30T00:00:00Z
 
+          PYTHONPATH=scripts/release python - "$OUT/evidence.json" <<'PY'
+          import json
+          import sys
+
+          import stable_publish
+
+          evidence = json.load(open(sys.argv[1], encoding="utf-8"))
+          inputs = stable_publish.stable_publish_inputs(evidence, 77)
+          assert inputs["channel"] == "stable"
+          assert inputs["publish"] == "true"
+          assert inputs["canonical_ci_run"] == "1"
+          assert inputs["stable_qualification_run"] == "77"
+          assert inputs["linux_compat_sha256"] == "a" * 64
+          assert inputs["linux_terminal"] == "ci-python38"
+          assert inputs["performance_source_sha"] == "0123456789abcdef0123456789abcdef01234567"
+          assert "linux_source_sha" not in inputs
+          assert len(inputs) == 14
+          assert stable_publish.STABLE_VERSION.fullmatch("1.2.0")
+          assert not stable_publish.STABLE_VERSION.fullmatch("1.2.0-rc.1")
+          assert not stable_publish.STABLE_VERSION.fullmatch("0.9.0")
+
+          broken = json.loads(json.dumps(evidence))
+          del broken["terminalRestoration"]["linux"]
+          try:
+              stable_publish.stable_publish_inputs(broken, 77)
+          except SystemExit:
+              pass
+          else:
+              raise AssertionError("expected missing Linux terminal restoration to fail")
+          PY
+
           cat > "$OUT/prior-stable-run.json" <<'EOF'
           {
             "id": 77,
@@ -440,6 +471,7 @@ jobs:
 
           python scripts/release/validate_stable_dry_run.py --help >/dev/null
           python scripts/release/validate_release_branch_state.py --help >/dev/null
+          python scripts/release/stable_publish.py --help >/dev/null
           python scripts/release/linux_qualify.py --help >/dev/null
           PYTHONPATH=scripts/release python -c 'import linux_qualify as q; assert q.stable_version_allowed("1.0.0"); assert q.stable_version_allowed("1.1.0"); assert q.stable_version_allowed("2.3.4"); assert not q.stable_version_allowed("0.9.0"); assert not q.stable_version_allowed("1.1.0-rc.1"); assert not q.stable_version_allowed("01.1.0")'
       - name: Verify Python scripts parse

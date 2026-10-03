@@ -455,7 +455,8 @@ def main() -> int:
         "localStableVerify": "pass",
         "workflowInputs": workflow_inputs,
         "next": (
-            "stable publish=false workflow dispatched"
+            "stable publish=false workflow dispatched; after it succeeds, run "
+            "scripts/release/stable_publish.py with that run ID"
             if args.dispatch
             else "use workflowInputs for stable publish=false, or run a fresh qualification with --dispatch"
         ),
@@ -485,7 +486,10 @@ def main() -> int:
         for key, value in workflow_inputs.items():
             command.extend(["-f", f"{key}={value}"])
         run(command, cwd=root, capture=False)
-        summary["next"] = "stable publish=false workflow dispatched"
+        summary["next"] = (
+            "stable publish=false workflow dispatched; after it succeeds, run "
+            "scripts/release/stable_publish.py with that run ID"
+        )
 
     summary_path = output_dir / "qualification-summary.json"
     write_text_lf(

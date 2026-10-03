@@ -46,6 +46,15 @@ Stable qualification also reads the live `main` branch metadata and refuses to c
 
 The Linux evidence source SHA is not a manual dispatch input: the workflow derives it directly from `github.sha`. This both tightens exact-source binding and keeps the dispatch contract within GitHub's top-level input budget.
 
+The recommended publication path does not manually re-enter the retained inputs. After the successful stable dry-run, use:
+
+```bash
+python3 scripts/release/stable_publish.py \
+  --stable-qualification-run <successful-stable-publish-false-run-id>
+```
+
+This performs a non-publishing preflight: clean/main/origin SHA agreement, absent stable tag, live `main.protected=true`, released CHANGELOG entry, prior dry-run identity and retained release-evidence validation. It reconstructs the exact publish inputs from the prior immutable `release-gate` artifact. Add `--dispatch` only after reviewing the emitted preflight summary. The helper never accepts compatibility, terminal or performance values as manual command-line inputs.
+
 `publish=true` additionally creates the GitHub Release only after every prior job succeeds and, for stable, the prior dry-run qualification has been validated.
 
 An existing tag is treated as a collision and publishing fails closed.
