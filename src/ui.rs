@@ -1522,12 +1522,7 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
                     .map(|(index, card)| {
                         let selected =
                             stage_index == app.board_stage_index && index == app.board_selected;
-                        planning_card_line(
-                            card,
-                            selected,
-                            app.language,
-                            &view.visible_fields,
-                        )
+                        planning_card_line(card, selected, app.language, &view.visible_fields)
                     })
                     .collect::<Vec<_>>();
                 frame.render_widget(
@@ -1650,7 +1645,11 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
             "{}> {} · {}",
             tr(app, "view field", "视图字段"),
             truncate_display(&app.input_buffer, 80),
-            tr(app, "Enter apply field · Esc cancel", "Enter 应用字段 · Esc 取消")
+            tr(
+                app,
+                "Enter apply field · Esc cancel",
+                "Enter 应用字段 · Esc 取消"
+            )
         )
     } else if app.hot_slot_bind_pending {
         tr(
