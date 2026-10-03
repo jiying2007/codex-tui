@@ -29,7 +29,9 @@ enum Transport {
         stream: Box<WebSocketStream<MaybeTlsStream<TcpStream>>>,
     },
     #[cfg(unix)]
-    UnixSocket { stream: WebSocketStream<UnixStream> },
+    UnixSocket {
+        stream: Box<WebSocketStream<UnixStream>>,
+    },
 }
 
 pub struct AppServerTransport {
@@ -100,7 +102,9 @@ impl AppServerTransport {
                     let (stream, _) = client_async("ws://localhost/rpc", socket)
                         .await
                         .context("perform App Server Unix-socket WebSocket handshake")?;
-                    Transport::UnixSocket { stream }
+                    Transport::UnixSocket {
+                        stream: Box::new(stream),
+                    }
                 }
                 #[cfg(not(unix))]
                 {
@@ -130,7 +134,7 @@ impl AppServerTransport {
             },
             Transport::WebSocket { stream } => read_websocket_json(stream.as_mut()).await,
             #[cfg(unix)]
-            Transport::UnixSocket { stream } => read_websocket_json(stream).await,
+            Transport::UnixSocket { stream } => read_websocket_json(stream.as_mut()).await,
         }
     }
 
@@ -148,7 +152,7 @@ impl AppServerTransport {
             }
             Transport::WebSocket { stream } => write_websocket_json(stream.as_mut(), value).await,
             #[cfg(unix)]
-            Transport::UnixSocket { stream } => write_websocket_json(stream, value).await,
+            Transport::UnixSocket { stream } => write_websocket_json(stream.as_mut(), value).await,
         }
     }
 }
