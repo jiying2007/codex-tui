@@ -2711,17 +2711,6 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 return vec![];
             };
             let thread_id = hit.thread_id.clone();
-            if !state.threads.iter().any(|thread| thread.id == thread_id) {
-                state.transcript_search_error = Some(
-                    local_text(
-                        state.language,
-                        "search result thread is no longer present in the Registry",
-                        "搜索结果对应的会话已不在当前 Registry 中",
-                    )
-                    .into(),
-                );
-                return vec![];
-            }
             state.transcript_search_open = false;
             state.previous_target = state.current_thread_id().cloned();
             state.thread_ui.entry(thread_id.0.clone()).or_default();
