@@ -260,9 +260,8 @@ mod tests {
 
     #[test]
     fn websocket_diagnostics_strip_query_fragment_and_credentials() {
-        let value = sanitize_websocket_url(
-            "wss://user:secret@example.test:443/rpc?token=secret#fragment",
-        );
+        let value =
+            sanitize_websocket_url("wss://user:secret@example.test:443/rpc?token=secret#fragment");
         assert_eq!(value, "wss://example.test/rpc");
     }
 
