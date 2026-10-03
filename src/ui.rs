@@ -341,7 +341,11 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
         InputMode::TranscriptSearch => Line::from(format!(
             "Ctrl+F> {}  · {}",
             app.input_buffer,
-            tr(app, "Enter full-history search · Esc cancel", "Enter 全历史搜索 · Esc 取消")
+            tr(
+                app,
+                "Enter full-history search · Esc cancel",
+                "Enter 全历史搜索 · Esc 取消"
+            )
         )),
         InputMode::Alias => Line::from(format!(
             "alias> {}  · {}",
@@ -1241,13 +1245,13 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area: R
                     item.kind.label(),
                     item.text.replace('\n', " ")
                 );
-                let is_search_target = app
-                    .transcript_search_active_hit
-                    .as_ref()
-                    .is_some_and(|hit| {
-                        hit.thread_id.0 == thread_id
-                            && hit.item_id.as_deref() == Some(item.item_id.as_str())
-                    });
+                let is_search_target =
+                    app.transcript_search_active_hit
+                        .as_ref()
+                        .is_some_and(|hit| {
+                            hit.thread_id.0 == thread_id
+                                && hit.item_id.as_deref() == Some(item.item_id.as_str())
+                        });
                 if is_search_target {
                     Line::styled(text, Style::default().add_modifier(Modifier::REVERSED))
                 } else {
