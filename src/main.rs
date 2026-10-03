@@ -797,6 +797,9 @@ fn conversation_event_changes_planning(event: &ConversationEvent) -> bool {
         ConversationEvent::GoalObserved(_) | ConversationEvent::GoalCleared(_) => true,
         ConversationEvent::Loaded(_)
         | ConversationEvent::OlderLoaded(_)
+        | ConversationEvent::TranscriptSearchLoaded(_)
+        | ConversationEvent::TranscriptSearchJumpLoaded { .. }
+        | ConversationEvent::TranscriptSearchFailed { .. }
         | ConversationEvent::InteractiveRequested(_)
         | ConversationEvent::InteractiveResolved { .. }
         | ConversationEvent::PromptSubmitted { .. }
@@ -824,10 +827,31 @@ fn drain_registry(
         changes.planning |= conversation_event_changes_planning(&event);
         match event {
             ConversationEvent::Loaded(page) => {
+                if let Some(error) = store.index_conversation_page(&page) {
+                    reduce(app, Action::MutationNotice(error));
+                }
                 reduce(app, Action::ConversationLoaded(page));
             }
             ConversationEvent::OlderLoaded(page) => {
+                if let Some(error) = store.index_conversation_page(&page) {
+                    reduce(app, Action::MutationNotice(error));
+                }
                 reduce(app, Action::OlderConversationLoaded(page));
+            }
+            ConversationEvent::TranscriptSearchLoaded(results) => {
+                reduce(app, Action::TranscriptSearchLoaded(results));
+            }
+            ConversationEvent::TranscriptSearchJumpLoaded { page, item_id } => {
+                if let Some(error) = store.index_conversation_page(&page) {
+                    reduce(app, Action::MutationNotice(error));
+                }
+                reduce(app, Action::TranscriptSearchLoadedPage { page, item_id });
+            }
+            ConversationEvent::TranscriptSearchFailed { query, error } => {
+                reduce(
+                    app,
+                    Action::TranscriptSearchServerFailed { query, error },
+                );
             }
             ConversationEvent::InteractiveRequested(request) => {
                 reduce(app, Action::InteractiveRequested(request));
@@ -1484,6 +1508,73 @@ fn apply_effects(
                         Action::ReviewError {
                             thread_id,
                             error: error.to_string(),
+                        },
+                    );
+                }
+            }
+            Effect::SearchTranscript { query } => {
+                match store.search_transcript(
+                    &query,
+                    codex_tui::transcript_search::TRANSCRIPT_SEARCH_RESULT_LIMIT,
+                ) {
+                    Ok(local_results) => {
+                        reduce(app, Action::TranscriptSearchLoaded(local_results));
+                    }
+                    Err(error) => {
+                        reduce(
+                            app,
+                            Action::MutationNotice(error),
+                        );
+                    }
+                }
+                if let Some(registry) = registry {
+                    if let Err(error) = registry.search_transcript(query.clone()) {
+                        reduce(
+                            app,
+                            Action::TranscriptSearchServerFailed {
+                                query,
+                                error: error.to_string(),
+                            },
+                        );
+                    }
+                } else {
+                    reduce(
+                        app,
+                        Action::TranscriptSearchServerFailed {
+                            query,
+                            error: runtime_text(
+                                app.language,
+                                "App Server full-history search unavailable; showing local indexed history",
+                                "App Server 全历史搜索不可用；正在显示本地已索引历史",
+                            )
+                            .into(),
+                        },
+                    );
+                }
+            }
+            Effect::JumpToTranscriptHit(hit) => {
+                let thread_id = hit.thread_id.clone();
+                if let Some(registry) = registry {
+                    if let Err(error) = registry.jump_to_transcript_hit(hit) {
+                        reduce(
+                            app,
+                            Action::ConversationFailed {
+                                thread_id,
+                                error: error.to_string(),
+                            },
+                        );
+                    }
+                } else {
+                    reduce(
+                        app,
+                        Action::ConversationFailed {
+                            thread_id,
+                            error: runtime_text(
+                                app.language,
+                                "conversation backend unavailable",
+                                "会话后端不可用",
+                            )
+                            .into(),
                         },
                     );
                 }
