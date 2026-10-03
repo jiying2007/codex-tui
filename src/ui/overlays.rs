@@ -185,8 +185,8 @@ pub(super) fn render_local_input_overlay(frame: &mut Frame<'_>, app: &AppState) 
         InputMode::ForgeMergeRequestTitle => (
             tr(
                 app,
-                " Create GitLab merge request ",
-                " 创建 GitLab 合并请求 ",
+                " Create forge change request ",
+                " 创建 Forge 变更请求 ",
             ),
             tr(
                 app,
@@ -197,8 +197,8 @@ pub(super) fn render_local_input_overlay(frame: &mut Frame<'_>, app: &AppState) 
         InputMode::ForgeComment => (
             tr(
                 app,
-                " Comment on GitLab merge request ",
-                " 评论 GitLab 合并请求 ",
+                " Comment on forge change request ",
+                " 评论 Forge 变更请求 ",
             ),
             tr(
                 app,
@@ -456,8 +456,8 @@ pub(super) fn render_forge_mutation_confirmation(frame: &mut Frame<'_>, app: &Ap
     let mut lines = vec![
         Line::from(tr(
             app,
-            "CONFIRM REQUIRED — no GitLab mutation has executed yet.",
-            "需要确认 — 尚未执行任何 GitLab 变更。",
+            "CONFIRM REQUIRED — no forge mutation has executed yet.",
+            "需要确认 — 尚未执行任何 Forge 变更。",
         )),
         Line::from(format!(
             "{}: {}",
