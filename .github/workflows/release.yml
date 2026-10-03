@@ -64,11 +64,6 @@ on:
         type: string
         required: false
         default: "0"
-      linux_source_sha:
-        description: Stable only - exact candidate source SHA for paired real-environment evidence
-        type: string
-        required: false
-        default: ""
       linux_compat_sha256:
         description: Stable only - SHA-256 of retained Linux doctor compat JSON
         type: string
@@ -345,7 +340,7 @@ jobs:
         env:
           CI_RUN: ${{ inputs.canonical_ci_run }}
           VERSION: ${{ steps.meta.outputs.version }}
-          LINUX_SOURCE_SHA: ${{ inputs.linux_source_sha }}
+          LINUX_SOURCE_SHA: ${{ github.sha }}
           LINUX_COMPAT_SHA: ${{ inputs.linux_compat_sha256 }}
           LINUX_COMPAT_AT: ${{ inputs.linux_compat_observed_at }}
           LINUX_TERMINAL: ${{ inputs.linux_terminal }}
