@@ -1,6 +1,4 @@
-use crate::app_server_target::{
-    ResolvedAppServerEndpoint, ResolvedAppServerTarget,
-};
+use crate::app_server_target::{ResolvedAppServerEndpoint, ResolvedAppServerTarget};
 use anyhow::{Context, Result};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::Value;
@@ -15,10 +13,7 @@ use tokio_tungstenite::{
     tungstenite::{
         Message,
         client::IntoClientRequest,
-        http::{
-            HeaderValue,
-            header::AUTHORIZATION,
-        },
+        http::{HeaderValue, header::AUTHORIZATION},
     },
 };
 
@@ -32,9 +27,7 @@ enum Transport {
         stream: WebSocketStream<MaybeTlsStream<TcpStream>>,
     },
     #[cfg(unix)]
-    UnixSocket {
-        stream: WebSocketStream<UnixStream>,
-    },
+    UnixSocket { stream: WebSocketStream<UnixStream> },
 }
 
 pub struct AppServerTransport {
@@ -45,8 +38,7 @@ impl AppServerTransport {
     pub async fn connect(target: &ResolvedAppServerTarget) -> Result<Self> {
         let inner = match &target.endpoint {
             ResolvedAppServerEndpoint::Stdio { codex_bin } => {
-                let mut command =
-                    Command::new(codex_bin.clone().unwrap_or_else(|| "codex".into()));
+                let mut command = Command::new(codex_bin.clone().unwrap_or_else(|| "codex".into()));
                 command
                     .args(["app-server", "--listen", "stdio://"])
                     .stdin(Stdio::piped())
@@ -54,10 +46,7 @@ impl AppServerTransport {
                     .stderr(Stdio::piped())
                     .kill_on_drop(true);
                 let mut child = command.spawn().with_context(|| {
-                    format!(
-                        "spawn local Codex App Server target {:?}",
-                        target.name
-                    )
+                    format!("spawn local Codex App Server target {:?}", target.name)
                 })?;
                 let stdin = child
                     .stdin
@@ -89,15 +78,13 @@ impl AppServerTransport {
                         .context("encode App Server bearer authorization header")?;
                     request.headers_mut().insert(AUTHORIZATION, value);
                 }
-                let (stream, _) = connect_async(request)
-                    .await
-                    .with_context(|| {
-                        format!(
-                            "connect App Server target {:?} at {}",
-                            target.name,
-                            target.diagnostic_endpoint()
-                        )
-                    })?;
+                let (stream, _) = connect_async(request).await.with_context(|| {
+                    format!(
+                        "connect App Server target {:?} at {}",
+                        target.name,
+                        target.diagnostic_endpoint()
+                    )
+                })?;
                 Transport::WebSocket { stream }
             }
             ResolvedAppServerEndpoint::UnixSocket { path } => {
@@ -127,11 +114,7 @@ impl AppServerTransport {
     pub async fn read_json(&mut self) -> Result<Option<Value>> {
         match &mut self.inner {
             Transport::Stdio { reader, .. } => loop {
-                let Some(line) = reader
-                    .next_line()
-                    .await
-                    .context("read App Server stdio")?
-                else {
+                let Some(line) = reader.next_line().await.context("read App Server stdio")? else {
                     return Ok(None);
                 };
                 if line.trim().is_empty() {
@@ -192,10 +175,7 @@ where
     }
 }
 
-async fn write_websocket_json<S>(
-    stream: &mut WebSocketStream<S>,
-    value: &Value,
-) -> Result<()>
+async fn write_websocket_json<S>(stream: &mut WebSocketStream<S>, value: &Value) -> Result<()>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
@@ -210,8 +190,7 @@ where
 mod tests {
     use super::*;
     use crate::app_server_target::{
-        AppServerConfig, AppServerTargetConfig, ResolvedAppServerEndpoint,
-        ResolvedAppServerTarget,
+        AppServerConfig, AppServerTargetConfig, ResolvedAppServerEndpoint, ResolvedAppServerTarget,
     };
     use serde_json::json;
     use tokio_tungstenite::accept_async;
@@ -227,12 +206,8 @@ mod tests {
                 auth_token_env: None,
             },
         );
-        let target =
-            ResolvedAppServerTarget::resolve(&config, None).expect("remote target");
-        assert_eq!(
-            target.diagnostic_endpoint(),
-            "wss://example.test/rpc"
-        );
+        let target = ResolvedAppServerTarget::resolve(&config, None).expect("remote target");
+        assert_eq!(target.diagnostic_endpoint(), "wss://example.test/rpc");
     }
 
     #[tokio::test]
@@ -303,7 +278,9 @@ mod tests {
         let listener = tokio::net::UnixListener::bind(&path).expect("bind unix fixture");
         let server = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.expect("accept unix socket");
-            let mut websocket = accept_async(stream).await.expect("unix websocket handshake");
+            let mut websocket = accept_async(stream)
+                .await
+                .expect("unix websocket handshake");
             let request = websocket
                 .next()
                 .await
