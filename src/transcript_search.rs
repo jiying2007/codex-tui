@@ -198,8 +198,14 @@ mod tests {
 
     #[test]
     fn fts_match_query_is_literal_phrase_and_rejects_empty_input() {
-        assert_eq!(fts_match_query(" audio regression "), Some("\"audio regression\"".into()));
-        assert_eq!(fts_match_query("say \"hello\""), Some("\"say \"\"hello\"\"\"".into()));
+        assert_eq!(
+            fts_match_query(" audio regression "),
+            Some("\"audio regression\"".into())
+        );
+        assert_eq!(
+            fts_match_query("say \"hello\""),
+            Some("\"say \"\"hello\"\"\"".into())
+        );
         assert_eq!(fts_match_query("  "), None);
     }
 }
