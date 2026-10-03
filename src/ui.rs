@@ -3102,6 +3102,37 @@ mod tests {
     }
 
     #[test]
+    fn board_viewport_keeps_large_selection_visible() {
+        let viewport = board_viewport(10_000, 7_321, 22);
+        assert_eq!(viewport.row_capacity, 20);
+        assert!(7_321 >= viewport.start);
+        assert!(7_321 < viewport.start + viewport.row_capacity);
+        assert!(viewport.start <= 10_000 - viewport.row_capacity);
+    }
+
+    #[test]
+    fn board_viewport_stays_at_zero_when_content_fits() {
+        assert_eq!(
+            board_viewport(5, 4, 12),
+            BoardViewport {
+                start: 0,
+                row_capacity: 10,
+            }
+        );
+    }
+
+    #[test]
+    fn board_viewport_handles_zero_height_without_underflow() {
+        assert_eq!(
+            board_viewport(100, 73, 1),
+            BoardViewport {
+                start: 0,
+                row_capacity: 0,
+            }
+        );
+    }
+
+    #[test]
     fn help_hints_match_locked_keyboard_commands() {
         use crate::app::ViewKind;
         use crate::{command::Command, keymap::command_for_key};
