@@ -520,6 +520,7 @@ async fn execute_with_project_lock(
 struct Preflight {
     authenticated_user_id: Option<u64>,
     merge_request_sha: Option<String>,
+    github: Option<GitHubPreflight>,
     already_satisfied: Option<(String, String)>,
 }
 
@@ -704,10 +705,15 @@ struct GitLabApprovalRuleState {
 }
 
 async fn validate_preconditions(plan: &ForgeMutationPlan) -> Result<Preflight> {
-    anyhow::ensure!(
-        plan.provider == ForgeProviderKind::GitLab,
-        "unsupported forge provider"
-    );
+    if plan.provider == ForgeProviderKind::GitHub {
+        let github = crate::forge_github_mutation::validate_preconditions(plan).await?;
+        return Ok(Preflight {
+            authenticated_user_id: None,
+            merge_request_sha: github.head_sha.clone(),
+            already_satisfied: github.already_satisfied.clone(),
+            github: Some(github),
+        });
+    }
     let project: GitLabProjectCheck =
         glab_api_json(&plan.cwd, &plan.host, &project_endpoint(plan)).await?;
     anyhow::ensure!(
@@ -747,6 +753,7 @@ async fn validate_preconditions(plan: &ForgeMutationPlan) -> Result<Preflight> {
             Ok(Preflight {
                 authenticated_user_id: None,
                 merge_request_sha: None,
+                github: None,
                 already_satisfied: None,
             })
         }
@@ -755,6 +762,7 @@ async fn validate_preconditions(plan: &ForgeMutationPlan) -> Result<Preflight> {
             Ok(Preflight {
                 authenticated_user_id: None,
                 merge_request_sha: None,
+                github: None,
                 already_satisfied: None,
             })
         }
@@ -771,6 +779,7 @@ async fn validate_preconditions(plan: &ForgeMutationPlan) -> Result<Preflight> {
                 return Ok(Preflight {
                     authenticated_user_id: Some(user.id),
                     merge_request_sha: Some(sha),
+                    github: None,
                     already_satisfied: Some((
                         mr_ref(plan, mr.iid),
                         "authenticated GitLab user is already present in approved_by".into(),
@@ -780,6 +789,7 @@ async fn validate_preconditions(plan: &ForgeMutationPlan) -> Result<Preflight> {
             Ok(Preflight {
                 authenticated_user_id: Some(user.id),
                 merge_request_sha: Some(sha),
+                github: None,
                 already_satisfied: None,
             })
         }
@@ -832,6 +842,7 @@ async fn validate_preconditions(plan: &ForgeMutationPlan) -> Result<Preflight> {
             Ok(Preflight {
                 authenticated_user_id: None,
                 merge_request_sha: Some(sha),
+                github: None,
                 already_satisfied: None,
             })
         }
@@ -946,6 +957,7 @@ enum AppliedResult {
     Note(u64),
     Approval(u64),
     Merge(u64),
+    GitHub(GitHubAppliedResult),
 }
 
 async fn execute_mutation(
@@ -953,6 +965,15 @@ async fn execute_mutation(
     preflight: &Preflight,
 ) -> Result<AppliedResult> {
     let plan = &request.plan;
+    if plan.provider == ForgeProviderKind::GitHub {
+        let github = preflight
+            .github
+            .as_ref()
+            .context("GitHub mutation preflight is missing")?;
+        return crate::forge_github_mutation::execute_mutation(request, github)
+            .await
+            .map(AppliedResult::GitHub);
+    }
     match plan.kind {
         ForgeMutationKind::CreateMergeRequest => {
             let source = plan
@@ -1047,6 +1068,9 @@ async fn verify_success(
     applied: AppliedResult,
 ) -> Result<(String, String)> {
     let plan = &request.plan;
+    if let AppliedResult::GitHub(applied) = applied {
+        return crate::forge_github_mutation::verify_success(request, applied).await;
+    }
     match applied {
         AppliedResult::MergeRequest(iid) => {
             let mr = get_mr(plan, iid).await?;
@@ -1149,6 +1173,20 @@ enum ReconciledOutcome {
 }
 
 async fn reconcile_outcome(plan: &ForgeMutationPlan) -> Result<ReconciledOutcome> {
+    if plan.provider == ForgeProviderKind::GitHub {
+        return match crate::forge_github_mutation::reconcile_outcome(plan).await? {
+            GitHubReconciledOutcome::Succeeded {
+                result_ref,
+                verification,
+            } => Ok(ReconciledOutcome::Succeeded {
+                result_ref,
+                verification,
+            }),
+            GitHubReconciledOutcome::Unknown(reason) => {
+                Ok(ReconciledOutcome::Unknown(reason))
+            }
+        };
+    }
     match plan.kind {
         ForgeMutationKind::CreateMergeRequest => {
             let source = plan
