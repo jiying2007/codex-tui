@@ -10,7 +10,6 @@ use crate::{
     launch::{LaunchPlan, LaunchPreset},
     operation::{ManagedWorktreeRecord, OperationPlan, OperationReceipt},
     planning::{PlanningSnapshot, SavedView, SourceRef},
-    saved_view_editor::SavedViewEditor,
     pty::TerminalSize,
     terminal_drawer::TerminalSnapshot,
     thread_queue::{ThreadQueueMutation, ThreadQueueSnapshot},
