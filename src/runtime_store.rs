@@ -4,6 +4,7 @@ use codex_tui::{
     planning::{
         LocalNote, PlanningSnapshot, SavedView, ScratchState, SourceKind, SourceRef, WorkCardRecord,
     },
+    saved_view_editor::validate_saved_view,
     sqlite_store::SqliteStore,
     store::{AppConfig, LocalStateV1, LocalStore},
     transcript_search::TranscriptSearchResults,
@@ -359,6 +360,7 @@ impl RuntimeStore {
     }
 
     pub(crate) fn save_view(&mut self, view: SavedView) -> Result<PlanningSnapshot, String> {
+        validate_saved_view(&view)?;
         if !self.writable {
             return Err(self
                 .error
