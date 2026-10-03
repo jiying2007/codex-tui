@@ -6,6 +6,7 @@ All notable codex-tui changes are recorded here.
 
 ### Maintainability
 
+- made stable qualification fail closed if `main` has moved away from the exact release SHA, and made stable publication require live `main.protected=true` before any GitHub Release can be created.
 - kept the release workflow within GitHub's 25-input `workflow_dispatch` limit by deriving Linux evidence `sourceSha` from the exact workflow commit instead of accepting a redundant input, and added a canonical CI budget guard.
 - enforced two-phase stable publication: `stable + publish=true` now requires a successful prior `stable + publish=false` release run on the exact same source SHA and unchanged canonical CI / real-environment / performance evidence; the publish run still regenerates automated qualification independently.
 - added an exact-SHA GitHub-hosted 200-sample `resident-planning-10k` performance-diagnostics workflow on every main SHA; it retains source-bound p50/p95/p99/max evidence for stable handoff without turning hosted-runner latency into a threshold gate.
