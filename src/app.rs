@@ -40,6 +40,7 @@ use crate::transcript_search::{
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::time::Instant;
 
+mod lifecycle;
 mod types;
 
 pub use types::{Action, ContextChoice, Effect, InputMode, View, ViewKind};
@@ -902,6 +903,18 @@ impl AppState {
                 ]);
             }
         }
+        if self.lifecycle_capability_available("thread/start")
+            && self
+                .lifecycle_cwd()
+                .is_some_and(|cwd| classify_cwd(&cwd) == CwdLocality::LocalDirectory)
+        {
+            choices.push(ContextChoice::NewCodexThread);
+        }
+        if self.lifecycle_capability_available("thread/fork")
+            && self.lifecycle_thread_id().is_some()
+        {
+            choices.push(ContextChoice::ForkCodexThread);
+        }
         if matches!(self.view, View::Board) {
             if !self.visible_planning_cards().is_empty() {
                 choices.extend([
@@ -1507,6 +1520,15 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.goals.remove(&thread_id.0);
             state.goal_actions_open = false;
         }
+        Action::ThreadCreated {
+            thread_id,
+            operation,
+        } => {
+            return state.apply_thread_created(thread_id, operation);
+        }
+        Action::ThreadLifecycleFailed { operation, error } => {
+            state.apply_thread_lifecycle_failed(operation, error);
+        }
         Action::OpenGoalActions => {
             if state.current_pending_request().is_some() {
                 return vec![];
@@ -1866,6 +1888,13 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.context_open = false;
             state.context_selected = 0;
 
+            if choice == ContextChoice::NewCodexThread {
+                return state.plan_start_thread();
+            }
+            if choice == ContextChoice::ForkCodexThread {
+                return state.plan_fork_thread();
+            }
+
             if choice == ContextChoice::SaveCurrentView {
                 let mut template = state.active_saved_view();
                 template.id.clear();
@@ -2158,7 +2187,9 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                         scratch_id: target.value,
                     }];
                 }
-                ContextChoice::SaveCurrentView
+                ContextChoice::NewCodexThread
+                | ContextChoice::ForkCodexThread
+                | ContextChoice::SaveCurrentView
                 | ContextChoice::DeleteCurrentView
                 | ContextChoice::BatchAddTag
                 | ContextChoice::BatchRemoveTag

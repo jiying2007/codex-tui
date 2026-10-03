@@ -11,6 +11,7 @@ use codex_tui::{
     i18n::{UiLanguage, pick},
     notification::NotificationMode,
     planning::PlanningSnapshot,
+    runtime_lifecycle,
     sqlite_store::SqliteStore,
     store::LocalStore,
     terminal::TerminalSession,
@@ -828,8 +829,11 @@ struct RegistryDrainChanges {
 
 fn conversation_event_changes_planning(event: &ConversationEvent) -> bool {
     match event {
-        ConversationEvent::GoalObserved(_) | ConversationEvent::GoalCleared(_) => true,
-        ConversationEvent::Loaded(_)
+        ConversationEvent::GoalObserved(_)
+        | ConversationEvent::GoalCleared(_)
+        | ConversationEvent::ThreadCreated { .. } => true,
+        ConversationEvent::ThreadLifecycleFailed { .. }
+        | ConversationEvent::Loaded(_)
         | ConversationEvent::OlderLoaded(_)
         | ConversationEvent::TranscriptSearchLoaded(_)
         | ConversationEvent::TranscriptSearchJumpLoaded { .. }
@@ -862,6 +866,34 @@ fn drain_registry(
     while let Some(event) = registry.try_recv_conversation() {
         changes.planning |= conversation_event_changes_planning(&event);
         match event {
+            ConversationEvent::ThreadCreated {
+                thread_id,
+                operation,
+            } => {
+                let effects = reduce(
+                    app,
+                    Action::ThreadCreated {
+                        thread_id,
+                        operation,
+                    },
+                );
+                for effect in effects {
+                    if let Effect::LoadConversation(thread_id) = effect
+                        && let Err(error) = registry.load_conversation(thread_id.clone())
+                    {
+                        reduce(
+                            app,
+                            Action::ConversationFailed {
+                                thread_id,
+                                error: error.to_string(),
+                            },
+                        );
+                    }
+                }
+            }
+            ConversationEvent::ThreadLifecycleFailed { operation, error } => {
+                reduce(app, Action::ThreadLifecycleFailed { operation, error });
+            }
             ConversationEvent::Loaded(page) => {
                 if let Some(error) = store.index_conversation_page(&page) {
                     reduce(app, Action::MutationNotice(error));
@@ -1680,6 +1712,12 @@ fn apply_effects(
                         },
                     );
                 }
+            }
+            Effect::StartThread { cwd } => {
+                runtime_lifecycle::start_thread(app, registry, cwd);
+            }
+            Effect::ForkThread { thread_id } => {
+                runtime_lifecycle::fork_thread(app, registry, thread_id);
             }
             Effect::LoadConversation(thread_id) => {
                 if let Some(registry) = registry {
