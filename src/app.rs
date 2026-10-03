@@ -13,7 +13,7 @@ use crate::domain::{
 };
 use crate::forge::{
     CapabilityState, ChangeRequestSummary, ForgeCapability, ForgeIdentity, ForgeObservation,
-    ForgeProviderKind, ForgeReviewTarget,
+    ForgeReviewTarget,
 };
 use crate::forge_mutation::{ForgeMutationPlan, ForgeMutationReceipt, ForgeMutationRequest};
 use crate::git::{GitContext, GitReview};
