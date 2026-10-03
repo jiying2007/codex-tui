@@ -33,6 +33,7 @@ use crate::planning::{
 use crate::store::LocalStateV1;
 use crate::terminal_drawer::TerminalSnapshot;
 use crate::text::sanitize_inline;
+use crate::thread_queue::{QueuedSubmission, ThreadQueueMutation, ThreadQueueSnapshot};
 use crate::transcript_search::{
     TranscriptSearchHit, TranscriptSearchResults, TranscriptSearchSource,
 };
@@ -119,6 +120,12 @@ pub struct AppState {
     pub goals: BTreeMap<String, GoalObservation>,
     pub goal_checked: BTreeSet<String>,
     pub goal_actions_open: bool,
+    pub thread_queue_open: bool,
+    pub thread_queue_snapshot: Option<ThreadQueueSnapshot>,
+    pub thread_queue_selected: usize,
+    pub thread_queue_loading: bool,
+    pub thread_queue_error: Option<String>,
+    pub pending_thread_queue_mutation: Option<ThreadQueueMutation>,
     pub managed_worktrees: Vec<ManagedWorktreeRecord>,
     pub managed_selected: usize,
     pub managed_return_view: Option<View>,
@@ -242,6 +249,12 @@ impl AppState {
             goals: BTreeMap::new(),
             goal_checked: BTreeSet::new(),
             goal_actions_open: false,
+            thread_queue_open: false,
+            thread_queue_snapshot: None,
+            thread_queue_selected: 0,
+            thread_queue_loading: false,
+            thread_queue_error: None,
+            pending_thread_queue_mutation: None,
             managed_worktrees: vec![],
             managed_selected: 0,
             managed_return_view: None,
@@ -322,6 +335,12 @@ impl AppState {
             .as_ref()
             .map(|results| results.source.label())
             .unwrap_or("pending")
+    }
+
+    pub fn selected_thread_queue_submission(&self) -> Option<&QueuedSubmission> {
+        self.thread_queue_snapshot
+            .as_ref()
+            .and_then(|snapshot| snapshot.submissions.get(self.thread_queue_selected))
     }
 
     fn prepare_conversation(&mut self, thread_id: &ThreadId) {
@@ -832,6 +851,7 @@ impl AppState {
 
         if matches!(self.view, View::Thread(_)) {
             choices.push(Command::Goal);
+            choices.push(Command::ThreadQueue);
         }
         if matches!(self.view, View::Registry) && self.selected_thread().is_some() {
             choices.push(Command::TogglePin);
