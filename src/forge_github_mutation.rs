@@ -88,9 +88,7 @@ struct GitHubMergeResult {
     sha: Option<String>,
 }
 
-pub(crate) async fn validate_preconditions(
-    plan: &ForgeMutationPlan,
-) -> Result<GitHubPreflight> {
+pub(crate) async fn validate_preconditions(plan: &ForgeMutationPlan) -> Result<GitHubPreflight> {
     let repository = repository(plan).await?;
     anyhow::ensure!(
         repository.id.to_string() == plan.project_id,
@@ -99,7 +97,9 @@ pub(crate) async fn validate_preconditions(
         repository.id
     );
     anyhow::ensure!(
-        repository.full_name.eq_ignore_ascii_case(&plan.project_path),
+        repository
+            .full_name
+            .eq_ignore_ascii_case(&plan.project_path),
         "GitHub repository identity changed: expected {}, observed {}",
         plan.project_path,
         repository.full_name
@@ -222,7 +222,10 @@ pub(crate) async fn execute_mutation(
             let number = plan
                 .change_request_iid
                 .context("comment plan missing pull request number")?;
-            let body = request.payload.as_deref().context("comment payload missing")?;
+            let body = request
+                .payload
+                .as_deref()
+                .context("comment payload missing")?;
             let comment: GitHubComment = gh_api_mutation_json(
                 &plan.cwd,
                 &plan.host,
@@ -320,10 +323,16 @@ pub(crate) async fn verify_success(
             let comment: GitHubComment = gh_api_json(
                 &plan.cwd,
                 &plan.host,
-                &format!("{}/issues/comments/{comment_id}", repository_endpoint(plan)?),
+                &format!(
+                    "{}/issues/comments/{comment_id}",
+                    repository_endpoint(plan)?
+                ),
             )
             .await?;
-            let payload = request.payload.as_deref().context("comment payload missing")?;
+            let payload = request
+                .payload
+                .as_deref()
+                .context("comment payload missing")?;
             anyhow::ensure!(
                 comment.body == payload,
                 "GitHub comment readback body mismatch"
@@ -362,9 +371,7 @@ pub(crate) async fn verify_success(
     }
 }
 
-pub(crate) async fn reconcile_outcome(
-    plan: &ForgeMutationPlan,
-) -> Result<GitHubReconciledOutcome> {
+pub(crate) async fn reconcile_outcome(plan: &ForgeMutationPlan) -> Result<GitHubReconciledOutcome> {
     match plan.kind {
         ForgeMutationKind::CreateMergeRequest => {
             let source = plan.source_branch.as_deref().context("missing source branch")?;
@@ -465,8 +472,15 @@ async fn validate_exact_open_pull(plan: &ForgeMutationPlan) -> Result<GitHubPull
         .change_request_iid
         .context("pull request mutation plan missing number")?;
     let pull = get_pull(plan, number).await?;
-    anyhow::ensure!(pull.state == "open", "GitHub pull request #{number} is {}", pull.state);
-    anyhow::ensure!(!pull.merged, "GitHub pull request #{number} is already merged");
+    anyhow::ensure!(
+        pull.state == "open",
+        "GitHub pull request #{number} is {}",
+        pull.state
+    );
+    anyhow::ensure!(
+        !pull.merged,
+        "GitHub pull request #{number} is already merged"
+    );
     if let Some(source) = &plan.source_branch {
         anyhow::ensure!(
             pull.head.reference == *source,
@@ -486,7 +500,10 @@ async fn validate_exact_open_pull(plan: &ForgeMutationPlan) -> Result<GitHubPull
 
 fn required_head_sha(pull: &GitHubPullRequest) -> Result<String> {
     let sha = pull.head.sha.trim();
-    anyhow::ensure!(!sha.is_empty(), "GitHub pull request response is missing HEAD sha");
+    anyhow::ensure!(
+        !sha.is_empty(),
+        "GitHub pull request response is missing HEAD sha"
+    );
     Ok(sha.to_string())
 }
 
