@@ -244,7 +244,11 @@ pub(super) fn render_transcript_search(frame: &mut Frame<'_>, app: &AppState) {
         }
         Some(results) => {
             lines.push(Line::from(""));
-            for (index, hit) in results.hits.iter().take(18).enumerate() {
+            let window_start = app
+                .transcript_search_selected
+                .saturating_sub(8)
+                .min(results.hits.len().saturating_sub(18));
+            for (index, hit) in results.hits.iter().enumerate().skip(window_start).take(18) {
                 let selected = index == app.transcript_search_selected;
                 let style = if selected {
                     Style::default().add_modifier(Modifier::REVERSED)
@@ -277,14 +281,13 @@ pub(super) fn render_transcript_search(frame: &mut Frame<'_>, app: &AppState) {
                 )));
             }
             if results.hits.len() > 18 {
-                lines.push(Line::from(format!(
-                    "  … {}",
-                    if app.language.is_simplified_chinese() {
-                        format!("另有 {} 条结果", results.hits.len() - 18)
-                    } else {
-                        format!("{} more result(s)", results.hits.len() - 18)
-                    }
-                )));
+                let first = window_start + 1;
+                let last = (window_start + 18).min(results.hits.len());
+                lines.push(Line::from(if app.language.is_simplified_chinese() {
+                    format!("  显示 {first}-{last} / {} 条结果", results.hits.len())
+                } else {
+                    format!("  showing {first}-{last} / {} result(s)", results.hits.len())
+                }));
             }
         }
         None => {
