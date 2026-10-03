@@ -2252,7 +2252,7 @@ mod tests {
     }
 
     #[test]
-    fn schema_v2_upgrades_to_v3_and_preserves_m5_receipts() {
+    fn schema_v2_upgrades_to_latest_and_preserves_m5_receipts() {
         let root = tempdir().expect("tempdir");
         let store = SqliteStore::at(root.path());
         let repo = crate::domain::LocalRepoIdentity {
@@ -2274,8 +2274,8 @@ mod tests {
             .expect("downgrade fixture to v2");
         }
 
-        let health = store.health().expect("upgrade to v3");
-        assert_eq!(health.schema_version, 3);
+        let health = store.health().expect("upgrade to latest");
+        assert_eq!(health.schema_version, DB_SCHEMA_VERSION);
         assert_eq!(
             store
                 .operation_receipt(&plan.operation_id)
