@@ -2,9 +2,7 @@ use crate::forge::{
     ForgeIdentity, ForgeProviderKind, glab_api_json, glab_api_mutation_json,
     percent_encode_component,
 };
-use crate::forge_github_mutation::{
-    GitHubAppliedResult, GitHubPreflight, GitHubReconciledOutcome,
-};
+use crate::forge_github_mutation::{GitHubAppliedResult, GitHubPreflight, GitHubReconciledOutcome};
 use crate::operation::{OperationState, new_operation_id, now_unix_ms};
 use crate::sqlite_store::SqliteStore;
 use anyhow::{Context, Result, anyhow};
@@ -1182,9 +1180,7 @@ async fn reconcile_outcome(plan: &ForgeMutationPlan) -> Result<ReconciledOutcome
                 result_ref,
                 verification,
             }),
-            GitHubReconciledOutcome::Unknown(reason) => {
-                Ok(ReconciledOutcome::Unknown(reason))
-            }
+            GitHubReconciledOutcome::Unknown(reason) => Ok(ReconciledOutcome::Unknown(reason)),
         };
     }
     match plan.kind {
@@ -1487,9 +1483,12 @@ mod tests {
         .expect("GitHub create plan");
         assert_eq!(create.provider, ForgeProviderKind::GitHub);
         assert!(create.expected_side_effect.contains("GitHub pull request"));
-        assert!(create.preconditions.iter().any(|condition| {
-            condition.key == "provider" && condition.expected == "github"
-        }));
+        assert!(
+            create
+                .preconditions
+                .iter()
+                .any(|condition| { condition.key == "provider" && condition.expected == "github" })
+        );
 
         let approve = ForgeMutationPlan::approve_merge_request(
             &github_identity(),
