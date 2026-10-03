@@ -1,4 +1,5 @@
 use crate::batch_local::{LocalBatchAction, LocalBatchPlan};
+use crate::conversation::{ConversationItemKind, ConversationPage};
 use crate::forge_mutation::{ForgeMutationPlan, ForgeMutationReceipt};
 use crate::operation::{ManagedWorktreeRecord, OperationPlan, OperationReceipt, OperationState};
 use crate::planning::{
@@ -7,6 +8,9 @@ use crate::planning::{
 };
 use crate::sqlite_schema::{DB_SCHEMA_VERSION, configure_connection, ensure_schema};
 use crate::store::{AppConfig, FileStore, LocalStateV1, LocalStore};
+use crate::transcript_search::{
+    TranscriptSearchHit, TranscriptSearchResults, TranscriptSearchSource, fts_match_query,
+};
 use anyhow::{Context, Result};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde::Serialize;
@@ -228,6 +232,150 @@ impl SqliteStore {
                 )))
             }
         }
+    }
+
+    pub fn index_conversation_page(&self, page: &ConversationPage) -> Result<usize> {
+        let mut conn = self.open_ready()?;
+        let has_fts = transcript_fts_available(&conn)?;
+        let observed_at = u64_to_i64(now_unix_ms())?;
+        let tx = conn
+            .transaction()
+            .context("begin transcript index transaction")?;
+        let mut indexed = 0_usize;
+
+        for item in &page.items {
+            let kind = match item.kind {
+                ConversationItemKind::User => "user",
+                ConversationItemKind::Assistant => "assistant",
+                _ => continue,
+            };
+            if item.text.trim().is_empty() {
+                continue;
+            }
+            tx.execute(
+                "INSERT INTO transcript_documents (
+                    thread_id, turn_id, item_id, kind, title, text, observed_at_unix_ms
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                 ON CONFLICT(thread_id, turn_id, item_id) DO UPDATE SET
+                    kind=excluded.kind,
+                    title=excluded.title,
+                    text=excluded.text,
+                    observed_at_unix_ms=excluded.observed_at_unix_ms",
+                params![
+                    page.thread_id.0.as_str(),
+                    item.turn_id.as_str(),
+                    item.item_id.as_str(),
+                    kind,
+                    page.title.as_deref(),
+                    item.text.as_str(),
+                    observed_at,
+                ],
+            )
+            .context("upsert transcript search document")?;
+
+            if has_fts {
+                tx.execute(
+                    "DELETE FROM transcript_fts
+                     WHERE thread_id=?1 AND turn_id=?2 AND item_id=?3",
+                    params![
+                        page.thread_id.0.as_str(),
+                        item.turn_id.as_str(),
+                        item.item_id.as_str()
+                    ],
+                )
+                .context("remove prior transcript FTS row")?;
+                tx.execute(
+                    "INSERT INTO transcript_fts (
+                        thread_id, turn_id, item_id, kind, title, text
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    params![
+                        page.thread_id.0.as_str(),
+                        item.turn_id.as_str(),
+                        item.item_id.as_str(),
+                        kind,
+                        page.title.as_deref(),
+                        item.text.as_str(),
+                    ],
+                )
+                .context("insert transcript FTS row")?;
+            }
+            indexed += 1;
+        }
+
+        tx.commit().context("commit transcript index transaction")?;
+        Ok(indexed)
+    }
+
+    pub fn search_transcript(&self, query: &str, limit: usize) -> Result<TranscriptSearchResults> {
+        let query = query.trim();
+        if query.is_empty() || limit == 0 {
+            return Ok(TranscriptSearchResults::empty(
+                query,
+                TranscriptSearchSource::LocalFts,
+            ));
+        }
+        let conn = self.open_ready()?;
+        let limit = limit.min(crate::transcript_search::TRANSCRIPT_SEARCH_RESULT_LIMIT);
+        let limit_i64 = i64::try_from(limit).context("transcript search limit overflow")?;
+        let mut hits = Vec::new();
+
+        if transcript_fts_available(&conn)? && query.chars().count() >= 3 {
+            if let Some(match_query) = fts_match_query(query) {
+                let mut stmt = conn.prepare(
+                    "SELECT thread_id, turn_id, item_id,
+                            snippet(transcript_fts, 5, '[', ']', ' … ', 24)
+                     FROM transcript_fts
+                     WHERE transcript_fts MATCH ?1
+                     ORDER BY rank
+                     LIMIT ?2",
+                )?;
+                let rows = stmt.query_map(params![match_query, limit_i64], |row| {
+                    Ok(TranscriptSearchHit {
+                        thread_id: crate::domain::ThreadId::new(row.get::<_, String>(0)?),
+                        turn_id: Some(row.get(1)?),
+                        item_id: Some(row.get(2)?),
+                        snippet: row.get(3)?,
+                        turn_cursor: None,
+                        match_start_utf16: None,
+                        match_end_utf16: None,
+                    })
+                })?;
+                hits = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+            }
+        } else {
+            let pattern = format!("%{query}%");
+            let mut stmt = conn.prepare(
+                "SELECT thread_id, turn_id, item_id,
+                        CASE
+                          WHEN length(text) <= 240 THEN text
+                          ELSE substr(text, 1, 237) || '…'
+                        END
+                 FROM transcript_documents
+                 WHERE lower(title) LIKE lower(?1)
+                    OR lower(text) LIKE lower(?1)
+                 ORDER BY observed_at_unix_ms DESC
+                 LIMIT ?2",
+            )?;
+            let rows = stmt.query_map(params![pattern, limit_i64], |row| {
+                Ok(TranscriptSearchHit {
+                    thread_id: crate::domain::ThreadId::new(row.get::<_, String>(0)?),
+                    turn_id: Some(row.get(1)?),
+                    item_id: Some(row.get(2)?),
+                    snippet: row.get(3)?,
+                    turn_cursor: None,
+                    match_start_utf16: None,
+                    match_end_utf16: None,
+                })
+            })?;
+            hits = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+        }
+
+        Ok(TranscriptSearchResults {
+            query: query.to_string(),
+            source: TranscriptSearchSource::LocalFts,
+            hits,
+            complete: false,
+        })
     }
 
     pub fn load_planning_snapshot(&self) -> Result<PlanningSnapshot> {
@@ -997,6 +1145,17 @@ impl LocalStore for SqliteStore {
     }
 }
 
+fn transcript_fts_available(conn: &Connection) -> Result<bool> {
+    Ok(conn
+        .query_row(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='transcript_fts'",
+            [],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some())
+}
+
 fn validate_recovery_database(path: &Path) -> Result<i64> {
     anyhow::ensure!(
         path.is_file(),
@@ -1633,6 +1792,69 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
+    fn transcript_index_is_derived_search_state_and_excludes_reasoning() {
+        use crate::conversation::{ConversationItem, ConversationItemKind, ConversationPage};
+        use crate::domain::ThreadId;
+
+        let root = tempdir().expect("tempdir");
+        let store = SqliteStore::at(root.path());
+        let page = ConversationPage {
+            thread_id: ThreadId::new("thread-audio"),
+            title: Some("Audio regression".into()),
+            turns: vec![],
+            items: vec![
+                ConversationItem {
+                    turn_id: "turn-1".into(),
+                    item_id: "user-1".into(),
+                    kind: ConversationItemKind::User,
+                    text: "远场 audio regression appears".into(),
+                    status: None,
+                },
+                ConversationItem {
+                    turn_id: "turn-1".into(),
+                    item_id: "assistant-1".into(),
+                    kind: ConversationItemKind::Assistant,
+                    text: "check the AEC pipeline".into(),
+                    status: None,
+                },
+                ConversationItem {
+                    turn_id: "turn-1".into(),
+                    item_id: "reasoning-1".into(),
+                    kind: ConversationItemKind::Reasoning,
+                    text: "private-search-sentinel".into(),
+                    status: None,
+                },
+            ],
+            next_turn_cursor: None,
+            next_item_cursor: None,
+        };
+
+        assert_eq!(store.index_conversation_page(&page).expect("index"), 2);
+        let audio = store.search_transcript("audio", 20).expect("search");
+        assert_eq!(audio.source, TranscriptSearchSource::LocalFts);
+        assert_eq!(audio.hits.len(), 1);
+        assert_eq!(audio.hits[0].thread_id.0, "thread-audio");
+        assert_eq!(audio.hits[0].item_id.as_deref(), Some("user-1"));
+        assert!(
+            !audio.complete,
+            "local cache is never full-history authority"
+        );
+
+        let private = store
+            .search_transcript("private-search-sentinel", 20)
+            .expect("reasoning search");
+        assert!(
+            private.hits.is_empty(),
+            "reasoning must never enter local FTS"
+        );
+
+        let short = store
+            .search_transcript("远场", 20)
+            .expect("short LIKE fallback");
+        assert_eq!(short.hits.len(), 1);
+    }
+
+    #[test]
     fn local_batch_is_atomic_when_a_frozen_target_disappears() {
         use crate::batch_local::{LocalBatchAction, LocalBatchPlan, LocalBatchTarget};
 
@@ -2034,7 +2256,7 @@ mod tests {
     }
 
     #[test]
-    fn schema_v2_upgrades_to_v3_and_preserves_m5_receipts() {
+    fn schema_v2_upgrades_to_latest_and_preserves_m5_receipts() {
         let root = tempdir().expect("tempdir");
         let store = SqliteStore::at(root.path());
         let repo = crate::domain::LocalRepoIdentity {
@@ -2056,8 +2278,8 @@ mod tests {
             .expect("downgrade fixture to v2");
         }
 
-        let health = store.health().expect("upgrade to v3");
-        assert_eq!(health.schema_version, 3);
+        let health = store.health().expect("upgrade to latest");
+        assert_eq!(health.schema_version, DB_SCHEMA_VERSION);
         assert_eq!(
             store
                 .operation_receipt(&plan.operation_id)

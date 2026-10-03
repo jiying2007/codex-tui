@@ -12,6 +12,7 @@ use crate::{
     planning::{PlanningSnapshot, SavedView, SourceRef},
     pty::TerminalSize,
     terminal_drawer::TerminalSnapshot,
+    transcript_search::{TranscriptSearchHit, TranscriptSearchResults},
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -40,6 +41,7 @@ pub enum ViewKind {
 pub enum InputMode {
     Normal,
     Search,
+    TranscriptSearch,
     Alias,
     Composer,
     UserInput,
@@ -196,6 +198,19 @@ pub enum Action {
     OpenReviewExternalEditor,
     ConversationLoaded(ConversationPage),
     OlderConversationLoaded(ConversationPage),
+    BeginTranscriptSearch,
+    TranscriptSearchLoaded(TranscriptSearchResults),
+    TranscriptSearchLoadedPage {
+        page: ConversationPage,
+        item_id: String,
+    },
+    TranscriptSearchServerFailed {
+        query: String,
+        error: String,
+    },
+    CloseTranscriptSearch,
+    MoveTranscriptSearch(i32),
+    OpenTranscriptSearchSelected,
     ConversationFailed {
         thread_id: ThreadId,
         error: String,
@@ -325,6 +340,10 @@ pub enum Effect {
     },
     LoadConversation(ThreadId),
     StopWatchingConversation(ThreadId),
+    SearchTranscript {
+        query: String,
+    },
+    JumpToTranscriptHit(TranscriptSearchHit),
     LoadOlderConversation {
         thread_id: ThreadId,
         turn_cursor: Option<String>,

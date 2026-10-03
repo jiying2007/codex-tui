@@ -12,6 +12,11 @@ use crate::goal::{
     GoalObservation, GoalStatus, parse_goal_cleared_thread, parse_goal_get, parse_goal_set,
     parse_goal_updated,
 };
+use crate::transcript_search::{
+    TRANSCRIPT_SEARCH_OCCURRENCE_LIMIT, TRANSCRIPT_SEARCH_RESULT_LIMIT,
+    TRANSCRIPT_SEARCH_THREAD_LIMIT, TranscriptSearchResults, TranscriptSearchSource,
+    parse_search_occurrences, parse_thread_search, thread_level_hit,
+};
 use anyhow::{Context, Result, anyhow};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
@@ -53,6 +58,41 @@ impl fmt::Display for RpcResponseError {
 }
 
 impl std::error::Error for RpcResponseError {}
+
+fn is_transcript_search_unsupported(error: &anyhow::Error) -> bool {
+    let Some(source) = error.downcast_ref::<RpcResponseError>() else {
+        return false;
+    };
+    source.code == Some(-32601)
+        || (matches!(source.code, Some(-32600 | -32602)) && {
+            let message = source.message.to_ascii_lowercase();
+            message.contains("thread/search")
+                || message.contains("experimental")
+                || message.contains("unknown method")
+        })
+}
+
+fn mark_optional_capability(status: &mut BackendStatus, capability: &str, supported: bool) {
+    if supported {
+        if !status.capabilities.iter().any(|value| value == capability) {
+            status.capabilities.push(capability.to_string());
+        }
+        status
+            .optional_capabilities_missing
+            .retain(|value| value != capability);
+    } else {
+        status.capabilities.retain(|value| value != capability);
+        if !status
+            .optional_capabilities_missing
+            .iter()
+            .any(|value| value == capability)
+        {
+            status
+                .optional_capabilities_missing
+                .push(capability.to_string());
+        }
+    }
+}
 
 fn is_goal_unsupported(error: &anyhow::Error) -> bool {
     let Some(source) = error.downcast_ref::<RpcResponseError>() else {
@@ -174,6 +214,8 @@ pub enum BackendCommand {
         status: Option<GoalStatus>,
     },
     ClearGoal(ThreadId),
+    SearchTranscript(String),
+    JumpToTranscriptHit(crate::transcript_search::TranscriptSearchHit),
 }
 
 #[derive(Clone, Debug)]
@@ -190,6 +232,15 @@ pub enum ConversationEvent {
     },
     GoalObserved(GoalObservation),
     GoalCleared(ThreadId),
+    TranscriptSearchLoaded(TranscriptSearchResults),
+    TranscriptSearchJumpLoaded {
+        page: ConversationPage,
+        item_id: String,
+    },
+    TranscriptSearchFailed {
+        query: String,
+        error: String,
+    },
     Failed {
         thread_id: ThreadId,
         error: String,
@@ -280,6 +331,17 @@ impl RegistryHandle {
 
     pub fn clear_goal(&self, thread_id: ThreadId) -> Result<()> {
         self.send_command(BackendCommand::ClearGoal(thread_id))
+    }
+
+    pub fn search_transcript(&self, query: String) -> Result<()> {
+        self.send_command(BackendCommand::SearchTranscript(query))
+    }
+
+    pub fn jump_to_transcript_hit(
+        &self,
+        hit: crate::transcript_search::TranscriptSearchHit,
+    ) -> Result<()> {
+        self.send_command(BackendCommand::JumpToTranscriptHit(hit))
     }
 
     fn send_command(&self, command: BackendCommand) -> Result<()> {
@@ -927,6 +989,58 @@ async fn run_registry_actor(
                             }
                         }
                     }
+                    BackendCommand::SearchTranscript(query) => {
+                        match search_transcript(&mut rpc, query.clone()).await {
+                            Ok(results) => {
+                                mark_optional_capability(&mut status, "thread/search", true);
+                                send_conversation_event(
+                                    &conversation_tx,
+                                    ConversationEvent::TranscriptSearchLoaded(results),
+                                )
+                                .await;
+                            }
+                            Err(error) => {
+                                if is_transcript_search_unsupported(&error) {
+                                    mark_optional_capability(&mut status, "thread/search", false);
+                                }
+                                send_conversation_event(
+                                    &conversation_tx,
+                                    ConversationEvent::TranscriptSearchFailed {
+                                        query,
+                                        error: error.to_string(),
+                                    },
+                                )
+                                .await;
+                            }
+                        }
+                    }
+                    BackendCommand::JumpToTranscriptHit(hit) => {
+                        let thread_id = hit.thread_id.clone();
+                        watched_threads.insert(thread_id.0.clone());
+                        match load_transcript_hit(&mut rpc, &hit).await {
+                            Ok(page) => {
+                                let item_id = hit.item_id.clone().unwrap_or_default();
+                                send_conversation_event(
+                                    &conversation_tx,
+                                    ConversationEvent::TranscriptSearchJumpLoaded {
+                                        page,
+                                        item_id,
+                                    },
+                                )
+                                .await;
+                            }
+                            Err(error) => {
+                                send_conversation_event(
+                                    &conversation_tx,
+                                    ConversationEvent::Failed {
+                                        thread_id,
+                                        error: error.to_string(),
+                                    },
+                                )
+                                .await;
+                            }
+                        }
+                    }
                 }
             }
             _ = hydration_tick.tick(), if registry_page_can_advance => {
@@ -1191,7 +1305,7 @@ async fn initialize(rpc: &mut RpcSession) -> Result<Value> {
                     "version": env!("CARGO_PKG_VERSION")
                 },
                 "capabilities": {
-                    "experimentalApi": false
+                    "experimentalApi": true
                 }
             }),
         )
@@ -1667,6 +1781,127 @@ async fn load_conversation(rpc: &mut RpcSession, thread_id: ThreadId) -> Result<
         items,
         next_turn_cursor,
         next_item_cursor,
+    ))
+}
+
+async fn search_transcript(rpc: &mut RpcSession, query: String) -> Result<TranscriptSearchResults> {
+    let query = query.trim().to_string();
+    anyhow::ensure!(!query.is_empty(), "transcript search query is empty");
+
+    let mut cursor: Option<String> = None;
+    let mut hits = Vec::new();
+    let mut complete = false;
+
+    while hits.len() < TRANSCRIPT_SEARCH_RESULT_LIMIT {
+        let result = rpc
+            .request(
+                "thread/search",
+                json!({
+                    "cursor": cursor,
+                    "limit": TRANSCRIPT_SEARCH_THREAD_LIMIT,
+                    "sortKey": "recency_at",
+                    "sortDirection": "desc",
+                    "searchTerm": query
+                }),
+            )
+            .await
+            .context("search persisted Codex threads")?;
+        let (candidates, next_cursor) = parse_thread_search(result)?;
+
+        for candidate in candidates {
+            if hits.len() >= TRANSCRIPT_SEARCH_RESULT_LIMIT {
+                break;
+            }
+            let occurrence = rpc
+                .request(
+                    "thread/searchOccurrences",
+                    json!({
+                        "threadId": candidate.thread_id.0,
+                        "searchTerm": query,
+                        "cursor": null,
+                        "limit": TRANSCRIPT_SEARCH_OCCURRENCE_LIMIT
+                    }),
+                )
+                .await;
+
+            match occurrence {
+                Ok(result) => {
+                    let (mut exact, _) =
+                        parse_search_occurrences(candidate.thread_id.clone(), result)?;
+                    if exact.is_empty() {
+                        hits.push(thread_level_hit(candidate));
+                    } else {
+                        let remaining = TRANSCRIPT_SEARCH_RESULT_LIMIT.saturating_sub(hits.len());
+                        exact.truncate(remaining);
+                        hits.extend(exact);
+                    }
+                }
+                Err(error) if is_transcript_search_unsupported(&error) => {
+                    hits.push(thread_level_hit(candidate));
+                }
+                Err(_) => {
+                    // Thread-level search is still authoritative even if occurrence lookup
+                    // fails for one row. Preserve the result instead of failing the search.
+                    hits.push(thread_level_hit(candidate));
+                }
+            }
+        }
+
+        cursor = next_cursor;
+        if cursor.is_none() {
+            complete = true;
+            break;
+        }
+    }
+
+    Ok(TranscriptSearchResults {
+        query,
+        source: TranscriptSearchSource::AppServer,
+        hits,
+        complete,
+    })
+}
+
+async fn load_transcript_hit(
+    rpc: &mut RpcSession,
+    hit: &crate::transcript_search::TranscriptSearchHit,
+) -> Result<ConversationPage> {
+    let Some(turn_id) = hit.turn_id.as_deref() else {
+        return load_conversation(rpc, hit.thread_id.clone()).await;
+    };
+    let metadata = rpc
+        .request(
+            "thread/read",
+            json!({
+                "threadId": hit.thread_id.0,
+                "includeTurns": false
+            }),
+        )
+        .await
+        .context("read transcript search thread metadata")?;
+    let title = parse_thread_title(&metadata);
+
+    let result = rpc
+        .request(
+            "thread/items/list",
+            json!({
+                "threadId": hit.thread_id.0,
+                "turnId": turn_id,
+                "cursor": null,
+                "limit": 200,
+                "sortDirection": "asc"
+            }),
+        )
+        .await
+        .context("load transcript search turn items")?;
+    let (items, _) = parse_items_page(result)?;
+    Ok(merge_history(
+        hit.thread_id.clone(),
+        title,
+        vec![],
+        items,
+        None,
+        None,
     ))
 }
 

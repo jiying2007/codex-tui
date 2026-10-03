@@ -83,6 +83,20 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
         };
     }
 
+    if app.transcript_search_open {
+        if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('f') {
+            reduce(app, Action::CloseTranscriptSearch);
+            return reduce(app, Action::BeginTranscriptSearch);
+        }
+        return match key.code {
+            KeyCode::Esc => reduce(app, Action::CloseTranscriptSearch),
+            KeyCode::Char('j') | KeyCode::Down => reduce(app, Action::MoveTranscriptSearch(1)),
+            KeyCode::Char('k') | KeyCode::Up => reduce(app, Action::MoveTranscriptSearch(-1)),
+            KeyCode::Enter => reduce(app, Action::OpenTranscriptSearchSelected),
+            _ => vec![],
+        };
+    }
+
     if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('c') {
         return handle_command(app, Command::QuitOrInterrupt);
     }
@@ -236,6 +250,7 @@ pub(crate) fn action_for_command(app: &AppState, command: Command) -> Option<Act
         Command::Back => Action::Back,
         Command::Help => Action::ToggleHelp,
         Command::Search => Action::BeginSearch,
+        Command::TranscriptSearch => Action::BeginTranscriptSearch,
         Command::ToggleHostLocalFilter => Action::ToggleHostLocalFilter,
         Command::ToggleRepoBackedFilter => Action::ToggleRepoBackedFilter,
         Command::ToggleAllHistory => Action::ToggleAllHistory,

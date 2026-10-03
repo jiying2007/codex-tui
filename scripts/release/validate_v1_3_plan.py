@@ -51,6 +51,19 @@ def main() -> int:
             f"Cargo version {current!r} is outside the v1.3 activation contract"
         )
 
+    ratchet = plan.get("moduleRatchet")
+    if not isinstance(ratchet, dict):
+        raise SystemExit("v1.3 moduleRatchet is missing")
+    for required_path in (
+        "src/app.rs",
+        "src/app_server.rs",
+        "src/sqlite_store.rs",
+        "src/transcript_search.rs",
+    ):
+        ceiling = ratchet.get(required_path)
+        if not isinstance(ceiling, int) or ceiling <= 0:
+            raise SystemExit(f"v1.3 moduleRatchet missing {required_path}")
+
     priorities = plan.get("priorities")
     if not isinstance(priorities, list):
         raise SystemExit("v1.3 priorities are missing")

@@ -94,6 +94,14 @@ pub(super) fn render_context_actions(frame: &mut Frame<'_>, app: &AppState) {
 
 pub(super) fn render_local_input_overlay(frame: &mut Frame<'_>, app: &AppState) {
     let (title, hint) = match app.input_mode {
+        InputMode::TranscriptSearch => (
+            tr(app, " Search transcript history ", " 搜索会话全文 "),
+            tr(
+                app,
+                "Enter search · Esc cancel · App Server preferred, local index fallback",
+                "Enter 搜索 · Esc 取消 · 优先 App Server，本地索引回退",
+            ),
+        ),
         InputMode::Note => (
             tr(app, " Local note ", " 本地备注 "),
             tr(app, "Enter save · Esc cancel", "Enter 保存 · Esc 取消"),
@@ -194,6 +202,125 @@ pub(super) fn render_local_input_overlay(frame: &mut Frame<'_>, app: &AppState) 
         ])
         .block(Block::bordered().title(title))
         .wrap(Wrap { trim: false }),
+        area,
+    );
+}
+
+pub(super) fn render_transcript_search(frame: &mut Frame<'_>, app: &AppState) {
+    if !app.transcript_search_open {
+        return;
+    }
+
+    let source = app.transcript_search_source_label();
+    let mut lines = vec![Line::from(format!(
+        "{}: {} · {}: {}{}",
+        tr(app, "Query", "查询"),
+        sanitize_inline(&app.transcript_search_query),
+        tr(app, "Source", "来源"),
+        source,
+        if app.transcript_search_loading {
+            tr(app, " · upgrading…", " · 正在升级到服务端结果…")
+        } else {
+            ""
+        }
+    ))];
+
+    if let Some(error) = app.transcript_search_error.as_deref() {
+        lines.push(Line::from(format!(
+            "{}: {}",
+            tr(app, "Server note", "服务端提示"),
+            truncate_display(&sanitize_inline(error), 92)
+        )));
+    }
+
+    match app.transcript_search_results.as_ref() {
+        Some(results) if results.hits.is_empty() => {
+            lines.push(Line::from(""));
+            lines.push(Line::from(tr(
+                app,
+                "No transcript matches in the available search authority.",
+                "当前可用搜索来源中没有匹配的会话内容。",
+            )));
+        }
+        Some(results) => {
+            lines.push(Line::from(""));
+            let window_start = app
+                .transcript_search_selected
+                .saturating_sub(8)
+                .min(results.hits.len().saturating_sub(18));
+            for (index, hit) in results.hits.iter().enumerate().skip(window_start).take(18) {
+                let selected = index == app.transcript_search_selected;
+                let style = if selected {
+                    Style::default().add_modifier(Modifier::REVERSED)
+                } else {
+                    Style::default()
+                };
+                let thread_title = app
+                    .threads
+                    .iter()
+                    .find(|thread| thread.id == hit.thread_id)
+                    .map(|thread| thread.display_title())
+                    .unwrap_or_else(|| hit.thread_id.0.as_str());
+                let location = match (&hit.turn_id, &hit.item_id) {
+                    (Some(turn), Some(item)) => format!(
+                        "{} / {}",
+                        truncate_display(turn, 16),
+                        truncate_display(item, 16)
+                    ),
+                    _ => tr(app, "thread match", "会话匹配").to_string(),
+                };
+                lines.push(Line::from(Span::styled(
+                    format!(
+                        "{} {} · {} · {}",
+                        if selected { ">" } else { " " },
+                        truncate_display(thread_title, 32),
+                        location,
+                        truncate_display(&sanitize_inline(&hit.snippet), 72)
+                    ),
+                    style,
+                )));
+            }
+            if results.hits.len() > 18 {
+                let first = window_start + 1;
+                let last = (window_start + 18).min(results.hits.len());
+                lines.push(Line::from(if app.language.is_simplified_chinese() {
+                    format!("  显示 {first}-{last} / {} 条结果", results.hits.len())
+                } else {
+                    format!(
+                        "  showing {first}-{last} / {} result(s)",
+                        results.hits.len()
+                    )
+                }));
+            }
+        }
+        None => {
+            lines.push(Line::from(""));
+            lines.push(Line::from(tr(
+                app,
+                "Searching local transcript index and App Server…",
+                "正在搜索本地会话索引和 App Server…",
+            )));
+        }
+    }
+
+    lines.extend([
+        Line::from(""),
+        Line::from(tr(
+            app,
+            "j/k move · Enter open exact result · Ctrl+F new search · Esc close",
+            "j/k 移动 · Enter 打开精确结果 · Ctrl+F 重新搜索 · Esc 关闭",
+        )),
+    ]);
+
+    let height = u16::try_from(lines.len().saturating_add(2))
+        .unwrap_or(24)
+        .clamp(9, 26);
+    let area = centered_fixed(96, height, frame.area());
+    frame.render_widget(Clear, area);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(Block::bordered().title(tr(app, " Transcript Search ", " 会话全文搜索 ")))
+            .wrap(Wrap { trim: false }),
         area,
     );
 }
