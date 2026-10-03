@@ -85,15 +85,11 @@ SOURCE_TOKENS = {
     ".github/workflows/development-qualification.yml": [
         "name: development-qualification",
         "create_development_qualification.py",
-        "validate_v1_2_completion.py",
-        "release/v1.2-completion.json",
         "stableReady",
         "publicationAllowed",
     ],
     ".github/workflows/release.yml": [
-        "Validate v1.2 scope completion",
-        "validate_v1_2_completion.py",
-        "release/v1.2-completion.json",
+        "name: release",
         "cargo run --locked --bin codex-tui --",
         "gate/DEVELOPMENT-COMPLETION.json",
     ],

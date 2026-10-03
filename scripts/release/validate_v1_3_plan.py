@@ -7,6 +7,7 @@ import re
 
 PLAN = pathlib.Path("release/v1.3-plan.json")
 V12_COMPLETION = pathlib.Path("release/v1.2-completion.json")
+V13_COMPLETION = pathlib.Path("release/v1.3-completion.json")
 EXPECTED = [
     ("transcript-search", "P0"),
     ("thread-queue", "P0"),
@@ -49,6 +50,11 @@ def main() -> int:
     }:
         raise SystemExit(
             f"Cargo version {current!r} is outside the v1.3 activation contract"
+        )
+
+    if V13_COMPLETION.is_file() and current != activation.get("finalPackageVersion"):
+        raise SystemExit(
+            "v1.3 completion exists but Cargo is not at finalPackageVersion"
         )
 
     ratchet = plan.get("moduleRatchet")

@@ -2,6 +2,16 @@
 
 All notable codex-tui changes are recorded here.
 
+## [1.3.0] - Unreleased
+
+### Search & Multi-Target
+
+- added full-history transcript search with capability-first Codex App Server `thread/search` / `thread/searchOccurrences` authority and a derived SQLite FTS5 fallback for already observed user/final-assistant content; results retain thread/turn/item identity and can jump to non-resident history without indexing reasoning/tool-internal content.
+- added upstream-authoritative Thread Queue support for list/add/update/delete/reorder/start plus `thread/queue/changed` refresh; the bilingual queue overlay keeps mixed/multimodal items visible while refusing unsafe text-only replacement, and start/delete remain explicitly confirmed.
+- added named App Server targets in local TOML while retaining zero-config local stdio: alternate local binaries, ws/wss clients, and Unix-socket WebSocket framing share the same RpcSession semantics; bearer values stay out of config and authenticated cleartext WebSocket is restricted to loopback.
+- extended the existing plan-confirm-revalidate-receipt Forge mutation model to GitHub pull requests: create/comment/approve/merge reuse durable OutcomeUnknown recovery, approve/merge revalidate exact HEAD immediately before write, approval binds `commit_id`, merge binds `sha`, and no force/bypass policy is requested.
+- retained the completed v1.2 hardening baseline and its external stable-evidence requirements while activating the package/stable-criteria line at 1.3.0 only after all four v1.3 work packages reached development completion.
+
 ## [1.2.0] - Unreleased
 
 ### Maintainability

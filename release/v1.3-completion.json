@@ -1,0 +1,90 @@
+{
+  "schema": "codex-tui/v1.3-completion/v1",
+  "targetVersion": "1.3.0",
+  "planSchema": "codex-tui/v1.3-plan/v1",
+  "featureCompletionBaselineSha": "39fa1476b8326d66e03a3cc3558d7e5e6dc37e43",
+  "status": "development-scope-complete",
+  "completedPriorities": {
+    "P0": [
+      "transcript-search",
+      "thread-queue"
+    ],
+    "P1": [
+      "remote-app-server-targets",
+      "github-safe-mutations"
+    ]
+  },
+  "evidence": {
+    "transcript-search": {
+      "paths": [
+        "src/transcript_search.rs",
+        "src/sqlite_schema.rs",
+        "src/sqlite_store.rs",
+        "docs/implementation/v1.3-transcript-search.md"
+      ]
+    },
+    "thread-queue": {
+      "paths": [
+        "src/thread_queue.rs",
+        "src/app_server.rs",
+        "docs/implementation/v1.3-thread-queue.md"
+      ]
+    },
+    "remote-app-server-targets": {
+      "paths": [
+        "src/app_server_target.rs",
+        "src/app_server_transport.rs",
+        "src/store.rs",
+        "docs/implementation/v1.3-remote-app-server-targets.md"
+      ]
+    },
+    "github-safe-mutations": {
+      "paths": [
+        "src/forge_github_mutation.rs",
+        "src/forge_github_mutation/api.rs",
+        "src/forge_github_mutation/tests.rs",
+        "src/forge_mutation.rs",
+        "docs/implementation/v1.3-github-safe-mutations.md"
+      ]
+    }
+  },
+  "deferredUntilEvidence": [
+    "native-gitlab-rest-graphql",
+    "extra-release-architectures"
+  ],
+  "frozenOptionalLayers": [
+    "team-server-rbac",
+    "web-mobile-companion",
+    "collaboration-service",
+    "generic-plugin-runtime",
+    "multi-agent-providers",
+    "job-workflow-engine"
+  ],
+  "frozenNonGoals": [
+    "native-gitlab-rest-graphql-without-measured-trigger",
+    "headless-mutation-api",
+    "github-enterprise-auto-detection",
+    "external-notification-bridge",
+    "team-server-rbac",
+    "web-mobile-companion",
+    "collaboration-service",
+    "generic-plugin-runtime",
+    "multi-agent-providers",
+    "job-workflow-engine"
+  ],
+  "freezePolicy": {
+    "newCoreFunctionality": "requires-new-development-plan",
+    "allowedChangeClasses": [
+      "defect-fix",
+      "security",
+      "compatibility",
+      "qualification-evidence",
+      "release-tooling",
+      "documentation"
+    ]
+  },
+  "stableReady": false,
+  "publicationAllowed": false,
+  "stableAuthority": "release/v1.3-criteria.json",
+  "stableEvidencePolicy": "release-evidence/v4 plus exact-SHA real Linux compatibility and controlling-TTY restoration remain required; hosted development qualification cannot satisfy stable publication"
+}
