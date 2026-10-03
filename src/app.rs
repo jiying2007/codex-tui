@@ -20,6 +20,9 @@ use crate::git::{GitContext, GitReview};
 use crate::goal::{GoalObservation, GoalStatus};
 use crate::i18n::{UiLanguage, pick};
 use crate::launch::{LaunchPlan, LaunchPreset};
+use crate::metadata_search::{
+    MetadataSearchContext, filter_requires_locality, matches_metadata_query,
+};
 use crate::operation::{
     ManagedWorktreeRecord, MutationScope, OperationPlan, OperationReceipt, OperationState,
     mutation_scope_for_thread, now_unix_ms,
@@ -529,8 +532,16 @@ impl AppState {
     ) -> bool {
         let locality = filter_requires_locality(normalized_query)
             .then(|| self.cwd_locality(&thread.metadata.cwd));
-        matches_filter_normalized(thread, normalized_query, locality)
-            && (!self.host_local_only
+        matches_metadata_query(
+            MetadataSearchContext {
+                thread,
+                locality,
+                goal: self.goals.get(&thread.id.0),
+                forge: self.forge_observation(&thread.id),
+                card: self.work_card_for_thread(&thread.id),
+            },
+            normalized_query,
+        ) && (!self.host_local_only
                 || self.cwd_locality(&thread.metadata.cwd) == CwdLocality::LocalDirectory)
             && self.thread_matches_repo_scope(thread)
     }
@@ -4436,65 +4447,6 @@ fn ensure_selection_visible(state: &mut AppState) {
     } else if !visible.contains(&state.selected) {
         state.selected = visible[0];
     }
-}
-
-fn is_locality_filter_token(token: &str) -> bool {
-    matches!(
-        token,
-        "local" | "stale" | "foreign-windows" | "foreign-unix" | "relative" | "empty"
-    )
-}
-
-fn filter_requires_locality(query: &str) -> bool {
-    query.split_whitespace().any(is_locality_filter_token)
-}
-
-fn matches_filter_normalized(
-    thread: &ThreadSummary,
-    query: &str,
-    locality: Option<CwdLocality>,
-) -> bool {
-    if query.is_empty() {
-        return true;
-    }
-
-    let fields = [
-        thread.id.0.as_str(),
-        thread.display_title(),
-        thread.title.as_str(),
-        thread.workspace.as_str(),
-        thread.metadata.cwd.as_str(),
-        thread.metadata.source.as_str(),
-        thread.metadata.workspace_key.as_str(),
-        thread.metadata.model.as_deref().unwrap_or_default(),
-        thread.metadata.project_id.as_deref().unwrap_or_default(),
-    ]
-    .map(str::to_lowercase);
-
-    query.split_whitespace().all(|token| {
-        if is_locality_filter_token(token) {
-            locality.is_some_and(|locality| token == locality.label())
-        } else {
-            fields.iter().any(|field| fuzzy_subsequence(token, field))
-        }
-    })
-}
-
-fn fuzzy_subsequence(needle: &str, haystack: &str) -> bool {
-    if needle.is_empty() {
-        return true;
-    }
-    let mut remaining = needle.chars();
-    let mut current = remaining.next();
-    for candidate in haystack.chars() {
-        if current == Some(candidate) {
-            current = remaining.next();
-            if current.is_none() {
-                return true;
-            }
-        }
-    }
-    false
 }
 
 #[cfg(test)]
