@@ -1,6 +1,8 @@
 pub mod app;
 pub mod app_server;
 pub(crate) mod app_server_registry;
+pub mod app_server_target;
+pub(crate) mod app_server_transport;
 pub(crate) mod app_server_wire;
 pub mod backend;
 pub mod batch_local;

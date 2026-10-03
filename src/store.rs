@@ -1,3 +1,4 @@
+use crate::app_server_target::AppServerConfig;
 use crate::domain::ThreadUiState;
 use crate::{
     i18n::LanguagePreference, notification::NotificationMode, presentation::PresentationMode,
@@ -47,6 +48,8 @@ pub struct AppConfig {
     pub ui: UiConfig,
     #[serde(default)]
     pub notifications: NotificationsConfig,
+    #[serde(default)]
+    pub app_server: AppServerConfig,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -198,6 +201,8 @@ mod tests {
         assert_eq!(config.ui.language, LanguagePreference::Auto);
         assert_eq!(config.ui.presentation, PresentationMode::Normal);
         assert_eq!(config.notifications.mode, NotificationMode::Off);
+        assert_eq!(config.app_server.active, "local");
+        assert!(config.app_server.targets.is_empty());
 
         let mut state = LocalStateV1::default();
         state.pins.insert("thread-1".into());
@@ -214,6 +219,8 @@ mod tests {
         assert!(config_text.contains("presentation = \"normal\""));
         assert!(config_text.contains("[notifications]"));
         assert!(config_text.contains("mode = \"off\""));
+        assert!(config_text.contains("[app_server]"));
+        assert!(config_text.contains("active = \"local\""));
         assert!(state_text.contains("\"schemaVersion\": 1"));
         assert!(state_text.contains("\"hostLocalOnly\": true"));
         assert!(state_text.contains("\"repoBackedOnly\": true"));

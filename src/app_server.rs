@@ -1,5 +1,6 @@
 use crate::app_server_registry::{apply_registry_notification, by_id, snapshot};
-use crate::app_server_wire::decode_wire_line;
+use crate::app_server_target::ResolvedAppServerTarget;
+use crate::app_server_transport::AppServerTransport;
 use crate::backend::{BackendSnapshot, BackendStatus};
 use crate::codex_protocol::{normalize_thread, parse_loaded_list, parse_thread_list};
 use crate::conversation::{
@@ -25,10 +26,7 @@ use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::ffi::OsString;
 use std::fmt;
-use std::process::Stdio;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter, Lines};
-use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 
@@ -475,9 +473,15 @@ async fn bootstrap_registry(
 }
 
 pub async fn start(codex_bin: Option<OsString>) -> Result<StartedRegistry> {
-    let mut rpc = RpcSession::spawn(codex_bin).await?;
-    let (threads, status, hydration) =
+    start_target(ResolvedAppServerTarget::implicit_local(codex_bin)).await
+}
+
+pub async fn start_target(target: ResolvedAppServerTarget) -> Result<StartedRegistry> {
+    let source = target.status_source();
+    let mut rpc = RpcSession::connect(&target).await?;
+    let (threads, mut status, hydration) =
         bootstrap_registry(&mut rpc, Some(STARTUP_REGISTRY_PAGE_LIMIT)).await?;
+    status.source = source;
 
     let initial = BackendSnapshot {
         generation: 0,
@@ -509,8 +513,14 @@ pub async fn start(codex_bin: Option<OsString>) -> Result<StartedRegistry> {
 }
 
 pub async fn probe(codex_bin: Option<OsString>) -> Result<BackendSnapshot> {
-    let mut rpc = RpcSession::spawn(codex_bin).await?;
+    probe_target(ResolvedAppServerTarget::implicit_local(codex_bin)).await
+}
+
+pub async fn probe_target(target: ResolvedAppServerTarget) -> Result<BackendSnapshot> {
+    let source = target.status_source();
+    let mut rpc = RpcSession::connect(&target).await?;
     let (mut threads, mut status, hydration) = bootstrap_registry(&mut rpc, None).await?;
+    status.source = source;
     debug_assert!(hydration.is_none());
 
     match load_all_loaded_ids(&mut rpc).await {
@@ -2466,42 +2476,15 @@ fn rpc_message_or_closed(message: Option<Value>, method: &str) -> Result<Value> 
 }
 
 struct RpcSession {
-    _child: Child,
-    reader: Lines<BufReader<ChildStdout>>,
-    writer: BufWriter<ChildStdin>,
+    transport: AppServerTransport,
     next_id: u64,
     queued_messages: VecDeque<Value>,
 }
 
 impl RpcSession {
-    async fn spawn(codex_bin: Option<OsString>) -> Result<Self> {
-        let mut command = Command::new(codex_bin.unwrap_or_else(|| OsString::from("codex")));
-        command
-            .args(["app-server", "--listen", "stdio://"])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .kill_on_drop(true);
-        let mut child = command.spawn().context("spawn codex app-server")?;
-        let stdin = child
-            .stdin
-            .take()
-            .context("codex app-server stdin unavailable")?;
-        let stdout = child
-            .stdout
-            .take()
-            .context("codex app-server stdout unavailable")?;
-        if let Some(stderr) = child.stderr.take() {
-            tokio::spawn(async move {
-                let mut lines = BufReader::new(stderr).lines();
-                while let Ok(Some(_line)) = lines.next_line().await {}
-            });
-        }
-
+    async fn connect(target: &ResolvedAppServerTarget) -> Result<Self> {
         Ok(Self {
-            _child: child,
-            reader: BufReader::new(stdout).lines(),
-            writer: BufWriter::new(stdin),
+            transport: AppServerTransport::connect(target).await?,
             next_id: 1,
             queued_messages: VecDeque::new(),
         })
@@ -2576,21 +2559,7 @@ impl RpcSession {
     }
 
     async fn read_wire_message(&mut self) -> Result<Option<Value>> {
-        loop {
-            let Some(line) = self
-                .reader
-                .next_line()
-                .await
-                .context("read app-server stdout")?
-            else {
-                return Ok(None);
-            };
-            if line.trim().is_empty() {
-                continue;
-            }
-            let value = decode_wire_line(&line)?;
-            return Ok(Some(value));
-        }
+        self.transport.read_json().await
     }
 
     async fn respond_result(&mut self, id: Value, result: Value) -> Result<()> {
@@ -2613,19 +2582,14 @@ impl RpcSession {
     }
 
     async fn write_message(&mut self, message: &Value) -> Result<()> {
-        let mut encoded = serde_json::to_vec(message).context("encode app-server request")?;
-        encoded.push(b'\n');
-        self.writer
-            .write_all(&encoded)
-            .await
-            .context("write app-server stdin")?;
-        self.writer.flush().await.context("flush app-server stdin")
+        self.transport.write_json(message).await
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app_server_wire::decode_wire_line;
     use crate::backend::{CodexBackend, FakeBackend};
 
     #[test]
@@ -2781,9 +2745,12 @@ mod tests {
             .next()
             .expect("production actor source");
         let wire = include_str!("app_server_wire.rs");
-        assert!(actor.contains("decode_wire_line"));
+        let transport = include_str!("app_server_transport.rs");
+        assert!(actor.contains("self.transport.read_json"));
         assert!(!wire.contains("decode app-server JSON line: {line}"));
         assert!(wire.contains("decode app-server JSON line ({} bytes)"));
+        assert!(!transport.contains("decode App Server stdio JSON: {line}"));
+        assert!(transport.contains("decode App Server stdio JSON"));
     }
 
     #[test]
