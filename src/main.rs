@@ -1860,6 +1860,40 @@ fn open_external_editor(cwd: &str, relative_path: &str) -> Result<()> {
 }
 
 #[cfg(test)]
+mod app_server_target_cli_tests {
+    use super::*;
+
+    #[test]
+    fn target_flag_is_removed_and_preserves_other_arguments() {
+        let mut args = vec![
+            "doctor".to_string(),
+            "codex".to_string(),
+            "--target".to_string(),
+            "remote-dev".to_string(),
+        ];
+        assert_eq!(
+            take_value_flag(&mut args, "--target").expect("target"),
+            Some("remote-dev".into())
+        );
+        assert_eq!(args, vec!["doctor", "codex"]);
+    }
+
+    #[test]
+    fn target_flag_requires_exactly_one_non_empty_value() {
+        let mut missing = vec!["--target".to_string()];
+        assert!(take_value_flag(&mut missing, "--target").is_err());
+
+        let mut duplicate = vec![
+            "--target".to_string(),
+            "one".to_string(),
+            "--target".to_string(),
+            "two".to_string(),
+        ];
+        assert!(take_value_flag(&mut duplicate, "--target").is_err());
+    }
+}
+
+#[cfg(test)]
 mod command_palette_input_tests {
     use super::*;
 
