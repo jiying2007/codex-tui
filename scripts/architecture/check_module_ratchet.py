@@ -5,7 +5,7 @@ import json
 import pathlib
 import sys
 
-DEFAULT_PLAN = pathlib.Path("release/v1.2-plan.json")
+DEFAULT_PLAN = pathlib.Path("release/v1.3-plan.json") if pathlib.Path("release/v1.3-plan.json").is_file() else pathlib.Path("release/v1.2-plan.json")
 
 
 def main() -> int:
@@ -13,7 +13,7 @@ def main() -> int:
     plan = json.loads(plan_path.read_text(encoding="utf-8"))
     ratchet = plan.get("moduleRatchet")
     if not isinstance(ratchet, dict) or not ratchet:
-        raise SystemExit("v1.2 moduleRatchet is missing")
+        raise SystemExit(f"{plan_path} moduleRatchet is missing")
 
     failures = []
     rows = []
@@ -35,7 +35,7 @@ def main() -> int:
 
     if failures:
         raise SystemExit("module ratchet failed:\n" + "\n".join(failures))
-    print("PASS v1.2 module no-growth ratchet")
+    print(f"PASS {plan_path} module no-growth ratchet")
     return 0
 
 
