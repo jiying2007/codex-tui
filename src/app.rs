@@ -6974,7 +6974,6 @@ mod tests {
     }
 }
 
-
 #[cfg(test)]
 mod thread_queue_reducer_tests {
     use super::*;
@@ -7054,10 +7053,7 @@ mod thread_queue_reducer_tests {
         assert!(app.mutation_notice.is_some());
 
         let effects = reduce(&mut app, Action::CloseThreadQueue);
-        assert_eq!(
-            effects,
-            vec![Effect::StopWatchingThreadQueue(thread_id)]
-        );
+        assert_eq!(effects, vec![Effect::StopWatchingThreadQueue(thread_id)]);
         assert!(!app.thread_queue_open);
     }
 
