@@ -134,6 +134,10 @@ def main() -> int:
 
     if args.command == "prepare":
         label = terminal_label(tty_path, args.terminal_label)
+        candidate_command = (
+            f'CODEX_TUI_GIT_SHA="{source_sha}" '
+            "cargo run --release --locked --bin codex-tui"
+        )
         pending = {
             "schema": PENDING_SCHEMA,
             "platform": "linux",
@@ -144,12 +148,14 @@ def main() -> int:
             "preparedAt": utc_now(),
             "humanObservationRequired": True,
             "procedure": "docs/implementation/m7c3-pty-lifecycle.md#interactive-smoke-procedure",
+            "candidateCommand": candidate_command,
         }
         pending_path = (root / args.pending).resolve()
         write_text_lf(pending_path, json.dumps(pending, indent=2, sort_keys=True) + "\n")
         print(
             "\nREAL TTY SMOKE (human observation required):\n"
-            "  1. launch the exact-SHA codex-tui candidate in a repository-backed thread\n"
+            f"  candidate: {candidate_command}\n"
+            "  1. launch that exact-SHA candidate in a repository-backed thread\n"
             "  2. press t; run: echo CODEX_TUI_DRAWER_SMOKE\n"
             "  3. resize the host terminal in both dimensions\n"
             "  4. run a long command; Ctrl-C it; run a second echo\n"
