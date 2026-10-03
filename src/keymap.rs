@@ -23,6 +23,7 @@ pub const HELP_BINDINGS: &[HelpBinding] = &[
     HelpBinding { surface: "Global", scope: HelpScope::AllViews, token: "?", code: KeyCode::Char('?'), modifiers: KeyModifiers::NONE, command: Command::Help },
     HelpBinding { surface: "Global", scope: HelpScope::AllViews, token: "Ctrl+K", code: KeyCode::Char('k'), modifiers: KeyModifiers::CONTROL, command: Command::CommandPalette },
     HelpBinding { surface: "Global", scope: HelpScope::AllViews, token: "/", code: KeyCode::Char('/'), modifiers: KeyModifiers::NONE, command: Command::Search },
+    HelpBinding { surface: "Global", scope: HelpScope::AllViews, token: "Ctrl+F", code: KeyCode::Char('f'), modifiers: KeyModifiers::CONTROL, command: Command::TranscriptSearch },
     HelpBinding { surface: "Global", scope: HelpScope::AllViews, token: ".", code: KeyCode::Char('.'), modifiers: KeyModifiers::NONE, command: Command::ContextActions },
     HelpBinding { surface: "Global", scope: HelpScope::AllViews, token: "Esc", code: KeyCode::Esc, modifiers: KeyModifiers::NONE, command: Command::Back },
     HelpBinding { surface: "Terminal drawer", scope: HelpScope::NonScratch, token: "t", code: KeyCode::Char('t'), modifiers: KeyModifiers::NONE, command: Command::TerminalDrawer },
@@ -88,6 +89,9 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
     }
     if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('k') {
         return Some(Command::CommandPalette);
+    }
+    if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('f') {
+        return Some(Command::TranscriptSearch);
     }
 
     match (view, key.code) {
