@@ -94,5 +94,35 @@
       "v1.3 completion manifest freezes new core scope behind a subsequent development plan"
     ]
   },
-  "frozenV1_2Checkpoint": "release/v1.2-development-complete"
+  "frozenV1_2Checkpoint": "release/v1.2-development-complete",
+  "moduleRatchet": {
+    "src/app.rs": 7350,
+    "src/ui.rs": 3450,
+    "src/app_server.rs": 3450,
+    "src/main.rs": 2200,
+    "src/sqlite_store.rs": 2550,
+    "src/forge.rs": 1400,
+    "src/worktree.rs": 1050,
+    "src/release.rs": 1050,
+    "src/runtime_store.rs": 600,
+    "src/runtime_input.rs": 450,
+    "src/app_server_registry.rs": 250,
+    "src/app_server_wire.rs": 100,
+    "src/sqlite_schema.rs": 250,
+    "src/worktree_git.rs": 250,
+    "src/forge_types.rs": 400,
+    "src/headless.rs": 650,
+    "src/headless/surfaces.rs": 550,
+    "src/notification.rs": 500,
+    "src/runtime_notifications.rs": 300,
+    "src/syntax_highlight.rs": 500,
+    "src/bin/syntax-asset-notices.rs": 100,
+    "src/presentation.rs": 150,
+    "src/transcript_search.rs": 350
+  },
+  "ratchetPolicy": {
+    "baseline": "v1.2 retained ceilings are inherited unless a v1.3 feature requires bounded growth",
+    "rule": "new ceilings are explicit development-plan authority and become no-growth ceilings immediately",
+    "extractionPreference": "new domain/provider logic belongs in bounded modules; mature v1.2 modules must not grow beyond these ceilings"
+  }
 }
