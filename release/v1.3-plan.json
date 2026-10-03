@@ -124,5 +124,32 @@
     "baseline": "v1.2 retained ceilings are inherited unless a v1.3 feature requires bounded growth",
     "rule": "new ceilings are explicit development-plan authority and become no-growth ceilings immediately",
     "extractionPreference": "new domain/provider logic belongs in bounded modules; mature v1.2 modules must not grow beyond these ceilings"
+  },
+  "phase": "search-and-multi-target",
+  "automatedQualification": {
+    "schema": "codex-tui/automated-qualification/v3",
+    "exactSourceSha": true,
+    "requiredOnEveryMainSha": true,
+    "requiredGates": [
+      "failureMatrix",
+      "scaleEvidence",
+      "soakStructural",
+      "uiContract",
+      "stateMigrationRecovery",
+      "supportBundleRedaction"
+    ]
+  },
+  "developmentQualification": {
+    "schema": "codex-tui/development-qualification/v1",
+    "generatedForEveryMainSha": true,
+    "authority": "hosted-development-only",
+    "canSatisfyStable": false,
+    "requiredChecks": [
+      "automated-qualification",
+      "module-ratchet",
+      "protocol-replay",
+      "scope-status"
+    ],
+    "activeScopeStatus": "in-progress-until-v1.3-completion"
   }
 }
