@@ -213,6 +213,8 @@ fn context_choice_label(choice: ContextChoice, language: UiLanguage) -> &'static
         ContextChoice::BatchSnooze => "批量当前可见项 · 稍后提醒…",
         ContextChoice::BatchClearSnooze => "批量当前可见项 · 清除稍后提醒",
         ContextChoice::LaunchPreset => "启动仓库预设…",
+        ContextChoice::NewCodexThread => "新建 Codex 会话",
+        ContextChoice::ForkCodexThread => "分叉 Codex 会话",
         ContextChoice::ForgeCreateMergeRequest => "Forge · 创建合并请求…",
         ContextChoice::ForgeComment => "Forge · 评论合并请求…",
         ContextChoice::ForgeApprove => "Forge · 批准合并请求",
