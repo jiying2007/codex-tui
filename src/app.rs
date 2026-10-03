@@ -45,7 +45,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::time::Instant;
 
 mod lifecycle;
-mod palette;
+pub(crate) mod palette;
 mod review;
 mod types;
 
