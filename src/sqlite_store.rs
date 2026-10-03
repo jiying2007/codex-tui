@@ -306,11 +306,7 @@ impl SqliteStore {
         Ok(indexed)
     }
 
-    pub fn search_transcript(
-        &self,
-        query: &str,
-        limit: usize,
-    ) -> Result<TranscriptSearchResults> {
+    pub fn search_transcript(&self, query: &str, limit: usize) -> Result<TranscriptSearchResults> {
         let query = query.trim();
         if query.is_empty() || limit == 0 {
             return Ok(TranscriptSearchResults::empty(
@@ -1839,14 +1835,22 @@ mod tests {
         assert_eq!(audio.hits.len(), 1);
         assert_eq!(audio.hits[0].thread_id.0, "thread-audio");
         assert_eq!(audio.hits[0].item_id.as_deref(), Some("user-1"));
-        assert!(!audio.complete, "local cache is never full-history authority");
+        assert!(
+            !audio.complete,
+            "local cache is never full-history authority"
+        );
 
         let private = store
             .search_transcript("private-search-sentinel", 20)
             .expect("reasoning search");
-        assert!(private.hits.is_empty(), "reasoning must never enter local FTS");
+        assert!(
+            private.hits.is_empty(),
+            "reasoning must never enter local FTS"
+        );
 
-        let short = store.search_transcript("远场", 20).expect("short LIKE fallback");
+        let short = store
+            .search_transcript("远场", 20)
+            .expect("short LIKE fallback");
         assert_eq!(short.hits.len(), 1);
     }
 
