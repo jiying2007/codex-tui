@@ -30,6 +30,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 
+mod lifecycle;
+
 const PAGE_SIZE: u32 = 200;
 const STARTUP_REGISTRY_PAGE_LIMIT: usize = 1;
 const REGISTRY_HYDRATION_YIELD_INTERVAL: Duration = Duration::from_millis(10);
