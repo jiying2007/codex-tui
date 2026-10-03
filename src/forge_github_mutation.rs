@@ -256,7 +256,7 @@ pub(crate) async fn execute_mutation(
                 &plan.host,
                 "POST",
                 &format!("{}/pulls/{number}/reviews", repository_endpoint(plan)?),
-                &[("event", "APPROVE")],
+                &[("event", "APPROVE"), ("commit_id", expected_sha)],
             )
             .await?;
             Ok(GitHubAppliedResult::Approval(login.to_string()))
