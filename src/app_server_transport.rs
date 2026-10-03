@@ -208,9 +208,13 @@ where
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     use crate::app_server_target::{
-        AppServerConfig, AppServerTargetConfig, ResolvedAppServerTarget,
+        AppServerConfig, AppServerTargetConfig, ResolvedAppServerEndpoint,
+        ResolvedAppServerTarget,
     };
+    use serde_json::json;
+    use tokio_tungstenite::accept_async;
 
     #[test]
     fn remote_target_error_context_never_formats_bearer_token() {
@@ -229,5 +233,121 @@ mod tests {
             target.diagnostic_endpoint(),
             "wss://example.test/rpc"
         );
+    }
+
+    #[tokio::test]
+    async fn websocket_transport_round_trips_json_rpc_frames() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind websocket fixture");
+        let address = listener.local_addr().expect("fixture address");
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("accept websocket");
+            let mut websocket = accept_async(stream).await.expect("server handshake");
+            let request = websocket
+                .next()
+                .await
+                .expect("request frame")
+                .expect("request");
+            let Message::Text(text) = request else {
+                panic!("expected text JSON-RPC frame");
+            };
+            let value: Value = serde_json::from_str(text.as_str()).expect("request json");
+            assert_eq!(value["method"], "thread/list");
+            websocket
+                .send(Message::Text(
+                    serde_json::to_string(&json!({
+                        "id": 1,
+                        "result": {"data": []}
+                    }))
+                    .expect("response json")
+                    .into(),
+                ))
+                .await
+                .expect("send response");
+        });
+
+        let target = ResolvedAppServerTarget {
+            name: "fixture".into(),
+            endpoint: ResolvedAppServerEndpoint::WebSocket {
+                url: format!("ws://{address}/rpc"),
+                auth_token: None,
+            },
+        };
+        let mut transport = AppServerTransport::connect(&target)
+            .await
+            .expect("connect websocket target");
+        transport
+            .write_json(&json!({
+                "id": 1,
+                "method": "thread/list",
+                "params": {}
+            }))
+            .await
+            .expect("write request");
+        let response = transport
+            .read_json()
+            .await
+            .expect("read response")
+            .expect("response");
+        assert_eq!(response["id"], 1);
+        assert_eq!(response["result"]["data"], json!([]));
+        server.await.expect("fixture server");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn unix_socket_transport_uses_websocket_framing() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("app-server.sock");
+        let listener = tokio::net::UnixListener::bind(&path).expect("bind unix fixture");
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("accept unix socket");
+            let mut websocket = accept_async(stream).await.expect("unix websocket handshake");
+            let request = websocket
+                .next()
+                .await
+                .expect("request frame")
+                .expect("request");
+            let Message::Text(text) = request else {
+                panic!("expected text JSON-RPC frame");
+            };
+            let value: Value = serde_json::from_str(text.as_str()).expect("request json");
+            assert_eq!(value["method"], "initialize");
+            websocket
+                .send(Message::Text(
+                    serde_json::to_string(&json!({
+                        "id": 1,
+                        "result": {"serverInfo": {"version": "fixture"}}
+                    }))
+                    .expect("response json")
+                    .into(),
+                ))
+                .await
+                .expect("send response");
+        });
+
+        let target = ResolvedAppServerTarget {
+            name: "unix-fixture".into(),
+            endpoint: ResolvedAppServerEndpoint::UnixSocket { path },
+        };
+        let mut transport = AppServerTransport::connect(&target)
+            .await
+            .expect("connect unix target");
+        transport
+            .write_json(&json!({
+                "id": 1,
+                "method": "initialize",
+                "params": {}
+            }))
+            .await
+            .expect("write initialize");
+        let response = transport
+            .read_json()
+            .await
+            .expect("read response")
+            .expect("response");
+        assert_eq!(response["result"]["serverInfo"]["version"], "fixture");
+        server.await.expect("fixture server");
     }
 }
