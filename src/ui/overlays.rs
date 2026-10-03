@@ -132,7 +132,11 @@ pub(super) fn render_local_input_overlay(frame: &mut Frame<'_>, app: &AppState) 
         ),
         InputMode::SavedViewField => (
             tr(app, " Edit Saved View field ", " 编辑已保存视图字段 "),
-            tr(app, "Enter apply field · Esc cancel", "Enter 应用字段 · Esc 取消"),
+            tr(
+                app,
+                "Enter apply field · Esc cancel",
+                "Enter 应用字段 · Esc 取消",
+            ),
         ),
         InputMode::BatchAddTag => (
             tr(
@@ -349,7 +353,9 @@ pub(super) fn render_saved_view_editor(frame: &mut Frame<'_>, app: &AppState) {
     let field_value = |index: usize| -> String {
         match crate::saved_view_editor::SavedViewEditorField::ALL[index] {
             crate::saved_view_editor::SavedViewEditorField::Name => draft.name.clone(),
-            crate::saved_view_editor::SavedViewEditorField::SourceScope => draft.source_scope.clone(),
+            crate::saved_view_editor::SavedViewEditorField::SourceScope => {
+                draft.source_scope.clone()
+            }
             crate::saved_view_editor::SavedViewEditorField::Filter => {
                 if draft.filter.is_empty() {
                     "<none>".into()
