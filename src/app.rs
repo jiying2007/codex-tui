@@ -33,6 +33,7 @@ use crate::planning::{
 use crate::store::LocalStateV1;
 use crate::terminal_drawer::TerminalSnapshot;
 use crate::text::sanitize_inline;
+use crate::thread_queue::{QueuedSubmission, ThreadQueueMutation, ThreadQueueSnapshot};
 use crate::transcript_search::{
     TranscriptSearchHit, TranscriptSearchResults, TranscriptSearchSource,
 };
@@ -119,6 +120,12 @@ pub struct AppState {
     pub goals: BTreeMap<String, GoalObservation>,
     pub goal_checked: BTreeSet<String>,
     pub goal_actions_open: bool,
+    pub thread_queue_open: bool,
+    pub thread_queue_snapshot: Option<ThreadQueueSnapshot>,
+    pub thread_queue_selected: usize,
+    pub thread_queue_loading: bool,
+    pub thread_queue_error: Option<String>,
+    pub pending_thread_queue_mutation: Option<ThreadQueueMutation>,
     pub managed_worktrees: Vec<ManagedWorktreeRecord>,
     pub managed_selected: usize,
     pub managed_return_view: Option<View>,
@@ -242,6 +249,12 @@ impl AppState {
             goals: BTreeMap::new(),
             goal_checked: BTreeSet::new(),
             goal_actions_open: false,
+            thread_queue_open: false,
+            thread_queue_snapshot: None,
+            thread_queue_selected: 0,
+            thread_queue_loading: false,
+            thread_queue_error: None,
+            pending_thread_queue_mutation: None,
             managed_worktrees: vec![],
             managed_selected: 0,
             managed_return_view: None,
@@ -322,6 +335,12 @@ impl AppState {
             .as_ref()
             .map(|results| results.source.label())
             .unwrap_or("pending")
+    }
+
+    pub fn selected_thread_queue_submission(&self) -> Option<&QueuedSubmission> {
+        self.thread_queue_snapshot
+            .as_ref()
+            .and_then(|snapshot| snapshot.submissions.get(self.thread_queue_selected))
     }
 
     fn prepare_conversation(&mut self, thread_id: &ThreadId) {
@@ -832,6 +851,7 @@ impl AppState {
 
         if matches!(self.view, View::Thread(_)) {
             choices.push(Command::Goal);
+            choices.push(Command::ThreadQueue);
         }
         if matches!(self.view, View::Registry) && self.selected_thread().is_some() {
             choices.push(Command::TogglePin);
@@ -1434,6 +1454,9 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.input_mode = InputMode::WorktreeDeleteBranch;
         }
         Action::ConfirmPendingOperation => {
+            if let Some(mutation) = state.pending_thread_queue_mutation.take() {
+                return vec![Effect::MutateThreadQueue(mutation)];
+            }
             if state.planning_store_error.is_some() {
                 state.mutation_notice = Some(
                     local_text(
@@ -1468,6 +1491,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.pending_forge_payload = None;
             state.pending_local_batch = None;
             state.pending_launch_plan = None;
+            state.pending_thread_queue_mutation = None;
             state.mutation_notice = Some(
                 local_text(
                     state.language,
@@ -1499,6 +1523,171 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         }
         Action::CloseGoalActions => {
             state.goal_actions_open = false;
+        }
+        Action::OpenThreadQueue => {
+            let Some(thread_id) = state.current_thread_id().cloned() else {
+                return vec![];
+            };
+            state.goal_actions_open = false;
+            state.thread_queue_open = true;
+            state.thread_queue_loading = true;
+            state.thread_queue_error = None;
+            state.thread_queue_selected = 0;
+            if state
+                .thread_queue_snapshot
+                .as_ref()
+                .is_some_and(|snapshot| snapshot.thread_id != thread_id)
+            {
+                state.thread_queue_snapshot = None;
+            }
+            return vec![Effect::RefreshThreadQueue(thread_id)];
+        }
+        Action::CloseThreadQueue => {
+            let thread_id = state
+                .thread_queue_snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.thread_id.clone())
+                .or_else(|| state.current_thread_id().cloned());
+            state.thread_queue_open = false;
+            state.thread_queue_loading = false;
+            state.thread_queue_error = None;
+            state.pending_thread_queue_mutation = None;
+            state.input_mode = InputMode::Normal;
+            state.input_buffer.clear();
+            if let Some(thread_id) = thread_id {
+                return vec![Effect::StopWatchingThreadQueue(thread_id)];
+            }
+        }
+        Action::ThreadQueueLoaded(snapshot) => {
+            if state.thread_queue_open
+                && state
+                    .current_thread_id()
+                    .is_some_and(|thread_id| *thread_id == snapshot.thread_id)
+            {
+                let len = snapshot.submissions.len();
+                state.thread_queue_snapshot = Some(snapshot);
+                state.thread_queue_loading = false;
+                state.thread_queue_error = None;
+                state.thread_queue_selected = if len == 0 {
+                    0
+                } else {
+                    state.thread_queue_selected.min(len - 1)
+                };
+            }
+        }
+        Action::ThreadQueueFailed { thread_id, error } => {
+            if state.thread_queue_open
+                && state
+                    .current_thread_id()
+                    .is_some_and(|current| *current == thread_id)
+            {
+                state.thread_queue_loading = false;
+                state.thread_queue_error = Some(error);
+            }
+        }
+        Action::MoveThreadQueue(delta) => {
+            let len = state
+                .thread_queue_snapshot
+                .as_ref()
+                .map(|snapshot| snapshot.submissions.len())
+                .unwrap_or(0);
+            if len == 0 {
+                state.thread_queue_selected = 0;
+            } else {
+                state.thread_queue_selected =
+                    (state.thread_queue_selected as i32 + delta).rem_euclid(len as i32) as usize;
+            }
+        }
+        Action::BeginThreadQueueAdd => {
+            if state.thread_queue_open {
+                state.input_buffer.clear();
+                state.input_mode = InputMode::ThreadQueueAdd;
+            }
+        }
+        Action::BeginThreadQueueEdit => {
+            let Some(text) = state
+                .selected_thread_queue_submission()
+                .and_then(|submission| submission.editable_text.clone())
+            else {
+                state.mutation_notice = Some(
+                    local_text(
+                        state.language,
+                        "this queued item contains non-text input and cannot be text-edited safely",
+                        "该队列项包含非文本输入，无法安全地按文本编辑",
+                    )
+                    .into(),
+                );
+                return vec![];
+            };
+            state.input_buffer = text;
+            state.input_mode = InputMode::ThreadQueueEdit;
+        }
+        Action::BeginThreadQueueDelete => {
+            let Some(thread_id) = state.current_thread_id().cloned() else {
+                return vec![];
+            };
+            let Some(id) = state
+                .selected_thread_queue_submission()
+                .map(|submission| submission.id.clone())
+            else {
+                return vec![];
+            };
+            match ThreadQueueMutation::delete(thread_id, id) {
+                Ok(mutation) => state.pending_thread_queue_mutation = Some(mutation),
+                Err(error) => state.thread_queue_error = Some(error.to_string()),
+            }
+        }
+        Action::BeginThreadQueueStart => {
+            let Some(thread_id) = state.current_thread_id().cloned() else {
+                return vec![];
+            };
+            let Some(id) = state
+                .selected_thread_queue_submission()
+                .map(|submission| submission.id.clone())
+            else {
+                return vec![];
+            };
+            match ThreadQueueMutation::start(thread_id, id) {
+                Ok(mutation) => state.pending_thread_queue_mutation = Some(mutation),
+                Err(error) => state.thread_queue_error = Some(error.to_string()),
+            }
+        }
+        Action::ReorderThreadQueue(delta) => {
+            let Some(snapshot) = state.thread_queue_snapshot.as_ref() else {
+                return vec![];
+            };
+            let len = snapshot.submissions.len();
+            if len < 2 {
+                return vec![];
+            }
+            let from = state.thread_queue_selected.min(len - 1);
+            let to = (from as i32 + delta).clamp(0, (len - 1) as i32) as usize;
+            if from == to {
+                return vec![];
+            }
+            let mut ids = snapshot
+                .submissions
+                .iter()
+                .map(|submission| submission.id.clone())
+                .collect::<Vec<_>>();
+            ids.swap(from, to);
+            let thread_id = snapshot.thread_id.clone();
+            match ThreadQueueMutation::reorder(thread_id, ids) {
+                Ok(mutation) => {
+                    state.thread_queue_selected = to;
+                    state.thread_queue_loading = true;
+                    return vec![Effect::MutateThreadQueue(mutation)];
+                }
+                Err(error) => state.thread_queue_error = Some(error.to_string()),
+            }
+        }
+        Action::RefreshThreadQueue => {
+            let Some(thread_id) = state.current_thread_id().cloned() else {
+                return vec![];
+            };
+            state.thread_queue_loading = true;
+            state.thread_queue_error = None;
+            return vec![Effect::RefreshThreadQueue(thread_id)];
         }
         Action::BeginGoalObjective => {
             let Some(thread_id) = state.current_thread_id().cloned() else {
@@ -2750,6 +2939,8 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
             InputMode::Search
             | InputMode::TranscriptSearch
+            | InputMode::ThreadQueueAdd
+            | InputMode::ThreadQueueEdit
             | InputMode::Alias
             | InputMode::UserInput
             | InputMode::ScratchTitle
@@ -2800,6 +2991,8 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 }
                 InputMode::Search
                 | InputMode::TranscriptSearch
+                | InputMode::ThreadQueueAdd
+                | InputMode::ThreadQueueEdit
                 | InputMode::Alias
                 | InputMode::UserInput
                 | InputMode::ScratchTitle
@@ -2838,6 +3031,8 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
             InputMode::Search
             | InputMode::TranscriptSearch
+            | InputMode::ThreadQueueAdd
+            | InputMode::ThreadQueueEdit
             | InputMode::Alias
             | InputMode::UserInput
             | InputMode::ScratchTitle
@@ -2867,6 +3062,39 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         },
         Action::CommitInput => {
             let mode = state.input_mode;
+            if matches!(mode, InputMode::ThreadQueueAdd | InputMode::ThreadQueueEdit) {
+                let text = state.input_buffer.trim().to_string();
+                if text.is_empty() {
+                    return vec![];
+                }
+                let Some(thread_id) = state.current_thread_id().cloned() else {
+                    return vec![];
+                };
+                let mutation = if mode == InputMode::ThreadQueueAdd {
+                    ThreadQueueMutation::add(thread_id, text, now_unix_ms())
+                } else {
+                    let Some(id) = state
+                        .selected_thread_queue_submission()
+                        .map(|submission| submission.id.clone())
+                    else {
+                        return vec![];
+                    };
+                    ThreadQueueMutation::update(thread_id, id, text)
+                };
+                match mutation {
+                    Ok(mutation) => {
+                        state.input_mode = InputMode::Normal;
+                        state.input_buffer.clear();
+                        state.thread_queue_loading = true;
+                        state.thread_queue_error = None;
+                        return vec![Effect::MutateThreadQueue(mutation)];
+                    }
+                    Err(error) => {
+                        state.thread_queue_error = Some(error.to_string());
+                        return vec![];
+                    }
+                }
+            }
             if mode == InputMode::TranscriptSearch {
                 let query = state.input_buffer.trim().to_string();
                 if query.is_empty() {
@@ -3337,6 +3565,14 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         }
         Action::CancelInput => {
             let mut search_watch_to_release = None;
+            if matches!(
+                state.input_mode,
+                InputMode::ThreadQueueAdd | InputMode::ThreadQueueEdit
+            ) {
+                state.input_mode = InputMode::Normal;
+                state.input_buffer.clear();
+                return vec![];
+            }
             if state.input_mode == InputMode::TranscriptSearch {
                 state.input_mode = InputMode::Normal;
                 state.input_buffer.clear();
@@ -6735,5 +6971,126 @@ mod tests {
         let observation = app.forge_observation(&thread_id).expect("observation");
         assert_eq!(observation.observed_at_unix_ms, 1);
         assert!(observation.review.is_none());
+    }
+}
+
+#[cfg(test)]
+mod thread_queue_reducer_tests {
+    use super::*;
+    use crate::backend::{CodexBackend, FakeBackend};
+    use serde_json::json;
+
+    fn queue_app() -> (AppState, ThreadId) {
+        let threads = FakeBackend::seeded().snapshot().threads;
+        let thread_id = threads[0].id.clone();
+        let mut app = AppState::new(threads);
+        app.view = View::Thread(thread_id.clone());
+        (app, thread_id)
+    }
+
+    fn snapshot(thread_id: ThreadId) -> ThreadQueueSnapshot {
+        ThreadQueueSnapshot {
+            thread_id,
+            submissions: vec![
+                QueuedSubmission {
+                    id: "q1".into(),
+                    client_user_message_id: "c1".into(),
+                    input: vec![json!({
+                        "type": "text",
+                        "text": "first",
+                        "textElements": []
+                    })],
+                    summary: "first".into(),
+                    editable_text: Some("first".into()),
+                },
+                QueuedSubmission {
+                    id: "q2".into(),
+                    client_user_message_id: "c2".into(),
+                    input: vec![json!({"type": "localImage", "path": "/tmp/a.png"})],
+                    summary: "[localImage]".into(),
+                    editable_text: None,
+                },
+            ],
+            next_cursor: None,
+        }
+    }
+
+    #[test]
+    fn queue_open_load_edit_and_close_stay_upstream_authoritative() {
+        let (mut app, thread_id) = queue_app();
+        assert_eq!(
+            reduce(&mut app, Action::OpenThreadQueue),
+            vec![Effect::RefreshThreadQueue(thread_id.clone())]
+        );
+        assert!(app.thread_queue_open);
+        assert!(app.thread_queue_loading);
+
+        reduce(
+            &mut app,
+            Action::ThreadQueueLoaded(snapshot(thread_id.clone())),
+        );
+        assert!(!app.thread_queue_loading);
+        assert_eq!(app.selected_thread_queue_submission().unwrap().id, "q1");
+
+        reduce(&mut app, Action::BeginThreadQueueEdit);
+        assert_eq!(app.input_mode, InputMode::ThreadQueueEdit);
+        assert_eq!(app.input_buffer, "first");
+        app.input_buffer = "updated".into();
+        let effects = reduce(&mut app, Action::CommitInput);
+        assert!(matches!(
+            effects.as_slice(),
+            [Effect::MutateThreadQueue(ThreadQueueMutation::Update {
+                queued_submission_id,
+                text,
+                ..
+            })] if queued_submission_id == "q1" && text == "updated"
+        ));
+
+        app.input_mode = InputMode::Normal;
+        app.thread_queue_selected = 1;
+        reduce(&mut app, Action::BeginThreadQueueEdit);
+        assert_eq!(app.input_mode, InputMode::Normal);
+        assert!(app.mutation_notice.is_some());
+
+        let effects = reduce(&mut app, Action::CloseThreadQueue);
+        assert_eq!(effects, vec![Effect::StopWatchingThreadQueue(thread_id)]);
+        assert!(!app.thread_queue_open);
+    }
+
+    #[test]
+    fn queue_reorder_and_destructive_actions_follow_confirmation_contract() {
+        let (mut app, thread_id) = queue_app();
+        app.thread_queue_open = true;
+        app.thread_queue_snapshot = Some(snapshot(thread_id.clone()));
+
+        let effects = reduce(&mut app, Action::ReorderThreadQueue(1));
+        assert_eq!(app.thread_queue_selected, 1);
+        assert!(matches!(
+            effects.as_slice(),
+            [Effect::MutateThreadQueue(ThreadQueueMutation::Reorder {
+                queued_submission_ids,
+                ..
+            })] if queued_submission_ids == &vec!["q2".to_string(), "q1".to_string()]
+        ));
+
+        app.thread_queue_selected = 0;
+        reduce(&mut app, Action::BeginThreadQueueStart);
+        assert!(matches!(
+            app.pending_thread_queue_mutation,
+            Some(ThreadQueueMutation::Start { .. })
+        ));
+        let effects = reduce(&mut app, Action::ConfirmPendingOperation);
+        assert!(matches!(
+            effects.as_slice(),
+            [Effect::MutateThreadQueue(ThreadQueueMutation::Start { .. })]
+        ));
+
+        reduce(&mut app, Action::BeginThreadQueueDelete);
+        assert!(matches!(
+            app.pending_thread_queue_mutation,
+            Some(ThreadQueueMutation::Delete { .. })
+        ));
+        reduce(&mut app, Action::CancelPendingOperation);
+        assert!(app.pending_thread_queue_mutation.is_none());
     }
 }

@@ -102,6 +102,22 @@ pub(super) fn render_local_input_overlay(frame: &mut Frame<'_>, app: &AppState) 
                 "Enter 搜索 · Esc 取消 · 优先 App Server，本地索引回退",
             ),
         ),
+        InputMode::ThreadQueueAdd => (
+            tr(app, " Add queued prompt ", " 添加队列提示词 "),
+            tr(
+                app,
+                "Enter submit to Codex queue · Esc cancel",
+                "Enter 提交到 Codex 队列 · Esc 取消",
+            ),
+        ),
+        InputMode::ThreadQueueEdit => (
+            tr(app, " Edit queued prompt ", " 编辑队列提示词 "),
+            tr(
+                app,
+                "Enter replace text input · Esc cancel",
+                "Enter 替换文本输入 · Esc 取消",
+            ),
+        ),
         InputMode::Note => (
             tr(app, " Local note ", " 本地备注 "),
             tr(app, "Enter save · Esc cancel", "Enter 保存 · Esc 取消"),
@@ -320,6 +336,113 @@ pub(super) fn render_transcript_search(frame: &mut Frame<'_>, app: &AppState) {
     frame.render_widget(
         Paragraph::new(lines)
             .block(Block::bordered().title(tr(app, " Transcript Search ", " 会话全文搜索 ")))
+            .wrap(Wrap { trim: false }),
+        area,
+    );
+}
+
+pub(super) fn render_thread_queue(frame: &mut Frame<'_>, app: &AppState) {
+    if !app.thread_queue_open {
+        return;
+    }
+
+    let mut lines = Vec::new();
+    if app.thread_queue_loading {
+        lines.push(Line::from(tr(
+            app,
+            "Refreshing from Codex App Server…",
+            "正在从 Codex App Server 刷新…",
+        )));
+    }
+    if let Some(error) = app.thread_queue_error.as_deref() {
+        lines.push(Line::from(format!(
+            "{}: {}",
+            tr(app, "Queue note", "队列提示"),
+            truncate_display(&sanitize_inline(error), 92)
+        )));
+    }
+
+    match app.thread_queue_snapshot.as_ref() {
+        Some(snapshot) if snapshot.submissions.is_empty() => {
+            lines.push(Line::from(""));
+            lines.push(Line::from(tr(app, "Queue is empty.", "队列为空。")));
+        }
+        Some(snapshot) => {
+            let start = app
+                .thread_queue_selected
+                .saturating_sub(8)
+                .min(snapshot.submissions.len().saturating_sub(18));
+            for (index, submission) in snapshot.submissions.iter().enumerate().skip(start).take(18)
+            {
+                let selected = index == app.thread_queue_selected;
+                let style = if selected {
+                    Style::default().add_modifier(Modifier::REVERSED)
+                } else {
+                    Style::default()
+                };
+                let mode = if submission.editable_text.is_some() {
+                    tr(app, "text", "文本")
+                } else {
+                    tr(app, "mixed", "混合")
+                };
+                lines.push(Line::from(Span::styled(
+                    format!(
+                        "{} {:>2}. [{}] {}",
+                        if selected { ">" } else { " " },
+                        index + 1,
+                        mode,
+                        truncate_display(&sanitize_inline(&submission.summary), 78)
+                    ),
+                    style,
+                )));
+            }
+            if snapshot.submissions.len() > 18 {
+                lines.push(Line::from(format!(
+                    "{} {}/{}",
+                    tr(app, "Selected", "已选"),
+                    app.thread_queue_selected + 1,
+                    snapshot.submissions.len()
+                )));
+            }
+        }
+        None => {
+            lines.push(Line::from(""));
+            lines.push(Line::from(tr(
+                app,
+                "Queue has not been loaded yet.",
+                "队列尚未加载。",
+            )));
+        }
+    }
+
+    lines.push(Line::from(""));
+    if let Some(pending) = app.pending_thread_queue_mutation.as_ref() {
+        lines.push(Line::from(if app.language.is_simplified_chinese() {
+            format!("确认 {}？y 执行 · c/Esc 取消", pending.label())
+        } else {
+            format!("Confirm {}? y execute · c/Esc cancel", pending.label())
+        }));
+    } else {
+        lines.push(Line::from(tr(
+            app,
+            "j/k move · n add · e edit text · [/] reorder · s start · x delete · r refresh · q/Esc close",
+            "j/k 移动 · n 添加 · e 编辑文本 · [/] 重排 · s 启动 · x 删除 · r 刷新 · q/Esc 关闭",
+        )));
+        lines.push(Line::from(tr(
+            app,
+            "start/delete require confirmation; mixed-input items are intentionally not text-editable",
+            "启动/删除需要确认；混合输入队列项不会按文本方式编辑",
+        )));
+    }
+
+    let height = u16::try_from(lines.len().saturating_add(2))
+        .unwrap_or(24)
+        .clamp(9, 27);
+    let area = centered_fixed(100, height, frame.area());
+    frame.render_widget(Clear, area);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(Block::bordered().title(tr(app, " Thread Queue ", " 会话队列 ")))
             .wrap(Wrap { trim: false }),
         area,
     );

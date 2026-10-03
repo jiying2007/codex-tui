@@ -800,6 +800,8 @@ fn conversation_event_changes_planning(event: &ConversationEvent) -> bool {
         | ConversationEvent::TranscriptSearchLoaded(_)
         | ConversationEvent::TranscriptSearchJumpLoaded { .. }
         | ConversationEvent::TranscriptSearchFailed { .. }
+        | ConversationEvent::ThreadQueueLoaded(_)
+        | ConversationEvent::ThreadQueueFailed { .. }
         | ConversationEvent::InteractiveRequested(_)
         | ConversationEvent::InteractiveResolved { .. }
         | ConversationEvent::PromptSubmitted { .. }
@@ -849,6 +851,12 @@ fn drain_registry(
             }
             ConversationEvent::TranscriptSearchFailed { query, error } => {
                 reduce(app, Action::TranscriptSearchServerFailed { query, error });
+            }
+            ConversationEvent::ThreadQueueLoaded(snapshot) => {
+                reduce(app, Action::ThreadQueueLoaded(snapshot));
+            }
+            ConversationEvent::ThreadQueueFailed { thread_id, error } => {
+                reduce(app, Action::ThreadQueueFailed { thread_id, error });
             }
             ConversationEvent::InteractiveRequested(request) => {
                 reduce(app, Action::InteractiveRequested(request));
@@ -1567,6 +1575,72 @@ fn apply_effects(
                                 app.language,
                                 "conversation backend unavailable",
                                 "会话后端不可用",
+                            )
+                            .into(),
+                        },
+                    );
+                }
+            }
+            Effect::RefreshThreadQueue(thread_id) => {
+                if let Some(registry) = registry {
+                    if let Err(error) = registry.refresh_thread_queue(thread_id.clone()) {
+                        reduce(
+                            app,
+                            Action::ThreadQueueFailed {
+                                thread_id,
+                                error: error.to_string(),
+                            },
+                        );
+                    }
+                } else {
+                    reduce(
+                        app,
+                        Action::ThreadQueueFailed {
+                            thread_id,
+                            error: runtime_text(
+                                app.language,
+                                "App Server Thread Queue unavailable",
+                                "App Server 会话队列不可用",
+                            )
+                            .into(),
+                        },
+                    );
+                }
+            }
+            Effect::StopWatchingThreadQueue(thread_id) => {
+                if let Some(registry) = registry {
+                    let _ = registry.stop_watching_thread_queue(thread_id);
+                }
+            }
+            Effect::MutateThreadQueue(mutation) => {
+                let thread_id = match &mutation {
+                    codex_tui::thread_queue::ThreadQueueMutation::Add { thread_id, .. }
+                    | codex_tui::thread_queue::ThreadQueueMutation::Update { thread_id, .. }
+                    | codex_tui::thread_queue::ThreadQueueMutation::Delete { thread_id, .. }
+                    | codex_tui::thread_queue::ThreadQueueMutation::Reorder { thread_id, .. }
+                    | codex_tui::thread_queue::ThreadQueueMutation::Start { thread_id, .. } => {
+                        thread_id.clone()
+                    }
+                };
+                if let Some(registry) = registry {
+                    if let Err(error) = registry.mutate_thread_queue(mutation) {
+                        reduce(
+                            app,
+                            Action::ThreadQueueFailed {
+                                thread_id,
+                                error: error.to_string(),
+                            },
+                        );
+                    }
+                } else {
+                    reduce(
+                        app,
+                        Action::ThreadQueueFailed {
+                            thread_id,
+                            error: runtime_text(
+                                app.language,
+                                "App Server Thread Queue unavailable",
+                                "App Server 会话队列不可用",
                             )
                             .into(),
                         },

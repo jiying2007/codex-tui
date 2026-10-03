@@ -22,7 +22,7 @@ use crate::{pty::TerminalSize, terminal_drawer::TerminalProcessState};
 use overlays::{
     render_command_palette, render_context_actions, render_forge_mutation_confirmation,
     render_launch_confirmation, render_launch_presets, render_local_batch_confirmation,
-    render_local_input_overlay, render_transcript_search,
+    render_local_input_overlay, render_thread_queue, render_transcript_search,
 };
 use ratatui::{
     Frame,
@@ -261,6 +261,9 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
     if app.transcript_search_open {
         render_transcript_search(frame, app);
     }
+    if app.thread_queue_open {
+        render_thread_queue(frame, app);
+    }
     if app.command_palette_open {
         render_command_palette(frame, app);
     }
@@ -276,6 +279,8 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
     if matches!(
         app.input_mode,
         InputMode::TranscriptSearch
+            | InputMode::ThreadQueueAdd
+            | InputMode::ThreadQueueEdit
             | InputMode::Note
             | InputMode::Snooze
             | InputMode::SavedViewName
@@ -346,6 +351,12 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
                 "Enter full-history search · Esc cancel",
                 "Enter 全历史搜索 · Esc 取消"
             )
+        )),
+        InputMode::ThreadQueueAdd | InputMode::ThreadQueueEdit => Line::from(format!(
+            "{}> {}  · {}",
+            tr(app, "queue", "队列"),
+            truncate_display(&app.input_buffer, 60),
+            tr(app, "Enter submit · Esc cancel", "Enter 提交 · Esc 取消")
         )),
         InputMode::Alias => Line::from(format!(
             "alias> {}  · {}",
@@ -2216,7 +2227,7 @@ fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area: R
 const HELP_LINES: &[&str] = &[
     "Global: ? help · Ctrl+K palette · / search · Ctrl+F transcript · . actions · Esc back",
     "Registry: j/k · Enter · Space attention · l local-only · g repo-only · h recent/all-history · p pin · e alias · x ack",
-    "Thread: a composer · y/n/c approval · i answer · Ctrl+C interrupt · r review",
+    "Thread: a composer · q Thread Queue · y/n/c approval · i answer · Ctrl+C interrupt · r review",
     "Review: j/k file · w word-diff · e editor · . Forge actions · PageUp/PageDown · Esc",
     "Workspace: . actions/launch presets · r review · m worktrees · Esc",
     "Managed Worktrees: n create · a adopt · d remove · x delete branch · y confirm",

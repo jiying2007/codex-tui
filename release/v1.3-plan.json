@@ -118,7 +118,8 @@
     "src/syntax_highlight.rs": 500,
     "src/bin/syntax-asset-notices.rs": 100,
     "src/presentation.rs": 150,
-    "src/transcript_search.rs": 350
+    "src/transcript_search.rs": 350,
+    "src/thread_queue.rs": 400
   },
   "ratchetPolicy": {
     "baseline": "v1.2 retained ceilings are inherited unless a v1.3 feature requires bounded growth",
