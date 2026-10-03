@@ -1424,6 +1424,61 @@ fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area: R
     );
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct BoardViewport {
+    start: usize,
+    row_capacity: usize,
+}
+
+fn board_viewport(total: usize, selected: usize, area_height: u16) -> BoardViewport {
+    let row_capacity = area_height.saturating_sub(2) as usize;
+    if total == 0 || row_capacity == 0 {
+        return BoardViewport {
+            start: 0,
+            row_capacity,
+        };
+    }
+    let selected = selected.min(total.saturating_sub(1));
+    let max_start = total.saturating_sub(row_capacity);
+    let start = selected.saturating_sub(row_capacity / 2).min(max_start);
+    BoardViewport {
+        start,
+        row_capacity,
+    }
+}
+
+fn render_board_scrollbar(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    total: usize,
+    viewport: BoardViewport,
+) {
+    if total <= viewport.row_capacity || viewport.row_capacity == 0 || area.width == 0 {
+        return;
+    }
+    let scrollbar_area = Rect {
+        x: area.x.saturating_add(area.width.saturating_sub(1)),
+        y: area.y.saturating_add(1),
+        width: 1,
+        height: area.height.saturating_sub(2),
+    };
+    if scrollbar_area.height == 0 {
+        return;
+    }
+    let mut state = ScrollbarState::new(total)
+        .position(viewport.start)
+        .viewport_content_length(viewport.row_capacity);
+    frame.render_stateful_widget(
+        Scrollbar::new(ScrollbarOrientation::VerticalRight)
+            .begin_symbol(None)
+            .end_symbol(None)
+            .thumb_symbol("█")
+            .track_symbol(Some("│")),
+        scrollbar_area,
+        &mut state,
+    );
+}
+
 fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
     let outer = Layout::default()
         .direction(Direction::Vertical)
@@ -1445,9 +1500,16 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
                     .copied()
                     .filter(|card| card.stage == *stage)
                     .collect::<Vec<_>>();
+                let selected = (stage_index == app.board_stage_index)
+                    .then_some(app.board_selected)
+                    .unwrap_or(0);
+                let viewport =
+                    board_viewport(stage_cards.len(), selected, columns[stage_index].height);
                 let lines = stage_cards
                     .iter()
                     .enumerate()
+                    .skip(viewport.start)
+                    .take(viewport.row_capacity)
                     .map(|(index, card)| {
                         let selected =
                             stage_index == app.board_stage_index && index == app.board_selected;
@@ -1486,14 +1548,23 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
                         .wrap(Wrap { trim: false }),
                     columns[stage_index],
                 );
+                render_board_scrollbar(
+                    frame,
+                    columns[stage_index],
+                    stage_cards.len(),
+                    viewport,
+                );
             }
         }
         SavedViewLayout::Board => {
             let stage = WorkflowStage::ALL[app.board_stage_index % WorkflowStage::ALL.len()];
-            let lines = app
-                .visible_planning_cards()
+            let cards = app.visible_planning_cards();
+            let viewport = board_viewport(cards.len(), app.board_selected, outer[0].height);
+            let lines = cards
                 .iter()
                 .enumerate()
+                .skip(viewport.start)
+                .take(viewport.row_capacity)
                 .map(|(index, card)| {
                     planning_card_line(card, index == app.board_selected, app.language)
                 })
@@ -1510,16 +1581,21 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
                     .wrap(Wrap { trim: false }),
                 outer[0],
             );
+            render_board_scrollbar(frame, outer[0], cards.len(), viewport);
         }
         SavedViewLayout::List | SavedViewLayout::ReviewQueue => {
             let cards = app.visible_planning_cards();
             let mut lines = Vec::new();
             let mut previous_group = String::new();
+            let mut selected_line = 0_usize;
             for (index, card) in cards.iter().enumerate() {
                 let group = saved_view_group_key(card, view.group_by.as_deref());
                 if !group.is_empty() && group != previous_group {
                     lines.push(Line::from(format!("── {group} ──")));
                     previous_group = group;
+                }
+                if index == app.board_selected {
+                    selected_line = lines.len();
                 }
                 lines.push(planning_card_line(
                     card,
@@ -1534,8 +1610,15 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
                     "没有符合当前已保存视图的卡片。",
                 )));
             }
+            let total = lines.len();
+            let viewport = board_viewport(total, selected_line, outer[0].height);
+            let visible_lines = lines
+                .into_iter()
+                .skip(viewport.start)
+                .take(viewport.row_capacity)
+                .collect::<Vec<_>>();
             frame.render_widget(
-                Paragraph::new(lines)
+                Paragraph::new(visible_lines)
                     .block(Block::bordered().title(format!(
                         " {} · {} ",
                         saved_view_name(&view, app.language),
@@ -1544,6 +1627,7 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
                     .wrap(Wrap { trim: false }),
                 outer[0],
             );
+            render_board_scrollbar(frame, outer[0], total, viewport);
         }
     }
 
