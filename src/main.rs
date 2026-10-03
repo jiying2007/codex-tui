@@ -848,10 +848,7 @@ fn drain_registry(
                 reduce(app, Action::TranscriptSearchLoadedPage { page, item_id });
             }
             ConversationEvent::TranscriptSearchFailed { query, error } => {
-                reduce(
-                    app,
-                    Action::TranscriptSearchServerFailed { query, error },
-                );
+                reduce(app, Action::TranscriptSearchServerFailed { query, error });
             }
             ConversationEvent::InteractiveRequested(request) => {
                 reduce(app, Action::InteractiveRequested(request));
@@ -1521,10 +1518,7 @@ fn apply_effects(
                         reduce(app, Action::TranscriptSearchLoaded(local_results));
                     }
                     Err(error) => {
-                        reduce(
-                            app,
-                            Action::MutationNotice(error),
-                        );
+                        reduce(app, Action::MutationNotice(error));
                     }
                 }
                 if let Some(registry) = registry {
