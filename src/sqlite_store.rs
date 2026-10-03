@@ -262,12 +262,12 @@ impl SqliteStore {
                     text=excluded.text,
                     observed_at_unix_ms=excluded.observed_at_unix_ms",
                 params![
-                    page.thread_id.0,
-                    item.turn_id,
-                    item.item_id,
+                    page.thread_id.0.as_str(),
+                    item.turn_id.as_str(),
+                    item.item_id.as_str(),
                     kind,
-                    page.title,
-                    item.text,
+                    page.title.as_deref(),
+                    item.text.as_str(),
                     observed_at,
                 ],
             )
@@ -277,7 +277,11 @@ impl SqliteStore {
                 tx.execute(
                     "DELETE FROM transcript_fts
                      WHERE thread_id=?1 AND turn_id=?2 AND item_id=?3",
-                    params![page.thread_id.0, item.turn_id, item.item_id],
+                    params![
+                        page.thread_id.0.as_str(),
+                        item.turn_id.as_str(),
+                        item.item_id.as_str()
+                    ],
                 )
                 .context("remove prior transcript FTS row")?;
                 tx.execute(
@@ -285,12 +289,12 @@ impl SqliteStore {
                         thread_id, turn_id, item_id, kind, title, text
                      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                     params![
-                        page.thread_id.0,
-                        item.turn_id,
-                        item.item_id,
+                        page.thread_id.0.as_str(),
+                        item.turn_id.as_str(),
+                        item.item_id.as_str(),
                         kind,
-                        page.title,
-                        item.text,
+                        page.title.as_deref(),
+                        item.text.as_str(),
                     ],
                 )
                 .context("insert transcript FTS row")?;
@@ -316,6 +320,7 @@ impl SqliteStore {
         }
         let conn = self.open_ready()?;
         let limit = limit.min(crate::transcript_search::TRANSCRIPT_SEARCH_RESULT_LIMIT);
+        let limit_i64 = i64::try_from(limit).context("transcript search limit overflow")?;
         let mut hits = Vec::new();
 
         if transcript_fts_available(&conn)? && query.chars().count() >= 3 {
@@ -328,7 +333,7 @@ impl SqliteStore {
                      ORDER BY rank
                      LIMIT ?2",
                 )?;
-                let rows = stmt.query_map(params![match_query, usize_to_i64(limit)?], |row| {
+                let rows = stmt.query_map(params![match_query, limit_i64], |row| {
                     Ok(TranscriptSearchHit {
                         thread_id: crate::domain::ThreadId::new(row.get::<_, String>(0)?),
                         turn_id: Some(row.get(1)?),
@@ -355,7 +360,7 @@ impl SqliteStore {
                  ORDER BY observed_at_unix_ms DESC
                  LIMIT ?2",
             )?;
-            let rows = stmt.query_map(params![pattern, usize_to_i64(limit)?], |row| {
+            let rows = stmt.query_map(params![pattern, limit_i64], |row| {
                 Ok(TranscriptSearchHit {
                     thread_id: crate::domain::ThreadId::new(row.get::<_, String>(0)?),
                     turn_id: Some(row.get(1)?),
