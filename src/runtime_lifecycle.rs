@@ -14,11 +14,7 @@ pub fn start_thread(app: &mut AppState, registry: Option<&RegistryHandle>, cwd: 
     }
 }
 
-pub fn fork_thread(
-    app: &mut AppState,
-    registry: Option<&RegistryHandle>,
-    thread_id: ThreadId,
-) {
+pub fn fork_thread(app: &mut AppState, registry: Option<&RegistryHandle>, thread_id: ThreadId) {
     match registry {
         Some(registry) => {
             if let Err(error) = registry.fork_thread(thread_id) {
