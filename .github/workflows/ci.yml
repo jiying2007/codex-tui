@@ -214,6 +214,9 @@ jobs:
           assert inputs["performance_source_sha"] == "0123456789abcdef0123456789abcdef01234567"
           assert "linux_source_sha" not in inputs
           assert len(inputs) == 14
+          assert stable_publish.STABLE_VERSION.fullmatch("1.2.0")
+          assert not stable_publish.STABLE_VERSION.fullmatch("1.2.0-rc.1")
+          assert not stable_publish.STABLE_VERSION.fullmatch("0.9.0")
 
           broken = json.loads(json.dumps(evidence))
           del broken["terminalRestoration"]["linux"]
