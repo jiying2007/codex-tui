@@ -892,10 +892,7 @@ fn drain_registry(
                 }
             }
             ConversationEvent::ThreadLifecycleFailed { operation, error } => {
-                reduce(
-                    app,
-                    Action::ThreadLifecycleFailed { operation, error },
-                );
+                reduce(app, Action::ThreadLifecycleFailed { operation, error });
             }
             ConversationEvent::Loaded(page) => {
                 if let Some(error) = store.index_conversation_page(&page) {
