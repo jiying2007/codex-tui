@@ -1010,6 +1010,7 @@ async fn run_registry_actor(
                                 .await;
                             }
                         }
+                    }
                     BackendCommand::JumpToTranscriptHit(hit) => {
                         let thread_id = hit.thread_id.clone();
                         watched_threads.insert(thread_id.0.clone());
@@ -1036,7 +1037,6 @@ async fn run_registry_actor(
                                 .await;
                             }
                         }
-                    }
                     }
                 }
             }
