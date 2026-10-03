@@ -78,3 +78,10 @@ fn merge_mutation_builder_has_no_force_or_bypass_fields() {
             || key.eq_ignore_ascii_case("merge_method")
     }));
 }
+
+#[test]
+fn approval_mutation_binds_exact_commit_id() {
+    let source = include_str!("../forge_github_mutation.rs");
+    assert!(source.contains("[(" + "\"event\", \"APPROVE\"" + "), (" + "\"commit_id\", expected_sha" + ")]"));
+    assert!(source.contains("revalidate_head(plan, number, expected_sha).await?"));
+}
