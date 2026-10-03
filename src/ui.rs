@@ -1014,53 +1014,6 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
         .wrap(Wrap { trim: false })
 }
 
-fn forge_review_label(app: &AppState, thread_id: &str) -> String {
-    let Some(review) = app
-        .forge_observations
-        .get(thread_id)
-        .and_then(|observation| observation.review.as_ref())
-    else {
-        return String::new();
-    };
-
-    let approvals = if review.approvals_available {
-        match (review.approvals_required, review.approvals_left) {
-            (Some(required), Some(left)) if app.language.is_simplified_chinese() => {
-                format!(" · 批准 剩余 {left}/{required}")
-            }
-            (Some(required), Some(left)) => format!(" · approvals {left} left/{required}"),
-            _ if app.language.is_simplified_chinese() => {
-                format!(" · 批准 {}", review.approved_by_count)
-            }
-            _ => format!(" · approvals {}", review.approved_by_count),
-        }
-    } else {
-        tr(app, " · approvals n/a", " · 批准 n/a").into()
-    };
-    let changes_requested = if review.changes_requested_by_count > 0 {
-        if app.language.is_simplified_chinese() {
-            format!(" · 请求修改 {}", review.changes_requested_by_count)
-        } else {
-            format!(" · changes requested {}", review.changes_requested_by_count)
-        }
-    } else {
-        String::new()
-    };
-    let discussions = if review.discussions_available {
-        if app.language.is_simplified_chinese() {
-            format!(" · 未解决讨论 {}", review.unresolved_discussions)
-        } else {
-            format!(" · unresolved {}", review.unresolved_discussions)
-        }
-    } else {
-        tr(app, " · discussions n/a", " · 讨论 n/a").into()
-    };
-    format!(
-        " · CR {}{}{}{}",
-        review.change_request_iid, approvals, changes_requested, discussions
-    )
-}
-
 fn forge_context_lines(
     app: &AppState,
     thread_id: &crate::domain::ThreadId,
