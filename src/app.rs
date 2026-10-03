@@ -4469,6 +4469,7 @@ fn fuzzy_subsequence(needle: &str, haystack: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::forge::ForgeProviderKind;
 
     #[test]
     fn production_reducer_routes_do_not_panic_on_declared_unreachable_states() {
