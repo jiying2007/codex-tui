@@ -170,7 +170,10 @@ fn take_value_flag(args: &mut Vec<String>, flag: &str) -> Result<Option<String>>
     anyhow::ensure!(index + 1 < args.len(), "{flag} requires a target name");
     let value = args.remove(index + 1);
     args.remove(index);
-    anyhow::ensure!(!value.trim().is_empty(), "{flag} target name must not be empty");
+    anyhow::ensure!(
+        !value.trim().is_empty(),
+        "{flag} target name must not be empty"
+    );
     Ok(Some(value))
 }
 
