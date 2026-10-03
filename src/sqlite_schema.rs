@@ -183,7 +183,7 @@ pub(crate) fn ensure_schema(conn: &mut Connection) -> Result<()> {
             .transaction()
             .context("begin SQLite schema v4 migration")?;
         tx.execute_batch(
-            "CREATE TABLE transcript_documents (
+            "CREATE TABLE IF NOT EXISTS transcript_documents (
                 thread_id TEXT NOT NULL,
                 turn_id TEXT NOT NULL,
                 item_id TEXT NOT NULL,
@@ -193,7 +193,7 @@ pub(crate) fn ensure_schema(conn: &mut Connection) -> Result<()> {
                 observed_at_unix_ms INTEGER NOT NULL,
                 PRIMARY KEY(thread_id, turn_id, item_id)
              );
-             CREATE INDEX transcript_documents_thread_idx
+             CREATE INDEX IF NOT EXISTS transcript_documents_thread_idx
                  ON transcript_documents(thread_id);
              PRAGMA user_version = 4;",
         )
@@ -210,7 +210,7 @@ pub(crate) fn ensure_schema(conn: &mut Connection) -> Result<()> {
             turn_id UNINDEXED,
             item_id UNINDEXED,
             kind UNINDEXED,
-            title,
+            title UNINDEXED,
             text,
             tokenize='trigram'
          );",
