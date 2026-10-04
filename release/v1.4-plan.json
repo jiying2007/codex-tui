@@ -203,10 +203,30 @@
   "developmentQualification": {
     "schema": "codex-tui/development-qualification/v1",
     "authority": "hosted-development-only",
-    "activeScopeStatus": "in-progress-until-v1.4-completion",
-    "stableAuthority": false
+    "activeScopeStatus": "complete",
+    "stableAuthority": false,
+    "requiredChecks": [
+      "automated-qualification",
+      "module-ratchet",
+      "protocol-replay",
+      "scope-completion"
+    ]
   },
   "freezePolicy": {
     "afterCompletion": "new-core-functionality-requires-new-development-plan"
+  },
+  "phase": "workflow-completion-reconciliation",
+  "automatedQualification": {
+    "schema": "codex-tui/automated-qualification/v3",
+    "exactSourceSha": true,
+    "requiredOnEveryMainSha": true,
+    "requiredGates": [
+      "failureMatrix",
+      "scaleEvidence",
+      "soakStructural",
+      "uiContract",
+      "stateMigrationRecovery",
+      "supportBundleRedaction"
+    ]
   }
 }
