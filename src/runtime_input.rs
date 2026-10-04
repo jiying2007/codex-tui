@@ -1,13 +1,13 @@
+use crate::{
+    runtime_commands::handle_command,
+    runtime_palette::{handle_command_palette_key, handle_command_palette_paste},
+};
 use codex_tui::{
     app::{Action, AppState, Effect, InputMode, ViewKind, reduce},
     command::Command,
     conversation::{InteractiveRequestKind, InteractiveResolution},
     goal::GoalStatus,
     keymap::command_for_key,
-};
-use crate::{
-    runtime_commands::handle_command,
-    runtime_palette::{handle_command_palette_key, handle_command_palette_paste},
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
