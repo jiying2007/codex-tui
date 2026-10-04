@@ -206,7 +206,8 @@ fn spawn_and_drive_pty(
     let mut reader = pair.master.try_clone_reader().context("clone PTY reader")?;
     let mut writer = pair.master.take_writer().context("take PTY writer")?;
     {
-        let mut shared_master = runtime.pty_master
+        let mut shared_master = runtime
+            .pty_master
             .lock()
             .map_err(|_| anyhow::anyhow!("PTY master state poisoned"))?;
         *shared_master = Some(pair.master);
@@ -280,7 +281,8 @@ fn spawn_and_drive_pty(
             }
             PtyCommand::Resize(size) => {
                 let size = size.validate()?;
-                let master = runtime.pty_master
+                let master = runtime
+                    .pty_master
                     .lock()
                     .map_err(|_| anyhow::anyhow!("PTY master state poisoned"))?;
                 master
