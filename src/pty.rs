@@ -119,7 +119,7 @@ impl Drop for PtyHandle {
 
         signal_foreground_process_group(&self.runtime.pty_master);
 
-        if let Ok(mut child_killer) = self.runtime.runtime.child_killer.lock()
+        if let Ok(mut child_killer) = self.runtime.child_killer.lock()
             && let Some(child_killer) = child_killer.as_mut()
         {
             let _ = child_killer.kill();
@@ -254,7 +254,7 @@ fn spawn_and_drive_pty(
         .name("codex-tui-pty-wait".into())
         .spawn(move || {
             let result = child.wait();
-            if let Ok(mut shared) = exit_runtime.child_killer.lock() {
+            if let Ok(mut shared) = exit_child_killer.lock() {
                 shared.take();
             }
             match result {
@@ -280,7 +280,7 @@ fn spawn_and_drive_pty(
             }
             PtyCommand::Resize(size) => {
                 let size = size.validate()?;
-                let master = pty_master
+                let master = runtime.pty_master
                     .lock()
                     .map_err(|_| anyhow::anyhow!("PTY master state poisoned"))?;
                 master
@@ -467,7 +467,6 @@ mod tests {
         let (event_tx, event_rx) = sync_channel(16);
         let actor = std::thread::spawn({
             let cwd = cwd.clone();
-            let child_killer = Arc::new(Mutex::new(None));
             move || {
                 let runtime = PtyRuntime::new();
                 spawn_and_drive_pty(
