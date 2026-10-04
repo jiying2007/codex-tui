@@ -1,0 +1,135 @@
+{
+  "schema": "codex-tui/v1.4-completion/v1",
+  "targetVersion": "1.4.0",
+  "planSchema": "codex-tui/v1.4-plan/v1",
+  "featureCompletionBaselineSha": "7a4ba35d8a785208ca8372c41dd4ecaf57b12161",
+  "status": "development-scope-complete",
+  "completedPriorities": {
+    "P0": [
+      "board-large-dataset-navigation",
+      "workcard-relationship-closure",
+      "codex-thread-lifecycle-handoff",
+      "unified-metadata-search"
+    ],
+    "P1": [
+      "saved-view-editor",
+      "review-evidence-and-external-open",
+      "long-thread-viewport-cache",
+      "fuzzy-command-palette"
+    ],
+    "P2": [
+      "core-module-decomposition",
+      "user-perceived-performance-evidence"
+    ]
+  },
+  "evidence": {
+    "board-large-dataset-navigation": {
+      "paths": [
+        "src/ui.rs"
+      ]
+    },
+    "workcard-relationship-closure": {
+      "paths": [
+        "src/planning.rs"
+      ]
+    },
+    "codex-thread-lifecycle-handoff": {
+      "paths": [
+        "src/app/lifecycle.rs",
+        "src/app_server/lifecycle.rs",
+        "src/runtime_lifecycle.rs"
+      ]
+    },
+    "unified-metadata-search": {
+      "paths": [
+        "src/metadata_search.rs",
+        "docs/implementation/v1.4-unified-metadata-search.md"
+      ]
+    },
+    "saved-view-editor": {
+      "paths": [
+        "src/saved_view_editor.rs",
+        "src/saved_view_editor/tests.rs"
+      ]
+    },
+    "review-evidence-and-external-open": {
+      "paths": [
+        "src/app/review.rs",
+        "src/ui/review.rs",
+        "src/runtime_external.rs",
+        "docs/implementation/v1.4-review-evidence-external-open.md"
+      ]
+    },
+    "long-thread-viewport-cache": {
+      "paths": [
+        "src/conversation.rs",
+        "src/ui/thread.rs",
+        "docs/implementation/v1.4-long-thread-viewport-cache.md"
+      ]
+    },
+    "fuzzy-command-palette": {
+      "paths": [
+        "src/app/palette.rs",
+        "src/ui/overlays.rs",
+        "docs/implementation/v1.4-fuzzy-command-palette.md"
+      ]
+    },
+    "core-module-decomposition": {
+      "paths": [
+        "src/runtime_commands.rs",
+        "src/runtime_palette.rs",
+        "src/runtime_doctor.rs",
+        "docs/implementation/v1.4-core-module-decomposition.md"
+      ]
+    },
+    "user-perceived-performance-evidence": {
+      "paths": [
+        "src/render_performance.rs",
+        ".github/workflows/performance-diagnostics.yml",
+        "src/release.rs"
+      ]
+    }
+  },
+  "deferredUntilEvidence": [
+    "gitlab-issue-board-projection",
+    "native-gitlab-rest-graphql",
+    "extra-release-architectures"
+  ],
+  "frozenOptionalLayers": [
+    "team-server-rbac",
+    "web-mobile-companion",
+    "collaboration-service",
+    "generic-plugin-runtime",
+    "multi-agent-providers",
+    "job-workflow-engine",
+    "cloud-sync"
+  ],
+  "frozenNonGoals": [
+    "native-gitlab-rest-graphql-without-measured-trigger",
+    "headless-mutation-api",
+    "github-enterprise-auto-detection",
+    "external-notification-bridge",
+    "team-server-rbac",
+    "web-mobile-companion",
+    "collaboration-service",
+    "generic-plugin-runtime",
+    "multi-agent-providers",
+    "job-workflow-engine",
+    "cloud-sync"
+  ],
+  "freezePolicy": {
+    "newCoreFunctionality": "requires-new-development-plan",
+    "allowedChangeClasses": [
+      "defect-fix",
+      "security",
+      "compatibility",
+      "qualification-evidence",
+      "release-tooling",
+      "documentation"
+    ]
+  },
+  "stableReady": false,
+  "publicationAllowed": false,
+  "stableAuthority": "release/v1.4-criteria.json",
+  "stableEvidencePolicy": "release-evidence/v4 plus exact-SHA real Linux compatibility and controlling-TTY restoration remain required; hosted development and render-performance diagnostics cannot satisfy stable publication"
+}
