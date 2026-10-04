@@ -557,8 +557,8 @@ jobs:
           try:
               finalize_release.finalize_changelog_text(
                   sample + "\n## [1.4.0] - 2026-10-03\n",
-                  "1.3.0",
-                  "2026-10-03",
+                  "1.4.0",
+                  "2026-10-04",
               )
           except SystemExit:
               pass
