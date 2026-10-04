@@ -10,6 +10,21 @@ use std::thread::{self, JoinHandle};
 type SharedChildKiller = Arc<Mutex<Option<Box<dyn ChildKiller + Send + Sync>>>>;
 type SharedPtyMaster = Arc<Mutex<Option<Box<dyn portable_pty::MasterPty>>>>;
 
+#[derive(Clone)]
+struct PtyRuntime {
+    child_killer: SharedChildKiller,
+    pty_master: SharedPtyMaster,
+}
+
+impl PtyRuntime {
+    fn new() -> Self {
+        Self {
+            child_killer: Arc::new(Mutex::new(None)),
+            pty_master: Arc::new(Mutex::new(None)),
+        }
+    }
+}
+
 const EVENT_QUEUE_CAPACITY: usize = 64;
 const OUTPUT_CHUNK_BYTES: usize = 8 * 1024;
 pub const DEFAULT_SCROLLBACK_BYTES: usize = 2 * 1024 * 1024;
@@ -57,8 +72,7 @@ pub struct PtyHandle {
     command_tx: Option<SyncSender<PtyCommand>>,
     event_rx: Option<Receiver<PtyEvent>>,
     actor: Option<JoinHandle<()>>,
-    child_killer: SharedChildKiller,
-    pty_master: SharedPtyMaster,
+    runtime: PtyRuntime,
 }
 
 impl PtyHandle {
@@ -67,30 +81,18 @@ impl PtyHandle {
         size.validate()?;
         let (command_tx, command_rx) = sync_channel(64);
         let (event_tx, event_rx) = sync_channel(EVENT_QUEUE_CAPACITY);
-        let child_killer = Arc::new(Mutex::new(None));
-        let actor_child_killer = Arc::clone(&child_killer);
-        let pty_master = Arc::new(Mutex::new(None));
-        let actor_pty_master = Arc::clone(&pty_master);
+        let runtime = PtyRuntime::new();
+        let actor_runtime = runtime.clone();
         let actor = thread::Builder::new()
             .name("codex-tui-pty".into())
-            .spawn(move || {
-                run_actor(
-                    cwd,
-                    size,
-                    command_rx,
-                    event_tx,
-                    actor_child_killer,
-                    actor_pty_master,
-                )
-            })
+            .spawn(move || run_actor(cwd, size, command_rx, event_tx, actor_runtime))
             .context("spawn PTY actor")?;
 
         Ok(Self {
             command_tx: Some(command_tx),
             event_rx: Some(event_rx),
             actor: Some(actor),
-            child_killer,
-            pty_master,
+            runtime,
         })
     }
 
@@ -115,9 +117,9 @@ impl Drop for PtyHandle {
     fn drop(&mut self) {
         self.event_rx.take();
 
-        signal_foreground_process_group(&self.pty_master);
+        signal_foreground_process_group(&self.runtime.pty_master);
 
-        if let Ok(mut child_killer) = self.child_killer.lock()
+        if let Ok(mut child_killer) = self.runtime.runtime.child_killer.lock()
             && let Some(child_killer) = child_killer.as_mut()
         {
             let _ = child_killer.kill();
@@ -138,18 +140,10 @@ fn run_actor(
     size: TerminalSize,
     command_rx: Receiver<PtyCommand>,
     event_tx: SyncSender<PtyEvent>,
-    child_killer: SharedChildKiller,
-    pty_master: SharedPtyMaster,
+    runtime: PtyRuntime,
 ) {
-    let result = run_actor_inner(
-        &cwd,
-        size,
-        command_rx,
-        &event_tx,
-        &child_killer,
-        &pty_master,
-    );
-    if let Ok(mut master) = pty_master.lock() {
+    let result = run_actor_inner(&cwd, size, command_rx, &event_tx, &runtime);
+    if let Ok(mut master) = runtime.pty_master.lock() {
         master.take();
     }
     if let Err(error) = result {
@@ -162,8 +156,7 @@ fn run_actor_inner(
     size: TerminalSize,
     command_rx: Receiver<PtyCommand>,
     event_tx: &SyncSender<PtyEvent>,
-    child_killer: &SharedChildKiller,
-    pty_master: &SharedPtyMaster,
+    runtime: &PtyRuntime,
 ) -> Result<()> {
     let cwd =
         std::fs::canonicalize(cwd).with_context(|| format!("resolve PTY cwd {}", cwd.display()))?;
@@ -187,8 +180,7 @@ fn run_actor_inner(
         size,
         command_rx,
         event_tx,
-        child_killer,
-        pty_master,
+        runtime,
     )
 }
 
@@ -199,15 +191,14 @@ fn spawn_and_drive_pty(
     size: TerminalSize,
     command_rx: Receiver<PtyCommand>,
     event_tx: &SyncSender<PtyEvent>,
-    child_killer: &SharedChildKiller,
-    pty_master: &SharedPtyMaster,
+    runtime: &PtyRuntime,
 ) -> Result<()> {
     let mut child = pair
         .slave
         .spawn_command(command)
         .context("spawn PTY child program")?;
     let mut killer = child.clone_killer();
-    if let Ok(mut shared) = child_killer.lock() {
+    if let Ok(mut shared) = runtime.child_killer.lock() {
         *shared = Some(killer.clone_killer());
     }
     drop(pair.slave);
@@ -215,7 +206,7 @@ fn spawn_and_drive_pty(
     let mut reader = pair.master.try_clone_reader().context("clone PTY reader")?;
     let mut writer = pair.master.take_writer().context("take PTY writer")?;
     {
-        let mut shared_master = pty_master
+        let mut shared_master = runtime.pty_master
             .lock()
             .map_err(|_| anyhow::anyhow!("PTY master state poisoned"))?;
         *shared_master = Some(pair.master);
@@ -258,12 +249,12 @@ fn spawn_and_drive_pty(
         .context("spawn PTY reader")?;
 
     let exit_tx = event_tx.clone();
-    let exit_child_killer = Arc::clone(child_killer);
+    let exit_child_killer = Arc::clone(&runtime.child_killer);
     thread::Builder::new()
         .name("codex-tui-pty-wait".into())
         .spawn(move || {
             let result = child.wait();
-            if let Ok(mut shared) = exit_child_killer.lock() {
+            if let Ok(mut shared) = exit_runtime.child_killer.lock() {
                 shared.take();
             }
             match result {
@@ -302,7 +293,7 @@ fn spawn_and_drive_pty(
         }
     }
 
-    signal_foreground_process_group(pty_master);
+    signal_foreground_process_group(&runtime.pty_master);
     let _ = killer.kill();
     Ok(())
 }
@@ -478,6 +469,7 @@ mod tests {
             let cwd = cwd.clone();
             let child_killer = Arc::new(Mutex::new(None));
             move || {
+                let runtime = PtyRuntime::new();
                 spawn_and_drive_pty(
                     pair,
                     command,
@@ -485,7 +477,7 @@ mod tests {
                     size,
                     command_rx,
                     &event_tx,
-                    &child_killer,
+                    &runtime,
                 )
             }
         });
@@ -545,7 +537,7 @@ mod tests {
             command_tx: Some(command_tx),
             event_rx: Some(event_rx),
             actor: Some(actor),
-            child_killer: Arc::new(Mutex::new(None)),
+            runtime: PtyRuntime::new(),
         };
 
         drop(handle);
@@ -599,7 +591,10 @@ mod tests {
             command_tx: Some(command_tx),
             event_rx: Some(event_rx),
             actor: Some(actor),
-            child_killer,
+            runtime: PtyRuntime {
+                child_killer,
+                pty_master: Arc::new(Mutex::new(None)),
+            },
         };
 
         drop(handle);
