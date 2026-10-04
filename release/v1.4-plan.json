@@ -151,13 +151,13 @@
     "src/app.rs": 7350,
     "src/ui.rs": 3450,
     "src/app_server.rs": 3450,
-    "src/main.rs": 2200,
+    "src/main.rs": 1900,
     "src/sqlite_store.rs": 2550,
     "src/forge.rs": 1400,
     "src/worktree.rs": 1050,
     "src/release.rs": 1050,
     "src/runtime_store.rs": 600,
-    "src/runtime_input.rs": 450,
+    "src/runtime_input.rs": 300,
     "src/app_server_registry.rs": 250,
     "src/app_server_wire.rs": 100,
     "src/sqlite_schema.rs": 250,
@@ -189,7 +189,10 @@
     "src/ui/review.rs": 300,
     "src/runtime_external.rs": 100,
     "src/ui/thread.rs": 430,
-    "src/app/palette.rs": 420
+    "src/app/palette.rs": 420,
+    "src/runtime_commands.rs": 180,
+    "src/runtime_palette.rs": 160,
+    "src/runtime_doctor.rs": 380
   },
   "ratchetPolicy": {
     "baseline": "inherit v1.3 Search & Multi-Target ceilings; feature work may only add bounded module-specific ceilings",
