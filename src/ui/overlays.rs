@@ -40,10 +40,7 @@ pub(super) fn render_command_palette(frame: &mut Frame<'_>, app: &AppState) {
             } else {
                 Style::default()
             };
-            let mut spans = vec![Span::styled(
-                if selected { "> " } else { "  " },
-                base,
-            )];
+            let mut spans = vec![Span::styled(if selected { "> " } else { "  " }, base)];
             let matched_indices = matched
                 .matched_char_indices
                 .iter()
