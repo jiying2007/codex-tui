@@ -82,7 +82,6 @@ jobs:
           set -euo pipefail
 
           cargo test --locked --all-targets --all-features
-          cargo test --locked --test protocol_replay
           cargo build --locked --release
 
           mkdir -p qualification

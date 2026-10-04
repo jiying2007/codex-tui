@@ -9,15 +9,20 @@ use codex_tui::{
     store::{AppConfig, LocalStateV1, LocalStore},
     transcript_search::TranscriptSearchResults,
 };
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+#[cfg(test)]
+use std::time::{Duration, Instant};
+use std::time::{SystemTime, UNIX_EPOCH};
 
+#[cfg(test)]
 const OPERATOR_STATE_WRITE_BEHIND_INTERVAL: Duration = Duration::from_millis(250);
 
+#[cfg(test)]
 #[derive(Default)]
 struct OperatorStateWriteBehind {
     dirty_since: Option<Instant>,
 }
 
+#[cfg(test)]
 impl OperatorStateWriteBehind {
     fn mark(&mut self) {
         self.mark_at(Instant::now());
@@ -25,10 +30,6 @@ impl OperatorStateWriteBehind {
 
     fn mark_at(&mut self, now: Instant) {
         self.dirty_since.get_or_insert(now);
-    }
-
-    fn is_due(&self) -> bool {
-        self.is_due_at(Instant::now())
     }
 
     fn is_due_at(&self, now: Instant) -> bool {
@@ -46,6 +47,7 @@ pub(crate) struct RuntimeStore {
     sqlite: SqliteStore,
     writable: bool,
     error: Option<String>,
+    #[cfg(test)]
     operator_state_write_behind: OperatorStateWriteBehind,
 }
 
@@ -56,6 +58,16 @@ pub(crate) struct StoreBootstrap {
 }
 
 impl RuntimeStore {
+    #[cfg(test)]
+    pub(crate) fn at_for_test(root: &std::path::Path) -> Self {
+        Self {
+            sqlite: SqliteStore::at(root),
+            writable: true,
+            error: None,
+            operator_state_write_behind: OperatorStateWriteBehind::default(),
+        }
+    }
+
     pub(crate) fn discover() -> Result<(Self, StoreBootstrap)> {
         let sqlite = SqliteStore::discover()?;
         let config = sqlite.load_config()?;
@@ -88,6 +100,7 @@ impl RuntimeStore {
                 sqlite,
                 writable,
                 error,
+                #[cfg(test)]
                 operator_state_write_behind: OperatorStateWriteBehind::default(),
             },
             StoreBootstrap {
@@ -98,17 +111,15 @@ impl RuntimeStore {
         ))
     }
 
+    #[cfg(test)]
     pub(crate) fn defer_operator_state(&mut self) {
         if self.writable {
             self.operator_state_write_behind.mark();
         }
     }
 
-    pub(crate) fn operator_state_flush_due(&self) -> bool {
-        self.writable && self.operator_state_write_behind.is_due()
-    }
-
     pub(crate) fn persist_operator_state(&mut self, state: &LocalStateV1) -> Option<String> {
+        #[cfg(test)]
         self.operator_state_write_behind.clear();
         if !self.writable {
             return None;
@@ -125,10 +136,13 @@ impl RuntimeStore {
     }
 
     pub(crate) fn flush_operator_state_on_exit(&mut self, state: &LocalStateV1) -> Result<()> {
+        #[cfg(test)]
         self.operator_state_write_behind.clear();
-        if !self.writable {
-            return Ok(());
-        }
+        anyhow::ensure!(
+            self.writable,
+            "final SQLite operator-state flush refused: {}",
+            self.error.as_deref().unwrap_or("store is read-only")
+        );
         self.sqlite
             .save_state(state)
             .context("final SQLite operator-state flush")

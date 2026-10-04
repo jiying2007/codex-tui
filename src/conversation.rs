@@ -2,6 +2,10 @@ use crate::domain::ThreadId;
 use anyhow::{Context, Result};
 use serde_json::Value;
 use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+// A reloaded/evicted instance of the same thread must not reuse a cache revision.
+static PRESENTATION_REVISION: AtomicU64 = AtomicU64::new(1);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ConversationItemKind {
@@ -307,7 +311,7 @@ impl ConversationState {
     }
 
     pub fn replace_page(&mut self, page: ConversationPage) {
-        self.revision = self.revision.saturating_add(1);
+        self.revision = PRESENTATION_REVISION.fetch_add(1, Ordering::Relaxed);
         self.title = page.title;
         self.turns = page.turns;
         self.items = page.items;
@@ -319,7 +323,7 @@ impl ConversationState {
     }
 
     pub fn prepend_page(&mut self, page: ConversationPage) {
-        self.revision = self.revision.saturating_add(1);
+        self.revision = PRESENTATION_REVISION.fetch_add(1, Ordering::Relaxed);
         let existing_turns = self
             .turns
             .iter()
@@ -788,7 +792,8 @@ mod tests {
             next_turn_cursor: Some("cursor-1".into()),
             next_item_cursor: Some("cursor-1".into()),
         });
-        assert_eq!(state.presentation_revision(), 1);
+        let first_revision = state.presentation_revision();
+        assert!(first_revision > 0);
         state.prepend_page(ConversationPage {
             thread_id: ThreadId::new("thread-1"),
             title: None,
@@ -827,7 +832,7 @@ mod tests {
             next_turn_cursor: None,
             next_item_cursor: None,
         });
-        assert_eq!(state.presentation_revision(), 2);
+        assert!(state.presentation_revision() > first_revision);
 
         assert_eq!(
             state

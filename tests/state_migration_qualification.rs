@@ -303,3 +303,35 @@ fn validated_backup_restores_over_corrupt_live_database_and_preserves_raw_image(
         expected_planning
     );
 }
+
+#[test]
+fn online_backup_includes_committed_wal_while_an_old_reader_pins_checkpoint() {
+    let root = tempdir().unwrap();
+    let store = SqliteStore::at(root.path());
+    store.save_state(&LocalStateV1::default()).unwrap();
+    let reader = Connection::open(store.db_path()).unwrap();
+    reader
+        .execute_batch("BEGIN; SELECT * FROM operator_state;")
+        .unwrap();
+    let mut expected = LocalStateV1::default();
+    expected.pins.insert("committed-in-wal".into());
+    store.save_state(&expected).unwrap();
+    let backup = root.path().join("online.sqlite3");
+    store.create_recovery_backup(&backup).unwrap();
+    reader.execute_batch("ROLLBACK").unwrap();
+    store.save_state(&LocalStateV1::default()).unwrap();
+    store.restore_recovery_backup(&backup).unwrap();
+    assert_eq!(store.load_state().unwrap(), expected);
+    assert!(!root.path().join("online.sqlite3-wal").exists());
+}
+
+#[test]
+fn backup_never_overwrites_an_existing_destination() {
+    let root = tempdir().unwrap();
+    let store = SqliteStore::at(root.path());
+    store.save_state(&LocalStateV1::default()).unwrap();
+    let path = root.path().join("keep-me.sqlite3");
+    fs::write(&path, b"preserve this file").unwrap();
+    assert!(store.create_recovery_backup(&path).is_err());
+    assert_eq!(fs::read(&path).unwrap(), b"preserve this file");
+}

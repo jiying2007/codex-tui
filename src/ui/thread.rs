@@ -24,13 +24,19 @@ struct CachedItemPresentation {
 struct CachedConversationPresentation {
     thread_id: String,
     revision: u64,
+    start: usize,
+    end: usize,
     items: Arc<Vec<CachedItemPresentation>>,
 }
 
 static PRESENTATION_CACHE: LazyLock<Mutex<Option<CachedConversationPresentation>>> =
     LazyLock::new(|| Mutex::new(None));
 
-fn formatted_items(conversation: &ConversationState) -> Arc<Vec<CachedItemPresentation>> {
+fn formatted_items(
+    conversation: &ConversationState,
+    start: usize,
+    end: usize,
+) -> Arc<Vec<CachedItemPresentation>> {
     let mut cache = PRESENTATION_CACHE
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner());
@@ -38,13 +44,14 @@ fn formatted_items(conversation: &ConversationState) -> Arc<Vec<CachedItemPresen
     if let Some(entry) = cache.as_ref()
         && entry.thread_id == conversation.thread_id.0
         && entry.revision == conversation.presentation_revision()
+        && entry.start == start
+        && entry.end == end
     {
         return Arc::clone(&entry.items);
     }
 
     let items = Arc::new(
-        conversation
-            .items
+        conversation.items[start..end]
             .iter()
             .map(|item| {
                 let status = item
@@ -67,6 +74,8 @@ fn formatted_items(conversation: &ConversationState) -> Arc<Vec<CachedItemPresen
     *cache = Some(CachedConversationPresentation {
         thread_id: conversation.thread_id.0.clone(),
         revision: conversation.presentation_revision(),
+        start,
+        end,
         items: Arc::clone(&items),
     });
     items
@@ -174,11 +183,11 @@ pub(super) fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
             "已加载的历史页中没有可见内容。",
         ))],
         Some(conversation) => {
-            let cached = formatted_items(conversation);
-            total_items = cached.len();
+            total_items = conversation.items.len();
             (window_start, window_end) =
                 item_window(total_items, effective_scroll, chunks[1].height);
-            cached[window_start..window_end]
+            let cached = formatted_items(conversation, window_start, window_end);
+            cached
                 .iter()
                 .map(|item| {
                     let is_search_target =
@@ -369,52 +378,4 @@ pub(super) fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::conversation::{ConversationItem, ConversationItemKind, ConversationPage};
-    use crate::domain::ThreadId;
-
-    fn page(text: &str) -> ConversationPage {
-        ConversationPage {
-            thread_id: ThreadId::new("cache-thread"),
-            title: Some("cache".into()),
-            turns: vec![],
-            items: vec![ConversationItem {
-                turn_id: "turn-1".into(),
-                item_id: "item-1".into(),
-                kind: ConversationItemKind::User,
-                text: text.into(),
-                status: None,
-            }],
-            next_turn_cursor: None,
-            next_item_cursor: None,
-        }
-    }
-
-    #[test]
-    fn presentation_cache_invalidates_on_conversation_revision() {
-        let mut conversation = ConversationState::loading(ThreadId::new("cache-thread"));
-        conversation.replace_page(page("before"));
-        let before = formatted_items(&conversation);
-        assert!(before[0].text.contains("before"));
-
-        conversation.replace_page(page("after"));
-        let after = formatted_items(&conversation);
-        assert!(after[0].text.contains("after"));
-        assert!(!Arc::ptr_eq(&before, &after));
-    }
-
-    #[test]
-    fn long_history_window_is_bounded_and_tracks_item_offset() {
-        let (start, end) = item_window(10_000, 9_000, 40);
-        assert_eq!(start, 9_000);
-        assert!(end > start);
-        assert!(end - start <= MAX_WINDOW_ITEMS);
-        assert!(end - start >= MIN_WINDOW_ITEMS);
-    }
-
-    #[test]
-    fn oversized_offset_clamps_to_last_item() {
-        assert_eq!(item_window(5, u16::MAX, 10), (4, 5));
-    }
-}
+mod tests;

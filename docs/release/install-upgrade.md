@@ -27,6 +27,17 @@ Each platform archive contains:
 - `RELEASE-METADATA.json`;
 - `LICENSE` with the Apache License 2.0.
 
+## Linux ABI baseline
+
+The v1.4 GNU x86-64 distributable is built and archive-smoked in Ubuntu 20.04
+(glibc 2.31). `LINUX-ABI.json` records the binary hash, exact source SHA and
+versioned imported symbols; strong requirements above glibc 2.31 fail packaging.
+Optional weak imports are recorded separately and do not raise that floor.
+This is an ABI compatibility floor, not a recommendation to run an unmaintained OS.
+Use a security-maintained distribution or the appropriate vendor extended support.
+Git command compatibility, Python 3.8 release-helper compatibility, and the GNU
+binary ABI are separate tested contracts. Musl/Alpine is not this GNU target.
+
 ## Install
 
 1. Extract the archive for the current platform/host triple.
@@ -94,3 +105,12 @@ The first permitted stable product line is v1.0.0. Stable publication fails clos
 ## Project license
 
 codex-tui is licensed under Apache-2.0. Release packaging requires both `Cargo.toml license = "Apache-2.0"` and the root `LICENSE`; extracted archive smoke verifies that the license is present and identified as Apache License 2.0.
+
+## Consistent backups and recovery
+
+Recovery backups use SQLite's online backup API, not a copy of the live main
+database. Committed WAL data is included even when an older reader prevents a
+full checkpoint. Backup copying has a five-second retry deadline; the destination
+is staged, validated, synced and published without replacing an existing file.
+Recovery/rollback remains an offline operation: close every codex-tui instance
+and retain the previous database/WAL/SHM image before restoring.

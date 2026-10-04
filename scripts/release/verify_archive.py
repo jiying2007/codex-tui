@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import pathlib
@@ -11,6 +12,7 @@ import tempfile
 import zipfile
 
 from _compat import safe_extract_tar
+from check_linux_abi import MAX_GLIBC, version
 
 
 def extract(archive: pathlib.Path, destination: pathlib.Path) -> pathlib.Path:
@@ -36,6 +38,7 @@ def run_checked(command: list[str]) -> str:
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        timeout=60,
     )
     return proc.stdout
 
@@ -110,6 +113,24 @@ def main() -> int:
             if metadata.get(key) != value:
                 raise SystemExit(f"metadata {key} mismatch: {metadata.get(key)!r} != {value!r}")
 
+        if metadata.get("platform") == "linux":
+            abi_path = root / "LINUX-ABI.json"
+            if not abi_path.is_file():
+                raise SystemExit("Linux archive missing ABI receipt")
+            abi = json.loads(abi_path.read_text(encoding="utf-8"))
+            if (abi.get("schema") != "codex-tui/linux-abi/v1" or abi.get("passed") is not True
+                or abi.get("sourceSha") != args.commit
+                or abi.get("binarySha256") != hashlib.sha256(binary.read_bytes()).hexdigest()
+                or abi.get("maximumGlibc") != MAX_GLIBC
+                or version(abi.get("requiredGlibc", "invalid")) > version(MAX_GLIBC)
+                or metadata.get("linuxRuntime", {}).get("minimumGlibc") != MAX_GLIBC):
+                raise SystemExit("Linux ABI receipt or binary binding mismatch")
+
+        if "Usage:" not in run_checked([str(binary), "--help"]):
+            raise SystemExit("archive --help smoke failed")
+        invalid = subprocess.run([str(binary), "--invalid-archive-smoke-option"], capture_output=True, timeout=10)
+        if invalid.returncode != 2:
+            raise SystemExit("archive invalid-usage exit code mismatch")
         version_output = run_checked([str(binary), "--version"]).strip()
         if version_output != f"codex-tui {args.version}":
             raise SystemExit(f"version smoke mismatch: {version_output!r}")

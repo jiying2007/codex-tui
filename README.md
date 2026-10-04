@@ -8,6 +8,20 @@ A local-first terminal workbench for managing multiple Codex projects and conver
 
 v1.4 has reached development-scope completion and is frozen against new core functionality under `release/v1.4-completion.json`. It preserves v1.3 Search & Multi-Target and closes the remaining workflow/UX gaps: large Board navigation, WorkCard relationships, thread start/fork handoff, unified metadata search, Saved View editing, Review evidence/external open, bounded long-thread rendering, fuzzy Command Palette, runtime decomposition and exact-SHA 10k Board/Thread render diagnostics. This is not stable readiness: v1.4 stable publication still requires exact-SHA real Linux compatibility, controlling-TTY restoration, performance diagnostics and release evidence defined by `release/v1.4-criteria.json`. GitLab Issue Board membership remains evidence-gated until the native-transport/refresh-budget trigger is satisfied. The v1.3/v1.2 completion checkpoints and parked v1.1 candidate remain historical and separate.
 
+## Audit hardening
+
+The v1.4 line now validates CLI usage before initialization (`--help` exits 0,
+malformed usage 2, blocked scoped Doctor 3), moves interactive SQLite and planning
+work to bounded workers, and uses consistent online recovery backups. Linux GNU
+archives target glibc 2.31 or later and include a source/binary-bound ABI receipt;
+other Linux libc variants are not implied. See `docs/release/install-upgrade.md`.
+
+Changed-state diagnostics are available through `release interaction-benchmark`.
+`soak --duration-seconds 300 --json` retains same-process resource trends as well as
+structural invariants. These are development measurements, not real-terminal
+acceptance or demonstrated human-time/token-cost savings. Details and remaining
+external evidence are in `docs/implementation/v1.4-audit-closure.md`.
+
 ## Product goal
 
 codex-tui answers four questions quickly:
@@ -342,8 +356,8 @@ See:
 - `release/v1.4-plan.json` — v1.4 Workflow Completion Reconciliation plan
 - `release/v1.4-completion.json` — v1.4 development-scope completion/freeze contract; never stable authority
 - `release/v1.4-criteria.json` — v1.4 stable qualification authority
-- `release/v1.1-criteria.json` — current v1.1 qualification authority
-- `release/v1.1-rc-plan.json` — current RC freeze/deferred-real-evidence handoff contract
+- `release/v1.1-criteria.json` — historical parked v1.1 qualification authority
+- `release/v1.1-rc-plan.json` — historical parked RC freeze/deferred-real-evidence handoff contract
 - `release/v1.0-criteria.json` — historical v1.0 release record
 - `CHANGELOG.md`
 

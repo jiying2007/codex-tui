@@ -2,7 +2,17 @@
 
 All notable codex-tui changes are recorded here.
 
-## [1.4.0] - 2026-10-04
+## [1.4.0] - Unreleased
+
+### Audit hardening
+
+- made help and invalid CLI usage side-effect-free, with consistent scoped Doctor failure exits;
+- moved SQLite operations and planning computation off the interactive loop through bounded ordered workers and generation-fenced derived results;
+- bounded conversation formatting on changed frames and prevented same-thread reload cache collisions;
+- replaced live SQLite checkpoint/copy backup with deadline-bounded online snapshots and no-clobber publication;
+- declared and tested the Linux glibc 2.31 ABI baseline, including source/binary-bound archive receipts;
+- added changed-state/planning-phase performance distributions, sustained same-process resource samples, and proven-safe branch hygiene;
+- removed redundant protocol replay invocations while retaining independent release qualification and all real-environment evidence gates.
 
 ### Workflow Completion Reconciliation
 

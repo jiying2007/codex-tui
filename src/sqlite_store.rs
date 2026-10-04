@@ -127,26 +127,17 @@ impl SqliteStore {
             .with_context(|| format!("create recovery backup directory {}", parent.display()))?;
 
         let conn = self.open_ready()?;
-        conn.execute_batch("PRAGMA wal_checkpoint(FULL);")
-            .context("checkpoint SQLite before recovery backup")?;
         let schema_version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-        drop(conn);
-
         let temporary = NamedTempFile::new_in(parent)
             .with_context(|| format!("create temporary recovery backup in {}", parent.display()))?;
-        fs::copy(&self.db_path, temporary.path()).with_context(|| {
-            format!(
-                "copy SQLite recovery backup {} -> {}",
-                self.db_path.display(),
-                temporary.path().display()
-            )
-        })?;
+        crate::sqlite_backup::snapshot(&conn, temporary.path())?;
+        drop(conn);
         temporary
             .as_file()
             .sync_all()
             .context("sync temporary SQLite recovery backup")?;
         validate_recovery_database(temporary.path())?;
-        temporary.persist(destination).map_err(|error| {
+        temporary.persist_noclobber(destination).map_err(|error| {
             anyhow::anyhow!(
                 "persist recovery backup {}: {}",
                 destination.display(),

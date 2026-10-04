@@ -8,6 +8,11 @@ on:
       - ".github/workflows/performance-diagnostics.yml"
       - "src/release_benchmark.rs"
       - "src/render_performance.rs"
+      - "src/interaction_performance.rs"
+      - "src/app/planning_worker.rs"
+      - "src/runtime_store_worker.rs"
+      - "src/main.rs"
+      - "src/app.rs"
       - "src/planning.rs"
       - "src/conversation.rs"
       - "src/ui.rs"
@@ -61,6 +66,26 @@ jobs:
             --iterations 200 \
             --source "github-hosted:ubuntu-24.04" \
             --json | tee user-perceived-performance.json
+
+      - name: Capture changed-state and planning phase diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./target/release/codex-tui release interaction-benchmark \
+            --warmup 20 --iterations 200 --source "github-hosted:ubuntu-24.04" \
+            --json | tee interaction-performance.json
+          python3 - <<'PY'
+          import json, math, os
+          r = json.load(open("interaction-performance.json"))
+          assert r["schema"] == "codex-tui/interaction-performance/v1"
+          assert r["sourceSha"] == os.environ["GITHUB_SHA"] and r["sampleQualified"]
+          assert r["iterations"] >= 200 and r["warmupIterations"] >= 20
+          assert len(r["fixtures"]) == 6 and len({f["fixture"] for f in r["fixtures"]}) == 6
+          assert r["humanTimeSavings"] is None and r["modelTokenSavings"] is None
+          for f in r["fixtures"]:
+              values = [f[k] for k in ("p50Ms", "p95Ms", "p99Ms", "maxMs")]
+              assert values == sorted(values) and all(math.isfinite(v) and v >= 0 for v in values)
+          PY
 
       - name: Validate exact-SHA diagnostic
         shell: bash
@@ -128,5 +153,12 @@ jobs:
         with:
           name: user-perceived-performance-${{ github.sha }}
           path: user-perceived-performance.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: interaction-performance-${{ github.sha }}
+          path: interaction-performance.json
           if-no-files-found: error
           retention-days: 90

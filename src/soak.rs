@@ -8,18 +8,39 @@ use anyhow::{Context, Result};
 use serde::Serialize;
 #[cfg(target_os = "linux")]
 use std::fs;
-use std::time::Instant;
+use std::{
+    collections::VecDeque,
+    time::{Duration, Instant},
+};
 
 pub const SOAK_EVIDENCE_SCHEMA: &str = "codex-tui/soak-evidence/v1";
 pub const DEFAULT_ROWS: usize = 10_000;
 pub const DEFAULT_CYCLES: usize = 256;
 pub const MAX_ROWS: usize = 50_000;
 pub const MAX_CYCLES: usize = 10_000;
+pub const MAX_DURATION_SECONDS: u64 = 3600;
+const MAX_RESOURCE_SAMPLES: usize = 128;
+
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResourceSample {
+    pub elapsed_ms: u64,
+    pub cycle: usize,
+    pub rss_kib: Option<u64>,
+    /// Raw Linux process user+system clock ticks, not milliseconds.
+    pub cpu_ticks: Option<u64>,
+}
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SoakReport {
     pub schema: &'static str,
+    pub source_sha: &'static str,
+    pub requested_duration_seconds: f64,
+    pub elapsed_ms: u64,
+    pub duration_qualified: bool,
+    pub resource_samples: Vec<ResourceSample>,
+    pub resource_sample_limit: usize,
     pub rows: usize,
     pub cycles: usize,
     pub actions_applied: usize,
@@ -42,6 +63,15 @@ pub struct SoakReport {
 }
 
 pub fn run(rows: usize, cycles: usize) -> Result<SoakReport> {
+    run_for(rows, cycles, Duration::ZERO)
+}
+
+fn run_for(rows: usize, minimum_cycles: usize, duration: Duration) -> Result<SoakReport> {
+    let cycles = minimum_cycles;
+    anyhow::ensure!(
+        duration <= Duration::from_secs(MAX_DURATION_SECONDS),
+        "--duration-seconds must not exceed {MAX_DURATION_SECONDS}"
+    );
     anyhow::ensure!(
         rows > 0 && rows <= MAX_ROWS,
         "--rows must be within 1..={MAX_ROWS}"
@@ -69,7 +99,13 @@ pub fn run(rows: usize, cycles: usize) -> Result<SoakReport> {
     planning_reconciles += 1;
     max_work_cards = max_work_cards.max(app.work_cards.len());
 
-    for cycle in 0..cycles {
+    let started = Instant::now();
+    let mut resource_samples = VecDeque::new();
+    let sample_period =
+        Duration::from_millis(250).max(duration / (MAX_RESOURCE_SAMPLES as u32 - 2));
+    let mut next_sample = Duration::ZERO;
+    let mut cycle = 0;
+    while cycle < minimum_cycles || started.elapsed() < duration {
         let cycle_started = Instant::now();
         let selected = cycle % rows;
         app.selected = selected;
@@ -141,8 +177,16 @@ pub fn run(rows: usize, cycles: usize) -> Result<SoakReport> {
         }
         longest_cycle_stall_ms =
             longest_cycle_stall_ms.max(cycle_started.elapsed().as_secs_f64() * 1000.0);
+        cycle += 1;
+        if started.elapsed() >= next_sample {
+            sample_resource(&mut resource_samples, started, cycle);
+            next_sample = started.elapsed() + sample_period;
+        }
     }
 
+    let cycles = cycle;
+    sample_resource(&mut resource_samples, started, cycles);
+    let elapsed = started.elapsed();
     let rss_end_kib = resident_set_kib();
     let publication_upper_bound = registry_snapshot_publication_upper_bound(rows);
     let expected_reconciles = 1 + churn_batches;
@@ -156,6 +200,12 @@ pub fn run(rows: usize, cycles: usize) -> Result<SoakReport> {
 
     Ok(SoakReport {
         schema: SOAK_EVIDENCE_SCHEMA,
+        source_sha: crate::compat::source_sha(),
+        requested_duration_seconds: duration.as_secs_f64(),
+        elapsed_ms: elapsed.as_millis() as u64,
+        duration_qualified: !duration.is_zero() && elapsed >= duration && cycles >= minimum_cycles,
+        resource_samples: resource_samples.into_iter().collect(),
+        resource_sample_limit: MAX_RESOURCE_SAMPLES,
         rows,
         cycles,
         actions_applied,
@@ -181,6 +231,7 @@ pub fn run(rows: usize, cycles: usize) -> Result<SoakReport> {
 pub fn run_cli(args: &[String]) -> Result<i32> {
     let mut rows = DEFAULT_ROWS;
     let mut cycles = DEFAULT_CYCLES;
+    let mut duration_seconds = 0u64;
     let mut json = false;
     let mut index = 0usize;
 
@@ -202,19 +253,32 @@ pub fn run_cli(args: &[String]) -> Result<i32> {
                     .parse()
                     .context("--cycles must be an integer")?;
             }
+            "--duration-seconds" => {
+                index += 1;
+                duration_seconds = args
+                    .get(index)
+                    .context("--duration-seconds requires a value")?
+                    .parse()
+                    .context("--duration-seconds must be an integer")?;
+                anyhow::ensure!(duration_seconds > 0, "--duration-seconds must be positive");
+            }
             "--json" => json = true,
             other => anyhow::bail!("unknown soak option: {other}"),
         }
         index += 1;
     }
 
-    let report = run(rows, cycles)?;
+    let report = run_for(rows, cycles, Duration::from_secs(duration_seconds))?;
     if json {
         println!("{}", serde_json::to_string_pretty(&report)?);
     } else {
         println!("schema: {}", report.schema);
         println!("rows: {}", report.rows);
         println!("cycles: {}", report.cycles);
+        println!(
+            "elapsed-ms: {} · duration-qualified: {}",
+            report.elapsed_ms, report.duration_qualified
+        );
         println!("structural-pass: {}", report.structural_pass);
         println!(
             "planning-reconciles: {} (churn-batches={})",
@@ -244,6 +308,32 @@ pub fn run_cli(args: &[String]) -> Result<i32> {
     Ok(if report.structural_pass { 0 } else { 3 })
 }
 
+fn sample_resource(samples: &mut VecDeque<ResourceSample>, started: Instant, cycle: usize) {
+    if samples.len() == MAX_RESOURCE_SAMPLES {
+        samples.pop_front();
+    }
+    samples.push_back(ResourceSample {
+        elapsed_ms: started.elapsed().as_millis() as u64,
+        cycle,
+        rss_kib: resident_set_kib(),
+        cpu_ticks: process_cpu_ticks(),
+    });
+}
+fn process_cpu_ticks() -> Option<u64> {
+    #[cfg(target_os = "linux")]
+    {
+        let stat = fs::read_to_string("/proc/self/stat").ok()?;
+        let fields: Vec<_> = stat.rsplit_once(')')?.1.split_whitespace().collect();
+        let user: u64 = fields.get(11)?.parse().ok()?;
+        let system: u64 = fields.get(12)?.parse().ok()?;
+        user.checked_add(system)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        None
+    }
+}
+
 fn resident_set_kib() -> Option<u64> {
     #[cfg(target_os = "linux")]
     {
@@ -270,6 +360,24 @@ mod tests {
         assert_eq!(report.ui_only_planning_reconciles, 0);
         assert_eq!(report.planning_reconciles, 1 + report.churn_batches);
         assert_eq!(report.final_work_cards, 256);
+    }
+
+    #[test]
+    fn duration_soak_keeps_one_process_and_bounds_retained_samples() {
+        let report = run_for(4, 1, Duration::from_millis(20)).unwrap();
+        assert!(report.duration_qualified && report.structural_pass);
+        assert!(report.elapsed_ms >= 20 && report.cycles >= 1);
+        assert!(!report.resource_samples.is_empty());
+        assert!(report.resource_samples.len() <= MAX_RESOURCE_SAMPLES);
+        assert!(!run(4, 1).unwrap().duration_qualified);
+        assert!(run_for(4, 1, Duration::from_secs(MAX_DURATION_SECONDS + 1)).is_err());
+        let mut samples = VecDeque::new();
+        let now = Instant::now();
+        for cycle in 0..300 {
+            sample_resource(&mut samples, now, cycle);
+        }
+        assert_eq!(samples.len(), MAX_RESOURCE_SAMPLES);
+        assert_eq!(samples.back().unwrap().cycle, 299);
     }
 
     #[test]

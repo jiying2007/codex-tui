@@ -202,7 +202,7 @@ fn measure_fixture(
     }
 }
 
-fn board_fixture() -> AppState {
+pub(crate) fn board_fixture() -> AppState {
     let mut app = AppState::new(vec![]);
     app.view = View::Board;
     app.work_cards = (0..RENDER_ROWS)
@@ -236,7 +236,7 @@ fn board_fixture() -> AppState {
     app
 }
 
-fn thread_fixture() -> AppState {
+pub(crate) fn thread_fixture() -> AppState {
     let threads = FakeBackend::scaled(1).snapshot().threads;
     let thread_id = threads[0].id.clone();
     let mut app = AppState::new(threads);
@@ -279,7 +279,7 @@ fn thread_fixture() -> AppState {
     app
 }
 
-fn percentile(samples: &[f64], percentile: f64) -> f64 {
+pub(crate) fn percentile(samples: &[f64], percentile: f64) -> f64 {
     if samples.is_empty() {
         return 0.0;
     }

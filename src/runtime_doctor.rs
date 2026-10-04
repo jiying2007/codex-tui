@@ -9,7 +9,8 @@ use codex_tui::{
     store::LocalStore,
 };
 
-pub(crate) async fn doctor(scope: Option<&str>, target_override: Option<&str>) -> Result<()> {
+pub(crate) async fn doctor(scope: Option<&str>, target_override: Option<&str>) -> Result<i32> {
+    let mut degraded = false;
     let store = SqliteStore::discover()?;
     let config = store.load_config()?;
     let target = ResolvedAppServerTarget::resolve(&config.app_server, target_override)?;
@@ -34,7 +35,10 @@ pub(crate) async fn doctor(scope: Option<&str>, target_override: Option<&str>) -
 
     match store.load_state() {
         Ok(state) => println!("operator-schemaVersion: {}", state.schema_version),
-        Err(error) => println!("operator-state: DEGRADED · {error:#}"),
+        Err(error) => {
+            degraded = true;
+            println!("operator-state: DEGRADED · {error:#}");
+        }
     }
 
     if scope == Some("store") {
@@ -53,11 +57,17 @@ pub(crate) async fn doctor(scope: Option<&str>, target_override: Option<&str>) -
                         println!("scratch: {}", snapshot.scratch.len());
                         println!("saved-views: {}", snapshot.saved_views.len());
                     }
-                    Err(error) => println!("planning: DEGRADED · {error:#}"),
+                    Err(error) => {
+                        degraded = true;
+                        println!("planning: DEGRADED · {error:#}");
+                    }
                 }
                 match store.load_managed_worktrees() {
                     Ok(worktrees) => println!("managed-worktrees: {}", worktrees.len()),
-                    Err(error) => println!("managed-worktrees: DEGRADED · {error:#}"),
+                    Err(error) => {
+                        degraded = true;
+                        println!("managed-worktrees: DEGRADED · {error:#}");
+                    }
                 }
                 match store.load_recent_operation_receipts(10) {
                     Ok(receipts) => {
@@ -71,7 +81,10 @@ pub(crate) async fn doctor(scope: Option<&str>, target_override: Option<&str>) -
                             );
                         }
                     }
-                    Err(error) => println!("operation-receipts: DEGRADED · {error:#}"),
+                    Err(error) => {
+                        degraded = true;
+                        println!("operation-receipts: DEGRADED · {error:#}");
+                    }
                 }
                 match store.load_recent_forge_mutation_receipts(10) {
                     Ok(receipts) => {
@@ -92,11 +105,13 @@ pub(crate) async fn doctor(scope: Option<&str>, target_override: Option<&str>) -
                         }
                     }
                     Err(error) => {
+                        degraded = true;
                         println!("forge-mutation-receipts: DEGRADED · {error:#}");
                     }
                 }
             }
             Err(error) => {
+                degraded = true;
                 println!("store-backend: sqlite");
                 println!("integrity: DEGRADED");
                 println!("error: {error:#}");
@@ -109,6 +124,7 @@ pub(crate) async fn doctor(scope: Option<&str>, target_override: Option<&str>) -
             cwd.to_string_lossy().into_owned(),
         )
         .await?;
+        degraded |= !context.is_repository || context.error.is_some();
         println!("git-repository: {}", context.is_repository);
         println!("cwd: {}", context.cwd);
         if let Some(repo) = context.repo {
@@ -172,6 +188,9 @@ pub(crate) async fn doctor(scope: Option<&str>, target_override: Option<&str>) -
             println!("forge-remote: <unresolved>");
         }
         let observation = &snapshot.observation;
+        degraded |= snapshot.authenticated == Some(false)
+            || observation.identity.is_none()
+            || observation.error.is_some();
         if let Some(identity) = &observation.identity {
             println!("provider: {}", identity.provider.label());
             println!("project-id: {}", identity.project_id);
@@ -213,7 +232,7 @@ pub(crate) async fn doctor(scope: Option<&str>, target_override: Option<&str>) -
         let Some(repo) = context.repo else {
             println!("launch-config: unavailable");
             println!("error: current directory is not inside a Git repository");
-            return Ok(());
+            return Ok(codex_tui::headless::EXIT_DEGRADED);
         };
         let repo_root = std::path::Path::new(&repo.primary_root);
         let config_path = repo_root.join(codex_tui::launch::REPO_CONFIG_FILE);
@@ -236,11 +255,15 @@ pub(crate) async fn doctor(scope: Option<&str>, target_override: Option<&str>) -
                     );
                 }
             }
-            Err(error) => println!("launch-config: DEGRADED · {error:#}"),
+            Err(error) => {
+                degraded = true;
+                println!("launch-config: DEGRADED · {error:#}");
+            }
         }
     } else if scope == Some("codex") {
         match app_server::probe_target(target).await {
             Ok(snapshot) => {
+                degraded |= !snapshot.status.connected || snapshot.status.error.is_some();
                 print_backend_status(&snapshot.status);
                 println!(
                     "codex-home: {}",
@@ -297,6 +320,7 @@ pub(crate) async fn doctor(scope: Option<&str>, target_override: Option<&str>) -
                 }
             }
             Err(error) => {
+                degraded = true;
                 println!("backend: codex-app-server");
                 println!("connected: false");
                 println!("error: {error:#}");
@@ -307,7 +331,11 @@ pub(crate) async fn doctor(scope: Option<&str>, target_override: Option<&str>) -
             "hint: run `codex-tui doctor codex`, `doctor git`, `doctor forge`, `doctor store`, `doctor presets`, or `doctor terminal`"
         );
     }
-    Ok(())
+    Ok(if degraded {
+        codex_tui::headless::EXIT_DEGRADED
+    } else {
+        codex_tui::headless::EXIT_OK
+    })
 }
 
 fn print_backend_status(status: &BackendStatus) {

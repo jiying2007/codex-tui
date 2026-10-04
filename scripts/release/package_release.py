@@ -13,6 +13,7 @@ import tempfile
 import zipfile
 
 from _compat import cargo_package, write_text_lf
+from check_linux_abi import inspect_binary
 
 
 def host_triple() -> str:
@@ -140,6 +141,10 @@ def main() -> int:
             "binary": binary_name,
             "license": license_spdx,
         }
+        if args.platform == "linux":
+            abi = inspect_binary(binary, args.commit)
+            metadata["linuxRuntime"] = {"minimumGlibc": abi["maximumGlibc"], "baseline": abi["baseline"], "evidence": "LINUX-ABI.json"}
+            write_text_lf(stage / "LINUX-ABI.json", json.dumps(abi, indent=2, sort_keys=True) + "\n")
         write_text_lf(
             stage / "RELEASE-METADATA.json",
             json.dumps(metadata, indent=2, sort_keys=True) + "\n",
