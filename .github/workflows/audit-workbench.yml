@@ -5,15 +5,13 @@ on:
     paths:
       - .github/workflows/audit-workbench.yml
       - .audit/**
-
 permissions:
   contents: read
-
 jobs:
   candidate:
     if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'fix/v1.4-audit-closure'
     runs-on: ubuntu-24.04
-    timeout-minutes: 20
+    timeout-minutes: 10
     permissions:
       contents: write
     env:
@@ -25,11 +23,7 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
-      - name: Apply checksum-verified source patch and remove workbench from candidate
+      - name: Materialize the already-tested checksum-bound candidate
         shell: bash
         run: |
           set -euo pipefail
@@ -40,56 +34,40 @@ jobs:
           assert len(parts) == 5
           patch = lzma.decompress(b''.join(p.read_bytes() for p in parts))
           assert hashlib.sha256(patch).hexdigest() == '94e6018a795790d3cf3413642c9f3acd3972f2473971bcc9da34d5644c63d4dd'
-          subprocess.run(['git', 'apply', '--check', '-'], input=patch, check=True)
-          subprocess.run(['git', 'apply', '-'], input=patch, check=True)
+          subprocess.run(['git','apply','--check','-'],input=patch,check=True)
+          subprocess.run(['git','apply','-'],input=patch,check=True)
           shutil.rmtree('.audit')
           pathlib.Path('.github/workflows/audit-workbench.yml').unlink()
           PY
           git add -A
           git diff --cached --check
-      - name: Verify candidate before creating immutable Git objects
+          test "$(git write-tree)" = 79620d80e8d52bc76b9c03d3a33861db7a628bdb
+      - name: Retain branch plan and pathless Git blobs without ref changes
         shell: bash
         run: |
           set -euo pipefail
-          cargo fmt --all -- --check
-          cargo clippy --locked --all-targets --all-features -- -D warnings
-          cargo test --locked --all-targets --all-features
-          python3 -m unittest discover -s scripts/release -p 'test_*.py'
-          python3 scripts/architecture/check_module_ratchet.py release/v1.3-plan.json
-          python3 scripts/architecture/check_module_ratchet.py release/v1.4-plan.json
-          python3 scripts/release/validate_v1_4_plan.py
-          python3 scripts/release/validate_v1_4_completion.py
-      - name: Retain read-only branch cleanup plan
-        shell: bash
-        run: |
           mkdir -p "$RUNNER_TEMP/audit-candidate"
           python3 scripts/repository/branch_hygiene.py --repo "$GITHUB_REPOSITORY" --output "$RUNNER_TEMP/audit-candidate/branch-plan.json"
-      - name: Create candidate Git objects without changing any ref
-        shell: bash
-        run: |
           python3 - <<'PY'
-          import json, os, pathlib, subprocess
-          def git(*args):
-              return subprocess.check_output(['git', *args], text=True).strip()
-          def api(path, body):
-              result = subprocess.run(['gh','api','repos/'+os.environ['GITHUB_REPOSITORY']+'/git/'+path,'--input','-'], input=json.dumps(body), text=True, capture_output=True, check=True)
-              return json.loads(result.stdout)
-          assert git('rev-parse','HEAD') == os.environ['EXPECTED_HEAD']
-          changes = subprocess.check_output(['git','diff','--cached','--no-renames','--name-status','-z']).decode().split('\0')
-          entries = []
+          import hashlib,json,os,pathlib,subprocess
+          entries=[]
+          changes=subprocess.check_output(['git','diff','--cached','--no-renames','--name-status','-z']).decode().split('\0')
           for i in range(0,len(changes)-1,2):
-              status, name = changes[i:i+2]
-              entry = {'path':name,'mode':'100644','type':'blob'}
-              if status == 'D': entry['sha'] = None
-              else: entry['content'] = pathlib.Path(name).read_text(encoding='utf-8')
+              status,name=changes[i:i+2]
+              entry={'path':name,'mode':'100644','type':'blob','sha':None}
+              if status!='D':
+                  raw=pathlib.Path(name).read_bytes()
+                  body={'encoding':'utf-8','content':raw.decode('utf-8')}
+                  proc=subprocess.run(['gh','api','repos/'+os.environ['GITHUB_REPOSITORY']+'/git/blobs','--input','-'],input=json.dumps(body),text=True,capture_output=True)
+                  if proc.returncode:
+                      raise SystemExit(proc.stderr+'\n'+proc.stdout)
+                  entry['sha']=json.loads(proc.stdout)['sha']
+                  expected=hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()
+                  assert entry['sha']==expected
               entries.append(entry)
-          tree = api('trees', {'base_tree':git('rev-parse','HEAD^{tree}'),'tree':entries})['sha']
-          assert tree == git('write-tree'), 'candidate tree mismatch'
-          print('CANDIDATE_TREE='+tree, flush=True)
-          result = api('commits', {'message':'fix(v1.4): close audit contracts, bounded UI workers and release diagnostics','tree':tree,'parents':[os.environ['EXPECTED_HEAD']]})
-          receipt = {'sha':result['sha'],'tree':tree,'parent':os.environ['EXPECTED_HEAD'],'baseline':'81a1725ca85b1028264f98427a57012077e794af','changedFiles':[e['path'] for e in entries],'refUpdated':False,'stableReady':False}
-          pathlib.Path(os.environ['RUNNER_TEMP'],'audit-candidate','candidate.json').write_text(json.dumps(receipt,indent=2)+'\n')
-          print('CANDIDATE_COMMIT='+result['sha'], flush=True)
+          receipt={'parent':os.environ['EXPECTED_HEAD'],'tree':'79620d80e8d52bc76b9c03d3a33861db7a628bdb','entries':entries,'refUpdated':False,'testedRun':37224646752}
+          pathlib.Path(os.environ['RUNNER_TEMP'],'audit-candidate','candidate-blobs.json').write_text(json.dumps(receipt,indent=2)+'\n')
+          print(json.dumps(receipt))
           PY
       - uses: actions/upload-artifact@v7
         if: always()
