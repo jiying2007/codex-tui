@@ -173,15 +173,7 @@ fn run_actor_inner(
 
     let mut command = CommandBuilder::new_default_prog();
     command.cwd(&cwd);
-    spawn_and_drive_pty(
-        pair,
-        command,
-        cwd,
-        size,
-        command_rx,
-        event_tx,
-        runtime,
-    )
+    spawn_and_drive_pty(pair, command, cwd, size, command_rx, event_tx, runtime)
 }
 
 fn spawn_and_drive_pty(
@@ -471,15 +463,7 @@ mod tests {
             let cwd = cwd.clone();
             move || {
                 let runtime = PtyRuntime::new();
-                spawn_and_drive_pty(
-                    pair,
-                    command,
-                    cwd,
-                    size,
-                    command_rx,
-                    &event_tx,
-                    &runtime,
-                )
+                spawn_and_drive_pty(pair, command, cwd, size, command_rx, &event_tx, &runtime)
             }
         });
 
