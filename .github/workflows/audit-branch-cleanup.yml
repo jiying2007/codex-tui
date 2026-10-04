@@ -1,0 +1,31 @@
+name: audit-branch-cleanup
+on:
+  pull_request:
+    paths:
+      - .github/workflows/audit-branch-cleanup.yml
+      - scripts/repository/branch_hygiene.py
+permissions:
+  contents: read
+jobs:
+  plan:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'fix/v1.4-audit-closure'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Verify cleanup invariants and generate read-only plan
+        run: |
+          python3 -m unittest discover -s scripts/release -p 'test_*.py'
+          python3 scripts/repository/branch_hygiene.py --repo "$GITHUB_REPOSITORY" --output "$RUNNER_TEMP/branch-plan.json"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: audit-branch-plan
+          path: ${{ runner.temp }}/branch-plan.json
+          if-no-files-found: error
+          retention-days: 14

@@ -19,23 +19,28 @@ def api(repo: str, path: str):
 def pages(repo: str, path: str):
     return [item for page in json.loads(checked("gh", "api", "--paginate", "--slurp", "repos/" + repo + "/" + path)) for item in page]
 
-def build_plan(repo: str, main: str, branches: list, prs: list, ancestor) -> dict:
+def build_plan(repo: str, main: str, branches: list, prs: list, ancestor, equivalent=None) -> dict:
     entries = []
     for branch in branches:
         name, sha = branch["name"], branch["commit"]["sha"]
-        relevant = [pr for pr in prs if pr["head"]["ref"] == name and pr["head"].get("repo", {}).get("full_name") == repo]
-        merged = next((pr for pr in relevant if pr.get("merged_at") and pr["head"]["sha"] == sha and pr["base"]["ref"] == "main"), None)
+        relevant = [pr for pr in prs if pr["head"]["ref"] == name and (pr["head"].get("repo") or {}).get("full_name") == repo]
+        merged = next((pr for pr in relevant if pr.get("merged_at") and pr["head"]["sha"] == sha), None)
+        proof = None
         if name in ("main", "master", "develop") or name.startswith(("release/", "archive/", "checkpoint/")) or branch.get("protected"):
             reason = "protected-or-retained-reference"
         elif any(pr["state"] == "open" for pr in relevant):
             reason = "active-pull-request"
         elif not re.fullmatch(r"[0-9a-f]{40}", sha) or not merged:
             reason = "no-exact-merged-pull-request"
-        elif not ancestor(sha, main):
-            reason = "head-not-reachable-from-main"
-        else:
+        elif ancestor(sha, main):
             reason = "exact-merged-head-reachable-from-main"
-        entries.append({"branch": name, "sha": sha, "decision": "delete" if reason == "exact-merged-head-reachable-from-main" else "keep", "reason": reason, "mergedPr": merged["number"] if merged else None})
+        else:
+            proof = equivalent(sha, merged.get("merge_commit_sha"), main) if equivalent else None
+            reason = "exact-merged-squash-tree-delta" if proof else "head-not-reachable-from-main"
+        entry = {"branch": name, "sha": sha, "decision": "delete" if reason in ("exact-merged-head-reachable-from-main", "exact-merged-squash-tree-delta") else "keep", "reason": reason, "mergedPr": merged["number"] if merged else None}
+        if proof:
+            entry["equivalenceProof"] = proof
+        entries.append(entry)
     return {"schema": SCHEMA, "repository": repo, "mainSha": main, "entries": entries}
 
 def is_ancestor(head: str, main: str) -> bool:
@@ -43,6 +48,28 @@ def is_ancestor(head: str, main: str) -> bool:
     if code not in (0, 1):
         raise RuntimeError("cannot verify commit ancestry; fetch full history first")
     return code == 0
+
+def squash_equivalence(head: str, merge: str, main: str):
+    """Prove identical file/mode/blob deltas, not whitespace-insensitive patch IDs.
+
+    The exact PR head must already match. A one-parent merge commit reachable
+    from main may be a squash; require its complete raw tree delta to equal the
+    branch delta from the common ancestor. Changed/deleted/renamed/binary files
+    and mode changes are all covered, and empty diffs never authorize deletion.
+    """
+    if not merge or not re.fullmatch(r"[0-9a-f]{40}", merge) or not is_ancestor(merge, main):
+        return None
+    parents = checked("git", "rev-list", "--parents", "-n", "1", merge).split()[1:]
+    if len(parents) != 1:
+        return None
+    base = checked("git", "merge-base", head, parents[0])
+    def delta(before, after):
+        return subprocess.run(["git", "diff", "--raw", "--no-abbrev", "--no-renames", "-z", before, after], check=True, capture_output=True, timeout=30).stdout
+    branch_delta = delta(base, head)
+    if not branch_delta or branch_delta != delta(parents[0], merge):
+        return None
+    return {"method": "identical-raw-tree-delta-v1", "mergeCommit": merge, "branchBase": base,
+            "mergeParent": parents[0], "deltaSha256": hashlib.sha256(branch_delta).hexdigest()}
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -57,7 +84,7 @@ def main() -> int:
     head = api(args.repo, "git/ref/heads/main")["object"]["sha"]
     branches = pages(args.repo, "branches?per_page=100")
     prs = pages(args.repo, "pulls?state=all&per_page=100")
-    plan = build_plan(args.repo, head, branches, prs, is_ancestor)
+    plan = build_plan(args.repo, head, branches, prs, is_ancestor, squash_equivalence)
     encoded = (json.dumps(plan, indent=2, sort_keys=True) + "\n").encode()
     digest = hashlib.sha256(encoded).hexdigest()
     if not args.apply:
