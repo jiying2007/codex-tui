@@ -2,7 +2,7 @@
 
 All notable codex-tui changes are recorded here.
 
-## [1.4.0] - Unreleased
+## [1.4.0] - 2026-10-04
 
 ### Workflow Completion Reconciliation
 
