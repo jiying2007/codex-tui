@@ -7,10 +7,16 @@ on:
     paths:
       - ".github/workflows/performance-diagnostics.yml"
       - "src/release_benchmark.rs"
+      - "src/render_performance.rs"
       - "src/planning.rs"
+      - "src/conversation.rs"
+      - "src/ui.rs"
+      - "src/ui/thread.rs"
       - "src/backend.rs"
       - "src/compat.rs"
-      - "release/v1.2-criteria.json"
+      - "release/v1.4-criteria.json"
+      - "release/v1.4-completion.json"
+      - "release/v1.4-plan.json"
       - "Cargo.toml"
       - "Cargo.lock"
   workflow_dispatch:
@@ -46,6 +52,16 @@ jobs:
             --source "github-hosted:ubuntu-24.04" \
             --json | tee performance-diagnostics.json
 
+      - name: Capture 10k Board and Thread render diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./target/release/codex-tui release render-benchmark \
+            --warmup 20 \
+            --iterations 200 \
+            --source "github-hosted:ubuntu-24.04" \
+            --json | tee user-perceived-performance.json
+
       - name: Validate exact-SHA diagnostic
         shell: bash
         run: |
@@ -72,9 +88,45 @@ jobs:
           assert report["p50Ms"] <= report["p95Ms"] <= report["p99Ms"] <= report["maxMs"]
           PY
 
+      - name: Validate user-perceived render diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import math
+          import os
+
+          with open("user-perceived-performance.json", encoding="utf-8") as handle:
+              report = json.load(handle)
+
+          assert report["schema"] == "codex-tui/render-performance/v1"
+          assert report["sourceSha"] == os.environ["GITHUB_SHA"]
+          assert report["viewportWidth"] == 160
+          assert report["viewportHeight"] == 40
+          assert report["warmupIterations"] >= 20
+          assert report["iterations"] >= 200
+          assert report["source"] == "github-hosted:ubuntu-24.04"
+          assert report["sampleQualified"] is True
+          fixtures = {item["fixture"]: item for item in report["fixtures"]}
+          assert set(fixtures) == {"board-render-10k", "thread-render-10k"}
+          for fixture in fixtures.values():
+              assert fixture["rows"] == 10_000
+              values = [float(fixture[key]) for key in ("p50Ms", "p95Ms", "p99Ms", "maxMs")]
+              assert all(math.isfinite(value) and value >= 0.0 for value in values)
+              assert values == sorted(values)
+          PY
+
       - uses: actions/upload-artifact@v7
         with:
           name: performance-diagnostics-${{ github.sha }}
           path: performance-diagnostics.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: user-perceived-performance-${{ github.sha }}
+          path: user-perceived-performance.json
           if-no-files-found: error
           retention-days: 90

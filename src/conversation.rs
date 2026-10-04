@@ -267,6 +267,7 @@ pub struct ConversationPage {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ConversationState {
     pub thread_id: ThreadId,
+    revision: u64,
     pub title: Option<String>,
     pub turns: Vec<ConversationTurn>,
     pub items: Vec<ConversationItem>,
@@ -281,6 +282,7 @@ impl ConversationState {
     pub fn loading(thread_id: ThreadId) -> Self {
         Self {
             thread_id,
+            revision: 0,
             title: None,
             turns: vec![],
             items: vec![],
@@ -292,6 +294,10 @@ impl ConversationState {
         }
     }
 
+    pub const fn presentation_revision(&self) -> u64 {
+        self.revision
+    }
+
     pub fn active_turn_id(&self) -> Option<&str> {
         self.turns
             .iter()
@@ -301,6 +307,7 @@ impl ConversationState {
     }
 
     pub fn replace_page(&mut self, page: ConversationPage) {
+        self.revision = self.revision.saturating_add(1);
         self.title = page.title;
         self.turns = page.turns;
         self.items = page.items;
@@ -312,6 +319,7 @@ impl ConversationState {
     }
 
     pub fn prepend_page(&mut self, page: ConversationPage) {
+        self.revision = self.revision.saturating_add(1);
         let existing_turns = self
             .turns
             .iter()
@@ -759,6 +767,7 @@ mod tests {
     #[test]
     fn older_pages_prepend_without_duplicate_turns_or_items() {
         let mut state = ConversationState::loading(ThreadId::new("thread-1"));
+        assert_eq!(state.presentation_revision(), 0);
         state.replace_page(ConversationPage {
             thread_id: ThreadId::new("thread-1"),
             title: Some("title".into()),
@@ -779,6 +788,7 @@ mod tests {
             next_turn_cursor: Some("cursor-1".into()),
             next_item_cursor: Some("cursor-1".into()),
         });
+        assert_eq!(state.presentation_revision(), 1);
         state.prepend_page(ConversationPage {
             thread_id: ThreadId::new("thread-1"),
             title: None,
@@ -817,6 +827,7 @@ mod tests {
             next_turn_cursor: None,
             next_item_cursor: None,
         });
+        assert_eq!(state.presentation_revision(), 2);
 
         assert_eq!(
             state

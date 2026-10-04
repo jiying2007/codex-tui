@@ -1,4 +1,4 @@
-use super::{command_palette_choice_label, context_choice_label, tr};
+use super::{context_choice_label, tr};
 use crate::{
     app::{AppState, InputMode},
     text::{sanitize_inline, truncate_display},
@@ -12,37 +12,62 @@ use ratatui::{
 };
 
 pub(super) fn render_command_palette(frame: &mut Frame<'_>, app: &AppState) {
-    let choices = app.command_palette_choices();
-    let lines = choices
-        .iter()
-        .enumerate()
-        .map(|(index, choice)| {
+    let matches = app.command_palette_matches();
+    let mut lines = vec![Line::from(vec![
+        Span::styled(
+            format!("{}> ", tr(app, "Query", "搜索")),
+            Style::default().add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(if app.command_palette_query.is_empty() {
+            tr(app, "<type to filter>", "<输入以筛选>").to_string()
+        } else {
+            app.command_palette_query.clone()
+        }),
+    ])];
+
+    if matches.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(Line::from(tr(
+            app,
+            "No matching commands.",
+            "没有匹配的命令。",
+        )));
+    } else {
+        for (index, matched) in matches.iter().enumerate() {
             let selected = index == app.command_palette_selected;
-            let style = if selected {
+            let base = if selected {
                 Style::default().add_modifier(Modifier::REVERSED)
             } else {
                 Style::default()
             };
-            Line::from(Span::styled(
-                format!(
-                    "{} {}",
-                    if selected { ">" } else { " " },
-                    command_palette_choice_label(*choice, app.language)
-                ),
-                style,
-            ))
-        })
-        .chain(std::iter::once(Line::from("")))
-        .chain(std::iter::once(Line::from(tr(
-            app,
-            "j/k move · Enter execute · Esc close · Ctrl+K toggle",
-            "j/k 移动 · Enter 执行 · Esc 关闭 · Ctrl+K 切换",
-        ))))
-        .collect::<Vec<_>>();
+            let mut spans = vec![Span::styled(if selected { "> " } else { "  " }, base)];
+            let matched_indices = matched
+                .matched_char_indices
+                .iter()
+                .copied()
+                .collect::<std::collections::BTreeSet<_>>();
+            for (char_index, character) in matched.label.chars().enumerate() {
+                let style = if matched_indices.contains(&char_index) {
+                    base.add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+                } else {
+                    base
+                };
+                spans.push(Span::styled(character.to_string(), style));
+            }
+            lines.push(Line::from(spans));
+        }
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(tr(
+        app,
+        "type/paste fuzzy query · ↑/↓ move · Enter execute · Backspace edit · Esc close · Ctrl+K toggle",
+        "输入/粘贴模糊搜索 · ↑/↓ 移动 · Enter 执行 · Backspace 编辑 · Esc 关闭 · Ctrl+K 切换",
+    )));
     let height = u16::try_from(lines.len().saturating_add(2))
         .unwrap_or(20)
-        .clamp(7, 24);
-    let area = centered_fixed(72, height, frame.area());
+        .clamp(7, 26);
+    let area = centered_fixed(86, height, frame.area());
     frame.render_widget(Clear, area);
     frame.render_widget(
         Paragraph::new(lines)
@@ -130,9 +155,13 @@ pub(super) fn render_local_input_overlay(frame: &mut Frame<'_>, app: &AppState) 
                 "15m / 1h / 1d · Enter 应用 · Esc 取消",
             ),
         ),
-        InputMode::SavedViewName => (
-            tr(app, " Save current view ", " 保存当前视图 "),
-            tr(app, "Enter save · Esc cancel", "Enter 保存 · Esc 取消"),
+        InputMode::SavedViewField => (
+            tr(app, " Edit Saved View field ", " 编辑已保存视图字段 "),
+            tr(
+                app,
+                "Enter apply field · Esc cancel",
+                "Enter 应用字段 · Esc 取消",
+            ),
         ),
         InputMode::BatchAddTag => (
             tr(
@@ -336,6 +365,103 @@ pub(super) fn render_transcript_search(frame: &mut Frame<'_>, app: &AppState) {
     frame.render_widget(
         Paragraph::new(lines)
             .block(Block::bordered().title(tr(app, " Transcript Search ", " 会话全文搜索 ")))
+            .wrap(Wrap { trim: false }),
+        area,
+    );
+}
+
+pub(super) fn render_saved_view_editor(frame: &mut Frame<'_>, app: &AppState) {
+    let Some(editor) = app.saved_view_editor.as_ref() else {
+        return;
+    };
+    let draft = &editor.draft;
+    let field_value = |index: usize| -> String {
+        match crate::saved_view_editor::SavedViewEditorField::ALL[index] {
+            crate::saved_view_editor::SavedViewEditorField::Name => draft.name.clone(),
+            crate::saved_view_editor::SavedViewEditorField::SourceScope => {
+                draft.source_scope.clone()
+            }
+            crate::saved_view_editor::SavedViewEditorField::Filter => {
+                if draft.filter.is_empty() {
+                    "<none>".into()
+                } else {
+                    draft.filter.clone()
+                }
+            }
+            crate::saved_view_editor::SavedViewEditorField::GroupBy => {
+                draft.group_by.clone().unwrap_or_else(|| "<none>".into())
+            }
+            crate::saved_view_editor::SavedViewEditorField::OrderBy => {
+                draft.order_by.clone().unwrap_or_else(|| "<none>".into())
+            }
+            crate::saved_view_editor::SavedViewEditorField::Layout => {
+                draft.layout.label().to_string()
+            }
+            crate::saved_view_editor::SavedViewEditorField::VisibleFields => {
+                draft.visible_fields.join(",")
+            }
+        }
+    };
+
+    let mut lines = vec![Line::from(if editor.creating {
+        tr(app, "New custom Saved View", "新建自定义已保存视图")
+    } else {
+        tr(app, "Edit custom Saved View", "编辑自定义已保存视图")
+    })];
+    lines.push(Line::from(""));
+
+    for (index, field) in crate::saved_view_editor::SavedViewEditorField::ALL
+        .iter()
+        .enumerate()
+    {
+        let selected = index == editor.selected_field;
+        let style = if selected {
+            Style::default().add_modifier(Modifier::REVERSED)
+        } else {
+            Style::default()
+        };
+        lines.push(Line::from(Span::styled(
+            format!(
+                "{} {:<14} {}",
+                if selected { ">" } else { " " },
+                field.label(),
+                truncate_display(&sanitize_inline(&field_value(index)), 70)
+            ),
+            style,
+        )));
+    }
+
+    if let Some(error) = app.saved_view_editor_error.as_deref() {
+        lines.push(Line::from(""));
+        lines.push(Line::from(format!(
+            "{}: {}",
+            tr(app, "Validation", "校验"),
+            truncate_display(&sanitize_inline(error), 92)
+        )));
+    }
+
+    lines.extend([
+        Line::from(""),
+        Line::from(tr(
+            app,
+            "j/k field · h/l cycle enum · Enter edit text field · s save · Esc cancel",
+            "j/k 选择字段 · h/l 切换枚举 · Enter 编辑文本字段 · s 保存 · Esc 取消",
+        )),
+        Line::from(tr(
+            app,
+            "built-in views are immutable; Save as creates a local custom copy",
+            "内置视图不可修改；另存为会创建本地自定义副本",
+        )),
+    ]);
+
+    let height = u16::try_from(lines.len().saturating_add(2))
+        .unwrap_or(18)
+        .clamp(12, 22);
+    let area = centered_fixed(100, height, frame.area());
+    frame.render_widget(Clear, area);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .block(Block::bordered().title(tr(app, " Saved View Editor ", " 已保存视图编辑器 ")))
             .wrap(Wrap { trim: false }),
         area,
     );

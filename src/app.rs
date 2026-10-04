@@ -20,6 +20,9 @@ use crate::git::{GitContext, GitReview};
 use crate::goal::{GoalObservation, GoalStatus};
 use crate::i18n::{UiLanguage, pick};
 use crate::launch::{LaunchPlan, LaunchPreset};
+use crate::metadata_search::{
+    MetadataSearchContext, filter_requires_locality, matches_metadata_query,
+};
 use crate::operation::{
     ManagedWorktreeRecord, MutationScope, OperationPlan, OperationReceipt, OperationState,
     mutation_scope_for_thread, now_unix_ms,
@@ -30,6 +33,7 @@ use crate::planning::{
     forge_issue_source_ref, reconcile_forge_issue_card, reconcile_scratch_card_with_local,
     reconcile_thread_card_with_goal_and_forge,
 };
+use crate::saved_view_editor::SavedViewEditor;
 use crate::store::LocalStateV1;
 use crate::terminal_drawer::TerminalSnapshot;
 use crate::text::sanitize_inline;
@@ -40,6 +44,9 @@ use crate::transcript_search::{
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::time::Instant;
 
+mod lifecycle;
+pub(crate) mod palette;
+mod review;
 mod types;
 
 pub use types::{Action, ContextChoice, Effect, InputMode, View, ViewKind};
@@ -157,9 +164,11 @@ pub struct AppState {
     pub new_scratch_workspace: Option<String>,
     pub snooze_target: Option<SourceRef>,
     pub note_target: Option<SourceRef>,
-    pub saved_view_template: Option<SavedView>,
+    pub saved_view_editor: Option<SavedViewEditor>,
+    pub saved_view_editor_error: Option<String>,
     pub command_palette_open: bool,
     pub command_palette_selected: usize,
+    pub command_palette_query: String,
     command_palette_items: Vec<Command>,
     pub context_open: bool,
     pub context_selected: usize,
@@ -286,9 +295,11 @@ impl AppState {
             new_scratch_workspace: None,
             snooze_target: None,
             note_target: None,
-            saved_view_template: None,
+            saved_view_editor: None,
+            saved_view_editor_error: None,
             command_palette_open: false,
             command_palette_selected: 0,
+            command_palette_query: String::new(),
             command_palette_items: vec![],
             context_open: false,
             context_selected: 0,
@@ -528,9 +539,17 @@ impl AppState {
     ) -> bool {
         let locality = filter_requires_locality(normalized_query)
             .then(|| self.cwd_locality(&thread.metadata.cwd));
-        matches_filter_normalized(thread, normalized_query, locality)
-            && (!self.host_local_only
-                || self.cwd_locality(&thread.metadata.cwd) == CwdLocality::LocalDirectory)
+        matches_metadata_query(
+            MetadataSearchContext {
+                thread,
+                locality,
+                goal: self.goals.get(&thread.id.0),
+                forge: self.forge_observation(&thread.id),
+                card: self.work_card_for_thread(&thread.id),
+            },
+            normalized_query,
+        ) && (!self.host_local_only
+            || self.cwd_locality(&thread.metadata.cwd) == CwdLocality::LocalDirectory)
             && self.thread_matches_repo_scope(thread)
     }
 
@@ -811,80 +830,6 @@ impl AppState {
         })
     }
 
-    fn command_palette_thread_id(&self) -> Option<ThreadId> {
-        self.selected_local_target().and_then(|target| {
-            (target.kind == SourceKind::CodexThread).then(|| ThreadId::new(target.value))
-        })
-    }
-
-    fn build_command_palette_choices(&self) -> Vec<Command> {
-        let mut choices = vec![Command::Search, Command::TranscriptSearch];
-        let thread_id = self.command_palette_thread_id();
-
-        if matches!(self.view, View::Registry | View::Board) {
-            choices.push(Command::NextAttention);
-        }
-        if thread_id.is_some() {
-            choices.push(Command::QuickPrompt);
-        }
-        if !matches!(self.view, View::Board) {
-            choices.push(Command::Board);
-        }
-        if thread_id.is_some() && !matches!(self.view, View::Review(_)) {
-            choices.push(Command::Review);
-        }
-        if thread_id.is_some() && !matches!(self.view, View::Workspace(_)) {
-            choices.push(Command::Workspace);
-        }
-        if thread_id.as_ref().is_some_and(|thread_id| {
-            self.git_context(thread_id)
-                .is_some_and(|context| context.repo.is_some())
-        }) && !matches!(self.view, View::ManagedWorktrees(_))
-        {
-            choices.push(Command::ManagedWorktrees);
-        }
-
-        choices.push(Command::New);
-
-        if matches!(self.view, View::Thread(_)) {
-            choices.push(Command::Goal);
-            choices.push(Command::ThreadQueue);
-        }
-        if matches!(self.view, View::Registry) && self.selected_thread().is_some() {
-            choices.push(Command::TogglePin);
-        }
-        if self.selected_local_target().is_some() {
-            choices.push(Command::Snooze);
-        }
-        if !self.context_choices().is_empty() {
-            choices.push(Command::ContextActions);
-        }
-        if !matches!(self.view, View::Scratch(_)) {
-            choices.push(if self.terminal_drawer_open {
-                Command::CloseTerminalDrawer
-            } else {
-                Command::TerminalDrawer
-            });
-        }
-
-        choices.push(Command::Help);
-        choices
-    }
-
-    pub fn command_palette_choices(&self) -> Vec<Command> {
-        if self.command_palette_open {
-            self.command_palette_items.clone()
-        } else {
-            self.build_command_palette_choices()
-        }
-    }
-
-    pub fn command_palette_choice(&self) -> Option<Command> {
-        self.command_palette_items
-            .get(self.command_palette_selected)
-            .copied()
-    }
-
     pub fn context_choices(&self) -> Vec<ContextChoice> {
         let mut choices = Vec::new();
         if let Some(target) = self.selected_local_target() {
@@ -901,6 +846,18 @@ impl AppState {
                     ContextChoice::DeleteScratch,
                 ]);
             }
+        }
+        if self.lifecycle_capability_available("thread/start")
+            && self
+                .lifecycle_cwd()
+                .is_some_and(|cwd| classify_cwd(&cwd) == CwdLocality::LocalDirectory)
+        {
+            choices.push(ContextChoice::NewCodexThread);
+        }
+        if self.lifecycle_capability_available("thread/fork")
+            && self.lifecycle_thread_id().is_some()
+        {
+            choices.push(ContextChoice::ForkCodexThread);
         }
         if matches!(self.view, View::Board) {
             if !self.visible_planning_cards().is_empty() {
@@ -919,6 +876,7 @@ impl AppState {
             }
             choices.push(ContextChoice::SaveCurrentView);
             if self.active_saved_view().id.starts_with("view:") {
+                choices.push(ContextChoice::EditCurrentView);
                 choices.push(ContextChoice::DeleteCurrentView);
             }
         }
@@ -1507,6 +1465,15 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.goals.remove(&thread_id.0);
             state.goal_actions_open = false;
         }
+        Action::ThreadCreated {
+            thread_id,
+            operation,
+        } => {
+            return state.apply_thread_created(thread_id, operation);
+        }
+        Action::ThreadLifecycleFailed { operation, error } => {
+            state.apply_thread_lifecycle_failed(operation, error);
+        }
         Action::OpenGoalActions => {
             if state.current_pending_request().is_some() {
                 return vec![];
@@ -1769,6 +1736,50 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
             state.board_selected = 0;
         }
+        Action::CloseSavedViewEditor => {
+            state.saved_view_editor = None;
+            state.saved_view_editor_error = None;
+            if state.input_mode == InputMode::SavedViewField {
+                state.input_mode = InputMode::Normal;
+                state.input_buffer.clear();
+            }
+        }
+        Action::MoveSavedViewEditorField(delta) => {
+            if let Some(editor) = state.saved_view_editor.as_mut() {
+                editor.move_field(delta);
+                state.saved_view_editor_error = None;
+            }
+        }
+        Action::CycleSavedViewEditorValue(delta) => {
+            if let Some(editor) = state.saved_view_editor.as_mut() {
+                editor.cycle_value(delta);
+                state.saved_view_editor_error = None;
+            }
+        }
+        Action::BeginSavedViewFieldEdit => {
+            if let Some(editor) = state.saved_view_editor.as_ref()
+                && let Some(value) = editor.begin_text_value()
+            {
+                state.input_buffer = value;
+                state.input_mode = InputMode::SavedViewField;
+                state.saved_view_editor_error = None;
+            }
+        }
+        Action::SaveSavedViewEditor => {
+            let Some(editor) = state.saved_view_editor.as_ref() else {
+                return vec![];
+            };
+            if let Err(error) = editor.validate() {
+                state.saved_view_editor_error = Some(error);
+                return vec![];
+            }
+            let view = editor.draft.clone();
+            state.saved_view_editor = None;
+            state.saved_view_editor_error = None;
+            state.input_mode = InputMode::Normal;
+            state.input_buffer.clear();
+            return vec![Effect::SaveSavedView { view }];
+        }
         Action::OpenPlanningSelected => {
             let Some(card) = state.selected_planning_card().cloned() else {
                 return vec![];
@@ -1816,29 +1827,14 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.input_buffer.clear();
             state.input_mode = InputMode::ScratchTitle;
         }
-        Action::OpenCommandPalette => {
-            let choices = state.build_command_palette_choices();
-            if !choices.is_empty() {
-                state.command_palette_items = choices;
-                state.command_palette_open = true;
-                state.command_palette_selected = 0;
-                state.show_help = false;
-            }
+        Action::OpenCommandPalette => state.open_command_palette(),
+        Action::CloseCommandPalette => state.close_command_palette(),
+        Action::MoveCommandPalette(delta) => state.move_command_palette(delta),
+        Action::CommandPaletteInputChar(character) => {
+            state.input_command_palette_char(character);
         }
-        Action::CloseCommandPalette => {
-            state.command_palette_open = false;
-            state.command_palette_selected = 0;
-            state.command_palette_items.clear();
-        }
-        Action::MoveCommandPalette(delta) => {
-            let len = state.command_palette_items.len();
-            if len == 0 {
-                state.command_palette_selected = 0;
-            } else {
-                state.command_palette_selected =
-                    (state.command_palette_selected as i32 + delta).rem_euclid(len as i32) as usize;
-            }
-        }
+        Action::CommandPaletteInputText(text) => state.input_command_palette_text(text),
+        Action::CommandPaletteBackspace => state.backspace_command_palette(),
         Action::OpenContext => {
             if !state.context_choices().is_empty() {
                 state.context_open = true;
@@ -1866,12 +1862,28 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.context_open = false;
             state.context_selected = 0;
 
+            if choice == ContextChoice::NewCodexThread {
+                return state.plan_start_thread();
+            }
+            if choice == ContextChoice::ForkCodexThread {
+                return state.plan_fork_thread();
+            }
+
             if choice == ContextChoice::SaveCurrentView {
-                let mut template = state.active_saved_view();
-                template.id.clear();
-                state.input_buffer = format!("{} Copy", template.name);
-                state.saved_view_template = Some(template);
-                state.input_mode = InputMode::SavedViewName;
+                state.saved_view_editor =
+                    Some(SavedViewEditor::create_from(&state.active_saved_view()));
+                state.saved_view_editor_error = None;
+                state.show_help = false;
+                return vec![];
+            }
+            if choice == ContextChoice::EditCurrentView {
+                match SavedViewEditor::edit(&state.active_saved_view()) {
+                    Ok(editor) => {
+                        state.saved_view_editor = Some(editor);
+                        state.saved_view_editor_error = None;
+                    }
+                    Err(error) => state.saved_view_editor_error = Some(error),
+                }
                 return vec![];
             }
             if choice == ContextChoice::DeleteCurrentView {
@@ -2158,7 +2170,10 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                         scratch_id: target.value,
                     }];
                 }
-                ContextChoice::SaveCurrentView
+                ContextChoice::NewCodexThread
+                | ContextChoice::ForkCodexThread
+                | ContextChoice::SaveCurrentView
+                | ContextChoice::EditCurrentView
                 | ContextChoice::DeleteCurrentView
                 | ContextChoice::BatchAddTag
                 | ContextChoice::BatchRemoveTag
@@ -2484,6 +2499,9 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 cwd: review.cwd.clone(),
                 path: change.path.clone(),
             }];
+        }
+        Action::OpenReviewExternal => {
+            return state.open_review_external();
         }
         Action::ConversationLoaded(page) => {
             let thread_id = page.thread_id.clone();
@@ -2943,7 +2961,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::ScratchTitle
             | InputMode::Snooze
             | InputMode::Note
-            | InputMode::SavedViewName
+            | InputMode::SavedViewField
             | InputMode::BatchAddTag
             | InputMode::BatchRemoveTag
             | InputMode::BatchPriority
@@ -2995,7 +3013,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 | InputMode::ScratchTitle
                 | InputMode::Snooze
                 | InputMode::Note
-                | InputMode::SavedViewName
+                | InputMode::SavedViewField
                 | InputMode::BatchAddTag
                 | InputMode::BatchRemoveTag
                 | InputMode::BatchPriority
@@ -3035,7 +3053,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::ScratchTitle
             | InputMode::Snooze
             | InputMode::Note
-            | InputMode::SavedViewName
+            | InputMode::SavedViewField
             | InputMode::BatchAddTag
             | InputMode::BatchRemoveTag
             | InputMode::BatchPriority
@@ -3395,20 +3413,19 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 state.input_buffer.clear();
                 return vec![Effect::CreateScratch { title, workspace }];
             }
-            if mode == InputMode::SavedViewName {
-                let name = state.input_buffer.trim().to_string();
-                let Some(mut view) = state.saved_view_template.take() else {
-                    state.input_mode = InputMode::Normal;
-                    state.input_buffer.clear();
-                    return vec![];
-                };
-                if name.is_empty() {
-                    return vec![];
-                }
-                view.name = name;
+            if mode == InputMode::SavedViewField {
+                let value = state.input_buffer.clone();
                 state.input_mode = InputMode::Normal;
                 state.input_buffer.clear();
-                return vec![Effect::SaveSavedView { view }];
+                let Some(editor) = state.saved_view_editor.as_mut() else {
+                    return vec![];
+                };
+                if let Err(error) = editor.commit_text_value(value) {
+                    state.saved_view_editor_error = Some(error);
+                } else {
+                    state.saved_view_editor_error = None;
+                }
+                return vec![];
             }
             if mode == InputMode::Note {
                 let text = state.input_buffer.trim().to_string();
@@ -3621,8 +3638,10 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             if state.input_mode == InputMode::Note {
                 state.note_target = None;
             }
-            if state.input_mode == InputMode::SavedViewName {
-                state.saved_view_template = None;
+            if state.input_mode == InputMode::SavedViewField {
+                state.input_mode = InputMode::Normal;
+                state.input_buffer.clear();
+                return vec![];
             }
             if state.input_mode == InputMode::Search {
                 let origin_thread_id = state.search_origin_thread_id();
@@ -4405,65 +4424,6 @@ fn ensure_selection_visible(state: &mut AppState) {
     } else if !visible.contains(&state.selected) {
         state.selected = visible[0];
     }
-}
-
-fn is_locality_filter_token(token: &str) -> bool {
-    matches!(
-        token,
-        "local" | "stale" | "foreign-windows" | "foreign-unix" | "relative" | "empty"
-    )
-}
-
-fn filter_requires_locality(query: &str) -> bool {
-    query.split_whitespace().any(is_locality_filter_token)
-}
-
-fn matches_filter_normalized(
-    thread: &ThreadSummary,
-    query: &str,
-    locality: Option<CwdLocality>,
-) -> bool {
-    if query.is_empty() {
-        return true;
-    }
-
-    let fields = [
-        thread.id.0.as_str(),
-        thread.display_title(),
-        thread.title.as_str(),
-        thread.workspace.as_str(),
-        thread.metadata.cwd.as_str(),
-        thread.metadata.source.as_str(),
-        thread.metadata.workspace_key.as_str(),
-        thread.metadata.model.as_deref().unwrap_or_default(),
-        thread.metadata.project_id.as_deref().unwrap_or_default(),
-    ]
-    .map(str::to_lowercase);
-
-    query.split_whitespace().all(|token| {
-        if is_locality_filter_token(token) {
-            locality.is_some_and(|locality| token == locality.label())
-        } else {
-            fields.iter().any(|field| fuzzy_subsequence(token, field))
-        }
-    })
-}
-
-fn fuzzy_subsequence(needle: &str, haystack: &str) -> bool {
-    if needle.is_empty() {
-        return true;
-    }
-    let mut remaining = needle.chars();
-    let mut current = remaining.next();
-    for candidate in haystack.chars() {
-        if current == Some(candidate) {
-            current = remaining.next();
-            if current.is_none() {
-                return true;
-            }
-        }
-    }
-    false
 }
 
 #[cfg(test)]
@@ -5825,11 +5785,12 @@ mod tests {
     }
 
     #[test]
-    fn board_context_can_save_but_not_delete_builtin_views() {
+    fn board_context_creates_structured_copy_and_keeps_builtin_immutable() {
         let mut app = app();
         reduce(&mut app, Action::OpenBoard);
         let choices = app.context_choices();
         assert!(choices.contains(&ContextChoice::SaveCurrentView));
+        assert!(!choices.contains(&ContextChoice::EditCurrentView));
         assert!(!choices.contains(&ContextChoice::DeleteCurrentView));
 
         reduce(&mut app, Action::OpenContext);
@@ -5840,8 +5801,48 @@ mod tests {
             .expect("save view action");
         app.context_selected = save_index;
         reduce(&mut app, Action::ExecuteContext);
-        assert_eq!(app.input_mode, InputMode::SavedViewName);
-        assert!(app.saved_view_template.is_some());
+
+        let editor = app.saved_view_editor.as_ref().expect("structured editor");
+        assert!(editor.creating);
+        assert!(editor.draft.id.is_empty());
+        assert_eq!(app.input_mode, InputMode::Normal);
+    }
+
+    #[test]
+    fn saved_view_editor_validates_before_write_and_custom_views_are_editable() {
+        let mut app = app();
+        reduce(&mut app, Action::OpenBoard);
+        app.saved_view_editor = Some(SavedViewEditor::create_from(&app.active_saved_view()));
+        app.saved_view_editor.as_mut().expect("editor").draft.filter = "unknown:value".into();
+
+        assert!(reduce(&mut app, Action::SaveSavedViewEditor).is_empty());
+        assert!(app.saved_view_editor.is_some());
+        assert!(app.saved_view_editor_error.is_some());
+
+        let editor = app.saved_view_editor.as_mut().expect("editor");
+        editor.draft.filter = "stage:review".into();
+        editor.draft.name = "Review only".into();
+        let effects = reduce(&mut app, Action::SaveSavedViewEditor);
+        assert!(matches!(
+            effects.as_slice(),
+            [Effect::SaveSavedView { view }]
+                if view.name == "Review only" && view.filter == "stage:review"
+        ));
+
+        app.planning_snapshot.saved_views.push(SavedView {
+            id: "view:7".into(),
+            name: "Custom".into(),
+            source_scope: "all".into(),
+            filter: String::new(),
+            group_by: Some("workspace".into()),
+            order_by: Some("priority".into()),
+            layout: SavedViewLayout::List,
+            visible_fields: vec!["stage".into()],
+        });
+        app.planning_view_index = builtin_saved_views().len();
+        let choices = app.context_choices();
+        assert!(choices.contains(&ContextChoice::EditCurrentView));
+        assert!(choices.contains(&ContextChoice::DeleteCurrentView));
     }
 
     #[test]

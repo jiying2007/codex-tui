@@ -1,9 +1,7 @@
 use crate::app::{AppState, ContextChoice, InputMode, View};
-use crate::command::Command;
 use crate::conversation::{InteractiveRequest, InteractiveRequestKind};
-use crate::domain::{AttentionReason, CwdLocality, RuntimeStatus, ThreadSummary, display_cwd};
+use crate::domain::{AttentionReason, CwdLocality, RuntimeStatus, display_cwd};
 use crate::forge::ForgeFreshness;
-use crate::git::presentation_diff_lines;
 use crate::goal::GoalStatus;
 use crate::i18n::{UiLanguage, pick};
 use crate::operation::OperationState;
@@ -11,18 +9,20 @@ use crate::planning::{
     PlanningAttention, SavedView, SavedViewLayout, ScratchState, WorkflowStage, apply_saved_view,
     saved_view_group_key,
 };
-use crate::syntax_highlight::cached_review_diff;
 use crate::text::{fit_display, sanitize_inline, truncate_display};
 
 mod overlays;
+mod review;
 mod terminal;
+mod thread;
 
 #[cfg(test)]
 use crate::{pty::TerminalSize, terminal_drawer::TerminalProcessState};
 use overlays::{
     render_command_palette, render_context_actions, render_forge_mutation_confirmation,
     render_launch_confirmation, render_launch_presets, render_local_batch_confirmation,
-    render_local_input_overlay, render_thread_queue, render_transcript_search,
+    render_local_input_overlay, render_saved_view_editor, render_thread_queue,
+    render_transcript_search,
 };
 use ratatui::{
     Frame,
@@ -182,12 +182,6 @@ fn operation_state_label(state: OperationState, language: UiLanguage) -> &'stati
     }
 }
 
-fn command_palette_choice_label(choice: Command, language: UiLanguage) -> &'static str {
-    choice
-        .palette_label(language.is_simplified_chinese())
-        .expect("command palette must only contain palette-capable commands")
-}
-
 fn context_choice_label(choice: ContextChoice, language: UiLanguage) -> &'static str {
     if language == UiLanguage::English {
         return choice.label();
@@ -201,6 +195,7 @@ fn context_choice_label(choice: ContextChoice, language: UiLanguage) -> &'static
         ContextChoice::ScratchDone => "Scratch → 完成",
         ContextChoice::DeleteScratch => "删除 ScratchWork",
         ContextChoice::SaveCurrentView => "保存当前视图…",
+        ContextChoice::EditCurrentView => "编辑当前已保存视图…",
         ContextChoice::DeleteCurrentView => "删除当前已保存视图",
         ContextChoice::BatchAddTag => "批量当前可见项 · 添加标签…",
         ContextChoice::BatchRemoveTag => "批量当前可见项 · 移除标签…",
@@ -213,6 +208,8 @@ fn context_choice_label(choice: ContextChoice, language: UiLanguage) -> &'static
         ContextChoice::BatchSnooze => "批量当前可见项 · 稍后提醒…",
         ContextChoice::BatchClearSnooze => "批量当前可见项 · 清除稍后提醒",
         ContextChoice::LaunchPreset => "启动仓库预设…",
+        ContextChoice::NewCodexThread => "新建 Codex 会话",
+        ContextChoice::ForkCodexThread => "分叉 Codex 会话",
         ContextChoice::ForgeCreateMergeRequest => "Forge · 创建合并请求…",
         ContextChoice::ForgeComment => "Forge · 评论合并请求…",
         ContextChoice::ForgeApprove => "Forge · 批准合并请求",
@@ -246,8 +243,8 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
     let content_area = primary_view_rect(frame.area(), app.terminal_drawer_open);
     match &app.view {
         View::Registry => render_registry(frame, app, content_area),
-        View::Thread(id) => render_thread(frame, app, id.0.as_str(), content_area),
-        View::Review(id) => render_review(frame, app, id.0.as_str(), content_area),
+        View::Thread(id) => thread::render_thread(frame, app, id.0.as_str(), content_area),
+        View::Review(id) => review::render_review(frame, app, id.0.as_str(), content_area),
         View::Workspace(id) => render_workspace(frame, app, id.0.as_str(), content_area),
         View::ManagedWorktrees(id) => {
             render_managed_worktrees(frame, app, id.0.as_str(), content_area);
@@ -263,6 +260,9 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
     }
     if app.thread_queue_open {
         render_thread_queue(frame, app);
+    }
+    if app.saved_view_editor.is_some() {
+        render_saved_view_editor(frame, app);
     }
     if app.command_palette_open {
         render_command_palette(frame, app);
@@ -283,7 +283,7 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
             | InputMode::ThreadQueueEdit
             | InputMode::Note
             | InputMode::Snooze
-            | InputMode::SavedViewName
+            | InputMode::SavedViewField
             | InputMode::BatchAddTag
             | InputMode::BatchRemoveTag
             | InputMode::BatchPriority
@@ -391,7 +391,7 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
             truncate_display(&app.input_buffer, 60),
             tr(app, "Enter save · Esc cancel", "Enter 保存 · Esc 取消")
         )),
-        InputMode::SavedViewName => Line::from(format!(
+        InputMode::SavedViewField => Line::from(format!(
             "{}> {}  · {}",
             tr(app, "view name", "视图名称"),
             truncate_display(&app.input_buffer, 60),
@@ -1008,53 +1008,6 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
         .wrap(Wrap { trim: false })
 }
 
-fn forge_review_label(app: &AppState, thread_id: &str) -> String {
-    let Some(review) = app
-        .forge_observations
-        .get(thread_id)
-        .and_then(|observation| observation.review.as_ref())
-    else {
-        return String::new();
-    };
-
-    let approvals = if review.approvals_available {
-        match (review.approvals_required, review.approvals_left) {
-            (Some(required), Some(left)) if app.language.is_simplified_chinese() => {
-                format!(" · 批准 剩余 {left}/{required}")
-            }
-            (Some(required), Some(left)) => format!(" · approvals {left} left/{required}"),
-            _ if app.language.is_simplified_chinese() => {
-                format!(" · 批准 {}", review.approved_by_count)
-            }
-            _ => format!(" · approvals {}", review.approved_by_count),
-        }
-    } else {
-        tr(app, " · approvals n/a", " · 批准 n/a").into()
-    };
-    let changes_requested = if review.changes_requested_by_count > 0 {
-        if app.language.is_simplified_chinese() {
-            format!(" · 请求修改 {}", review.changes_requested_by_count)
-        } else {
-            format!(" · changes requested {}", review.changes_requested_by_count)
-        }
-    } else {
-        String::new()
-    };
-    let discussions = if review.discussions_available {
-        if app.language.is_simplified_chinese() {
-            format!(" · 未解决讨论 {}", review.unresolved_discussions)
-        } else {
-            format!(" · unresolved {}", review.unresolved_discussions)
-        }
-    } else {
-        tr(app, " · discussions n/a", " · 讨论 n/a").into()
-    };
-    format!(
-        " · CR {}{}{}{}",
-        review.change_request_iid, approvals, changes_requested, discussions
-    )
-}
-
 fn forge_context_lines(
     app: &AppState,
     thread_id: &crate::domain::ThreadId,
@@ -1194,233 +1147,58 @@ fn goal_summary(app: &AppState, thread_id: &str) -> String {
     tr(app, "probing…", "探测中…").into()
 }
 
-fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area: Rect) {
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(5),
-            Constraint::Min(4),
-            Constraint::Length(4),
-            Constraint::Length(1),
-        ])
-        .split(area);
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct BoardViewport {
+    start: usize,
+    row_capacity: usize,
+}
 
-    let thread = app.threads.iter().find(|thread| thread.id.0 == thread_id);
-    let title = thread
-        .map(ThreadSummary::display_title)
-        .unwrap_or_else(|| tr(app, "Unknown thread", "未知会话"));
-    frame.render_widget(
-        Paragraph::new(format!(
-            "{title}\n{thread_id}\n{}: {}",
-            tr(app, "Goal", "目标"),
-            goal_summary(app, thread_id)
-        ))
-        .block(Block::bordered().title(tr(app, " Thread ", " 会话 "))),
-        chunks[0],
-    );
-
-    let ui = app.thread_ui.get(thread_id).cloned().unwrap_or_default();
-    let mut conversation_lines = match app.conversations.get(thread_id) {
-        Some(conversation) if conversation.loading => vec![Line::from(tr(
-            app,
-            "Loading recent Codex history…",
-            "正在加载最近的 Codex 历史…",
-        ))],
-        Some(conversation) if conversation.error.is_some() => {
-            vec![Line::from(format!(
-                "{}: {}",
-                tr(app, "Conversation unavailable", "会话不可用"),
-                conversation.error.as_deref().unwrap_or_else(|| tr(
-                    app,
-                    "unknown error",
-                    "未知错误"
-                ))
-            ))]
-        }
-        Some(conversation) if conversation.items.is_empty() => vec![Line::from(tr(
-            app,
-            "No visible items in the loaded history page.",
-            "已加载的历史页中没有可见内容。",
-        ))],
-        Some(conversation) => conversation
-            .items
-            .iter()
-            .map(|item| {
-                let status = item
-                    .status
-                    .as_deref()
-                    .map(|value| format!(" [{value}]"))
-                    .unwrap_or_default();
-                let text = format!(
-                    "{:>5}{status} {}",
-                    item.kind.label(),
-                    item.text.replace('\n', " ")
-                );
-                let is_search_target =
-                    app.transcript_search_active_hit
-                        .as_ref()
-                        .is_some_and(|hit| {
-                            hit.thread_id.0 == thread_id
-                                && hit.item_id.as_deref() == Some(item.item_id.as_str())
-                        });
-                if is_search_target {
-                    Line::styled(text, Style::default().add_modifier(Modifier::REVERSED))
-                } else {
-                    Line::from(text)
-                }
-            })
-            .collect(),
-        None => vec![Line::from(tr(
-            app,
-            "Conversation has not been loaded yet.",
-            "会话尚未加载。",
-        ))],
-    };
-    if let Some(request) = app.current_pending_request() {
-        let mut request_lines = interactive_request_lines(request, app.language);
-        request_lines.push(Line::from(""));
-        request_lines.append(&mut conversation_lines);
-        conversation_lines = request_lines;
-    }
-
-    let page_hint = app
-        .conversations
-        .get(thread_id)
-        .is_some_and(|conversation| {
-            conversation.next_turn_cursor.is_some() || conversation.next_item_cursor.is_some()
-        });
-    frame.render_widget(
-        Paragraph::new(conversation_lines)
-            .block(Block::bordered().title(if page_hint {
-                tr(
-                    app,
-                    " Conversation · older history available ",
-                    " 会话 · 可加载更早历史 ",
-                )
-            } else {
-                tr(app, " Conversation ", " 会话 ")
-            }))
-            .wrap(Wrap { trim: false })
-            .scroll((
-                if app.current_pending_request().is_some() {
-                    0
-                } else {
-                    ui.scroll
-                },
-                0,
-            )),
-        chunks[1],
-    );
-
-    let (composer_title, composer_text) = if app.input_mode == InputMode::GoalObjective {
-        (
-            tr(
-                app,
-                " Goal objective · Enter set · Esc cancel ",
-                " Goal 目标 · Enter 设置 · Esc 取消 ",
-            ),
-            format!("{}> {}", tr(app, "objective", "目标"), app.input_buffer),
-        )
-    } else if app.goal_actions_open {
-        let text = app.current_goal().map_or_else(
-            || {
-                tr(
-                    app,
-                    "No Goal observed. e/Enter creates one with ACTIVE status.",
-                    "尚未发现 Goal。按 e/Enter 创建并设为 ACTIVE。",
-                )
-                .into()
-            },
-            |goal| {
-                if app.language.is_simplified_chinese() {
-                    format!(
-                        "{}\n状态={} · token={}{} · 已用={}秒",
-                        goal.objective,
-                        goal_status_label(goal.status, app.language),
-                        goal.tokens_used,
-                        goal.token_budget
-                            .map(|budget| format!("/{budget}"))
-                            .unwrap_or_default(),
-                        goal.time_used_seconds
-                    )
-                } else {
-                    format!(
-                        "{}\nstatus={} · tokens={}{} · elapsed={}s",
-                        goal.objective,
-                        goal_status_label(goal.status, app.language),
-                        goal.tokens_used,
-                        goal.token_budget
-                            .map(|budget| format!("/{budget}"))
-                            .unwrap_or_default(),
-                        goal.time_used_seconds
-                    )
-                }
-            },
-        );
-        (
-            tr(
-                app,
-                " Goal actions · e objective · p pause · r resume · c clear · Esc close ",
-                " Goal 操作 · e 目标 · p 暂停 · r 恢复 · c 清除 · Esc 关闭 ",
-            ),
-            text,
-        )
-    } else if app.input_mode == InputMode::UserInput {
-        let question = app.current_user_input_question();
-        let displayed_answer = if question.is_some_and(|question| question.is_secret) {
-            "*".repeat(app.input_buffer.chars().count())
-        } else {
-            app.input_buffer.clone()
+fn board_viewport(total: usize, selected: usize, area_height: u16) -> BoardViewport {
+    let row_capacity = area_height.saturating_sub(2) as usize;
+    if total == 0 || row_capacity == 0 {
+        return BoardViewport {
+            start: 0,
+            row_capacity,
         };
-        (
-            tr(
-                app,
-                " User input · Enter next/send · Esc cancel editor ",
-                " 用户输入 · Enter 下一项/发送 · Esc 取消编辑 ",
-            ),
-            format!(
-                "{}\n{}> {}",
-                question
-                    .map(|question| question.question.as_str())
-                    .unwrap_or_else(|| tr(app, "Question unavailable", "问题不可用")),
-                tr(app, "answer", "回答"),
-                displayed_answer
-            ),
-        )
-    } else {
-        (
-            if app.input_mode == InputMode::Composer {
-                tr(
-                    app,
-                    " Composer · Enter send · Esc keep draft ",
-                    " 编辑消息 · Enter 发送 · Esc 保留草稿 ",
-                )
-            } else {
-                tr(app, " Draft · a edit ", " 草稿 · a 编辑 ")
-            },
-            format!(
-                "{}\n{}={} {}={}",
-                if ui.draft.is_empty() {
-                    tr(app, "<empty>", "<空>")
-                } else {
-                    &ui.draft
-                },
-                tr(app, "scroll", "滚动"),
-                ui.scroll,
-                tr(app, "follow", "跟随"),
-                ui.follow
-            ),
-        )
+    }
+    let selected = selected.min(total.saturating_sub(1));
+    let max_start = total.saturating_sub(row_capacity);
+    let start = selected.saturating_sub(row_capacity / 2).min(max_start);
+    BoardViewport {
+        start,
+        row_capacity,
+    }
+}
+
+fn render_board_scrollbar(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    total: usize,
+    viewport: BoardViewport,
+) {
+    if total <= viewport.row_capacity || viewport.row_capacity == 0 || area.width == 0 {
+        return;
+    }
+    let scrollbar_area = Rect {
+        x: area.x.saturating_add(area.width.saturating_sub(1)),
+        y: area.y.saturating_add(1),
+        width: 1,
+        height: area.height.saturating_sub(2),
     };
-    let composer = Paragraph::new(composer_text).block(Block::bordered().title(composer_title));
-    frame.render_widget(composer, chunks[2]);
-    frame.render_widget(
-        Paragraph::new(tr(
-            app,
-            "a composer · g goal · m worktrees · y accept · n decline · c cancel · i answer · Ctrl+C interrupt",
-            "a 编辑 · g 目标 · m worktree · y 接受 · n 拒绝 · c 取消 · i 回答 · Ctrl+C 中断",
-        )),
-        chunks[3],
+    if scrollbar_area.height == 0 {
+        return;
+    }
+    let mut state = ScrollbarState::new(total)
+        .position(viewport.start)
+        .viewport_content_length(viewport.row_capacity);
+    frame.render_stateful_widget(
+        Scrollbar::new(ScrollbarOrientation::VerticalRight)
+            .begin_symbol(None)
+            .end_symbol(None)
+            .thumb_symbol("█")
+            .track_symbol(Some("│")),
+        scrollbar_area,
+        &mut state,
     );
 }
 
@@ -1445,35 +1223,22 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
                     .copied()
                     .filter(|card| card.stage == *stage)
                     .collect::<Vec<_>>();
+                let selected = if stage_index == app.board_stage_index {
+                    app.board_selected
+                } else {
+                    0
+                };
+                let viewport =
+                    board_viewport(stage_cards.len(), selected, columns[stage_index].height);
                 let lines = stage_cards
                     .iter()
                     .enumerate()
+                    .skip(viewport.start)
+                    .take(viewport.row_capacity)
                     .map(|(index, card)| {
                         let selected =
                             stage_index == app.board_stage_index && index == app.board_selected;
-                        let attention = if card.needs_you() { "!" } else { " " };
-                        let pin = if card.overlay.pinned { "*" } else { " " };
-                        let goal = card
-                            .goal
-                            .as_ref()
-                            .map(|goal| {
-                                format!(" [{}]", goal_status_label(goal.status, app.language))
-                            })
-                            .unwrap_or_default();
-                        let text = format!(
-                            "{}{}{} {}{}",
-                            if selected { ">" } else { " " },
-                            pin,
-                            attention,
-                            truncate_display(&sanitize_inline(&card.title), 20),
-                            goal
-                        );
-                        let style = if selected {
-                            Style::default().add_modifier(Modifier::REVERSED)
-                        } else {
-                            Style::default()
-                        };
-                        Line::from(Span::styled(text, style))
+                        planning_card_line(card, selected, app.language, &view.visible_fields)
                     })
                     .collect::<Vec<_>>();
                 frame.render_widget(
@@ -1486,16 +1251,25 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
                         .wrap(Wrap { trim: false }),
                     columns[stage_index],
                 );
+                render_board_scrollbar(frame, columns[stage_index], stage_cards.len(), viewport);
             }
         }
         SavedViewLayout::Board => {
             let stage = WorkflowStage::ALL[app.board_stage_index % WorkflowStage::ALL.len()];
-            let lines = app
-                .visible_planning_cards()
+            let cards = app.visible_planning_cards();
+            let viewport = board_viewport(cards.len(), app.board_selected, outer[0].height);
+            let lines = cards
                 .iter()
                 .enumerate()
+                .skip(viewport.start)
+                .take(viewport.row_capacity)
                 .map(|(index, card)| {
-                    planning_card_line(card, index == app.board_selected, app.language)
+                    planning_card_line(
+                        card,
+                        index == app.board_selected,
+                        app.language,
+                        &view.visible_fields,
+                    )
                 })
                 .collect::<Vec<_>>();
             frame.render_widget(
@@ -1510,21 +1284,27 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
                     .wrap(Wrap { trim: false }),
                 outer[0],
             );
+            render_board_scrollbar(frame, outer[0], cards.len(), viewport);
         }
         SavedViewLayout::List | SavedViewLayout::ReviewQueue => {
             let cards = app.visible_planning_cards();
             let mut lines = Vec::new();
             let mut previous_group = String::new();
+            let mut selected_line = 0_usize;
             for (index, card) in cards.iter().enumerate() {
                 let group = saved_view_group_key(card, view.group_by.as_deref());
                 if !group.is_empty() && group != previous_group {
                     lines.push(Line::from(format!("── {group} ──")));
                     previous_group = group;
                 }
+                if index == app.board_selected {
+                    selected_line = lines.len();
+                }
                 lines.push(planning_card_line(
                     card,
                     index == app.board_selected,
                     app.language,
+                    &view.visible_fields,
                 ));
             }
             if lines.is_empty() {
@@ -1534,8 +1314,15 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
                     "没有符合当前已保存视图的卡片。",
                 )));
             }
+            let total = lines.len();
+            let viewport = board_viewport(total, selected_line, outer[0].height);
+            let visible_lines = lines
+                .into_iter()
+                .skip(viewport.start)
+                .take(viewport.row_capacity)
+                .collect::<Vec<_>>();
             frame.render_widget(
-                Paragraph::new(lines)
+                Paragraph::new(visible_lines)
                     .block(Block::bordered().title(format!(
                         " {} · {} ",
                         saved_view_name(&view, app.language),
@@ -1544,6 +1331,7 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
                     .wrap(Wrap { trim: false }),
                 outer[0],
             );
+            render_board_scrollbar(frame, outer[0], total, viewport);
         }
     }
 
@@ -1568,12 +1356,16 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
             truncate_display(&app.input_buffer, 80),
             tr(app, "Enter save · Esc cancel", "Enter 保存 · Esc 取消")
         )
-    } else if app.input_mode == InputMode::SavedViewName {
+    } else if app.input_mode == InputMode::SavedViewField {
         format!(
             "{}> {} · {}",
-            tr(app, "view name", "视图名称"),
+            tr(app, "view field", "视图字段"),
             truncate_display(&app.input_buffer, 80),
-            tr(app, "Enter save · Esc cancel", "Enter 保存 · Esc 取消")
+            tr(
+                app,
+                "Enter apply field · Esc cancel",
+                "Enter 应用字段 · Esc 取消"
+            )
         )
     } else if app.hot_slot_bind_pending {
         tr(
@@ -1608,47 +1400,115 @@ fn planning_card_line(
     card: &crate::planning::WorkCardProjection,
     selected: bool,
     language: UiLanguage,
+    visible_fields: &[String],
 ) -> Line<'static> {
-    let attention = if card.needs_you() {
-        card.attention
-            .iter()
-            .map(|reason| planning_attention_label(reason, language))
-            .collect::<Vec<_>>()
-            .join(",")
-    } else if card.snoozed && !card.attention.is_empty() {
-        tr_language(language, "snoozed", "已稍后提醒").into()
+    let values = visible_fields
+        .iter()
+        .filter_map(|field| planning_card_field(card, field, language))
+        .collect::<Vec<_>>();
+    let metadata = values.join(" · ");
+    let text = if metadata.is_empty() {
+        format!(
+            "{} {}",
+            if selected { ">" } else { " " },
+            sanitize_inline(&card.title)
+        )
     } else {
-        "-".into()
+        format!(
+            "{} {} · {}",
+            if selected { ">" } else { " " },
+            sanitize_inline(&card.title),
+            metadata
+        )
     };
-    let source = match (card.anchor.kind.clone(), language) {
-        (crate::planning::SourceKind::ScratchWork, UiLanguage::SimplifiedChinese) => "草稿",
-        (crate::planning::SourceKind::CodexThread, UiLanguage::SimplifiedChinese) => "会话",
-        (crate::planning::SourceKind::ForgeWorkItem, UiLanguage::SimplifiedChinese) => "Forge",
-        (crate::planning::SourceKind::ScratchWork, UiLanguage::English) => "scratch",
-        (crate::planning::SourceKind::CodexThread, UiLanguage::English) => "thread",
-        (crate::planning::SourceKind::ForgeWorkItem, UiLanguage::English) => "forge",
-        _ => tr_language(language, "link", "链接"),
-    };
-    let goal = card
-        .goal
-        .as_ref()
-        .map(|goal| goal_status_label(goal.status, language))
-        .unwrap_or("-");
-    let text = format!(
-        "{} {} {} {} {} {}",
-        if selected { ">" } else { " " },
-        fit_display(workflow_stage_label(card.stage, language), 7),
-        fit_display(&attention, 10),
-        fit_display(goal, 12),
-        fit_display(source, 8),
-        sanitize_inline(&card.title)
-    );
     let style = if selected {
         Style::default().add_modifier(Modifier::REVERSED)
     } else {
         Style::default()
     };
     Line::from(Span::styled(text, style))
+}
+
+fn planning_card_field(
+    card: &crate::planning::WorkCardProjection,
+    field: &str,
+    language: UiLanguage,
+) -> Option<String> {
+    match field {
+        "stage" => Some(workflow_stage_label(card.stage, language).to_string()),
+        "attention" => Some(if card.needs_you() {
+            card.attention
+                .iter()
+                .map(|reason| planning_attention_label(reason, language))
+                .collect::<Vec<_>>()
+                .join(",")
+        } else if card.snoozed && !card.attention.is_empty() {
+            tr_language(language, "snoozed", "已稍后提醒").into()
+        } else {
+            "-".into()
+        }),
+        "goal" => Some(
+            card.goal
+                .as_ref()
+                .map(|goal| goal_status_label(goal.status, language).to_string())
+                .unwrap_or_else(|| "-".into()),
+        ),
+        "source" => Some(
+            match (card.anchor.kind.clone(), language) {
+                (crate::planning::SourceKind::ScratchWork, UiLanguage::SimplifiedChinese) => "草稿",
+                (crate::planning::SourceKind::CodexThread, UiLanguage::SimplifiedChinese) => "会话",
+                (crate::planning::SourceKind::ForgeWorkItem, UiLanguage::SimplifiedChinese) => {
+                    "Forge"
+                }
+                (crate::planning::SourceKind::ScratchWork, UiLanguage::English) => "scratch",
+                (crate::planning::SourceKind::CodexThread, UiLanguage::English) => "thread",
+                (crate::planning::SourceKind::ForgeWorkItem, UiLanguage::English) => "forge",
+                _ => tr_language(language, "link", "链接"),
+            }
+            .into(),
+        ),
+        "workspace" => Some(
+            card.workspace
+                .as_deref()
+                .map(sanitize_inline)
+                .filter(|value| !value.is_empty())
+                .unwrap_or_else(|| "-".into()),
+        ),
+        "branch" => Some(
+            card.branch
+                .as_deref()
+                .map(sanitize_inline)
+                .filter(|value| !value.is_empty())
+                .unwrap_or_else(|| "-".into()),
+        ),
+        "forge" => Some(
+            card.forge_provider
+                .map(|provider| provider.label().to_string())
+                .unwrap_or_else(|| "-".into()),
+        ),
+        "change-request" => Some(
+            card.change_request_state
+                .as_deref()
+                .map(|state| {
+                    if card.change_request_draft {
+                        format!("{state}/draft")
+                    } else {
+                        state.to_string()
+                    }
+                })
+                .unwrap_or_else(|| "-".into()),
+        ),
+        "relationships" => Some(if card.links.is_empty() {
+            "-".into()
+        } else {
+            card.links
+                .iter()
+                .map(|link| link.role.label())
+                .collect::<Vec<_>>()
+                .join(",")
+        }),
+        _ => None,
+    }
 }
 
 fn render_scratch(frame: &mut Frame<'_>, app: &AppState, scratch_id: &str, area: Rect) {
@@ -2086,149 +1946,11 @@ fn render_managed_worktrees(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
     frame.render_widget(Paragraph::new(footer), outer[1]);
 }
 
-fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area: Rect) {
-    let outer = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(4), Constraint::Length(1)])
-        .split(area);
-
-    let Some(review) = app.git_reviews.get(thread_id) else {
-        frame.render_widget(
-            Paragraph::new(tr(app, "Review has not been loaded.", "评审尚未加载。"))
-                .block(Block::bordered().title(tr(app, " Review ", " 评审 "))),
-            outer[0],
-        );
-        return;
-    };
-
-    if review.observed_at_unix_ms == 0 {
-        frame.render_widget(
-            Paragraph::new(tr(app, "Loading Git review…", "正在加载 Git 评审…"))
-                .block(Block::bordered().title(tr(app, " Review ", " 评审 "))),
-            outer[0],
-        );
-    } else if let Some(error) = &review.error {
-        frame.render_widget(
-            Paragraph::new(format!(
-                "{}: {error}",
-                tr(app, "Review unavailable", "评审不可用")
-            ))
-            .block(Block::bordered().title(tr(app, " Review ", " 评审 "))),
-            outer[0],
-        );
-    } else {
-        let forge_summary = forge_review_label(app, thread_id);
-        let files = review
-            .changes
-            .iter()
-            .enumerate()
-            .map(|(index, change)| {
-                let selected = index == app.review_selected;
-                let prefix = if selected { ">" } else { " " };
-                let text = format!("{prefix} {:2} {}", change.status_label(), change.path);
-                let style = if selected {
-                    Style::default().add_modifier(Modifier::REVERSED)
-                } else {
-                    Style::default()
-                };
-                Line::from(Span::styled(text, style))
-            })
-            .collect::<Vec<_>>();
-
-        let mut diff_lines =
-            cached_review_diff(thread_id, review.observed_at_unix_ms, app.review_word_diff)
-                .unwrap_or_else(|| {
-                    presentation_diff_lines(review, app.review_word_diff)
-                        .into_iter()
-                        .map(Line::from)
-                        .collect()
-                });
-        if diff_lines.is_empty() {
-            diff_lines.push(Line::from(tr(
-                app,
-                "No staged/unstaged tracked diff. Untracked files remain listed at left/top.",
-                "没有已跟踪的暂存/未暂存 diff；未跟踪文件仍显示在左侧/顶部。",
-            )));
-        }
-
-        let truncation = if review.truncated {
-            tr(app, " · truncated", " · 已截断")
-        } else {
-            ""
-        };
-        if area.width >= 100 {
-            let columns = Layout::default()
-                .direction(Direction::Horizontal)
-                .constraints([Constraint::Percentage(32), Constraint::Percentage(68)])
-                .split(outer[0]);
-            frame.render_widget(
-                Paragraph::new(files)
-                    .block(Block::bordered().title(format!(
-                        " {} ({}){} ",
-                        tr(app, "Changed files", "变更文件"),
-                        review.changes.len(),
-                        forge_summary
-                    )))
-                    .wrap(Wrap { trim: false }),
-                columns[0],
-            );
-            frame.render_widget(
-                Paragraph::new(diff_lines)
-                    .block(Block::bordered().title(format!(
-                        " Git diff · {}={}{} ",
-                        tr(app, "word", "单词级"),
-                        app.review_word_diff,
-                        truncation
-                    )))
-                    .wrap(Wrap { trim: false })
-                    .scroll((app.review_scroll, 0)),
-                columns[1],
-            );
-        } else {
-            let rows = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([Constraint::Length(6), Constraint::Min(4)])
-                .split(outer[0]);
-            frame.render_widget(
-                Paragraph::new(files)
-                    .block(Block::bordered().title(format!(
-                        " {}{} ",
-                        tr(app, "Changed files", "变更文件"),
-                        forge_summary
-                    )))
-                    .wrap(Wrap { trim: false }),
-                rows[0],
-            );
-            frame.render_widget(
-                Paragraph::new(diff_lines)
-                    .block(Block::bordered().title(format!(
-                        " Git diff · {}={}{} ",
-                        tr(app, "word", "单词级"),
-                        app.review_word_diff,
-                        truncation
-                    )))
-                    .wrap(Wrap { trim: false })
-                    .scroll((app.review_scroll, 0)),
-                rows[1],
-            );
-        }
-    }
-
-    frame.render_widget(
-        Paragraph::new(tr(
-            app,
-            "j/k file · PageUp/PageDown diff · w word-diff · e editor · . actions · Esc back",
-            "j/k 文件 · PageUp/PageDown diff · w 单词级 diff · e 编辑器 · . 操作 · Esc 返回",
-        )),
-        outer[1],
-    );
-}
-
 const HELP_LINES: &[&str] = &[
     "Global: ? help · Ctrl+K palette · / search · Ctrl+F transcript · . actions · Esc back",
     "Registry: j/k · Enter · Space attention · l local-only · g repo-only · h recent/all-history · p pin · e alias · x ack",
     "Thread: a composer · q Thread Queue · y/n/c approval · i answer · Ctrl+C interrupt · r review",
-    "Review: j/k file · w word-diff · e editor · . Forge actions · PageUp/PageDown · Esc",
+    "Review: j/k file · w word-diff · e editor · o external · . Forge actions · PageUp/PageDown · Esc",
     "Workspace: . actions/launch presets · r review · m worktrees · Esc",
     "Managed Worktrees: n create · a adopt · d remove · x delete branch · y confirm",
     "Board: h/l stage · j/k item · Space attention · s snooze · = bind · 1–9 hot slot",
@@ -2243,7 +1965,7 @@ const HELP_LINES_ZH: &[&str] = &[
     "全局: ? 帮助 · Ctrl+K 命令面板 · / 搜索 · . 操作 · Esc 返回",
     "任务中心: j/k 移动 · Enter 打开 · Space 待处理 · l 仅本机 · g 仅仓库 · h 最近/全部历史 · p 固定 · e 别名 · x 已处理",
     "会话: a 编辑消息 · y/n/c 审批 · i 回答 · Ctrl+C 中断 · r 评审",
-    "评审: j/k 文件 · w 单词级 diff · e 编辑器 · . Forge 操作 · PageUp/PageDown · Esc",
+    "评审: j/k 文件 · w 单词级 diff · e 编辑器 · o 外部打开 · . Forge 操作 · PageUp/PageDown · Esc",
     "工作区: Git + Forge · . 操作/启动预设 · r 评审 · m worktree · Esc",
     "受管 Worktree: n 创建 · a 接管 · d 移除 · x 删除分支 · y 确认",
     "看板: h/l 阶段 · j/k 项目 · Space 待处理 · s 稍后提醒 · = 绑定 · 1–9 快捷槽",
@@ -3015,6 +2737,37 @@ mod tests {
         let small = terminal_drawer_pty_size(20, 8);
         assert!(small.rows > 0);
         assert!(small.cols > 0);
+    }
+
+    #[test]
+    fn board_viewport_keeps_large_selection_visible() {
+        let viewport = board_viewport(10_000, 7_321, 22);
+        assert_eq!(viewport.row_capacity, 20);
+        assert!(7_321 >= viewport.start);
+        assert!(7_321 < viewport.start + viewport.row_capacity);
+        assert!(viewport.start <= 10_000 - viewport.row_capacity);
+    }
+
+    #[test]
+    fn board_viewport_stays_at_zero_when_content_fits() {
+        assert_eq!(
+            board_viewport(5, 4, 12),
+            BoardViewport {
+                start: 0,
+                row_capacity: 10,
+            }
+        );
+    }
+
+    #[test]
+    fn board_viewport_handles_zero_height_without_underflow() {
+        assert_eq!(
+            board_viewport(100, 73, 1),
+            BoardViewport {
+                start: 0,
+                row_capacity: 0,
+            }
+        );
     }
 
     #[test]

@@ -2,11 +2,11 @@
 
 A local-first terminal workbench for managing multiple Codex projects and conversations.
 
-**License:** Apache-2.0 · **Stable release:** v1.0.0 · **Parked v1.1 candidate:** `release/v1.1-parked` · **Current development line:** v1.3.0 · **Tier 1:** Linux.
+**License:** Apache-2.0 · **Stable release:** v1.0.0 · **Parked v1.1 candidate:** `release/v1.1-parked` · **Current development line:** v1.4.0 · **Tier 1:** Linux.
 
 ## Development status
 
-v1.3 has reached development-scope completion and is frozen against new core functionality under `release/v1.3-completion.json`. The line combines full-history transcript search, upstream Thread Queue, named local/remote App Server targets and safe GitHub pull-request mutations while retaining the v1.2 hardening baseline. Main continues to accept only defect, security, compatibility, qualification-evidence, release-tooling and documentation changes until a new development plan is opened. This is not stable readiness: v1.3 stable publication still requires exact-SHA real Linux compatibility, controlling-TTY restoration, performance diagnostics and release evidence defined by `release/v1.3-criteria.json`. The v1.2 completion checkpoint and parked v1.1 candidate remain historical and separate.
+v1.4 has reached development-scope completion and is frozen against new core functionality under `release/v1.4-completion.json`. It preserves v1.3 Search & Multi-Target and closes the remaining workflow/UX gaps: large Board navigation, WorkCard relationships, thread start/fork handoff, unified metadata search, Saved View editing, Review evidence/external open, bounded long-thread rendering, fuzzy Command Palette, runtime decomposition and exact-SHA 10k Board/Thread render diagnostics. This is not stable readiness: v1.4 stable publication still requires exact-SHA real Linux compatibility, controlling-TTY restoration, performance diagnostics and release evidence defined by `release/v1.4-criteria.json`. GitLab Issue Board membership remains evidence-gated until the native-transport/refresh-budget trigger is satisfied. The v1.3/v1.2 completion checkpoints and parked v1.1 candidate remain historical and separate.
 
 ## Product goal
 
@@ -165,7 +165,7 @@ cargo run -- board list --json
 cargo run -- forge status --json
 cargo run -- worktree list --json
 cargo run -- headless threads --fixture-10k
-cargo run -- release verify --channel preview --tag v1.3.0-preview.1 --commit "$(git rev-parse HEAD)" --json
+cargo run -- release verify --channel preview --tag v1.4.0-preview.1 --commit "$(git rev-parse HEAD)" --json
 cargo run -- release benchmark --iterations 200 --source retained-runner --json
 cargo run -- release failure-matrix --json
 cargo run -- soak --rows 50000 --cycles 256 --json
@@ -255,7 +255,7 @@ M7a establishes a read-only automation and scale baseline. v1.2 extends that sta
 
 M7b3 adds repository-shared `.codex-tui.toml` launch presets as a deliberately narrow argv-only feature. Presets are selected from Workspace/Review context actions, shown as an exact cwd/argv plan, and require explicit confirmation before codex-tui starts the external process. The config has no shell string, env templating, chaining, hooks or scheduler semantics; common shell executables are rejected.
 
-M7d3 adds a fail-closed release path: publication is manually dispatched, while release-pipeline changes on main automatically run a non-publishing preview self-test. Preview and stable identity derive from the Cargo version; Cargo.lock pins candidates; Linux/macOS/Windows build native archives and smoke the extracted binary; runtime dependency licenses/notices and SHA-256 manifests are retained. v1.0.0 was published as the first stable release on 2026-09-30. The v1.1 candidate is parked on `release/v1.1-parked`; v1.2 remains a historical development-complete checkpoint; main now carries the v1.3.0 development-complete line. v1.3 preview and stable qualification are bound to the exact source SHA and require the Failure Matrix, 50k scale-v4 evidence, 50k structural soak, UI command contract, state migration/recovery, support-bundle redaction, protocol replay and dependency-security gates. Stable publication additionally requires canonical CI plus real Linux Tier 1 compatibility and controlling-TTY restoration evidence. The retained 10k p95/p99 benchmark uses at least 200 samples as diagnostic evidence rather than a noisy hosted-runner latency threshold. macOS/Windows remain Tier 2 automated-compatibility targets across the v1 stable line.
+M7d3 adds a fail-closed release path: publication is manually dispatched, while release-pipeline changes on main automatically run a non-publishing preview self-test. Preview and stable identity derive from the Cargo version; Cargo.lock pins candidates; Linux/macOS/Windows build native archives and smoke the extracted binary; runtime dependency licenses/notices and SHA-256 manifests are retained. v1.0.0 was published as the first stable release on 2026-09-30. The v1.1 candidate is parked on `release/v1.1-parked`; v1.2/v1.3 remain historical development-complete checkpoints; main now carries the v1.4.0 development-complete line. v1.4 preview and stable qualification are bound to the exact source SHA and retain the Failure Matrix, 50k scale-v4 evidence, 50k structural soak, UI command contract, state migration/recovery, support-bundle redaction, protocol replay and dependency-security gates. Exact-SHA 10k Board/Thread render diagnostics are retained with 20 warmups and at least 200 samples as user-perceived performance evidence, but hosted timings remain diagnostic rather than release thresholds. Stable publication additionally requires canonical CI plus real Linux Tier 1 compatibility and controlling-TTY restoration evidence. macOS/Windows remain Tier 2 automated-compatibility targets across the v1 stable line.
 
 ## Status
 
@@ -282,7 +282,8 @@ M7d3 adds a fail-closed release path: publication is manually dispatched, while 
 - v1.0.0 stable release: published on 2026-09-30 with Linux Tier 1 retained evidence and three-platform native package/archive smoke.
 - v1.1.0 candidate: parked on `release/v1.1-parked`; its historical real-environment qualification remains separate.
 - v1.2.0 checkpoint: development-scope complete and retained as historical authority; not published as stable.
-- v1.3.0 development line: scope complete with transcript search, Thread Queue, named App Server targets and safe GitHub mutations; stable readiness remains externally gated.
+- v1.3.0 checkpoint: development-scope complete with transcript search, Thread Queue, named App Server targets and safe GitHub mutations; retained as historical authority.
+- v1.4.0 development line: P0/P1/P2 workflow-completion scope complete; stable readiness remains externally gated by exact-SHA real Linux compatibility and controlling-TTY evidence.
 
 Architecture and product research are archived under `docs/research/`.
 Implementation design lives under `docs/design/`.
@@ -320,6 +321,12 @@ See:
 - `docs/implementation/v1.3-thread-queue.md`
 - `docs/implementation/v1.3-remote-app-server-targets.md`
 - `docs/implementation/v1.3-github-safe-mutations.md`
+- `docs/roadmap-v1.4.md`
+- `docs/implementation/v1.4-unified-metadata-search.md`
+- `docs/implementation/v1.4-long-thread-viewport-cache.md`
+- `docs/implementation/v1.4-fuzzy-command-palette.md`
+- `docs/implementation/v1.4-review-evidence-external-open.md`
+- `docs/implementation/v1.4-core-module-decomposition.md`
 - `docs/implementation/v1.2-accessibility-mature-mode.md`
 - `docs/roadmap-v1.2.md`
 - `docs/release/install-upgrade.md`
@@ -332,6 +339,9 @@ See:
 - `release/v1.3-plan.json` — v1.3 Search & Multi-Target development plan
 - `release/v1.3-completion.json` — v1.3 development-scope completion/freeze contract; never stable authority
 - `release/v1.3-criteria.json` — v1.3 stable qualification authority
+- `release/v1.4-plan.json` — v1.4 Workflow Completion Reconciliation plan
+- `release/v1.4-completion.json` — v1.4 development-scope completion/freeze contract; never stable authority
+- `release/v1.4-criteria.json` — v1.4 stable qualification authority
 - `release/v1.1-criteria.json` — current v1.1 qualification authority
 - `release/v1.1-rc-plan.json` — current RC freeze/deferred-real-evidence handoff contract
 - `release/v1.0-criteria.json` — historical v1.0 release record

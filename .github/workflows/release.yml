@@ -236,14 +236,14 @@ jobs:
           set -euo pipefail
           test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq .id)" = "$GITHUB_RUN_ID"
 
-      - name: Validate v1.3 development authority
-        run: python3 scripts/release/validate_v1_3_plan.py
+      - name: Validate v1.4 development authority
+        run: python3 scripts/release/validate_v1_4_plan.py
 
-      - name: Validate v1.3 scope completion
-        run: python3 scripts/release/validate_v1_3_completion.py
+      - name: Validate v1.4 scope completion
+        run: python3 scripts/release/validate_v1_4_completion.py
 
-      - name: Enforce v1.3 module ratchet
-        run: python3 scripts/architecture/check_module_ratchet.py
+      - name: Enforce v1.4 module ratchet
+        run: python3 scripts/architecture/check_module_ratchet.py release/v1.4-plan.json
 
       - name: Check dependency policy
         uses: EmbarkStudios/cargo-deny-action@v2.0.20
@@ -290,7 +290,7 @@ jobs:
           cargo build --locked --release
 
           mkdir -p qualification
-          cp release/v1.3-completion.json qualification/v1.3-completion.json
+          cp release/v1.4-completion.json qualification/v1.4-completion.json
           cargo test --locked --all-targets --all-features -- --list > qualification/test-list.txt
           ./target/release/codex-tui release failure-matrix --json > qualification/failure-matrix.json
           python3 scripts/release/check_failure_evidence.py \
@@ -427,8 +427,8 @@ jobs:
           cp qualification/support-bundle/manifest.json gate/support-bundle-manifest.json
           cp qualification/support-bundle/snapshot.json gate/support-bundle-snapshot.json
           cp qualification/security-governance.json gate/security-governance.json
-          cp release/v1.3-plan.json gate/DEVELOPMENT-PLAN.json
-          cp release/v1.3-completion.json gate/DEVELOPMENT-COMPLETION.json
+          cp release/v1.4-plan.json gate/DEVELOPMENT-PLAN.json
+          cp release/v1.4-completion.json gate/DEVELOPMENT-COMPLETION.json
           if [ -f release-evidence.json ]; then
             cp release-evidence.json gate/release-evidence.json
           fi
