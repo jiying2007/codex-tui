@@ -8,8 +8,8 @@ fn invoke(args: &[&str], home: &TempDir) -> Output {
         .current_dir(home.path())
         .env("HOME", home.path())
         .env("USERPROFILE", home.path())
-        .env("APPDATA", home.path())
-        .env("LOCALAPPDATA", home.path())
+        .env("APPDATA", home.path().join("AppData/Roaming"))
+        .env("LOCALAPPDATA", home.path().join("AppData/Local"))
         .env("XDG_CONFIG_HOME", home.path().join("config"))
         .env("XDG_DATA_HOME", home.path().join("data"))
         .env("XDG_STATE_HOME", home.path().join("state"))
@@ -78,6 +78,13 @@ fn invalid_usage_is_side_effect_free_and_exits_two() {
 #[test]
 fn requested_missing_backend_is_not_reported_as_success() {
     let home = TempDir::new().unwrap();
+    // Known Folder API verifies directories before returning a Windows path.
+    // Only this explicit Doctor probe gets an initialized synthetic profile;
+    // help/invalid-usage tests above still start with a completely empty home.
+    #[cfg(windows)]
+    for directory in ["AppData/Roaming", "AppData/Local"] {
+        std::fs::create_dir_all(home.path().join(directory)).unwrap();
+    }
     let output = invoke(&["doctor", "codex"], &home);
     assert_eq!(output.status.code(), Some(3), "{output:?}");
     assert!(
