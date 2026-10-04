@@ -387,7 +387,6 @@ pub(crate) fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect
     reduce(app, action)
 }
 
-
 #[cfg(test)]
 mod fuzzy_palette_input_tests {
     use super::*;
@@ -419,10 +418,7 @@ mod fuzzy_palette_input_tests {
         handle_paste(&mut app, "definitely-no-command".into());
         assert!(app.command_palette_choices().is_empty());
 
-        let effects = handle_key(
-            &mut app,
-            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
-        );
+        let effects = handle_key(&mut app, KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         assert!(effects.is_empty());
         assert!(app.command_palette_open);
     }
@@ -433,10 +429,7 @@ mod fuzzy_palette_input_tests {
         reduce(&mut app, Action::OpenCommandPalette);
         handle_paste(&mut app, "o".into());
         let query = app.command_palette_query.clone();
-        handle_key(
-            &mut app,
-            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
-        );
+        handle_key(&mut app, KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
         assert_eq!(app.command_palette_query, query);
     }
 }
