@@ -13,24 +13,33 @@ jobs:
   snapshot:
     if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'fix/v1.4-audit-closure'
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
-      - name: Capture exact source and reachable refs for isolated audit
+      - uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          components: rustfmt, clippy
+      - name: Capture exact source and offline verification dependencies
         shell: bash
         run: |
           set -euo pipefail
           git bundle create "$RUNNER_TEMP/audit-source.bundle" --all
           git rev-parse HEAD > "$RUNNER_TEMP/audit-source.sha"
+          cargo vendor --locked "$RUNNER_TEMP/vendor" > "$RUNNER_TEMP/vendor-config.toml"
+          tar -C "$RUNNER_TEMP" -czf "$RUNNER_TEMP/audit-vendor.tar.gz" vendor vendor-config.toml
+          SYSROOT="$(rustc --print sysroot)"
+          tar -C "$SYSROOT" --exclude='lib/rustlib/src' -czf "$RUNNER_TEMP/audit-rust.tar.gz" bin lib
       - uses: actions/upload-artifact@v7
         with:
-          name: audit-source
+          name: audit-offline-verification
           path: |
             ${{ runner.temp }}/audit-source.bundle
             ${{ runner.temp }}/audit-source.sha
+            ${{ runner.temp }}/audit-vendor.tar.gz
+            ${{ runner.temp }}/audit-rust.tar.gz
           if-no-files-found: error
           retention-days: 1
