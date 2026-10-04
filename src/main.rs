@@ -20,6 +20,7 @@ use crossterm::event::{self, Event, KeyEventKind};
 use std::path::Path;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+mod runtime_cli;
 mod runtime_commands;
 mod runtime_doctor;
 mod runtime_external;
@@ -27,12 +28,13 @@ mod runtime_input;
 mod runtime_notifications;
 mod runtime_palette;
 mod runtime_store;
+mod runtime_store_worker;
 
 use runtime_doctor::doctor;
 use runtime_external::{open_external_editor, open_external_url};
 use runtime_input::{handle_key, handle_paste};
 use runtime_notifications::RuntimeNotifications;
-use runtime_store::RuntimeStore;
+use runtime_store_worker::{StoreEvent, StoreWorker as RuntimeStore};
 
 #[cfg(test)]
 use codex_tui::{
@@ -71,6 +73,17 @@ impl RuntimeServices {
 #[tokio::main]
 async fn main() -> Result<()> {
     let mut args = std::env::args().skip(1).collect::<Vec<_>>();
+    match runtime_cli::preflight(&args) {
+        Ok(Some(help)) => {
+            println!("{help}");
+            return Ok(());
+        }
+        Ok(None) => {}
+        Err(error) => {
+            eprintln!("{error}\nRun `codex-tui --help` for usage.");
+            std::process::exit(codex_tui::headless::EXIT_USAGE);
+        }
+    }
 
     if matches!(args.as_slice(), [arg] if arg == "--version" || arg == "version") {
         println!("codex-tui {}", env!("CARGO_PKG_VERSION"));
@@ -155,7 +168,17 @@ async fn main() -> Result<()> {
     let target_override = take_value_flag(&mut args, "--target")?;
 
     if args.first().is_some_and(|arg| arg == "doctor") {
-        return doctor(args.get(1).map(String::as_str), target_override.as_deref()).await;
+        let code = match doctor(args.get(1).map(String::as_str), target_override.as_deref()).await {
+            Ok(code) => code,
+            Err(error) => {
+                eprintln!("doctor: DEGRADED · {error:#}");
+                codex_tui::headless::EXIT_DEGRADED
+            }
+        };
+        if code != codex_tui::headless::EXIT_OK {
+            std::process::exit(code);
+        }
+        return Ok(());
     }
 
     let fake_mode = args.iter().any(|arg| arg == "--fake");
@@ -216,12 +239,7 @@ async fn run_app(fake_mode: bool, target_override: Option<&str>) -> Result<()> {
     app.apply_local_state(&local);
     reduce(&mut app, Action::PlanningSnapshotLoaded(bootstrap.planning));
     reduce(&mut app, Action::PlanningStoreDegraded(store.error()));
-    reduce(
-        &mut app,
-        Action::ReconcilePlanning {
-            now_unix_ms: now_unix_ms(),
-        },
-    );
+    let mut planning_worker = codex_tui::app::planning_worker::PlanningWorker::start()?;
 
     let mut services = RuntimeServices::new(store, notification_mode);
     let language = app.language;
@@ -269,7 +287,72 @@ async fn run_app(fake_mode: bool, target_override: Option<&str>) -> Result<()> {
     let mut last_render = Instant::now();
 
     while !app.should_quit {
+        for _ in 0..64 {
+            if !event::poll(Duration::ZERO)? {
+                break;
+            }
+            match event::read()? {
+                Event::Key(key) => {
+                    let effects = handle_key(&mut app, key);
+                    if !effects.is_empty()
+                        || matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat)
+                    {
+                        needs_render = true;
+                        urgent_render = true;
+                    }
+                    apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
+                }
+                Event::Paste(text) => {
+                    let effects = handle_paste(&mut app, text);
+                    needs_render = true;
+                    urgent_render = true;
+                    apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
+                }
+                Event::Resize(cols, rows) => {
+                    needs_render = true;
+                    urgent_render = true;
+                    if app.terminal_drawer_open {
+                        let effects = vec![Effect::TerminalResize(ui::terminal_drawer_pty_size(
+                            cols, rows,
+                        ))];
+                        apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
+                    }
+                }
+                _ => {}
+            }
+        }
+        if app.should_quit {
+            break;
+        }
         let mut planning_dirty = false;
+        for _ in 0..32 {
+            let Some(event) = services.store.try_event() else {
+                break;
+            };
+            match event {
+                StoreEvent::Operator(error) => {
+                    if let Some(error) = error {
+                        reduce(&mut app, Action::PlanningStoreDegraded(Some(error)));
+                    }
+                }
+                StoreEvent::Planning(result, notice) => {
+                    let succeeded = result.is_ok();
+                    apply_planning_store_result(&mut app, result);
+                    planning_dirty |= succeeded;
+                    if succeeded && let Some(notice) = notice {
+                        reduce(&mut app, Action::MutationNotice(notice));
+                    }
+                }
+                StoreEvent::Search(Ok(results)) => {
+                    reduce(&mut app, Action::TranscriptSearchLoaded(results));
+                }
+                StoreEvent::Search(Err(error)) | StoreEvent::Notice(Some(error)) => {
+                    reduce(&mut app, Action::MutationNotice(error));
+                }
+                StoreEvent::Notice(None) => {}
+            }
+            needs_render = true;
+        }
 
         if connect_task
             .as_ref()
@@ -386,7 +469,15 @@ async fn run_app(fake_mode: bool, target_override: Option<&str>) -> Result<()> {
             needs_render = true;
         }
 
-        if reconcile_planning_if_dirty(&mut app, planning_dirty, now_unix_ms()) {
+        let planning_applied =
+            match planning_worker.advance(&mut app, planning_dirty, now_unix_ms()) {
+                Ok(applied) => applied,
+                Err(error) => {
+                    reduce(&mut app, Action::MutationNotice(error));
+                    false
+                }
+            };
+        if planning_applied {
             needs_render = true;
             if let Err(error) = services.notifications.observe(&app) {
                 reduce(
@@ -423,50 +514,20 @@ async fn run_app(fake_mode: bool, target_override: Option<&str>) -> Result<()> {
             last_render = Instant::now();
         }
 
-        while event::poll(Duration::ZERO)? {
-            match event::read()? {
-                Event::Key(key) => {
-                    let effects = handle_key(&mut app, key);
-                    if !effects.is_empty()
-                        || matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat)
-                    {
-                        needs_render = true;
-                        urgent_render = true;
-                    }
-                    apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
-                }
-                Event::Paste(text) => {
-                    let effects = handle_paste(&mut app, text);
-                    needs_render = true;
-                    urgent_render = true;
-                    apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
-                }
-                Event::Resize(cols, rows) => {
-                    needs_render = true;
-                    urgent_render = true;
-                    if app.terminal_drawer_open {
-                        let effects = vec![Effect::TerminalResize(ui::terminal_drawer_pty_size(
-                            cols, rows,
-                        ))];
-                        apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
-                    }
-                }
-                _ => {}
-            }
-        }
-
         tokio::time::sleep(Duration::from_millis(16)).await;
     }
 
     if let Some(task) = connect_task {
         task.abort();
     }
+    drop(terminal);
     services
         .store
         .flush_operator_state_on_exit(&app.to_local_state())?;
     Ok(())
 }
 
+#[cfg(test)]
 fn reconcile_planning_if_dirty(app: &mut AppState, planning_dirty: bool, now_unix_ms: u64) -> bool {
     if !planning_dirty {
         return false;
@@ -534,14 +595,20 @@ fn drain_registry(
         return RegistryDrainChanges::default();
     };
     let mut changes = RegistryDrainChanges::default();
-    while let Some(snapshot) = registry.try_recv() {
+    for _ in 0..32 {
+        let Some(snapshot) = registry.try_recv() else {
+            break;
+        };
         reduce(app, Action::ReplaceThreads(snapshot.threads));
         reduce(app, Action::BackendStatus(snapshot.status));
         changes.any = true;
         changes.registry_projection = true;
         changes.planning = true;
     }
-    while let Some(event) = registry.try_recv_conversation() {
+    for _ in 0..32 {
+        let Some(event) = registry.try_recv_conversation() else {
+            break;
+        };
         changes.planning |= conversation_event_changes_planning(&event);
         match event {
             ConversationEvent::ThreadCreated {
@@ -672,7 +739,10 @@ fn git_event_changes_planning(event: &GitEvent) -> bool {
 
 fn drain_git(app: &mut AppState, git: &mut GitHandle) -> ProjectionDrainChanges {
     let mut changes = ProjectionDrainChanges::default();
-    while let Some(event) = git.try_recv() {
+    for _ in 0..32 {
+        let Some(event) = git.try_recv() else {
+            break;
+        };
         changes.planning_projection |= git_event_changes_planning(&event);
         match event {
             GitEvent::Context(context) => {
@@ -717,7 +787,10 @@ mod projection_drain_classification_tests {
 
 fn drain_forge(app: &mut AppState, forge: &mut ForgeHandle) -> bool {
     let mut changed = false;
-    while let Some(event) = forge.try_recv() {
+    for _ in 0..32 {
+        let Some(event) = forge.try_recv() else {
+            break;
+        };
         match event {
             ForgeEvent::Observation(observation) => {
                 reduce(app, Action::ForgeObservationLoaded(*observation));
@@ -743,7 +816,10 @@ fn drain_forge_mutations(
     mutations: &mut ForgeMutationHandle,
 ) -> ProjectionDrainChanges {
     let mut changes = ProjectionDrainChanges::default();
-    while let Some(event) = mutations.try_recv() {
+    for _ in 0..32 {
+        let Some(event) = mutations.try_recv() else {
+            break;
+        };
         changes.planning_projection |= forge_mutation_event_changes_planning(&event);
         match event {
             ForgeMutationEvent::Receipt(receipt) => {
@@ -770,7 +846,10 @@ fn drain_mutations(
     mutations: &mut WorktreeMutationHandle,
 ) -> ProjectionDrainChanges {
     let mut changes = ProjectionDrainChanges::default();
-    while let Some(event) = mutations.try_recv() {
+    for _ in 0..32 {
+        let Some(event) = mutations.try_recv() else {
+            break;
+        };
         changes.planning_projection |= mutation_event_changes_planning(&event);
         match event {
             MutationEvent::Receipt(receipt) => {
@@ -822,104 +901,87 @@ fn apply_effects(
                 store.defer_operator_state();
             }
             Effect::CreateScratch { title, workspace } => {
-                match store.create_scratch(title, workspace) {
-                    Ok(snapshot) => {
-                        reduce(app, Action::PlanningSnapshotLoaded(snapshot));
-                        reduce(
-                            app,
-                            Action::ReconcilePlanning {
-                                now_unix_ms: now_unix_ms(),
-                            },
-                        );
-                        reduce(app, Action::PlanningStoreDegraded(None));
-                    }
-                    Err(error) => {
-                        reduce(app, Action::PlanningStoreDegraded(Some(error)));
-                    }
-                }
+                submit_planning(
+                    app,
+                    store.planning(move |store| store.create_scratch(title, workspace), None),
+                );
             }
             Effect::SnoozeWorkCard {
                 anchor,
                 duration_ms,
-            } => match store.snooze_work_card(anchor, duration_ms) {
-                Ok(snapshot) => {
-                    reduce(app, Action::PlanningSnapshotLoaded(snapshot));
-                    reduce(
-                        app,
-                        Action::ReconcilePlanning {
-                            now_unix_ms: now_unix_ms(),
-                        },
-                    );
-                    reduce(app, Action::PlanningStoreDegraded(None));
-                }
-                Err(error) => {
-                    reduce(app, Action::PlanningStoreDegraded(Some(error)));
-                }
-            },
+            } => {
+                submit_planning(
+                    app,
+                    store.planning(
+                        move |store| store.snooze_work_card(anchor, duration_ms),
+                        None,
+                    ),
+                );
+            }
             Effect::SaveSourceNote { owner, text } => {
-                apply_planning_store_result(app, store.save_source_note(owner, text));
+                submit_planning(
+                    app,
+                    store.planning(move |store| store.save_source_note(owner, text), None),
+                );
             }
             Effect::UpdateScratchNote { scratch_id, note } => {
-                apply_planning_store_result(app, store.update_scratch_note(scratch_id, note));
+                submit_planning(
+                    app,
+                    store.planning(
+                        move |store| store.update_scratch_note(scratch_id, note),
+                        None,
+                    ),
+                );
             }
             Effect::CreateBookmark { source, label } => {
-                apply_planning_store_result(app, store.create_bookmark(source, label));
+                submit_planning(
+                    app,
+                    store.planning(move |store| store.create_bookmark(source, label), None),
+                );
             }
             Effect::UpdateScratchState { scratch_id, state } => {
-                apply_planning_store_result(app, store.update_scratch_state(scratch_id, state));
+                submit_planning(
+                    app,
+                    store.planning(
+                        move |store| store.update_scratch_state(scratch_id, state),
+                        None,
+                    ),
+                );
             }
             Effect::DeleteScratch { scratch_id } => {
-                apply_planning_store_result(app, store.delete_scratch(scratch_id));
+                submit_planning(
+                    app,
+                    store.planning(move |store| store.delete_scratch(scratch_id), None),
+                );
             }
             Effect::SaveSavedView { view } => {
-                apply_planning_store_result(app, store.save_view(view));
+                submit_planning(
+                    app,
+                    store.planning(move |store| store.save_view(view), None),
+                );
             }
             Effect::DeleteSavedView { view_id } => {
-                apply_planning_store_result(app, store.delete_view(view_id));
+                submit_planning(
+                    app,
+                    store.planning(move |store| store.delete_view(view_id), None),
+                );
             }
-            Effect::SetHotSlot { slot, target } => match store.set_hot_slot(slot, target) {
-                Ok(snapshot) => {
-                    reduce(app, Action::PlanningSnapshotLoaded(snapshot));
-                    reduce(
-                        app,
-                        Action::ReconcilePlanning {
-                            now_unix_ms: now_unix_ms(),
-                        },
-                    );
-                    reduce(app, Action::PlanningStoreDegraded(None));
-                }
-                Err(error) => {
-                    reduce(app, Action::PlanningStoreDegraded(Some(error)));
-                }
-            },
+            Effect::SetHotSlot { slot, target } => {
+                submit_planning(
+                    app,
+                    store.planning(move |store| store.set_hot_slot(slot, target), None),
+                );
+            }
             Effect::ApplyLocalBatch(plan) => {
-                let preview = plan.preview();
-                match store.apply_local_batch(&plan) {
-                    Ok(snapshot) => {
-                        reduce(app, Action::PlanningSnapshotLoaded(snapshot));
-                        reduce(
-                            app,
-                            Action::ReconcilePlanning {
-                                now_unix_ms: now_unix_ms(),
-                            },
-                        );
-                        reduce(app, Action::PlanningStoreDegraded(None));
-                        reduce(
-                            app,
-                            Action::MutationNotice(format!(
-                                "{} · {preview}",
-                                runtime_text(
-                                    app.language,
-                                    "local batch applied",
-                                    "本地批量操作已应用",
-                                )
-                            )),
-                        );
-                    }
-                    Err(error) => {
-                        reduce(app, Action::PlanningStoreDegraded(Some(error)));
-                    }
-                }
+                let notice = format!(
+                    "{} · {}",
+                    runtime_text(app.language, "local batch applied", "本地批量操作已应用"),
+                    plan.preview()
+                );
+                submit_planning(
+                    app,
+                    store.planning(move |store| store.apply_local_batch(&plan), Some(notice)),
+                );
             }
             Effect::LoadLaunchPresets {
                 repo_root,
@@ -1277,16 +1339,14 @@ fn apply_effects(
                 }
             }
             Effect::SearchTranscript { query } => {
-                match store.search_transcript(
-                    &query,
-                    codex_tui::transcript_search::TRANSCRIPT_SEARCH_RESULT_LIMIT,
-                ) {
-                    Ok(local_results) => {
-                        reduce(app, Action::TranscriptSearchLoaded(local_results));
-                    }
-                    Err(error) => {
-                        reduce(app, Action::MutationNotice(error));
-                    }
+                let local_query = query.clone();
+                if let Err(error) = store.submit(move |store| {
+                    StoreEvent::Search(store.search_transcript(
+                        &local_query,
+                        codex_tui::transcript_search::TRANSCRIPT_SEARCH_RESULT_LIMIT,
+                    ))
+                }) {
+                    reduce(app, Action::MutationNotice(error));
                 }
                 if let Some(registry) = registry {
                     if let Err(error) = registry.search_transcript(query.clone()) {
@@ -1546,16 +1606,16 @@ fn apply_effects(
     Ok(())
 }
 
+fn submit_planning(app: &mut AppState, result: Result<(), String>) {
+    if let Err(error) = result {
+        reduce(app, Action::PlanningStoreDegraded(Some(error)));
+    }
+}
+
 fn apply_planning_store_result(app: &mut AppState, result: Result<PlanningSnapshot, String>) {
     match result {
         Ok(snapshot) => {
             reduce(app, Action::PlanningSnapshotLoaded(snapshot));
-            reduce(
-                app,
-                Action::ReconcilePlanning {
-                    now_unix_ms: now_unix_ms(),
-                },
-            );
             reduce(app, Action::PlanningStoreDegraded(None));
         }
         Err(error) => {

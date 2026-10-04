@@ -8,9 +8,13 @@ on:
         required: false
         default: "50000"
       cycles:
-        description: Churn cycles
+        description: Minimum churn cycles
         required: false
         default: "256"
+      duration_seconds:
+        description: Minimum sustained same-process duration (1..3600 seconds)
+        required: false
+        default: "300"
   schedule:
     - cron: "17 3 * * 0"
 
@@ -20,19 +24,38 @@ permissions:
 jobs:
   soak:
     runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    env:
+      CODEX_TUI_GIT_SHA: ${{ github.sha }}
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Build exact source
         run: cargo build --locked --release
-      - name: Run retained structural soak
+      - name: Run sustained same-process structural soak
         shell: bash
+        env:
+          ROWS: ${{ inputs.rows || '50000' }}
+          CYCLES: ${{ inputs.cycles || '256' }}
+          DURATION_SECONDS: ${{ inputs.duration_seconds || '300' }}
         run: |
           set -euo pipefail
-          ./target/release/codex-tui soak             --rows "${{ inputs.rows || '50000' }}"             --cycles "${{ inputs.cycles || '256' }}"             --json | tee soak-evidence.json
-      - name: Retain evidence
-        uses: actions/upload-artifact@v4
+          ./target/release/codex-tui soak --rows "$ROWS" --cycles "$CYCLES" \
+            --duration-seconds "$DURATION_SECONDS" --json | tee soak-evidence.json
+      - name: Validate sustained resource receipt
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, os
+          r = json.load(open("soak-evidence.json"))
+          assert r["sourceSha"] == os.environ["GITHUB_SHA"]
+          assert r["durationQualified"] is True and r["structuralPass"] is True
+          assert r["requestedDurationSeconds"] > 0
+          assert r["elapsedMs"] >= r["requestedDurationSeconds"] * 1000
+          assert 1 <= len(r["resourceSamples"]) <= r["resourceSampleLimit"] == 128
+          PY
+      - uses: actions/upload-artifact@v7
         with:
           name: soak-evidence-${{ github.sha }}
           path: soak-evidence.json

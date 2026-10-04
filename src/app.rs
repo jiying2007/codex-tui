@@ -46,6 +46,7 @@ use std::time::Instant;
 
 mod lifecycle;
 pub(crate) mod palette;
+pub mod planning_worker;
 mod review;
 mod types;
 
@@ -103,6 +104,7 @@ fn build_thread_indexes(
 
 #[derive(Clone, Debug)]
 pub struct AppState {
+    planning_generation: u64,
     pub threads: Vec<ThreadSummary>,
     thread_index_by_id: HashMap<String, usize>,
     thread_indices_by_cwd: BTreeMap<String, Vec<usize>>,
@@ -234,6 +236,7 @@ impl AppState {
             .map(|thread| thread.id.0.clone())
             .collect();
         Self {
+            planning_generation: 0,
             threads,
             thread_index_by_id,
             thread_indices_by_cwd,
@@ -1083,6 +1086,23 @@ impl AppState {
 }
 
 pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
+    if matches!(
+        &action,
+        Action::ReplaceThreads(_)
+            | Action::BackendStatus(_)
+            | Action::GitContextLoaded(_)
+            | Action::ForgeObservationLoaded(_)
+            | Action::ForgeReviewLoaded(_)
+            | Action::PlanningSnapshotLoaded(_)
+            | Action::GoalObserved(_)
+            | Action::GoalCleared(_)
+            | Action::TogglePin
+            | Action::MarkUnread
+            | Action::AcknowledgeAttention
+            | Action::CommitInput
+    ) {
+        state.planning_generation = state.planning_generation.wrapping_add(1);
+    }
     match action {
         Action::ReplaceThreads(mut threads) => {
             state.worktree_collision_counts.clear();

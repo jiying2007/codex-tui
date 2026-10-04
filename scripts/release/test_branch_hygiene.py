@@ -1,0 +1,70 @@
+import importlib.util
+from pathlib import Path
+import unittest
+
+spec = importlib.util.spec_from_file_location("branch_hygiene", Path(__file__).resolve().parents[1] / "repository/branch_hygiene.py")
+h = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(h)
+
+class BranchHygieneContract(unittest.TestCase):
+    def plan(self, name="fix/old", sha="a" * 40, protected=False, state="closed", reachable=True):
+        pr = {"number": 1, "state": state, "merged_at": "date", "head": {"ref": name, "sha": "a" * 40, "repo": {"full_name": "owner/repo"}}, "base": {"ref": "main"}}
+        branch = {"name": name, "commit": {"sha": sha}, "protected": protected}
+        return h.build_plan("owner/repo", "b" * 40, [branch], [pr], lambda *_: reachable)["entries"][0]
+    def test_exact_merged_reachable_head_is_only_candidate(self):
+        self.assertEqual(self.plan()["decision"], "delete")
+    def test_advanced_open_unreachable_or_protected_work_is_retained(self):
+        for kwargs in ({"sha": "c" * 40}, {"state": "open"}, {"reachable": False}, {"protected": True}):
+            self.assertEqual(self.plan(**kwargs)["decision"], "keep")
+    def test_release_checkpoints_are_never_candidates(self):
+        for name in ("main", "release/v1.1-parked", "archive/old", "checkpoint/evidence"):
+            self.assertEqual(self.plan(name=name)["decision"], "keep")
+
+    def test_squash_requires_exact_head_and_complete_equivalence_proof(self):
+        branch = {"name": "fix/squashed", "commit": {"sha": "a" * 40}}
+        pr = {"number": 2, "state": "closed", "merged_at": "date", "merge_commit_sha": "c" * 40,
+              "head": {"ref": branch["name"], "sha": "a" * 40, "repo": {"full_name": "owner/repo"}}, "base": {"ref": "main"}}
+        proof = {"method": "identical-raw-tree-delta-v1", "deltaSha256": "d" * 64}
+        entry = h.build_plan("owner/repo", "b" * 40, [branch], [pr], lambda *_: False, lambda *_: proof)["entries"][0]
+        self.assertEqual(entry["decision"], "delete")
+        self.assertEqual(entry["equivalenceProof"], proof)
+        pr["head"]["sha"] = "e" * 40
+        self.assertEqual(h.build_plan("owner/repo", "b" * 40, [branch], [pr], lambda *_: False, lambda *_: proof)["entries"][0]["decision"], "keep")
+    def test_deleted_pull_request_repository_is_not_a_cleanup_authority(self):
+        branch = {"name": "fix/old", "commit": {"sha": "a" * 40}}
+        pr = {"number": 2, "state": "closed", "merged_at": "date", "head": {"ref": "fix/old", "sha": "a" * 40, "repo": None}}
+        self.assertEqual(h.build_plan("owner/repo", "b" * 40, [branch], [pr], lambda *_: True)["entries"][0]["decision"], "keep")
+
+class RealSquashProof(unittest.TestCase):
+    def test_blob_mode_and_binary_delta_match_is_required(self):
+        import os, subprocess, tempfile
+        with tempfile.TemporaryDirectory() as directory:
+            def git(*args):
+                return subprocess.check_output(["git", "-C", directory, *args], stderr=subprocess.DEVNULL).decode().strip()
+            git("init")
+            git("config", "user.email", "test@example.invalid")
+            git("config", "user.name", "Test")
+            path = Path(directory, "binary.dat")
+            path.write_bytes(b"before\x00")
+            git("add", "."); git("commit", "-m", "base")
+            base = git("rev-parse", "HEAD")
+            git("checkout", "-b", "topic")
+            path.write_bytes(b"after\x00")
+            git("commit", "-am", "topic")
+            head = git("rev-parse", "HEAD")
+            git("checkout", "-b", "main-copy", base)
+            git("merge", "--squash", "topic"); git("commit", "-m", "squash")
+            merge = git("rev-parse", "HEAD")
+            old = os.getcwd()
+            try:
+                os.chdir(directory)
+                proof = h.squash_equivalence(head, merge, merge)
+                self.assertEqual(proof["mergeCommit"], merge)
+                path.write_bytes(b"different\x00")
+                git("commit", "-am", "different")
+                wrong = git("rev-parse", "HEAD")
+                self.assertIsNone(h.squash_equivalence(head, wrong, wrong))
+                self.assertIsNone(h.squash_equivalence(head, merge, base))
+                self.assertIsNone(h.squash_equivalence(base, base, base))
+            finally:
+                os.chdir(old)

@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   msrv:
     name: rust-1.88-msrv
@@ -27,16 +31,21 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-24.04
+            container: ubuntu:20.04
     runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
     steps:
+      - name: Prepare Linux ABI baseline
+        if: runner.os == 'Linux'
+        run: |
+          apt-get update -qq
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential pkg-config curl ca-certificates git python3 python-is-python3 binutils
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - uses: actions/setup-python@v7
-        if: runner.os == 'Linux'
-        with:
-          python-version: "3.8"
       - uses: Swatinem/rust-cache@v2
       - name: Smoke release tools on Python 3.8
         if: runner.os == 'Linux'
@@ -646,3 +655,8 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --locked --all-targets --all-features -- -D warnings
       - run: cargo test --locked --all-targets --all-features
+      - name: Test ABI policy
+        run: python -m unittest discover -s scripts/release -p "test_*.py"
+      - name: Smoke strong GLIBC imports on the baseline build
+        if: runner.os == 'Linux'
+        run: python scripts/release/check_linux_abi.py --binary target/debug/codex-tui --commit "${{ github.sha }}" --output linux-abi.json

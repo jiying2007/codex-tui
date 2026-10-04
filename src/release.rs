@@ -531,6 +531,9 @@ pub fn print_text(report: &ReleaseVerification) {
 
 pub fn run_cli(args: &[String]) -> Result<i32> {
     match args.first().map(String::as_str) {
+        Some("interaction-benchmark") => {
+            return crate::interaction_performance::run_cli(&args[1..]);
+        }
         Some("benchmark") => return crate::release_benchmark::run_cli(&args[1..]),
         Some("render-benchmark") => return crate::render_performance::run_cli(&args[1..]),
         Some("scale") => return crate::scale_evidence::run_cli(&args[1..]),
