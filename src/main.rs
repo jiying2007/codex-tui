@@ -6,7 +6,7 @@ use codex_tui::{
     backend::{BackendStatus, CodexBackend, FakeBackend},
     forge::{self, ForgeEvent, ForgeHandle},
     forge_mutation::{ForgeMutationEvent, ForgeMutationHandle},
-    git::{self, GitEvent, GitHandle},
+    git::{GitEvent, GitHandle},
     i18n::{UiLanguage, pick},
     notification::NotificationMode,
     planning::PlanningSnapshot,
