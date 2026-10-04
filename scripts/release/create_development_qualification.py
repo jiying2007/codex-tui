@@ -13,10 +13,12 @@ from _compat import write_text_lf
 SCHEMA = "codex-tui/development-qualification/v1"
 V12_PLAN_SCHEMA = "codex-tui/v1.2-plan/v1"
 V13_PLAN_SCHEMA = "codex-tui/v1.3-plan/v1"
+V14_PLAN_SCHEMA = "codex-tui/v1.4-plan/v1"
 AUTOMATED_SCHEMA = "codex-tui/automated-qualification/v3"
 PROTOCOL_SCHEMA = "codex-tui/protocol-fixtures/v1"
 V12_COMPLETION_SCHEMA = "codex-tui/v1.2-completion/v1"
 V13_COMPLETION_SCHEMA = "codex-tui/v1.3-completion/v1"
+V14_COMPLETION_SCHEMA = "codex-tui/v1.4-completion/v1"
 HEX40 = re.compile(r"^[0-9a-fA-F]{40}$")
 
 
@@ -33,11 +35,19 @@ def sha256(path: pathlib.Path) -> str:
 
 
 def default_plan_path() -> pathlib.Path:
+    v14 = pathlib.Path("release/v1.4-plan.json")
+    if v14.is_file():
+        return v14
     v13 = pathlib.Path("release/v1.3-plan.json")
     return v13 if v13.is_file() else pathlib.Path("release/v1.2-plan.json")
 
 
 def default_completion_path(plan: dict) -> pathlib.Path:
+    if plan.get("targetVersion") == "1.4.0":
+        v14 = pathlib.Path("release/v1.4-completion.json")
+        if v14.is_file():
+            return v14
+        return pathlib.Path("release/v1.3-completion.json")
     if plan.get("targetVersion") == "1.3.0":
         v13 = pathlib.Path("release/v1.3-completion.json")
         if v13.is_file():
@@ -54,6 +64,9 @@ def validate_plan(plan: dict) -> None:
     elif schema == V13_PLAN_SCHEMA:
         if target != "1.3.0":
             raise SystemExit("v1.3 development plan requires targetVersion=1.3.0")
+    elif schema == V14_PLAN_SCHEMA:
+        if target != "1.4.0":
+            raise SystemExit("v1.4 development plan requires targetVersion=1.4.0")
     else:
         raise SystemExit("unexpected development plan schema: {!r}".format(schema))
 
@@ -64,11 +77,11 @@ def scope_status(plan: dict, completion: dict) -> str:
     completion_schema = completion.get("schema")
 
     if plan_target == completion_target:
-        expected = (
-            V13_COMPLETION_SCHEMA
-            if plan_target == "1.3.0"
-            else V12_COMPLETION_SCHEMA
-        )
+        expected = {
+            "1.2.0": V12_COMPLETION_SCHEMA,
+            "1.3.0": V13_COMPLETION_SCHEMA,
+            "1.4.0": V14_COMPLETION_SCHEMA,
+        }.get(plan_target)
         if completion_schema != expected:
             raise SystemExit(
                 "completion schema {!r} does not match active target {}".format(
@@ -78,6 +91,13 @@ def scope_status(plan: dict, completion: dict) -> str:
         if completion.get("status") != "development-scope-complete":
             raise SystemExit("active completion status is not development-scope-complete")
         return "pass"
+
+    if plan_target == "1.4.0" and completion_target == "1.3.0":
+        if completion_schema != V13_COMPLETION_SCHEMA:
+            raise SystemExit("v1.4 predecessor must be the retained v1.3 completion")
+        if completion.get("status") != "development-scope-complete":
+            raise SystemExit("v1.3 predecessor completion is not complete")
+        return "in-progress"
 
     if plan_target == "1.3.0" and completion_target == "1.2.0":
         if completion_schema != V12_COMPLETION_SCHEMA:

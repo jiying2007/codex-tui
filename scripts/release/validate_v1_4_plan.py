@@ -7,6 +7,7 @@ import re
 
 PLAN = pathlib.Path("release/v1.4-plan.json")
 V13_COMPLETION = pathlib.Path("release/v1.3-completion.json")
+V14_COMPLETION = pathlib.Path("release/v1.4-completion.json")
 EXPECTED = [
     ("board-large-dataset-navigation", "P0"),
     ("workcard-relationship-closure", "P0"),
@@ -39,7 +40,11 @@ def main() -> int:
         raise SystemExit("v1.4 targetVersion must be 1.4.0")
     if plan.get("entryMainSha")!="01e1f3d20d7b234b1ff17f85cc05321450e9fcf5":
         raise SystemExit("v1.4 entry main SHA drifted")
-    if package_version()!="1.3.0":
+    current = package_version()
+    if V14_COMPLETION.is_file():
+        if current != "1.4.0":
+            raise SystemExit("v1.4 completion requires package version 1.4.0")
+    elif current != "1.3.0":
         raise SystemExit("v1.4 integration must retain stable predecessor package version 1.3.0 until completion")
     if v13.get("schema")!="codex-tui/v1.3-completion/v1" or v13.get("status")!="development-scope-complete":
         raise SystemExit("v1.3 predecessor completion is not retained")
@@ -58,7 +63,8 @@ def main() -> int:
     for path in ("src/app.rs","src/ui.rs","src/app_server.rs","src/main.rs","src/conversation.rs"):
         if not isinstance(ratchet.get(path),int) or ratchet[path] <= 0:
             raise SystemExit("v1.4 ratchet missing {}".format(path))
-    print("VALID v1.4 plan: workflow-completion reconciliation authorized; stable predecessor remains v1.3.0")
+    state = "completion-active" if V14_COMPLETION.is_file() else "integration-active"
+    print("VALID v1.4 plan: workflow-completion reconciliation authorized; " + state)
     return 0
 
 if __name__=="__main__":

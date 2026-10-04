@@ -2,6 +2,23 @@
 
 All notable codex-tui changes are recorded here.
 
+## [1.4.0] - Unreleased
+
+### Workflow Completion Reconciliation
+
+- bounded Board rendering and navigation to the visible viewport for large work sets;
+- closed derived WorkCard Goal, Worktree and ChangeRequest relationships without creating a second task authority;
+- added capability-gated Codex thread start/fork lifecycle and managed-worktree handoff;
+- unified metadata search across thread, cwd, project, Goal, Forge, WorkCard and relationship fields without transcript hydration;
+- added structured local Saved View create/edit/delete with validation and immutable built-ins;
+- expanded Review with pipeline/approval evidence plus bounded external editor/browser handoff;
+- bounded long-thread presentation to the visible item window with revision-bound cache invalidation;
+- added ranked bilingual fuzzy Command Palette query/filter behavior over the frozen contextual command set;
+- decomposed mature runtime command, palette and Doctor responsibilities into explicit ratcheted modules;
+- added exact-SHA 10k Board/Thread real-TUI render diagnostics with 20 warmups and 200 retained samples; hosted timing remains diagnostic rather than a release threshold;
+- retained GitLab Issue Board membership as evidence-gated until the existing native-transport/refresh-budget trigger is satisfied;
+- activated the 1.4.0 package/stable-criteria line only after all ten v1.4 P0/P1/P2 work packages reached development completion.
+
 ## [1.3.0] - Unreleased
 
 ### Search & Multi-Target
