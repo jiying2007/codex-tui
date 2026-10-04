@@ -255,40 +255,48 @@ async fn run_actor(mut command_rx: mpsc::Receiver<GitCommand>, event_tx: mpsc::S
 }
 
 pub async fn probe_context(thread_id: ThreadId, cwd: String) -> Result<GitContext> {
-    let identity = run_git(
+    let worktree_probe = run_git(
         &cwd,
-        [
-            "rev-parse",
-            "--path-format=absolute",
-            "--show-toplevel",
-            "--git-common-dir",
-        ],
+        ["rev-parse", "--path-format=absolute", "--show-toplevel"],
     )
     .await?;
 
-    if !identity.success {
-        if looks_like_not_repository(&identity.stderr) {
+    if !worktree_probe.success {
+        if looks_like_not_repository(&worktree_probe.stderr) {
             return Ok(GitContext::not_repository(thread_id, cwd));
         }
         return Err(anyhow!(
-            "git repository probe failed: {}",
-            identity.stderr.trim()
+            "git worktree-root probe failed: {}",
+            worktree_probe.stderr.trim()
         ));
     }
 
-    let mut lines = identity
-        .stdout
-        .lines()
-        .map(str::trim)
-        .filter(|line| !line.is_empty());
+    let common_dir_probe = run_git(
+        &cwd,
+        ["rev-parse", "--path-format=absolute", "--git-common-dir"],
+    )
+    .await?;
+    if !common_dir_probe.success {
+        return Err(anyhow!(
+            "git common-dir probe failed: {}",
+            common_dir_probe.stderr.trim()
+        ));
+    }
+
     let worktree_root = canonical_identity_path(
-        lines
-            .next()
+        worktree_probe
+            .stdout
+            .lines()
+            .map(str::trim)
+            .find(|line| !line.is_empty())
             .context("git rev-parse response missing worktree root")?,
     );
     let common_dir = canonical_identity_path(
-        lines
-            .next()
+        common_dir_probe
+            .stdout
+            .lines()
+            .map(str::trim)
+            .find(|line| !line.is_empty())
             .context("git rev-parse response missing common directory")?,
     );
     let primary_root =
