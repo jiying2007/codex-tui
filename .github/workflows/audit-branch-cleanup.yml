@@ -3,29 +3,56 @@ on:
   pull_request:
     paths:
       - .github/workflows/audit-branch-cleanup.yml
-      - scripts/repository/branch_hygiene.py
 permissions:
   contents: read
 jobs:
-  plan:
+  apply-reviewed-plan:
     if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'fix/v1.4-audit-closure'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
     env:
       GH_TOKEN: ${{ github.token }}
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
-      - name: Verify cleanup invariants and generate read-only plan
+      - name: Fetch reviewed immutable plan
+        run: gh run download 37225393660 --repo "$GITHUB_REPOSITORY" --name audit-branch-plan --dir "$RUNNER_TEMP/reviewed-plan"
+      - name: Verify unchanged deletion authority and apply exact-head leases
+        shell: bash
         run: |
+          set -euo pipefail
           python3 -m unittest discover -s scripts/release -p 'test_*.py'
-          python3 scripts/repository/branch_hygiene.py --repo "$GITHUB_REPOSITORY" --output "$RUNNER_TEMP/branch-plan.json"
+          python3 - <<'PY'
+          import hashlib,json,os,pathlib,subprocess
+          path=pathlib.Path(os.environ['RUNNER_TEMP'],'reviewed-plan','branch-plan.json')
+          raw=path.read_bytes()
+          assert hashlib.sha256(raw).hexdigest()=='4e96ddd9c0f772a1eb452761c259c907f78c737c88ce80cd47ae270e8f11c5ae'
+          plan=json.loads(raw)
+          assert plan['repository']==os.environ['GITHUB_REPOSITORY']=='jiying2007/codex-tui'
+          assert plan['mainSha']=='81a1725ca85b1028264f98427a57012077e794af'
+          assert sum(e['decision']=='delete' for e in plan['entries'])==147
+          # Only the active, explicitly retained implementation branch advanced
+          # to install this one-shot workflow. No deletion candidate is modified.
+          own=[e for e in plan['entries'] if e['branch']=='fix/v1.4-audit-closure']
+          assert len(own)==1 and own[0]['decision']=='keep' and own[0]['reason']=='active-pull-request'
+          assert own[0]['sha']=='2f1b0c7c8ef2252f779792cec71e10d8970b86ee'
+          own[0]['sha']=os.environ['EXPECTED_HEAD']
+          raw=(json.dumps(plan,indent=2,sort_keys=True)+'\n').encode()
+          path.write_bytes(raw)
+          subprocess.run(['gh','auth','setup-git'],check=True)
+          subprocess.run(['python3','scripts/repository/branch_hygiene.py','--repo',plan['repository'],'--output',str(path),'--apply','--confirm-repository',plan['repository'],'--plan-sha256',hashlib.sha256(raw).hexdigest()],check=True)
+          PY
       - uses: actions/upload-artifact@v7
+        if: always()
         with:
-          name: audit-branch-plan
-          path: ${{ runner.temp }}/branch-plan.json
+          name: audit-branch-cleanup-receipt
+          path: ${{ runner.temp }}/reviewed-plan/
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 90

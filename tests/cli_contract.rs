@@ -80,5 +80,8 @@ fn requested_missing_backend_is_not_reported_as_success() {
     let home = TempDir::new().unwrap();
     let output = invoke(&["doctor", "codex"], &home);
     assert_eq!(output.status.code(), Some(3), "{output:?}");
-    assert!(String::from_utf8_lossy(&output.stdout).contains("connected: false"));
+    assert!(
+        String::from_utf8_lossy(&output.stdout).contains("connected: false"),
+        "{output:?}"
+    );
 }
