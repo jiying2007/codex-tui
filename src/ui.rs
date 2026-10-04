@@ -1,6 +1,6 @@
 use crate::app::{AppState, ContextChoice, InputMode, View};
 use crate::conversation::{InteractiveRequest, InteractiveRequestKind};
-use crate::domain::{AttentionReason, CwdLocality, RuntimeStatus, ThreadSummary, display_cwd};
+use crate::domain::{AttentionReason, CwdLocality, RuntimeStatus, display_cwd};
 use crate::forge::ForgeFreshness;
 use crate::goal::GoalStatus;
 use crate::i18n::{UiLanguage, pick};
