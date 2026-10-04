@@ -192,7 +192,8 @@
     "src/app/palette.rs": 420,
     "src/runtime_commands.rs": 180,
     "src/runtime_palette.rs": 160,
-    "src/runtime_doctor.rs": 380
+    "src/runtime_doctor.rs": 380,
+    "src/render_performance.rs": 380
   },
   "ratchetPolicy": {
     "baseline": "inherit v1.3 Search & Multi-Target ceilings; feature work may only add bounded module-specific ceilings",
