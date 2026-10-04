@@ -14,6 +14,9 @@ pub(crate) fn handle_paste(app: &mut AppState, text: String) -> Vec<Effect> {
     if app.terminal_focused {
         return vec![Effect::TerminalPaste(text)];
     }
+    if app.command_palette_open {
+        return reduce(app, Action::CommandPaletteInputText(text));
+    }
     if app.input_mode != InputMode::Normal {
         return reduce(app, Action::InputText(text));
     }
@@ -52,12 +55,22 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
         }
         return match key.code {
             KeyCode::Esc => reduce(app, Action::CloseCommandPalette),
-            KeyCode::Char('j') | KeyCode::Down => reduce(app, Action::MoveCommandPalette(1)),
-            KeyCode::Char('k') | KeyCode::Up => reduce(app, Action::MoveCommandPalette(-1)),
+            KeyCode::Down => reduce(app, Action::MoveCommandPalette(1)),
+            KeyCode::Up => reduce(app, Action::MoveCommandPalette(-1)),
+            KeyCode::Backspace => reduce(app, Action::CommandPaletteBackspace),
             KeyCode::Enter => {
-                let choice = app.command_palette_choice();
+                let Some(choice) = app.command_palette_choice() else {
+                    return vec![];
+                };
                 reduce(app, Action::CloseCommandPalette);
-                choice.map_or_else(Vec::new, |choice| handle_palette_choice(app, choice))
+                handle_palette_choice(app, choice)
+            }
+            KeyCode::Char(character)
+                if !key.modifiers.intersects(
+                    KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER,
+                ) =>
+            {
+                reduce(app, Action::CommandPaletteInputChar(character))
             }
             _ => vec![],
         };
@@ -372,4 +385,51 @@ pub(crate) fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect
         return vec![];
     };
     reduce(app, action)
+}
+
+#[cfg(test)]
+mod fuzzy_palette_input_tests {
+    use super::*;
+    use codex_tui::backend::{CodexBackend, FakeBackend};
+
+    fn app() -> AppState {
+        AppState::new(FakeBackend::seeded().snapshot().threads)
+    }
+
+    #[test]
+    fn palette_accepts_typed_and_pasted_query_text() {
+        let mut app = app();
+        reduce(&mut app, Action::OpenCommandPalette);
+        assert!(app.command_palette_open);
+
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('b'), KeyModifiers::NONE),
+        );
+        handle_paste(&mut app, "oard".into());
+        assert_eq!(app.command_palette_query, "board");
+        assert_eq!(app.command_palette_choice(), Some(Command::Board));
+    }
+
+    #[test]
+    fn empty_result_enter_keeps_palette_open_and_executes_nothing() {
+        let mut app = app();
+        reduce(&mut app, Action::OpenCommandPalette);
+        handle_paste(&mut app, "definitely-no-command".into());
+        assert!(app.command_palette_choices().is_empty());
+
+        let effects = handle_key(&mut app, KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
+        assert!(effects.is_empty());
+        assert!(app.command_palette_open);
+    }
+
+    #[test]
+    fn arrow_navigation_does_not_modify_query() {
+        let mut app = app();
+        reduce(&mut app, Action::OpenCommandPalette);
+        handle_paste(&mut app, "o".into());
+        let query = app.command_palette_query.clone();
+        handle_key(&mut app, KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
+        assert_eq!(app.command_palette_query, query);
+    }
 }

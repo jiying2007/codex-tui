@@ -1,4 +1,4 @@
-use super::{command_palette_choice_label, context_choice_label, tr};
+use super::{context_choice_label, tr};
 use crate::{
     app::{AppState, InputMode},
     text::{sanitize_inline, truncate_display},
@@ -12,37 +12,62 @@ use ratatui::{
 };
 
 pub(super) fn render_command_palette(frame: &mut Frame<'_>, app: &AppState) {
-    let choices = app.command_palette_choices();
-    let lines = choices
-        .iter()
-        .enumerate()
-        .map(|(index, choice)| {
+    let matches = app.command_palette_matches();
+    let mut lines = vec![Line::from(vec![
+        Span::styled(
+            format!("{}> ", tr(app, "Query", "搜索")),
+            Style::default().add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(if app.command_palette_query.is_empty() {
+            tr(app, "<type to filter>", "<输入以筛选>").to_string()
+        } else {
+            app.command_palette_query.clone()
+        }),
+    ])];
+
+    if matches.is_empty() {
+        lines.push(Line::from(""));
+        lines.push(Line::from(tr(
+            app,
+            "No matching commands.",
+            "没有匹配的命令。",
+        )));
+    } else {
+        for (index, matched) in matches.iter().enumerate() {
             let selected = index == app.command_palette_selected;
-            let style = if selected {
+            let base = if selected {
                 Style::default().add_modifier(Modifier::REVERSED)
             } else {
                 Style::default()
             };
-            Line::from(Span::styled(
-                format!(
-                    "{} {}",
-                    if selected { ">" } else { " " },
-                    command_palette_choice_label(*choice, app.language)
-                ),
-                style,
-            ))
-        })
-        .chain(std::iter::once(Line::from("")))
-        .chain(std::iter::once(Line::from(tr(
-            app,
-            "j/k move · Enter execute · Esc close · Ctrl+K toggle",
-            "j/k 移动 · Enter 执行 · Esc 关闭 · Ctrl+K 切换",
-        ))))
-        .collect::<Vec<_>>();
+            let mut spans = vec![Span::styled(if selected { "> " } else { "  " }, base)];
+            let matched_indices = matched
+                .matched_char_indices
+                .iter()
+                .copied()
+                .collect::<std::collections::BTreeSet<_>>();
+            for (char_index, character) in matched.label.chars().enumerate() {
+                let style = if matched_indices.contains(&char_index) {
+                    base.add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+                } else {
+                    base
+                };
+                spans.push(Span::styled(character.to_string(), style));
+            }
+            lines.push(Line::from(spans));
+        }
+    }
+
+    lines.push(Line::from(""));
+    lines.push(Line::from(tr(
+        app,
+        "type/paste fuzzy query · ↑/↓ move · Enter execute · Backspace edit · Esc close · Ctrl+K toggle",
+        "输入/粘贴模糊搜索 · ↑/↓ 移动 · Enter 执行 · Backspace 编辑 · Esc 关闭 · Ctrl+K 切换",
+    )));
     let height = u16::try_from(lines.len().saturating_add(2))
         .unwrap_or(20)
-        .clamp(7, 24);
-    let area = centered_fixed(72, height, frame.area());
+        .clamp(7, 26);
+    let area = centered_fixed(86, height, frame.area());
     frame.render_widget(Clear, area);
     frame.render_widget(
         Paragraph::new(lines)
