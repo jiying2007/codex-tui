@@ -1,20 +1,12 @@
 use crate::runtime_commands::handle_command;
-use codex_tui::{
-    app::{Action, AppState, Effect, reduce},
-};
+use codex_tui::app::{Action, AppState, Effect, reduce};
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
-pub(crate) fn handle_command_palette_paste(
-    app: &mut AppState,
-    text: String,
-) -> Vec<Effect> {
+pub(crate) fn handle_command_palette_paste(app: &mut AppState, text: String) -> Vec<Effect> {
     reduce(app, Action::CommandPaletteInputText(text))
 }
 
-pub(crate) fn handle_command_palette_key(
-    app: &mut AppState,
-    key: KeyEvent,
-) -> Vec<Effect> {
+pub(crate) fn handle_command_palette_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
     if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('k') {
         return reduce(app, Action::CloseCommandPalette);
     }
@@ -31,9 +23,9 @@ pub(crate) fn handle_command_palette_key(
             handle_command(app, choice)
         }
         KeyCode::Char(character)
-            if !key.modifiers.intersects(
-                KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER,
-            ) =>
+            if !key
+                .modifiers
+                .intersects(KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER) =>
         {
             reduce(app, Action::CommandPaletteInputChar(character))
         }
@@ -76,10 +68,8 @@ mod tests {
         handle_command_palette_paste(&mut app, "definitely-no-command".into());
         assert!(app.command_palette_choices().is_empty());
 
-        let effects = handle_command_palette_key(
-            &mut app,
-            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
-        );
+        let effects =
+            handle_command_palette_key(&mut app, KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         assert!(effects.is_empty());
         assert!(app.command_palette_open);
     }
@@ -90,10 +80,7 @@ mod tests {
         reduce(&mut app, Action::OpenCommandPalette);
         handle_command_palette_paste(&mut app, "o".into());
         let query = app.command_palette_query.clone();
-        handle_command_palette_key(
-            &mut app,
-            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
-        );
+        handle_command_palette_key(&mut app, KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
         assert_eq!(app.command_palette_query, query);
     }
 }
