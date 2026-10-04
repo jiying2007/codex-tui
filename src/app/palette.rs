@@ -33,8 +33,7 @@ fn query_chars(query: &str) -> Vec<char> {
 
 fn is_boundary(previous: Option<char>) -> bool {
     previous.is_none_or(|character| {
-        character.is_whitespace()
-            || matches!(character, '-' | '_' | '/' | ':' | '·' | '.')
+        character.is_whitespace() || matches!(character, '-' | '_' | '/' | ':' | '·' | '.')
     })
 }
 
@@ -44,7 +43,12 @@ fn score_positions(label: &[char], query: &[char], positions: &[usize]) -> i32 {
         score += 160;
     }
     for (index, position) in positions.iter().copied().enumerate() {
-        if is_boundary(position.checked_sub(1).and_then(|prev| label.get(prev)).copied()) {
+        if is_boundary(
+            position
+                .checked_sub(1)
+                .and_then(|prev| label.get(prev))
+                .copied(),
+        ) {
             score += 35;
         }
         if index > 0 {
@@ -229,9 +233,8 @@ impl AppState {
                         candidates.push((simplified_chinese == display_chinese, label, matched));
                     }
                 }
-                let (display_language, label, matched) = candidates
-                    .into_iter()
-                    .max_by(|left, right| {
+                let (display_language, label, matched) =
+                    candidates.into_iter().max_by(|left, right| {
                         left.2
                             .score
                             .cmp(&right.2.score)
@@ -250,12 +253,7 @@ impl AppState {
             })
             .collect::<Vec<_>>();
 
-        ranked.sort_by(|left, right| {
-            right
-                .0
-                .cmp(&left.0)
-                .then_with(|| left.1.cmp(&right.1))
-        });
+        ranked.sort_by(|left, right| right.0.cmp(&left.0).then_with(|| left.1.cmp(&right.1)));
         ranked.into_iter().map(|(_, _, matched)| matched).collect()
     }
 
@@ -311,8 +309,8 @@ impl AppState {
     }
 
     pub(super) fn input_command_palette_text(&mut self, text: String) {
-        let remaining = MAX_PALETTE_QUERY_CHARS
-            .saturating_sub(self.command_palette_query.chars().count());
+        let remaining =
+            MAX_PALETTE_QUERY_CHARS.saturating_sub(self.command_palette_query.chars().count());
         self.command_palette_query.extend(
             text.chars()
                 .filter(|character| !character.is_control())
@@ -368,7 +366,10 @@ mod tests {
         let mut app = app();
         app.open_command_palette();
         app.input_command_palette_text(format!("{}\nsecret", "x".repeat(400)));
-        assert_eq!(app.command_palette_query.chars().count(), MAX_PALETTE_QUERY_CHARS);
+        assert_eq!(
+            app.command_palette_query.chars().count(),
+            MAX_PALETTE_QUERY_CHARS
+        );
         assert!(!app.command_palette_query.contains('\n'));
     }
 
