@@ -2,7 +2,7 @@ use crate::domain::{LocalRepoIdentity, ThreadId, WorktreeIdentity};
 use anyhow::{Context, Result, anyhow};
 use similar::{ChangeTag, TextDiff};
 use std::ffi::OsStr;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Stdio;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::io::{AsyncRead, AsyncReadExt};
@@ -294,7 +294,7 @@ pub async fn probe_context(thread_id: ThreadId, cwd: String) -> Result<GitContex
             .context("git rev-parse response missing common directory")?,
     );
     let primary_root =
-        canonical_identity_path(&primary_root_from_common_dir(&common_dir, &worktree_root));
+        canonical_identity_path(primary_root_from_common_dir(&common_dir, &worktree_root));
 
     let status = run_git_bytes(
         &cwd,
