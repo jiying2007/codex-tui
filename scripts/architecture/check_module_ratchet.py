@@ -5,7 +5,13 @@ import json
 import pathlib
 import sys
 
-DEFAULT_PLAN = pathlib.Path("release/v1.3-plan.json") if pathlib.Path("release/v1.3-plan.json").is_file() else pathlib.Path("release/v1.2-plan.json")
+DEFAULT_PLAN = (
+    pathlib.Path("release/v1.4-plan.json")
+    if pathlib.Path("release/v1.4-plan.json").is_file()
+    else pathlib.Path("release/v1.3-plan.json")
+    if pathlib.Path("release/v1.3-plan.json").is_file()
+    else pathlib.Path("release/v1.2-plan.json")
+)
 
 
 def main() -> int:
