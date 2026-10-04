@@ -319,6 +319,8 @@ fn online_backup_includes_committed_wal_while_an_old_reader_pins_checkpoint() {
     let backup = root.path().join("online.sqlite3");
     store.create_recovery_backup(&backup).unwrap();
     reader.execute_batch("ROLLBACK").unwrap();
+    // Backup is online; restore is offline and must not rename an open database.
+    reader.close().unwrap();
     store.save_state(&LocalStateV1::default()).unwrap();
     store.restore_recovery_backup(&backup).unwrap();
     assert_eq!(store.load_state().unwrap(), expected);
