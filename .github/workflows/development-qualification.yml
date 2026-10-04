@@ -86,9 +86,9 @@ jobs:
           cargo build --locked --release
 
           mkdir -p qualification
-          cp release/v1.4-plan.json qualification/v1.3-plan.json
-          cp release/v1.4-completion.json qualification/v1.3-completion.json
-          cp release/v1.4-criteria.json qualification/v1.3-criteria.json
+          cp release/v1.4-plan.json qualification/v1.4-plan.json
+          cp release/v1.4-completion.json qualification/v1.4-completion.json
+          cp release/v1.4-criteria.json qualification/v1.4-criteria.json
           cargo test --locked --all-targets --all-features -- --list > qualification/test-list.txt
 
           ./target/release/codex-tui release failure-matrix --json             > qualification/failure-matrix.json
