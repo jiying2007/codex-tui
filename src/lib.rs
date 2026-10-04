@@ -31,6 +31,7 @@ pub mod presentation;
 pub mod pty;
 pub mod release;
 pub mod release_benchmark;
+pub mod render_performance;
 pub mod replay_backend;
 pub mod runtime_lifecycle;
 pub mod saved_view_editor;
