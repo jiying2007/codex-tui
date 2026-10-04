@@ -227,6 +227,7 @@ dependencies = [
  "directories",
  "divan",
  "futures-util",
+ "nix 0.28.0",
  "portable-pty",
  "pretty_assertions",
  "ratatui",

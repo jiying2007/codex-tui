@@ -16,6 +16,7 @@ All notable codex-tui changes are recorded here.
 - added ranked bilingual fuzzy Command Palette query/filter behavior over the frozen contextual command set;
 - decomposed mature runtime command, palette and Doctor responsibilities into explicit ratcheted modules;
 - added exact-SHA 10k Board/Thread real-TUI render diagnostics with 20 warmups and 200 retained samples; hosted timing remains diagnostic rather than a release threshold;
+- hardened Unix Terminal Drawer teardown to signal the active PTY foreground process group before terminating the shell, preventing long-running child commands from retaining the slave and delaying reader shutdown;
 - retained GitLab Issue Board membership as evidence-gated until the existing native-transport/refresh-budget trigger is satisfied;
 - activated the 1.4.0 package/stable-criteria line only after all ten v1.4 P0/P1/P2 work packages reached development completion.
 
