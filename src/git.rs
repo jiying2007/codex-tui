@@ -2,7 +2,7 @@ use crate::domain::{LocalRepoIdentity, ThreadId, WorktreeIdentity};
 use anyhow::{Context, Result, anyhow};
 use similar::{ChangeTag, TextDiff};
 use std::ffi::OsStr;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Stdio;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::io::{AsyncRead, AsyncReadExt};
@@ -255,11 +255,7 @@ async fn run_actor(mut command_rx: mpsc::Receiver<GitCommand>, event_tx: mpsc::S
 }
 
 pub async fn probe_context(thread_id: ThreadId, cwd: String) -> Result<GitContext> {
-    let worktree_probe = run_git(
-        &cwd,
-        ["rev-parse", "--path-format=absolute", "--show-toplevel"],
-    )
-    .await?;
+    let worktree_probe = run_git(&cwd, ["rev-parse", "--show-toplevel"]).await?;
 
     if !worktree_probe.success {
         if looks_like_not_repository(&worktree_probe.stderr) {
@@ -271,11 +267,7 @@ pub async fn probe_context(thread_id: ThreadId, cwd: String) -> Result<GitContex
         ));
     }
 
-    let common_dir_probe = run_git(
-        &cwd,
-        ["rev-parse", "--path-format=absolute", "--git-common-dir"],
-    )
-    .await?;
+    let common_dir_probe = run_git(&cwd, ["rev-parse", "--git-common-dir"]).await?;
     if !common_dir_probe.success {
         return Err(anyhow!(
             "git common-dir probe failed: {}",
@@ -283,7 +275,8 @@ pub async fn probe_context(thread_id: ThreadId, cwd: String) -> Result<GitContex
         ));
     }
 
-    let worktree_root = canonical_identity_path(
+    let worktree_root = canonical_identity_path_from(
+        &cwd,
         worktree_probe
             .stdout
             .lines()
@@ -291,7 +284,8 @@ pub async fn probe_context(thread_id: ThreadId, cwd: String) -> Result<GitContex
             .find(|line| !line.is_empty())
             .context("git rev-parse response missing worktree root")?,
     );
-    let common_dir = canonical_identity_path(
+    let common_dir = canonical_identity_path_from(
+        &cwd,
         common_dir_probe
             .stdout
             .lines()
@@ -300,7 +294,7 @@ pub async fn probe_context(thread_id: ThreadId, cwd: String) -> Result<GitContex
             .context("git rev-parse response missing common directory")?,
     );
     let primary_root =
-        canonical_identity_path(&primary_root_from_common_dir(&common_dir, &worktree_root));
+        canonical_identity_path(primary_root_from_common_dir(&common_dir, &worktree_root));
 
     let status = run_git_bytes(
         &cwd,
@@ -741,11 +735,21 @@ fn change_from_xy(
     })
 }
 
-fn canonical_identity_path(value: &str) -> String {
+fn canonical_identity_path(value: impl AsRef<Path>) -> String {
+    let value = value.as_ref();
     std::fs::canonicalize(value)
-        .unwrap_or_else(|_| PathBuf::from(value))
+        .unwrap_or_else(|_| value.to_path_buf())
         .to_string_lossy()
         .into_owned()
+}
+
+fn canonical_identity_path_from(cwd: &str, value: &str) -> String {
+    let path = Path::new(value);
+    if path.is_absolute() {
+        canonical_identity_path(path)
+    } else {
+        canonical_identity_path(Path::new(cwd).join(path))
+    }
 }
 
 fn primary_root_from_common_dir(common_dir: &str, worktree_root: &str) -> String {
@@ -841,6 +845,24 @@ mod tests {
             .status()
             .expect("spawn git");
         assert!(status.success(), "git command failed: {args:?}");
+    }
+
+    #[test]
+    fn relative_identity_paths_resolve_from_the_probed_cwd() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let root = temp.path().join("repo");
+        let git_dir = root.join(".git");
+        std::fs::create_dir_all(&git_dir).expect("create git dir");
+
+        let cwd = root.to_string_lossy().into_owned();
+        assert_eq!(
+            canonical_identity_path_from(&cwd, ".git"),
+            canonical_identity_path(&git_dir)
+        );
+        assert_eq!(
+            canonical_identity_path_from(&cwd, git_dir.to_string_lossy().as_ref()),
+            canonical_identity_path(&git_dir)
+        );
     }
 
     #[tokio::test]
