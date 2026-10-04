@@ -1,0 +1,36 @@
+name: audit-workbench
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/audit-workbench.yml
+      - .audit/**
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'fix/v1.4-audit-closure'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Capture exact source and reachable refs for isolated audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          git bundle create "$RUNNER_TEMP/audit-source.bundle" --all
+          git rev-parse HEAD > "$RUNNER_TEMP/audit-source.sha"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: audit-source
+          path: |
+            ${{ runner.temp }}/audit-source.bundle
+            ${{ runner.temp }}/audit-source.sha
+          if-no-files-found: error
+          retention-days: 1
