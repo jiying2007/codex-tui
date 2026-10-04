@@ -290,7 +290,7 @@ jobs:
           cargo build --locked --release
 
           mkdir -p qualification
-          cp release/v1.4-completion.json qualification/v1.3-completion.json
+          cp release/v1.4-completion.json qualification/v1.4-completion.json
           cargo test --locked --all-targets --all-features -- --list > qualification/test-list.txt
           ./target/release/codex-tui release failure-matrix --json > qualification/failure-matrix.json
           python3 scripts/release/check_failure_evidence.py \
