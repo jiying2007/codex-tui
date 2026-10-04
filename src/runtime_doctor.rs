@@ -4,8 +4,7 @@ use codex_tui::{
     app_server_target::ResolvedAppServerTarget,
     backend::BackendStatus,
     domain::{CwdLocality, classify_cwd, display_cwd},
-    forge,
-    git,
+    forge, git,
     sqlite_store::SqliteStore,
     store::LocalStore,
 };
