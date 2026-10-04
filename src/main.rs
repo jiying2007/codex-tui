@@ -1659,7 +1659,7 @@ mod command_palette_input_tests {
 
         let effects = handle_key(
             &mut app,
-            KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE),
+            KeyEvent::new(KeyCode::Down, KeyModifiers::NONE),
         );
         assert!(effects.is_empty());
         assert_eq!(app.selected, registry_selected);
