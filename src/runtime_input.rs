@@ -1,3 +1,7 @@
+use crate::{
+    runtime_commands::handle_command,
+    runtime_palette::{handle_command_palette_key, handle_command_palette_paste},
+};
 use codex_tui::{
     app::{Action, AppState, Effect, InputMode, ViewKind, reduce},
     command::Command,
@@ -15,7 +19,7 @@ pub(crate) fn handle_paste(app: &mut AppState, text: String) -> Vec<Effect> {
         return vec![Effect::TerminalPaste(text)];
     }
     if app.command_palette_open {
-        return reduce(app, Action::CommandPaletteInputText(text));
+        return handle_command_palette_paste(app, text);
     }
     if app.input_mode != InputMode::Normal {
         return reduce(app, Action::InputText(text));
@@ -50,30 +54,7 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
     }
 
     if app.command_palette_open {
-        if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('k') {
-            return reduce(app, Action::CloseCommandPalette);
-        }
-        return match key.code {
-            KeyCode::Esc => reduce(app, Action::CloseCommandPalette),
-            KeyCode::Down => reduce(app, Action::MoveCommandPalette(1)),
-            KeyCode::Up => reduce(app, Action::MoveCommandPalette(-1)),
-            KeyCode::Backspace => reduce(app, Action::CommandPaletteBackspace),
-            KeyCode::Enter => {
-                let Some(choice) = app.command_palette_choice() else {
-                    return vec![];
-                };
-                reduce(app, Action::CloseCommandPalette);
-                handle_palette_choice(app, choice)
-            }
-            KeyCode::Char(character)
-                if !key.modifiers.intersects(
-                    KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER,
-                ) =>
-            {
-                reduce(app, Action::CommandPaletteInputChar(character))
-            }
-            _ => vec![],
-        };
+        return handle_command_palette_key(app, key);
     }
 
     if app.saved_view_editor.is_some() && app.input_mode == InputMode::Normal {
@@ -283,153 +264,4 @@ fn terminal_key_bytes(key: KeyEvent) -> Option<Vec<u8>> {
         bytes.insert(0, 0x1b);
     }
     Some(bytes)
-}
-
-fn handle_palette_choice(app: &mut AppState, command: Command) -> Vec<Effect> {
-    handle_command(app, command)
-}
-
-pub(crate) fn action_for_command(app: &AppState, command: Command) -> Option<Action> {
-    let action = match command {
-        Command::QuitOrInterrupt => match app.view_kind() {
-            ViewKind::Registry => Action::Quit,
-            ViewKind::Thread => Action::InterruptCurrent,
-            ViewKind::Review
-            | ViewKind::Workspace
-            | ViewKind::ManagedWorktrees
-            | ViewKind::Board
-            | ViewKind::Scratch => Action::Back,
-        },
-        Command::Back => Action::Back,
-        Command::Help => Action::ToggleHelp,
-        Command::Search => Action::BeginSearch,
-        Command::TranscriptSearch => Action::BeginTranscriptSearch,
-        Command::ThreadQueue => Action::OpenThreadQueue,
-        Command::ToggleHostLocalFilter => Action::ToggleHostLocalFilter,
-        Command::ToggleRepoBackedFilter => Action::ToggleRepoBackedFilter,
-        Command::ToggleAllHistory => Action::ToggleAllHistory,
-        Command::Next => match app.view_kind() {
-            ViewKind::Review => Action::MoveReview(1),
-            ViewKind::ManagedWorktrees => Action::MoveManagedWorktree(1),
-            ViewKind::Board => Action::MovePlanningSelection(1),
-            _ => Action::MoveSelection(1),
-        },
-        Command::Previous => match app.view_kind() {
-            ViewKind::Review => Action::MoveReview(-1),
-            ViewKind::ManagedWorktrees => Action::MoveManagedWorktree(-1),
-            ViewKind::Board => Action::MovePlanningSelection(-1),
-            _ => Action::MoveSelection(-1),
-        },
-        Command::Open => {
-            if app.view_kind() == ViewKind::Board {
-                Action::OpenPlanningSelected
-            } else {
-                Action::OpenSelected
-            }
-        }
-        Command::NextAttention => Action::NextAttention,
-        Command::QuickPrompt => Action::QuickPrompt,
-        Command::MarkUnread => Action::MarkUnread,
-        Command::TogglePin => Action::TogglePin,
-        Command::EditAlias => Action::BeginAlias,
-        Command::AcknowledgeAttention => Action::AcknowledgeAttention,
-        Command::ApprovePending => Action::ResolvePending(InteractiveResolution::Accept),
-        Command::DeclinePending => Action::ResolvePending(InteractiveResolution::Decline),
-        Command::CancelPending => Action::ResolvePending(InteractiveResolution::Cancel),
-        Command::AnswerPending => Action::BeginUserInput,
-        Command::Board => Action::OpenBoard,
-        Command::BoardLeft => Action::MoveBoardColumn(-1),
-        Command::BoardRight => Action::MoveBoardColumn(1),
-        Command::CycleSavedView => Action::CycleSavedView(1),
-        Command::Review => Action::OpenReview,
-        Command::Workspace => Action::OpenWorkspace,
-        Command::ManagedWorktrees => Action::OpenManagedWorktrees,
-        Command::CreateWorktree => Action::BeginCreateWorktree,
-        Command::AdoptWorktree => Action::BeginAdoptCurrentWorktree,
-        Command::RemoveWorktree => Action::BeginRemoveManagedWorktree,
-        Command::DeleteBranch => Action::BeginDeleteBranch,
-        Command::ConfirmOperation => Action::ConfirmPendingOperation,
-        Command::CancelOperation => Action::CancelPendingOperation,
-        Command::New => Action::BeginScratch,
-        Command::Snooze => Action::BeginSnooze,
-        Command::BeginHotSlotBind => Action::BeginHotSlotBind,
-        Command::PageUp => {
-            if app.view_kind() == ViewKind::Review {
-                Action::ScrollReviewBy(-10)
-            } else {
-                Action::ScrollBy(-5)
-            }
-        }
-        Command::PageDown => {
-            if app.view_kind() == ViewKind::Review {
-                Action::ScrollReviewBy(10)
-            } else {
-                Action::ScrollBy(5)
-            }
-        }
-        Command::ToggleWordDiff => Action::ToggleReviewWordDiff,
-        Command::ExternalEditor => Action::OpenReviewExternalEditor,
-        Command::TerminalDrawer => Action::ToggleTerminalDrawer,
-        Command::CloseTerminalDrawer => Action::CloseTerminalDrawer,
-        Command::HotSlot(slot) => Action::UseHotSlot(slot),
-        Command::ContextActions => Action::OpenContext,
-        Command::Goal => Action::OpenGoalActions,
-        Command::CommandPalette => Action::OpenCommandPalette,
-        Command::OpenExternal => Action::OpenReviewExternal,
-    };
-    Some(action)
-}
-
-pub(crate) fn handle_command(app: &mut AppState, command: Command) -> Vec<Effect> {
-    let Some(action) = action_for_command(app, command) else {
-        return vec![];
-    };
-    reduce(app, action)
-}
-
-#[cfg(test)]
-mod fuzzy_palette_input_tests {
-    use super::*;
-    use codex_tui::backend::{CodexBackend, FakeBackend};
-
-    fn app() -> AppState {
-        AppState::new(FakeBackend::seeded().snapshot().threads)
-    }
-
-    #[test]
-    fn palette_accepts_typed_and_pasted_query_text() {
-        let mut app = app();
-        reduce(&mut app, Action::OpenCommandPalette);
-        assert!(app.command_palette_open);
-
-        handle_key(
-            &mut app,
-            KeyEvent::new(KeyCode::Char('b'), KeyModifiers::NONE),
-        );
-        handle_paste(&mut app, "oard".into());
-        assert_eq!(app.command_palette_query, "board");
-        assert_eq!(app.command_palette_choice(), Some(Command::Board));
-    }
-
-    #[test]
-    fn empty_result_enter_keeps_palette_open_and_executes_nothing() {
-        let mut app = app();
-        reduce(&mut app, Action::OpenCommandPalette);
-        handle_paste(&mut app, "definitely-no-command".into());
-        assert!(app.command_palette_choices().is_empty());
-
-        let effects = handle_key(&mut app, KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
-        assert!(effects.is_empty());
-        assert!(app.command_palette_open);
-    }
-
-    #[test]
-    fn arrow_navigation_does_not_modify_query() {
-        let mut app = app();
-        reduce(&mut app, Action::OpenCommandPalette);
-        handle_paste(&mut app, "o".into());
-        let query = app.command_palette_query.clone();
-        handle_key(&mut app, KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
-        assert_eq!(app.command_palette_query, query);
-    }
 }
