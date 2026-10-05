@@ -32,7 +32,8 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
-          test -z "$(git diff "$BASE" -- src tests Cargo.toml Cargo.lock release)"
+          test -z "$(git diff "$BASE" -- src Cargo.toml Cargo.lock release)"
+          test "$(git diff --name-only "$BASE" -- tests)" = tests/queue_ready_guard.rs
           mkdir -p "$RUNNER_TEMP/queue-evidence"
           python3 - <<'PY'
           import hashlib,lzma,os,pathlib,re,subprocess
@@ -43,7 +44,7 @@ jobs:
           subprocess.run(['git','apply']+['--include='+p for p in paths]+['-'],input=patch,check=True)
           source=pathlib.Path('src/app_server.rs')
           source.write_text(source.read_text()+'\n#[cfg(test)]\nmod queue_wire_tests;\n')
-          cases=[('before.log',['--no-fail-fast','--test','queue_confirmation_safety','--test','queue_payload_integrity'],[(1,8),(2,10)]),('wire-before.log',['--lib','queue_wire_tests'],[(1,2)])]
+          cases=[('before.log',['--no-fail-fast','--test','queue_confirmation_safety','--test','queue_payload_integrity','--test','queue_ready_guard'],[(1,8),(2,4),(2,10)]),('wire-before.log',['--lib','queue_wire_tests'],[(1,2)])]
           for name,args,expected in cases:
               run=subprocess.run(['cargo','test','--locked']+args,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
               pathlib.Path(os.environ['RUNNER_TEMP'],'queue-evidence',name).write_bytes(run.stdout)
@@ -51,16 +52,18 @@ jobs:
               assert run.returncode==101 and counts==expected,(name,run.returncode,counts)
           source.write_bytes(subprocess.check_output(['git','show',os.environ['BASE']+':src/app_server.rs']))
           subprocess.run(['git','apply']+['--exclude='+p for p in paths]+['-'],input=patch,check=True)
+          subprocess.run(['python3','.audit/ready.py'],check=True)
           PY
       - name: Verify complete corrected candidate and unchanged gates
         shell: bash
         run: |
           set -euo pipefail
-          rm .audit/queue.patch.xz .github/workflows/audit-queue-safety.yml
+          rm .audit/queue.patch.xz .audit/ready.py .github/workflows/audit-queue-safety.yml
           rmdir .audit
+          cargo fmt --all
           git add -A
           git diff --cached --check
-          test "$(git write-tree)" = 762e2f80e35bf7c4bfd30979abe520b4384003e8
+          test "$(git write-tree)" = 8642de306d4b422e2764d400def3d388783f1bb9
           cargo fmt --all -- --check
           cargo clippy --locked --all-targets --all-features -- -D warnings 2>&1 | tee "$RUNNER_TEMP/queue-evidence/clippy.log"
           cargo test --locked --all-targets --all-features 2>&1 | tee "$RUNNER_TEMP/queue-evidence/after.log"
@@ -76,7 +79,7 @@ jobs:
           import hashlib,json,os,pathlib,re,subprocess
           out=pathlib.Path(os.environ['RUNNER_TEMP'],'queue-evidence')
           text=(out/'after.log').read_text()
-          assert sum(int(n) for n in re.findall(r'test result: ok\. (\d+) passed;',text))==572
+          assert sum(int(n) for n in re.findall(r'test result: ok\. (\d+) passed;',text))==578
           changes=subprocess.check_output(['git','diff','--cached','--name-status','--no-renames','-z',os.environ['BASE']]).decode().split('\0')
           entries=[]
           for i in range(0,len(changes)-1,2):
@@ -88,7 +91,7 @@ jobs:
               assert sha==hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()
               entries.append({'path':name,'mode':'100644','type':'blob','sha':sha})
           tree=subprocess.check_output(['git','write-tree'],text=True).strip()
-          assert tree=='762e2f80e35bf7c4bfd30979abe520b4384003e8'
+          assert tree=='8642de306d4b422e2764d400def3d388783f1bb9'
           receipt={'baseline':os.environ['BASE'],'parent':os.environ['EXPECTED_HEAD'],'tree':tree,'entries':entries,'refUpdated':False,'stableReady':False,'publicationAllowed':False}
           (out/'candidate.json').write_text(json.dumps(receipt,indent=2)+'\n')
           print(json.dumps(receipt))
