@@ -1,3 +1,5 @@
+mod user_input;
+
 use crate::domain::ThreadId;
 use anyhow::{Context, Result};
 use serde_json::Value;
@@ -193,6 +195,7 @@ pub fn parse_interactive_request(message: &Value) -> Result<Option<InteractiveRe
         _ => return Ok(None),
     };
 
+    request.validate_user_input()?;
     Ok(Some(request))
 }
 

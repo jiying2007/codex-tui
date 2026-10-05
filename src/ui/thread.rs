@@ -318,7 +318,7 @@ pub(super) fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
         )
     } else if app.input_mode == InputMode::UserInput {
         let question = app.current_user_input_question();
-        let displayed_answer = if question.is_some_and(|question| question.is_secret) {
+        let displayed_answer = if question.is_none_or(|question| question.is_secret) {
             "*".repeat(app.input_buffer.chars().count())
         } else {
             app.input_buffer.clone()

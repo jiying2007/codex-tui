@@ -2,10 +2,9 @@ use crate::backend::BackendStatus;
 use crate::batch_local::{LocalBatchAction, LocalBatchPlan, parse_priority};
 use crate::command::Command;
 #[cfg(test)]
-use crate::conversation::ConversationPage;
+use crate::conversation::{ConversationPage, RpcRequestId, UserInputQuestion};
 use crate::conversation::{
     ConversationState, InteractiveRequest, InteractiveRequestKind, InteractiveResolution,
-    RpcRequestId, UserInputQuestion,
 };
 use crate::domain::{
     AttentionReason, CwdLocality, LocalRepoIdentity, RuntimeStatus, ThreadId, ThreadSummary,
@@ -57,6 +56,7 @@ mod queue_confirmation;
 mod queue_editor;
 mod review;
 mod types;
+mod user_input;
 
 pub use queue_confirmation::QueueConfirmation;
 pub use types::{Action, ContextChoice, Effect, InputMode, View, ViewKind};
@@ -196,9 +196,7 @@ pub struct AppState {
     pub review_word_diff: bool,
     pub pending_requests: Vec<InteractiveRequest>,
     pending_request_threads: BTreeSet<String>,
-    pub user_input_request_id: Option<RpcRequestId>,
-    pub user_input_question_index: usize,
-    pub user_input_answers: BTreeMap<String, Vec<String>>,
+    user_input_editor: Option<user_input::UserInputEditor>,
     pub show_help: bool,
     pub should_quit: bool,
     pub backend_status: BackendStatus,
@@ -337,9 +335,7 @@ impl AppState {
             review_word_diff: false,
             pending_requests: vec![],
             pending_request_threads: BTreeSet::new(),
-            user_input_request_id: None,
-            user_input_question_index: 0,
-            user_input_answers: BTreeMap::new(),
+            user_input_editor: None,
             show_help: false,
             should_quit: false,
             backend_status: BackendStatus::starting("unknown"),
@@ -1011,18 +1007,6 @@ impl AppState {
         self.pending_requests
             .iter()
             .find(|request| request.thread_id == *thread_id)
-    }
-
-    pub fn current_user_input_question(&self) -> Option<&UserInputQuestion> {
-        let request_id = self.user_input_request_id.as_ref()?;
-        let request = self
-            .pending_requests
-            .iter()
-            .find(|request| &request.request_id == request_id)?;
-        let InteractiveRequestKind::UserInput { questions } = &request.kind else {
-            return None;
-        };
-        questions.get(self.user_input_question_index)
     }
 
     pub fn visible_indices_with_match_count(&self) -> (Vec<usize>, usize) {
@@ -2589,10 +2573,16 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::InteractiveRequested(request) => {
             state.acknowledged_attention.remove(&request.thread_id.0);
             let is_current_thread = state.current_thread_id() == Some(&request.thread_id);
-            state
+            if let Some(pending) = state
                 .pending_requests
-                .retain(|pending| pending.request_id != request.request_id);
-            state.pending_requests.push(request);
+                .iter_mut()
+                .find(|pending| pending.request_id == request.request_id)
+            {
+                *pending = request;
+            } else {
+                state.pending_requests.push(request);
+            }
+            state.notice_changed_user_input();
             state.rebuild_pending_request_threads();
             if is_current_thread {
                 state.goal_actions_open = false;
@@ -2606,9 +2596,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 .pending_requests
                 .retain(|request| request.request_id != request_id);
             state.rebuild_pending_request_threads();
-            if state.user_input_request_id.as_ref() == Some(&request_id) {
-                clear_user_input_editor(state);
-            }
+            state.resolve_user_input_editor(&request_id);
             ensure_selection_visible(state);
         }
         Action::ResolvePending(resolution) => {
@@ -2628,17 +2616,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 }
             }
         }
-        Action::BeginUserInput => {
-            if let Some(request) = state.current_pending_request().cloned()
-                && matches!(request.kind, InteractiveRequestKind::UserInput { .. })
-            {
-                state.user_input_request_id = Some(request.request_id);
-                state.user_input_question_index = 0;
-                state.user_input_answers.clear();
-                state.input_buffer.clear();
-                state.input_mode = InputMode::UserInput;
-            }
-        }
+        Action::BeginUserInput => state.begin_user_input(),
         Action::MoveSelection(delta) => move_selection(state, delta),
         Action::OpenSelected => {
             if let Some(id) = state.selected_thread_id() {
@@ -2686,7 +2664,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     return vec![Effect::InterruptTurn { thread_id, turn_id }];
                 }
                 if state.input_mode == InputMode::UserInput {
-                    clear_user_input_editor(state);
+                    state.clear_user_input_editor();
                 } else {
                     state.input_mode = InputMode::Normal;
                 }
@@ -2737,7 +2715,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
             let thread_id = state.current_thread_id().cloned();
             if state.input_mode == InputMode::UserInput {
-                clear_user_input_editor(state);
+                state.clear_user_input_editor();
             } else {
                 state.input_mode = InputMode::Normal;
             }
@@ -3469,55 +3447,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 }];
             }
             if mode == InputMode::UserInput {
-                let Some(request_id) = state.user_input_request_id.clone() else {
-                    clear_user_input_editor(state);
-                    return vec![];
-                };
-                let Some(question) = state.current_user_input_question().cloned() else {
-                    clear_user_input_editor(state);
-                    return vec![];
-                };
-                let input = state.input_buffer.trim();
-                if input.is_empty() {
-                    return vec![];
-                }
-                let answers = if question.options.is_empty() {
-                    vec![input.to_string()]
-                } else {
-                    input
-                        .split(',')
-                        .map(str::trim)
-                        .filter(|answer| !answer.is_empty())
-                        .map(ToOwned::to_owned)
-                        .collect::<Vec<_>>()
-                };
-                if answers.is_empty() {
-                    return vec![];
-                }
-                state.user_input_answers.insert(question.id, answers);
-                state.input_buffer.clear();
-
-                let question_count = state
-                    .pending_requests
-                    .iter()
-                    .find(|request| request.request_id == request_id)
-                    .and_then(|request| match &request.kind {
-                        InteractiveRequestKind::UserInput { questions } => Some(questions.len()),
-                        _ => None,
-                    })
-                    .unwrap_or(0);
-
-                if state.user_input_question_index + 1 < question_count {
-                    state.user_input_question_index += 1;
-                    return vec![];
-                }
-
-                let answers = std::mem::take(&mut state.user_input_answers);
-                clear_user_input_editor(state);
-                return vec![Effect::ResolveInteractive {
-                    request_id,
-                    resolution: InteractiveResolution::UserInput(answers),
-                }];
+                return state.commit_user_input();
             }
             if mode == InputMode::Composer {
                 return prompt::submit(state);
@@ -3650,7 +3580,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 }
             }
             if state.input_mode == InputMode::UserInput {
-                clear_user_input_editor(state);
+                state.clear_user_input_editor();
             } else {
                 state.input_mode = InputMode::Normal;
                 state.input_buffer.clear();
@@ -4347,14 +4277,6 @@ fn rebuild_planning_inner<const PROFILE: bool>(
         selection_refresh_ms: 0.0,
         total_ms: rebuild_total_ms,
     }
-}
-
-fn clear_user_input_editor(state: &mut AppState) {
-    state.user_input_request_id = None;
-    state.user_input_question_index = 0;
-    state.user_input_answers.clear();
-    state.input_buffer.clear();
-    state.input_mode = InputMode::Normal;
 }
 
 fn remote_attention(thread: &ThreadSummary) -> Vec<AttentionReason> {
