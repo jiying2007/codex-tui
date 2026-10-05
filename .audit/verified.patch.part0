@@ -1,0 +1,350 @@
+diff --git a/docs/implementation/v1.4-local-edit-durability.md b/docs/implementation/v1.4-local-edit-durability.md
+new file mode 100644
+index 0000000..e3cba58
+--- /dev/null
++++ b/docs/implementation/v1.4-local-edit-durability.md
+@@ -0,0 +1,45 @@
++# Local editor write receipts
++
++Frozen v1.4 defect follow-up from f7ad98c092214977f2c2512a448940a4f3445ec1.
++
++Scratch creation, thread/source notes, scratch notes and Saved Views used to clear
++the editor before admission to the bounded SQLite queue. Failed admission or
++write/refresh could therefore lose the only draft. Invalid visible-field input
++also cleared before validation.
++
++The original operation still owns its existing typed Effect. One ephemeral
++in-flight editor slot adds a process-unique ticket and editor revision. Only the
++matching ordered worker receipt can retire unchanged input. The check also
++compares original raw input and current editor payload/target identity; the
++ephemeral revision only advances while a local save is pending. Later input,
++including edit/undo and cancel/reopen, is retained. Duplicate submission is refused while
++pending, but editing/navigation/explicit close remain responsive. Closing does
++not undo an accepted write, and a later failure does not resurrect discarded input.
++
++Queue refusal retains the draft without declaring a healthy database read-only.
++Accepted failures and stopped workers report an unconfirmed outcome, never a
++rollback or a safe automatic retry. A write may have committed before projection
++refresh failed. Existing backend read-only and exit-barrier error handling remain.
++Unrelated planning receipts cannot close an editor. Invalid Saved View fields stay
++in the text editor for correction. No schema, Cargo, RPC or persistent shadow copy
++was added. Existing module limits and real qualification/publication gates remain.
++
++Validation uses production reducers, actual bounded StoreWorker admission and
++SQLite writes, old/matching receipts, full-queue recovery, write failure, injected
++worker termination and the final-save barrier. Eleven original reducer tests
++reproduce eight failures and three positive controls; corrected validation covers 630 Rust and 34 Python tests, including
++the actual effect dispatcher for all four editor types with real SQLite success
++and failure. These candidate results are not final-main release evidence.
++Before/after logs, the exact tested tree and independent hosted verification
++belong in the PR receipt. The original unexecuted candidate had a missing import;
++that compile failure is retained before the corrected full-suite pass.
++
++Verification code runs without repository-write authority. Exporting tested
++source blobs, when needed by the connector, uses a separate data-only job which
++never executes repository code or changes any ref. Temporary files are excluded
++from the final tree and squash merge.
++
++Scope limits: at most one pending local editor write; drafts remain memory-only
++while editing. Explicit exit/SIGKILL/power loss is not draft durability certification.
++This is not multi-process CAS or a cross-table atomic write-plus-projection read.
++Synthetic diagnostics do not establish human/token ROI or real terminal SLO.
+diff --git a/release/v1.4-plan.json b/release/v1.4-plan.json
+index 4249a7a..d5bcf01 100644
+--- a/release/v1.4-plan.json
++++ b/release/v1.4-plan.json
+@@ -220,7 +220,11 @@
+     "src/runtime_prompt.rs": 140,
+     "src/latest_read.rs": 260,
+     "src/forge/read_order_tests.rs": 180,
+-    "src/git/read_order_tests.rs": 160
++    "src/git/read_order_tests.rs": 160,
++    "src/app/local_edit.rs": 240,
++    "src/runtime_local_edit.rs": 150,
++    "src/runtime_local_edit/tests.rs": 310,
++    "src/runtime_local_edit/route_tests.rs": 240
+   },
+   "ratchetPolicy": {
+     "baseline": "inherit v1.3 Search & Multi-Target ceilings; feature work may only add bounded module-specific ceilings",
+diff --git a/src/app.rs b/src/app.rs
+index 138739b..f86ce94 100644
+--- a/src/app.rs
++++ b/src/app.rs
+@@ -46,6 +46,7 @@ use std::time::Instant;
+ 
+ mod context_menu;
+ mod lifecycle;
++mod local_edit;
+ mod mutation_editor;
+ pub(crate) mod palette;
+ mod palette_intent;
+@@ -113,6 +114,8 @@ fn build_thread_indexes(
+ #[derive(Clone, Debug)]
+ pub struct AppState {
+     planning_generation: u64,
++    local_edit_revision: u64,
++    pending_local_edit: Option<local_edit::PendingLocalEdit>,
+     planning_reconcile_count: usize,
+     pub threads: Vec<ThreadSummary>,
+     thread_index_by_id: HashMap<String, usize>,
+@@ -252,6 +255,8 @@ impl AppState {
+             .collect();
+         Self {
+             planning_generation: 0,
++            local_edit_revision: 0,
++            pending_local_edit: None,
+             planning_reconcile_count: 0,
+             threads,
+             thread_index_by_id,
+@@ -1127,6 +1132,7 @@ impl AppState {
+ }
+ 
+ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
++    state.observe_local_edit_action(&action);
+     if matches!(
+         &action,
+         Action::ReplaceThreads(_)
+@@ -1792,11 +1798,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
+                 return vec![];
+             }
+             let view = editor.draft.clone();
+-            state.saved_view_editor = None;
+-            state.saved_view_editor_error = None;
+-            state.input_mode = InputMode::Normal;
+-            state.input_buffer.clear();
+-            return vec![Effect::SaveSavedView { view }];
++            return state.begin_local_edit_write(Effect::SaveSavedView { view });
+         }
+         Action::OpenPlanningSelected => {
+             let Some(card) = state.selected_planning_card().cloned() else {
+@@ -3417,15 +3419,11 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
+                 if title.is_empty() {
+                     return vec![];
+                 }
+-                let workspace = state.new_scratch_workspace.take();
+-                state.input_mode = InputMode::Normal;
+-                state.input_buffer.clear();
+-                return vec![Effect::CreateScratch { title, workspace }];
++                let workspace = state.new_scratch_workspace.clone();
++                return state.begin_local_edit_write(Effect::CreateScratch { title, workspace });
+             }
+             if mode == InputMode::SavedViewField {
+                 let value = state.input_buffer.clone();
+-                state.input_mode = InputMode::Normal;
+-                state.input_buffer.clear();
+                 let Some(editor) = state.saved_view_editor.as_mut() else {
+                     return vec![];
+                 };
+@@ -3433,28 +3431,26 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
+                     state.saved_view_editor_error = Some(error);
+                 } else {
+                     state.saved_view_editor_error = None;
++                    state.input_mode = InputMode::Normal;
++                    state.input_buffer.clear();
+                 }
+                 return vec![];
+             }
+             if mode == InputMode::Note {
+                 let text = state.input_buffer.trim().to_string();
+-                let Some(target) = state.note_target.take() else {
+-                    state.input_mode = InputMode::Normal;
+-                    state.input_buffer.clear();
++                let Some(target) = state.note_target.clone() else {
+                     return vec![];
+                 };
+-                state.input_mode = InputMode::Normal;
+-                state.input_buffer.clear();
+                 if target.kind == SourceKind::ScratchWork {
+-                    return vec![Effect::UpdateScratchNote {
++                    return state.begin_local_edit_write(Effect::UpdateScratchNote {
+                         scratch_id: target.value,
+                         note: (!text.is_empty()).then_some(text),
+-                    }];
++                    });
+                 }
+-                return vec![Effect::SaveSourceNote {
++                return state.begin_local_edit_write(Effect::SaveSourceNote {
+                     owner: target,
+                     text,
+-                }];
++                });
+             }
+             if mode == InputMode::Snooze {
+                 let Some(duration_ms) = parse_snooze_duration(&state.input_buffer) else {
+@@ -5706,6 +5702,9 @@ mod tests {
+             effects.as_slice(),
+             [Effect::CreateScratch { title, .. }] if title == "Investigate wake miss"
+         ));
++        assert_eq!(app.input_mode, InputMode::ScratchTitle);
++        let ticket = app.local_edit_ticket_for(&effects[0]).expect("save ticket");
++        app.finish_local_edit_write(ticket, Ok(()));
+         assert_eq!(app.input_mode, InputMode::Normal);
+     }
+ 
+diff --git a/src/app/local_edit.rs b/src/app/local_edit.rs
+new file mode 100644
+index 0000000..f4d6598
+--- /dev/null
++++ b/src/app/local_edit.rs
+@@ -0,0 +1,163 @@
++//! One in-flight local editor write; only its receipt can retire its draft.
++use super::{Action, AppState, Effect, InputMode, local_text};
++use std::sync::atomic::{AtomicU64, Ordering};
++
++static NEXT_TICKET: AtomicU64 = AtomicU64::new(1);
++
++#[derive(Clone, Debug)]
++pub(super) struct PendingLocalEdit {
++    ticket: u64,
++    revision: u64,
++    mode: InputMode,
++    original_input: String,
++    effect: Effect,
++}
++
++impl AppState {
++    pub(super) fn observe_local_edit_action(&mut self, action: &Action) {
++        if self.pending_local_edit.is_some()
++            && matches!(
++                action,
++                Action::InputChar(_)
++                    | Action::InputText(_)
++                    | Action::InputBackspace
++                    | Action::CancelInput
++                    | Action::Back
++                    | Action::BeginScratch
++                    | Action::ExecuteContext
++                    | Action::CloseSavedViewEditor
++                    | Action::MoveSavedViewEditorField(_)
++                    | Action::CycleSavedViewEditorValue(_)
++                    | Action::BeginSavedViewFieldEdit
++            )
++        {
++            self.local_edit_revision = self.local_edit_revision.saturating_add(1);
++        }
++    }
++
++    pub fn local_edit_ticket_for(&self, effect: &Effect) -> Option<u64> {
++        self.pending_local_edit
++            .as_ref()
++            .filter(|pending| &pending.effect == effect)
++            .map(|pending| pending.ticket)
++    }
++
++    pub fn pending_local_edit_ticket(&self) -> Option<u64> {
++        self.pending_local_edit
++            .as_ref()
++            .map(|pending| pending.ticket)
++    }
++
++    pub(super) fn begin_local_edit_write(&mut self, effect: Effect) -> Vec<Effect> {
++        if self.pending_local_edit.is_some() {
++            self.mutation_notice = Some(
++                local_text(
++                    self.language,
++                    "local save is still pending; draft retained, no second write submitted",
++                    "本地保存仍在处理中；已保留草稿，未重复提交",
++                )
++                .into(),
++            );
++            return vec![];
++        }
++        if self.planning_store_error.is_some() {
++            self.mutation_notice = Some(
++                local_text(
++                    self.language,
++                    "local store is unavailable; draft retained, no write submitted",
++                    "本地存储不可用；已保留草稿，未提交写入",
++                )
++                .into(),
++            );
++            return vec![];
++        }
++        let Ok(ticket) = NEXT_TICKET.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
++            next.checked_add(1)
++        }) else {
++            self.mutation_notice = Some("local save identity exhausted; draft retained".into());
++            return vec![];
++        };
++        self.pending_local_edit = Some(PendingLocalEdit {
++            ticket,
++            revision: self.local_edit_revision,
++            mode: self.input_mode,
++            original_input: self.input_buffer.clone(),
++            effect: effect.clone(),
++        });
++        self.mutation_notice = Some(local_text(self.language,
++            "saving local changes; draft retained until receipt; closing does not undo a submitted write",
++            "正在保存本地更改；回执前保留草稿，关闭编辑不会撤销已提交写入").into());
++        vec![effect]
++    }
++
++    /// Errors may occur after commit while refreshing the projection. Never
++    /// advertise rollback or automatically retry an unconfirmed write.
++    pub fn finish_local_edit_write(&mut self, ticket: u64, result: Result<(), String>) {
++        if self.pending_local_edit_ticket() != Some(ticket) {
++            return;
++        }
++        let pending = self
++            .pending_local_edit
++            .take()
++            .expect("matching local write");
++        let same_editor = pending.revision == self.local_edit_revision
++            && self.local_edit_revision != u64::MAX
++            && pending.mode == self.input_mode
++            && pending.original_input == self.input_buffer
++            && match &pending.effect {
++                Effect::CreateScratch { workspace, .. } => self.new_scratch_workspace == *workspace,
++                Effect::SaveSourceNote { owner, .. } => self.note_target.as_ref() == Some(owner),
++                Effect::UpdateScratchNote { scratch_id, .. } => {
++                    self.note_target.as_ref().is_some_and(|target| {
++                        target.kind == crate::planning::SourceKind::ScratchWork
++                            && target.value == *scratch_id
++                    })
++                }
++                Effect::SaveSavedView { view } => self
++                    .saved_view_editor
++                    .as_ref()
++                    .is_some_and(|editor| editor.draft == *view),
++                _ => false,
++            };
++        if let Err(error) = result {
++            self.mutation_notice = Some(format!(
++                "{}: {error}",
++                local_text(
++                    self.language,
++                    "local save not confirmed; draft retained unless explicitly closed; check state before retrying",
++                    "本地保存未确认；未主动关闭的草稿已保留，请核对状态后再操作"
++                )
++            ));
++            if matches!(&pending.effect, Effect::SaveSavedView { .. }) && same_editor {
++                self.saved_view_editor_error = Some(error);
++            }
++            return;
++        }
++        if same_editor {
++            match pending.effect {
++                Effect::CreateScratch { .. } => self.new_scratch_workspace = None,
++                Effect::SaveSourceNote { .. } | Effect::UpdateScratchNote { .. } => {
++                    self.note_target = None
++                }
++                Effect::SaveSavedView { .. } => {
++                    self.saved_view_editor = None;
++                    self.saved_view_editor_error = None;
++                }
++                _ => return,
++            }
++            self.input_mode = InputMode::Normal;
++            self.input_buffer.clear();
++            self.mutation_notice =
++                Some(local_text(self.language, "local changes saved", "本地更改已保存").into());
++        } else {
++            self.mutation_notice = Some(
++                local_text(
++                    self.language,
++                    "submitted local changes saved; newer editor state was preserved",
++                    "已提交的本地更改已保存；后续编辑状态已保留",
++                )
++                .into(),
++            );
++        }
