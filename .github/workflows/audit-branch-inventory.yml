@@ -1,0 +1,41 @@
+name: audit-branch-inventory
+on:
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/audit-branch-inventory.yml']
+permissions:
+  contents: read
+  pull-requests: read
+jobs:
+  inventory:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'fix/v1.4-alias-identity'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: d4bef0b902069601ba6f4c2d436cd63fa38203a2
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Classify every branch with the trusted exact-main policy, without deletion
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = d4bef0b902069601ba6f4c2d436cd63fa38203a2
+          python3 scripts/repository/branch_hygiene.py --repo "$GITHUB_REPOSITORY" --output "$RUNNER_TEMP/branch-inventory.json"
+          python3 - <<'PY'
+          import collections,json,os,pathlib
+          path=pathlib.Path(os.environ['RUNNER_TEMP'],'branch-inventory.json')
+          plan=json.loads(path.read_text())
+          print('BRANCH_INVENTORY='+json.dumps({'mainSha':plan['mainSha'],'entries':len(plan['entries']),'decisions':dict(collections.Counter(x['decision'] for x in plan['entries'])),'reasons':dict(collections.Counter(x['reason'] for x in plan['entries'])),'mutationsPerformed':False}))
+          for entry in plan['entries']:
+              print(json.dumps(entry,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v7
+        with:
+          name: whole-repository-branch-inventory
+          path: ${{ runner.temp }}/branch-inventory.json
+          if-no-files-found: error
+          retention-days: 90
