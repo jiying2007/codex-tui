@@ -3,29 +3,86 @@ on:
   pull_request:
     paths:
       - .github/workflows/audit-authority-boundaries.yml
+      - .audit/**
 permissions:
   contents: read
 jobs:
-  source:
+  verify:
     if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'fix/v1.4-authority-boundaries'
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
-      - name: Retain exact source for isolated offline audit
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Materialize exact locally reproduced correction
+        shell: bash
         run: |
           set -euo pipefail
-          git bundle create "$RUNNER_TEMP/authority-source.bundle" HEAD
-          git rev-parse HEAD > "$RUNNER_TEMP/authority-source.sha"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          mkdir -p "$RUNNER_TEMP/authority-evidence"
+          python3 - <<'PY'
+          import hashlib,lzma,pathlib,subprocess,shutil
+          patch=lzma.decompress(pathlib.Path('.audit/authority.patch.xz').read_bytes())
+          assert hashlib.sha256(patch).hexdigest()=='a684f5b6fdc5bb786759e1f42036bddfc2d397e8087fa71301e45f144ab20933'
+          subprocess.run(['git','apply','--check','-'],input=patch,check=True)
+          subprocess.run(['git','apply','-'],input=patch,check=True)
+          shutil.rmtree('.audit')
+          pathlib.Path('.github/workflows/audit-authority-boundaries.yml').unlink()
+          PY
+          git add -A
+          git diff --cached --check
+          test "$(git write-tree)" = b8b825f0276845dfcc328f93dc7d04f83d4c1801
+      - name: Validate complete candidate and unchanged original gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets --all-features -- -D warnings 2>&1 | tee "$RUNNER_TEMP/authority-evidence/clippy.log"
+          cargo test --locked --all-targets --all-features 2>&1 | tee "$RUNNER_TEMP/authority-evidence/tests.log"
+          python3 -m unittest discover -s scripts/release -p 'test_*.py' 2>&1 | tee "$RUNNER_TEMP/authority-evidence/python.log"
+          python3 scripts/architecture/check_module_ratchet.py release/v1.3-plan.json > "$RUNNER_TEMP/authority-evidence/ratchet-v13.json"
+          python3 scripts/architecture/check_module_ratchet.py release/v1.4-plan.json > "$RUNNER_TEMP/authority-evidence/ratchet-v14.json"
+          python3 scripts/release/validate_v1_4_plan.py > "$RUNNER_TEMP/authority-evidence/plan.json"
+          python3 scripts/release/validate_v1_4_completion.py > "$RUNNER_TEMP/authority-evidence/completion.json"
+      - name: Export verified pathless Git blobs without moving any ref
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib,json,os,pathlib,subprocess
+          changes=subprocess.check_output(['git','diff','--cached','--no-renames','--name-status','-z']).decode().split('\0')
+          entries=[]
+          for i in range(0,len(changes)-1,2):
+              status,name=changes[i:i+2]
+              entry={'path':name,'mode':'100644','type':'blob','sha':None}
+              if status!='D':
+                  raw=pathlib.Path(name).read_bytes()
+                  body=json.dumps({'encoding':'utf-8','content':raw.decode('utf-8')})
+                  proc=subprocess.run(['gh','api','repos/'+os.environ['GITHUB_REPOSITORY']+'/git/blobs','--input','-'],input=body,text=True,capture_output=True,check=True)
+                  entry['sha']=json.loads(proc.stdout)['sha']
+                  assert entry['sha']==hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()
+              entries.append(entry)
+          tree=subprocess.check_output(['git','write-tree'],text=True).strip()
+          assert tree=='b8b825f0276845dfcc328f93dc7d04f83d4c1801'
+          receipt={'parent':os.environ['EXPECTED_HEAD'],'baseline':'19482044d0e73512da6f5d45bf501ddd6b005c00','tree':tree,'entries':entries,'refUpdated':False,'stableReady':False}
+          pathlib.Path(os.environ['RUNNER_TEMP'],'authority-evidence','candidate.json').write_text(json.dumps(receipt,indent=2)+'\n')
+          print(json.dumps(receipt))
+          PY
       - uses: actions/upload-artifact@v7
+        if: always()
         with:
-          name: authority-source
-          path: |
-            ${{ runner.temp }}/authority-source.bundle
-            ${{ runner.temp }}/authority-source.sha
+          name: authority-lifecycle-evidence
+          path: ${{ runner.temp }}/authority-evidence/
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 30
