@@ -243,9 +243,9 @@ impl ForgeObservation {
             return ForgeFreshness::Unavailable;
         }
         let age = now_unix_ms.saturating_sub(self.observed_at_unix_ms);
-        if age <= 10_000 {
+        if age <= crate::planning::FRESH_AGE_MS {
             ForgeFreshness::Fresh
-        } else if age <= 60_000 {
+        } else if age <= crate::planning::AGING_AGE_MS {
             ForgeFreshness::Aging
         } else {
             ForgeFreshness::Stale

@@ -9,7 +9,7 @@ on:
       - "src/release_benchmark.rs"
       - "src/render_performance.rs"
       - "src/interaction_performance.rs"
-      - "src/app/planning_worker.rs"
+      - "src/app/**"
       - "src/runtime_store_worker.rs"
       - "src/main.rs"
       - "src/app.rs"

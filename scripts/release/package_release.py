@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import gzip
+import hashlib
 import json
 import os
 import pathlib
@@ -14,6 +15,7 @@ import zipfile
 
 from _compat import cargo_package, write_text_lf
 from check_linux_abi import inspect_binary
+from archive_identity import validate_metadata
 
 
 def host_triple() -> str:
@@ -139,8 +141,10 @@ def main() -> int:
             "platform": args.platform,
             "hostTriple": triple,
             "binary": binary_name,
+            "binarySha256": hashlib.sha256((stage / binary_name).read_bytes()).hexdigest(),
             "license": license_spdx,
         }
+        validate_metadata(metadata, stage / binary_name, args.version, args.tag, args.commit)
         if args.platform == "linux":
             abi = inspect_binary(binary, args.commit)
             metadata["linuxRuntime"] = {"minimumGlibc": abi["maximumGlibc"], "baseline": abi["baseline"], "evidence": "LINUX-ABI.json"}

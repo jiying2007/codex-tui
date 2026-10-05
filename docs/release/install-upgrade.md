@@ -27,6 +27,23 @@ Each platform archive contains:
 - `RELEASE-METADATA.json`;
 - `LICENSE` with the Apache License 2.0.
 
+## Native archive identity
+
+Every newly built platform archive records `binarySha256` in
+`RELEASE-METADATA.json`. Native archive smoke verifies the schema, declared native
+platform/host-triple family, executable name, exact source SHA and actual payload
+hash before exercising the extracted executable. An existing backend-free
+one-sample diagnostic also checks the binary's embedded source SHA; that sample
+is identity verification, not qualified performance evidence.
+
+Extraction preflight rejects duplicate/case-colliding or aliased member paths,
+links/special files, multiple roots and file/directory collisions. It accepts at
+most 4,096 members and 256 MiB of declared extracted content. These checks do not
+authenticate an arbitrary executable: use only artifacts from the trusted,
+exact-source release workflow and verify the supplied artifact/checksum evidence.
+The verifier intentionally refuses older metadata lacking a payload hash rather
+than silently weakening the current release contract.
+
 ## Linux ABI baseline
 
 The v1.4 GNU x86-64 distributable is built and archive-smoked in Ubuntu 20.04

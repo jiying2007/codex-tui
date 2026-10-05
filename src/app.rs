@@ -46,6 +46,7 @@ use std::time::Instant;
 
 mod lifecycle;
 pub(crate) mod palette;
+mod planning_selection;
 pub mod planning_worker;
 mod review;
 mod types;
@@ -105,6 +106,7 @@ fn build_thread_indexes(
 #[derive(Clone, Debug)]
 pub struct AppState {
     planning_generation: u64,
+    planning_reconcile_count: usize,
     pub threads: Vec<ThreadSummary>,
     thread_index_by_id: HashMap<String, usize>,
     thread_indices_by_cwd: BTreeMap<String, Vec<usize>>,
@@ -237,6 +239,7 @@ impl AppState {
             .collect();
         Self {
             planning_generation: 0,
+            planning_reconcile_count: 0,
             threads,
             thread_index_by_id,
             thread_indices_by_cwd,
@@ -1047,6 +1050,10 @@ impl AppState {
             || (!thread.attention.is_empty() && !self.acknowledged_attention.contains(&thread.id.0))
     }
 
+    pub(crate) fn planning_reconcile_count(&self) -> usize {
+        self.planning_reconcile_count
+    }
+
     pub fn apply_local_state(&mut self, local: &LocalStateV1) {
         self.thread_ui = local.thread_ui.clone();
         self.local_pins = local.pins.clone();
@@ -1208,11 +1215,9 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             };
         }
         Action::PlanningSnapshotLoaded(snapshot) => {
+            let selection = planning_selection::PlanningSelection::capture(state);
             state.planning_snapshot = snapshot;
-            state.planning_view_index = state
-                .planning_view_index
-                .min(state.planning_views().len().saturating_sub(1));
-            state.board_selected = 0;
+            selection.restore(state);
         }
         Action::PlanningStoreDegraded(error) => {
             state.planning_store_error = error;
@@ -4209,6 +4214,8 @@ fn rebuild_planning_inner<const PROFILE: bool>(
     state: &mut AppState,
     now_unix_ms: u64,
 ) -> PlanningReconcilePhaseTimings {
+    let selection = planning_selection::PlanningSelection::capture(state);
+    state.planning_reconcile_count = state.planning_reconcile_count.saturating_add(1);
     let rebuild_started = planning_phase_start::<PROFILE>();
     let setup_started = planning_phase_start::<PROFILE>();
 
@@ -4343,6 +4350,7 @@ fn rebuild_planning_inner<const PROFILE: bool>(
 
     let work_cards_commit_started = planning_phase_start::<PROFILE>();
     state.work_cards = projections;
+    selection.restore(state);
     let work_cards_commit_ms = planning_phase_elapsed::<PROFILE>(work_cards_commit_started);
 
     let index_commit_ms = planning_phase_elapsed::<PROFILE>(index_commit_started);

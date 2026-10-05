@@ -9,46 +9,12 @@ use codex_tui::{
     store::{AppConfig, LocalStateV1, LocalStore},
     transcript_search::TranscriptSearchResults,
 };
-#[cfg(test)]
-use std::time::{Duration, Instant};
 use std::time::{SystemTime, UNIX_EPOCH};
-
-#[cfg(test)]
-const OPERATOR_STATE_WRITE_BEHIND_INTERVAL: Duration = Duration::from_millis(250);
-
-#[cfg(test)]
-#[derive(Default)]
-struct OperatorStateWriteBehind {
-    dirty_since: Option<Instant>,
-}
-
-#[cfg(test)]
-impl OperatorStateWriteBehind {
-    fn mark(&mut self) {
-        self.mark_at(Instant::now());
-    }
-
-    fn mark_at(&mut self, now: Instant) {
-        self.dirty_since.get_or_insert(now);
-    }
-
-    fn is_due_at(&self, now: Instant) -> bool {
-        self.dirty_since.is_some_and(|dirty_since| {
-            now.saturating_duration_since(dirty_since) >= OPERATOR_STATE_WRITE_BEHIND_INTERVAL
-        })
-    }
-
-    fn clear(&mut self) {
-        self.dirty_since = None;
-    }
-}
 
 pub(crate) struct RuntimeStore {
     sqlite: SqliteStore,
     writable: bool,
     error: Option<String>,
-    #[cfg(test)]
-    operator_state_write_behind: OperatorStateWriteBehind,
 }
 
 pub(crate) struct StoreBootstrap {
@@ -64,7 +30,6 @@ impl RuntimeStore {
             sqlite: SqliteStore::at(root),
             writable: true,
             error: None,
-            operator_state_write_behind: OperatorStateWriteBehind::default(),
         }
     }
 
@@ -100,8 +65,6 @@ impl RuntimeStore {
                 sqlite,
                 writable,
                 error,
-                #[cfg(test)]
-                operator_state_write_behind: OperatorStateWriteBehind::default(),
             },
             StoreBootstrap {
                 config,
@@ -111,16 +74,7 @@ impl RuntimeStore {
         ))
     }
 
-    #[cfg(test)]
-    pub(crate) fn defer_operator_state(&mut self) {
-        if self.writable {
-            self.operator_state_write_behind.mark();
-        }
-    }
-
     pub(crate) fn persist_operator_state(&mut self, state: &LocalStateV1) -> Option<String> {
-        #[cfg(test)]
-        self.operator_state_write_behind.clear();
         if !self.writable {
             return None;
         }
@@ -136,8 +90,6 @@ impl RuntimeStore {
     }
 
     pub(crate) fn flush_operator_state_on_exit(&mut self, state: &LocalStateV1) -> Result<()> {
-        #[cfg(test)]
-        self.operator_state_write_behind.clear();
         anyhow::ensure!(
             self.writable,
             "final SQLite operator-state flush refused: {}",
@@ -477,9 +429,7 @@ mod tests {
             sqlite: SqliteStore::at(blocked),
             writable: true,
             error: None,
-            operator_state_write_behind: OperatorStateWriteBehind::default(),
         };
-        store.defer_operator_state();
 
         let error = store
             .flush_operator_state_on_exit(&LocalStateV1::default())
@@ -490,20 +440,5 @@ mod tests {
                 .contains("final SQLite operator-state flush"),
             "unexpected final flush error: {error:#}"
         );
-    }
-
-    #[test]
-    fn deferred_operator_state_coalesces_without_extending_the_flush_deadline() {
-        let started = Instant::now();
-        let mut write_behind = OperatorStateWriteBehind::default();
-
-        write_behind.mark_at(started);
-        write_behind.mark_at(started + Duration::from_millis(100));
-
-        assert!(!write_behind.is_due_at(started + Duration::from_millis(249)));
-        assert!(write_behind.is_due_at(started + Duration::from_millis(250)));
-
-        write_behind.clear();
-        assert!(!write_behind.is_due_at(started + Duration::from_secs(1)));
     }
 }
