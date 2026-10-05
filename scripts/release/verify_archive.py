@@ -24,9 +24,14 @@ def extract(archive: pathlib.Path, destination: pathlib.Path) -> pathlib.Path:
             safe_extract_tar(handle, destination)
     elif archive.suffix == ".zip":
         with zipfile.ZipFile(archive) as handle:
-            validate_members([(entry.filename, entry.is_dir(),
+            entries = handle.infolist()
+            # ZipInfo normalizes backslashes on Windows and truncates at NUL.
+            # Validate wire names before extraction can hide those aliases.
+            if any(entry.orig_filename != entry.filename for entry in entries):
+                raise SystemExit("archive member name changed during ZIP normalization")
+            validate_members([(entry.orig_filename, entry.is_dir(),
                                stat.S_IFMT(entry.external_attr >> 16) in (0, stat.S_IFREG), entry.file_size)
-                              for entry in handle.infolist()])
+                              for entry in entries])
             handle.extractall(destination)
     else:
         raise SystemExit(f"unsupported archive: {archive}")
