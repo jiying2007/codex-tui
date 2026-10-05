@@ -1,0 +1,102 @@
+name: audit-queue-safety
+on:
+  pull_request:
+    paths:
+      - '.audit/**'
+      - '.github/workflows/audit-queue-safety.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'fix/v1.4-queue-confirmation'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+      BASE: 4a02b3538a344fd7a732b44f0d1212d24373064f
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Reproduce original reducer and real RPC failures
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test -z "$(git diff "$BASE" -- src tests Cargo.toml Cargo.lock release)"
+          mkdir -p "$RUNNER_TEMP/queue-evidence"
+          python3 - <<'PY'
+          import hashlib,lzma,os,pathlib,re,subprocess
+          patch=lzma.decompress(pathlib.Path('.audit/queue.patch.xz').read_bytes())
+          assert hashlib.sha256(patch).hexdigest()=='7bed037afda06b9626fafaed905891c399885b95091650830fea1529d6269336'
+          pathlib.Path(os.environ['RUNNER_TEMP'],'queue.patch').write_bytes(patch)
+          paths=['tests/queue_confirmation_safety.rs','tests/queue_payload_integrity.rs','src/app_server/queue_wire_tests.rs']
+          subprocess.run(['git','apply']+['--include='+p for p in paths]+['-'],input=patch,check=True)
+          source=pathlib.Path('src/app_server.rs')
+          source.write_text(source.read_text()+'\n#[cfg(test)]\nmod queue_wire_tests;\n')
+          cases=[('before.log',['--no-fail-fast','--test','queue_confirmation_safety','--test','queue_payload_integrity'],[(1,8),(2,10)]),('wire-before.log',['--lib','queue_wire_tests'],[(1,2)])]
+          for name,args,expected in cases:
+              run=subprocess.run(['cargo','test','--locked']+args,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+              pathlib.Path(os.environ['RUNNER_TEMP'],'queue-evidence',name).write_bytes(run.stdout)
+              counts=sorted((int(a),int(b)) for a,b in re.findall(r'test result: FAILED\. (\d+) passed; (\d+) failed',run.stdout.decode(errors='replace')))
+              assert run.returncode==101 and counts==expected,(name,run.returncode,counts)
+          source.write_bytes(subprocess.check_output(['git','show',os.environ['BASE']+':src/app_server.rs']))
+          subprocess.run(['git','apply']+['--exclude='+p for p in paths]+['-'],input=patch,check=True)
+          PY
+      - name: Verify complete corrected candidate and unchanged gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .audit/queue.patch.xz .github/workflows/audit-queue-safety.yml
+          rmdir .audit
+          git add -A
+          git diff --cached --check
+          test "$(git write-tree)" = 762e2f80e35bf7c4bfd30979abe520b4384003e8
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets --all-features -- -D warnings 2>&1 | tee "$RUNNER_TEMP/queue-evidence/clippy.log"
+          cargo test --locked --all-targets --all-features 2>&1 | tee "$RUNNER_TEMP/queue-evidence/after.log"
+          python3 -m unittest discover -s scripts/release -p 'test_*.py' 2>&1 | tee "$RUNNER_TEMP/queue-evidence/python.log"
+          python3 scripts/architecture/check_module_ratchet.py release/v1.3-plan.json
+          python3 scripts/architecture/check_module_ratchet.py release/v1.4-plan.json
+          python3 scripts/release/validate_v1_4_plan.py
+          python3 scripts/release/validate_v1_4_completion.py
+      - name: Export exact verified Git blobs without changing refs
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib,json,os,pathlib,re,subprocess
+          out=pathlib.Path(os.environ['RUNNER_TEMP'],'queue-evidence')
+          text=(out/'after.log').read_text()
+          assert sum(int(n) for n in re.findall(r'test result: ok\. (\d+) passed;',text))==572
+          changes=subprocess.check_output(['git','diff','--cached','--name-status','--no-renames','-z',os.environ['BASE']]).decode().split('\0')
+          entries=[]
+          for i in range(0,len(changes)-1,2):
+              status,name=changes[i:i+2]
+              assert status in ('A','M')
+              raw=pathlib.Path(name).read_bytes()
+              response=subprocess.run(['gh','api','repos/'+os.environ['GITHUB_REPOSITORY']+'/git/blobs','--input','-'],input=json.dumps({'encoding':'utf-8','content':raw.decode()}),capture_output=True,text=True,check=True)
+              sha=json.loads(response.stdout)['sha']
+              assert sha==hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()
+              entries.append({'path':name,'mode':'100644','type':'blob','sha':sha})
+          tree=subprocess.check_output(['git','write-tree'],text=True).strip()
+          assert tree=='762e2f80e35bf7c4bfd30979abe520b4384003e8'
+          receipt={'baseline':os.environ['BASE'],'parent':os.environ['EXPECTED_HEAD'],'tree':tree,'entries':entries,'refUpdated':False,'stableReady':False,'publicationAllowed':False}
+          (out/'candidate.json').write_text(json.dumps(receipt,indent=2)+'\n')
+          print(json.dumps(receipt))
+          PY
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: queue-safety-evidence
+          path: ${{ runner.temp }}/queue-evidence/
+          if-no-files-found: error
+          retention-days: 30
