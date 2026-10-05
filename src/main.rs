@@ -26,6 +26,7 @@ mod runtime_connection;
 mod runtime_doctor;
 mod runtime_external;
 mod runtime_input;
+mod runtime_local_edit;
 mod runtime_notifications;
 mod runtime_palette;
 mod runtime_prompt;
@@ -333,28 +334,7 @@ async fn run_app(fake_mode: bool, target_override: Option<&str>) -> Result<()> {
                 let Some(event) = services.store.try_event() else {
                     break;
                 };
-                match event {
-                    StoreEvent::Operator(error) => {
-                        if let Some(error) = error {
-                            reduce(&mut app, Action::PlanningStoreDegraded(Some(error)));
-                        }
-                    }
-                    StoreEvent::Planning(result, notice) => {
-                        let succeeded = result.is_ok();
-                        apply_planning_store_result(&mut app, result);
-                        planning_dirty |= succeeded;
-                        if succeeded && let Some(notice) = notice {
-                            reduce(&mut app, Action::MutationNotice(notice));
-                        }
-                    }
-                    StoreEvent::Search(Ok(results)) => {
-                        reduce(&mut app, Action::TranscriptSearchLoaded(results));
-                    }
-                    StoreEvent::Search(Err(error)) | StoreEvent::Notice(Some(error)) => {
-                        reduce(&mut app, Action::MutationNotice(error));
-                    }
-                    StoreEvent::Notice(None) => {}
-                }
+                planning_dirty |= runtime_local_edit::apply_event(&mut app, event);
                 needs_render = true;
             }
 
@@ -924,6 +904,7 @@ fn apply_effects(
         store,
     } = services;
     for effect in effects {
+        let local_ticket = app.local_edit_ticket_for(&effect);
         match effect {
             Effect::PersistOperatorState => {
                 if let Some(error) = store.persist_operator_state(&app.to_local_state()) {
@@ -934,10 +915,9 @@ fn apply_effects(
                 store.defer_operator_state();
             }
             Effect::CreateScratch { title, workspace } => {
-                submit_planning(
-                    app,
-                    store.planning(move |store| store.create_scratch(title, workspace), None),
-                );
+                runtime_local_edit::submit(app, store, local_ticket, move |store| {
+                    store.create_scratch(title, workspace)
+                });
             }
             Effect::SnoozeWorkCard {
                 anchor,
@@ -952,19 +932,14 @@ fn apply_effects(
                 );
             }
             Effect::SaveSourceNote { owner, text } => {
-                submit_planning(
-                    app,
-                    store.planning(move |store| store.save_source_note(owner, text), None),
-                );
+                runtime_local_edit::submit(app, store, local_ticket, move |store| {
+                    store.save_source_note(owner, text)
+                });
             }
             Effect::UpdateScratchNote { scratch_id, note } => {
-                submit_planning(
-                    app,
-                    store.planning(
-                        move |store| store.update_scratch_note(scratch_id, note),
-                        None,
-                    ),
-                );
+                runtime_local_edit::submit(app, store, local_ticket, move |store| {
+                    store.update_scratch_note(scratch_id, note)
+                });
             }
             Effect::CreateBookmark { source, label } => {
                 submit_planning(
@@ -988,10 +963,9 @@ fn apply_effects(
                 );
             }
             Effect::SaveSavedView { view } => {
-                submit_planning(
-                    app,
-                    store.planning(move |store| store.save_view(view), None),
-                );
+                runtime_local_edit::submit(app, store, local_ticket, move |store| {
+                    store.save_view(view)
+                });
             }
             Effect::DeleteSavedView { view_id } => {
                 submit_planning(

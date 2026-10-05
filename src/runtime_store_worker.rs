@@ -20,7 +20,8 @@ type Job = Box<dyn FnOnce(&mut StoreBackend) -> StoreEvent + Send>;
 type PlanningResult = std::result::Result<PlanningSnapshot, String>;
 pub(crate) enum StoreEvent {
     Operator(Option<String>),
-    Planning(PlanningResult, Option<String>),
+    Planning(PlanningResult, Option<String>, Option<u64>),
+    Stopped,
     Search(std::result::Result<TranscriptSearchResults, String>),
     Notice(Option<String>),
 }
@@ -138,7 +139,18 @@ impl StoreWorker {
     where
         F: FnOnce(&mut StoreBackend) -> PlanningResult + Send + 'static,
     {
-        self.submit(move |store| StoreEvent::Planning(job(store), notice))
+        self.planning_with_ticket(job, notice, None)
+    }
+    pub(crate) fn planning_with_ticket<F>(
+        &mut self,
+        job: F,
+        notice: Option<String>,
+        ticket: Option<u64>,
+    ) -> std::result::Result<(), String>
+    where
+        F: FnOnce(&mut StoreBackend) -> PlanningResult + Send + 'static,
+    {
+        self.submit(move |store| StoreEvent::Planning(job(store), notice, ticket))
     }
     pub(crate) fn index_conversation_page(
         &mut self,
@@ -154,7 +166,7 @@ impl StoreWorker {
         }
         match self.events.try_recv() {
             Ok(event) => {
-                if let StoreEvent::Operator(Some(error)) | StoreEvent::Planning(Err(error), _) =
+                if let StoreEvent::Operator(Some(error)) | StoreEvent::Planning(Err(error), _, _) =
                     &event
                 {
                     self.error = Some(error.clone());
@@ -164,16 +176,16 @@ impl StoreWorker {
             Err(TryRecvError::Empty) => None,
             Err(TryRecvError::Disconnected) if !self.stopped => {
                 self.stopped = true;
-                Some(StoreEvent::Operator(Some(
-                    "local state worker stopped".into(),
-                )))
+                Some(StoreEvent::Stopped)
             }
             Err(TryRecvError::Disconnected) => None,
         }
     }
     fn drain_exit_events(&self, failure: &mut Option<String>) {
         while let Ok(event) = self.events.try_recv() {
-            if let StoreEvent::Operator(Some(error)) | StoreEvent::Planning(Err(error), _) = event {
+            if let StoreEvent::Operator(Some(error)) | StoreEvent::Planning(Err(error), _, _) =
+                event
+            {
                 failure.get_or_insert(error);
             }
         }
@@ -222,6 +234,13 @@ impl StoreWorker {
             );
             std::thread::sleep(Duration::from_millis(5));
         }
+    }
+}
+
+#[cfg(test)]
+impl StoreWorker {
+    pub(crate) fn at_for_test(root: &std::path::Path) -> Self {
+        Self::start(StoreBackend::at_for_test(root)).unwrap()
     }
 }
 
@@ -291,7 +310,7 @@ mod shutdown_tests {
         let root = tempfile::tempdir().unwrap();
         let mut worker = StoreWorker::start(StoreBackend::at_for_test(root.path())).unwrap();
         worker
-            .submit(|_| StoreEvent::Planning(Err("accepted write failed".into()), None))
+            .submit(|_| StoreEvent::Planning(Err("accepted write failed".into()), None, None))
             .unwrap();
         let error = worker
             .flush_operator_state_on_exit(&LocalStateV1::default())

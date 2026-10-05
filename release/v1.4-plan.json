@@ -220,7 +220,11 @@
     "src/runtime_prompt.rs": 140,
     "src/latest_read.rs": 260,
     "src/forge/read_order_tests.rs": 180,
-    "src/git/read_order_tests.rs": 160
+    "src/git/read_order_tests.rs": 160,
+    "src/app/local_edit.rs": 240,
+    "src/runtime_local_edit.rs": 150,
+    "src/runtime_local_edit/tests.rs": 310,
+    "src/runtime_local_edit/route_tests.rs": 240
   },
   "ratchetPolicy": {
     "baseline": "inherit v1.3 Search & Multi-Target ceilings; feature work may only add bounded module-specific ceilings",
