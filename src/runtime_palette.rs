@@ -16,10 +16,9 @@ pub(crate) fn handle_command_palette_key(app: &mut AppState, key: KeyEvent) -> V
         KeyCode::Up => reduce(app, Action::MoveCommandPalette(-1)),
         KeyCode::Backspace => reduce(app, Action::CommandPaletteBackspace),
         KeyCode::Enter => {
-            let Some(choice) = app.command_palette_choice() else {
+            let Some(choice) = app.take_command_palette_choice() else {
                 return vec![];
             };
-            reduce(app, Action::CloseCommandPalette);
             handle_command(app, choice)
         }
         KeyCode::Char(character)
@@ -84,3 +83,7 @@ mod tests {
         assert_eq!(app.command_palette_query, query);
     }
 }
+
+#[cfg(test)]
+#[path = "runtime_palette/intent_tests.rs"]
+mod intent_tests;

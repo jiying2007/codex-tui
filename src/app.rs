@@ -48,6 +48,7 @@ mod context_menu;
 mod lifecycle;
 mod mutation_editor;
 pub(crate) mod palette;
+mod palette_intent;
 mod planning_selection;
 pub mod planning_worker;
 mod prompt;
@@ -182,6 +183,7 @@ pub struct AppState {
     pub command_palette_selected: usize,
     pub command_palette_query: String,
     command_palette_items: Vec<Command>,
+    command_palette_intent: Option<palette_intent::PaletteIntent>,
     pub context_open: bool,
     context_menu: Option<context_menu::ContextMenu>,
     pub context_selected: usize,
@@ -320,6 +322,7 @@ impl AppState {
             command_palette_selected: 0,
             command_palette_query: String::new(),
             command_palette_items: vec![],
+            command_palette_intent: None,
             context_open: false,
             context_menu: None,
             context_selected: 0,

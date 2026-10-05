@@ -22,8 +22,11 @@ fn fixture() -> AppState {
 
 fn choose(app: &mut AppState, command: Command) {
     reduce(app, Action::OpenCommandPalette);
-    app.command_palette_selected = app.command_palette_choices().iter()
-        .position(|candidate| *candidate == command).expect("available command");
+    app.command_palette_selected = app
+        .command_palette_choices()
+        .iter()
+        .position(|candidate| *candidate == command)
+        .expect("available command");
 }
 
 fn enter(app: &mut AppState) -> Vec<Effect> {
@@ -34,10 +37,17 @@ fn refused(app: &mut AppState) {
     let before = app.to_local_state();
     let view = app.view.clone();
     assert!(enter(app).is_empty(), "stale command emitted an effect");
-    assert_eq!(app.to_local_state(), before, "stale command changed operator state");
+    assert_eq!(
+        app.to_local_state(),
+        before,
+        "stale command changed operator state"
+    );
     assert_eq!(app.view, view, "stale command changed the active view");
     assert!(!app.command_palette_open);
-    assert!(app.mutation_notice.is_some(), "missing explicit stale-target notice");
+    assert!(
+        app.mutation_notice.is_some(),
+        "missing explicit stale-target notice"
+    );
     assert_eq!(app.input_mode, InputMode::Normal);
 }
 
@@ -152,7 +162,11 @@ fn identity_survives_reordering_when_same_item_remains_selected() {
     let mut threads = app.threads.clone();
     threads.reverse();
     reduce(&mut app, Action::ReplaceThreads(threads));
-    app.selected = app.threads.iter().position(|thread| thread.id == original).unwrap();
+    app.selected = app
+        .threads
+        .iter()
+        .position(|thread| thread.id == original)
+        .unwrap();
     assert_eq!(enter(&mut app), vec![Effect::PersistOperatorState]);
     assert!(app.threads[app.selected].pinned);
 }
@@ -190,7 +204,10 @@ fn cancel_and_reopen_capture_the_new_target() {
 fn direct_commands_remain_live_without_opening_a_palette() {
     let mut app = fixture();
     app.selected = 1;
-    assert_eq!(handle_command(&mut app, Command::TogglePin), vec![Effect::PersistOperatorState]);
+    assert_eq!(
+        handle_command(&mut app, Command::TogglePin),
+        vec![Effect::PersistOperatorState]
+    );
     assert!(app.threads[1].pinned);
 }
 

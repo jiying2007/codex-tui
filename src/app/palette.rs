@@ -275,6 +275,7 @@ impl AppState {
         if choices.is_empty() {
             return;
         }
+        self.command_palette_intent = Some(self.palette_intent());
         self.command_palette_items = choices;
         self.command_palette_query.clear();
         self.command_palette_open = true;
@@ -287,6 +288,7 @@ impl AppState {
         self.command_palette_selected = 0;
         self.command_palette_query.clear();
         self.command_palette_items.clear();
+        self.command_palette_intent = None;
     }
 
     pub(super) fn move_command_palette(&mut self, delta: i32) {
