@@ -1,0 +1,90 @@
+name: audit-release-coverage
+on:
+  pull_request:
+    paths:
+      - .github/workflows/audit-release-coverage.yml
+      - scripts/release/test_release_path_coverage.py
+permissions:
+  contents: read
+jobs:
+  verify-coverage:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'fix/v1.4-release-source-coverage'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Reproduce missing coverage and verify exact trigger correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/coverage-evidence"
+          python3 - <<'PY'
+          import os, pathlib, subprocess
+          result = subprocess.run(['python3','-m','unittest','discover','-s','scripts/release','-p','test_release_path_coverage.py','-v'],capture_output=True,text=True)
+          output = result.stdout + result.stderr
+          pathlib.Path(os.environ['RUNNER_TEMP'],'coverage-evidence','before.log').write_text(output)
+          print(output)
+          if result.returncode == 0 or 'FAILED (failures=2)' not in output or 'Ran 2 tests' not in output:
+              raise SystemExit('expected precisely two missing-coverage failures')
+          path = pathlib.Path('.github/workflows/release.yml')
+          text = path.read_text()
+          old_paths = ['src/release.rs','src/hardening.rs','src/soak.rs','src/scale_evidence.rs','src/support_bundle.rs','src/sqlite_store.rs','src/command.rs','src/keymap.rs','tests/failure_matrix.rs','tests/state_migration_qualification.rs','tests/protocol_replay.rs','tests/fixtures/protocol/**']
+          old = ''.join('      - "' + name + '"\n' for name in old_paths)
+          new = ''.join('      - "' + name + '"\n' for name in ['src/**','tests/**','benches/**','rust-toolchain.toml'])
+          if text.count(old) != 1:
+              raise SystemExit('release trigger changed; refusing fuzzy patch')
+          updated = text.replace(old, new, 1)
+          if updated.split('  workflow_dispatch:',1)[1] != text.split('  workflow_dispatch:',1)[1]:
+              raise SystemExit('unexpected dispatch/job/publish change')
+          path.write_text(updated)
+          path = pathlib.Path('docs/implementation/v1.4-review-consistency.md')
+          path.write_text(path.read_text() + '\n## Preview source-coverage correction\n\nAfter #224, main `414c714b190f7c536c6a14c49140a36771deb94e` correctly ran\nnative CI/development/scale/performance/soak, but the release main-push allowlist\nomitted app and UI sources. It did not produce a new preview; old archives are\nnot current-source evidence. The release trigger now covers all `src/**`,\n`tests/**`, `benches/**` and the Rust toolchain specification instead of enumerating\nindividual Rust files. Two regression tests fail with the old list and pass with\nthe complete coverage. No dispatch input, job, permission or publication condition\nis changed. Main push still builds a non-publishing preview; real-evidence stable\nqualification and explicit publication authorization remain unchanged.\n')
+          PY
+          python3 -m unittest discover -s scripts/release -p 'test_*.py' -v 2>&1 | tee "$RUNNER_TEMP/coverage-evidence/after.log"
+          python3 -O -m unittest discover -s scripts/release -p 'test_release_path_coverage.py' -v
+          python3 scripts/architecture/check_module_ratchet.py release/v1.3-plan.json
+          python3 scripts/architecture/check_module_ratchet.py release/v1.4-plan.json
+          python3 scripts/release/validate_v1_4_plan.py
+          python3 scripts/release/validate_v1_4_completion.py
+          git diff --check
+      - name: Retain tested source blobs without changing a ref
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,os,pathlib,subprocess
+          def git(*args):
+              return subprocess.check_output(['git',*args],text=True).strip()
+          if git('rev-parse','HEAD') != os.environ['EXPECTED_HEAD']:
+              raise SystemExit('unexpected checkout')
+          paths = git('diff','--name-only').splitlines()
+          if set(paths) != {'.github/workflows/release.yml','docs/implementation/v1.4-review-consistency.md'}:
+              raise SystemExit('unexpected candidate changes')
+          entries = []
+          for name in paths:
+              body = {'encoding':'utf-8','content':pathlib.Path(name).read_text()}
+              proc = subprocess.run(['gh','api','repos/'+os.environ['GITHUB_REPOSITORY']+'/git/blobs','--input','-'],input=json.dumps(body),text=True,capture_output=True,check=True)
+              sha = json.loads(proc.stdout)['sha']
+              if sha != git('hash-object',name):
+                  raise SystemExit('blob identity mismatch')
+              entries.append({'path':name,'mode':'100644','type':'blob','sha':sha})
+          pathlib.Path('.github/workflows/audit-release-coverage.yml').unlink()
+          git('add','-A')
+          receipt = {'parent':os.environ['EXPECTED_HEAD'],'tree':git('write-tree'),'entries':entries,'refUpdated':False,'localExecution':False,'publicationConditionsChanged':False}
+          pathlib.Path(os.environ['RUNNER_TEMP'],'coverage-evidence','candidate.json').write_text(json.dumps(receipt,indent=2)+'\n')
+          print('VERIFIED_CANDIDATE='+json.dumps(receipt))
+          PY
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: release-coverage-evidence
+          path: ${{ runner.temp }}/coverage-evidence/
+          if-no-files-found: error
+          retention-days: 30
