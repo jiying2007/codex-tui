@@ -542,7 +542,13 @@ pub(super) fn render_thread_queue(frame: &mut Frame<'_>, app: &AppState) {
     }
 
     lines.push(Line::from(""));
-    if let Some(pending) = app.pending_thread_queue_mutation.as_ref() {
+    if let Some(pending) = app.pending_queue_confirmation.as_ref() {
+        lines.push(Line::from(format!(
+            "{}: {} · {}",
+            tr(app, "Original item", "原始队列项"),
+            truncate_display(&sanitize_inline(pending.item_id()), 28),
+            truncate_display(&sanitize_inline(pending.summary()), 48),
+        )));
         lines.push(Line::from(if app.language.is_simplified_chinese() {
             format!("确认 {}？y 执行 · c/Esc 取消", pending.label())
         } else {
