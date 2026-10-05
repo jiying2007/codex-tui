@@ -1,0 +1,30 @@
+name: audit-mutation-targets
+on:
+  pull_request:
+    paths:
+      - .github/workflows/audit-mutation-targets.yml
+permissions:
+  contents: read
+jobs:
+  source:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'fix/v1.4-mutation-targets'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Retain exact source for isolated offline regression
+        run: |
+          git bundle create "$RUNNER_TEMP/mutation-source.bundle" HEAD
+          git rev-parse HEAD > "$RUNNER_TEMP/mutation-source.sha"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mutation-source
+          path: |
+            ${{ runner.temp }}/mutation-source.bundle
+            ${{ runner.temp }}/mutation-source.sha
+          retention-days: 7
+          if-no-files-found: error
