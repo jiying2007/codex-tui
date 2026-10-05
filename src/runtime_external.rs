@@ -12,12 +12,13 @@ pub(crate) fn open_external_editor(cwd: &str, relative_path: &str) -> Result<()>
     if !path.exists() {
         anyhow::bail!("selected path does not exist: {}", path.display());
     }
-    std::process::Command::new(editor)
+    let mut command = std::process::Command::new(editor);
+    command
         .arg(path)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
+        .stderr(Stdio::null());
+    codex_tui::detached_process::spawn(&mut command)
         .map(|_| ())
         .map_err(Into::into)
 }
@@ -53,8 +54,8 @@ pub(crate) fn open_external_url(url: &str) -> Result<()> {
     command
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
+        .stderr(Stdio::null());
+    codex_tui::detached_process::spawn(&mut command)
         .map(|_| ())
         .map_err(Into::into)
 }
@@ -69,3 +70,7 @@ mod tests {
         assert!(open_external_url("javascript:alert(1)").is_err());
     }
 }
+
+#[cfg(all(test, target_os = "linux"))]
+#[path = "runtime_external/tests.rs"]
+mod process_tests;

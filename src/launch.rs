@@ -188,21 +188,20 @@ impl LaunchPlan {
             .argv
             .split_first()
             .context("launch plan argv is empty")?;
-        let child = Command::new(program)
+        let mut command = Command::new(program);
+        command
             .args(args)
             .current_dir(&self.cwd)
             .stdin(Stdio::null())
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .with_context(|| {
-                format!(
-                    "spawn launch preset {:?} in {}",
-                    self.name,
-                    self.cwd.display()
-                )
-            })?;
-        Ok(child.id())
+            .stderr(Stdio::null());
+        crate::detached_process::spawn(&mut command).with_context(|| {
+            format!(
+                "spawn launch preset {:?} in {}",
+                self.name,
+                self.cwd.display()
+            )
+        })
     }
 }
 
