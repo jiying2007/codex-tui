@@ -206,6 +206,7 @@ pub struct AppState {
     pub input_mode: InputMode,
     pub input_buffer: String,
     input_original: String,
+    alias_target: Option<ThreadId>,
     search_return_view: Option<View>,
 }
 
@@ -340,6 +341,7 @@ impl AppState {
             input_mode: InputMode::Normal,
             input_buffer: String::new(),
             input_original: String::new(),
+            alias_target: None,
             search_return_view: None,
         }
     }
@@ -2974,10 +2976,11 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             };
         }
         Action::BeginAlias => {
-            if let Some(alias) = state
+            if let Some((target, alias)) = state
                 .selected_thread()
-                .map(|thread| thread.alias.clone().unwrap_or_default())
+                .map(|thread| (thread.id.clone(), thread.alias.clone().unwrap_or_default()))
             {
+                state.alias_target = Some(target);
                 state.input_original.clear();
                 state.input_buffer = alias;
                 state.input_mode = InputMode::Alias;
@@ -3565,14 +3568,31 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 return prompt::submit(state);
             }
             if mode == InputMode::Alias {
+                let Some(index) = state
+                    .alias_target
+                    .as_ref()
+                    .and_then(|id| state.thread_index_by_id.get(&id.0))
+                    .copied()
+                else {
+                    state.mutation_notice = Some(
+                        local_text(
+                            state.language,
+                            "alias target is no longer available; edit retained, no changes saved",
+                            "别名目标已不可用；已保留输入，未保存任何更改",
+                        )
+                        .into(),
+                    );
+                    return vec![];
+                };
                 let alias = state.input_buffer.trim().to_string();
-                if let Some(thread) = state.threads.get_mut(state.selected) {
+                if let Some(thread) = state.threads.get_mut(index) {
                     thread.alias = (!alias.is_empty()).then_some(alias);
                     if let Some(alias) = thread.alias.clone() {
                         state.local_aliases.insert(thread.id.0.clone(), alias);
                     } else {
                         state.local_aliases.remove(&thread.id.0);
                     }
+                    state.alias_target = None;
                     state.input_mode = InputMode::Normal;
                     state.input_buffer.clear();
                     state.input_original.clear();
@@ -3594,6 +3614,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
         }
         Action::CancelInput => {
+            state.alias_target = None;
             let mut search_watch_to_release = None;
             if matches!(
                 state.input_mode,

@@ -16,7 +16,8 @@ fn begin(state: &mut AppState) {
 }
 #[test]
 fn removed_alias_target_never_retargets_the_replacement_row() {
-    let mut state = fixture(); begin(&mut state);
+    let mut state = fixture();
+    begin(&mut state);
     let remaining = vec![state.threads[1].clone()];
     reduce(&mut state, Action::ReplaceThreads(remaining));
     let before = state.to_local_state();
@@ -29,23 +30,53 @@ fn removed_alias_target_never_retargets_the_replacement_row() {
 }
 #[test]
 fn refreshed_filter_cannot_redirect_an_existing_alias_editor() {
-    let mut state = fixture(); let original = state.threads[0].id.clone(); begin(&mut state);
+    let mut state = fixture();
+    let original = state.threads[0].id.clone();
+    begin(&mut state);
     state.filter = "Beta".into();
     let refreshed = state.threads.clone();
     reduce(&mut state, Action::ReplaceThreads(refreshed));
     assert_eq!(state.selected, 1);
-    assert_eq!(reduce(&mut state, Action::CommitInput), vec![Effect::PersistOperatorState]);
-    assert_eq!(state.threads.iter().find(|thread| thread.id == original).unwrap().alias.as_deref(), Some("原始目标的别名"));
+    assert_eq!(
+        reduce(&mut state, Action::CommitInput),
+        vec![Effect::PersistOperatorState]
+    );
+    assert_eq!(
+        state
+            .threads
+            .iter()
+            .find(|thread| thread.id == original)
+            .unwrap()
+            .alias
+            .as_deref(),
+        Some("原始目标的别名")
+    );
     assert!(state.threads[1].alias.is_none());
 }
 #[test]
 fn reordered_alias_target_and_explicit_cancel_keep_identity() {
-    let mut state = fixture(); let original = state.threads[0].id.clone(); begin(&mut state);
-    let mut refreshed = state.threads.clone(); refreshed.reverse();
+    let mut state = fixture();
+    let original = state.threads[0].id.clone();
+    begin(&mut state);
+    let mut refreshed = state.threads.clone();
+    refreshed.reverse();
     reduce(&mut state, Action::ReplaceThreads(refreshed));
-    assert_eq!(reduce(&mut state, Action::CommitInput), vec![Effect::PersistOperatorState]);
-    assert_eq!(state.threads.iter().find(|thread| thread.id == original).unwrap().alias.as_deref(), Some("原始目标的别名"));
-    state.selected = 0; begin(&mut state);
+    assert_eq!(
+        reduce(&mut state, Action::CommitInput),
+        vec![Effect::PersistOperatorState]
+    );
+    assert_eq!(
+        state
+            .threads
+            .iter()
+            .find(|thread| thread.id == original)
+            .unwrap()
+            .alias
+            .as_deref(),
+        Some("原始目标的别名")
+    );
+    state.selected = 0;
+    begin(&mut state);
     let before = state.to_local_state();
     assert!(reduce(&mut state, Action::CancelInput).is_empty());
     assert_eq!(state.to_local_state(), before);
