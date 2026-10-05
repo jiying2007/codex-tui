@@ -3,7 +3,7 @@ use crate::{
     batch_local::LocalBatchPlan,
     conversation::{ConversationPage, InteractiveRequest, InteractiveResolution, RpcRequestId},
     domain::{ThreadId, ThreadSummary},
-    forge::{ForgeObservation, ForgeReviewSummary, ForgeReviewTarget},
+    forge::{ForgeObservation, ForgeReviewResult, ForgeReviewTarget},
     forge_mutation::{ForgeMutationReceipt, ForgeMutationRequest},
     git::{GitContext, GitReview},
     goal::{GoalObservation, GoalStatus},
@@ -139,7 +139,7 @@ pub enum Action {
     RefreshForgeProjections,
     GitContextLoaded(GitContext),
     ForgeObservationLoaded(ForgeObservation),
-    ForgeReviewLoaded(ForgeReviewSummary),
+    ForgeReviewLoaded(Box<ForgeReviewResult>),
     GitReviewLoaded(GitReview),
     ReviewError {
         thread_id: ThreadId,

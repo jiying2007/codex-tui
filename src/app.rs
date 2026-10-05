@@ -1178,9 +1178,28 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::ForgeObservationLoaded(observation) => {
             propagate_forge_observation(state, observation);
         }
-        Action::ForgeReviewLoaded(review) => {
+        Action::ForgeReviewLoaded(result) => {
+            let crate::forge::ForgeReviewResult {
+                target,
+                summary: review,
+            } = *result;
+            if state
+                .thread_by_id(&target.thread_id)
+                .is_none_or(|thread| thread.metadata.cwd != target.cwd)
+                || target.thread_id != review.thread_id
+                || target.cwd != review.cwd
+                || target.change_request_iid != review.change_request_iid
+            {
+                return vec![];
+            }
             if let Some(observation) = state.forge_observations.get_mut(&review.thread_id.0)
                 && observation.cwd == review.cwd
+                && observation.identity.as_ref().is_some_and(|identity| {
+                    identity.provider == target.provider
+                        && identity.host == target.host
+                        && identity.project_id == target.project_id
+                        && identity.path_with_namespace == target.project_path
+                })
                 && observation
                     .change_requests
                     .iter()
@@ -4010,6 +4029,12 @@ fn propagate_git_context(state: &mut AppState, context: GitContext) {
 }
 
 fn propagate_forge_observation(state: &mut AppState, observation: ForgeObservation) {
+    if state
+        .thread_by_id(&observation.thread_id)
+        .is_none_or(|thread| thread.metadata.cwd != observation.cwd)
+    {
+        return;
+    }
     let source_cwd = observation.cwd.clone();
     let source_identity = observation.identity.clone();
     let mut targets = state
@@ -4045,6 +4070,9 @@ fn propagate_forge_observation(state: &mut AppState, observation: ForgeObservati
         let existing_review = state
             .forge_observations
             .get(&thread_id.0)
+            .filter(|existing| {
+                existing.identity.is_some() && existing.identity == observation.identity
+            })
             .and_then(|existing| existing.review.clone())
             .filter(|review| {
                 review.cwd == cwd

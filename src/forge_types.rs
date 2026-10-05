@@ -285,6 +285,33 @@ pub struct ForgeReviewTarget {
     pub change_request_iid: u64,
 }
 
+/// In-memory result retaining the exact target that the actor actually requested.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ForgeReviewResult {
+    pub target: ForgeReviewTarget,
+    pub summary: ForgeReviewSummary,
+}
+impl ForgeReviewResult {
+    pub fn unavailable(target: ForgeReviewTarget, error: String) -> Self {
+        let summary = ForgeReviewSummary {
+            thread_id: target.thread_id.clone(),
+            cwd: target.cwd.clone(),
+            change_request_iid: target.change_request_iid,
+            approvals_required: None,
+            approvals_left: None,
+            approved_by_count: 0,
+            changes_requested_by_count: 0,
+            discussions_total: 0,
+            unresolved_discussions: 0,
+            approvals_available: false,
+            discussions_available: false,
+            observed_at_unix_ms: now_unix_ms(),
+            error: Some(error),
+        };
+        Self { target, summary }
+    }
+}
+
 pub type ForgeFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 pub trait ForgeProvider: Send + Sync {

@@ -4,9 +4,10 @@ pub(crate) use crate::forge_types::default_capabilities;
 pub use crate::forge_types::{
     CapabilityState, ChangeRequestSummary, ForgeCapability, ForgeDoctorSnapshot, ForgeFreshness,
     ForgeFuture, ForgeIdentity, ForgeIssueSummary, ForgeObservation, ForgeProvider,
-    ForgeProviderKind, ForgeReviewSummary, ForgeReviewTarget, IssueBoardSummary, PipelineSummary,
-    RemoteIdentity,
+    ForgeProviderKind, ForgeReviewResult, ForgeReviewSummary, ForgeReviewTarget, IssueBoardSummary,
+    PipelineSummary, RemoteIdentity,
 };
+use crate::latest_read::{ReadEnvelope, ReadFence, ReadScope, next_current};
 use anyhow::{Context, Result, anyhow, bail};
 use serde::Deserialize;
 use std::path::Path;
@@ -154,13 +155,14 @@ pub enum ForgeCommand {
 #[derive(Clone, Debug)]
 pub enum ForgeEvent {
     Observation(Box<ForgeObservation>),
-    Review(ForgeReviewSummary),
+    Review(Box<ForgeReviewResult>),
 }
 
 pub struct ForgeHandle {
-    command_tx: mpsc::Sender<ForgeCommand>,
-    event_rx: mpsc::Receiver<ForgeEvent>,
+    command_tx: mpsc::Sender<ReadEnvelope<ForgeCommand>>,
+    event_rx: mpsc::Receiver<ReadEnvelope<ForgeEvent>>,
     task: JoinHandle<()>,
+    reads: ReadFence,
 }
 
 impl ForgeHandle {
@@ -176,6 +178,7 @@ impl ForgeHandle {
             command_tx,
             event_rx,
             task,
+            reads: ReadFence::default(),
         }
     }
 
@@ -188,16 +191,15 @@ impl ForgeHandle {
     }
 
     fn queue_command(&self, command: ForgeCommand) -> Result<()> {
-        self.command_tx
-            .try_send(command)
-            .map_err(|error| match error {
-                mpsc::error::TrySendError::Full(_) => anyhow!("Forge actor queue is full"),
-                mpsc::error::TrySendError::Closed(_) => anyhow!("Forge actor is not available"),
-            })
+        let scope = match &command {
+            ForgeCommand::Probe { cwd, .. } => ReadScope::Snapshot(cwd.clone()),
+            ForgeCommand::ProbeReview(target) => ReadScope::Review(target.thread_id.0.clone()),
+        };
+        self.reads.submit(&self.command_tx, scope, command, "Forge")
     }
 
     pub fn try_recv(&mut self) -> Option<ForgeEvent> {
-        self.event_rx.try_recv().ok()
+        next_current(&mut self.event_rx, FORGE_EVENT_QUEUE_CAPACITY)
     }
 }
 
@@ -209,8 +211,8 @@ impl Drop for ForgeHandle {
 
 async fn run_actor(
     provider: Arc<dyn ForgeProvider>,
-    mut command_rx: mpsc::Receiver<ForgeCommand>,
-    event_tx: mpsc::Sender<ForgeEvent>,
+    mut command_rx: mpsc::Receiver<ReadEnvelope<ForgeCommand>>,
+    event_tx: mpsc::Sender<ReadEnvelope<ForgeEvent>>,
 ) {
     let mut tasks = JoinSet::new();
     let mut command_open = true;
@@ -222,7 +224,7 @@ async fn run_actor(
             }
             command = command_rx.recv(), if command_open && tasks.len() < FORGE_MAX_CONCURRENCY => {
                 match command {
-                    Some(command) => {
+                    Some(ReadEnvelope { value: command, ticket }) => {
                         let provider = Arc::clone(&provider);
                         let event_tx = event_tx.clone();
                         tasks.spawn(async move {
@@ -231,10 +233,11 @@ async fn run_actor(
                                     ForgeEvent::Observation(Box::new(provider.probe(thread_id, cwd).await))
                                 }
                                 ForgeCommand::ProbeReview(target) => {
-                                    ForgeEvent::Review(provider.probe_review(target).await)
+                                    let summary = provider.probe_review(target.clone()).await;
+                                    ForgeEvent::Review(Box::new(ForgeReviewResult { target, summary }))
                                 }
                             };
-                            let _ = event_tx.send(event).await;
+                            let _ = event_tx.send(ReadEnvelope { value: event, ticket }).await;
                         });
                     }
                     None => command_open = false,
@@ -1337,3 +1340,6 @@ mod tests {
         assert_eq!(observation.freshness_at(101), ForgeFreshness::Unavailable);
     }
 }
+
+#[cfg(test)]
+mod read_order_tests;
