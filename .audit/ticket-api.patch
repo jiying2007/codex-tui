@@ -1,0 +1,95 @@
+diff --git a/docs/implementation/v1.4-local-edit-durability.md b/docs/implementation/v1.4-local-edit-durability.md
+index fe6b35d..519c59c 100644
+--- a/docs/implementation/v1.4-local-edit-durability.md
++++ b/docs/implementation/v1.4-local-edit-durability.md
+@@ -27,12 +27,16 @@ was added. Existing module limits and real qualification/publication gates remai
+ Validation uses production reducers, actual bounded StoreWorker admission and
+ SQLite writes, old/matching receipts, full-queue recovery, write failure, injected
+ worker termination and the final-save barrier. Eleven original reducer tests
+-reproduce eight failures and three positive controls; corrected validation covers 630 Rust and 34 Python tests, including
++reproduce eight failures and three positive controls; corrected validation covers 632 Rust and 34 Python tests, including
+ the actual effect dispatcher for all four editor types with real SQLite success
+ and failure. These candidate results are not final-main release evidence.
+ Before/after logs, the exact tested tree and independent hosted verification
+ belong in the PR receipt. The original unexecuted candidate had a missing import;
+ that compile failure is retained before the corrected full-suite pass.
++The first independent hosted candidate also rejected the deprecated atomic
++fetch_update alias on Rust 1.99. Ticket allocation now uses the MSRV-compatible
++compare-exchange loop, with exhaustion and concurrent-uniqueness tests. No
++warning suppression or toolchain requirement increase was used.
+ 
+ Verification code runs without repository-write authority. Exporting tested
+ source blobs, when needed by the connector, uses a separate data-only job which
+ diff --git a/src/app/local_edit.rs b/src/app/local_edit.rs
+index f4d6598..847de94 100644
+--- a/src/app/local_edit.rs
++++ b/src/app/local_edit.rs
+@@ -4,6 +4,18 @@ use std::sync::atomic::{AtomicU64, Ordering};
+ 
+ static NEXT_TICKET: AtomicU64 = AtomicU64::new(1);
+ 
++// compare_exchange_weak is available at our MSRV; no deprecated alias or wrap.
++fn allocate_ticket(counter: &AtomicU64) -> Option<u64> {
++    let mut current = counter.load(Ordering::Relaxed);
++    loop {
++        let next = current.checked_add(1)?;
++        match counter.compare_exchange_weak(current, next, Ordering::Relaxed, Ordering::Relaxed) {
++            Ok(_) => return Some(current),
++            Err(observed) => current = observed,
++        }
++    }
++}
++
+ #[derive(Clone, Debug)]
+ pub(super) struct PendingLocalEdit {
+     ticket: u64,
+@@ -71,9 +83,7 @@ impl AppState {
+             );
+             return vec![];
+         }
+-        let Ok(ticket) = NEXT_TICKET.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |next| {
+-            next.checked_add(1)
+-        }) else {
++        let Some(ticket) = allocate_ticket(&NEXT_TICKET) else {
+             self.mutation_notice = Some("local save identity exhausted; draft retained".into());
+             return vec![];
+         };
+@@ -161,3 +171,38 @@ impl AppState {
+         }
+     }
+ }
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    #[test]
++    fn ticket_exhaustion_never_wraps_or_reuses_an_identity() {
++        let counter = AtomicU64::new(u64::MAX - 1);
++        assert_eq!(allocate_ticket(&counter), Some(u64::MAX - 1));
++        assert_eq!(allocate_ticket(&counter), None);
++        assert_eq!(allocate_ticket(&counter), None);
++        assert_eq!(counter.load(Ordering::Relaxed), u64::MAX);
++    }
++
++    #[test]
++    fn concurrent_ticket_allocation_is_unique() {
++        let counter = std::sync::Arc::new(AtomicU64::new(1));
++        let workers = (0..8)
++            .map(|_| {
++                let counter = counter.clone();
++                std::thread::spawn(move || {
++                    (0..100)
++                        .map(|_| allocate_ticket(&counter).unwrap())
++                        .collect::<Vec<_>>()
++                })
++            })
++            .collect::<Vec<_>>();
++        let mut tickets = workers
++            .into_iter()
++            .flat_map(|worker| worker.join().unwrap())
++            .collect::<Vec<_>>();
++        tickets.sort_unstable();
++        assert_eq!(tickets, (1..=800).collect::<Vec<_>>());
++    }
++}
