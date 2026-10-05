@@ -3673,7 +3673,7 @@ fn parse_snooze_duration(value: &str) -> Option<u64> {
     if value.len() < 2 {
         return None;
     }
-    let (number, suffix) = value.split_at(value.len() - 1);
+    let (number, suffix) = value.split_at_checked(value.len() - 1)?;
     let amount = number.parse::<u64>().ok()?;
     if amount == 0 {
         return None;
