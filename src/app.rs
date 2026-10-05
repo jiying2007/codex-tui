@@ -44,7 +44,9 @@ use crate::transcript_search::{
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::time::Instant;
 
+mod context_menu;
 mod lifecycle;
+mod mutation_editor;
 pub(crate) mod palette;
 mod planning_selection;
 pub mod planning_worker;
@@ -179,8 +181,9 @@ pub struct AppState {
     pub command_palette_query: String,
     command_palette_items: Vec<Command>,
     pub context_open: bool,
+    context_menu: Option<context_menu::ContextMenu>,
     pub context_selected: usize,
-    pub hot_slot_bind_pending: bool,
+    pub hot_slot_bind_pending: Option<SourceRef>,
     pub review_selected: usize,
     pub review_scroll: u16,
     pub review_word_diff: bool,
@@ -209,6 +212,7 @@ pub struct AppState {
     pub input_buffer: String,
     input_original: String,
     alias_target: Option<ThreadId>,
+    mutation_editor: Option<mutation_editor::MutationEditor>,
     search_return_view: Option<View>,
 }
 
@@ -315,8 +319,9 @@ impl AppState {
             command_palette_query: String::new(),
             command_palette_items: vec![],
             context_open: false,
+            context_menu: None,
             context_selected: 0,
-            hot_slot_bind_pending: false,
+            hot_slot_bind_pending: None,
             review_selected: 0,
             review_scroll: 0,
             review_word_diff: false,
@@ -345,6 +350,7 @@ impl AppState {
             input_buffer: String::new(),
             input_original: String::new(),
             alias_target: None,
+            mutation_editor: None,
             search_return_view: None,
         }
     }
@@ -831,9 +837,17 @@ impl AppState {
             View::Review(id) | View::Workspace(id) => id,
             _ => return None,
         };
+        let live = self.thread_by_id(thread_id)?;
         let context = self.git_context(thread_id)?;
         let branch = context.branch.clone()?;
         let observation = self.forge_observation(thread_id)?;
+        if context.cwd != live.metadata.cwd
+            || observation.cwd != live.metadata.cwd
+            || context.error.is_some()
+            || observation.error.is_some()
+        {
+            return None;
+        }
         let identity = observation.identity.clone()?;
         let change_request = observation.change_request_for_branch(&branch).cloned();
         Some(ForgeMutationTarget {
@@ -845,6 +859,13 @@ impl AppState {
     }
 
     pub fn context_choices(&self) -> Vec<ContextChoice> {
+        if let Some(menu) = self.context_menu.as_ref() {
+            return menu.choices.clone();
+        }
+        self.build_context_choices()
+    }
+
+    fn build_context_choices(&self) -> Vec<ContextChoice> {
         let mut choices = Vec::new();
         if let Some(target) = self.selected_local_target() {
             choices.extend([
@@ -1375,6 +1396,9 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 );
                 return vec![];
             }
+            if !state.begin_mutation_editor(InputMode::WorktreeCreateBranch) {
+                return vec![];
+            }
             state.pending_operation = None;
             state.create_worktree_branch = None;
             state.create_worktree_path = None;
@@ -1442,10 +1466,17 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             if context.repo.is_none() {
                 return vec![];
             }
+            if !state.begin_mutation_editor(InputMode::WorktreeDeleteBranch) {
+                return vec![];
+            }
             state.input_buffer = state
                 .selected_managed_worktree()
                 .and_then(|record| record.branch.clone())
-                .or_else(|| context.branch.clone())
+                .or_else(|| {
+                    state
+                        .git_context(&thread_id)
+                        .and_then(|context| context.branch.clone())
+                })
                 .unwrap_or_default();
             state.input_mode = InputMode::WorktreeDeleteBranch;
         }
@@ -1673,6 +1704,9 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             if !state.goal_checked.contains(&thread_id.0) {
                 return vec![Effect::RefreshGoal(thread_id)];
             }
+            if !state.begin_mutation_editor(InputMode::GoalObjective) {
+                return vec![];
+            }
             state.input_buffer = state
                 .goals
                 .get(&thread_id.0)
@@ -1840,16 +1874,8 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         }
         Action::CommandPaletteInputText(text) => state.input_command_palette_text(text),
         Action::CommandPaletteBackspace => state.backspace_command_palette(),
-        Action::OpenContext => {
-            if !state.context_choices().is_empty() {
-                state.context_open = true;
-                state.context_selected = 0;
-            }
-        }
-        Action::CloseContext => {
-            state.context_open = false;
-            state.context_selected = 0;
-        }
+        Action::OpenContext => state.open_context_menu(),
+        Action::CloseContext => state.close_context_menu(),
         Action::MoveContext(delta) => {
             let len = state.context_choices().len();
             if len == 0 {
@@ -1860,12 +1886,9 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
         }
         Action::ExecuteContext => {
-            let Some(choice) = state.context_choice() else {
-                state.context_open = false;
+            let Some(choice) = state.take_context_choice() else {
                 return vec![];
             };
-            state.context_open = false;
-            state.context_selected = 0;
 
             if choice == ContextChoice::NewCodexThread {
                 return state.plan_start_thread();
@@ -2015,12 +2038,18 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 state.pending_operation = None;
                 match choice {
                     ContextChoice::ForgeCreateMergeRequest => {
+                        if !state.begin_mutation_editor(InputMode::ForgeMergeRequestTitle) {
+                            return vec![];
+                        }
                         state.pending_forge_operation = None;
                         state.pending_forge_payload = None;
                         state.input_buffer.clear();
                         state.input_mode = InputMode::ForgeMergeRequestTitle;
                     }
                     ContextChoice::ForgeComment => {
+                        if !state.begin_mutation_editor(InputMode::ForgeComment) {
+                            return vec![];
+                        }
                         state.pending_forge_operation = None;
                         state.pending_forge_payload = None;
                         state.input_buffer.clear();
@@ -2316,14 +2345,21 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
         }
         Action::BeginHotSlotBind => {
-            state.hot_slot_bind_pending = state.selected_local_target().is_some();
+            state.hot_slot_bind_pending = state.selected_local_target();
         }
         Action::UseHotSlot(slot) => {
-            if state.hot_slot_bind_pending {
-                state.hot_slot_bind_pending = false;
-                if let Some(target) = state.selected_local_target() {
+            if let Some(target) = state.hot_slot_bind_pending.take() {
+                if state.local_target_live(&target) {
                     return vec![Effect::SetHotSlot { slot, target }];
                 }
+                state.mutation_notice = Some(
+                    local_text(
+                        state.language,
+                        "shortcut target disappeared; no binding saved",
+                        "快捷槽目标已消失；未保存绑定",
+                    )
+                    .into(),
+                );
                 return vec![];
             }
 
@@ -2695,12 +2731,10 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 return vec![];
             }
             if state.context_open {
-                state.context_open = false;
-                state.context_selected = 0;
+                state.close_context_menu();
                 return vec![];
             }
-            if state.hot_slot_bind_pending {
-                state.hot_slot_bind_pending = false;
+            if state.hot_slot_bind_pending.take().is_some() {
                 return vec![];
             }
             if matches!(state.view, View::Scratch(_)) {
@@ -3094,6 +3128,9 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         },
         Action::CommitInput => {
             let mode = state.input_mode;
+            if !state.guard_mutation_editor(mode) {
+                return vec![];
+            }
             if matches!(mode, InputMode::ThreadQueueAdd | InputMode::ThreadQueueEdit) {
                 return state.commit_queue_input();
             }
@@ -3150,6 +3187,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     Ok(plan) => {
                         state.pending_forge_operation = Some(plan);
                         state.pending_forge_payload = None;
+                        state.mutation_editor = None;
                         state.input_mode = InputMode::Normal;
                         state.input_buffer.clear();
                         state.mutation_notice = None;
@@ -3206,6 +3244,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     Ok(plan) => {
                         state.pending_forge_operation = Some(plan);
                         state.pending_forge_payload = Some(body);
+                        state.mutation_editor = None;
                         state.input_mode = InputMode::Normal;
                         state.input_buffer.clear();
                         state.mutation_notice = None;
@@ -3282,6 +3321,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     start_point,
                     now_unix_ms(),
                 ));
+                state.mutation_editor = None;
                 state.input_mode = InputMode::Normal;
                 state.input_buffer.clear();
                 return vec![];
@@ -3306,6 +3346,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     branch,
                     now_unix_ms(),
                 ));
+                state.mutation_editor = None;
                 state.input_mode = InputMode::Normal;
                 state.input_buffer.clear();
                 return vec![];
@@ -3373,6 +3414,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
             if mode == InputMode::GoalObjective {
                 let Some(thread_id) = state.current_thread_id().cloned() else {
+                    state.mutation_editor = None;
                     state.input_mode = InputMode::Normal;
                     state.input_buffer.clear();
                     return vec![];
@@ -3382,6 +3424,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     return vec![];
                 }
                 let is_new = !state.goals.contains_key(&thread_id.0);
+                state.mutation_editor = None;
                 state.input_mode = InputMode::Normal;
                 state.input_buffer.clear();
                 return vec![Effect::SetGoal {
@@ -3551,6 +3594,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
         }
         Action::CancelInput => {
+            state.mutation_editor = None;
             state.thread_queue_editor = None;
             state.alias_target = None;
             let mut search_watch_to_release = None;
@@ -4997,6 +5041,7 @@ mod tests {
     #[test]
     fn launch_preset_requires_load_select_plan_and_confirmation() {
         let mut app = app();
+        app.threads[0].metadata.cwd = "/repo/subdir".into();
         let thread_id = app.threads[0].id.clone();
         app.view = View::Workspace(thread_id.clone());
         app.git_contexts.insert(
@@ -5144,6 +5189,7 @@ mod tests {
     #[test]
     fn worktree_remove_and_branch_delete_are_distinct_plans() {
         let mut app = app();
+        app.threads[0].metadata.cwd = "/repo".into();
         app.view = View::ManagedWorktrees(ThreadId::new("thread-impl"));
         let repo = crate::domain::LocalRepoIdentity {
             git_common_dir: "/repo/.git".into(),
@@ -5985,10 +6031,10 @@ mod tests {
     fn back_cancels_hot_slot_binding_before_navigation() {
         let mut app = app();
         reduce(&mut app, Action::BeginHotSlotBind);
-        assert!(app.hot_slot_bind_pending);
+        assert!(app.hot_slot_bind_pending.is_some());
         let effects = reduce(&mut app, Action::Back);
         assert!(effects.is_empty());
-        assert!(!app.hot_slot_bind_pending);
+        assert!(app.hot_slot_bind_pending.is_none());
         assert_eq!(app.view, View::Registry);
     }
 
@@ -6004,7 +6050,7 @@ mod tests {
                 target: SourceRef::codex_thread(&ThreadId::new("thread-impl")),
             }]
         );
-        assert!(!app.hot_slot_bind_pending);
+        assert!(app.hot_slot_bind_pending.is_none());
     }
 
     #[test]

@@ -1367,7 +1367,7 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
                 "Enter 应用字段 · Esc 取消"
             )
         )
-    } else if app.hot_slot_bind_pending {
+    } else if app.hot_slot_bind_pending.is_some() {
         tr(
             app,
             "bind hot slot: press 1–9 · Esc cancels other input only",
