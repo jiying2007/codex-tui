@@ -15,14 +15,17 @@ fn review(state: &AppState, index: usize, paths: &[&str]) -> GitReview {
     let thread = &state.threads[index];
     let mut review = GitReview::pending(thread.id.clone(), thread.metadata.cwd.clone());
     review.observed_at_unix_ms = 10;
-    review.changes = paths.iter().map(|path| GitFileChange {
-        path: (*path).into(),
-        original_path: None,
-        index_status: None,
-        worktree_status: Some('M'),
-        untracked: false,
-        conflict: false,
-    }).collect();
+    review.changes = paths
+        .iter()
+        .map(|path| GitFileChange {
+            path: (*path).into(),
+            original_path: None,
+            index_status: None,
+            worktree_status: Some('M'),
+            untracked: false,
+            conflict: false,
+        })
+        .collect();
     review
 }
 

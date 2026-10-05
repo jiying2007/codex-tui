@@ -1205,18 +1205,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 observation.review = Some(review);
             }
         }
-        Action::GitReviewLoaded(review) => {
-            let thread_id = review.thread_id.clone();
-            let key = thread_id.0.clone();
-            let len = review.changes.len();
-            state.git_reviews.insert(key, review);
-            state.touch_git_review_cache(&thread_id);
-            state.review_selected = if len == 0 {
-                0
-            } else {
-                state.review_selected.min(len - 1)
-            };
-        }
+        Action::GitReviewLoaded(review) => state.install_git_review(review),
         Action::PlanningSnapshotLoaded(snapshot) => {
             let selection = planning_selection::PlanningSelection::capture(state);
             state.planning_snapshot = snapshot;
@@ -5577,6 +5566,15 @@ mod tests {
                 .snapshot()
                 .threads,
         );
+        // Cached and incoming snapshots belong to the live thread cwd.
+        for (index, thread) in app.threads.iter_mut().enumerate() {
+            thread.metadata.cwd = if index == GIT_REVIEW_CACHE_LIMIT {
+                "/repo/new"
+            } else {
+                "/repo"
+            }
+            .into();
+        }
         let ids = app
             .threads
             .iter()

@@ -2,6 +2,38 @@ use super::{AppState, Effect, View};
 use crate::domain::ThreadId;
 
 impl AppState {
+    pub(super) fn install_git_review(&mut self, review: crate::git::GitReview) {
+        // A completed background read is only valid for a still-live thread
+        // at the same cwd. Rejected results must not touch the cache or cursor.
+        if self
+            .thread_by_id(&review.thread_id)
+            .is_none_or(|thread| thread.metadata.cwd != review.cwd)
+        {
+            return;
+        }
+        let thread_id = review.thread_id.clone();
+        let key = thread_id.0.clone();
+        if matches!(&self.view, View::Review(current) if *current == thread_id) {
+            let selected_path = self
+                .git_reviews
+                .get(&key)
+                .filter(|old| old.cwd == review.cwd)
+                .and_then(|old| old.changes.get(self.review_selected))
+                .map(|change| change.path.as_str());
+            let preserved = selected_path
+                .and_then(|path| review.changes.iter().position(|change| change.path == path));
+            if preserved.is_none() {
+                self.review_scroll = 0;
+            }
+            self.review_selected = preserved.unwrap_or_else(|| {
+                self.review_selected
+                    .min(review.changes.len().saturating_sub(1))
+            });
+        }
+        self.git_reviews.insert(key, review);
+        self.touch_git_review_cache(&thread_id);
+    }
+
     pub(super) fn review_external_url(&self, thread_id: &ThreadId) -> Option<String> {
         let observation = self.forge_observation(thread_id)?;
         let identity = observation.identity.as_ref()?;
