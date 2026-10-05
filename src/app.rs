@@ -46,6 +46,7 @@ use std::time::Instant;
 
 mod context_menu;
 mod lifecycle;
+mod local_edit;
 mod mutation_editor;
 pub(crate) mod palette;
 mod palette_intent;
@@ -113,6 +114,8 @@ fn build_thread_indexes(
 #[derive(Clone, Debug)]
 pub struct AppState {
     planning_generation: u64,
+    local_edit_revision: u64,
+    pending_local_edit: Option<local_edit::PendingLocalEdit>,
     planning_reconcile_count: usize,
     pub threads: Vec<ThreadSummary>,
     thread_index_by_id: HashMap<String, usize>,
@@ -252,6 +255,8 @@ impl AppState {
             .collect();
         Self {
             planning_generation: 0,
+            local_edit_revision: 0,
+            pending_local_edit: None,
             planning_reconcile_count: 0,
             threads,
             thread_index_by_id,
@@ -1127,6 +1132,7 @@ impl AppState {
 }
 
 pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
+    state.observe_local_edit_action(&action);
     if matches!(
         &action,
         Action::ReplaceThreads(_)
@@ -1792,11 +1798,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 return vec![];
             }
             let view = editor.draft.clone();
-            state.saved_view_editor = None;
-            state.saved_view_editor_error = None;
-            state.input_mode = InputMode::Normal;
-            state.input_buffer.clear();
-            return vec![Effect::SaveSavedView { view }];
+            return state.begin_local_edit_write(Effect::SaveSavedView { view });
         }
         Action::OpenPlanningSelected => {
             let Some(card) = state.selected_planning_card().cloned() else {
@@ -3417,15 +3419,11 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 if title.is_empty() {
                     return vec![];
                 }
-                let workspace = state.new_scratch_workspace.take();
-                state.input_mode = InputMode::Normal;
-                state.input_buffer.clear();
-                return vec![Effect::CreateScratch { title, workspace }];
+                let workspace = state.new_scratch_workspace.clone();
+                return state.begin_local_edit_write(Effect::CreateScratch { title, workspace });
             }
             if mode == InputMode::SavedViewField {
                 let value = state.input_buffer.clone();
-                state.input_mode = InputMode::Normal;
-                state.input_buffer.clear();
                 let Some(editor) = state.saved_view_editor.as_mut() else {
                     return vec![];
                 };
@@ -3433,28 +3431,26 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     state.saved_view_editor_error = Some(error);
                 } else {
                     state.saved_view_editor_error = None;
+                    state.input_mode = InputMode::Normal;
+                    state.input_buffer.clear();
                 }
                 return vec![];
             }
             if mode == InputMode::Note {
                 let text = state.input_buffer.trim().to_string();
-                let Some(target) = state.note_target.take() else {
-                    state.input_mode = InputMode::Normal;
-                    state.input_buffer.clear();
+                let Some(target) = state.note_target.clone() else {
                     return vec![];
                 };
-                state.input_mode = InputMode::Normal;
-                state.input_buffer.clear();
                 if target.kind == SourceKind::ScratchWork {
-                    return vec![Effect::UpdateScratchNote {
+                    return state.begin_local_edit_write(Effect::UpdateScratchNote {
                         scratch_id: target.value,
                         note: (!text.is_empty()).then_some(text),
-                    }];
+                    });
                 }
-                return vec![Effect::SaveSourceNote {
+                return state.begin_local_edit_write(Effect::SaveSourceNote {
                     owner: target,
                     text,
-                }];
+                });
             }
             if mode == InputMode::Snooze {
                 let Some(duration_ms) = parse_snooze_duration(&state.input_buffer) else {
@@ -5706,6 +5702,9 @@ mod tests {
             effects.as_slice(),
             [Effect::CreateScratch { title, .. }] if title == "Investigate wake miss"
         ));
+        assert_eq!(app.input_mode, InputMode::ScratchTitle);
+        let ticket = app.local_edit_ticket_for(&effects[0]).expect("save ticket");
+        app.finish_local_edit_write(ticket, Ok(()));
         assert_eq!(app.input_mode, InputMode::Normal);
     }
 
