@@ -71,10 +71,22 @@ def squash_equivalence(head: str, merge: str, main: str):
     return {"method": "identical-raw-tree-delta-v1", "mergeCommit": merge, "branchBase": base,
             "mergeParent": parents[0], "deltaSha256": hashlib.sha256(branch_delta).hexdigest()}
 
+def scoped_branches(branches: list, name: str, expected_sha: str) -> list:
+    if not name and not expected_sha:
+        return branches
+    if not name or not re.fullmatch(r"[0-9a-f]{40}", expected_sha or ""):
+        raise ValueError("branch scope requires an exact expected HEAD")
+    selected = [branch for branch in branches if branch["name"] == name]
+    if any(branch["commit"]["sha"] != expected_sha for branch in selected):
+        raise ValueError("scoped branch advanced; refusing cleanup")
+    return selected  # Already absent is a safe, verified no-op.
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--only-branch")
+    parser.add_argument("--expected-head")
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--plan-sha256")
     parser.add_argument("--confirm-repository")
@@ -82,7 +94,7 @@ def main() -> int:
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", args.repo):
         parser.error("expected owner/name repository")
     head = api(args.repo, "git/ref/heads/main")["object"]["sha"]
-    branches = pages(args.repo, "branches?per_page=100")
+    branches = scoped_branches(pages(args.repo, "branches?per_page=100"), args.only_branch, args.expected_head)
     prs = pages(args.repo, "pulls?state=all&per_page=100")
     plan = build_plan(args.repo, head, branches, prs, is_ancestor, squash_equivalence)
     encoded = (json.dumps(plan, indent=2, sort_keys=True) + "\n").encode()

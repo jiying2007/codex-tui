@@ -17,7 +17,7 @@ jobs:
     name: rust-1.88-msrv
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: 1.88.0
@@ -42,7 +42,7 @@ jobs:
         run: |
           apt-get update -qq
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential pkg-config curl ca-certificates git python3 python-is-python3 binutils
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -103,54 +103,7 @@ jobs:
           }
           EOF
 
-          cat > "$OUT/scale.json" <<'EOF'
-          {
-            "schema": "codex-tui/scale-evidence/v4",
-            "rows": 50000,
-            "warmupIterations": 5,
-            "iterations": 50,
-            "registryConstructMs": 1.0,
-            "planningReconcile": {"p50Ms": 1.0, "p95Ms": 2.0, "p99Ms": 3.0, "maxMs": 4.0},
-            "recentProjection": {"p50Ms": 1.0, "p95Ms": 2.0, "p99Ms": 3.0, "maxMs": 4.0},
-            "allHistoryProjection": {"p50Ms": 1.0, "p95Ms": 2.0, "p99Ms": 3.0, "maxMs": 4.0},
-            "searchProjection": {"p50Ms": 1.0, "p95Ms": 2.0, "p99Ms": 3.0, "maxMs": 4.0},
-            "hostLocalProjection": {"p50Ms": 1.0, "p95Ms": 2.0, "p99Ms": 3.0, "maxMs": 4.0}
-          }
-          EOF
-
-          cat > "$OUT/soak.json" <<'EOF'
-          {
-            "schema": "codex-tui/soak-evidence/v1",
-            "rows": 50000,
-            "cycles": 256,
-            "uiOnlyPlanningReconciles": 0,
-            "structuralPass": true
-          }
-          EOF
-
-          cat > "$OUT/support-snapshot.json" <<'EOF'
-          {
-            "schema": "codex-tui/support-bundle/v1",
-            "build": {
-              "productVersion": "1.4.0",
-              "sourceSha": "0123456789abcdef0123456789abcdef01234567"
-            }
-          }
-          EOF
-
-          cat > "$OUT/support-manifest.json" <<'EOF'
-          {
-            "schema": "codex-tui/support-bundle/v1",
-            "privacy": [
-              "no-environment-variables",
-              "no-authentication-tokens",
-              "no-prompts-or-transcripts",
-              "no-comment-bodies",
-              "no-repository-or-file-paths",
-              "no-raw-errors"
-            ]
-          }
-          EOF
+          python scripts/release/diagnostic_fixtures.py --output "$OUT"
 
           python scripts/release/create_automated_qualification.py \
             --output "$OUT/automated-qualification.json" \

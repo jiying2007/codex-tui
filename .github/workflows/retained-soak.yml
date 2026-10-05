@@ -1,6 +1,14 @@
 name: retained-soak
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "src/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "scripts/release/validate_diagnostics.py"
+      - ".github/workflows/retained-soak.yml"
   workflow_dispatch:
     inputs:
       rows:
@@ -27,18 +35,17 @@ jobs:
     timeout-minutes: 75
     env:
       CODEX_TUI_GIT_SHA: ${{ github.sha }}
+      ROWS: ${{ inputs.rows || '50000' }}
+      CYCLES: ${{ inputs.cycles || '256' }}
+      DURATION_SECONDS: ${{ inputs.duration_seconds || '300' }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Build exact source
         run: cargo build --locked --release
       - name: Run sustained same-process structural soak
         shell: bash
-        env:
-          ROWS: ${{ inputs.rows || '50000' }}
-          CYCLES: ${{ inputs.cycles || '256' }}
-          DURATION_SECONDS: ${{ inputs.duration_seconds || '300' }}
         run: |
           set -euo pipefail
           ./target/release/codex-tui soak --rows "$ROWS" --cycles "$CYCLES" \
@@ -46,16 +53,12 @@ jobs:
       - name: Validate sustained resource receipt
         shell: bash
         run: |
-          python3 - <<'PY'
-          import json, os
-          r = json.load(open("soak-evidence.json"))
-          assert r["sourceSha"] == os.environ["GITHUB_SHA"]
-          assert r["durationQualified"] is True and r["structuralPass"] is True
-          assert r["requestedDurationSeconds"] > 0
-          assert r["elapsedMs"] >= r["requestedDurationSeconds"] * 1000
-          assert 1 <= len(r["resourceSamples"]) <= r["resourceSampleLimit"] == 128
-          PY
+          set -euo pipefail
+          python3 scripts/release/validate_diagnostics.py soak soak-evidence.json \
+            --commit "$GITHUB_SHA" --rows "$ROWS" --minimum-cycles "$CYCLES" \
+            --minimum-duration "$DURATION_SECONDS"
       - uses: actions/upload-artifact@v7
+        if: always()
         with:
           name: soak-evidence-${{ github.sha }}
           path: soak-evidence.json

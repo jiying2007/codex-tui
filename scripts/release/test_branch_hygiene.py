@@ -68,3 +68,16 @@ class RealSquashProof(unittest.TestCase):
                 self.assertIsNone(h.squash_equivalence(base, base, base))
             finally:
                 os.chdir(old)
+
+class ScopedCleanupContract(unittest.TestCase):
+    def test_scope_excludes_other_branches_and_accepts_already_absent(self):
+        branches = [{"name": "fix/merged", "commit": {"sha": "a" * 40}},
+                    {"name": "fix/other", "commit": {"sha": "b" * 40}}]
+        self.assertEqual(h.scoped_branches(branches, "fix/merged", "a" * 40), branches[:1])
+        self.assertEqual(h.scoped_branches(branches, "absent", "a" * 40), [])
+        self.assertEqual(h.scoped_branches(branches, None, None), branches)
+    def test_scope_rejects_missing_identity_and_advanced_head(self):
+        branches = [{"name": "fix/merged", "commit": {"sha": "b" * 40}}]
+        for name, sha in (("fix/merged", "a" * 40), ("fix/merged", None), (None, "b" * 40)):
+            with self.assertRaises(ValueError):
+                h.scoped_branches(branches, name, sha)

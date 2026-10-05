@@ -171,14 +171,22 @@ impl StoreWorker {
             Err(TryRecvError::Disconnected) => None,
         }
     }
+    fn drain_exit_events(&self, failure: &mut Option<String>) {
+        while let Ok(event) = self.events.try_recv() {
+            if let StoreEvent::Operator(Some(error)) | StoreEvent::Planning(Err(error), _) = event {
+                failure.get_or_insert(error);
+            }
+        }
+    }
     pub(crate) fn flush_operator_state_on_exit(&mut self, state: &LocalStateV1) -> Result<()> {
         // Supersede the unsent operator snapshot. Already accepted jobs precede this barrier.
         self.pending_operator = None;
         let (reply, receipt) = mpsc::sync_channel(1);
         let mut request = Request::Flush(Box::new(state.clone()), reply);
         let started = Instant::now();
+        let mut failure = None;
         loop {
-            while self.events.try_recv().is_ok() {}
+            self.drain_exit_events(&mut failure);
             match self.requests.try_send(request) {
                 Ok(()) => break,
                 Err(TrySendError::Full(returned)) => request = returned,
@@ -193,9 +201,16 @@ impl StoreWorker {
             std::thread::sleep(Duration::from_millis(5));
         }
         loop {
-            while self.events.try_recv().is_ok() {}
+            self.drain_exit_events(&mut failure);
             match receipt.try_recv() {
-                Ok(result) => return result.map_err(anyhow::Error::msg),
+                Ok(result) => {
+                    self.stopped = true;
+                    self.drain_exit_events(&mut failure);
+                    return crate::runtime_shutdown::combine(
+                        failure.map_or(Ok(()), |error| Err(anyhow::Error::msg(error))),
+                        result.map_err(anyhow::Error::msg),
+                    );
+                }
                 Err(TryRecvError::Disconnected) => {
                     anyhow::bail!("final state flush: receipt unavailable")
                 }
@@ -265,5 +280,22 @@ mod tests {
         assert!(worker.pending_operator.is_some());
         release.send(()).unwrap();
         worker.flush_operator_state_on_exit(&last).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod shutdown_tests {
+    use super::*;
+    #[test]
+    fn final_flush_does_not_hide_an_unobserved_accepted_mutation_failure() {
+        let root = tempfile::tempdir().unwrap();
+        let mut worker = StoreWorker::start(StoreBackend::at_for_test(root.path())).unwrap();
+        worker
+            .submit(|_| StoreEvent::Planning(Err("accepted write failed".into()), None))
+            .unwrap();
+        let error = worker
+            .flush_operator_state_on_exit(&LocalStateV1::default())
+            .unwrap_err();
+        assert!(error.to_string().contains("accepted write failed"));
     }
 }

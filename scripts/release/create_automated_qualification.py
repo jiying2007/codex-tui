@@ -4,12 +4,12 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import math
 import pathlib
 import re
 from datetime import datetime, timezone
 
 from _compat import write_text_lf
+from validate_diagnostics import validate_scale, validate_soak, validate_support_snapshot
 
 HEX40 = re.compile(r"^[0-9a-fA-F]{40}$")
 
@@ -57,42 +57,12 @@ def main() -> int:
             raise SystemExit(f"Failure Matrix case {case.get('id')} has no evidence")
     support = json.loads(support_path.read_text(encoding="utf-8"))
 
-    if scale.get("schema") != "codex-tui/scale-evidence/v4":
-        raise SystemExit("unexpected scale evidence schema")
-    if scale.get("rows") != 50_000:
-        raise SystemExit("release scale evidence must cover exactly 50,000 rows")
-    if int(scale.get("warmupIterations", 0)) < 5:
-        raise SystemExit("release scale evidence requires at least 5 warmup iterations")
-    if int(scale.get("iterations", 0)) < 50:
-        raise SystemExit("release scale evidence requires at least 50 measured iterations")
-    registry_construct = scale.get("registryConstructMs")
-    if not isinstance(registry_construct, (int, float)) or not math.isfinite(registry_construct) or registry_construct < 0:
-        raise SystemExit("release scale registryConstructMs must be finite and nonnegative")
-    for name in (
-        "planningReconcile",
-        "recentProjection",
-        "allHistoryProjection",
-        "searchProjection",
-        "hostLocalProjection",
-    ):
-        timing = scale.get(name)
-        if not isinstance(timing, dict):
-            raise SystemExit(f"release scale evidence missing {name}")
-        for field in ("p50Ms", "p95Ms", "p99Ms", "maxMs"):
-            value = timing.get(field)
-            if not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0:
-                raise SystemExit(f"release scale {name}.{field} must be finite and nonnegative")
-
-    if soak.get("schema") != "codex-tui/soak-evidence/v1":
-        raise SystemExit("unexpected soak evidence schema")
-    if soak.get("rows") != 50_000:
-        raise SystemExit("release soak evidence must cover exactly 50,000 rows")
-    if int(soak.get("cycles", 0)) < 256:
-        raise SystemExit("release soak evidence must cover at least 256 churn cycles")
-    if soak.get("structuralPass") is not True:
-        raise SystemExit("release soak structural gate did not pass")
-    if int(soak.get("uiOnlyPlanningReconciles", -1)) != 0:
-        raise SystemExit("UI-only churn must not trigger planning reconciliation")
+    try:
+        validate_scale(scale, args.commit.lower())
+        validate_soak(soak, args.commit.lower())
+        validate_support_snapshot(support, support_snapshot_path)
+    except ValueError as error:
+        raise SystemExit(str(error)) from error
 
     if support.get("schema") != "codex-tui/support-bundle/v1":
         raise SystemExit("unexpected support bundle schema")

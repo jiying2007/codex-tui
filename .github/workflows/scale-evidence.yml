@@ -3,16 +3,18 @@ name: scale-evidence
 on:
   pull_request:
     paths:
-      - "src/app.rs"
-      - "src/scale_evidence.rs"
-      - "src/release.rs"
+      - "src/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "scripts/release/validate_diagnostics.py"
       - ".github/workflows/scale-evidence.yml"
   push:
     branches: [main]
     paths:
-      - "src/app.rs"
-      - "src/scale_evidence.rs"
-      - "src/release.rs"
+      - "src/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "scripts/release/validate_diagnostics.py"
       - ".github/workflows/scale-evidence.yml"
   workflow_dispatch:
 
@@ -22,8 +24,10 @@ permissions:
 jobs:
   linux-scale-evidence:
     runs-on: ubuntu-24.04
+    env:
+      CODEX_TUI_GIT_SHA: ${{ github.sha }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Build locked release binary
@@ -41,6 +45,8 @@ jobs:
               --iterations 50 \
               --source "github-actions:ubuntu-24.04" \
               --json > "scale-evidence/report-${ROWS}.json"
+
+            python3 scripts/release/validate_diagnostics.py scale "scale-evidence/report-${ROWS}.json" --commit "$GITHUB_SHA" --rows "$ROWS"
 
             echo "=== scale evidence ${ROWS} rows ==="
             cat "scale-evidence/report-${ROWS}.json"

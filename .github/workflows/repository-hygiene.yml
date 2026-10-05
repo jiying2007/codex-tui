@@ -1,0 +1,43 @@
+name: repository-hygiene
+on:
+  pull_request:
+    types: [closed]
+permissions:
+  contents: read
+jobs:
+  merged-branch:
+    if: github.event.pull_request.merged == true && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      MERGED_BRANCH: ${{ github.event.pull_request.head.ref }}
+      MERGED_HEAD: ${{ github.event.pull_request.head.sha }}
+    steps:
+      # Run trusted default-branch code, never code checked out from a PR head.
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify exact merged-head deletion proof and lease
+        shell: bash
+        run: |
+          set -euo pipefail
+          PLAN="$RUNNER_TEMP/merged-branch-plan.json"
+          ARGS=(--repo "$GITHUB_REPOSITORY" --output "$PLAN" --only-branch "$MERGED_BRANCH" --expected-head "$MERGED_HEAD")
+          python3 scripts/repository/branch_hygiene.py "${ARGS[@]}"
+          DIGEST="$(sha256sum "$PLAN" | cut -d ' ' -f 1)"
+          gh auth setup-git
+          python3 scripts/repository/branch_hygiene.py "${ARGS[@]}" \
+            --apply --confirm-repository "$GITHUB_REPOSITORY" --plan-sha256 "$DIGEST"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: merged-branch-hygiene-${{ github.event.pull_request.number }}
+          path: ${{ runner.temp }}/merged-branch-plan*.json
+          if-no-files-found: error
+          retention-days: 90
