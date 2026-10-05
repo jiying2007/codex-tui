@@ -4,7 +4,10 @@
 use anyhow::{Result, anyhow};
 use std::{
     collections::BTreeMap,
-    sync::{Arc, Mutex, Weak, atomic::{AtomicBool, Ordering}},
+    sync::{
+        Arc, Mutex, Weak,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 use tokio::sync::mpsc;
 
@@ -47,11 +50,14 @@ impl ReadFence {
             mpsc::error::TrySendError::Full(_) => anyhow!("{actor} actor queue is full"),
             mpsc::error::TrySendError::Closed(_) => anyhow!("{actor} actor is not available"),
         })?;
-        let mut latest = self.latest.try_lock()
+        let mut latest = self
+            .latest
+            .try_lock()
             .map_err(|_| anyhow!("{actor} read admission is busy or unavailable"))?;
         latest.retain(|_, ticket| ticket.strong_count() > 0);
         let ticket = ReadTicket(Arc::new(AtomicBool::new(true)));
-        if let Some(previous) = latest.insert(scope, Arc::downgrade(&ticket.0))
+        if let Some(previous) = latest
+            .insert(scope, Arc::downgrade(&ticket.0))
             .and_then(|previous| previous.upgrade())
         {
             previous.store(false, Ordering::Release);
@@ -79,7 +85,9 @@ pub(crate) fn next_current<T>(
 mod tests {
     use super::*;
 
-    fn scope() -> ReadScope { ReadScope::Snapshot("/repo".into()) }
+    fn scope() -> ReadScope {
+        ReadScope::Snapshot("/repo".into())
+    }
 
     #[test]
     fn buffered_and_late_old_results_are_both_rejected() {
@@ -109,7 +117,9 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(1);
         fence.submit(&tx, scope(), 1, "test").unwrap();
         let accepted = rx.try_recv().unwrap();
-        fence.submit(&tx, ReadScope::Snapshot("/other".into()), 2, "test").unwrap();
+        fence
+            .submit(&tx, ReadScope::Snapshot("/other".into()), 2, "test")
+            .unwrap();
         assert!(fence.submit(&tx, scope(), 3, "test").is_err());
         assert!(accepted.ticket.is_current());
         drop(rx.try_recv().unwrap());
@@ -128,10 +138,19 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(2);
         fence.submit(&tx, scope(), 1, "test").unwrap();
         let snapshot = rx.try_recv().unwrap();
-        fence.submit(&tx, ReadScope::Review("/repo".into()), 2, "test").unwrap();
+        fence
+            .submit(&tx, ReadScope::Review("/repo".into()), 2, "test")
+            .unwrap();
         drop(rx.try_recv().unwrap());
         for index in 0..1000 {
-            fence.submit(&tx, ReadScope::Snapshot(format!("/other/{index}")), index, "test").unwrap();
+            fence
+                .submit(
+                    &tx,
+                    ReadScope::Snapshot(format!("/other/{index}")),
+                    index,
+                    "test",
+                )
+                .unwrap();
             drop(rx.try_recv().unwrap());
             assert!(fence.latest.lock().unwrap().len() <= 2);
         }
@@ -142,7 +161,9 @@ mod tests {
     fn stale_drain_respects_budget_without_losing_a_current_result() {
         let fence = ReadFence::default();
         let (tx, mut rx) = mpsc::channel(4);
-        for value in 1..=4 { fence.submit(&tx, scope(), value, "test").unwrap(); }
+        for value in 1..=4 {
+            fence.submit(&tx, scope(), value, "test").unwrap();
+        }
         assert_eq!(next_current(&mut rx, 2), None);
         assert_eq!(rx.len(), 2);
         assert_eq!(next_current(&mut rx, 2), Some(4));

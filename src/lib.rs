@@ -23,6 +23,7 @@ pub mod headless;
 pub mod i18n;
 pub mod interaction_performance;
 pub mod keymap;
+mod latest_read;
 pub mod launch;
 pub mod metadata_search;
 pub mod notification;

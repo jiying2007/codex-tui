@@ -1,4 +1,5 @@
 use crate::domain::{LocalRepoIdentity, ThreadId, WorktreeIdentity};
+use crate::latest_read::{ReadEnvelope, ReadFence, ReadScope, next_current};
 use anyhow::{Context, Result, anyhow};
 use similar::{ChangeTag, TextDiff};
 use std::ffi::OsStr;
@@ -164,9 +165,10 @@ pub enum GitEvent {
 }
 
 pub struct GitHandle {
-    command_tx: mpsc::Sender<GitCommand>,
-    event_rx: mpsc::Receiver<GitEvent>,
+    command_tx: mpsc::Sender<ReadEnvelope<GitCommand>>,
+    event_rx: mpsc::Receiver<ReadEnvelope<GitEvent>>,
     task: JoinHandle<()>,
+    reads: ReadFence,
 }
 
 impl GitHandle {
@@ -178,6 +180,7 @@ impl GitHandle {
             command_tx,
             event_rx,
             task,
+            reads: ReadFence::default(),
         }
     }
 
@@ -190,16 +193,15 @@ impl GitHandle {
     }
 
     fn queue_command(&self, command: GitCommand) -> Result<()> {
-        self.command_tx
-            .try_send(command)
-            .map_err(|error| match error {
-                mpsc::error::TrySendError::Full(_) => anyhow!("Git actor queue is full"),
-                mpsc::error::TrySendError::Closed(_) => anyhow!("Git actor is not available"),
-            })
+        let scope = match &command {
+            GitCommand::Probe { cwd, .. } => ReadScope::Snapshot(cwd.clone()),
+            GitCommand::LoadReview { thread_id, .. } => ReadScope::Review(thread_id.0.clone()),
+        };
+        self.reads.submit(&self.command_tx, scope, command, "Git")
     }
 
     pub fn try_recv(&mut self) -> Option<GitEvent> {
-        self.event_rx.try_recv().ok()
+        next_current(&mut self.event_rx, GIT_EVENT_QUEUE_CAPACITY)
     }
 }
 
@@ -209,7 +211,10 @@ impl Drop for GitHandle {
     }
 }
 
-async fn run_actor(mut command_rx: mpsc::Receiver<GitCommand>, event_tx: mpsc::Sender<GitEvent>) {
+async fn run_actor(
+    mut command_rx: mpsc::Receiver<ReadEnvelope<GitCommand>>,
+    event_tx: mpsc::Sender<ReadEnvelope<GitEvent>>,
+) {
     let mut tasks = JoinSet::new();
     let mut command_open = true;
 
@@ -220,7 +225,7 @@ async fn run_actor(mut command_rx: mpsc::Receiver<GitCommand>, event_tx: mpsc::S
             }
             command = command_rx.recv(), if command_open && tasks.len() < GIT_MAX_CONCURRENCY => {
                 match command {
-                    Some(command) => {
+                    Some(ReadEnvelope { value: command, ticket }) => {
                         let event_tx = event_tx.clone();
                         tasks.spawn(async move {
                             let event = match command {
@@ -246,7 +251,7 @@ async fn run_actor(mut command_rx: mpsc::Receiver<GitCommand>, event_tx: mpsc::S
                                     GitEvent::Review(review)
                                 }
                             };
-                            let _ = event_tx.send(event).await;
+                            let _ = event_tx.send(ReadEnvelope { value: event, ticket }).await;
                         });
                     }
                     None => command_open = false,
@@ -962,3 +967,6 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod read_order_tests;

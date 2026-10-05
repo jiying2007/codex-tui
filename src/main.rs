@@ -1312,21 +1312,10 @@ fn apply_effects(
                 if let Err(error) = forge.probe_review(target) {
                     reduce(
                         app,
-                        Action::ForgeReviewLoaded(forge::ForgeReviewSummary {
-                            thread_id: fallback.thread_id,
-                            cwd: fallback.cwd,
-                            change_request_iid: fallback.change_request_iid,
-                            approvals_required: None,
-                            approvals_left: None,
-                            approved_by_count: 0,
-                            changes_requested_by_count: 0,
-                            discussions_total: 0,
-                            unresolved_discussions: 0,
-                            approvals_available: false,
-                            discussions_available: false,
-                            observed_at_unix_ms: now_unix_ms(),
-                            error: Some(error.to_string()),
-                        }),
+                        Action::ForgeReviewLoaded(Box::new(forge::ForgeReviewResult::unavailable(
+                            fallback,
+                            error.to_string(),
+                        ))),
                     );
                 }
             }

@@ -207,7 +207,10 @@
     "src/app/planning_worker/clock.rs": 120,
     "src/app/planning_worker/live_tests.rs": 240,
     "src/app/prompt.rs": 200,
-    "src/runtime_prompt.rs": 140
+    "src/runtime_prompt.rs": 140,
+    "src/latest_read.rs": 260,
+    "src/forge/read_order_tests.rs": 180,
+    "src/git/read_order_tests.rs": 160
   },
   "ratchetPolicy": {
     "baseline": "inherit v1.3 Search & Multi-Target ceilings; feature work may only add bounded module-specific ceilings",
