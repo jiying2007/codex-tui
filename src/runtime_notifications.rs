@@ -53,18 +53,21 @@ impl RuntimeNotifications {
     }
 
     pub(crate) fn seed(&mut self, app: &AppState) {
+        if self.mode == NotificationMode::Off {
+            return;
+        }
         let observation =
             NotificationObservation::from_projection(&app.threads, &app.work_cards, &app.goals);
         let _ = self.tracker.advance(observation);
     }
 
     pub(crate) fn observe(&mut self, app: &AppState) -> Result<usize> {
-        let observation =
-            NotificationObservation::from_projection(&app.threads, &app.work_cards, &app.goals);
-        let events = self.tracker.advance(observation);
         if self.mode == NotificationMode::Off {
             return Ok(0);
         }
+        let observation =
+            NotificationObservation::from_projection(&app.threads, &app.work_cards, &app.goals);
+        let events = self.tracker.advance(observation);
 
         let Some(tx) = self.command_tx.as_ref() else {
             return Err(anyhow!("notification dispatcher is unavailable"));
@@ -232,5 +235,49 @@ mod tests {
         assert!(production.contains("try_send"));
         assert!(production.contains("kill_on_drop(true)"));
         assert!(production.contains("OS_NOTIFICATION_TIMEOUT"));
+    }
+}
+
+#[cfg(test)]
+mod disabled_tracking_tests {
+    use super::*;
+    use codex_tui::{
+        backend::{CodexBackend, FakeBackend},
+        domain::RuntimeStatus,
+    };
+
+    fn working() -> AppState {
+        let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+        for thread in &mut app.threads {
+            thread.runtime = RuntimeStatus::Working;
+        }
+        app
+    }
+
+    fn assert_untracked(runtime: &mut RuntimeNotifications, mut app: AppState) {
+        for thread in &mut app.threads {
+            thread.runtime = RuntimeStatus::Ready;
+        }
+        let observation = NotificationObservation::from_projection(&app.threads, &[], &app.goals);
+        assert!(
+            runtime.tracker.advance(observation).is_empty(),
+            "disabled mode retained and compared the entire previous registry"
+        );
+    }
+
+    #[tokio::test]
+    async fn off_seed_does_not_retain_registry_projections() {
+        let mut runtime = RuntimeNotifications::start(NotificationMode::Off);
+        let app = working();
+        runtime.seed(&app);
+        assert_untracked(&mut runtime, app);
+    }
+
+    #[tokio::test]
+    async fn off_observe_does_not_retain_registry_projections() {
+        let mut runtime = RuntimeNotifications::start(NotificationMode::Off);
+        let app = working();
+        assert_eq!(runtime.observe(&app).unwrap(), 0);
+        assert_untracked(&mut runtime, app);
     }
 }

@@ -223,6 +223,7 @@ pub enum BackendCommand {
     },
     SubmitPrompt {
         thread_id: ThreadId,
+        request_id: u64,
         text: String,
         active_turn_id: Option<String>,
     },
@@ -260,7 +261,13 @@ pub enum ConversationEvent {
     OlderLoaded(ConversationPage),
     PromptSubmitted {
         thread_id: ThreadId,
+        request_id: u64,
         turn_id: String,
+    },
+    PromptFailed {
+        thread_id: ThreadId,
+        request_id: u64,
+        error: String,
     },
     InteractiveRequested(InteractiveRequest),
     InteractiveResolved {
@@ -336,11 +343,13 @@ impl RegistryHandle {
     pub fn submit_prompt(
         &self,
         thread_id: ThreadId,
+        request_id: u64,
         text: String,
         active_turn_id: Option<String>,
     ) -> Result<()> {
         self.send_command(BackendCommand::SubmitPrompt {
             thread_id,
+            request_id,
             text,
             active_turn_id,
         })
@@ -894,6 +903,7 @@ async fn run_registry_actor(
                     }
                     BackendCommand::SubmitPrompt {
                         thread_id,
+                        request_id,
                         text,
                         active_turn_id,
                     } => {
@@ -912,6 +922,7 @@ async fn run_registry_actor(
                                     &conversation_tx,
                                     ConversationEvent::PromptSubmitted {
                                         thread_id: thread_id.clone(),
+                                        request_id,
                                         turn_id,
                                     },
                                 )
@@ -926,8 +937,9 @@ async fn run_registry_actor(
                             Err(error) => {
                                 send_conversation_event(
                                     &conversation_tx,
-                                    ConversationEvent::Failed {
+                                    ConversationEvent::PromptFailed {
                                         thread_id,
+                                        request_id,
                                         error: error.to_string(),
                                     },
                                 )

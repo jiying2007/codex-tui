@@ -48,6 +48,7 @@ mod lifecycle;
 pub(crate) mod palette;
 mod planning_selection;
 pub mod planning_worker;
+mod prompt;
 mod review;
 mod types;
 
@@ -114,6 +115,7 @@ pub struct AppState {
     pub view: View,
     pub previous_target: Option<ThreadId>,
     pub thread_ui: BTreeMap<String, ThreadUiState>,
+    prompt_submissions: prompt::PendingSubmissions,
     local_pins: BTreeSet<String>,
     local_aliases: BTreeMap<String, String>,
     local_marked_unread: BTreeSet<String>,
@@ -247,6 +249,7 @@ impl AppState {
             view: View::Registry,
             previous_target: None,
             thread_ui: BTreeMap::new(),
+            prompt_submissions: Default::default(),
             local_pins,
             local_aliases,
             local_marked_unread,
@@ -2576,11 +2579,18 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             conversation.error = Some(error);
             state.touch_conversation_cache(&thread_id);
         }
-        Action::PromptSubmitted { thread_id } => {
-            if let Some(ui) = state.thread_ui.get_mut(&thread_id.0) {
-                ui.draft.clear();
-            }
-            return vec![Effect::PersistOperatorState];
+        Action::PromptSubmitted {
+            thread_id,
+            request_id,
+        } => {
+            return prompt::acknowledge(state, thread_id, request_id);
+        }
+        Action::PromptFailed {
+            thread_id,
+            request_id,
+            error,
+        } => {
+            prompt::fail(state, thread_id, request_id, error);
         }
         Action::InteractiveRequested(request) => {
             state.acknowledged_attention.remove(&request.thread_id.0);
@@ -2754,6 +2764,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::ToggleHelp => state.show_help = !state.show_help,
         Action::SetDraft(draft) => {
             if let Some(id) = state.current_thread_id().cloned() {
+                state.prompt_submissions.edited(&id);
                 state.thread_ui.entry(id.0).or_default().draft = draft;
                 return vec![Effect::PersistOperatorStateDeferred];
             }
@@ -2968,6 +2979,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             InputMode::Normal => {}
             InputMode::Composer => {
                 if let Some(id) = state.current_thread_id().cloned() {
+                    state.prompt_submissions.edited(&id);
                     state
                         .thread_ui
                         .entry(id.0)
@@ -3020,6 +3032,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 InputMode::Normal => {}
                 InputMode::Composer => {
                     if let Some(id) = state.current_thread_id().cloned() {
+                        state.prompt_submissions.edited(&id);
                         state
                             .thread_ui
                             .entry(id.0)
@@ -3065,6 +3078,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             InputMode::Normal => {}
             InputMode::Composer => {
                 if let Some(id) = state.current_thread_id().cloned() {
+                    state.prompt_submissions.edited(&id);
                     state.thread_ui.entry(id.0).or_default().draft.pop();
                     return vec![Effect::PersistOperatorStateDeferred];
                 }
@@ -3540,38 +3554,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                 }];
             }
             if mode == InputMode::Composer {
-                if let Some(thread_id) = state.current_thread_id().cloned() {
-                    let conversation_ready =
-                        state
-                            .conversations
-                            .get(&thread_id.0)
-                            .is_some_and(|conversation| {
-                                !conversation.loading && conversation.error.is_none()
-                            });
-                    if !conversation_ready {
-                        return vec![];
-                    }
-
-                    let text = state
-                        .thread_ui
-                        .get(&thread_id.0)
-                        .map(|ui| ui.draft.trim().to_string())
-                        .unwrap_or_default();
-                    if !text.is_empty() {
-                        let active_turn_id = state
-                            .conversations
-                            .get(&thread_id.0)
-                            .and_then(ConversationState::active_turn_id)
-                            .map(ToOwned::to_owned);
-                        state.input_mode = InputMode::Normal;
-                        return vec![Effect::SubmitPrompt {
-                            thread_id,
-                            text,
-                            active_turn_id,
-                        }];
-                    }
-                }
-                return vec![];
+                return prompt::submit(state);
             }
             if mode == InputMode::Alias {
                 let alias = state.input_buffer.trim().to_string();

@@ -257,6 +257,12 @@ pub enum Action {
     },
     PromptSubmitted {
         thread_id: ThreadId,
+        request_id: u64,
+    },
+    PromptFailed {
+        thread_id: ThreadId,
+        request_id: u64,
+        error: String,
     },
     InteractiveRequested(InteractiveRequest),
     InteractiveResolved {
@@ -403,6 +409,7 @@ pub enum Effect {
     },
     SubmitPrompt {
         thread_id: ThreadId,
+        request_id: u64,
         text: String,
         active_turn_id: Option<String>,
     },

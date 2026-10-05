@@ -6,7 +6,7 @@ use ratatui::{
 use std::{
     collections::VecDeque,
     hash::{DefaultHasher, Hash, Hasher},
-    sync::{LazyLock, Mutex},
+    sync::{Mutex, OnceLock},
 };
 use two_face::{
     re_exports::syntect::{
@@ -146,8 +146,7 @@ impl SyntaxHighlighter {
     }
 }
 
-static REVIEW_HIGHLIGHTER: LazyLock<Mutex<SyntaxHighlighter>> =
-    LazyLock::new(|| Mutex::new(SyntaxHighlighter::new()));
+static REVIEW_HIGHLIGHTER: OnceLock<Mutex<SyntaxHighlighter>> = OnceLock::new();
 
 fn review_revision(observed_at_unix_ms: u64, word_diff: bool) -> u64 {
     observed_at_unix_ms
@@ -156,10 +155,20 @@ fn review_revision(observed_at_unix_ms: u64, word_diff: bool) -> u64 {
 }
 
 pub fn prewarm_review_diff(review: &GitReview) {
-    if review.observed_at_unix_ms == 0 || review.error.is_some() {
+    if review.observed_at_unix_ms == 0
+        || review.error.is_some()
+        || review
+            .staged_diff
+            .len()
+            .saturating_add(review.unstaged_diff.len())
+            > MAX_SYNC_HIGHLIGHT_BYTES
+    {
         return;
     }
-    let Ok(mut highlighter) = REVIEW_HIGHLIGHTER.lock() else {
+    let Ok(mut highlighter) = REVIEW_HIGHLIGHTER
+        .get_or_init(|| Mutex::new(SyntaxHighlighter::new()))
+        .lock()
+    else {
         return;
     };
     for word_diff in [false, true] {
@@ -178,7 +187,9 @@ pub fn cached_review_diff(
     observed_at_unix_ms: u64,
     word_diff: bool,
 ) -> Option<Vec<Line<'static>>> {
-    REVIEW_HIGHLIGHTER.lock().ok()?.cached_lines(
+    // A cold or busy cache falls back to plain text. UI lookup must neither
+    // initialize syntax assets nor wait for the worker holding the cache lock.
+    REVIEW_HIGHLIGHTER.get()?.try_lock().ok()?.cached_lines(
         review_revision(observed_at_unix_ms, word_diff),
         thread_id,
         REVIEW_SYNTAX,
@@ -296,5 +307,30 @@ mod tests {
                 .is_none()
         );
         assert_eq!(highlighter.cache_len(), 0);
+    }
+}
+
+#[cfg(test)]
+mod worker_contention_tests {
+    use super::*;
+    use std::{sync::mpsc, time::Duration};
+
+    #[test]
+    fn render_lookup_does_not_wait_for_the_highlighting_worker() {
+        let held = REVIEW_HIGHLIGHTER
+            .get_or_init(|| Mutex::new(SyntaxHighlighter::new()))
+            .lock()
+            .unwrap();
+        let (done, result) = mpsc::sync_channel(1);
+        let reader = std::thread::spawn(move || {
+            let value = cached_review_diff("held-by-worker", 42, false);
+            done.send(value.is_none()).unwrap();
+        });
+        // This is a liveness handshake, not a performance threshold. Release on
+        // failure as well so a regression cannot hang the complete test suite.
+        let answered_while_held = result.recv_timeout(Duration::from_secs(2));
+        drop(held);
+        reader.join().unwrap();
+        assert_eq!(answered_while_held, Ok(true));
     }
 }
