@@ -9,6 +9,7 @@ use ratatui::{Terminal, backend::TestBackend};
 #[test]
 fn uncached_word_diff_falls_back_explicitly_without_computing_word_pairs() {
     let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+    app.threads[0].metadata.cwd = "/synthetic-review".into();
     let id = app.threads[0].id.clone();
     let mut review = GitReview::pending(id.clone(), "/synthetic-review");
     review.observed_at_unix_ms = 42;
