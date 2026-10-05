@@ -120,9 +120,15 @@ jobs:
 
           '''
           path.write_text(text.replace(marker, marker + textwrap.dedent(method), 1))
+          path = pathlib.Path('tests/review_render_contract.rs')
+          text = path.read_text()
+          marker = '    let id = app.threads[0].id.clone();\n'
+          if text.count(marker) != 1:
+              raise SystemExit('render fixture changed')
+          path.write_text(text.replace(marker, '    app.threads[0].metadata.cwd = "/synthetic-review".into();\n' + marker, 1))
           path = pathlib.Path('docs/implementation/v1.4-review-consistency.md')
           text = path.read_text()
-          path.write_text(text + '\nThe first candidate verification (`37264750708`) reproduced all six defects but\nthen rejected an old cache test whose incoming cwd did not match its empty thread\nmetadata. The fixture now assigns its actual cached/incoming cwd to each thread;\nall cache assertions remain. The failed run is retained, not counted as a pass.\n')
+          path.write_text(text + '\nCandidate runs `37264750708` and `37265173589` reproduced all six defects, then\nexposed cache and render fixtures whose incoming cwd did not match their thread\nmetadata. The fixtures now assign the cached/incoming cwd to the live threads;\nall cache and no-synchronous-render assertions remain. Both failed runs are\nretained as failures. No production guard or test assertion was weakened.\n')
           PY
           cargo fmt --all
           git diff --check
@@ -150,7 +156,7 @@ jobs:
               return subprocess.check_output(['git', *args], text=True).strip()
           if git('rev-parse', 'HEAD') != os.environ['EXPECTED_HEAD']:
               raise SystemExit('unexpected checkout')
-          allowed = {'src/app.rs','src/app/review.rs','tests/review_consistency.rs','docs/implementation/v1.4-review-consistency.md'}
+          allowed = {'src/app.rs','src/app/review.rs','tests/review_consistency.rs','tests/review_render_contract.rs','docs/implementation/v1.4-review-consistency.md'}
           paths = git('diff','--name-only').splitlines()
           if not set(paths).issubset(allowed) or not {'src/app.rs','src/app/review.rs'}.issubset(paths):
               raise SystemExit('unexpected formatter/source change')
