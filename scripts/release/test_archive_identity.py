@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import sys
+import subprocess
 import tempfile
 import unittest
 from unittest import mock
@@ -35,7 +36,11 @@ class ArchiveIdentity(unittest.TestCase):
             def command(args):
                 if "--help" in args: return "Usage: codex-tui"
                 if "--version" in args: return "codex-tui 1.4.0"
-                if "benchmark" in args: return json.dumps({"schema": "codex-tui/performance/v2", "sourceSha": compiled_sha})
+                if "benchmark" in args:
+                    # Model the real CLI contract: insufficient sampling exits 5.
+                    if int(args[args.index("--warmup") + 1]) < 20 or int(args[args.index("--iterations") + 1]) < 200:
+                        raise subprocess.CalledProcessError(5, args)
+                    return json.dumps({"schema": "codex-tui/performance/v2", "sourceSha": compiled_sha})
                 return json.dumps({"schema": "codex-tui/headless-threads/v1", "degraded": False, "threads": [{}] * 10_000})
             with mock.patch.object(sys, "argv", ["verify_archive.py", "--archive", "fixture.zip", "--version", "1.4.0", "--tag", "audit", "--commit", SHA]), \
                  mock.patch.object(v, "extract", return_value=root), mock.patch.object(v, "run_checked", side_effect=command), \
