@@ -5,98 +5,29 @@ on:
 permissions:
   contents: read
 jobs:
-  verify:
+  source:
     if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'fix/v1.4-local-edit-durability'
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    permissions:
-      contents: write
-    env:
-      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
-      CARGO_TERM_COLOR: never
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
-      - name: Reproduce original local-editor loss
-        shell: bash
+      - name: Export exact tracked source for offline verification
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
-          mkdir -p "$RUNNER_TEMP/local-edit-evidence"
-          python3 .audit/apply_local_edit.py tests
-          cargo fmt --all
-          set +e
-          cargo test --locked --test local_edit_durability -- --nocapture > "$RUNNER_TEMP/local-edit-evidence/before.log" 2>&1
-          code=$?
-          set -e
-          cat "$RUNNER_TEMP/local-edit-evidence/before.log"
-          test "$code" = 101
-          grep -q '8 failed' "$RUNNER_TEMP/local-edit-evidence/before.log"
-          grep -q '3 passed' "$RUNNER_TEMP/local-edit-evidence/before.log"
-      - name: Apply correction and remove temporary files
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          for name in ['local_edit.rs','runtime_local_tests.rs']:
-              p=Path('.audit',name);p.write_text(p.read_text().replace('Action::Backspace','Action::InputBackspace'))
-          p=Path('.audit/local_edit.rs');s=p.read_text()
-          s=s.replace('if self.saved_view_editor.is_some() { self.saved_view_editor_error = Some(error); }', 'if matches!(&pending.effect, Effect::SaveSavedView { .. }) && pending.revision == self.local_edit_revision && self.saved_view_editor.is_some() { self.saved_view_editor_error = Some(error); }')
-          p.write_text(s)
-          PY
-          python3 .audit/apply_local_edit.py fix
-          cargo fmt --all
-          git add -A
-          git diff --cached --check
-      - name: Full corrected source and original governance
-        shell: bash
-        run: |
-          set -euo pipefail
-          cargo fmt --all -- --check
-          cargo clippy --locked --all-targets --all-features -- -D warnings 2>&1 | tee "$RUNNER_TEMP/local-edit-evidence/clippy.log"
-          cargo test --locked --all-targets --all-features 2>&1 | tee "$RUNNER_TEMP/local-edit-evidence/after.log"
-          python3 -m unittest discover -s scripts/release -p 'test_*.py' 2>&1 | tee "$RUNNER_TEMP/local-edit-evidence/python.log"
-          python3 scripts/architecture/check_module_ratchet.py release/v1.3-plan.json
-          python3 scripts/architecture/check_module_ratchet.py release/v1.4-plan.json
-          python3 scripts/release/validate_v1_4_plan.py
-          python3 scripts/release/validate_v1_4_completion.py
-          git diff --cached --check
-      - name: Export tested blobs without updating refs
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import hashlib,json,os,pathlib,subprocess
-          changes=subprocess.check_output(['git','diff','--cached','--no-renames','--name-status','-z']).decode().split('\0')
-          entries=[]
-          for i in range(0,len(changes)-1,2):
-              status,name=changes[i:i+2]
-              entry={'path':name,'mode':'100644','type':'blob','sha':None}
-              if status!='D':
-                  raw=pathlib.Path(name).read_bytes()
-                  result=subprocess.run(['gh','api','repos/'+os.environ['GITHUB_REPOSITORY']+'/git/blobs','--input','-'],input=json.dumps({'encoding':'utf-8','content':raw.decode()}),text=True,capture_output=True,check=True)
-                  entry['sha']=json.loads(result.stdout)['sha']
-                  assert entry['sha']==hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()
-              entries.append(entry)
-          receipt={'parent':os.environ['EXPECTED_HEAD'],'baseline':'f7ad98c092214977f2c2512a448940a4f3445ec1','tree':subprocess.check_output(['git','write-tree'],text=True).strip(),'entries':entries,'refUpdated':False}
-          pathlib.Path(os.environ['RUNNER_TEMP'],'local-edit-evidence','candidate.json').write_text(json.dumps(receipt,indent=2)+'\n')
-          print('CANDIDATE_RECEIPT='+json.dumps(receipt),flush=True)
-          PY
-          git diff --cached > "$RUNNER_TEMP/local-edit-evidence/validated.patch"
+          git bundle create "$RUNNER_TEMP/local-edit-source.bundle" HEAD
+          git rev-parse HEAD > "$RUNNER_TEMP/local-edit-source.sha"
       - uses: actions/upload-artifact@v7
-        if: always()
         with:
-          name: local-edit-evidence
-          path: ${{ runner.temp }}/local-edit-evidence/
+          name: local-edit-source
+          path: |
+            ${{ runner.temp }}/local-edit-source.bundle
+            ${{ runner.temp }}/local-edit-source.sha
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 7
