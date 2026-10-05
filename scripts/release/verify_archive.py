@@ -139,9 +139,10 @@ def main() -> int:
             raise SystemExit(f"version smoke mismatch: {version_output!r}")
 
         # Use an existing no-backend diagnostic to read the embedded build identity.
-        # One sample is sufficient for identity; this is NOT performance evidence.
+        # Respect its minimum sampling contract so success exits zero. These
+        # packaging smoke timings are not retained performance qualification.
         identity = json.loads(run_checked([
-            str(binary), "release", "benchmark", "--warmup", "1", "--iterations", "1",
+            str(binary), "release", "benchmark", "--warmup", "20", "--iterations", "200",
             "--source", "archive-identity-smoke", "--json",
         ]))
         validate_compiled_source(identity, args.commit)

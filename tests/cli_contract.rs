@@ -96,3 +96,32 @@ fn requested_missing_backend_is_not_reported_as_success() {
         "{output:?}"
     );
 }
+
+#[test]
+fn archive_identity_sampling_respects_real_cli_exit_contract_without_state() {
+    for (warmup, iterations, exit, qualified) in [("1", "1", 5, false), ("20", "200", 0, true)] {
+        let home = TempDir::new().unwrap();
+        let output = invoke(
+            &[
+                "release",
+                "benchmark",
+                "--warmup",
+                warmup,
+                "--iterations",
+                iterations,
+                "--source",
+                "archive-identity-smoke",
+                "--json",
+            ],
+            &home,
+        );
+        assert_eq!(output.status.code(), Some(exit), "{output:?}");
+        let report: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(report["schema"], "codex-tui/performance/v2");
+        assert_eq!(report["sampleQualified"], qualified);
+        assert_eq!(report["warmupIterations"], warmup.parse::<u64>().unwrap());
+        assert_eq!(report["iterations"], iterations.parse::<u64>().unwrap());
+        assert_eq!(report["sourceSha"], codex_tui::compat::source_sha());
+        assert_eq!(std::fs::read_dir(home.path()).unwrap().count(), 0);
+    }
+}
