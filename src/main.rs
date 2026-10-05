@@ -27,6 +27,7 @@ mod runtime_external;
 mod runtime_input;
 mod runtime_notifications;
 mod runtime_palette;
+mod runtime_shutdown;
 mod runtime_store;
 mod runtime_store_worker;
 
@@ -286,245 +287,252 @@ async fn run_app(fake_mode: bool, target_override: Option<&str>) -> Result<()> {
     let mut urgent_render = true;
     let mut last_render = Instant::now();
 
-    while !app.should_quit {
-        for _ in 0..64 {
-            if !event::poll(Duration::ZERO)? {
-                break;
-            }
-            match event::read()? {
-                Event::Key(key) => {
-                    let effects = handle_key(&mut app, key);
-                    if !effects.is_empty()
-                        || matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat)
-                    {
-                        needs_render = true;
-                        urgent_render = true;
-                    }
-                    apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
+    let run_result: Result<()> = async {
+        while !app.should_quit {
+            for _ in 0..64 {
+                if !event::poll(Duration::ZERO)? {
+                    break;
                 }
-                Event::Paste(text) => {
-                    let effects = handle_paste(&mut app, text);
-                    needs_render = true;
-                    urgent_render = true;
-                    apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
-                }
-                Event::Resize(cols, rows) => {
-                    needs_render = true;
-                    urgent_render = true;
-                    if app.terminal_drawer_open {
-                        let effects = vec![Effect::TerminalResize(ui::terminal_drawer_pty_size(
-                            cols, rows,
-                        ))];
+                match event::read()? {
+                    Event::Key(key) => {
+                        let effects = handle_key(&mut app, key);
+                        if !effects.is_empty()
+                            || matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat)
+                        {
+                            needs_render = true;
+                            urgent_render = true;
+                        }
                         apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
                     }
+                    Event::Paste(text) => {
+                        let effects = handle_paste(&mut app, text);
+                        needs_render = true;
+                        urgent_render = true;
+                        apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
+                    }
+                    Event::Resize(cols, rows) => {
+                        needs_render = true;
+                        urgent_render = true;
+                        if app.terminal_drawer_open {
+                            let effects = vec![Effect::TerminalResize(
+                                ui::terminal_drawer_pty_size(cols, rows),
+                            )];
+                            apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
+                        }
+                    }
+                    _ => {}
                 }
-                _ => {}
             }
-        }
-        if app.should_quit {
-            break;
-        }
-        let mut planning_dirty = false;
-        for _ in 0..32 {
-            let Some(event) = services.store.try_event() else {
+            if app.should_quit {
                 break;
-            };
-            match event {
-                StoreEvent::Operator(error) => {
-                    if let Some(error) = error {
-                        reduce(&mut app, Action::PlanningStoreDegraded(Some(error)));
-                    }
-                }
-                StoreEvent::Planning(result, notice) => {
-                    let succeeded = result.is_ok();
-                    apply_planning_store_result(&mut app, result);
-                    planning_dirty |= succeeded;
-                    if succeeded && let Some(notice) = notice {
-                        reduce(&mut app, Action::MutationNotice(notice));
-                    }
-                }
-                StoreEvent::Search(Ok(results)) => {
-                    reduce(&mut app, Action::TranscriptSearchLoaded(results));
-                }
-                StoreEvent::Search(Err(error)) | StoreEvent::Notice(Some(error)) => {
-                    reduce(&mut app, Action::MutationNotice(error));
-                }
-                StoreEvent::Notice(None) => {}
             }
-            needs_render = true;
-        }
+            let mut planning_dirty = false;
+            for _ in 0..32 {
+                let Some(event) = services.store.try_event() else {
+                    break;
+                };
+                match event {
+                    StoreEvent::Operator(error) => {
+                        if let Some(error) = error {
+                            reduce(&mut app, Action::PlanningStoreDegraded(Some(error)));
+                        }
+                    }
+                    StoreEvent::Planning(result, notice) => {
+                        let succeeded = result.is_ok();
+                        apply_planning_store_result(&mut app, result);
+                        planning_dirty |= succeeded;
+                        if succeeded && let Some(notice) = notice {
+                            reduce(&mut app, Action::MutationNotice(notice));
+                        }
+                    }
+                    StoreEvent::Search(Ok(results)) => {
+                        reduce(&mut app, Action::TranscriptSearchLoaded(results));
+                    }
+                    StoreEvent::Search(Err(error)) | StoreEvent::Notice(Some(error)) => {
+                        reduce(&mut app, Action::MutationNotice(error));
+                    }
+                    StoreEvent::Notice(None) => {}
+                }
+                needs_render = true;
+            }
 
-        if connect_task
-            .as_ref()
-            .is_some_and(tokio::task::JoinHandle::is_finished)
-        {
-            let Some(task) = connect_task.take() else {
-                continue;
-            };
-            match task.await {
-                Ok(Ok(started)) => {
-                    reduce(&mut app, Action::ReplaceThreads(started.initial.threads));
-                    reduce(&mut app, Action::BackendStatus(started.initial.status));
-                    app.apply_local_state(&local);
-                    registry = Some(started.handle);
-                    let effects = reduce(&mut app, Action::RefreshGitProjections);
-                    apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
+            if connect_task
+                .as_ref()
+                .is_some_and(tokio::task::JoinHandle::is_finished)
+            {
+                let Some(task) = connect_task.take() else {
+                    continue;
+                };
+                match task.await {
+                    Ok(Ok(started)) => {
+                        reduce(&mut app, Action::ReplaceThreads(started.initial.threads));
+                        reduce(&mut app, Action::BackendStatus(started.initial.status));
+                        app.apply_local_state(&local);
+                        registry = Some(started.handle);
+                        let effects = reduce(&mut app, Action::RefreshGitProjections);
+                        apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
+                        planning_dirty = true;
+                    }
+                    Ok(Err(error)) => {
+                        reduce(
+                            &mut app,
+                            Action::BackendStatus(backend_error_status(error.to_string())),
+                        );
+                    }
+                    Err(error) => {
+                        let language = app.language;
+                        reduce(
+                            &mut app,
+                            Action::BackendStatus(backend_error_status(format!(
+                                "{}: {error}",
+                                runtime_text(
+                                    language,
+                                    "App Server connection task failed",
+                                    "App Server 连接任务失败",
+                                )
+                            ))),
+                        );
+                    }
+                }
+                needs_render = true;
+            }
+
+            let registry_changes = drain_registry(&mut app, registry.as_mut(), &mut services.store);
+            needs_render |= registry_changes.any;
+            if registry_changes.registry_projection {
+                let effects = reduce(&mut app, Action::RefreshGitProjections);
+                apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
+            }
+            planning_dirty |= registry_changes.planning;
+            let git_changes = drain_git(&mut app, &mut services.git);
+            needs_render |= git_changes.any;
+            if git_changes.planning_projection {
+                let effects = reduce(&mut app, Action::RefreshForgeProjections);
+                apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
+                planning_dirty = true;
+            }
+
+            let forge_changed = drain_forge(&mut app, &mut services.forge);
+            needs_render |= forge_changed;
+            planning_dirty |= forge_changed;
+
+            let forge_mutation_changes =
+                drain_forge_mutations(&mut app, &mut services.forge_mutations);
+            needs_render |= forge_mutation_changes.any;
+            if forge_mutation_changes.planning_projection {
+                let effects = reduce(&mut app, Action::RefreshForgeProjections);
+                apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
+                planning_dirty = true;
+            }
+
+            let mutation_changes = drain_mutations(&mut app, &mut services.mutations);
+            needs_render |= mutation_changes.any;
+            if mutation_changes.planning_projection {
+                let effects = reduce(&mut app, Action::RefreshGitProjections);
+                apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
+                planning_dirty = true;
+            }
+
+            let terminal_changed = drain_terminal_drawer(&mut app, &mut services.terminal_drawer);
+            needs_render |= terminal_changed;
+
+            if services.store.operator_state_flush_due()
+                && let Some(error) = services.store.persist_operator_state(&app.to_local_state())
+            {
+                reduce(&mut app, Action::PlanningStoreDegraded(Some(error)));
+            }
+
+            if last_git_reconcile.elapsed() >= Duration::from_secs(10) {
+                let effects = reduce(&mut app, Action::RefreshActiveGitProjections);
+                apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
+                last_git_reconcile = Instant::now();
+            }
+
+            if last_forge_reconcile.elapsed() >= Duration::from_secs(15) {
+                let effects = reduce(&mut app, Action::RefreshForgeProjections);
+                let forge_projection_changed = !effects.is_empty();
+                apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
+                if forge_projection_changed {
                     planning_dirty = true;
+                    needs_render = true;
                 }
-                Ok(Err(error)) => {
+                last_forge_reconcile = Instant::now();
+            }
+
+            if let Some(fake) = fake_backend.as_mut()
+                && last_fake_tick.elapsed() >= Duration::from_millis(900)
+            {
+                let snapshot = fake.tick();
+                reduce(&mut app, Action::ReplaceThreads(snapshot.threads));
+                reduce(&mut app, Action::BackendStatus(snapshot.status));
+                let effects = reduce(&mut app, Action::RefreshGitProjections);
+                apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
+                planning_dirty = true;
+                last_fake_tick = Instant::now();
+                needs_render = true;
+            }
+
+            let planning_applied =
+                match planning_worker.advance(&mut app, planning_dirty, now_unix_ms()) {
+                    Ok(applied) => applied,
+                    Err(error) => {
+                        reduce(&mut app, Action::MutationNotice(error));
+                        false
+                    }
+                };
+            if planning_applied {
+                needs_render = true;
+                if let Err(error) = services.notifications.observe(&app) {
                     reduce(
                         &mut app,
-                        Action::BackendStatus(backend_error_status(error.to_string())),
-                    );
-                }
-                Err(error) => {
-                    let language = app.language;
-                    reduce(
-                        &mut app,
-                        Action::BackendStatus(backend_error_status(format!(
+                        Action::MutationNotice(format!(
                             "{}: {error}",
                             runtime_text(
                                 language,
-                                "App Server connection task failed",
-                                "App Server 连接任务失败",
+                                "notification dispatch unavailable",
+                                "通知分派不可用",
                             )
-                        ))),
+                        )),
                     );
                 }
             }
-            needs_render = true;
-        }
 
-        let registry_changes = drain_registry(&mut app, registry.as_mut(), &mut services.store);
-        needs_render |= registry_changes.any;
-        if registry_changes.registry_projection {
-            let effects = reduce(&mut app, Action::RefreshGitProjections);
-            apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
-        }
-        planning_dirty |= registry_changes.planning;
-        let git_changes = drain_git(&mut app, &mut services.git);
-        needs_render |= git_changes.any;
-        if git_changes.planning_projection {
-            let effects = reduce(&mut app, Action::RefreshForgeProjections);
-            apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
-            planning_dirty = true;
-        }
-
-        let forge_changed = drain_forge(&mut app, &mut services.forge);
-        needs_render |= forge_changed;
-        planning_dirty |= forge_changed;
-
-        let forge_mutation_changes = drain_forge_mutations(&mut app, &mut services.forge_mutations);
-        needs_render |= forge_mutation_changes.any;
-        if forge_mutation_changes.planning_projection {
-            let effects = reduce(&mut app, Action::RefreshForgeProjections);
-            apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
-            planning_dirty = true;
-        }
-
-        let mutation_changes = drain_mutations(&mut app, &mut services.mutations);
-        needs_render |= mutation_changes.any;
-        if mutation_changes.planning_projection {
-            let effects = reduce(&mut app, Action::RefreshGitProjections);
-            apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
-            planning_dirty = true;
-        }
-
-        let terminal_changed = drain_terminal_drawer(&mut app, &mut services.terminal_drawer);
-        needs_render |= terminal_changed;
-
-        if services.store.operator_state_flush_due()
-            && let Some(error) = services.store.persist_operator_state(&app.to_local_state())
-        {
-            reduce(&mut app, Action::PlanningStoreDegraded(Some(error)));
-        }
-
-        if last_git_reconcile.elapsed() >= Duration::from_secs(10) {
-            let effects = reduce(&mut app, Action::RefreshActiveGitProjections);
-            apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
-            last_git_reconcile = Instant::now();
-        }
-
-        if last_forge_reconcile.elapsed() >= Duration::from_secs(15) {
-            let effects = reduce(&mut app, Action::RefreshForgeProjections);
-            let forge_projection_changed = !effects.is_empty();
-            apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
-            if forge_projection_changed {
-                planning_dirty = true;
-                needs_render = true;
-            }
-            last_forge_reconcile = Instant::now();
-        }
-
-        if let Some(fake) = fake_backend.as_mut()
-            && last_fake_tick.elapsed() >= Duration::from_millis(900)
-        {
-            let snapshot = fake.tick();
-            reduce(&mut app, Action::ReplaceThreads(snapshot.threads));
-            reduce(&mut app, Action::BackendStatus(snapshot.status));
-            let effects = reduce(&mut app, Action::RefreshGitProjections);
-            apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
-            planning_dirty = true;
-            last_fake_tick = Instant::now();
-            needs_render = true;
-        }
-
-        let planning_applied =
-            match planning_worker.advance(&mut app, planning_dirty, now_unix_ms()) {
-                Ok(applied) => applied,
-                Err(error) => {
-                    reduce(&mut app, Action::MutationNotice(error));
-                    false
-                }
-            };
-        if planning_applied {
-            needs_render = true;
-            if let Err(error) = services.notifications.observe(&app) {
+            if let Some(notice) = services.notifications.try_notice() {
                 reduce(
                     &mut app,
                     Action::MutationNotice(format!(
-                        "{}: {error}",
-                        runtime_text(
-                            language,
-                            "notification dispatch unavailable",
-                            "通知分派不可用",
-                        )
+                        "{}: {notice}",
+                        runtime_text(language, "notification delivery degraded", "通知投递已降级",)
                     )),
                 );
+                needs_render = true;
             }
+
+            if needs_render && presentation_mode.should_render(last_render.elapsed(), urgent_render)
+            {
+                terminal
+                    .terminal_mut()
+                    .draw(|frame| ui::render(frame, &app))?;
+                needs_render = false;
+                urgent_render = false;
+                last_render = Instant::now();
+            }
+
+            tokio::time::sleep(Duration::from_millis(16)).await;
         }
 
-        if let Some(notice) = services.notifications.try_notice() {
-            reduce(
-                &mut app,
-                Action::MutationNotice(format!(
-                    "{}: {notice}",
-                    runtime_text(language, "notification delivery degraded", "通知投递已降级",)
-                )),
-            );
-            needs_render = true;
-        }
-
-        if needs_render && presentation_mode.should_render(last_render.elapsed(), urgent_render) {
-            terminal
-                .terminal_mut()
-                .draw(|frame| ui::render(frame, &app))?;
-            needs_render = false;
-            urgent_render = false;
-            last_render = Instant::now();
-        }
-
-        tokio::time::sleep(Duration::from_millis(16)).await;
+        Ok(())
     }
+    .await;
 
     if let Some(task) = connect_task {
         task.abort();
     }
-    drop(terminal);
-    services
-        .store
-        .flush_operator_state_on_exit(&app.to_local_state())?;
-    Ok(())
+    runtime_shutdown::finish(terminal, run_result, || {
+        services
+            .store
+            .flush_operator_state_on_exit(&app.to_local_state())
+    })
 }
 
 #[cfg(test)]

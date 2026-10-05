@@ -64,6 +64,7 @@ pub(crate) fn preflight(args: &[String]) -> Result<Option<&'static str>, String>
         &words[..]
     };
     validate(input, wants_help)?;
+    validate_limits(input)?;
     Ok(wants_help.then_some(help))
 }
 
@@ -169,6 +170,24 @@ fn validate(words: &[&str], help: bool) -> Result<(), String> {
         }
         Some(other) => Err(format!("unknown command: {other}")),
     }
+}
+
+fn validate_limits(words: &[&str]) -> Result<(), String> {
+    for pair in words.windows(2) {
+        let maximum = match (words.first().copied(), words.get(1).copied(), pair[0]) {
+            (Some("soak"), _, "--rows") => codex_tui::soak::MAX_ROWS,
+            (Some("soak"), _, "--cycles") => codex_tui::soak::MAX_CYCLES,
+            (Some("soak"), _, "--duration-seconds") => {
+                codex_tui::soak::MAX_DURATION_SECONDS as usize
+            }
+            (Some("release"), Some("scale"), "--rows") => codex_tui::scale_evidence::MAX_ROWS,
+            _ => continue,
+        };
+        if pair[1].parse::<usize>().is_ok_and(|value| value > maximum) {
+            return Err(format!("{} must be <= {maximum}", pair[0]));
+        }
+    }
+    Ok(())
 }
 
 fn headless_options(words: &[&str]) -> Result<(), String> {

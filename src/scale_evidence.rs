@@ -44,6 +44,7 @@ pub struct PlanningPhaseSummary {
 #[serde(rename_all = "camelCase")]
 pub struct ScaleEvidenceReport {
     pub schema: &'static str,
+    pub source_sha: &'static str,
     pub rows: usize,
     pub warmup_iterations: usize,
     pub iterations: usize,
@@ -103,6 +104,7 @@ pub fn run(
 
     Ok(ScaleEvidenceReport {
         schema: SCALE_EVIDENCE_SCHEMA,
+        source_sha: crate::compat::source_sha(),
         rows,
         warmup_iterations,
         iterations,
@@ -381,6 +383,11 @@ mod tests {
     fn scale_evidence_covers_registry_projection_shapes() {
         let report = run(64, 1, 3, "test".into()).expect("scale evidence");
         assert_eq!(report.schema, SCALE_EVIDENCE_SCHEMA);
+        assert_eq!(report.source_sha, crate::compat::source_sha());
+        assert_eq!(
+            serde_json::to_value(&report).unwrap()["sourceSha"],
+            report.source_sha
+        );
         assert_eq!(report.rows, 64);
         assert_eq!(report.iterations, 3);
         for timing in [

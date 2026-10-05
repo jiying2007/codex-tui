@@ -61,6 +61,10 @@ fn invalid_usage_is_side_effect_free_and_exits_two() {
         vec!["doctor", "bundle", "--output", "a", "--output", "b"],
         vec!["release", "benchmark", "--iterations", "0"],
         vec!["soak", "--cycles", "bad"],
+        vec!["soak", "--rows", "50001"],
+        vec!["soak", "--cycles", "10001"],
+        vec!["soak", "--duration-seconds", "3601"],
+        vec!["release", "scale", "--rows", "100001"],
         vec!["doctor", "bad", "--help"],
         vec!["version", "extra"],
     ] {

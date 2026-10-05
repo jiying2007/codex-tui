@@ -22,6 +22,8 @@ on:
       - "release/v1.4-criteria.json"
       - "release/v1.4-completion.json"
       - "release/v1.4-plan.json"
+      - "scripts/release/**"
+      - "src/ui/**"
       - "Cargo.toml"
       - "Cargo.lock"
   workflow_dispatch:
@@ -40,7 +42,7 @@ jobs:
     env:
       CODEX_TUI_GIT_SHA: ${{ github.sha }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
 
@@ -74,73 +76,13 @@ jobs:
           ./target/release/codex-tui release interaction-benchmark \
             --warmup 20 --iterations 200 --source "github-hosted:ubuntu-24.04" \
             --json | tee interaction-performance.json
-          python3 - <<'PY'
-          import json, math, os
-          r = json.load(open("interaction-performance.json"))
-          assert r["schema"] == "codex-tui/interaction-performance/v1"
-          assert r["sourceSha"] == os.environ["GITHUB_SHA"] and r["sampleQualified"]
-          assert r["iterations"] >= 200 and r["warmupIterations"] >= 20
-          assert len(r["fixtures"]) == 6 and len({f["fixture"] for f in r["fixtures"]}) == 6
-          assert r["humanTimeSavings"] is None and r["modelTokenSavings"] is None
-          for f in r["fixtures"]:
-              values = [f[k] for k in ("p50Ms", "p95Ms", "p99Ms", "maxMs")]
-              assert values == sorted(values) and all(math.isfinite(v) and v >= 0 for v in values)
-          PY
-
-      - name: Validate exact-SHA diagnostic
+      - name: Validate exact-SHA diagnostic coverage
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          import json
-          import math
-          import os
-
-          with open("performance-diagnostics.json", encoding="utf-8") as handle:
-              report = json.load(handle)
-
-          assert report["schema"] == "codex-tui/performance/v2"
-          assert report["fixture"] == "resident-planning-10k"
-          assert report["sourceSha"] == os.environ["GITHUB_SHA"]
-          assert report["rows"] == 10_000
-          assert report["warmupIterations"] >= 1
-          assert report["iterations"] >= 200
-          assert report["source"] == "github-hosted:ubuntu-24.04"
-          assert report["sampleQualified"] is True
-          for key in ("p50Ms", "p95Ms", "p99Ms", "maxMs"):
-              value = float(report[key])
-              assert math.isfinite(value) and value >= 0.0
-          assert report["p50Ms"] <= report["p95Ms"] <= report["p99Ms"] <= report["maxMs"]
-          PY
-
-      - name: Validate user-perceived render diagnostics
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          import json
-          import math
-          import os
-
-          with open("user-perceived-performance.json", encoding="utf-8") as handle:
-              report = json.load(handle)
-
-          assert report["schema"] == "codex-tui/render-performance/v1"
-          assert report["sourceSha"] == os.environ["GITHUB_SHA"]
-          assert report["viewportWidth"] == 160
-          assert report["viewportHeight"] == 40
-          assert report["warmupIterations"] >= 20
-          assert report["iterations"] >= 200
-          assert report["source"] == "github-hosted:ubuntu-24.04"
-          assert report["sampleQualified"] is True
-          fixtures = {item["fixture"]: item for item in report["fixtures"]}
-          assert set(fixtures) == {"board-render-10k", "thread-render-10k"}
-          for fixture in fixtures.values():
-              assert fixture["rows"] == 10_000
-              values = [float(fixture[key]) for key in ("p50Ms", "p95Ms", "p99Ms", "maxMs")]
-              assert all(math.isfinite(value) and value >= 0.0 for value in values)
-              assert values == sorted(values)
-          PY
+          python3 scripts/release/validate_diagnostics.py performance performance-diagnostics.json --commit "$GITHUB_SHA"
+          python3 scripts/release/validate_diagnostics.py render user-perceived-performance.json --commit "$GITHUB_SHA"
+          python3 scripts/release/validate_diagnostics.py interaction interaction-performance.json --commit "$GITHUB_SHA"
 
       - uses: actions/upload-artifact@v7
         with:

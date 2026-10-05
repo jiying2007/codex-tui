@@ -40,7 +40,14 @@ SOURCE_TOKENS = {
     ".github/workflows/performance-diagnostics.yml": [
         "release render-benchmark",
         "user-perceived-performance-${{ github.sha }}",
+        "validate_diagnostics.py render",
+    ],
+    "scripts/release/validate_diagnostics.py": [
         "codex-tui/render-performance/v1",
+        "board-render-10k",
+        "thread-render-10k",
+        "sourceSha",
+        "math.isfinite",
     ],
     ".github/workflows/development-qualification.yml": [
         "validate_v1_4_completion.py",

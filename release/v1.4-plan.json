@@ -199,7 +199,9 @@
     "src/app/planning_worker.rs": 240,
     "src/sqlite_backup.rs": 140,
     "src/interaction_performance.rs": 250,
-    "src/ui/thread/tests.rs": 140
+    "src/ui/thread/tests.rs": 140,
+    "src/sqlite_store/recovery.rs": 280,
+    "src/runtime_shutdown.rs": 120
   },
   "ratchetPolicy": {
     "baseline": "inherit v1.3 Search & Multi-Target ceilings; feature work may only add bounded module-specific ceilings",
