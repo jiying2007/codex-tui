@@ -28,6 +28,7 @@ mod runtime_external;
 mod runtime_input;
 mod runtime_notifications;
 mod runtime_palette;
+mod runtime_prompt;
 mod runtime_shutdown;
 mod runtime_store;
 mod runtime_store_worker;
@@ -589,6 +590,7 @@ fn conversation_event_changes_planning(event: &ConversationEvent) -> bool {
         | ConversationEvent::InteractiveRequested(_)
         | ConversationEvent::InteractiveResolved { .. }
         | ConversationEvent::PromptSubmitted { .. }
+        | ConversationEvent::PromptFailed { .. }
         | ConversationEvent::Failed { .. } => false,
     }
 }
@@ -688,8 +690,18 @@ fn drain_registry(
             ConversationEvent::GoalCleared(thread_id) => {
                 reduce(app, Action::GoalCleared(thread_id));
             }
-            ConversationEvent::PromptSubmitted { thread_id, .. } => {
-                let effects = reduce(app, Action::PromptSubmitted { thread_id });
+            ConversationEvent::PromptSubmitted {
+                thread_id,
+                request_id,
+                ..
+            } => {
+                let effects = reduce(
+                    app,
+                    Action::PromptSubmitted {
+                        thread_id,
+                        request_id,
+                    },
+                );
                 for effect in effects {
                     if effect == Effect::PersistOperatorState
                         && let Some(error) = store.persist_operator_state(&app.to_local_state())
@@ -697,6 +709,20 @@ fn drain_registry(
                         reduce(app, Action::PlanningStoreDegraded(Some(error)));
                     }
                 }
+            }
+            ConversationEvent::PromptFailed {
+                thread_id,
+                request_id,
+                error,
+            } => {
+                reduce(
+                    app,
+                    Action::PromptFailed {
+                        thread_id,
+                        request_id,
+                        error,
+                    },
+                );
             }
             ConversationEvent::Failed { thread_id, error } => {
                 reduce(app, Action::ConversationFailed { thread_id, error });
@@ -725,6 +751,7 @@ mod registry_drain_classification_tests {
         assert!(!conversation_event_changes_planning(
             &ConversationEvent::PromptSubmitted {
                 thread_id: codex_tui::domain::ThreadId::new("thread"),
+                request_id: 1,
                 turn_id: "turn".into(),
             }
         ));
@@ -756,7 +783,6 @@ fn drain_git(app: &mut AppState, git: &mut GitHandle) -> ProjectionDrainChanges 
                 reduce(app, Action::GitContextLoaded(context));
             }
             GitEvent::Review(review) => {
-                codex_tui::syntax_highlight::prewarm_review_diff(&review);
                 reduce(app, Action::GitReviewLoaded(review));
             }
         }
@@ -1545,35 +1571,11 @@ fn apply_effects(
             }
             Effect::SubmitPrompt {
                 thread_id,
+                request_id,
                 text,
                 active_turn_id,
             } => {
-                if let Some(registry) = registry {
-                    if let Err(error) =
-                        registry.submit_prompt(thread_id.clone(), text, active_turn_id)
-                    {
-                        reduce(
-                            app,
-                            Action::ConversationFailed {
-                                thread_id,
-                                error: error.to_string(),
-                            },
-                        );
-                    }
-                } else {
-                    reduce(
-                        app,
-                        Action::ConversationFailed {
-                            thread_id,
-                            error: runtime_text(
-                                app.language,
-                                "conversation backend unavailable",
-                                "会话后端不可用",
-                            )
-                            .into(),
-                        },
-                    );
-                }
+                runtime_prompt::submit(app, registry, thread_id, request_id, text, active_turn_id);
             }
             Effect::ResolveInteractive {
                 request_id,

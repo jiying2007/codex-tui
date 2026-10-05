@@ -233,7 +233,14 @@ async fn run_actor(mut command_rx: mpsc::Receiver<GitCommand>, event_tx: mpsc::S
                                 }
                                 GitCommand::LoadReview { thread_id, cwd } => {
                                     let review = match load_review(thread_id.clone(), cwd.clone()).await {
-                                        Ok(review) => review,
+                                        Ok(review) => match tokio::task::spawn_blocking(move || {
+                                            crate::syntax_highlight::prewarm_review_diff(&review);
+                                            review
+                                        }).await {
+                                            Ok(review) => review,
+                                            Err(error) => GitReview::failed(thread_id, cwd,
+                                                format!("review presentation worker failed: {error}")),
+                                        },
                                         Err(error) => GitReview::failed(thread_id, cwd, error.to_string()),
                                     };
                                     GitEvent::Review(review)

@@ -160,14 +160,25 @@ pub(super) fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
             })
             .collect::<Vec<_>>();
 
-        let mut diff_lines =
-            cached_review_diff(thread_id, review.observed_at_unix_ms, app.review_word_diff)
-                .unwrap_or_else(|| {
-                    presentation_diff_lines(review, app.review_word_diff)
-                        .into_iter()
-                        .map(Line::from)
-                        .collect()
-                });
+        let cached =
+            cached_review_diff(thread_id, review.observed_at_unix_ms, app.review_word_diff);
+        let word_diff_ready = app.review_word_diff && cached.is_some();
+        let mut diff_lines = cached.unwrap_or_else(|| {
+            presentation_diff_lines(review, false)
+                .into_iter()
+                .map(Line::from)
+                .collect()
+        });
+        if app.review_word_diff && !word_diff_ready {
+            diff_lines.insert(
+                0,
+                Line::from(tr(
+                    app,
+                    "Word diff not cached or over budget; showing plain diff.",
+                    "单词级差异未缓存或超出预算；正在显示普通差异。",
+                )),
+            );
+        }
         if diff_lines.is_empty() {
             diff_lines.push(Line::from(tr(
                 app,
@@ -213,7 +224,7 @@ pub(super) fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
                     .block(Block::bordered().title(format!(
                         " Git diff · {}={}{} ",
                         tr(app, "word", "单词级"),
-                        app.review_word_diff,
+                        word_diff_ready,
                         truncation
                     )))
                     .wrap(Wrap { trim: false })
@@ -246,7 +257,7 @@ pub(super) fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
                     .block(Block::bordered().title(format!(
                         " Git diff · {}={}{} ",
                         tr(app, "word", "单词级"),
-                        app.review_word_diff,
+                        word_diff_ready,
                         truncation
                     )))
                     .wrap(Wrap { trim: false })
