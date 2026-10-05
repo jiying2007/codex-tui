@@ -1,0 +1,36 @@
+name: audit-inspect
+on:
+  pull_request:
+    paths:
+      - .github/workflows/audit-inspect.yml
+permissions:
+  contents: read
+jobs:
+  source:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'fix/v1.4-runtime-closure'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@1.88.0
+      - name: Capture source and locked offline dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          git bundle create "$RUNNER_TEMP/source.bundle" --all
+          git rev-parse HEAD > "$RUNNER_TEMP/source.sha"
+          cargo vendor --locked "$RUNNER_TEMP/vendor" > "$RUNNER_TEMP/vendor-config.toml"
+          tar -C "$RUNNER_TEMP" -czf "$RUNNER_TEMP/vendor.tar.gz" vendor vendor-config.toml
+      - uses: actions/upload-artifact@v7
+        with:
+          name: audit-offline-source
+          path: |
+            ${{ runner.temp }}/source.bundle
+            ${{ runner.temp }}/source.sha
+            ${{ runner.temp }}/vendor.tar.gz
+          retention-days: 1
+          if-no-files-found: error
