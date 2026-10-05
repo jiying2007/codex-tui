@@ -1,0 +1,31 @@
+name: audit-authority-boundaries
+on:
+  pull_request:
+    paths:
+      - .github/workflows/audit-authority-boundaries.yml
+permissions:
+  contents: read
+jobs:
+  source:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'fix/v1.4-authority-boundaries'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Retain exact source for isolated offline audit
+        run: |
+          set -euo pipefail
+          git bundle create "$RUNNER_TEMP/authority-source.bundle" HEAD
+          git rev-parse HEAD > "$RUNNER_TEMP/authority-source.sha"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: authority-source
+          path: |
+            ${{ runner.temp }}/authority-source.bundle
+            ${{ runner.temp }}/authority-source.sha
+          if-no-files-found: error
+          retention-days: 7
