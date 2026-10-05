@@ -1,0 +1,149 @@
+name: audit-user-input
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: read
+jobs:
+  verify:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'fix/v1.4-user-input-intent'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+      CARGO_TERM_COLOR: never
+      RUST_BACKTRACE: 0
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Verify original source identity and patch bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test "$(git rev-parse b8e755f3e4a110b12b999c280fa12f43b7cf188c^{tree})" = 013efb021b1a437aa42e6bb9f4d7309cd9ccd63b
+          git diff --exit-code b8e755f3e4a110b12b999c280fa12f43b7cf188c -- src tests Cargo.toml Cargo.lock
+          mkdir -p "$RUNNER_TEMP/user-input-evidence"
+          python3 - <<'PY'
+          import hashlib,lzma,os,pathlib
+          patch=lzma.decompress(pathlib.Path('.audit/user-input.patch.xz').read_bytes())
+          assert hashlib.sha256(patch).hexdigest()=='9b3117589e53513c42eaec643ab1f11a702b1ce217448a7d5430a96661820547'
+          pathlib.Path(os.environ['RUNNER_TEMP'],'fix.patch').write_bytes(patch)
+          PY
+      - name: Reproduce original form and privacy failures
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --check --include=tests/user_input_intent.rs "$RUNNER_TEMP/fix.patch"
+          git apply --include=tests/user_input_intent.rs "$RUNNER_TEMP/fix.patch"
+          set +e
+          cargo test --locked --test user_input_intent > "$RUNNER_TEMP/user-input-evidence/before.log" 2>&1
+          code=$?
+          set -e
+          cat "$RUNNER_TEMP/user-input-evidence/before.log"
+          test "$code" = 101
+          grep -q '5 passed; 19 failed' "$RUNNER_TEMP/user-input-evidence/before.log"
+          grep -q 'private answer leaked into screen' "$RUNNER_TEMP/user-input-evidence/before.log"
+      - name: Apply correction and remove temporary files
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --check --exclude=tests/user_input_intent.rs "$RUNNER_TEMP/fix.patch"
+          git apply --exclude=tests/user_input_intent.rs "$RUNNER_TEMP/fix.patch"
+          rm .audit/user-input.patch.xz .github/workflows/audit-user-input.yml
+          rmdir .audit
+          git add -A
+          git diff --cached --check
+          test "$(git write-tree)" = 072bc806a1931b251b97fa89d0724d570c2287c7
+      - name: Full corrected tests and unchanged governance
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets --all-features -- -D warnings 2>&1 | tee "$RUNNER_TEMP/user-input-evidence/clippy.log"
+          cargo test --locked --all-targets --all-features 2>&1 | tee "$RUNNER_TEMP/user-input-evidence/after.log"
+          python3 -m unittest discover -s scripts/release -p 'test_*.py' 2>&1 | tee "$RUNNER_TEMP/user-input-evidence/python.log"
+          python3 scripts/architecture/check_module_ratchet.py release/v1.3-plan.json
+          python3 scripts/architecture/check_module_ratchet.py release/v1.4-plan.json
+          python3 scripts/release/validate_v1_4_plan.py
+          python3 scripts/release/validate_v1_4_completion.py
+      - name: Retain verified source as data
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib,json,os,pathlib,subprocess
+          names=['docs/implementation/v1.4-user-input-intent.md','release/v1.4-plan.json','src/app.rs','src/app/user_input.rs','src/conversation.rs','src/conversation/user_input.rs','src/ui/thread.rs','tests/user_input_intent.rs']
+          root=pathlib.Path(os.environ['RUNNER_TEMP'],'user-input-source');root.mkdir()
+          files=[]
+          for i,name in enumerate(names):
+              raw=pathlib.Path(name).read_bytes();data=str(i)+'.txt';(root/data).write_bytes(raw)
+              files.append({'path':name,'data':data,'sha256':hashlib.sha256(raw).hexdigest(),'gitSha':hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()})
+          tree=subprocess.check_output(['git','write-tree'],text=True).strip()
+          assert tree=='072bc806a1931b251b97fa89d0724d570c2287c7'
+          manifest={'parent':os.environ['EXPECTED_HEAD'],'tree':tree,'files':files}
+          for destination in [root,pathlib.Path(os.environ['RUNNER_TEMP'],'user-input-evidence')]:
+              (destination/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
+          pathlib.Path(os.environ['RUNNER_TEMP'],'user-input-evidence','validated.patch').write_bytes(subprocess.check_output(['git','diff','--cached']))
+          PY
+      - uses: actions/upload-artifact@v7
+        with:
+          name: user-input-verified-source
+          path: ${{ runner.temp }}/user-input-source/
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: user-input-evidence
+          path: ${{ runner.temp }}/user-input-evidence/
+          if-no-files-found: error
+          retention-days: 30
+  objects:
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: user-input-verified-source
+          path: data
+      - name: Store verified bytes as pathless blobs only
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib,json,os,pathlib,subprocess
+          root=pathlib.Path('data');manifest=json.loads((root/'manifest.json').read_text())
+          expected=['docs/implementation/v1.4-user-input-intent.md','release/v1.4-plan.json','src/app.rs','src/app/user_input.rs','src/conversation.rs','src/conversation/user_input.rs','src/ui/thread.rs','tests/user_input_intent.rs']
+          assert manifest['tree']=='072bc806a1931b251b97fa89d0724d570c2287c7'
+          assert [f['path'] for f in manifest['files']]==expected
+          assert os.environ['GITHUB_REPOSITORY']=='jiying2007/codex-tui'
+          entries=[]
+          for i,item in enumerate(manifest['files']):
+              assert item['data']==str(i)+'.txt'
+              raw=(root/item['data']).read_bytes()
+              assert len(raw)<500000 and hashlib.sha256(raw).hexdigest()==item['sha256']
+              sha=hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()
+              assert sha==item['gitSha']
+              result=subprocess.run(['gh','api','repos/jiying2007/codex-tui/git/blobs','--input','-'],input=json.dumps({'encoding':'utf-8','content':raw.decode('utf-8')}),text=True,capture_output=True,check=True)
+              assert json.loads(result.stdout)['sha']==sha
+              entries.append({'path':item['path'],'mode':'100644','type':'blob','sha':sha})
+          pathlib.Path('receipt').mkdir()
+          pathlib.Path('receipt/candidate.json').write_text(json.dumps({'parent':manifest['parent'],'tree':manifest['tree'],'entries':entries,'refUpdated':False},indent=2)+'\n')
+          PY
+      - uses: actions/upload-artifact@v7
+        with:
+          name: user-input-candidate-blobs
+          path: receipt/
+          if-no-files-found: error
+          retention-days: 30
