@@ -37,27 +37,13 @@ jobs:
           if result.returncode == 0 or failures != expected or '2 passed; 6 failed' not in result.stdout:
               raise SystemExit('expected six behavioral failures, not compilation or infrastructure failure')
           PY
-      - name: Apply narrowly scoped reducer fix
+      - name: Apply narrowly scoped reducer and fixture correction
         shell: bash
         run: |
           python3 - <<'PY'
-          import pathlib
+          import pathlib, textwrap
           path = pathlib.Path('src/app.rs')
           text = path.read_text()
-          old = '''        Action::GitReviewLoaded(review) => {
-                      let thread_id = review.thread_id.clone();
-                      let key = thread_id.0.clone();
-                      let len = review.changes.len();
-                      state.git_reviews.insert(key, review);
-                      state.touch_git_review_cache(&thread_id);
-                      state.review_selected = if len == 0 {
-                          0
-                      } else {
-                          state.review_selected.min(len - 1)
-                      };
-                  }'''
-          import textwrap
-          old = textwrap.dedent(old).replace('\n              ', '\n') if False else old
           start = text.index('        Action::GitReviewLoaded(review) => {')
           end = text.index('        Action::PlanningSnapshotLoaded(snapshot) => {', start)
           expected = '\n'.join([
@@ -77,7 +63,27 @@ jobs:
           ])
           if text[start:end] != expected:
               raise SystemExit('review reducer source changed; refusing fuzzy patch')
-          path.write_text(text[:start] + '        Action::GitReviewLoaded(review) => state.install_git_review(review),\n' + text[end:])
+          text = text[:start] + '        Action::GitReviewLoaded(review) => state.install_git_review(review),\n' + text[end:]
+          start = text.index('    fn git_review_cache_never_evicts_current_review_on_background_load() {')
+          end = text.index('    #[test]', start)
+          test = text[start:end]
+          marker = '        let ids = app\n'
+          if test.count(marker) != 1:
+              raise SystemExit('cache fixture changed')
+          setup = '\n'.join([
+              '        // Cached and incoming snapshots belong to the live thread cwd.',
+              '        for (index, thread) in app.threads.iter_mut().enumerate() {',
+              '            thread.metadata.cwd = if index == GIT_REVIEW_CACHE_LIMIT {',
+              '                "/repo/new"',
+              '            } else {',
+              '                "/repo"',
+              '            }',
+              '            .into();',
+              '        }',
+              '',
+          ])
+          text = text[:start] + test.replace(marker, setup + marker, 1) + text[end:]
+          path.write_text(text)
           path = pathlib.Path('src/app/review.rs')
           text = path.read_text()
           marker = 'impl AppState {\n'
@@ -113,8 +119,10 @@ jobs:
           }
 
           '''
-          method = textwrap.dedent(method)
-          path.write_text(text.replace(marker, marker + method, 1))
+          path.write_text(text.replace(marker, marker + textwrap.dedent(method), 1))
+          path = pathlib.Path('docs/implementation/v1.4-review-consistency.md')
+          text = path.read_text()
+          path.write_text(text + '\nThe first candidate verification (`37264750708`) reproduced all six defects but\nthen rejected an old cache test whose incoming cwd did not match its empty thread\nmetadata. The fixture now assigns its actual cached/incoming cwd to each thread;\nall cache assertions remain. The failed run is retained, not counted as a pass.\n')
           PY
           cargo fmt --all
           git diff --check
@@ -142,7 +150,7 @@ jobs:
               return subprocess.check_output(['git', *args], text=True).strip()
           if git('rev-parse', 'HEAD') != os.environ['EXPECTED_HEAD']:
               raise SystemExit('unexpected checkout')
-          allowed = {'src/app.rs','src/app/review.rs','tests/review_consistency.rs'}
+          allowed = {'src/app.rs','src/app/review.rs','tests/review_consistency.rs','docs/implementation/v1.4-review-consistency.md'}
           paths = git('diff','--name-only').splitlines()
           if not set(paths).issubset(allowed) or not {'src/app.rs','src/app/review.rs'}.issubset(paths):
               raise SystemExit('unexpected formatter/source change')
