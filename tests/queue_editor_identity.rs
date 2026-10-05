@@ -47,7 +47,7 @@ fn assert_refused(app: &mut AppState) {
     assert_eq!(app.input_buffer, draft);
     assert_eq!(app.to_local_state(), state);
     assert!(app.thread_queue_error.is_some());
-    assert!(app.pending_thread_queue_mutation.is_none());
+    assert!(app.pending_queue_confirmation.is_none());
 }
 
 #[test]
@@ -169,6 +169,7 @@ fn cancel_and_close_do_not_leak_editor_targets() {
         reduce(&mut app, Action::CommitInput).as_slice(),
         [Effect::MutateThreadQueue(ThreadQueueMutation::Add { .. })]
     ));
+    load(&mut app, &id, &[("a", "first"), ("b", "second")]);
     edit(&mut app);
     assert_eq!(
         reduce(&mut app, Action::CloseThreadQueue),

@@ -95,7 +95,7 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
     }
 
     if app.thread_queue_open && app.input_mode == InputMode::Normal {
-        if app.pending_thread_queue_mutation.is_some() {
+        if app.pending_queue_confirmation.is_some() {
             return match key.code {
                 KeyCode::Char('y') => reduce(app, Action::ConfirmPendingOperation),
                 KeyCode::Char('c') | KeyCode::Esc => reduce(app, Action::CancelPendingOperation),

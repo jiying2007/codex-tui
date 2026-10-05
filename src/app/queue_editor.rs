@@ -20,6 +20,11 @@ impl AppState {
         {
             return;
         }
+        if let Err(error) = snapshot.validate_complete() {
+            self.thread_queue_loading = false;
+            self.thread_queue_error = Some(error.to_string());
+            return;
+        }
         let selected = self
             .thread_queue_snapshot
             .as_ref()
@@ -50,8 +55,7 @@ impl AppState {
         };
         let original = if edit {
             let selected = self
-                .thread_queue_snapshot
-                .as_ref()
+                .ready_queue_snapshot()
                 .filter(|snapshot| snapshot.thread_id == thread_id)
                 .and_then(|snapshot| snapshot.submissions.get(self.thread_queue_selected));
             let Some(item) = selected.filter(|item| item.editable_text.is_some()) else {
@@ -97,8 +101,7 @@ impl AppState {
                 && match (&editor.original, self.input_mode) {
                     (None, InputMode::ThreadQueueAdd) => true,
                     (Some(original), InputMode::ThreadQueueEdit) => self
-                        .thread_queue_snapshot
-                        .as_ref()
+                        .ready_queue_snapshot()
                         .filter(|snapshot| snapshot.thread_id == editor.thread_id)
                         .and_then(|snapshot| {
                             snapshot

@@ -51,10 +51,12 @@ pub(crate) mod palette;
 mod planning_selection;
 pub mod planning_worker;
 mod prompt;
+mod queue_confirmation;
 mod queue_editor;
 mod review;
 mod types;
 
+pub use queue_confirmation::QueueConfirmation;
 pub use types::{Action, ContextChoice, Effect, InputMode, View, ViewKind};
 
 const REGISTRY_RECENT_LIMIT: usize = 100;
@@ -141,7 +143,7 @@ pub struct AppState {
     pub thread_queue_selected: usize,
     pub thread_queue_loading: bool,
     pub thread_queue_error: Option<String>,
-    pub pending_thread_queue_mutation: Option<ThreadQueueMutation>,
+    pub pending_queue_confirmation: Option<QueueConfirmation>,
     thread_queue_editor: Option<queue_editor::QueueEditor>,
     pub managed_worktrees: Vec<ManagedWorktreeRecord>,
     pub managed_selected: usize,
@@ -279,7 +281,7 @@ impl AppState {
             thread_queue_selected: 0,
             thread_queue_loading: false,
             thread_queue_error: None,
-            pending_thread_queue_mutation: None,
+            pending_queue_confirmation: None,
             thread_queue_editor: None,
             managed_worktrees: vec![],
             managed_selected: 0,
@@ -1481,8 +1483,8 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.input_mode = InputMode::WorktreeDeleteBranch;
         }
         Action::ConfirmPendingOperation => {
-            if let Some(mutation) = state.pending_thread_queue_mutation.take() {
-                return vec![Effect::MutateThreadQueue(mutation)];
+            if state.pending_queue_confirmation.is_some() {
+                return state.confirm_queue_operation();
             }
             if state.planning_store_error.is_some() {
                 state.mutation_notice = Some(
@@ -1518,7 +1520,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.pending_forge_payload = None;
             state.pending_local_batch = None;
             state.pending_launch_plan = None;
-            state.pending_thread_queue_mutation = None;
+            state.pending_queue_confirmation = None;
             state.mutation_notice = Some(
                 local_text(
                     state.language,
@@ -1561,6 +1563,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.goal_actions_open = false;
         }
         Action::OpenThreadQueue => {
+            state.pending_queue_confirmation = None;
             state.thread_queue_editor = None;
             let Some(thread_id) = state.current_thread_id().cloned() else {
                 return vec![];
@@ -1589,7 +1592,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.thread_queue_open = false;
             state.thread_queue_loading = false;
             state.thread_queue_error = None;
-            state.pending_thread_queue_mutation = None;
+            state.pending_queue_confirmation = None;
             state.input_mode = InputMode::Normal;
             state.input_buffer.clear();
             if let Some(thread_id) = thread_id {
@@ -1622,38 +1625,11 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         }
         Action::BeginThreadQueueAdd => state.begin_queue_input(false),
         Action::BeginThreadQueueEdit => state.begin_queue_input(true),
-        Action::BeginThreadQueueDelete => {
-            let Some(thread_id) = state.current_thread_id().cloned() else {
-                return vec![];
-            };
-            let Some(id) = state
-                .selected_thread_queue_submission()
-                .map(|submission| submission.id.clone())
-            else {
-                return vec![];
-            };
-            match ThreadQueueMutation::delete(thread_id, id) {
-                Ok(mutation) => state.pending_thread_queue_mutation = Some(mutation),
-                Err(error) => state.thread_queue_error = Some(error.to_string()),
-            }
-        }
-        Action::BeginThreadQueueStart => {
-            let Some(thread_id) = state.current_thread_id().cloned() else {
-                return vec![];
-            };
-            let Some(id) = state
-                .selected_thread_queue_submission()
-                .map(|submission| submission.id.clone())
-            else {
-                return vec![];
-            };
-            match ThreadQueueMutation::start(thread_id, id) {
-                Ok(mutation) => state.pending_thread_queue_mutation = Some(mutation),
-                Err(error) => state.thread_queue_error = Some(error.to_string()),
-            }
-        }
+        Action::BeginThreadQueueDelete => state.begin_queue_confirmation(false),
+        Action::BeginThreadQueueStart => state.begin_queue_confirmation(true),
         Action::ReorderThreadQueue(delta) => {
-            let Some(snapshot) = state.thread_queue_snapshot.as_ref() else {
+            let Some(snapshot) = state.ready_queue_snapshot() else {
+                state.refuse_queue_mutation();
                 return vec![];
             };
             let len = snapshot.submissions.len();
@@ -7216,24 +7192,29 @@ mod thread_queue_reducer_tests {
             })] if queued_submission_ids == &vec!["q2".to_string(), "q1".to_string()]
         ));
 
+        reduce(
+            &mut app,
+            Action::ThreadQueueLoaded(snapshot(thread_id.clone())),
+        );
         app.thread_queue_selected = 0;
         reduce(&mut app, Action::BeginThreadQueueStart);
-        assert!(matches!(
-            app.pending_thread_queue_mutation,
-            Some(ThreadQueueMutation::Start { .. })
-        ));
+        assert_eq!(
+            app.pending_queue_confirmation.as_ref().unwrap().label(),
+            "start"
+        );
         let effects = reduce(&mut app, Action::ConfirmPendingOperation);
         assert!(matches!(
             effects.as_slice(),
             [Effect::MutateThreadQueue(ThreadQueueMutation::Start { .. })]
         ));
 
+        reduce(&mut app, Action::ThreadQueueLoaded(snapshot(thread_id)));
         reduce(&mut app, Action::BeginThreadQueueDelete);
-        assert!(matches!(
-            app.pending_thread_queue_mutation,
-            Some(ThreadQueueMutation::Delete { .. })
-        ));
+        assert_eq!(
+            app.pending_queue_confirmation.as_ref().unwrap().label(),
+            "delete"
+        );
         reduce(&mut app, Action::CancelPendingOperation);
-        assert!(app.pending_thread_queue_mutation.is_none());
+        assert!(app.pending_queue_confirmation.is_none());
     }
 }

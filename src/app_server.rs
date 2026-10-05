@@ -14,7 +14,8 @@ use crate::goal::{
     parse_goal_updated,
 };
 use crate::thread_queue::{
-    THREAD_QUEUE_PAGE_LIMIT, ThreadQueueMutation, ThreadQueueSnapshot, parse_queue_list, text_input,
+    THREAD_QUEUE_MAX_PAGES, THREAD_QUEUE_PAGE_LIMIT, ThreadQueueMutation, ThreadQueueSnapshot,
+    parse_queue_list, text_input,
 };
 use crate::transcript_search::{
     TRANSCRIPT_SEARCH_OCCURRENCE_LIMIT, TRANSCRIPT_SEARCH_RESULT_LIMIT,
@@ -43,7 +44,6 @@ const APP_SERVER_COMMAND_QUEUE_CAPACITY: usize = 64;
 const APP_SERVER_CONVERSATION_QUEUE_CAPACITY: usize = 256;
 const RPC_QUEUED_MESSAGE_CAPACITY: usize = 1024;
 const RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
-const THREAD_QUEUE_MAX_PAGES: usize = 10;
 
 #[derive(Debug)]
 struct RpcResponseError {
@@ -1999,6 +1999,7 @@ async fn load_thread_queue(
 ) -> Result<ThreadQueueSnapshot> {
     let mut cursor: Option<String> = None;
     let mut submissions = Vec::new();
+    let mut cursors = BTreeSet::new();
 
     for page_index in 0..THREAD_QUEUE_MAX_PAGES {
         let result = rpc
@@ -2016,12 +2017,18 @@ async fn load_thread_queue(
         submissions.extend(page.submissions);
         cursor = page.next_cursor;
         if cursor.is_none() {
-            return Ok(ThreadQueueSnapshot {
+            let snapshot = ThreadQueueSnapshot {
                 thread_id,
                 submissions,
                 next_cursor: None,
-            });
+            };
+            snapshot.validate_complete()?;
+            return Ok(snapshot);
         }
+        anyhow::ensure!(
+            cursors.insert(cursor.clone()),
+            "thread queue pagination cursor repeated"
+        );
         if page_index + 1 == THREAD_QUEUE_MAX_PAGES {
             anyhow::bail!(
                 "thread queue exceeds bounded pagination limit of {} entries",
@@ -3282,3 +3289,6 @@ mod tests {
         assert!(status.capabilities.is_empty());
     }
 }
+
+#[cfg(test)]
+mod queue_wire_tests;

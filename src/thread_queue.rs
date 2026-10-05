@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use serde_json::{Value, json};
 
 pub const THREAD_QUEUE_PAGE_LIMIT: u32 = 100;
+pub const THREAD_QUEUE_MAX_PAGES: usize = 10;
 pub const THREAD_QUEUE_TEXT_LIMIT: usize = 64 * 1024;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -136,14 +137,20 @@ pub fn parse_queue_list(thread_id: ThreadId, result: Value) -> Result<ThreadQueu
         .get("data")
         .and_then(Value::as_array)
         .context("thread/queue/list response missing data")?;
+    anyhow::ensure!(
+        data.len() <= THREAD_QUEUE_PAGE_LIMIT as usize,
+        "thread queue page exceeds requested limit"
+    );
     let submissions = data
         .iter()
         .map(parse_submission)
         .collect::<Result<Vec<_>>>()?;
-    let next_cursor = result
-        .get("nextCursor")
-        .and_then(Value::as_str)
-        .map(ToOwned::to_owned);
+    validate_submissions(&submissions)?;
+    let next_cursor = match result.get("nextCursor") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(cursor)) if !cursor.trim().is_empty() => Some(cursor.clone()),
+        _ => anyhow::bail!("thread queue nextCursor must be null or a non-empty string"),
+    };
     Ok(ThreadQueueSnapshot {
         thread_id,
         submissions,
@@ -162,6 +169,14 @@ pub fn parse_submission(value: &Value) -> Result<QueuedSubmission> {
         .and_then(Value::as_str)
         .context("queued submission missing clientUserMessageId")?
         .to_string();
+    anyhow::ensure!(
+        !id.trim().is_empty(),
+        "queued submission id must not be empty"
+    );
+    anyhow::ensure!(
+        !client_user_message_id.trim().is_empty(),
+        "queued client message id must not be empty"
+    );
     let input = value
         .get("input")
         .and_then(Value::as_array)
@@ -169,13 +184,28 @@ pub fn parse_submission(value: &Value) -> Result<QueuedSubmission> {
         .clone();
 
     let mut text_parts = Vec::new();
-    let mut text_only = true;
+    let mut text_only = !input.is_empty();
     for item in &input {
         match item.get("type").and_then(Value::as_str) {
             Some("text") => {
                 if let Some(text) = item.get("text").and_then(Value::as_str) {
                     text_parts.push(text.to_string());
+                } else {
+                    text_only = false;
+                    text_parts.push("[invalid text]".into());
                 }
+                // The text editor replaces input with text_input(), so only a
+                // fully understood plain-text shape can be edited without loss.
+                text_only &= match item.get("textElements") {
+                    None => true, // previous optional-field shape
+                    Some(Value::Array(elements)) => elements.is_empty(),
+                    _ => false,
+                };
+                text_only &= item.as_object().is_some_and(|object| {
+                    object
+                        .keys()
+                        .all(|key| matches!(key.as_str(), "type" | "text" | "textElements"))
+                });
             }
             Some(other) => {
                 text_only = false;
@@ -207,6 +237,39 @@ pub fn parse_submission(value: &Value) -> Result<QueuedSubmission> {
         summary,
         editable_text,
     })
+}
+
+fn validate_submissions(submissions: &[QueuedSubmission]) -> Result<()> {
+    anyhow::ensure!(
+        submissions.len() <= THREAD_QUEUE_MAX_PAGES * THREAD_QUEUE_PAGE_LIMIT as usize,
+        "thread queue exceeds bounded item count"
+    );
+    let mut ids = std::collections::BTreeSet::new();
+    for item in submissions {
+        anyhow::ensure!(
+            !item.id.trim().is_empty() && !item.client_user_message_id.trim().is_empty(),
+            "thread queue contains empty identity"
+        );
+        anyhow::ensure!(
+            ids.insert(&item.id),
+            "thread queue contains duplicate submission identity"
+        );
+    }
+    Ok(())
+}
+
+impl ThreadQueueSnapshot {
+    pub fn validate_complete(&self) -> Result<()> {
+        anyhow::ensure!(
+            !self.thread_id.0.trim().is_empty(),
+            "thread queue has empty thread identity"
+        );
+        anyhow::ensure!(
+            self.next_cursor.is_none(),
+            "thread queue snapshot is incomplete"
+        );
+        validate_submissions(&self.submissions)
+    }
 }
 
 pub fn text_input(text: &str) -> Value {

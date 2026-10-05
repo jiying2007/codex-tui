@@ -186,6 +186,8 @@
     "src/saved_view_editor.rs": 360,
     "src/saved_view_editor/tests.rs": 120,
     "src/app/queue_editor.rs": 200,
+    "src/app/queue_confirmation.rs": 150,
+    "src/app_server/queue_wire_tests.rs": 140,
     "src/app/mutation_editor.rs": 220,
     "src/app/context_menu.rs": 150,
     "src/app/review.rs": 140,
