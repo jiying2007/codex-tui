@@ -1,0 +1,30 @@
+name: audit-source
+on:
+  pull_request:
+    paths:
+      - .github/workflows/audit-source.yml
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'fix/v1.4-automated-closure'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Capture tracked source and refs without credentials
+        run: |
+          git bundle create "$RUNNER_TEMP/source.bundle" --all
+          git rev-parse HEAD > "$RUNNER_TEMP/source.sha"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: audit-source
+          path: |
+            ${{ runner.temp }}/source.bundle
+            ${{ runner.temp }}/source.sha
+          retention-days: 1
+          if-no-files-found: error
