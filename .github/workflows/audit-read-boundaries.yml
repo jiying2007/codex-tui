@@ -1,0 +1,126 @@
+name: audit-read-boundaries
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/audit-read-boundaries.yml'
+      - '.github/audit-read-boundaries.py'
+      - 'src/latest_read.rs'
+      - 'src/forge/read_order_tests.rs'
+      - 'src/git/read_order_tests.rs'
+      - 'tests/forge_result_identity.rs'
+permissions:
+  contents: write
+jobs:
+  verify:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'fix/v1.4-read-boundaries'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Reproduce unguarded actor ordering and Forge identity failures
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/read-audit"
+          python3 - <<'PY'
+          import os,pathlib,re,subprocess
+          out=pathlib.Path(os.environ['RUNNER_TEMP'],'read-audit')
+          p=pathlib.Path('src/forge.rs'); text=p.read_text()
+          if 'mod read_order_tests;' in text: raise SystemExit('baseline already patched')
+          p.write_text(text+'\n#[cfg(test)]\nmod read_order_tests;\n')
+          cases=[(['--lib','forge::read_order_tests::'], {'late_old_completion_cannot_replace_the_newer_accepted_probe','an_already_buffered_result_is_rechecked_after_new_admission'},'before-order.log'),
+                 (['--test','forge_result_identity'], {'unknown_thread_observation_is_not_reintroduced','former_cwd_observation_cannot_replace_current_source','same_iid_in_a_different_repository_does_not_reuse_approvals','mismatched_review_source_is_rejected_even_when_cwd_and_iid_match','removed_thread_review_does_not_update_orphaned_cached_observation'},'before-identity.log')]
+          for args,expected,name in cases:
+              run=subprocess.run(['cargo','test','--locked',*args,'--','--test-threads=1'],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
+              (out/name).write_text(run.stdout)
+              print(run.stdout[-7000:])
+              actual={name.split('::')[-1] for name in re.findall(r'^test (\S+) \.\.\. FAILED$',run.stdout,re.M)}
+              if run.returncode == 0 or actual != expected: raise SystemExit('expected behavioral failures were not reproduced: '+name)
+          PY
+      - name: Apply exact fixes and verify the complete candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/audit-read-boundaries.py
+          cargo fmt --all
+          cargo clippy --locked --all-targets --all-features -- -D warnings > "$RUNNER_TEMP/read-audit/clippy.log" 2>&1
+          cargo test --locked --all-targets --all-features > "$RUNNER_TEMP/read-audit/after.log" 2>&1
+          python3 -m unittest discover -s scripts/release -p 'test_*.py' > "$RUNNER_TEMP/read-audit/python.log" 2>&1
+          python3 scripts/architecture/check_module_ratchet.py release/v1.3-plan.json
+          python3 scripts/architecture/check_module_ratchet.py release/v1.4-plan.json
+          python3 scripts/release/validate_v1_4_plan.py
+          python3 scripts/release/validate_v1_4_completion.py
+      - name: Mutation-check the actual fencing and restore verified source
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import os,pathlib,re,subprocess
+          out=pathlib.Path(os.environ['RUNNER_TEMP'],'read-audit')
+          path=pathlib.Path('src/latest_read.rs'); original=path.read_text()
+          old='self.0.load(Ordering::Acquire)'
+          if original.count(old)!=1: raise SystemExit('fence changed')
+          try:
+              path.write_text(original.replace(old,'true',1))
+              run=subprocess.run(['cargo','test','--locked','--lib','read_order_tests::','--','--test-threads=1'],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
+              (out/'mutation.log').write_text(run.stdout)
+              failures=re.findall(r'^test (\S+) \.\.\. FAILED$',run.stdout,re.M)
+              print(run.stdout[-7000:])
+              if run.returncode==0 or len(failures)!=4: raise SystemExit('expected four actor/handle fencing failures')
+          finally:
+              path.write_text(original)
+          subprocess.run(['cargo','test','--locked','--lib','read_order_tests::'],check=True)
+          PY
+          cargo fmt --all -- --check
+          git diff --check
+      - name: Export exact tested blobs without moving refs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          python3 - <<'PY'
+          import json,os,pathlib,subprocess
+          out=pathlib.Path(os.environ['RUNNER_TEMP'],'read-audit')
+          def git(*args): return subprocess.check_output(['git',*args],text=True).strip()
+          if git('rev-parse','HEAD')!=os.environ['EXPECTED_HEAD']: raise SystemExit('head changed')
+          paths=git('diff','--name-only').splitlines()
+          allowed={'src/app.rs','src/app/types.rs','src/forge.rs','src/forge_types.rs','src/git.rs','src/lib.rs','src/main.rs','src/latest_read.rs','src/forge/read_order_tests.rs','src/git/read_order_tests.rs','tests/forge_result_identity.rs','release/v1.4-plan.json'}
+          if not set(paths).issubset(allowed): raise SystemExit('unexpected changes')
+          old=json.loads(git('show','HEAD:release/v1.4-plan.json')); new=json.loads(pathlib.Path('release/v1.4-plan.json').read_text())
+          if any(new['moduleRatchet'].get(k)!=v for k,v in old['moduleRatchet'].items()): raise SystemExit('existing ceiling changed')
+          new_without=json.loads(json.dumps(new)); new_without['moduleRatchet']=old['moduleRatchet']
+          if new_without!=old: raise SystemExit('non-ratchet plan changed')
+          entries=[]
+          for name in paths:
+              body={'encoding':'utf-8','content':pathlib.Path(name).read_text()}
+              p=subprocess.run(['gh','api','repos/'+os.environ['GITHUB_REPOSITORY']+'/git/blobs','--input','-'],input=json.dumps(body),capture_output=True,text=True,check=True)
+              sha=json.loads(p.stdout)['sha']
+              if sha!=git('hash-object',name): raise SystemExit('blob mismatch')
+              entries.append({'path':name,'mode':'100644','type':'blob','sha':sha})
+          pathlib.Path('.github/workflows/audit-read-boundaries.yml').unlink()
+          pathlib.Path('.github/audit-read-boundaries.py').unlink()
+          git('add','-A')
+          receipt={'parent':os.environ['EXPECTED_HEAD'],'tree':git('write-tree'),'entries':entries,'refUpdated':False,'localExecution':False}
+          (out/'candidate.json').write_text(json.dumps(receipt,indent=2)+'\n')
+          print('VERIFIED_CANDIDATE='+json.dumps(receipt))
+          print('TEST_SUMMARY\n'+'\n'.join(x for x in (out/'after.log').read_text().splitlines() if 'test result:' in x))
+          PY
+      - name: Surface failure context
+        if: failure()
+        shell: bash
+        run: |
+          for file in "$RUNNER_TEMP/read-audit/"*.log; do echo "--- $file"; tail -70 "$file"; done
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: read-boundary-audit
+          path: ${{ runner.temp }}/read-audit/
+          if-no-files-found: error
+          retention-days: 30
