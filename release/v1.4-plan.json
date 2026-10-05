@@ -198,6 +198,8 @@
     "src/detached_process/tests.rs": 190,
     "src/ui/thread.rs": 430,
     "src/app/palette.rs": 420,
+    "src/app/palette_intent.rs": 180,
+    "src/runtime_palette/intent_tests.rs": 280,
     "src/runtime_commands.rs": 180,
     "src/runtime_palette.rs": 160,
     "src/runtime_doctor.rs": 380,
