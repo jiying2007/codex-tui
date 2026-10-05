@@ -22,6 +22,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 mod runtime_cli;
 mod runtime_commands;
+mod runtime_connection;
 mod runtime_doctor;
 mod runtime_external;
 mod runtime_input;
@@ -365,9 +366,7 @@ async fn run_app(fake_mode: bool, target_override: Option<&str>) -> Result<()> {
                 };
                 match task.await {
                     Ok(Ok(started)) => {
-                        reduce(&mut app, Action::ReplaceThreads(started.initial.threads));
-                        reduce(&mut app, Action::BackendStatus(started.initial.status));
-                        app.apply_local_state(&local);
+                        runtime_connection::install(&mut app, started.initial);
                         registry = Some(started.handle);
                         let effects = reduce(&mut app, Action::RefreshGitProjections);
                         apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;

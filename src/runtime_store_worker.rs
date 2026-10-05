@@ -299,3 +299,23 @@ mod shutdown_tests {
         assert!(error.to_string().contains("accepted write failed"));
     }
 }
+
+#[cfg(test)]
+mod write_behind_tests {
+    use super::*;
+    #[test]
+    fn repeated_edits_do_not_postpone_the_production_flush_deadline() {
+        let root = tempfile::tempdir().unwrap();
+        let mut worker = StoreWorker::start(StoreBackend::at_for_test(root.path())).unwrap();
+        worker.dirty_since = Some(Instant::now() - WRITE_BEHIND);
+        let first = worker.dirty_since;
+        worker.defer_operator_state();
+        assert_eq!(worker.dirty_since, first);
+        assert!(worker.operator_state_flush_due());
+        worker.persist_operator_state(&LocalStateV1::default());
+        assert!(!worker.operator_state_flush_due());
+        worker
+            .flush_operator_state_on_exit(&LocalStateV1::default())
+            .unwrap();
+    }
+}

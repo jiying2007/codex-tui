@@ -1043,6 +1043,9 @@ fn map_attention(reason: &AttentionReason) -> Option<PlanningAttention> {
     }
 }
 
+pub(crate) const FRESH_AGE_MS: u64 = 10_000;
+pub(crate) const AGING_AGE_MS: u64 = 60_000;
+
 fn freshness(observed_at: Option<u64>, now: u64, unavailable: bool) -> Freshness {
     if unavailable {
         return Freshness::Unavailable;
@@ -1051,9 +1054,9 @@ fn freshness(observed_at: Option<u64>, now: u64, unavailable: bool) -> Freshness
         return Freshness::Unavailable;
     };
     let age = now.saturating_sub(observed_at);
-    if age <= 10_000 {
+    if age <= FRESH_AGE_MS {
         Freshness::Fresh
-    } else if age <= 60_000 {
+    } else if age <= AGING_AGE_MS {
         Freshness::Aging
     } else {
         Freshness::Stale

@@ -7,20 +7,26 @@ import json
 import os
 import pathlib
 import subprocess
+import stat
 import tarfile
 import tempfile
 import zipfile
 
 from _compat import safe_extract_tar
 from check_linux_abi import MAX_GLIBC, version
+from archive_identity import validate_metadata, validate_compiled_source, validate_members
 
 
 def extract(archive: pathlib.Path, destination: pathlib.Path) -> pathlib.Path:
     if archive.name.endswith(".tar.gz"):
         with tarfile.open(archive, "r:gz") as handle:
+            validate_members([(entry.name, entry.isdir(), entry.isfile(), entry.size) for entry in handle.getmembers()])
             safe_extract_tar(handle, destination)
     elif archive.suffix == ".zip":
         with zipfile.ZipFile(archive) as handle:
+            validate_members([(entry.filename, entry.is_dir(),
+                               stat.S_IFMT(entry.external_attr >> 16) in (0, stat.S_IFREG), entry.file_size)
+                              for entry in handle.infolist()])
             handle.extractall(destination)
     else:
         raise SystemExit(f"unsupported archive: {archive}")
@@ -103,15 +109,7 @@ def main() -> int:
             )
 
         metadata = json.loads((root / "RELEASE-METADATA.json").read_text(encoding="utf-8"))
-        expected = {
-            "version": args.version,
-            "tag": args.tag,
-            "commitSha": args.commit,
-            "license": "Apache-2.0",
-        }
-        for key, value in expected.items():
-            if metadata.get(key) != value:
-                raise SystemExit(f"metadata {key} mismatch: {metadata.get(key)!r} != {value!r}")
+        validate_metadata(metadata, binary, args.version, args.tag, args.commit)
 
         if metadata.get("platform") == "linux":
             abi_path = root / "LINUX-ABI.json"
@@ -134,6 +132,14 @@ def main() -> int:
         version_output = run_checked([str(binary), "--version"]).strip()
         if version_output != f"codex-tui {args.version}":
             raise SystemExit(f"version smoke mismatch: {version_output!r}")
+
+        # Use an existing no-backend diagnostic to read the embedded build identity.
+        # One sample is sufficient for identity; this is NOT performance evidence.
+        identity = json.loads(run_checked([
+            str(binary), "release", "benchmark", "--warmup", "1", "--iterations", "1",
+            "--source", "archive-identity-smoke", "--json",
+        ]))
+        validate_compiled_source(identity, args.commit)
 
         fixture_output = run_checked(
             [str(binary), "headless", "threads", "--fixture-10k", "--json"]

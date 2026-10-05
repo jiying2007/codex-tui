@@ -85,8 +85,7 @@ fn run_for(rows: usize, minimum_cycles: usize, duration: Duration) -> Result<Soa
     let mut actions_applied = 0usize;
     let mut effects_emitted = 0usize;
     let mut churn_batches = 0usize;
-    let mut planning_reconciles = 0usize;
-    let ui_only_planning_reconciles = 0usize;
+    let mut ui_only_planning_reconciles = 0usize;
     let mut max_conversations = 0usize;
     let mut max_git_reviews = 0usize;
     let mut max_work_cards = 0usize;
@@ -96,7 +95,6 @@ fn run_for(rows: usize, minimum_cycles: usize, duration: Duration) -> Result<Soa
 
     reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 1 });
     actions_applied += 1;
-    planning_reconciles += 1;
     max_work_cards = max_work_cards.max(app.work_cards.len());
 
     let started = Instant::now();
@@ -107,6 +105,7 @@ fn run_for(rows: usize, minimum_cycles: usize, duration: Duration) -> Result<Soa
     let mut cycle = 0;
     while cycle < minimum_cycles || started.elapsed() < duration {
         let cycle_started = Instant::now();
+        let before_ui = app.planning_reconcile_count();
         let selected = cycle % rows;
         app.selected = selected;
 
@@ -142,6 +141,7 @@ fn run_for(rows: usize, minimum_cycles: usize, duration: Duration) -> Result<Soa
         reduce(&mut app, Action::ToggleHelp);
         actions_applied += 2;
 
+        ui_only_planning_reconciles += app.planning_reconcile_count().saturating_sub(before_ui);
         let mut planning_dirty = false;
         if cycle % 16 == 0 {
             let mut fresh = app.threads.clone();
@@ -166,7 +166,6 @@ fn run_for(rows: usize, minimum_cycles: usize, duration: Duration) -> Result<Soa
                 },
             );
             actions_applied += 1;
-            planning_reconciles += 1;
         }
 
         max_conversations = max_conversations.max(app.conversations.len());
@@ -190,6 +189,7 @@ fn run_for(rows: usize, minimum_cycles: usize, duration: Duration) -> Result<Soa
     let rss_end_kib = resident_set_kib();
     let publication_upper_bound = registry_snapshot_publication_upper_bound(rows);
     let expected_reconciles = 1 + churn_batches;
+    let planning_reconciles = app.planning_reconcile_count();
     let structural_pass = max_conversations <= conversation_cache_limit()
         && max_git_reviews <= git_review_cache_limit()
         && max_work_cards <= rows

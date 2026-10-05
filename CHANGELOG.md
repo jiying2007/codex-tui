@@ -6,6 +6,11 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
+- preserved operator changes made during initial connection, selected WorkCard identity across asynchronous projections, and Saved View identity across list reordering;
+- refreshed time-derived snooze and provenance state at its next deadline, rejecting expired in-flight results without rebuilding on every idle poll;
+- measured actual planning reconciliation calls in soak rather than orchestrator intent, with mutation-tested UI-only regression detection;
+- bound every native archive to its platform, executable name, payload hash and embedded source SHA, and rejected aliased, duplicate or oversized archive layouts before extraction;
+- removed the obsolete test-only write-behind model and tested the production worker's non-postponing flush deadline directly;
 - made help and invalid CLI usage side-effect-free, with consistent scoped Doctor failure exits;
 - moved SQLite operations and planning computation off the interactive loop through bounded ordered workers and generation-fenced derived results;
 - bounded conversation formatting on changed frames and prevented same-thread reload cache collisions;

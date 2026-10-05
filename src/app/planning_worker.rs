@@ -1,6 +1,8 @@
 //! Latest-generation planning projection. Only metadata is copied; transcripts,
 //! PTY state, drafts and mutation confirmations never enter this worker.
 use super::*;
+mod clock;
+use clock::ProjectionClock;
 use std::sync::mpsc::{self, Receiver, SyncSender, TryRecvError};
 
 struct Input {
@@ -35,6 +37,7 @@ impl Input {
         state.backend_status = self.backend;
         rebuild_planning(&mut state, self.now);
         Output {
+            clock: ProjectionClock::capture(&state.work_cards, self.now),
             generation: self.generation,
             cards: state.work_cards,
             by_thread: state.work_card_by_thread,
@@ -43,6 +46,7 @@ impl Input {
     }
 }
 struct Output {
+    clock: ProjectionClock,
     generation: u64,
     cards: Vec<WorkCardProjection>,
     by_thread: BTreeMap<String, usize>,
@@ -53,9 +57,12 @@ impl Output {
         if self.generation != state.planning_generation {
             return false;
         }
+        let selection = planning_selection::PlanningSelection::capture(state);
+        state.planning_reconcile_count = state.planning_reconcile_count.saturating_add(1);
         state.work_cards = self.cards;
         state.work_card_by_thread = self.by_thread;
         state.worktree_collision_counts = self.collisions;
+        selection.restore(state);
         ensure_selection_visible(state);
         true
     }
@@ -66,6 +73,7 @@ pub struct PlanningWorker {
     receive: Receiver<Output>,
     in_flight: bool,
     completed: Option<u64>,
+    clock: Option<ProjectionClock>,
 }
 impl PlanningWorker {
     pub fn start() -> std::io::Result<Self> {
@@ -85,6 +93,7 @@ impl PlanningWorker {
             receive,
             in_flight: false,
             completed: None,
+            clock: None,
         })
     }
     /// One job in flight. Changes coalesce without queuing or cloning more snapshots.
@@ -98,9 +107,15 @@ impl PlanningWorker {
             Ok(output) => {
                 self.in_flight = false;
                 let generation = output.generation;
-                applied = output.apply(state);
+                let clock = output.clock;
+                // A delayed result may already be obsolete by time even when its
+                // data generation still matches. Do not flash an expired projection.
+                if !clock.expired(now) {
+                    applied = output.apply(state);
+                }
                 if applied {
                     self.completed = Some(generation);
+                    self.clock = Some(clock);
                 }
             }
             Err(TryRecvError::Empty) => {}
@@ -108,7 +123,10 @@ impl PlanningWorker {
                 return Err("planning worker stopped; previous projection retained".into());
             }
         }
-        if !self.in_flight && self.completed != Some(state.planning_generation) {
+        if !self.in_flight
+            && (self.completed != Some(state.planning_generation)
+                || self.clock.is_some_and(|clock| clock.expired(now)))
+        {
             self.send
                 .try_send(Input::capture(state, now))
                 .map_err(|_| {
@@ -165,3 +183,7 @@ mod tests {
         assert_eq!(live.filter, "keep user filter");
     }
 }
+
+#[cfg(test)]
+#[path = "planning_worker/live_tests.rs"]
+mod live_tests;
