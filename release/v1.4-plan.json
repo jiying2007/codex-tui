@@ -185,6 +185,7 @@
     "src/metadata_search.rs": 450,
     "src/saved_view_editor.rs": 360,
     "src/saved_view_editor/tests.rs": 120,
+    "src/app/queue_editor.rs": 200,
     "src/app/review.rs": 140,
     "src/ui/review.rs": 300,
     "src/runtime_external.rs": 100,

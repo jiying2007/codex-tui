@@ -73,7 +73,10 @@ impl AppState {
             .as_ref()
             .and_then(|item| item.editable_text.clone())
             .unwrap_or_default();
-        self.thread_queue_editor = Some(QueueEditor { thread_id, original });
+        self.thread_queue_editor = Some(QueueEditor {
+            thread_id,
+            original,
+        });
         self.input_mode = if edit {
             InputMode::ThreadQueueEdit
         } else {
@@ -98,7 +101,10 @@ impl AppState {
                         .as_ref()
                         .filter(|snapshot| snapshot.thread_id == editor.thread_id)
                         .and_then(|snapshot| {
-                            snapshot.submissions.iter().find(|item| item.id == original.id)
+                            snapshot
+                                .submissions
+                                .iter()
+                                .find(|item| item.id == original.id)
                         })
                         .is_some_and(|current| current == original),
                     _ => false,

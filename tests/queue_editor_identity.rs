@@ -8,10 +8,14 @@ use codex_tui::{
 use serde_json::json;
 
 fn snapshot(id: ThreadId, items: &[(&str, &str)]) -> ThreadQueueSnapshot {
-    parse_queue_list(id, json!({"data": items.iter().map(|(id, text)| json!({
+    parse_queue_list(
+        id,
+        json!({"data": items.iter().map(|(id, text)| json!({
         "id": id, "clientUserMessageId": format!("client-{id}"),
         "input": [{"type":"text", "text":text, "textElements":[]}]
-    })).collect::<Vec<_>>(), "nextCursor":null})).unwrap()
+    })).collect::<Vec<_>>(), "nextCursor":null}),
+    )
+    .unwrap()
 }
 
 fn fixture() -> (AppState, ThreadId) {
@@ -35,7 +39,10 @@ fn assert_refused(app: &mut AppState) {
     let state = app.to_local_state();
     let mode = app.input_mode;
     let draft = app.input_buffer.clone();
-    assert!(reduce(app, Action::CommitInput).is_empty(), "must not mutate a stale target");
+    assert!(
+        reduce(app, Action::CommitInput).is_empty(),
+        "must not mutate a stale target"
+    );
     assert_eq!(app.input_mode, mode);
     assert_eq!(app.input_buffer, draft);
     assert_eq!(app.to_local_state(), state);
@@ -54,9 +61,14 @@ fn edit_keeps_its_original_item_even_after_selection_moves() {
     let (mut app, id) = fixture();
     edit(&mut app);
     reduce(&mut app, Action::MoveThreadQueue(1));
-    assert_eq!(reduce(&mut app, Action::CommitInput), vec![Effect::MutateThreadQueue(
-        ThreadQueueMutation::Update { thread_id:id, queued_submission_id:"b".into(), text:"operator draft 中文".into() }
-    )]);
+    assert_eq!(
+        reduce(&mut app, Action::CommitInput),
+        vec![Effect::MutateThreadQueue(ThreadQueueMutation::Update {
+            thread_id: id,
+            queued_submission_id: "b".into(),
+            text: "operator draft 中文".into()
+        })]
+    );
 }
 #[test]
 fn disappeared_item_retains_draft_without_updating_a_neighbor() {
@@ -77,7 +89,9 @@ fn multimodal_replacement_cannot_be_destroyed_by_text_editing() {
     let (mut app, id) = fixture();
     edit(&mut app);
     let mut fresh = snapshot(id, &[("a", "first"), ("b", "second")]);
-    fresh.submissions[1].input.push(json!({"type":"localImage", "path":"/synthetic.png"}));
+    fresh.submissions[1]
+        .input
+        .push(json!({"type":"localImage", "path":"/synthetic.png"}));
     fresh.submissions[1].editable_text = None;
     reduce(&mut app, Action::ThreadQueueLoaded(fresh));
     assert_refused(&mut app);
@@ -108,8 +122,12 @@ fn deleted_thread_snapshot_is_not_reintroduced() {
 fn reorder_waits_for_authoritative_order_without_retargeting_selection() {
     let (mut app, id) = fixture();
     let before = app.thread_queue_snapshot.clone();
-    assert!(matches!(reduce(&mut app, Action::ReorderThreadQueue(-1)).as_slice(),
-        [Effect::MutateThreadQueue(ThreadQueueMutation::Reorder { .. })]));
+    assert!(matches!(
+        reduce(&mut app, Action::ReorderThreadQueue(-1)).as_slice(),
+        [Effect::MutateThreadQueue(
+            ThreadQueueMutation::Reorder { .. }
+        )]
+    ));
     assert_eq!(app.thread_queue_snapshot, before);
     assert_eq!(app.selected_thread_queue_submission().unwrap().id, "b");
     load(&mut app, &id, &[("b", "second"), ("a", "first")]);
@@ -147,10 +165,15 @@ fn cancel_and_close_do_not_leak_editor_targets() {
     assert_eq!(app.input_mode, InputMode::Normal);
     reduce(&mut app, Action::BeginThreadQueueAdd);
     app.input_buffer = "new".into();
-    assert!(matches!(reduce(&mut app, Action::CommitInput).as_slice(),
-        [Effect::MutateThreadQueue(ThreadQueueMutation::Add { .. })]));
+    assert!(matches!(
+        reduce(&mut app, Action::CommitInput).as_slice(),
+        [Effect::MutateThreadQueue(ThreadQueueMutation::Add { .. })]
+    ));
     edit(&mut app);
-    assert_eq!(reduce(&mut app, Action::CloseThreadQueue), vec![Effect::StopWatchingThreadQueue(id)]);
+    assert_eq!(
+        reduce(&mut app, Action::CloseThreadQueue),
+        vec![Effect::StopWatchingThreadQueue(id)]
+    );
     assert_eq!(app.input_mode, InputMode::Normal);
     assert!(app.input_buffer.is_empty());
     assert!(reduce(&mut app, Action::CommitInput).is_empty());
