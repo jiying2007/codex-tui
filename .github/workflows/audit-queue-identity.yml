@@ -1,0 +1,91 @@
+name: audit-queue-identity
+on:
+  pull_request:
+    paths:
+      - .github/workflows/audit-queue-identity.yml
+      - .audit/apply_queue_identity.py
+permissions:
+  contents: read
+jobs:
+  verify:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'fix/v1.4-queue-editor-identity'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Prove original reducer failures
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/queue-evidence"
+          python3 - <<'PY'
+          import os,pathlib,re,subprocess
+          result = subprocess.run(['cargo','test','--locked','--test','queue_editor_identity','--','--test-threads=1'],stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
+          pathlib.Path(os.environ['RUNNER_TEMP'],'queue-evidence','before.log').write_text(result.stdout)
+          print(result.stdout)
+          failed=set(re.findall(r'^test (\w+) \.\.\. FAILED$',result.stdout,re.M))
+          expected={'refresh_preserves_the_selected_submission_identity','edit_keeps_its_original_item_even_after_selection_moves','disappeared_item_retains_draft_without_updating_a_neighbor','externally_changed_item_cannot_be_overwritten_by_the_old_editor','multimodal_replacement_cannot_be_destroyed_by_text_editing','add_editor_cannot_be_retargeted_to_another_thread','deleted_thread_snapshot_is_not_reintroduced','reorder_waits_for_authoritative_order_without_retargeting_selection'}
+          if result.returncode == 0 or failed != expected or '3 passed; 8 failed' not in result.stdout:
+              raise SystemExit('expected eight behavioral failures and three positive controls')
+          PY
+      - name: Apply exact scoped correction
+        run: |
+          python3 .audit/apply_queue_identity.py
+          cargo fmt --all
+          git diff --check
+      - name: Verify full corrected candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets --all-features -- -D warnings 2>&1 | tee "$RUNNER_TEMP/queue-evidence/clippy.log"
+          cargo test --locked --all-targets --all-features 2>&1 | tee "$RUNNER_TEMP/queue-evidence/after.log"
+          python3 -m unittest discover -s scripts/release -p 'test_*.py' 2>&1 | tee "$RUNNER_TEMP/queue-evidence/python.log"
+          python3 scripts/architecture/check_module_ratchet.py release/v1.3-plan.json
+          python3 scripts/architecture/check_module_ratchet.py release/v1.4-plan.json
+          python3 scripts/release/validate_v1_4_plan.py
+          python3 scripts/release/validate_v1_4_completion.py
+      - name: Export exact candidate without changing refs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,os,pathlib,subprocess
+          def git(*args): return subprocess.check_output(['git',*args],text=True).strip()
+          if git('rev-parse','HEAD') != os.environ['EXPECTED_HEAD']: raise SystemExit('checkout drift')
+          paths=['src/app.rs','src/app/queue_editor.rs','tests/queue_editor_identity.rs','release/v1.4-plan.json','docs/implementation/v1.4-queue-identity.md']
+          if not set(git('diff','--name-only').splitlines()).issubset(set(paths)): raise SystemExit('unrelated source change')
+          entries=[]
+          for name in paths:
+              raw=pathlib.Path(name).read_text()
+              body=json.dumps({'content':raw,'encoding':'utf-8'})
+              result=subprocess.run(['gh','api','repos/'+os.environ['GITHUB_REPOSITORY']+'/git/blobs','--input','-'],input=body,text=True,capture_output=True,check=True)
+              sha=json.loads(result.stdout)['sha']
+              if sha != git('hash-object',name): raise SystemExit('blob mismatch')
+              entries.append({'path':name,'mode':'100644','type':'blob','sha':sha})
+          for name in ['.audit/apply_queue_identity.py','.github/workflows/audit-queue-identity.yml']:
+              pathlib.Path(name).unlink()
+          git('add','-A')
+          receipt={'parent':os.environ['EXPECTED_HEAD'],'tree':git('write-tree'),'entries':entries,'refUpdated':False,'temporaryFilesRemoved':True}
+          destination=pathlib.Path(os.environ['RUNNER_TEMP'],'queue-evidence')
+          (destination/'candidate.json').write_text(json.dumps(receipt,indent=2)+'\n')
+          subprocess.run(['git','diff','--cached','--binary','--output='+str(destination/'candidate.patch')],check=True)
+          print('VERIFIED_CANDIDATE='+json.dumps(receipt))
+          PY
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: queue-editor-evidence
+          path: ${{ runner.temp }}/queue-evidence/
+          if-no-files-found: error
+          retention-days: 30
