@@ -39,17 +39,16 @@ replace('        Action::OpenThreadQueue => {\n', '        Action::OpenThreadQue
 replace('        Action::CancelInput => {\n', '        Action::CancelInput => {\n            state.thread_queue_editor = None;\n')
 replace('                    state.thread_queue_selected = to;\n',
         '                    // Keep the cursor on the observed item until upstream confirms order.\n')
-# The prior test expected speculative numeric movement on the unchanged snapshot.
-# Preserve its mutation/confirmation assertions; assert stable observed identity instead.
+# Keep existing mutation/confirmation assertions, but no speculative cursor move.
 replace('        let effects = reduce(&mut app, Action::ReorderThreadQueue(1));\n        assert_eq!(app.thread_queue_selected, 1);\n',
         '        let effects = reduce(&mut app, Action::ReorderThreadQueue(1));\n        assert_eq!(app.thread_queue_selected, 0);\n        assert_eq!(app.selected_thread_queue_submission().unwrap().id, "q1");\n')
 p.write_text(text)
 p = Path('release/v1.4-plan.json')
 text = p.read_text()
-anchor = '      "src/app/review.rs": 140,'
+anchor = '    "src/app/review.rs": 140,'
 if text.count(anchor) != 1:
     raise SystemExit('module ratchet structure drift')
-p.write_text(text.replace(anchor, '      "src/app/queue_editor.rs": 200,\n' + anchor, 1))
+p.write_text(text.replace(anchor, '    "src/app/queue_editor.rs": 200,\n' + anchor, 1))
 Path('docs/implementation/v1.4-queue-identity.md').write_text('''# v1.4 queue editor identity closure
 
 Baseline: `aceadffe2a4357a8dbf4fcd4fac1675f3cc19c94` (#228).
