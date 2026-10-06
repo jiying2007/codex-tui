@@ -16,6 +16,8 @@ def main() -> int:
     checks = {
         "workflow name": run.get("name") == "ci",
         "workflow path": run.get("path") == ".github/workflows/ci.yml",
+        "workflow event": run.get("event") == "push",
+        "status": run.get("status") == "completed",
         "conclusion": run.get("conclusion") == "success",
         "head SHA": str(run.get("head_sha", "")).lower() == args.commit.lower(),
         "head branch": run.get("head_branch") == "main",
