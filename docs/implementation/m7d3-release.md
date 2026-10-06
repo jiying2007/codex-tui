@@ -122,7 +122,7 @@ This gate prevents accidental publication when project license metadata is absen
 
 ## Stable evidence
 
-Stable evidence is represented by `codex-tui/release-evidence/v4`.
+Stable evidence is represented by `codex-tui/release-evidence/v5`.
 
 It binds:
 
@@ -131,12 +131,12 @@ It binds:
 - canonical successful CI run ID;
 - compatibility schema version;
 - Linux Tier 1 compatibility report SHA-256 with READY state, observation timestamp and `sourceSha` equal to the release commit;
-- Linux Tier 1 terminal-restoration PASS receipt with `sourceSha` equal to the release commit;
+- Linux Tier 1 terminal-restoration PASS receipt with `sourceSha` equal to the release commit, plus SHA-256 of the exact retained receipt JSON;
 - an exact-SHA `codex-tui/automated-qualification/v3` receipt covering Failure Matrix, 50k scale-v4 evidence, 50k structural soak, UI contract, state migration/recovery and support-bundle redaction;
 - Linux retained `resident-planning-10k` p95/p99 diagnostic receipt with `sourceSha` equal to the release commit;
 - optional macOS/Windows Tier 2 retained receipts when available.
 
-The stable verifier requires at least 200 retained resident-planning-10k samples with finite nonnegative p95/p99 values, but v1.2 does not fail solely on hosted-runner latency thresholds. Compatibility report hashes and automated-qualification artifact hashes are exact SHA-256 values.
+The stable verifier requires at least 200 retained resident-planning-10k samples with finite nonnegative p95/p99 values, but v1.2 does not fail solely on hosted-runner latency thresholds. Compatibility report hashes, terminal-restoration receipt hashes and automated-qualification artifact hashes are exact SHA-256 values.
 
 The workflow independently calls the GitHub Actions API and verifies the supplied canonical CI run is the `ci` workflow on `main`, succeeded, and is bound to the release source SHA.
 
@@ -144,7 +144,7 @@ The workflow independently calls the GitHub Actions API and verifies the supplie
 
 Every push to `main` retains a source-bound `codex-tui/development-qualification/v1` artifact. It combines the exact-SHA automated hardening receipt with the current module ratchet and retained App Server protocol replay fixtures.
 
-This hosted receipt is development authority only: it always records `stableReady=false` and `publicationAllowed=false`. It is never accepted in place of `codex-tui/release-evidence/v4`, so automated v1.2 development can continue without fabricating Linux compatibility, real controlling-TTY restoration or retained Linux performance evidence.
+This hosted receipt is development authority only: it always records `stableReady=false` and `publicationAllowed=false`. It is never accepted in place of `codex-tui/release-evidence/v5`, so automated v1.2 development can continue without fabricating Linux compatibility, real controlling-TTY restoration or retained Linux performance evidence.
 
 The release gate independently rechecks the architecture ratchet, protocol replay, cargo-deny policy and RustSec advisories on the exact checkout before packaging. It retains both `development-qualification.json` and `security-governance.json` in the release-gate artifact so the new v1.2 gates are auditable instead of existing only as workflow logs.
 
@@ -322,7 +322,7 @@ It performs:
 6. exact-SHA 50k/256 structural soak and secret-safe Doctor Bundle capture;
 7. `automated-qualification/v3` assembly with SHA-256 bindings for Failure Matrix, scale, soak, support manifest and support snapshot; the support snapshot source SHA must equal the candidate SHA;
 8. 20 warmup + 200 measured resident-planning-10k diagnostic samples;
-9. Linux terminal receipt validation including exact candidate `sourceSha`;
+9. Linux terminal receipt validation including exact candidate `sourceSha`, followed by SHA-256 over the exact retained receipt bytes;
 10. `release-evidence/v4` assembly with source-bound compat and terminal receipts;
 11. local stable release verification for the current Cargo package version.
 
