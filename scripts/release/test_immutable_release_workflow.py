@@ -198,6 +198,29 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
         self.assertIn("name: release-asset-integrity", publish)
         self.assertIn("*-assets.json", publish)
 
+    def test_draft_identity_uses_authenticated_release_listing_not_published_by_tag_endpoint(self):
+        text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        publish = text.rsplit("\n  publish:\n", 1)[1]
+        preview = publish.split(
+            "- name: Publish preview GitHub Release", 1
+        )[1].split("- name: Publish immutable stable GitHub Release", 1)[0]
+        stable = publish.split(
+            "- name: Publish immutable stable GitHub Release", 1
+        )[1].split("- uses: actions/upload-artifact@", 1)[0]
+
+        for section in (preview, stable):
+            before_publish = section.split('gh release edit "$TAG"', 1)[0]
+            self.assertIn("releases?per_page=100", before_publish)
+            self.assertIn("--paginate --slurp", before_publish)
+            self.assertIn("scripts/release/select_release.py", before_publish)
+            self.assertIn("--draft true", before_publish)
+            self.assertNotIn("releases/tags/$TAG", before_publish)
+
+        # Once draft=false has made the release public, the documented by-tag
+        # endpoint is the correct post-publication identity/readback path.
+        self.assertIn("releases/tags/$TAG", preview.split('gh release edit "$TAG"', 1)[1])
+        self.assertIn("releases/tags/$TAG", stable.split('gh release edit "$TAG"', 1)[1])
+
     def test_preview_publish_does_not_read_admin_secret(self):
         text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
         publish = text.rsplit("\n  publish:\n", 1)[1]
