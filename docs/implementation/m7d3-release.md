@@ -44,6 +44,8 @@ Stable publication is explicitly two-phase. A `stable + publish=true` dispatch m
 
 Stable qualification also reads the live `main` branch metadata and refuses to continue if `main` has moved away from the workflow's exact source SHA. Stable publication additionally requires `main.protected=true`, so branch protection cannot remain a documentation-only prerequisite. Detailed protection policy (for example force-push/deletion restrictions and required canonical PR checks) still remains repository configuration authority outside the release workflow.
 
+The final publication run may rebuild on fresh hosted runners, but those rebuilt native archives are not allowed to drift from the qualified dry-run. Before creating any stable draft, the publish job downloads the prior `release-bundle`, verifies both bundles' `SHA256SUMS` against the actual archive bytes, requires the same three native archive names, and requires byte-for-byte SHA-256 and size equality for every Linux/macOS/Windows archive. A compiler/runner/environment change that changes even one archive therefore fails closed and requires a new `stable + publish=false` qualification. The successful comparison is retained as `codex-tui/stable-package-equivalence/v1`; preview publication is intentionally unaffected.
+
 The Linux evidence source SHA is not a manual dispatch input: the workflow derives it directly from `github.sha`. This both tightens exact-source binding and keeps the dispatch contract within GitHub's top-level input budget.
 
 The recommended publication path does not manually re-enter the retained inputs. After the successful stable dry-run, use:
