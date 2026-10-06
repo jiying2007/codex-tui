@@ -33,6 +33,7 @@ mod runtime_prompt;
 mod runtime_shutdown;
 mod runtime_store;
 mod runtime_store_worker;
+mod runtime_user_response;
 
 use runtime_doctor::doctor;
 use runtime_external::{open_external_editor, open_external_url};
@@ -569,6 +570,7 @@ fn conversation_event_changes_planning(event: &ConversationEvent) -> bool {
         | ConversationEvent::ThreadQueueFailed { .. }
         | ConversationEvent::InteractiveRequested(_)
         | ConversationEvent::InteractiveResolved { .. }
+        | ConversationEvent::UserResponse { .. }
         | ConversationEvent::PromptSubmitted { .. }
         | ConversationEvent::PromptFailed { .. }
         | ConversationEvent::Failed { .. } => false,
@@ -596,6 +598,9 @@ fn drain_registry(
     }
     for _ in 0..32 {
         let Some(event) = registry.try_recv_conversation() else {
+            if registry.response_actor_finished() {
+                changes.any |= app.user_response_actor_stopped();
+            }
             break;
         };
         changes.planning |= conversation_event_changes_planning(&event);
@@ -660,6 +665,9 @@ fn drain_registry(
             }
             ConversationEvent::InteractiveRequested(request) => {
                 reduce(app, Action::InteractiveRequested(request));
+            }
+            ConversationEvent::UserResponse { ticket, outcome } => {
+                app.finish_user_response(ticket, outcome);
             }
             ConversationEvent::InteractiveResolved { request_id } => {
                 reduce(app, Action::InteractiveResolved { request_id });
@@ -1544,6 +1552,12 @@ fn apply_effects(
                 request_id,
                 resolution,
             } => {
+                if let codex_tui::conversation::InteractiveResolution::UserInput(answers) =
+                    &resolution
+                {
+                    runtime_user_response::submit(app, registry, &request_id, answers);
+                    continue;
+                }
                 if let Some(registry) = registry
                     && let Err(error) = registry.resolve_interactive(request_id.clone(), resolution)
                 {

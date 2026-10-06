@@ -163,6 +163,12 @@ fn duplicate_delivery_preserves_collected_answers_and_sends_once() {
     assert_eq!(request_id, &request.request_id);
     assert_eq!(answers["q1"], vec!["first-secret"]);
     assert_eq!(answers["q2"], vec!["second-answer"]);
+    let submission = app.user_response_submission(request_id, answers).unwrap();
+    assert_eq!(app.input_mode, InputMode::UserInput);
+    app.finish_user_response(
+        submission.ticket,
+        codex_tui::user_response::UserResponseOutcome::Written,
+    );
     assert_eq!(app.input_mode, InputMode::Normal);
     assert!(reduce(&mut app, Action::CommitInput).is_empty());
 }

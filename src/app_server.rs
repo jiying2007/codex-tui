@@ -32,6 +32,7 @@ use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 
 mod lifecycle;
+mod user_response;
 
 const PAGE_SIZE: u32 = 200;
 const STARTUP_REGISTRY_PAGE_LIMIT: usize = 1;
@@ -214,6 +215,7 @@ pub struct StartedRegistry {
 
 #[derive(Clone, Debug)]
 pub enum BackendCommand {
+    SubmitUserInput(crate::user_response::UserResponseSubmission),
     LoadConversation(ThreadId),
     StopWatchingConversation(ThreadId),
     LoadOlderConversation {
@@ -257,6 +259,10 @@ pub enum BackendCommand {
 
 #[derive(Clone, Debug)]
 pub enum ConversationEvent {
+    UserResponse {
+        ticket: u64,
+        outcome: crate::user_response::UserResponseOutcome,
+    },
     Loaded(ConversationPage),
     OlderLoaded(ConversationPage),
     PromptSubmitted {
@@ -311,6 +317,15 @@ pub struct RegistryHandle {
 }
 
 impl RegistryHandle {
+    pub fn response_actor_finished(&self) -> bool {
+        self.task.is_finished()
+    }
+    pub fn submit_user_input(
+        &self,
+        submission: crate::user_response::UserResponseSubmission,
+    ) -> Result<()> {
+        self.send_command(BackendCommand::SubmitUserInput(submission))
+    }
     pub fn try_recv(&mut self) -> Option<BackendSnapshot> {
         try_recv_latest_snapshot(&mut self.rx)
     }
@@ -861,6 +876,19 @@ async fn run_registry_actor(
                     return;
                 };
                 match command {
+                    BackendCommand::SubmitUserInput(submission) => {
+                        let ticket = submission.ticket;
+                        let outcome = user_response::send(&mut rpc, &mut pending_requests, &threads, submission).await;
+                        let unknown = matches!(&outcome, crate::user_response::UserResponseOutcome::Unknown(_));
+                        send_conversation_event(&conversation_tx, ConversationEvent::UserResponse { ticket, outcome }).await;
+                        if unknown {
+                            status.connected = false;
+                            status.error = Some("interactive response transport failed; delivery unconfirmed; connection stopped".into());
+                            generation = generation.saturating_add(1);
+                            let _ = tx.send(snapshot(generation, &threads, &status));
+                            return;
+                        }
+                    }
                     BackendCommand::LoadConversation(thread_id) => {
                         watched_threads.insert(thread_id.0.clone());
                         emit_conversation_load(&mut rpc, thread_id, &conversation_tx).await;
@@ -2462,13 +2490,8 @@ async fn resolve_interactive(
             }
         },
         "item/tool/requestUserInput" => match resolution {
-            InteractiveResolution::UserInput(answers) => {
-                let answers = answers
-                    .into_iter()
-                    .map(|(question_id, answers)| (question_id, json!({"answers": answers})))
-                    .collect::<serde_json::Map<_, _>>();
-                rpc.respond_result(request_id.to_value(), json!({"answers": answers}))
-                    .await?;
+            InteractiveResolution::UserInput(_) => {
+                anyhow::bail!("user input requires the checked submission path")
             }
             InteractiveResolution::Decline | InteractiveResolution::Cancel => {
                 rpc.reject_request(request_id.to_value(), "user input cancelled by user")

@@ -1,16 +1,17 @@
 //! Freeze question identity and privacy for the lifetime of one answer editor.
 use super::{AppState, Effect, InputMode, local_text};
 use crate::conversation::{
-    InteractiveRequest, InteractiveRequestKind, InteractiveResolution, RpcRequestId,
-    UserInputQuestion,
+    InteractiveRequest, InteractiveRequestKind, RpcRequestId, UserInputQuestion,
 };
 use std::collections::BTreeMap;
 
 #[derive(Clone, Debug)]
 pub(super) struct UserInputEditor {
-    request: InteractiveRequest,
+    pub(super) request: InteractiveRequest,
     question_index: usize,
-    answers: BTreeMap<String, Vec<String>>,
+    pub(super) answers: BTreeMap<String, Vec<String>>,
+    pub(super) revision: u64,
+    pub(super) submission: Option<u64>,
 }
 
 impl AppState {
@@ -68,7 +69,12 @@ impl AppState {
             );
             return;
         }
+        if self.user_response_blocked(&request.request_id) {
+            return;
+        }
         self.user_input_editor = Some(UserInputEditor {
+            revision: 0,
+            submission: None,
             request,
             question_index: 0,
             answers: BTreeMap::new(),
@@ -110,19 +116,12 @@ impl AppState {
             return vec![];
         };
         editor.answers.insert(question_id, answers);
-        self.input_buffer.clear();
         if editor.question_index + 1 < questions.len() {
+            self.input_buffer.clear();
             editor.question_index += 1;
             return vec![];
         }
-        let Some(editor) = self.user_input_editor.take() else {
-            return vec![];
-        };
-        self.input_mode = InputMode::Normal;
-        vec![Effect::ResolveInteractive {
-            request_id: editor.request.request_id,
-            resolution: InteractiveResolution::UserInput(editor.answers),
-        }]
+        self.begin_user_response()
     }
 
     pub(super) fn resolve_user_input_editor(&mut self, request_id: &RpcRequestId) {
