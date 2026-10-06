@@ -1,0 +1,56 @@
+name: terminal-regression
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/**'
+      - 'tests/terminal_restoration.rs'
+      - 'scripts/testing/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - '.github/workflows/terminal-regression.yml'
+  pull_request:
+    paths:
+      - 'tests/terminal_restoration.rs'
+      - 'scripts/testing/**'
+      - '.github/workflows/terminal-regression.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terminal-regression-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  linux-pty:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      CODEX_TUI_GIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      CODEX_TUI_PTY_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      CODEX_TUI_PTY_EVIDENCE_DIR: ${{ runner.temp }}/terminal-regression
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Verify checkout identity and probe negative fixtures
+        run: |
+          test "$(git rev-parse HEAD)" = "$CODEX_TUI_PTY_SOURCE_SHA"
+          python3 -m unittest discover -s scripts/testing -p 'test_terminal_restoration.py'
+          python3 -O -m unittest discover -s scripts/testing -p 'test_terminal_restoration.py'
+      - name: Exercise the actual program on a controlling PTY
+        run: cargo test --locked --test terminal_restoration -- --nocapture
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: automated-pty-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/terminal-regression/
+          if-no-files-found: warn
+          retention-days: 30
