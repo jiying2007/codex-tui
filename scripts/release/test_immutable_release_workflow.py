@@ -63,6 +63,33 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
         self.assertIn("--jq .immutable", stable)
         self.assertIn("PUBLISHED_TAG_SHA", stable)
 
+    def test_stable_publish_cleans_only_exact_unpublished_draft_and_tag(self):
+        text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        publish = text.rsplit("\n  publish:\n", 1)[1]
+        stable = publish.split(
+            "- name: Publish immutable stable GitHub Release", 1
+        )[1]
+
+        self.assertIn("group: codex-tui-release-publish", publish)
+        self.assertIn("cancel-in-progress: false", publish)
+        self.assertIn("trap cleanup_unpublished_draft EXIT", stable)
+        self.assertIn('CURRENT_DRAFT=', stable)
+        self.assertIn('CURRENT_TAG_SHA=', stable)
+        self.assertIn(
+            '[ "$CURRENT_DRAFT" = "true" ] && [ "$CURRENT_TAG_SHA" = "$GITHUB_SHA" ]',
+            stable,
+        )
+        self.assertIn("--cleanup-tag", stable)
+        self.assertIn('gh release upload "$TAG" bundle/*', stable)
+        self.assertIn("DRAFT_CREATED=true", stable)
+        self.assertIn("PUBLISHED=true", stable)
+        self.assertIn("trap - EXIT", stable)
+
+        create = stable.split('gh release create "$TAG"', 1)[1].split(
+            "DRAFT_CREATED=true", 1
+        )[0]
+        self.assertNotIn("bundle/*", create)
+
     def test_preview_publish_does_not_read_admin_secret(self):
         text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
         publish = text.rsplit("\n  publish:\n", 1)[1]
