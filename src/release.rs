@@ -825,16 +825,32 @@ mod tests {
         validate_evidence(&evidence, env!("CARGO_PKG_VERSION"), &sha())
             .expect("Linux Tier 1 evidence should satisfy stable retained evidence");
 
-        let mut malformed: serde_json::Value =
+        let original: serde_json::Value =
             serde_json::from_slice(&fs::read(&evidence).expect("read evidence"))
                 .expect("decode evidence");
-        malformed["terminalRestoration"]["linux"]["receiptSha256"] =
+
+        let mut malformed_performance = original.clone();
+        malformed_performance["performance"]["reportSha256"] =
+            serde_json::Value::String("d".repeat(63));
+        fs::write(
+            &evidence,
+            serde_json::to_vec_pretty(&malformed_performance)
+                .expect("malformed performance evidence json"),
+        )
+        .expect("malformed performance evidence");
+        let error = validate_evidence(&evidence, env!("CARGO_PKG_VERSION"), &sha())
+            .expect_err("performance report digest must be exact");
+        assert!(format!("{error:#}").contains("performance report SHA-256"));
+
+        let mut malformed_terminal = original;
+        malformed_terminal["terminalRestoration"]["linux"]["receiptSha256"] =
             serde_json::Value::String("c".repeat(63));
         fs::write(
             &evidence,
-            serde_json::to_vec_pretty(&malformed).expect("malformed evidence json"),
+            serde_json::to_vec_pretty(&malformed_terminal)
+                .expect("malformed terminal evidence json"),
         )
-        .expect("malformed evidence");
+        .expect("malformed terminal evidence");
         let error = validate_evidence(&evidence, env!("CARGO_PKG_VERSION"), &sha())
             .expect_err("terminal receipt digest must be exact");
         assert!(format!("{error:#}").contains("terminal receipt SHA-256"));
