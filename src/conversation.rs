@@ -1,4 +1,5 @@
 mod approval;
+mod approval_scope;
 mod user_input;
 pub use approval::ApprovalContext;
 

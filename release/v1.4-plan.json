@@ -237,6 +237,7 @@
     "src/app_server/user_response/approval_tests.rs": 300,
     "src/app_server/user_response/payload.rs": 110,
     "src/conversation/approval.rs": 60,
+    "src/conversation/approval_scope.rs": 100,
     "src/runtime_user_response/approval_tests.rs": 220
   },
   "ratchetPolicy": {
