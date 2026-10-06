@@ -1022,6 +1022,16 @@ mod tests {
     }
 
     #[test]
+    fn stable_evidence_example_matches_current_schema() {
+        validate_evidence(
+            Path::new("docs/release/stable-evidence.example.json"),
+            env!("CARGO_PKG_VERSION"),
+            &"0".repeat(40),
+        )
+        .expect("documented stable evidence example must remain verifier-valid");
+    }
+
+    #[test]
     fn sha256_contract_is_exact() {
         assert!(valid_sha256(&"a".repeat(64)));
         assert!(!valid_sha256(&"a".repeat(63)));
