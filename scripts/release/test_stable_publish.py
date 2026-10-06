@@ -25,10 +25,10 @@ class ImmutableReleasePreflight(unittest.TestCase):
                 pathlib.Path("/repo"),
                 "owner/repo",
             )
-        self.assertEqual(
-            receipt,
-            {"enabled": True, "enforcedByOwner": True},
-        )
+        self.assertEqual(receipt["enabled"], True)
+        self.assertEqual(receipt["enforcedByOwner"], True)
+        self.assertEqual(receipt["repository"], "owner/repo")
+        self.assertEqual(receipt["apiVersion"], "2026-03-10")
         command = runner.call_args.args[0]
         self.assertEqual(command[:4], ["gh", "api", "--method", "GET"])
         self.assertIn("X-GitHub-Api-Version: 2026-03-10", command)
