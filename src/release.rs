@@ -90,6 +90,7 @@ pub struct PerformanceReceipt {
     pub platform: String,
     pub fixture: String,
     pub source_sha: String,
+    pub report_sha256: String,
     pub iterations: usize,
     pub p95_ms: f64,
     pub p99_ms: f64,
@@ -320,6 +321,10 @@ pub fn validate_evidence(path: &Path, version: &str, commit_sha: &str) -> Result
             .source_sha
             .eq_ignore_ascii_case(commit_sha),
         "stable performance evidence source SHA must match the release commit"
+    );
+    anyhow::ensure!(
+        valid_sha256(&receipt.performance.report_sha256),
+        "stable performance report SHA-256 must be 64 hexadecimal characters"
     );
     anyhow::ensure!(
         receipt.performance.iterations >= RETAINED_MIN_ITERATIONS,
@@ -803,6 +808,7 @@ mod tests {
                 automated_qualification: automated_receipt(),
                 performance: PerformanceReceipt {
                     source_sha: sha(),
+                    report_sha256: "d".repeat(64),
                     platform: PRIMARY_STABLE_PLATFORM.into(),
                     fixture: PERFORMANCE_FIXTURE.into(),
                     iterations: RETAINED_MIN_ITERATIONS,
@@ -884,6 +890,7 @@ mod tests {
                 automated_qualification: automated_receipt(),
                 performance: PerformanceReceipt {
                     source_sha: sha(),
+                    report_sha256: "d".repeat(64),
                     platform: PRIMARY_STABLE_PLATFORM.into(),
                     fixture: PERFORMANCE_FIXTURE.into(),
                     iterations: RETAINED_MIN_ITERATIONS,
@@ -941,6 +948,7 @@ mod tests {
                 automated_qualification: automated_receipt(),
                 performance: PerformanceReceipt {
                     source_sha: sha(),
+                    report_sha256: "d".repeat(64),
                     platform: PRIMARY_STABLE_PLATFORM.into(),
                     fixture: PERFORMANCE_FIXTURE.into(),
                     iterations: RETAINED_MIN_ITERATIONS,
@@ -1003,6 +1011,7 @@ mod tests {
                 automated_qualification: automated_receipt(),
                 performance: PerformanceReceipt {
                     source_sha: sha(),
+                    report_sha256: "d".repeat(64),
                     platform: PRIMARY_STABLE_PLATFORM.into(),
                     fixture: PERFORMANCE_FIXTURE.into(),
                     iterations: RETAINED_MIN_ITERATIONS - 1,
