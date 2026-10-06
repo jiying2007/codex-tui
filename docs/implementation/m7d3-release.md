@@ -323,7 +323,7 @@ It performs:
 7. `automated-qualification/v3` assembly with SHA-256 bindings for Failure Matrix, scale, soak, support manifest and support snapshot; the support snapshot source SHA must equal the candidate SHA;
 8. 20 warmup + 200 measured resident-planning-10k diagnostic samples;
 9. Linux terminal receipt validation including exact candidate `sourceSha`, followed by SHA-256 over the exact retained receipt bytes;
-10. `release-evidence/v4` assembly with source-bound compat and terminal receipts;
+10. `release-evidence/v5` assembly with source-bound compatibility report SHA-256 and terminal-restoration receipt SHA-256;
 11. local stable release verification for the current Cargo package version.
 
 The result is retained under `release/evidence/linux/` and includes a complete `workflowInputs` object. `--dispatch` submits those exact values to the GitHub `release.yml` workflow with `channel=stable` and `publish=false`; it never publishes a release.
