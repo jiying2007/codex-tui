@@ -6,6 +6,8 @@ from pathlib import Path
 import re
 import sys
 
+RELEASE_ARTIFACT_SCHEMA = "codex-tui/release-artifact/v2"
+
 
 def native_platform() -> str:
     names = {"linux": "linux", "darwin": "macos", "win32": "windows"}
@@ -14,13 +16,44 @@ def native_platform() -> str:
     return names[sys.platform]
 
 
+def _require_text(value, label: str) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise SystemExit(f"archive build toolchain {label} must be non-empty")
+    return value.strip()
+
+
+def _validate_tool(toolchain: dict, name: str, triple: str) -> None:
+    value = toolchain.get(name)
+    if not isinstance(value, dict):
+        raise SystemExit(f"archive buildToolchain.{name} must be an object")
+
+    version = _require_text(value.get("version"), f"{name}.version")
+    release = _require_text(value.get("release"), f"{name}.release")
+    commit_hash = _require_text(value.get("commitHash"), f"{name}.commitHash")
+    commit_date = _require_text(value.get("commitDate"), f"{name}.commitDate")
+    host = _require_text(value.get("host"), f"{name}.host")
+
+    if not version.startswith(name + " "):
+        raise SystemExit(f"archive buildToolchain.{name}.version has unexpected format")
+    if not re.fullmatch(r"[0-9A-Za-z.+_-]+", release):
+        raise SystemExit(f"archive buildToolchain.{name}.release has unexpected format")
+    if not re.fullmatch(r"[0-9a-f]{40}", commit_hash):
+        raise SystemExit(f"archive buildToolchain.{name}.commitHash must be a full lowercase SHA")
+    if not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", commit_date):
+        raise SystemExit(f"archive buildToolchain.{name}.commitDate must be YYYY-MM-DD")
+    if host != triple:
+        raise SystemExit(
+            f"archive buildToolchain.{name}.host does not match hostTriple"
+        )
+
+
 def validate_metadata(metadata: dict, binary: Path, version: str, tag: str, commit: str) -> None:
     if not isinstance(metadata, dict):
         raise SystemExit("archive metadata must be an object")
     if not re.fullmatch(r"[0-9a-f]{40}", commit):
         raise SystemExit("archive expected commit must be a full lowercase SHA")
     platform = native_platform()
-    expected = {"schema": "codex-tui/release-artifact/v1", "version": version, "tag": tag,
+    expected = {"schema": RELEASE_ARTIFACT_SCHEMA, "version": version, "tag": tag,
                 "commitSha": commit, "license": "Apache-2.0", "platform": platform,
                 "binary": "codex-tui.exe" if platform == "windows" else "codex-tui",
                 "binarySha256": hashlib.sha256(binary.read_bytes()).hexdigest()}
@@ -35,6 +68,12 @@ def validate_metadata(metadata: dict, binary: Path, version: str, tag: str, comm
                         "windows": triple.endswith("-pc-windows-msvc")}[platform]
     if not valid_triple:
         raise SystemExit("archive hostTriple does not match the native platform")
+
+    toolchain = metadata.get("buildToolchain")
+    if not isinstance(toolchain, dict):
+        raise SystemExit("archive buildToolchain must be an object")
+    _validate_tool(toolchain, "rustc", triple)
+    _validate_tool(toolchain, "cargo", triple)
 
 
 def validate_compiled_source(report: dict, commit: str) -> None:
