@@ -57,6 +57,7 @@ mod queue_editor;
 mod review;
 mod types;
 mod user_input;
+mod user_response;
 
 pub use queue_confirmation::QueueConfirmation;
 pub use types::{Action, ContextChoice, Effect, InputMode, View, ViewKind};
@@ -197,6 +198,7 @@ pub struct AppState {
     pub pending_requests: Vec<InteractiveRequest>,
     pending_request_threads: BTreeSet<String>,
     user_input_editor: Option<user_input::UserInputEditor>,
+    user_responses: user_response::UserResponses,
     pub show_help: bool,
     pub should_quit: bool,
     pub backend_status: BackendStatus,
@@ -336,6 +338,7 @@ impl AppState {
             pending_requests: vec![],
             pending_request_threads: BTreeSet::new(),
             user_input_editor: None,
+            user_responses: Default::default(),
             show_help: false,
             should_quit: false,
             backend_status: BackendStatus::starting("unknown"),
@@ -1116,6 +1119,7 @@ impl AppState {
 }
 
 pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
+    state.observe_user_response_edit(&action);
     state.observe_local_edit_action(&action);
     if matches!(
         &action,
@@ -2592,6 +2596,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
         }
         Action::InteractiveResolved { request_id } => {
+            state.forget_user_response(&request_id);
             state
                 .pending_requests
                 .retain(|request| request.request_id != request_id);
@@ -2601,6 +2606,9 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         }
         Action::ResolvePending(resolution) => {
             if let Some(request) = state.current_pending_request().cloned() {
+                if state.user_response_blocked(&request.request_id) {
+                    return vec![];
+                }
                 let allowed = match request.kind {
                     InteractiveRequestKind::UserInput { .. } => matches!(
                         resolution,

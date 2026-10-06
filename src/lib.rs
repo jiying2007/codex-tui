@@ -52,5 +52,6 @@ pub mod text;
 pub mod thread_queue;
 pub mod transcript_search;
 pub mod ui;
+pub mod user_response;
 pub mod worktree;
 pub(crate) mod worktree_git;
