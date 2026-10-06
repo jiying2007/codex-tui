@@ -68,7 +68,7 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
         self.assertIn('test "$PUBLISHED_PRERELEASE" = "false"', stable)
         self.assertIn("PUBLISHED_TAG_SHA", stable)
 
-    def test_stable_publish_requires_exact_dry_run_package_bytes(self):
+    def test_stable_publish_promotes_exact_qualified_dry_run_bundle(self):
         text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
         publish = text.rsplit("\n  publish:\n", 1)[1]
         stable_start = publish.index("- name: Publish immutable stable GitHub Release")
@@ -76,12 +76,14 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
         self.assertIn("actions: read", publish)
         self.assertIn('gh run download "$STABLE_QUALIFICATION_RUN"', publish)
         self.assertIn("--name release-bundle", publish)
-        self.assertIn("scripts/release/compare_release_archives.py", publish)
-        self.assertIn("--prior-dir", publish)
-        self.assertIn("--current-dir bundle", publish)
-        self.assertIn("stable-package-equivalence.json", publish)
+        self.assertIn("scripts/release/promote_release_bundle.py", publish)
+        self.assertIn('mv bundle "$CURRENT_BUNDLE"', publish)
+        self.assertIn('mv "$PRIOR_BUNDLE" bundle', publish)
+        self.assertIn("stable-bundle-promotion.json", publish)
+        self.assertIn("name: stable-bundle-promotion", publish)
+        self.assertNotIn("compare_release_archives.py", publish)
         self.assertLess(
-            publish.index("scripts/release/compare_release_archives.py"),
+            publish.index("scripts/release/promote_release_bundle.py"),
             stable_start,
         )
 
