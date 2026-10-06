@@ -5,8 +5,7 @@ use std::{fs, path::PathBuf};
 const COMMIT: &str = "0000000000000000000000000000000000000000";
 
 fn example_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("docs/release/stable-evidence.example.json")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("docs/release/stable-evidence.example.json")
 }
 
 fn write_mutated(value: &Value) -> tempfile::TempDir {
@@ -27,11 +26,9 @@ fn documented_v5_example_is_verifier_valid() {
 
 #[test]
 fn terminal_receipt_digest_is_exact() {
-    let mut value: Value =
-        serde_json::from_slice(&fs::read(example_path()).expect("read example"))
-            .expect("decode example");
-    value["terminalRestoration"]["linux"]["receiptSha256"] =
-        Value::String("c".repeat(63));
+    let mut value: Value = serde_json::from_slice(&fs::read(example_path()).expect("read example"))
+        .expect("decode example");
+    value["terminalRestoration"]["linux"]["receiptSha256"] = Value::String("c".repeat(63));
     let temp = write_mutated(&value);
     let error = validate_evidence(
         &temp.path().join("evidence.json"),
@@ -44,9 +41,8 @@ fn terminal_receipt_digest_is_exact() {
 
 #[test]
 fn performance_report_digest_is_exact() {
-    let mut value: Value =
-        serde_json::from_slice(&fs::read(example_path()).expect("read example"))
-            .expect("decode example");
+    let mut value: Value = serde_json::from_slice(&fs::read(example_path()).expect("read example"))
+        .expect("decode example");
     value["performance"]["reportSha256"] = Value::String("d".repeat(63));
     let temp = write_mutated(&value);
     let error = validate_evidence(
