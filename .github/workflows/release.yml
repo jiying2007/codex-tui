@@ -612,23 +612,98 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       contents: write
-    env:
-      GH_TOKEN: ${{ github.token }}
     steps:
+      - uses: actions/checkout@v7
+        if: needs.gate.outputs.channel == 'stable'
+        with:
+          persist-credentials: false
+
       - uses: actions/download-artifact@v8
         with:
           name: release-bundle
           path: bundle
 
-      - name: Publish gated GitHub Release
+      - name: Publish preview GitHub Release
+        if: needs.gate.outputs.channel == 'preview'
         shell: bash
         env:
-          CHANNEL: ${{ needs.gate.outputs.channel }}
+          GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.gate.outputs.tag }}
         run: |
           set -euo pipefail
-          EXTRA=()
-          if [ "$CHANNEL" = "preview" ]; then
-            EXTRA+=(--prerelease)
+          gh release create "$TAG" bundle/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "codex-tui $TAG" \
+            --notes-file bundle/RELEASE_NOTES.md \
+            --prerelease
+
+      - name: Publish immutable stable GitHub Release
+        if: needs.gate.outputs.channel == 'stable'
+        shell: bash
+        env:
+          PUBLISH_TOKEN: ${{ github.token }}
+          ADMIN_READ_TOKEN: ${{ secrets.CODEX_TUI_ADMIN_READ_TOKEN }}
+          TAG: ${{ needs.gate.outputs.tag }}
+        run: |
+          set -euo pipefail
+          test -n "$ADMIN_READ_TOKEN" || {
+            echo "stable publish=true requires CODEX_TUI_ADMIN_READ_TOKEN with repository Administration(read)" >&2
+            exit 1
+          }
+
+          GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/branches/main" > "$RUNNER_TEMP/publish-main.json"
+          python3 scripts/release/validate_release_branch_state.py \
+            --branch-json "$RUNNER_TEMP/publish-main.json" \
+            --commit "$GITHUB_SHA" \
+            --require-protected
+
+          set +e
+          git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1
+          TAG_STATUS=$?
+          set -e
+          if [ "$TAG_STATUS" -eq 0 ]; then
+            echo "refusing stable publication because tag $TAG appeared before publish" >&2
+            exit 1
           fi
-          gh release create "$TAG" bundle/*             --repo "$GITHUB_REPOSITORY"             --target "$GITHUB_SHA"             --title "codex-tui $TAG"             --notes-file bundle/RELEASE_NOTES.md             "${EXTRA[@]}"
+          if [ "$TAG_STATUS" -ne 2 ]; then
+            echo "failed to revalidate stable tag absence; git ls-remote returned $TAG_STATUS" >&2
+            exit 1
+          fi
+
+          GH_TOKEN="$PUBLISH_TOKEN" gh release create "$TAG" bundle/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "codex-tui $TAG" \
+            --notes-file bundle/RELEASE_NOTES.md \
+            --draft
+
+          DRAFT_TAG_SHA="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha)"
+          if [ "$DRAFT_TAG_SHA" != "$GITHUB_SHA" ]; then
+            echo "draft release tag target drifted: expected=$GITHUB_SHA actual=$DRAFT_TAG_SHA" >&2
+            GH_TOKEN="$PUBLISH_TOKEN" gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes || true
+            exit 1
+          fi
+
+          if ! GH_TOKEN="$ADMIN_READ_TOKEN" python3 scripts/release/immutable_releases.py \
+            --repo "$GITHUB_REPOSITORY" \
+            --output "$RUNNER_TEMP/publish-immutable-releases.json"; then
+            echo "immutable-release state changed before stable publication; deleting unpublished draft" >&2
+            GH_TOKEN="$PUBLISH_TOKEN" gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes || true
+            exit 1
+          fi
+
+          GH_TOKEN="$PUBLISH_TOKEN" gh release edit "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft=false
+
+          PUBLISHED_IMMUTABLE="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .immutable)"
+          PUBLISHED_TAG_SHA="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha)"
+          test "$PUBLISHED_IMMUTABLE" = "true" || {
+            echo "stable release was published without immutable=true; manual incident response required" >&2
+            exit 1
+          }
+          test "$PUBLISHED_TAG_SHA" = "$GITHUB_SHA" || {
+            echo "stable release tag target mismatch after publication: expected=$GITHUB_SHA actual=$PUBLISHED_TAG_SHA" >&2
+            exit 1
+          }
