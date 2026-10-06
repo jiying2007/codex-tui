@@ -131,5 +131,5 @@
   "stableReady": false,
   "publicationAllowed": false,
   "stableAuthority": "release/v1.4-criteria.json",
-  "stableEvidencePolicy": "release-evidence/v4 plus exact-SHA real Linux compatibility and controlling-TTY restoration remain required; hosted development and render-performance diagnostics cannot satisfy stable publication"
+  "stableEvidencePolicy": "release-evidence/v5 plus exact-SHA real Linux compatibility and SHA-256-bound controlling-TTY restoration receipt remain required; hosted development and render-performance diagnostics cannot satisfy stable publication"
 }
