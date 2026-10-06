@@ -334,6 +334,21 @@ jobs:
           fi
           python3 scripts/release/validate_release_branch_state.py "${ARGS[@]}"
 
+      - name: Require immutable releases before stable publication
+        if: inputs.channel == 'stable' && inputs.publish == true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.CODEX_TUI_ADMIN_READ_TOKEN }}
+        run: |
+          set -euo pipefail
+          test -n "$GH_TOKEN" || {
+            echo "stable publish=true requires CODEX_TUI_ADMIN_READ_TOKEN with repository Administration(read)" >&2
+            exit 1
+          }
+          python3 scripts/release/immutable_releases.py \
+            --repo "$GITHUB_REPOSITORY" \
+            --output qualification/immutable-releases.json
+
       - name: Validate stable publication notes
         if: inputs.channel == 'stable' && inputs.publish == true
         run: >
@@ -420,6 +435,9 @@ jobs:
           cp qualification/security-governance.json gate/security-governance.json
           cp release/v1.4-plan.json gate/DEVELOPMENT-PLAN.json
           cp release/v1.4-completion.json gate/DEVELOPMENT-COMPLETION.json
+          if [ -f qualification/immutable-releases.json ]; then
+            cp qualification/immutable-releases.json gate/immutable-releases.json
+          fi
           if [ -f release-evidence.json ]; then
             cp release-evidence.json gate/release-evidence.json
           fi
