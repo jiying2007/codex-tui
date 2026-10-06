@@ -117,7 +117,7 @@ Stable tags are exactly:
 vX.Y.Z
 ```
 
-The first permitted stable product line is v1.0.0. Stable publication fails closed if any required evidence is absent.
+The first permitted stable product line is v1.0.0. Stable publication fails closed if any required evidence is absent. The supported `stable_publish.py` path also requires GitHub repository **release immutability** to be enabled and verifiable before it can dispatch `publish=true`; enable that administrative repository setting before the v1.4 release. The setting protects future releases and does not retroactively make older releases immutable.
 
 ## Project license
 

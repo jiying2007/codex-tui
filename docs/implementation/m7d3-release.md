@@ -53,7 +53,7 @@ python3 scripts/release/stable_publish.py \
   --stable-qualification-run <successful-stable-publish-false-run-id>
 ```
 
-This performs a non-publishing preflight: clean/main/origin SHA agreement, absent stable tag, live `main.protected=true`, released CHANGELOG entry, prior dry-run identity and retained release-evidence validation. It reconstructs the exact publish inputs from the prior immutable `release-gate` artifact. Add `--dispatch` only after reviewing the emitted preflight summary. The helper never accepts compatibility, terminal or performance values as manual command-line inputs.
+This performs a non-publishing preflight: clean/main/origin SHA agreement, absent stable tag, live `main.protected=true`, **GitHub repository immutable releases enabled and verifiable**, released CHANGELOG entry, prior dry-run identity and retained release-evidence validation. It reconstructs the exact publish inputs from the prior immutable `release-gate` artifact. The immutable-release check uses GitHub's repository administration API with the locally authenticated `gh` credential and fails closed if the setting is disabled, inaccessible, or malformed. Release immutability protects future GitHub releases only, so it must be enabled before v1.4 publication. Add `--dispatch` only after reviewing the emitted preflight summary. The helper never accepts compatibility, terminal or performance values as manual command-line inputs.
 
 `publish=true` additionally creates the GitHub Release only after every prior job succeeds and, for stable, the prior dry-run qualification has been validated.
 
