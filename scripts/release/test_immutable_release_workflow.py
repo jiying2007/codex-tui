@@ -179,6 +179,25 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
         self.assertIn("PUBLISHED_PRERELEASE", preview)
         self.assertIn("PUBLISHED_TAG_SHA", preview)
 
+    def test_preview_and_stable_verify_uploaded_asset_digests_before_and_after_publish(self):
+        text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        publish = text.rsplit("\n  publish:\n", 1)[1]
+        preview = publish.split(
+            "- name: Publish preview GitHub Release", 1
+        )[1].split("- name:", 1)[0]
+        stable = publish.split(
+            "- name: Publish immutable stable GitHub Release", 1
+        )[1].split("- uses: actions/upload-artifact@", 1)[0]
+
+        for section, prefix in ((preview, "preview"), (stable, "stable")):
+            self.assertEqual(section.count("scripts/release/verify_release_assets.py"), 2)
+            self.assertIn("X-GitHub-Api-Version: 2026-03-10", section)
+            self.assertIn(f"{prefix}-draft-assets.json", section)
+            self.assertIn(f"{prefix}-published-assets.json", section)
+
+        self.assertIn("name: release-asset-integrity", publish)
+        self.assertIn("*-assets.json", publish)
+
     def test_preview_publish_does_not_read_admin_secret(self):
         text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
         publish = text.rsplit("\n  publish:\n", 1)[1]
