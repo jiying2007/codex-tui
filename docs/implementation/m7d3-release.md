@@ -194,6 +194,12 @@ Windows zip entries use a fixed timestamp and deterministic ordering.
 
 Each archive contains the native binary, Apache-2.0 LICENSE, README, CHANGELOG, install/upgrade guidance, third-party notices, v1 stable criteria and release metadata. Packaging fails closed unless Cargo metadata declares `Apache-2.0` and the root `LICENSE` is present; archive smoke revalidates both the license text and release metadata SPDX value.
 
+Release metadata now uses `codex-tui/release-artifact/v2`. In addition to exact
+source and binary identity, it records structured rustc/cargo release, full commit
+SHA, commit date and native host values collected from `rustc -vV` and
+`cargo -Vv`. This is retained build provenance, not a claim that mutable hosted
+runner images or system packages make the archive bit-reproducible across future runs.
+
 ## Archive smoke
 
 Every platform extracts its newly built archive and executes the packaged binary:
@@ -201,7 +207,8 @@ Every platform extracts its newly built archive and executes the packaged binary
 1. `codex-tui --version` must exactly match the Cargo version;
 2. `codex-tui headless threads --fixture-10k --json` must report the v1 headless schema, no degradation and exactly 10,000 rows;
 3. required documentation/notice/criteria/metadata files must exist;
-4. release metadata version/tag/SHA must match the gate outputs.
+4. release metadata version/tag/SHA must match the gate outputs;
+5. release-artifact/v2 rustc/cargo provenance must contain full commit SHAs and both tool hosts must equal the declared native host triple.
 
 This validates the distributable, not merely `target/release`.
 

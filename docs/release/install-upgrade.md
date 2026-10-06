@@ -29,12 +29,18 @@ Each platform archive contains:
 
 ## Native archive identity
 
-Every newly built platform archive records `binarySha256` in
+Every newly built platform archive uses `codex-tui/release-artifact/v2` and
+records `binarySha256` plus exact rustc/cargo build-toolchain provenance in
 `RELEASE-METADATA.json`. Native archive smoke verifies the schema, declared native
-platform/host-triple family, executable name, exact source SHA and actual payload
-hash before exercising the extracted executable. An existing backend-free
+platform/host-triple family, executable name, exact source SHA, actual payload hash,
+and that both compiler/tool identities contain full commit SHAs and the same native
+host triple before exercising the extracted executable. An existing backend-free
 one-sample diagnostic also checks the binary's embedded source SHA; that sample
 is identity verification, not qualified performance evidence.
+
+Toolchain provenance makes later artifact drift diagnosable; it does not claim
+bit-for-bit reproducibility across mutable hosted-runner images, system packages,
+or container tags.
 
 Extraction preflight rejects duplicate/case-colliding or aliased member paths,
 links/special files, multiple roots and file/directory collisions. It accepts at

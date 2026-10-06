@@ -121,7 +121,7 @@
     {
       "id": "archive-smoke",
       "authority": "release packaging",
-      "evidence": "extracted license/metadata/version/headless fixture smoke passes on Linux/macOS/Windows"
+      "evidence": "release-artifact/v2 archive smoke verifies license, exact source/binary identity, native host triple, rustc/cargo release + full commit provenance, version and headless fixture behavior on Linux/macOS/Windows"
     },
     {
       "id": "checksums",
