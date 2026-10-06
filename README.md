@@ -409,4 +409,4 @@ python3 scripts/release/linux_qualify.py \
 # Add --dispatch to trigger stable + publish=false automatically after local PASS.
 ```
 
-The second command verifies a clean exact-main SHA, canonical CI, locked tests/build, source-bound READY `compat/v2` plus terminal receipts, the exact-SHA 50k scale-v4 startup/interaction distributions, 50k structural soak, support-bundle privacy manifest, state/UI/failure gates, a 200-sample 10k performance diagnostic, evidence assembly, and local stable verification. It does **not** publish.
+The second command verifies a clean exact-main SHA, canonical CI, locked tests/build, source-bound READY `compat/v2` plus SHA-256-bound real terminal-restoration receipts, the exact-SHA 50k scale-v4 startup/interaction distributions, 50k structural soak, support-bundle privacy manifest, state/UI/failure gates, a 200-sample 10k performance diagnostic, evidence assembly, and local stable verification. It does **not** publish.
