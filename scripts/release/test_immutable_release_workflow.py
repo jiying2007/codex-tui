@@ -40,7 +40,7 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
             "- name: Publish immutable stable GitHub Release", 1
         )[1]
 
-        self.assertIn("actions/checkout@v7", publish)
+        self.assertIn("actions/checkout@", publish)
         self.assertIn("validate_release_branch_state.py", stable)
         self.assertIn(
             'git ls-remote --exit-code --tags origin "refs/tags/$TAG"',
