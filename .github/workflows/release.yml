@@ -618,7 +618,6 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        if: needs.gate.outputs.channel == 'stable'
         with:
           persist-credentials: false
 
@@ -635,12 +634,85 @@ jobs:
           TAG: ${{ needs.gate.outputs.tag }}
         run: |
           set -euo pipefail
-          gh release create "$TAG" bundle/* \
+
+          set +e
+          git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1
+          TAG_STATUS=$?
+          set -e
+          if [ "$TAG_STATUS" -eq 0 ]; then
+            echo "refusing preview publication because tag $TAG appeared before publish" >&2
+            exit 1
+          fi
+          if [ "$TAG_STATUS" -ne 2 ]; then
+            echo "failed to revalidate preview tag absence; git ls-remote returned $TAG_STATUS" >&2
+            exit 1
+          fi
+
+          DRAFT_ATTEMPTED=false
+          PUBLISHED=false
+          DRAFT_OWNER_MARKER="<!-- codex-tui-preview-publish-run:${GITHUB_RUN_ID}:${GITHUB_RUN_ATTEMPT}:${GITHUB_SHA} -->"
+          cleanup_unpublished_preview() {
+            status=$?
+            trap - EXIT
+            if [ "$DRAFT_ATTEMPTED" = "true" ] && [ "$PUBLISHED" != "true" ]; then
+              CURRENT_DRAFT="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .draft 2>/dev/null || true)"
+              CURRENT_BODY="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .body 2>/dev/null || true)"
+              CURRENT_TAG_SHA="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha 2>/dev/null || true)"
+              if [ "$CURRENT_DRAFT" = "true" ] && [ "$CURRENT_TAG_SHA" = "$GITHUB_SHA" ] && [ "$CURRENT_BODY" = "$DRAFT_OWNER_MARKER" ]; then
+                echo "cleaning owned unpublished preview draft and tag after pre-publication failure" >&2
+                gh release delete "$TAG" \
+                  --repo "$GITHUB_REPOSITORY" \
+                  --cleanup-tag \
+                  --yes || echo "automatic preview draft/tag cleanup failed; manual cleanup required" >&2
+              else
+                echo "refusing automatic preview cleanup because draft/tag/owner identity is not exact" >&2
+              fi
+            fi
+            exit "$status"
+          }
+          trap cleanup_unpublished_preview EXIT
+
+          DRAFT_ATTEMPTED=true
+          gh release create "$TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "codex-tui $TAG" \
+            --notes "$DRAFT_OWNER_MARKER" \
+            --draft
+
+          gh release upload "$TAG" bundle/* \
+            --repo "$GITHUB_REPOSITORY"
+
+          DRAFT_TAG_SHA="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha)"
+          DRAFT_BODY="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .body)"
+          if [ "$DRAFT_TAG_SHA" != "$GITHUB_SHA" ] || [ "$DRAFT_BODY" != "$DRAFT_OWNER_MARKER" ]; then
+            echo "preview draft identity drifted before publication" >&2
+            exit 1
+          fi
+
+          gh release edit "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
             --notes-file bundle/RELEASE_NOTES.md \
-            --prerelease
+            --prerelease \
+            --draft=false
+          PUBLISHED=true
+          trap - EXIT
+
+          PUBLISHED_DRAFT="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .draft)"
+          PUBLISHED_PRERELEASE="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .prerelease)"
+          PUBLISHED_TAG_SHA="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha)"
+          test "$PUBLISHED_DRAFT" = "false" || {
+            echo "preview release remained draft after publication" >&2
+            exit 1
+          }
+          test "$PUBLISHED_PRERELEASE" = "true" || {
+            echo "preview release was not marked prerelease after publication" >&2
+            exit 1
+          }
+          test "$PUBLISHED_TAG_SHA" = "$GITHUB_SHA" || {
+            echo "preview release tag target mismatch after publication: expected=$GITHUB_SHA actual=$PUBLISHED_TAG_SHA" >&2
+            exit 1
+          }
 
       - name: Publish immutable stable GitHub Release
         if: needs.gate.outputs.channel == 'stable'
