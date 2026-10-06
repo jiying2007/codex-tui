@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import pathlib
@@ -395,6 +396,7 @@ def main() -> int:
         raise SystemExit("terminal receipt terminal name is empty")
     if not str(terminal.get("observedAt", "")).strip():
         raise SystemExit("terminal receipt observedAt is empty")
+    terminal_sha256 = hashlib.sha256(terminal_path.read_bytes()).hexdigest()
 
     evidence_path = output_dir / "release-evidence-linux.json"
     run(
@@ -419,8 +421,8 @@ def main() -> int:
             compat_summary["reportSha256"],
             "--linux-compat-observed-at",
             compat_summary["observedAt"],
-            "--linux-terminal",
-            terminal["terminal"],
+            "--linux-terminal-sha256",
+            terminal_sha256,
             "--linux-terminal-observed-at",
             terminal["observedAt"],
             "--performance-source-sha",
@@ -472,7 +474,7 @@ def main() -> int:
         "canonical_ci_run": str(canonical_ci_run),
         "linux_compat_sha256": compat_summary["reportSha256"],
         "linux_compat_observed_at": compat_summary["observedAt"],
-        "linux_terminal": terminal["terminal"],
+        "linux_terminal_sha256": terminal_sha256,
         "linux_terminal_observed_at": terminal["observedAt"],
         "performance_source_sha": commit_sha,
         "performance_iterations": str(performance["iterations"]),
@@ -491,6 +493,7 @@ def main() -> int:
         "compatReportSha256": compat_summary["reportSha256"],
         "realEvidenceSourceSha": commit_sha,
         "terminalReceipt": str(terminal_path),
+        "terminalReceiptSha256": terminal_sha256,
         "failureMatrix": str(failure_matrix_path),
         "failureEvidenceTestList": str(failure_test_list),
         "scaleEvidence": str(scale_path),
