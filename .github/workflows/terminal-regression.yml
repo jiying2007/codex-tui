@@ -32,7 +32,6 @@ jobs:
     env:
       CODEX_TUI_GIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       CODEX_TUI_PTY_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-      CODEX_TUI_PTY_EVIDENCE_DIR: ${{ runner.temp }}/terminal-regression
     steps:
       - uses: actions/checkout@v7
         with:
@@ -46,6 +45,8 @@ jobs:
           python3 -m unittest discover -s scripts/testing -p 'test_terminal_restoration.py'
           python3 -O -m unittest discover -s scripts/testing -p 'test_terminal_restoration.py'
       - name: Exercise the actual program on a controlling PTY
+        env:
+          CODEX_TUI_PTY_EVIDENCE_DIR: ${{ runner.temp }}/terminal-regression
         run: cargo test --locked --test terminal_restoration -- --nocapture
       - uses: actions/upload-artifact@v7
         if: always()

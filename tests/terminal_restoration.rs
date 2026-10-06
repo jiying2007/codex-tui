@@ -16,8 +16,8 @@ fn normal_and_failed_save_restore_the_actual_controlling_terminal() {
         .map(Path::new)
         .unwrap_or_else(|| temporary.path());
     std::fs::create_dir_all(output).unwrap();
-    let script = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("scripts/testing/terminal_restoration.py");
+    let script =
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/testing/terminal_restoration.py");
     let log_path = output.join("harness.log");
     let log = std::fs::File::create(&log_path).unwrap();
     let mut child = Command::new("python3")
@@ -38,11 +38,18 @@ fn normal_and_failed_save_restore_the_actual_controlling_terminal() {
         if Instant::now() >= deadline {
             let _ = child.kill();
             let _ = child.wait();
-            panic!("PTY deadline: {}", std::fs::read_to_string(&log_path).unwrap_or_default());
+            panic!(
+                "PTY deadline: {}",
+                std::fs::read_to_string(&log_path).unwrap_or_default()
+            );
         }
         std::thread::sleep(Duration::from_millis(20));
     };
-    assert!(status.success(), "PTY failure: {}", std::fs::read_to_string(&log_path).unwrap_or_default());
+    assert!(
+        status.success(),
+        "PTY failure: {}",
+        std::fs::read_to_string(&log_path).unwrap_or_default()
+    );
     for (scenario, exit_code, count) in [("normal", 0, 6), ("failed-save", 1, 7)] {
         let receipt: serde_json::Value = serde_json::from_slice(
             &std::fs::read(output.join(scenario).join("receipt.json")).unwrap(),
