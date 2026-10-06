@@ -74,7 +74,10 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
         self.assertIn("trap cleanup_unpublished_draft EXIT", stable)
         self.assertIn("DRAFT_ATTEMPTED=false", stable)
         self.assertIn("DRAFT_ATTEMPTED=true", stable)
-        self.assertIn("DRAFT_OWNER_MARKER=", stable)
+        self.assertIn(
+            'DRAFT_OWNER_MARKER="<!-- codex-tui-publish-run:${GITHUB_RUN_ID}:${GITHUB_RUN_ATTEMPT}:${GITHUB_SHA} -->"',
+            stable,
+        )
         self.assertIn('CURRENT_DRAFT=', stable)
         self.assertIn('CURRENT_BODY=', stable)
         self.assertIn('CURRENT_TAG_SHA=', stable)
