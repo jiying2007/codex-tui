@@ -3,26 +3,27 @@ use anyhow::{Context, Result};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::Value;
 use std::process::Stdio;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter, Lines};
+use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::TcpStream;
 #[cfg(unix)]
 use tokio::net::UnixStream;
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 #[cfg(unix)]
-use tokio_tungstenite::client_async;
+use tokio_tungstenite::client_async_with_config;
 use tokio_tungstenite::{
-    MaybeTlsStream, WebSocketStream, connect_async,
+    MaybeTlsStream, WebSocketStream, connect_async_with_config,
     tungstenite::{
         Message,
         client::IntoClientRequest,
         http::{HeaderValue, header::AUTHORIZATION},
+        protocol::WebSocketConfig,
     },
 };
 
 enum Transport {
     Stdio {
         _child: Box<Child>,
-        reader: Box<Lines<BufReader<ChildStdout>>>,
+        reader: Box<BufReader<ChildStdout>>,
         writer: Box<BufWriter<ChildStdin>>,
     },
     WebSocket {
@@ -36,6 +37,15 @@ enum Transport {
 
 pub struct AppServerTransport {
     inner: Transport,
+}
+
+const APP_SERVER_MAX_MESSAGE_BYTES: usize = 64 * 1024 * 1024;
+const APP_SERVER_MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
+
+fn websocket_config() -> WebSocketConfig {
+    WebSocketConfig::default()
+        .max_message_size(Some(APP_SERVER_MAX_MESSAGE_BYTES))
+        .max_frame_size(Some(APP_SERVER_MAX_FRAME_BYTES))
 }
 
 impl AppServerTransport {
@@ -60,15 +70,14 @@ impl AppServerTransport {
                     .stdout
                     .take()
                     .context("Codex App Server stdout unavailable")?;
-                if let Some(stderr) = child.stderr.take() {
+                if let Some(mut stderr) = child.stderr.take() {
                     tokio::spawn(async move {
-                        let mut lines = BufReader::new(stderr).lines();
-                        while let Ok(Some(_line)) = lines.next_line().await {}
+                        let _ = tokio::io::copy(&mut stderr, &mut tokio::io::sink()).await;
                     });
                 }
                 Transport::Stdio {
                     _child: Box::new(child),
-                    reader: Box::new(BufReader::new(stdout).lines()),
+                    reader: Box::new(BufReader::new(stdout)),
                     writer: Box::new(BufWriter::new(stdin)),
                 }
             }
@@ -82,13 +91,16 @@ impl AppServerTransport {
                         .context("encode App Server bearer authorization header")?;
                     request.headers_mut().insert(AUTHORIZATION, value);
                 }
-                let (stream, _) = connect_async(request).await.with_context(|| {
-                    format!(
-                        "connect App Server target {:?} at {}",
-                        target.name,
-                        target.diagnostic_endpoint()
-                    )
-                })?;
+                let (stream, _) =
+                    connect_async_with_config(request, Some(websocket_config()), false)
+                        .await
+                        .with_context(|| {
+                            format!(
+                                "connect App Server target {:?} at {}",
+                                target.name,
+                                target.diagnostic_endpoint()
+                            )
+                        })?;
                 Transport::WebSocket {
                     stream: Box::new(stream),
                 }
@@ -99,9 +111,13 @@ impl AppServerTransport {
                     let socket = UnixStream::connect(path).await.with_context(|| {
                         format!("connect App Server Unix socket {}", path.display())
                     })?;
-                    let (stream, _) = client_async("ws://localhost/rpc", socket)
-                        .await
-                        .context("perform App Server Unix-socket WebSocket handshake")?;
+                    let (stream, _) = client_async_with_config(
+                        "ws://localhost/rpc",
+                        socket,
+                        Some(websocket_config()),
+                    )
+                    .await
+                    .context("perform App Server Unix-socket WebSocket handshake")?;
                     Transport::UnixSocket {
                         stream: Box::new(stream),
                     }
@@ -121,17 +137,7 @@ impl AppServerTransport {
 
     pub async fn read_json(&mut self) -> Result<Option<Value>> {
         match &mut self.inner {
-            Transport::Stdio { reader, .. } => loop {
-                let Some(line) = reader.next_line().await.context("read App Server stdio")? else {
-                    return Ok(None);
-                };
-                if line.trim().is_empty() {
-                    continue;
-                }
-                return serde_json::from_str(&line)
-                    .context("decode App Server stdio JSON")
-                    .map(Some);
-            },
+            Transport::Stdio { reader, .. } => read_stdio_json(reader.as_mut()).await,
             Transport::WebSocket { stream } => read_websocket_json(stream.as_mut()).await,
             #[cfg(unix)]
             Transport::UnixSocket { stream } => read_websocket_json(stream.as_mut()).await,
@@ -157,6 +163,67 @@ impl AppServerTransport {
     }
 }
 
+async fn read_stdio_json<R>(reader: &mut R) -> Result<Option<Value>>
+where
+    R: AsyncBufRead + Unpin,
+{
+    loop {
+        let Some(bytes) = read_bounded_line(reader, APP_SERVER_MAX_MESSAGE_BYTES).await? else {
+            return Ok(None);
+        };
+        if bytes.iter().all(u8::is_ascii_whitespace) {
+            continue;
+        }
+        return serde_json::from_slice(&bytes)
+            .context("decode App Server stdio JSON")
+            .map(Some);
+    }
+}
+
+async fn read_bounded_line<R>(reader: &mut R, limit: usize) -> Result<Option<Vec<u8>>>
+where
+    R: AsyncBufRead + Unpin,
+{
+    let mut bytes = Vec::new();
+    loop {
+        let available = reader.fill_buf().await.context("read App Server stdio")?;
+        if available.is_empty() {
+            if bytes.is_empty() {
+                return Ok(None);
+            }
+            ensure_message_size(bytes.len(), limit, "stdio")?;
+            return Ok(Some(bytes));
+        }
+        let newline = available.iter().position(|byte| *byte == b'\n');
+        let take = newline.map_or(available.len(), |index| index + 1);
+        anyhow::ensure!(
+            bytes.len().saturating_add(take) <= limit.saturating_add(2),
+            "App Server stdio JSON exceeds {limit} byte limit"
+        );
+        bytes.extend_from_slice(&available[..take]);
+        reader.consume(take);
+        if newline.is_some() {
+            while matches!(bytes.last(), Some(b'\n' | b'\r')) {
+                bytes.pop();
+            }
+            ensure_message_size(bytes.len(), limit, "stdio")?;
+            return Ok(Some(bytes));
+        }
+        anyhow::ensure!(
+            bytes.len() <= limit.saturating_add(1),
+            "App Server stdio JSON exceeds {limit} byte limit"
+        );
+    }
+}
+
+fn ensure_message_size(bytes: usize, limit: usize, transport: &str) -> Result<()> {
+    anyhow::ensure!(
+        bytes <= limit,
+        "App Server {transport} JSON exceeds {limit} byte limit"
+    );
+    Ok(())
+}
+
 async fn read_websocket_json<S>(stream: &mut WebSocketStream<S>) -> Result<Option<Value>>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
@@ -168,11 +235,17 @@ where
         let frame = frame.context("read App Server WebSocket frame")?;
         match frame {
             Message::Text(text) => {
+                ensure_message_size(text.len(), APP_SERVER_MAX_MESSAGE_BYTES, "WebSocket text")?;
                 return serde_json::from_str(text.as_str())
                     .context("decode App Server WebSocket JSON")
                     .map(Some);
             }
             Message::Binary(bytes) => {
+                ensure_message_size(
+                    bytes.len(),
+                    APP_SERVER_MAX_MESSAGE_BYTES,
+                    "WebSocket binary",
+                )?;
                 return serde_json::from_slice(bytes.as_ref())
                     .context("decode App Server WebSocket binary JSON")
                     .map(Some);
@@ -202,6 +275,80 @@ mod tests {
     };
     use serde_json::json;
     use tokio_tungstenite::accept_async;
+
+    #[tokio::test]
+    async fn stdio_reader_enforces_limit_before_unbounded_line_growth() {
+        use tokio::io::{AsyncWriteExt, BufReader, duplex};
+
+        let (client, mut server) = duplex(128);
+        let writer = tokio::spawn(async move {
+            server
+                .write_all(b"{\"value\":\"abcdefghijklmnopqrstuvwxyz\"}\n")
+                .await
+                .unwrap();
+        });
+        let mut reader = BufReader::new(client);
+        let error = read_bounded_line(&mut reader, 16)
+            .await
+            .expect_err("oversized line must fail");
+        assert!(error.to_string().contains("16 byte limit"));
+        writer.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn stdio_reader_allows_exact_limit_with_crlf() {
+        use tokio::io::{AsyncWriteExt, BufReader, duplex};
+
+        let (client, mut server) = duplex(128);
+        let writer = tokio::spawn(async move {
+            server.write_all(b"1234567890abcdef\r\n").await.unwrap();
+        });
+        let mut reader = BufReader::new(client);
+        assert_eq!(
+            read_bounded_line(&mut reader, 16).await.unwrap(),
+            Some(b"1234567890abcdef".to_vec())
+        );
+        writer.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn stdio_reader_skips_blank_lines_and_decodes_json() {
+        use tokio::io::{AsyncWriteExt, BufReader, duplex};
+
+        let (client, mut server) = duplex(128);
+        let writer = tokio::spawn(async move {
+            server.write_all(b"\n  \r\n{\"id\":1}\n").await.unwrap();
+        });
+        let mut reader = BufReader::new(client);
+        assert_eq!(
+            read_stdio_json(&mut reader).await.unwrap(),
+            Some(json!({"id":1}))
+        );
+        writer.await.unwrap();
+    }
+
+    #[test]
+    fn websocket_limits_are_explicit_and_defense_in_depth_check_matches() {
+        let config = websocket_config();
+        assert_eq!(config.max_message_size, Some(APP_SERVER_MAX_MESSAGE_BYTES));
+        assert_eq!(config.max_frame_size, Some(APP_SERVER_MAX_FRAME_BYTES));
+        ensure_message_size(
+            APP_SERVER_MAX_MESSAGE_BYTES,
+            APP_SERVER_MAX_MESSAGE_BYTES,
+            "fixture",
+        )
+        .unwrap();
+        assert!(
+            ensure_message_size(
+                APP_SERVER_MAX_MESSAGE_BYTES + 1,
+                APP_SERVER_MAX_MESSAGE_BYTES,
+                "fixture"
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("byte limit")
+        );
+    }
 
     #[test]
     fn remote_target_error_context_never_formats_bearer_token() {
