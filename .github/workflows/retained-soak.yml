@@ -39,9 +39,9 @@ jobs:
       CYCLES: ${{ inputs.cycles || '256' }}
       DURATION_SECONDS: ${{ inputs.duration_seconds || '300' }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - name: Build exact source
         run: cargo build --locked --release
       - name: Run sustained same-process structural soak
@@ -57,7 +57,7 @@ jobs:
           python3 scripts/release/validate_diagnostics.py soak soak-evidence.json \
             --commit "$GITHUB_SHA" --rows "$ROWS" --minimum-cycles "$CYCLES" \
             --minimum-duration "$DURATION_SECONDS"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
           name: soak-evidence-${{ github.sha }}
