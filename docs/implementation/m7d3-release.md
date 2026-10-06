@@ -133,10 +133,10 @@ It binds:
 - Linux Tier 1 compatibility report SHA-256 with READY state, observation timestamp and `sourceSha` equal to the release commit;
 - Linux Tier 1 terminal-restoration PASS receipt with `sourceSha` equal to the release commit, plus SHA-256 of the exact retained receipt JSON;
 - an exact-SHA `codex-tui/automated-qualification/v3` receipt covering Failure Matrix, 50k scale-v4 evidence, 50k structural soak, UI contract, state migration/recovery and support-bundle redaction;
-- Linux retained `resident-planning-10k` p95/p99 diagnostic receipt with `sourceSha` equal to the release commit;
+- Linux retained `resident-planning-10k` diagnostic JSON with `sourceSha` equal to the release commit and SHA-256 of the exact retained report;
 - optional macOS/Windows Tier 2 retained receipts when available.
 
-The stable verifier requires at least 200 retained resident-planning-10k samples with finite nonnegative p95/p99 values, but v1.2 does not fail solely on hosted-runner latency thresholds. Compatibility report hashes, terminal-restoration receipt hashes and automated-qualification artifact hashes are exact SHA-256 values.
+The stable verifier requires at least 200 retained resident-planning-10k samples with finite nonnegative p95/p99 values, but v1.2 does not fail solely on hosted-runner latency thresholds. Compatibility report hashes, terminal-restoration receipt hashes, retained performance-report hashes and automated-qualification artifact hashes are exact SHA-256 values.
 
 The workflow independently calls the GitHub Actions API and verifies the supplied canonical CI run is the `ci` workflow on `main`, succeeded, and is bound to the release source SHA.
 
