@@ -1,20 +1,29 @@
-"""Require immutable GitHub Action references in repository workflows."""
+"""Require immutable GitHub Action references in repository automation."""
 from pathlib import Path
 import re
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOWS = ROOT / ".github" / "workflows"
+LOCAL_ACTIONS = ROOT / ".github" / "actions"
 USE_RE = re.compile(
     r"^\s*(?:-\s*)?uses:\s+([^\s#]+)(?:\s+#\s*(.+?))?\s*$"
 )
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
 
 
+def automation_files():
+    paths = set(WORKFLOWS.glob("*.yml")) | set(WORKFLOWS.glob("*.yaml"))
+    if LOCAL_ACTIONS.is_dir():
+        paths |= set(LOCAL_ACTIONS.rglob("action.yml"))
+        paths |= set(LOCAL_ACTIONS.rglob("action.yaml"))
+    return sorted(paths)
+
+
 class WorkflowActionPinning(unittest.TestCase):
     def test_external_actions_are_pinned_to_full_commit_sha(self):
         failures = []
-        for path in sorted(WORKFLOWS.glob("*.yml")):
+        for path in automation_files():
             for number, line in enumerate(
                 path.read_text(encoding="utf-8").splitlines(),
                 start=1,
