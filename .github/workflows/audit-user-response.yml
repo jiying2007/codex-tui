@@ -1,0 +1,130 @@
+name: audit-user-response
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: read
+jobs:
+  verify:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'fix/v1.4-user-response-delivery'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+      CARGO_TERM_COLOR: never
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Verify baseline and reproduce actual response loss
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          git diff --exit-code 380b81e950674fb88a064789d9bc4aa8b3c23323 -- src tests Cargo.toml Cargo.lock
+          mkdir -p "$RUNNER_TEMP/response-evidence"
+          python3 .audit/response_fix.py tests
+          cargo fmt --all
+          set +e
+          cargo test --locked --test user_response_retention > "$RUNNER_TEMP/response-evidence/before.log" 2>&1
+          code=$?
+          set -e
+          cat "$RUNNER_TEMP/response-evidence/before.log"
+          test "$code" = 101
+          grep -q '1 passed; 4 failed' "$RUNNER_TEMP/response-evidence/before.log"
+      - name: Apply correction and preserve original governance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .audit/response_fix.py fix
+          cargo fmt --all
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets --all-features -- -D warnings 2>&1 | tee "$RUNNER_TEMP/response-evidence/clippy.log"
+          cargo test --locked --all-targets --all-features 2>&1 | tee "$RUNNER_TEMP/response-evidence/after.log"
+          python3 -m unittest discover -s scripts/release -p 'test_*.py' 2>&1 | tee "$RUNNER_TEMP/response-evidence/python.log"
+          python3 scripts/architecture/check_module_ratchet.py release/v1.3-plan.json
+          python3 scripts/architecture/check_module_ratchet.py release/v1.4-plan.json
+          python3 scripts/release/validate_v1_4_plan.py
+          python3 scripts/release/validate_v1_4_completion.py
+          git add -A
+          git diff --cached --check
+      - name: Export tested UTF-8 source data only
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import hashlib,json,os,pathlib,subprocess
+          root=pathlib.Path(os.environ['RUNNER_TEMP'],'response-source'); root.mkdir()
+          changes=subprocess.check_output(['git','diff','--cached','--name-status','--no-renames','-z']).decode().split('\0')
+          files=[]
+          for i in range(0,len(changes)-1,2):
+              status,name=changes[i:i+2]
+              if status=='D': continue
+              raw=pathlib.Path(name).read_bytes(); raw.decode('utf-8')
+              data=str(len(files))+'.txt'; (root/data).write_bytes(raw)
+              files.append({'path':name,'data':data,'sha256':hashlib.sha256(raw).hexdigest(),'gitSha':hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()})
+          manifest={'parent':os.environ['EXPECTED_HEAD'],'base':'380b81e950674fb88a064789d9bc4aa8b3c23323','tree':subprocess.check_output(['git','write-tree'],text=True).strip(),'files':files}
+          for dest in [root,pathlib.Path(os.environ['RUNNER_TEMP'],'response-evidence')]:
+              (dest/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
+          pathlib.Path(os.environ['RUNNER_TEMP'],'response-evidence','validated.patch').write_bytes(subprocess.check_output(['git','diff','--cached']))
+          print(json.dumps(manifest))
+          PY
+      - uses: actions/upload-artifact@v7
+        with:
+          name: response-verified-source
+          path: ${{ runner.temp }}/response-source/
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: response-evidence
+          path: ${{ runner.temp }}/response-evidence/
+          if-no-files-found: error
+          retention-days: 30
+  objects:
+    needs: verify
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: response-verified-source
+          path: data
+      - name: Store verified source bytes without executing them or updating refs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 - <<'PY'
+          import hashlib,json,os,pathlib,subprocess
+          allowed={'src/lib.rs','src/user_response.rs','src/app.rs','src/app/user_input.rs','src/app/user_response.rs','src/app_server.rs','src/app_server/user_response.rs','src/app_server/user_response/tests.rs','src/main.rs','src/runtime_user_response.rs','src/runtime_user_response/tests.rs','tests/user_input_intent.rs','tests/user_response_retention.rs','release/v1.4-plan.json','docs/implementation/v1.4-user-response-delivery.md'}
+          root=pathlib.Path('data'); m=json.loads((root/'manifest.json').read_text())
+          assert m['base']=='380b81e950674fb88a064789d9bc4aa8b3c23323'
+          assert os.environ['GITHUB_REPOSITORY']=='jiying2007/codex-tui'
+          assert {f['path'] for f in m['files']}==allowed
+          entries=[]
+          for i,f in enumerate(m['files']):
+              assert f['data']==str(i)+'.txt'
+              raw=(root/f['data']).read_bytes()
+              assert len(raw)<500000 and hashlib.sha256(raw).hexdigest()==f['sha256']
+              sha=hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest()
+              assert sha==f['gitSha']
+              p=subprocess.run(['gh','api','repos/jiying2007/codex-tui/git/blobs','--input','-'],input=json.dumps({'encoding':'utf-8','content':raw.decode('utf-8')}),text=True,capture_output=True,check=True)
+              assert json.loads(p.stdout)['sha']==sha
+              entries.append({'path':f['path'],'mode':'100644','type':'blob','sha':sha})
+          receipt={'parent':m['parent'],'tree':m['tree'],'entries':entries,'refUpdated':False}
+          pathlib.Path('receipt').mkdir(); pathlib.Path('receipt/candidate.json').write_text(json.dumps(receipt,indent=2)+'\n')
+          print('CANDIDATE_RECEIPT='+json.dumps(receipt))
+          PY
+      - uses: actions/upload-artifact@v7
+        with:
+          name: response-candidate-blobs
+          path: receipt/
+          retention-days: 30
