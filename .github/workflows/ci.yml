@@ -17,11 +17,11 @@ jobs:
     name: rust-1.88-msrv
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
         with:
           toolchain: 1.88.0
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - name: Check declared Rust 1.88 MSRV
         run: cargo check --locked --all-targets --all-features
 
@@ -42,11 +42,11 @@ jobs:
         run: |
           apt-get update -qq
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential pkg-config curl ca-certificates git python3 python-is-python3 binutils
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
         with:
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - name: Smoke release tools on Python 3.8
         if: runner.os == 'Linux'
         shell: bash
