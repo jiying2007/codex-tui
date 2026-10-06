@@ -9,7 +9,7 @@ import re
 HEX40 = re.compile(r"^[0-9a-fA-F]{40}$")
 RELEASE_WORKFLOW = ".github/workflows/release.yml"
 VERIFY_SCHEMA = "codex-tui/release-verification/v1"
-EVIDENCE_SCHEMA = "codex-tui/release-evidence/v4"
+EVIDENCE_SCHEMA = "codex-tui/release-evidence/v5"
 AUTOMATED_SCHEMA = "codex-tui/automated-qualification/v3"
 
 STABLE_BINDING_KEYS = (
