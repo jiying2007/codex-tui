@@ -57,6 +57,8 @@ This performs a non-publishing preflight: clean/main/origin SHA agreement, absen
 
 `publish=true` additionally creates the GitHub Release only after every prior job succeeds and, for stable, the prior dry-run qualification has been validated.
 
+Stable publication is recoverable before it becomes public. The workflow writes a unique ownership marker derived from the workflow run/attempt/source SHA into the draft body before asset upload. Any pre-publication failure, including an ambiguous client failure while creating the draft, may automatically delete the release and tag only when GitHub still reports all three exact conditions: the release is a draft, its tag still points to the workflow SHA, and its body still equals that workflow ownership marker. Otherwise cleanup refuses. Final publication replaces the marker with the reviewed release notes and clears draft status in the same `gh release edit` operation; after that point automatic deletion is disabled and failed postconditions are incident conditions.
+
 An existing tag is treated as a collision and publishing fails closed.
 
 ### Final release-notes transition
