@@ -33,12 +33,12 @@ jobs:
       CODEX_TUI_GIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
       CODEX_TUI_PTY_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - name: Verify checkout identity and probe negative fixtures
         run: |
           test "$(git rev-parse HEAD)" = "$CODEX_TUI_PTY_SOURCE_SHA"
@@ -48,7 +48,7 @@ jobs:
         env:
           CODEX_TUI_PTY_EVIDENCE_DIR: ${{ runner.temp }}/terminal-regression
         run: cargo test --locked --test terminal_restoration -- --nocapture
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: always()
         with:
           name: automated-pty-${{ github.event.pull_request.head.sha || github.sha }}
