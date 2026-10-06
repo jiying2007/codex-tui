@@ -824,7 +824,6 @@ mod tests {
 
         validate_evidence(&evidence, env!("CARGO_PKG_VERSION"), &sha())
             .expect("Linux Tier 1 evidence should satisfy stable retained evidence");
-
     }
 
     #[test]
