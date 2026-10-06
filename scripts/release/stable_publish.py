@@ -55,6 +55,46 @@ def github_repo_from_cargo(root: pathlib.Path) -> str:
     return match.group(1)
 
 
+
+def require_immutable_releases(root: pathlib.Path, github_repo: str) -> dict:
+    response = run(
+        [
+            "gh",
+            "api",
+            "--method",
+            "GET",
+            "-H",
+            "Accept: application/vnd.github+json",
+            "-H",
+            "X-GitHub-Api-Version: 2026-03-10",
+            f"repos/{github_repo}/immutable-releases",
+        ],
+        cwd=root,
+        check=False,
+    )
+    if response.returncode != 0:
+        detail = (response.stderr or response.stdout or "").strip()
+        suffix = f": {detail}" if detail else ""
+        raise SystemExit(
+            "stable publication requires GitHub immutable releases to be enabled "
+            "and verifiable for this repository; enable release immutability with "
+            "an administrator credential before publishing" + suffix
+        )
+    try:
+        payload = json.loads(response.stdout or "")
+    except json.JSONDecodeError as error:
+        raise SystemExit(
+            f"cannot decode GitHub immutable-releases status: {error}"
+        ) from error
+    if not isinstance(payload, dict) or payload.get("enabled") is not True:
+        raise SystemExit(
+            "stable publication requires GitHub immutable releases enabled=true"
+        )
+    return {
+        "enabled": True,
+        "enforcedByOwner": payload.get("enforced_by_owner") is True,
+    }
+
 def load_json(path: pathlib.Path, label: str) -> dict:
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -260,6 +300,8 @@ def main() -> int:
             f"{existing_tag.returncode}"
         )
 
+    immutable_releases = require_immutable_releases(root, github_repo)
+
     with tempfile.TemporaryDirectory(prefix="codex-tui-stable-publish-") as temp:
         temp_dir = pathlib.Path(temp)
         branch_json = temp_dir / "main-branch.json"
@@ -376,6 +418,7 @@ def main() -> int:
         "priorDryRun": "verified",
         "releasedChangelog": "verified",
         "tagCollision": False,
+        "immutableReleases": immutable_releases,
         "workflowInputs": workflow_inputs,
         "dispatchRequested": args.dispatch,
         "next": (
