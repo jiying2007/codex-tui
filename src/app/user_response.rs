@@ -1,6 +1,8 @@
 //! Bounded, transient attempts; explicit editor close never cancels accepted work.
 use super::{Action, AppState, Effect, InputMode, local_text};
-use crate::conversation::{InteractiveRequest, InteractiveRequestKind, InteractiveResolution, RpcRequestId};
+use crate::conversation::{
+    InteractiveRequest, InteractiveRequestKind, InteractiveResolution, RpcRequestId,
+};
 use crate::user_response::{UserResponseOutcome, UserResponseSubmission};
 use std::collections::BTreeMap;
 const LIMIT: usize = 64;
