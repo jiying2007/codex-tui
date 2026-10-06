@@ -818,6 +818,20 @@ mod tests {
 
         validate_evidence(&evidence, env!("CARGO_PKG_VERSION"), &sha())
             .expect("Linux Tier 1 evidence should satisfy stable retained evidence");
+
+        let mut malformed: serde_json::Value =
+            serde_json::from_slice(&fs::read(&evidence).expect("read evidence"))
+                .expect("decode evidence");
+        malformed["terminalRestoration"]["linux"]["receiptSha256"] =
+            serde_json::Value::String("c".repeat(63));
+        fs::write(
+            &evidence,
+            serde_json::to_vec_pretty(&malformed).expect("malformed evidence json"),
+        )
+        .expect("malformed evidence");
+        let error = validate_evidence(&evidence, env!("CARGO_PKG_VERSION"), &sha())
+            .expect_err("terminal receipt digest must be exact");
+        assert!(format!("{error:#}").contains("terminal receipt SHA-256"));
     }
 
     #[test]
