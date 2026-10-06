@@ -60,6 +60,9 @@ def main() -> int:
     ratchet=plan.get("moduleRatchet")
     if not isinstance(ratchet,dict) or not ratchet:
         raise SystemExit("v1.4 module ratchet is missing")
+    policy=plan.get("ratchetPolicy")
+    if not isinstance(policy,dict) or policy.get("completeSourceCoverage") is not True:
+        raise SystemExit("v1.4 module ratchet must require complete src/**/*.rs coverage")
     for path in ("src/app.rs","src/ui.rs","src/app_server.rs","src/main.rs","src/conversation.rs"):
         if not isinstance(ratchet.get(path),int) or ratchet[path] <= 0:
             raise SystemExit("v1.4 ratchet missing {}".format(path))
