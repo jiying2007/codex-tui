@@ -674,42 +674,45 @@ jobs:
             exit 1
           fi
 
-          DRAFT_CREATED=false
+          DRAFT_ATTEMPTED=false
           PUBLISHED=false
+          DRAFT_OWNER_MARKER="<!-- codex-tui-publish-run:${GITHUB_RUN_ID}:${GITHUB_RUN_ATTEMPT}:${GITHUB_SHA} -->"
           cleanup_unpublished_draft() {
             status=$?
             trap - EXIT
-            if [ "$DRAFT_CREATED" = "true" ] && [ "$PUBLISHED" != "true" ]; then
+            if [ "$DRAFT_ATTEMPTED" = "true" ] && [ "$PUBLISHED" != "true" ]; then
               CURRENT_DRAFT="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .draft 2>/dev/null || true)"
+              CURRENT_BODY="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .body 2>/dev/null || true)"
               CURRENT_TAG_SHA="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha 2>/dev/null || true)"
-              if [ "$CURRENT_DRAFT" = "true" ] && [ "$CURRENT_TAG_SHA" = "$GITHUB_SHA" ]; then
-                echo "cleaning exact unpublished stable draft and tag after pre-publication failure" >&2
+              if [ "$CURRENT_DRAFT" = "true" ] && [ "$CURRENT_TAG_SHA" = "$GITHUB_SHA" ] && [ "$CURRENT_BODY" = "$DRAFT_OWNER_MARKER" ]; then
+                echo "cleaning owned unpublished stable draft and tag after pre-publication failure" >&2
                 GH_TOKEN="$PUBLISH_TOKEN" gh release delete "$TAG" \
                   --repo "$GITHUB_REPOSITORY" \
                   --cleanup-tag \
                   --yes || echo "automatic draft/tag cleanup failed; manual cleanup required" >&2
               else
-                echo "refusing automatic draft cleanup because draft/tag identity is no longer exact" >&2
+                echo "refusing automatic draft cleanup because draft/tag/owner identity is not exact" >&2
               fi
             fi
             exit "$status"
           }
           trap cleanup_unpublished_draft EXIT
 
+          DRAFT_ATTEMPTED=true
           GH_TOKEN="$PUBLISH_TOKEN" gh release create "$TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "codex-tui $TAG" \
-            --notes-file bundle/RELEASE_NOTES.md \
+            --notes "$DRAFT_OWNER_MARKER" \
             --draft
-          DRAFT_CREATED=true
 
           GH_TOKEN="$PUBLISH_TOKEN" gh release upload "$TAG" bundle/* \
             --repo "$GITHUB_REPOSITORY"
 
           DRAFT_TAG_SHA="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha)"
-          if [ "$DRAFT_TAG_SHA" != "$GITHUB_SHA" ]; then
-            echo "draft release tag target drifted: expected=$GITHUB_SHA actual=$DRAFT_TAG_SHA" >&2
+          DRAFT_BODY="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .body)"
+          if [ "$DRAFT_TAG_SHA" != "$GITHUB_SHA" ] || [ "$DRAFT_BODY" != "$DRAFT_OWNER_MARKER" ]; then
+            echo "draft release identity drifted before publication" >&2
             exit 1
           fi
 
@@ -722,6 +725,7 @@ jobs:
 
           GH_TOKEN="$PUBLISH_TOKEN" gh release edit "$TAG" \
             --repo "$GITHUB_REPOSITORY" \
+            --notes-file bundle/RELEASE_NOTES.md \
             --draft=false
           PUBLISHED=true
           trap - EXIT
