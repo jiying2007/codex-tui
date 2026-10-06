@@ -1,0 +1,109 @@
+import hashlib
+import importlib.util
+import json
+from pathlib import Path
+import tempfile
+import unittest
+
+spec = importlib.util.spec_from_file_location(
+    "verify_release_assets",
+    Path(__file__).resolve().parent / "verify_release_assets.py",
+)
+v = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(v)
+
+
+def release_for(payloads, changes=None):
+    assets = []
+    for index, (name, content) in enumerate(sorted(payloads.items()), start=1):
+        assets.append(
+            {
+                "id": index,
+                "name": name,
+                "state": "uploaded",
+                "size": len(content),
+                "digest": "sha256:" + hashlib.sha256(content).hexdigest(),
+            }
+        )
+    release = {
+        "id": 10,
+        "tag_name": "v1.4.0",
+        "draft": True,
+        "prerelease": False,
+        "immutable": False,
+        "assets": assets,
+    }
+    release.update(changes or {})
+    return release
+
+
+class ReleaseAssetVerification(unittest.TestCase):
+    def bundle(self, root):
+        payloads = {
+            "codex-tui-linux.tar.gz": b"linux",
+            "codex-tui-windows.zip": b"windows",
+            "SHA256SUMS": b"manifest",
+        }
+        for name, content in payloads.items():
+            (root / name).write_bytes(content)
+        return payloads
+
+    def test_matching_remote_assets_pass(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            payloads = self.bundle(root)
+            rows = v.verify(release_for(payloads), root, "v1.4.0")
+            self.assertEqual([row["name"] for row in rows], sorted(payloads))
+
+    def test_missing_or_extra_remote_asset_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            payloads = self.bundle(root)
+            release = release_for(payloads)
+            release["assets"].pop()
+            with self.assertRaisesRegex(SystemExit, "asset set does not exactly match"):
+                v.verify(release, root, "v1.4.0")
+
+    def test_remote_digest_or_size_drift_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            payloads = self.bundle(root)
+            for field, value, message in (
+                ("digest", "sha256:" + "0" * 64, "SHA-256 mismatch"),
+                ("size", 999, "size mismatch"),
+            ):
+                release = release_for(payloads)
+                release["assets"][0][field] = value
+                with self.subTest(field=field):
+                    with self.assertRaisesRegex(SystemExit, message):
+                        v.verify(release, root, "v1.4.0")
+
+    def test_invalid_state_missing_digest_and_duplicate_name_are_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            payloads = self.bundle(root)
+            release = release_for(payloads)
+            release["assets"][0]["state"] = "new"
+            with self.assertRaisesRegex(SystemExit, "not uploaded"):
+                v.verify(release, root, "v1.4.0")
+
+            release = release_for(payloads)
+            release["assets"][0]["digest"] = None
+            with self.assertRaisesRegex(SystemExit, "digest is missing or invalid"):
+                v.verify(release, root, "v1.4.0")
+
+            release = release_for(payloads)
+            release["assets"].append(dict(release["assets"][0]))
+            with self.assertRaisesRegex(SystemExit, "duplicate asset name"):
+                v.verify(release, root, "v1.4.0")
+
+    def test_tag_mismatch_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            payloads = self.bundle(root)
+            with self.assertRaisesRegex(SystemExit, "tag mismatch"):
+                v.verify(release_for(payloads), root, "v9.9.9")
+
+
+if __name__ == "__main__":
+    unittest.main()
