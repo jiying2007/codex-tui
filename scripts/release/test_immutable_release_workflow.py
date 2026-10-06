@@ -107,6 +107,55 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
         self.assertIn("--notes-file bundle/RELEASE_NOTES.md", publish)
         self.assertIn("--draft=false", publish)
 
+    def test_preview_publish_recovers_only_owned_unpublished_draft_and_tag(self):
+        text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        publish = text.rsplit("\n  publish:\n", 1)[1]
+        preview = publish.split(
+            "- name: Publish preview GitHub Release", 1
+        )[1].split("- name:", 1)[0]
+
+        self.assertIn(
+            'git ls-remote --exit-code --tags origin "refs/tags/$TAG"',
+            preview,
+        )
+        self.assertIn("trap cleanup_unpublished_preview EXIT", preview)
+        self.assertIn("DRAFT_ATTEMPTED=false", preview)
+        self.assertIn("DRAFT_ATTEMPTED=true", preview)
+        self.assertIn(
+            'DRAFT_OWNER_MARKER="<!-- codex-tui-preview-publish-run:${GITHUB_RUN_ID}:${GITHUB_RUN_ATTEMPT}:${GITHUB_SHA} -->"',
+            preview,
+        )
+        self.assertIn('CURRENT_DRAFT=', preview)
+        self.assertIn('CURRENT_BODY=', preview)
+        self.assertIn('CURRENT_TAG_SHA=', preview)
+        self.assertIn(
+            '[ "$CURRENT_DRAFT" = "true" ] && [ "$CURRENT_TAG_SHA" = "$GITHUB_SHA" ] && [ "$CURRENT_BODY" = "$DRAFT_OWNER_MARKER" ]',
+            preview,
+        )
+        self.assertIn("--cleanup-tag", preview)
+        self.assertIn('gh release upload "$TAG" bundle/*', preview)
+
+        attempt = preview.index("DRAFT_ATTEMPTED=true")
+        create_start = preview.index('gh release create "$TAG"')
+        self.assertLess(attempt, create_start)
+        create = preview.split('gh release create "$TAG"', 1)[1].split(
+            'gh release upload "$TAG"', 1
+        )[0]
+        self.assertNotIn("bundle/*", create)
+        self.assertIn('--notes "$DRAFT_OWNER_MARKER"', create)
+        self.assertIn("--draft", create)
+        self.assertNotIn("--prerelease", create)
+
+        final_publish = preview.split('gh release edit "$TAG"', 1)[1].split(
+            "PUBLISHED=true", 1
+        )[0]
+        self.assertIn("--notes-file bundle/RELEASE_NOTES.md", final_publish)
+        self.assertIn("--prerelease", final_publish)
+        self.assertIn("--draft=false", final_publish)
+        self.assertIn("PUBLISHED_DRAFT", preview)
+        self.assertIn("PUBLISHED_PRERELEASE", preview)
+        self.assertIn("PUBLISHED_TAG_SHA", preview)
+
     def test_preview_publish_does_not_read_admin_secret(self):
         text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
         publish = text.rsplit("\n  publish:\n", 1)[1]
