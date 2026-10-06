@@ -719,6 +719,17 @@ jobs:
           gh release upload "$TAG" bundle/* \
             --repo "$GITHUB_REPOSITORY"
 
+          gh api \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" \
+            > "$RUNNER_TEMP/preview-draft-release.json"
+          python3 scripts/release/verify_release_assets.py \
+            --release-json "$RUNNER_TEMP/preview-draft-release.json" \
+            --bundle bundle \
+            --tag "$TAG" \
+            --phase draft \
+            --output "$RUNNER_TEMP/preview-draft-assets.json"
+
           DRAFT_TAG_SHA="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha)"
           DRAFT_BODY="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .body)"
           if [ "$DRAFT_TAG_SHA" != "$GITHUB_SHA" ] || [ "$DRAFT_BODY" != "$DRAFT_OWNER_MARKER" ]; then
@@ -749,6 +760,17 @@ jobs:
             echo "preview release tag target mismatch after publication: expected=$GITHUB_SHA actual=$PUBLISHED_TAG_SHA" >&2
             exit 1
           }
+
+          gh api \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" \
+            > "$RUNNER_TEMP/preview-published-release.json"
+          python3 scripts/release/verify_release_assets.py \
+            --release-json "$RUNNER_TEMP/preview-published-release.json" \
+            --bundle bundle \
+            --tag "$TAG" \
+            --phase published \
+            --output "$RUNNER_TEMP/preview-published-assets.json"
 
       - name: Publish immutable stable GitHub Release
         if: needs.gate.outputs.channel == 'stable'
@@ -818,6 +840,17 @@ jobs:
           GH_TOKEN="$PUBLISH_TOKEN" gh release upload "$TAG" bundle/* \
             --repo "$GITHUB_REPOSITORY"
 
+          GH_TOKEN="$PUBLISH_TOKEN" gh api \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" \
+            > "$RUNNER_TEMP/stable-draft-release.json"
+          python3 scripts/release/verify_release_assets.py \
+            --release-json "$RUNNER_TEMP/stable-draft-release.json" \
+            --bundle bundle \
+            --tag "$TAG" \
+            --phase draft \
+            --output "$RUNNER_TEMP/stable-draft-assets.json"
+
           DRAFT_TAG_SHA="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha)"
           DRAFT_BODY="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .body)"
           if [ "$DRAFT_TAG_SHA" != "$GITHUB_SHA" ] || [ "$DRAFT_BODY" != "$DRAFT_OWNER_MARKER" ]; then
@@ -859,3 +892,22 @@ jobs:
             echo "stable release tag target mismatch after publication: expected=$GITHUB_SHA actual=$PUBLISHED_TAG_SHA" >&2
             exit 1
           }
+
+          GH_TOKEN="$PUBLISH_TOKEN" gh api \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" \
+            > "$RUNNER_TEMP/stable-published-release.json"
+          python3 scripts/release/verify_release_assets.py \
+            --release-json "$RUNNER_TEMP/stable-published-release.json" \
+            --bundle bundle \
+            --tag "$TAG" \
+            --phase published \
+            --output "$RUNNER_TEMP/stable-published-assets.json"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: success()
+        with:
+          name: release-asset-integrity
+          path: ${{ runner.temp }}/*-assets.json
+          if-no-files-found: error
+          retention-days: 90
