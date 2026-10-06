@@ -18,14 +18,52 @@ from check_linux_abi import inspect_binary
 from archive_identity import validate_metadata
 
 
-def host_triple() -> str:
+def verbose_tool_identity(command: list[str], name: str) -> dict:
     proc = subprocess.run(
-        ["rustc", "-vV"], check=True, stdout=subprocess.PIPE, text=True
+        command,
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
     )
-    for line in proc.stdout.splitlines():
-        if line.startswith("host: "):
-            return line.split(": ", 1)[1].strip()
-    raise RuntimeError("rustc -vV did not report host triple")
+    lines = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+    if not lines or not lines[0].startswith(name + " "):
+        raise RuntimeError(f"{name} verbose version did not report an expected header")
+
+    fields = {}
+    for line in lines[1:]:
+        key, separator, value = line.partition(": ")
+        if separator:
+            fields[key] = value.strip()
+
+    required = ("release", "commit-hash", "commit-date", "host")
+    missing = [key for key in required if not fields.get(key)]
+    if missing:
+        raise RuntimeError(
+            f"{name} verbose version is missing fields: {', '.join(missing)}"
+        )
+
+    identity = {
+        "version": lines[0],
+        "release": fields["release"],
+        "commitHash": fields["commit-hash"],
+        "commitDate": fields["commit-date"],
+        "host": fields["host"],
+    }
+    if name == "rustc" and fields.get("LLVM version"):
+        identity["llvmVersion"] = fields["LLVM version"]
+    return identity
+
+
+def build_toolchain_identity() -> tuple[str, dict]:
+    rustc = verbose_tool_identity(["rustc", "-vV"], "rustc")
+    cargo = verbose_tool_identity(["cargo", "-Vv"], "cargo")
+    if rustc["host"] != cargo["host"]:
+        raise RuntimeError(
+            "rustc/cargo host mismatch: "
+            f"{rustc['host']!r} != {cargo['host']!r}"
+        )
+    return rustc["host"], {"rustc": rustc, "cargo": cargo}
 
 
 def copy_file(source: pathlib.Path, destination: pathlib.Path, executable: bool = False) -> None:
@@ -108,7 +146,7 @@ def main() -> int:
     if not criteria.is_file():
         raise SystemExit(f"release criteria file is missing: {criteria}")
 
-    triple = host_triple()
+    triple, build_toolchain = build_toolchain_identity()
     package_name = f"codex-tui-{args.version}-{triple}"
     output_dir = pathlib.Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -134,12 +172,13 @@ def main() -> int:
         copy_file(project_license, stage / "LICENSE")
 
         metadata = {
-            "schema": "codex-tui/release-artifact/v1",
+            "schema": "codex-tui/release-artifact/v2",
             "version": args.version,
             "tag": args.tag,
             "commitSha": args.commit,
             "platform": args.platform,
             "hostTriple": triple,
+            "buildToolchain": build_toolchain,
             "binary": binary_name,
             "binarySha256": hashlib.sha256((stage / binary_name).read_bytes()).hexdigest(),
             "license": license_spdx,
