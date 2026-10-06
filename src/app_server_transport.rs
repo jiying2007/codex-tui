@@ -15,8 +15,8 @@ use tokio_tungstenite::{
     tungstenite::{
         Message,
         client::IntoClientRequest,
-        protocol::WebSocketConfig,
         http::{HeaderValue, header::AUTHORIZATION},
+        protocol::WebSocketConfig,
     },
 };
 
@@ -95,11 +95,11 @@ impl AppServerTransport {
                     connect_async_with_config(request, Some(websocket_config()), false)
                         .await
                         .with_context(|| {
-                    format!(
-                        "connect App Server target {:?} at {}",
-                        target.name,
-                        target.diagnostic_endpoint()
-                    )
+                            format!(
+                                "connect App Server target {:?} at {}",
+                                target.name,
+                                target.diagnostic_endpoint()
+                            )
                         })?;
                 Transport::WebSocket {
                     stream: Box::new(stream),
@@ -111,10 +111,13 @@ impl AppServerTransport {
                     let socket = UnixStream::connect(path).await.with_context(|| {
                         format!("connect App Server Unix socket {}", path.display())
                     })?;
-                    let (stream, _) =
-                        client_async_with_config("ws://localhost/rpc", socket, Some(websocket_config()))
-                            .await
-                            .context("perform App Server Unix-socket WebSocket handshake")?;
+                    let (stream, _) = client_async_with_config(
+                        "ws://localhost/rpc",
+                        socket,
+                        Some(websocket_config()),
+                    )
+                    .await
+                    .context("perform App Server Unix-socket WebSocket handshake")?;
                     Transport::UnixSocket {
                         stream: Box::new(stream),
                     }
@@ -185,7 +188,11 @@ where
     loop {
         let available = reader.fill_buf().await.context("read App Server stdio")?;
         if available.is_empty() {
-            return if bytes.is_empty() { Ok(None) } else { Ok(Some(bytes)) };
+            return if bytes.is_empty() {
+                Ok(None)
+            } else {
+                Ok(Some(bytes))
+            };
         }
         let newline = available.iter().position(|byte| *byte == b'\n');
         let take = newline.map_or(available.len(), |index| index + 1);
@@ -229,7 +236,11 @@ where
                     .map(Some);
             }
             Message::Binary(bytes) => {
-                ensure_message_size(bytes.len(), APP_SERVER_MAX_MESSAGE_BYTES, "WebSocket binary")?;
+                ensure_message_size(
+                    bytes.len(),
+                    APP_SERVER_MAX_MESSAGE_BYTES,
+                    "WebSocket binary",
+                )?;
                 return serde_json::from_slice(bytes.as_ref())
                     .context("decode App Server WebSocket binary JSON")
                     .map(Some);
@@ -260,14 +271,16 @@ mod tests {
     use serde_json::json;
     use tokio_tungstenite::accept_async;
 
-
     #[tokio::test]
     async fn stdio_reader_enforces_limit_before_unbounded_line_growth() {
         use tokio::io::{AsyncWriteExt, BufReader, duplex};
 
         let (client, mut server) = duplex(128);
         let writer = tokio::spawn(async move {
-            server.write_all(b"{\"value\":\"abcdefghijklmnopqrstuvwxyz\"}\n").await.unwrap();
+            server
+                .write_all(b"{\"value\":\"abcdefghijklmnopqrstuvwxyz\"}\n")
+                .await
+                .unwrap();
         });
         let mut reader = BufReader::new(client);
         let error = read_bounded_line(&mut reader, 16)
@@ -286,7 +299,10 @@ mod tests {
             server.write_all(b"\n  \r\n{\"id\":1}\n").await.unwrap();
         });
         let mut reader = BufReader::new(client);
-        assert_eq!(read_stdio_json(&mut reader).await.unwrap(), Some(json!({"id":1})));
+        assert_eq!(
+            read_stdio_json(&mut reader).await.unwrap(),
+            Some(json!({"id":1}))
+        );
         writer.await.unwrap();
     }
 
@@ -295,8 +311,12 @@ mod tests {
         let config = websocket_config();
         assert_eq!(config.max_message_size, Some(APP_SERVER_MAX_MESSAGE_BYTES));
         assert_eq!(config.max_frame_size, Some(APP_SERVER_MAX_FRAME_BYTES));
-        ensure_message_size(APP_SERVER_MAX_MESSAGE_BYTES, APP_SERVER_MAX_MESSAGE_BYTES, "fixture")
-            .unwrap();
+        ensure_message_size(
+            APP_SERVER_MAX_MESSAGE_BYTES,
+            APP_SERVER_MAX_MESSAGE_BYTES,
+            "fixture",
+        )
+        .unwrap();
         assert!(
             ensure_message_size(
                 APP_SERVER_MAX_MESSAGE_BYTES + 1,
