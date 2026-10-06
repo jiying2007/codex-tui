@@ -615,6 +615,7 @@ jobs:
       group: codex-tui-release-publish
       cancel-in-progress: false
     permissions:
+      actions: read
       contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -625,6 +626,41 @@ jobs:
         with:
           name: release-bundle
           path: bundle
+
+      - name: Verify stable package bytes match qualified dry-run
+        if: needs.gate.outputs.channel == 'stable'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STABLE_QUALIFICATION_RUN: ${{ inputs.stable_qualification_run }}
+        run: |
+          set -euo pipefail
+          [[ "$STABLE_QUALIFICATION_RUN" =~ ^[1-9][0-9]*$ ]] || {
+            echo "stable publication requires a nonzero stable_qualification_run" >&2
+            exit 1
+          }
+          PRIOR_BUNDLE="$RUNNER_TEMP/prior-stable-release-bundle"
+          rm -rf "$PRIOR_BUNDLE"
+          gh run download "$STABLE_QUALIFICATION_RUN" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name release-bundle \
+            --dir "$PRIOR_BUNDLE"
+          python3 scripts/release/compare_release_archives.py \
+            --prior-dir "$PRIOR_BUNDLE" \
+            --current-dir bundle \
+            --version "${{ needs.gate.outputs.version }}" \
+            --source-sha "$GITHUB_SHA" \
+            --prior-run "$STABLE_QUALIFICATION_RUN" \
+            --current-run "$GITHUB_RUN_ID" \
+            --output "$RUNNER_TEMP/stable-package-equivalence.json"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: needs.gate.outputs.channel == 'stable'
+        with:
+          name: stable-package-equivalence
+          path: ${{ runner.temp }}/stable-package-equivalence.json
+          if-no-files-found: error
+          retention-days: 90
 
       - name: Publish preview GitHub Release
         if: needs.gate.outputs.channel == 'preview'
