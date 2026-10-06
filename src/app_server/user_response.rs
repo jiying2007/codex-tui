@@ -2,6 +2,9 @@
 use super::*;
 use crate::user_response::{UserResponseOutcome, UserResponseSubmission};
 use std::future::Future;
+#[cfg(test)]
+mod approval_tests;
+mod payload;
 pub(super) async fn send(
     rpc: &mut RpcSession,
     pending: &mut BTreeMap<RpcRequestId, PendingServerRequest>,
@@ -10,7 +13,7 @@ pub(super) async fn send(
 ) -> UserResponseOutcome {
     if queued_invalidates(&rpc.queued_messages, &submission) {
         return UserResponseOutcome::NotSent(
-            "newer request or thread event awaits processing; answer retained".into(),
+            "newer request or thread event awaits processing; input retained".into(),
         );
     }
     send_with(
@@ -35,39 +38,24 @@ where
 {
     let id = &submission.request.request_id;
     let Some(current) = pending.get(id) else {
-        return UserResponseOutcome::NotSent("input request is no longer pending".into());
+        return UserResponseOutcome::NotSent("interactive request is no longer pending".into());
     };
     let message = json!({"id": id.to_value(), "method": current.method, "params": current.params});
     if parse_interactive_request(&message).ok().flatten().as_ref() != Some(&submission.request)
         || !threads.contains_key(&submission.request.thread_id.0)
     {
         return UserResponseOutcome::NotSent(
-            "input request changed or its thread disappeared".into(),
+            "interactive request changed or its thread disappeared".into(),
         );
     }
-    let crate::conversation::InteractiveRequestKind::UserInput { questions } =
-        &submission.request.kind
-    else {
-        return UserResponseOutcome::NotSent("not a user-input form".into());
+    let response = match payload::response(&submission, current) {
+        Ok(response) => response,
+        Err(error) => return UserResponseOutcome::NotSent(error.to_string()),
     };
-    if submission.request.validate_user_input().is_err()
-        || submission.answers.len() != questions.len()
-        || questions
-            .iter()
-            .any(|q| submission.answers.get(&q.id).is_none_or(|a| a.is_empty()))
-    {
-        return UserResponseOutcome::NotSent("answer keys do not match the observed form".into());
-    }
-    let answers = submission
-        .answers
-        .into_iter()
-        .map(|(id, answers)| (id, json!({"answers": answers})))
-        .collect::<serde_json::Map<_, _>>();
-    let response = json!({"id": id.to_value(), "result": {"answers": answers}});
     // From this point a partial write is possible. Never leave the old request
     // retryable merely because flush/timeout failed; local UI also fences retries.
     pending.remove(id);
-    match with_rpc_deadline("user-input response", deadline, write(response)).await {
+    match with_rpc_deadline("interactive response", deadline, write(response)).await {
         Ok(()) => UserResponseOutcome::Written,
         Err(error) => UserResponseOutcome::Unknown(error.to_string()),
     }

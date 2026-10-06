@@ -1,19 +1,19 @@
 //! Local response bookkeeping. A completed transport write is not server acknowledgement.
-use crate::conversation::InteractiveRequest;
+use crate::conversation::{InteractiveRequest, InteractiveResolution};
 use std::collections::BTreeMap;
 use std::fmt;
 #[derive(Clone, PartialEq, Eq)]
 pub struct UserResponseSubmission {
     pub ticket: u64,
     pub request: InteractiveRequest,
-    pub answers: BTreeMap<String, Vec<String>>,
+    pub resolution: InteractiveResolution,
 }
 impl fmt::Debug for UserResponseSubmission {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("UserResponseSubmission")
             .field("ticket", &self.ticket)
             .field("request_id", &self.request.request_id)
-            .field("answers", &"[redacted]")
+            .field("resolution", &"[redacted]")
             .finish()
     }
 }

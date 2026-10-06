@@ -2617,10 +2617,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
                     _ => !matches!(resolution, InteractiveResolution::UserInput(_)),
                 };
                 if allowed {
-                    return vec![Effect::ResolveInteractive {
-                        request_id: request.request_id,
-                        resolution,
-                    }];
+                    return state.begin_interactive_response(request, resolution);
                 }
             }
         }
@@ -5185,7 +5182,10 @@ mod tests {
                 thread_id: thread_id.clone(),
                 turn_id: "turn-1".into(),
                 item_id: "item-1".into(),
-                kind: InteractiveRequestKind::FileChangeApproval { reason: None },
+                kind: InteractiveRequestKind::FileChangeApproval {
+                    reason: None,
+                    context: serde_json::Value::Null.into(),
+                },
             }),
         );
         assert_eq!(app.input_mode, InputMode::Normal);
@@ -5206,7 +5206,10 @@ mod tests {
                     thread_id: thread_id.clone(),
                     turn_id: "turn-1".into(),
                     item_id: format!("item-{request_id}"),
-                    kind: InteractiveRequestKind::FileChangeApproval { reason: None },
+                    kind: InteractiveRequestKind::FileChangeApproval {
+                        reason: None,
+                        context: serde_json::Value::Null.into(),
+                    },
                 }),
             );
         }
@@ -5251,7 +5254,10 @@ mod tests {
                 thread_id: first.clone(),
                 turn_id: "turn-1".into(),
                 item_id: "item-1".into(),
-                kind: InteractiveRequestKind::FileChangeApproval { reason: None },
+                kind: InteractiveRequestKind::FileChangeApproval {
+                    reason: None,
+                    context: serde_json::Value::Null.into(),
+                },
             }),
         );
         reduce(
@@ -5261,7 +5267,10 @@ mod tests {
                 thread_id: second.clone(),
                 turn_id: "turn-2".into(),
                 item_id: "item-2".into(),
-                kind: InteractiveRequestKind::FileChangeApproval { reason: None },
+                kind: InteractiveRequestKind::FileChangeApproval {
+                    reason: None,
+                    context: serde_json::Value::Null.into(),
+                },
             }),
         );
 
@@ -5283,6 +5292,7 @@ mod tests {
                 turn_id: "turn-1".into(),
                 item_id: "item-1".into(),
                 kind: InteractiveRequestKind::CommandApproval {
+                    context: serde_json::Value::Null.into(),
                     command: "cargo test".into(),
                     cwd: "/repo".into(),
                     reason: None,

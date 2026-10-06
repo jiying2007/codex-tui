@@ -232,7 +232,12 @@
     "src/app_server/user_response.rs": 120,
     "src/app_server/user_response/tests.rs": 200,
     "src/runtime_user_response.rs": 80,
-    "src/runtime_user_response/tests.rs": 240
+    "src/runtime_user_response/tests.rs": 240,
+    "src/app/user_response/tests.rs": 100,
+    "src/app_server/user_response/approval_tests.rs": 300,
+    "src/app_server/user_response/payload.rs": 110,
+    "src/conversation/approval.rs": 60,
+    "src/runtime_user_response/approval_tests.rs": 220
   },
   "ratchetPolicy": {
     "baseline": "inherit v1.3 Search & Multi-Target ceilings; feature work may only add bounded module-specific ceilings",

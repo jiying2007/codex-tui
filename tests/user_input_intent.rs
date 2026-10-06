@@ -91,7 +91,12 @@ fn changed_request_thread_refuses_old_answers() {
 }
 #[test]
 fn replacement_approval_preserves_unsent_answer_without_responding() {
-    refuse_changed(|r| r.kind = InteractiveRequestKind::FileChangeApproval { reason: None });
+    refuse_changed(|r| {
+        r.kind = InteractiveRequestKind::FileChangeApproval {
+            reason: None,
+            context: serde_json::Value::Null.into(),
+        }
+    });
 }
 #[test]
 fn replaced_secret_flag_cannot_unmask_existing_answer() {
@@ -163,7 +168,12 @@ fn duplicate_delivery_preserves_collected_answers_and_sends_once() {
     assert_eq!(request_id, &request.request_id);
     assert_eq!(answers["q1"], vec!["first-secret"]);
     assert_eq!(answers["q2"], vec!["second-answer"]);
-    let submission = app.user_response_submission(request_id, answers).unwrap();
+    let submission = app
+        .user_response_submission(
+            request_id,
+            &InteractiveResolution::UserInput(answers.clone()),
+        )
+        .unwrap();
     assert_eq!(app.input_mode, InputMode::UserInput);
     app.finish_user_response(
         submission.ticket,
