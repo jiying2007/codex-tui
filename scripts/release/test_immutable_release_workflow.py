@@ -35,7 +35,7 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
 
     def test_stable_publish_revalidates_live_state_after_packaging(self):
         text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
-        publish = text.split("  publish:\n", 1)[1]
+        publish = text.rsplit("\n  publish:\n", 1)[1]
         stable = publish.split(
             "- name: Publish immutable stable GitHub Release", 1
         )[1]
@@ -65,7 +65,7 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
 
     def test_preview_publish_does_not_read_admin_secret(self):
         text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
-        publish = text.split("  publish:\n", 1)[1]
+        publish = text.rsplit("\n  publish:\n", 1)[1]
         preview = publish.split(
             "- name: Publish preview GitHub Release", 1
         )[1].split("- name:", 1)[0]
