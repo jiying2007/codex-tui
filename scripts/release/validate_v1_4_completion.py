@@ -199,8 +199,8 @@ def main() -> int:
 
     if completion.get("stableAuthority") != "release/v1.4-criteria.json":
         raise SystemExit("completion stable authority must be release/v1.4-criteria.json")
-    if "release-evidence/v4" not in str(completion.get("stableEvidencePolicy", "")):
-        raise SystemExit("completion must retain release-evidence/v4 stable authority")
+    if "release-evidence/v5" not in str(completion.get("stableEvidencePolicy", "")):
+        raise SystemExit("completion must retain release-evidence/v5 stable authority")
 
     dev = criteria.get("developmentQualification")
     if not isinstance(dev, dict):
