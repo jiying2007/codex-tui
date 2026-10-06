@@ -678,6 +678,7 @@ jobs:
           PUBLISHED=false
           cleanup_unpublished_draft() {
             status=$?
+            trap - EXIT
             if [ "$DRAFT_CREATED" = "true" ] && [ "$PUBLISHED" != "true" ]; then
               CURRENT_DRAFT="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .draft 2>/dev/null || true)"
               CURRENT_TAG_SHA="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha 2>/dev/null || true)"
