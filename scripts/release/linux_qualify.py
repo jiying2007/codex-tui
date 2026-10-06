@@ -367,6 +367,7 @@ def main() -> int:
         cwd=root,
     )
     write_text_lf(perf_path, perf.stdout)
+    performance_report_sha256 = hashlib.sha256(perf_path.read_bytes()).hexdigest()
     performance = json.loads(perf.stdout)
     if performance.get("schema") != PERFORMANCE_SCHEMA:
         raise SystemExit("performance schema mismatch")
@@ -427,6 +428,8 @@ def main() -> int:
             terminal["observedAt"],
             "--performance-source-sha",
             commit_sha,
+            "--performance-report-sha256",
+            performance_report_sha256,
             "--performance-iterations",
             str(performance["iterations"]),
             "--performance-p95-ms",
@@ -476,7 +479,7 @@ def main() -> int:
         "linux_compat_observed_at": compat_summary["observedAt"],
         "linux_terminal_sha256": terminal_sha256,
         "linux_terminal_observed_at": terminal["observedAt"],
-        "performance_source_sha": commit_sha,
+        "performance_report_sha256": performance_report_sha256,
         "performance_iterations": str(performance["iterations"]),
         "performance_p95_ms": str(performance["p95Ms"]),
         "performance_p99_ms": str(performance["p99Ms"]),
@@ -502,6 +505,7 @@ def main() -> int:
         "supportBundleSnapshot": str(support_snapshot),
         "automatedQualification": str(automated_path),
         "performanceReport": str(perf_path),
+        "performanceReportSha256": performance_report_sha256,
         "performanceDiagnostics": {
             "iterations": performance["iterations"],
             "p95Ms": performance["p95Ms"],
