@@ -129,9 +129,9 @@ def stable_publish_inputs(evidence: dict, stable_qualification_run: int) -> dict
             linux_terminal.get("observedAt"),
             "Linux terminal observed-at",
         ),
-        "performance_source_sha": nonempty(
-            performance.get("sourceSha"),
-            "performance source SHA",
+        "performance_report_sha256": nonempty(
+            performance.get("reportSha256"),
+            "performance report SHA-256",
         ),
         "performance_iterations": nonempty(
             performance.get("iterations"),
