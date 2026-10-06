@@ -627,38 +627,47 @@ jobs:
           name: release-bundle
           path: bundle
 
-      - name: Verify stable package bytes match qualified dry-run
+      - name: Promote exact qualified stable dry-run bundle
         if: needs.gate.outputs.channel == 'stable'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           STABLE_QUALIFICATION_RUN: ${{ inputs.stable_qualification_run }}
+          VERSION: ${{ needs.gate.outputs.version }}
+          TAG: ${{ needs.gate.outputs.tag }}
         run: |
           set -euo pipefail
           [[ "$STABLE_QUALIFICATION_RUN" =~ ^[1-9][0-9]*$ ]] || {
             echo "stable publication requires a nonzero stable_qualification_run" >&2
             exit 1
           }
+
+          CURRENT_BUNDLE="$RUNNER_TEMP/current-publication-run-bundle"
           PRIOR_BUNDLE="$RUNNER_TEMP/prior-stable-release-bundle"
-          rm -rf "$PRIOR_BUNDLE"
+          rm -rf "$CURRENT_BUNDLE" "$PRIOR_BUNDLE"
+          mv bundle "$CURRENT_BUNDLE"
+
           gh run download "$STABLE_QUALIFICATION_RUN" \
             --repo "$GITHUB_REPOSITORY" \
             --name release-bundle \
             --dir "$PRIOR_BUNDLE"
-          python3 scripts/release/compare_release_archives.py \
-            --prior-dir "$PRIOR_BUNDLE" \
-            --current-dir bundle \
-            --version "${{ needs.gate.outputs.version }}" \
+
+          python3 scripts/release/promote_release_bundle.py \
+            --bundle "$PRIOR_BUNDLE" \
+            --version "$VERSION" \
+            --tag "$TAG" \
             --source-sha "$GITHUB_SHA" \
-            --prior-run "$STABLE_QUALIFICATION_RUN" \
-            --current-run "$GITHUB_RUN_ID" \
-            --output "$RUNNER_TEMP/stable-package-equivalence.json"
+            --qualification-run "$STABLE_QUALIFICATION_RUN" \
+            --publication-run "$GITHUB_RUN_ID" \
+            --output "$RUNNER_TEMP/stable-bundle-promotion.json"
+
+          mv "$PRIOR_BUNDLE" bundle
 
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: needs.gate.outputs.channel == 'stable'
         with:
-          name: stable-package-equivalence
-          path: ${{ runner.temp }}/stable-package-equivalence.json
+          name: stable-bundle-promotion
+          path: ${{ runner.temp }}/stable-bundle-promotion.json
           if-no-files-found: error
           retention-days: 90
 
