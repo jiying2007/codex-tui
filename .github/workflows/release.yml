@@ -803,8 +803,18 @@ jobs:
           PUBLISHED=true
           trap - EXIT
 
+          PUBLISHED_DRAFT="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .draft)"
+          PUBLISHED_PRERELEASE="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .prerelease)"
           PUBLISHED_IMMUTABLE="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .immutable)"
           PUBLISHED_TAG_SHA="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha)"
+          test "$PUBLISHED_DRAFT" = "false" || {
+            echo "stable release remained draft after publication; manual incident response required" >&2
+            exit 1
+          }
+          test "$PUBLISHED_PRERELEASE" = "false" || {
+            echo "stable release was unexpectedly marked prerelease; manual incident response required" >&2
+            exit 1
+          }
           test "$PUBLISHED_IMMUTABLE" = "true" || {
             echo "stable release was published without immutable=true; manual incident response required" >&2
             exit 1
