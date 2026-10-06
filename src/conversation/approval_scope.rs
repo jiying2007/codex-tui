@@ -16,19 +16,25 @@ impl ApprovalContext {
                 continue;
             };
             if let Some(network) = scopes.get("network").filter(|value| !value.is_null()) {
-                let detailed = ["host", "hosts"]
-                    .into_iter()
-                    .any(|key| collect_strings(&mut out, "network-host", network.get(key)));
+                let mut detailed = false;
+                for key in ["host", "hosts"] {
+                    detailed |= collect_strings(&mut out, "network-host", network.get(key));
+                }
                 if !detailed {
                     out.insert(("network".into(), "requested".into()));
                 }
             }
             if let Some(filesystem) = scopes.get("fileSystem").filter(|value| !value.is_null()) {
-                let detailed = filesystem.as_object().is_some_and(|object| {
-                    ["read", "write"].into_iter().any(|key| {
-                        collect_strings(&mut out, &format!("filesystem-{key}"), object.get(key))
-                    })
-                });
+                let mut detailed = false;
+                if let Some(object) = filesystem.as_object() {
+                    for key in ["read", "write"] {
+                        detailed |= collect_strings(
+                            &mut out,
+                            &format!("filesystem-{key}"),
+                            object.get(key),
+                        );
+                    }
+                }
                 if !detailed {
                     out.insert(("filesystem".into(), "requested".into()));
                 }
