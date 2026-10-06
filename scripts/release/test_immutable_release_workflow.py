@@ -59,7 +59,13 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
         self.assertIn("--notes-file bundle/RELEASE_NOTES.md", stable)
         self.assertIn("--draft=false", stable)
         self.assertIn("releases/tags/$TAG", stable)
+        self.assertIn("--jq .draft", stable)
+        self.assertIn("--jq .prerelease", stable)
         self.assertIn("--jq .immutable", stable)
+        self.assertIn("PUBLISHED_DRAFT", stable)
+        self.assertIn("PUBLISHED_PRERELEASE", stable)
+        self.assertIn('test "$PUBLISHED_DRAFT" = "false"', stable)
+        self.assertIn('test "$PUBLISHED_PRERELEASE" = "false"', stable)
         self.assertIn("PUBLISHED_TAG_SHA", stable)
 
     def test_stable_publish_cleans_only_exact_unpublished_draft_and_tag(self):
