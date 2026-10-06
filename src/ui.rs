@@ -1,5 +1,5 @@
 use crate::app::{AppState, ContextChoice, InputMode, View};
-use crate::conversation::{InteractiveRequest, InteractiveRequestKind};
+use crate::conversation::{ApprovalContext, InteractiveRequest, InteractiveRequestKind};
 use crate::domain::{AttentionReason, CwdLocality, RuntimeStatus, display_cwd};
 use crate::forge::ForgeFreshness;
 use crate::goal::GoalStatus;
@@ -1997,6 +1997,44 @@ fn render_help(frame: &mut Frame<'_>, language: UiLanguage) {
     );
 }
 
+fn approval_scope_label(kind: &str, language: UiLanguage) -> &'static str {
+    match (kind, language) {
+        ("grant-root", UiLanguage::SimplifiedChinese) => "授权根目录",
+        ("network", UiLanguage::SimplifiedChinese) => "网络权限",
+        ("network-host", UiLanguage::SimplifiedChinese) => "网络主机",
+        ("filesystem", UiLanguage::SimplifiedChinese) => "文件权限",
+        ("filesystem-read", UiLanguage::SimplifiedChinese) => "文件读取",
+        ("filesystem-write", UiLanguage::SimplifiedChinese) => "文件写入",
+        ("permission-category", UiLanguage::SimplifiedChinese) => "其他权限类别",
+        ("grant-root", _) => "grant root",
+        ("network", _) => "network",
+        ("network-host", _) => "network host",
+        ("filesystem", _) => "filesystem",
+        ("filesystem-read", _) => "filesystem read",
+        ("filesystem-write", _) => "filesystem write",
+        _ => "other permission category",
+    }
+}
+
+fn append_approval_scope(
+    lines: &mut Vec<Line<'static>>,
+    context: &ApprovalContext,
+    language: UiLanguage,
+) {
+    for (kind, value) in context.visible_scope() {
+        let value = sanitize_inline(&value);
+        let value = if kind == "permission-category" {
+            format!("{value} · {}", tr_language(language, "details hidden", "详情已隐藏"))
+        } else {
+            value
+        };
+        lines.push(Line::from(format!(
+            "{}: {value}",
+            approval_scope_label(&kind, language)
+        )));
+    }
+}
+
 fn interactive_request_lines(
     request: &InteractiveRequest,
     language: UiLanguage,
@@ -2004,31 +2042,34 @@ fn interactive_request_lines(
     let mut lines = vec![Line::from(tr_language(language, "NEEDS YOU", "需要你处理"))];
     match &request.kind {
         InteractiveRequestKind::CommandApproval {
+            context,
             command,
             cwd,
             reason,
-            ..
         } => {
             lines.push(Line::from(format!(
-                "{}: {command}",
-                tr_language(language, "Command approval", "命令审批")
+                "{}: {}",
+                tr_language(language, "Command approval", "命令审批"),
+                sanitize_inline(command)
             )));
             if !cwd.is_empty() {
-                lines.push(Line::from(format!("cwd: {cwd}")));
+                lines.push(Line::from(format!("cwd: {}", sanitize_inline(cwd))));
             }
             if let Some(reason) = reason {
                 lines.push(Line::from(format!(
-                    "{}: {reason}",
-                    tr_language(language, "reason", "原因")
+                    "{}: {}",
+                    tr_language(language, "reason", "原因"),
+                    sanitize_inline(reason)
                 )));
             }
+            append_approval_scope(&mut lines, context, language);
             lines.push(Line::from(tr_language(
                 language,
                 "y accept · n decline · c cancel",
                 "y 接受 · n 拒绝 · c 取消",
             )));
         }
-        InteractiveRequestKind::FileChangeApproval { reason, .. } => {
+        InteractiveRequestKind::FileChangeApproval { context, reason } => {
             lines.push(Line::from(tr_language(
                 language,
                 "File change approval",
@@ -2036,10 +2077,12 @@ fn interactive_request_lines(
             )));
             if let Some(reason) = reason {
                 lines.push(Line::from(format!(
-                    "{}: {reason}",
-                    tr_language(language, "reason", "原因")
+                    "{}: {}",
+                    tr_language(language, "reason", "原因"),
+                    sanitize_inline(reason)
                 )));
             }
+            append_approval_scope(&mut lines, context, language);
             lines.push(Line::from(tr_language(
                 language,
                 "y accept · n decline · c cancel",
@@ -2047,10 +2090,10 @@ fn interactive_request_lines(
             )));
         }
         InteractiveRequestKind::PermissionsApproval {
+            context,
             reason,
             network_requested,
             filesystem_requested,
-            ..
         } => {
             if language.is_simplified_chinese() {
                 lines.push(Line::from(format!(
@@ -2065,10 +2108,12 @@ fn interactive_request_lines(
             }
             if let Some(reason) = reason {
                 lines.push(Line::from(format!(
-                    "{}: {reason}",
-                    tr_language(language, "reason", "原因")
+                    "{}: {}",
+                    tr_language(language, "reason", "原因"),
+                    sanitize_inline(reason)
                 )));
             }
+            append_approval_scope(&mut lines, context, language);
             lines.push(Line::from(tr_language(
                 language,
                 "y grant for this turn · n/c decline",
@@ -2090,13 +2135,19 @@ fn interactive_request_lines(
             if let Some(question) = questions.first() {
                 lines.push(Line::from(format!(
                     "{}: {}",
-                    question.header, question.question
+                    sanitize_inline(&question.header),
+                    sanitize_inline(&question.question)
                 )));
                 if !question.options.is_empty() {
                     lines.push(Line::from(format!(
                         "{}: {}",
                         tr_language(language, "options", "选项"),
-                        question.options.join(", ")
+                        question
+                            .options
+                            .iter()
+                            .map(|option| sanitize_inline(option))
+                            .collect::<Vec<_>>()
+                            .join(", ")
                     )));
                 }
             }
