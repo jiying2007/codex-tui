@@ -158,7 +158,7 @@ jobs:
           assert receipt["authority"] == "hosted-development-only"
           PY
 
-          python scripts/release/create_evidence.py             --output "$OUT/evidence.json"             --compat-schema codex-tui/compat/v2             --version 1.0.0             --commit 0123456789abcdef0123456789abcdef01234567             --canonical-ci-run 1             --automated-qualification "$OUT/automated-qualification.json"             --linux-source-sha 0123456789abcdef0123456789abcdef01234567             --linux-compat-sha256 "$(printf 'a%.0s' {1..64})"             --linux-compat-observed-at 2026-09-30T00:00:00Z             --linux-terminal-sha256 "$(printf 'c%.0s' {1..64})"             --linux-terminal-observed-at 2026-09-30T00:00:00Z             --performance-source-sha 0123456789abcdef0123456789abcdef01234567             --performance-iterations 200             --performance-p95-ms 1             --performance-p99-ms 2             --performance-source ci-python38             --performance-observed-at 2026-09-30T00:00:00Z
+          python scripts/release/create_evidence.py             --output "$OUT/evidence.json"             --compat-schema codex-tui/compat/v2             --version 1.0.0             --commit 0123456789abcdef0123456789abcdef01234567             --canonical-ci-run 1             --automated-qualification "$OUT/automated-qualification.json"             --linux-source-sha 0123456789abcdef0123456789abcdef01234567             --linux-compat-sha256 "$(printf 'a%.0s' {1..64})"             --linux-compat-observed-at 2026-09-30T00:00:00Z             --linux-terminal-sha256 "$(printf 'c%.0s' {1..64})"             --linux-terminal-observed-at 2026-09-30T00:00:00Z             --performance-source-sha 0123456789abcdef0123456789abcdef01234567             --performance-report-sha256 "$(printf 'd%.0s' {1..64})"             --performance-iterations 200             --performance-p95-ms 1             --performance-p99-ms 2             --performance-source ci-python38             --performance-observed-at 2026-09-30T00:00:00Z
 
           PYTHONPATH=scripts/release python - "$OUT/evidence.json" <<'PY'
           import json
@@ -174,7 +174,8 @@ jobs:
           assert inputs["stable_qualification_run"] == "77"
           assert inputs["linux_compat_sha256"] == "a" * 64
           assert inputs["linux_terminal_sha256"] == "c" * 64
-          assert inputs["performance_source_sha"] == "0123456789abcdef0123456789abcdef01234567"
+          assert inputs["performance_report_sha256"] == "d" * 64
+          assert "performance_source_sha" not in inputs
           assert "linux_source_sha" not in inputs
           assert len(inputs) == 14
           assert stable_publish.STABLE_VERSION.fullmatch("1.4.0")
@@ -266,7 +267,7 @@ jobs:
             exit 1
           fi
 
-          if python scripts/release/create_evidence.py             --output "$OUT/evidence-mismatch.json"             --compat-schema codex-tui/compat/v2             --version 1.0.0             --commit 0123456789abcdef0123456789abcdef01234567             --canonical-ci-run 1             --automated-qualification "$OUT/automated-qualification.json"             --linux-source-sha 1123456789abcdef0123456789abcdef01234567             --linux-compat-sha256 "$(printf 'a%.0s' {1..64})"             --linux-compat-observed-at 2026-09-30T00:00:00Z             --linux-terminal-sha256 "$(printf 'c%.0s' {1..64})"             --linux-terminal-observed-at 2026-09-30T00:00:00Z             --performance-source-sha 0123456789abcdef0123456789abcdef01234567             --performance-iterations 200             --performance-p95-ms 1             --performance-p99-ms 2             --performance-source ci-python38             --performance-observed-at 2026-09-30T00:00:00Z; then
+          if python scripts/release/create_evidence.py             --output "$OUT/evidence-mismatch.json"             --compat-schema codex-tui/compat/v2             --version 1.0.0             --commit 0123456789abcdef0123456789abcdef01234567             --canonical-ci-run 1             --automated-qualification "$OUT/automated-qualification.json"             --linux-source-sha 1123456789abcdef0123456789abcdef01234567             --linux-compat-sha256 "$(printf 'a%.0s' {1..64})"             --linux-compat-observed-at 2026-09-30T00:00:00Z             --linux-terminal-sha256 "$(printf 'c%.0s' {1..64})"             --linux-terminal-observed-at 2026-09-30T00:00:00Z             --performance-source-sha 0123456789abcdef0123456789abcdef01234567             --performance-report-sha256 "$(printf 'd%.0s' {1..64})"             --performance-iterations 200             --performance-p95-ms 1             --performance-p99-ms 2             --performance-source ci-python38             --performance-observed-at 2026-09-30T00:00:00Z; then
             echo "expected cross-SHA real evidence to fail" >&2
             exit 1
           fi
