@@ -16,7 +16,7 @@ HEX40 = re.compile(r"^[0-9a-fA-F]{40}$")
 STABLE_VERSION = re.compile(
     r"^[1-9][0-9]*\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)$"
 )
-RELEASE_EVIDENCE_SCHEMA = "codex-tui/release-evidence/v4"
+RELEASE_EVIDENCE_SCHEMA = "codex-tui/release-evidence/v5"
 PRIMARY_PLATFORM = "linux"
 SECONDARY_PLATFORMS = ("macos", "windows")
 
@@ -121,17 +121,17 @@ def stable_publish_inputs(evidence: dict, stable_qualification_run: int) -> dict
             linux_compat.get("observedAt"),
             "Linux compatibility observed-at",
         ),
-        "linux_terminal": nonempty(
-            linux_terminal.get("terminal"),
-            "Linux terminal",
+        "linux_terminal_sha256": nonempty(
+            linux_terminal.get("receiptSha256"),
+            "Linux terminal receipt SHA-256",
         ),
         "linux_terminal_observed_at": nonempty(
             linux_terminal.get("observedAt"),
             "Linux terminal observed-at",
         ),
-        "performance_source_sha": nonempty(
-            performance.get("sourceSha"),
-            "performance source SHA",
+        "performance_report_sha256": nonempty(
+            performance.get("reportSha256"),
+            "performance report SHA-256",
         ),
         "performance_iterations": nonempty(
             performance.get("iterations"),
@@ -177,9 +177,9 @@ def stable_publish_inputs(evidence: dict, stable_qualification_run: int) -> dict
             compat.get("observedAt"),
             f"{platform} compatibility observed-at",
         )
-        inputs[f"{platform}_terminal"] = nonempty(
-            tty.get("terminal"),
-            f"{platform} terminal",
+        inputs[f"{platform}_terminal_sha256"] = nonempty(
+            tty.get("receiptSha256"),
+            f"{platform} terminal receipt SHA-256",
         )
         inputs[f"{platform}_terminal_observed_at"] = nonempty(
             tty.get("observedAt"),

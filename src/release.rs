@@ -9,7 +9,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 pub const RELEASE_VERIFY_SCHEMA: &str = "codex-tui/release-verification/v1";
-pub const RELEASE_EVIDENCE_SCHEMA: &str = "codex-tui/release-evidence/v4";
+pub const RELEASE_EVIDENCE_SCHEMA: &str = "codex-tui/release-evidence/v5";
 pub const AUTOMATED_QUALIFICATION_SCHEMA: &str = "codex-tui/automated-qualification/v3";
 pub const STABLE_CRITERIA_SCHEMA: &str = "codex-tui/stable-criteria/v2";
 pub const PRIMARY_STABLE_PLATFORM: &str = "linux";
@@ -38,7 +38,7 @@ impl ReleaseChannel {
 pub struct PlatformTerminalReceipt {
     pub source_sha: String,
     pub status: String,
-    pub terminal: String,
+    pub receipt_sha256: String,
     pub observed_at: String,
     #[serde(default)]
     pub notes: Option<String>,
@@ -90,6 +90,7 @@ pub struct PerformanceReceipt {
     pub platform: String,
     pub fixture: String,
     pub source_sha: String,
+    pub report_sha256: String,
     pub iterations: usize,
     pub p95_ms: f64,
     pub p99_ms: f64,
@@ -322,6 +323,10 @@ pub fn validate_evidence(path: &Path, version: &str, commit_sha: &str) -> Result
         "stable performance evidence source SHA must match the release commit"
     );
     anyhow::ensure!(
+        valid_sha256(&receipt.performance.report_sha256),
+        "stable performance report SHA-256 must be 64 hexadecimal characters"
+    );
+    anyhow::ensure!(
         receipt.performance.iterations >= RETAINED_MIN_ITERATIONS,
         "stable performance evidence requires at least {RETAINED_MIN_ITERATIONS} iterations"
     );
@@ -447,8 +452,8 @@ fn validate_platform_evidence(
         "terminal restoration evidence source SHA for {platform} must match the release commit"
     );
     anyhow::ensure!(
-        !terminal.terminal.trim().is_empty(),
-        "terminal identifier for {platform} must not be empty"
+        valid_sha256(&terminal.receipt_sha256),
+        "terminal receipt SHA-256 for {platform} must be 64 hexadecimal characters"
     );
     anyhow::ensure!(
         !terminal.observed_at.trim().is_empty(),
@@ -795,7 +800,7 @@ mod tests {
                     PlatformTerminalReceipt {
                         source_sha: sha(),
                         status: "pass".into(),
-                        terminal: "xterm".into(),
+                        receipt_sha256: "c".repeat(64),
                         observed_at: "2026-09-30T00:00:00Z".into(),
                         notes: None,
                     },
@@ -803,6 +808,7 @@ mod tests {
                 automated_qualification: automated_receipt(),
                 performance: PerformanceReceipt {
                     source_sha: sha(),
+                    report_sha256: "d".repeat(64),
                     platform: PRIMARY_STABLE_PLATFORM.into(),
                     fixture: PERFORMANCE_FIXTURE.into(),
                     iterations: RETAINED_MIN_ITERATIONS,
@@ -862,7 +868,7 @@ mod tests {
                     PlatformTerminalReceipt {
                         source_sha: sha(),
                         status: "pass".into(),
-                        terminal: "xterm".into(),
+                        receipt_sha256: "c".repeat(64),
                         observed_at: "2026-09-30T00:00:00Z".into(),
                         notes: None,
                     },
@@ -870,6 +876,7 @@ mod tests {
                 automated_qualification: automated_receipt(),
                 performance: PerformanceReceipt {
                     source_sha: sha(),
+                    report_sha256: "d".repeat(64),
                     platform: PRIMARY_STABLE_PLATFORM.into(),
                     fixture: PERFORMANCE_FIXTURE.into(),
                     iterations: RETAINED_MIN_ITERATIONS,
@@ -919,7 +926,7 @@ mod tests {
                     PlatformTerminalReceipt {
                         source_sha: sha(),
                         status: "pass".into(),
-                        terminal: "xterm".into(),
+                        receipt_sha256: "c".repeat(64),
                         observed_at: "2026-10-01T00:00:00Z".into(),
                         notes: None,
                     },
@@ -927,6 +934,7 @@ mod tests {
                 automated_qualification: automated_receipt(),
                 performance: PerformanceReceipt {
                     source_sha: sha(),
+                    report_sha256: "d".repeat(64),
                     platform: PRIMARY_STABLE_PLATFORM.into(),
                     fixture: PERFORMANCE_FIXTURE.into(),
                     iterations: RETAINED_MIN_ITERATIONS,
@@ -958,10 +966,10 @@ mod tests {
     fn stable_evidence_rejects_too_few_performance_samples() {
         let root = repo_with_lock_and_changelog();
         let evidence = root.path().join("evidence.json");
-        let terminal = |name: &str| PlatformTerminalReceipt {
+        let terminal = || PlatformTerminalReceipt {
             source_sha: sha(),
             status: "pass".into(),
-            terminal: name.into(),
+            receipt_sha256: "c".repeat(64),
             observed_at: "2026-09-30T00:00:00Z".into(),
             notes: None,
         };
@@ -985,10 +993,11 @@ mod tests {
                     .map(|platform| (*platform).to_string())
                     .collect(),
                 compatibility: BTreeMap::from([("linux".into(), compatibility('a'))]),
-                terminal_restoration: BTreeMap::from([("linux".into(), terminal("xterm"))]),
+                terminal_restoration: BTreeMap::from([("linux".into(), terminal())]),
                 automated_qualification: automated_receipt(),
                 performance: PerformanceReceipt {
                     source_sha: sha(),
+                    report_sha256: "d".repeat(64),
                     platform: PRIMARY_STABLE_PLATFORM.into(),
                     fixture: PERFORMANCE_FIXTURE.into(),
                     iterations: RETAINED_MIN_ITERATIONS - 1,

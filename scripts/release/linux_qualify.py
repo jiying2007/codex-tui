@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import pathlib
@@ -366,6 +367,7 @@ def main() -> int:
         cwd=root,
     )
     write_text_lf(perf_path, perf.stdout)
+    performance_report_sha256 = hashlib.sha256(perf_path.read_bytes()).hexdigest()
     performance = json.loads(perf.stdout)
     if performance.get("schema") != PERFORMANCE_SCHEMA:
         raise SystemExit("performance schema mismatch")
@@ -395,6 +397,7 @@ def main() -> int:
         raise SystemExit("terminal receipt terminal name is empty")
     if not str(terminal.get("observedAt", "")).strip():
         raise SystemExit("terminal receipt observedAt is empty")
+    terminal_sha256 = hashlib.sha256(terminal_path.read_bytes()).hexdigest()
 
     evidence_path = output_dir / "release-evidence-linux.json"
     run(
@@ -419,12 +422,14 @@ def main() -> int:
             compat_summary["reportSha256"],
             "--linux-compat-observed-at",
             compat_summary["observedAt"],
-            "--linux-terminal",
-            terminal["terminal"],
+            "--linux-terminal-sha256",
+            terminal_sha256,
             "--linux-terminal-observed-at",
             terminal["observedAt"],
             "--performance-source-sha",
             commit_sha,
+            "--performance-report-sha256",
+            performance_report_sha256,
             "--performance-iterations",
             str(performance["iterations"]),
             "--performance-p95-ms",
@@ -472,9 +477,9 @@ def main() -> int:
         "canonical_ci_run": str(canonical_ci_run),
         "linux_compat_sha256": compat_summary["reportSha256"],
         "linux_compat_observed_at": compat_summary["observedAt"],
-        "linux_terminal": terminal["terminal"],
+        "linux_terminal_sha256": terminal_sha256,
         "linux_terminal_observed_at": terminal["observedAt"],
-        "performance_source_sha": commit_sha,
+        "performance_report_sha256": performance_report_sha256,
         "performance_iterations": str(performance["iterations"]),
         "performance_p95_ms": str(performance["p95Ms"]),
         "performance_p99_ms": str(performance["p99Ms"]),
@@ -491,6 +496,7 @@ def main() -> int:
         "compatReportSha256": compat_summary["reportSha256"],
         "realEvidenceSourceSha": commit_sha,
         "terminalReceipt": str(terminal_path),
+        "terminalReceiptSha256": terminal_sha256,
         "failureMatrix": str(failure_matrix_path),
         "failureEvidenceTestList": str(failure_test_list),
         "scaleEvidence": str(scale_path),
@@ -499,6 +505,7 @@ def main() -> int:
         "supportBundleSnapshot": str(support_snapshot),
         "automatedQualification": str(automated_path),
         "performanceReport": str(perf_path),
+        "performanceReportSha256": performance_report_sha256,
         "performanceDiagnostics": {
             "iterations": performance["iterations"],
             "p95Ms": performance["p95Ms"],

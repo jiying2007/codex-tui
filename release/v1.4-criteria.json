@@ -111,12 +111,12 @@
     {
       "id": "terminal-restoration",
       "authority": "retained real interaction smoke",
-      "evidence": "Linux real controlling-TTY PASS receipt is required and its sourceSha must equal the exact release commit; this evidence cannot be synthesized by repository CI"
+      "evidence": "Linux real controlling-TTY PASS receipt is required; its sourceSha must equal the exact release commit and its exact JSON bytes are SHA-256 bound into release-evidence/v5; this evidence cannot be synthesized by repository CI"
     },
     {
       "id": "performance-diagnostics",
       "authority": "retained benchmark run",
-      "evidence": "Linux resident-planning-10k >= 200 iterations with finite p95/p99 and sourceSha equal to the exact release commit; exact-SHA Board/Thread 10k render diagnostics are retained separately for comparison, not as hosted-runner latency thresholds"
+      "evidence": "Linux retained resident-planning-10k JSON is SHA-256 bound into release-evidence/v5, has sourceSha equal to the exact release commit, and contains >=200 iterations with finite p95/p99; exact-SHA Board/Thread 10k render diagnostics are retained separately for comparison, not as hosted-runner latency thresholds"
     },
     {
       "id": "archive-smoke",
@@ -160,7 +160,7 @@
   "realEnvironmentEvidence": {
     "schema": "codex-tui/real-environment-evidence/v1",
     "exactSourceSha": true,
-    "policy": "compatibility and terminal-restoration receipts must each carry sourceSha equal to the exact release commit; old candidate receipts cannot be replayed onto a new SHA"
+    "policy": "compatibility and terminal-restoration receipts must each carry sourceSha equal to the exact release commit; compatibility report bytes and terminal-restoration receipt bytes are SHA-256 bound into release evidence; old candidate receipts cannot be replayed or silently substituted"
   },
   "developmentQualification": {
     "schema": "codex-tui/development-qualification/v1",
@@ -173,7 +173,7 @@
       "protocol-replay",
       "scope-completion"
     ],
-    "policy": "every main SHA retains repository-hosted development qualification including the validated v1.4 scope-completion manifest; stable publication still requires release-evidence/v4 and real-environment evidence",
+    "policy": "every main SHA retains repository-hosted development qualification including the validated v1.4 scope-completion manifest; stable publication still requires release-evidence/v5 and real-environment evidence",
     "scopeCompletionSchema": "codex-tui/v1.4-completion/v1"
   },
   "deferredUntilEvidence": [
