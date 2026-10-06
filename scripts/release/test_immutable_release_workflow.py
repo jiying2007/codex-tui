@@ -55,10 +55,9 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
             stable,
         )
         self.assertIn("--draft", stable)
-        self.assertIn(
-            'gh release edit "$TAG" \\\n            --repo "$GITHUB_REPOSITORY" \\\n            --draft=false',
-            stable,
-        )
+        self.assertIn('gh release edit "$TAG"', stable)
+        self.assertIn("--notes-file bundle/RELEASE_NOTES.md", stable)
+        self.assertIn("--draft=false", stable)
         self.assertIn("releases/tags/$TAG", stable)
         self.assertIn("--jq .immutable", stable)
         self.assertIn("PUBLISHED_TAG_SHA", stable)
@@ -73,22 +72,37 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
         self.assertIn("group: codex-tui-release-publish", publish)
         self.assertIn("cancel-in-progress: false", publish)
         self.assertIn("trap cleanup_unpublished_draft EXIT", stable)
+        self.assertIn("DRAFT_ATTEMPTED=false", stable)
+        self.assertIn("DRAFT_ATTEMPTED=true", stable)
+        self.assertIn("DRAFT_OWNER_MARKER=", stable)
         self.assertIn('CURRENT_DRAFT=', stable)
+        self.assertIn('CURRENT_BODY=', stable)
         self.assertIn('CURRENT_TAG_SHA=', stable)
         self.assertIn(
-            '[ "$CURRENT_DRAFT" = "true" ] && [ "$CURRENT_TAG_SHA" = "$GITHUB_SHA" ]',
+            '[ "$CURRENT_DRAFT" = "true" ] && [ "$CURRENT_TAG_SHA" = "$GITHUB_SHA" ] && [ "$CURRENT_BODY" = "$DRAFT_OWNER_MARKER" ]',
             stable,
         )
         self.assertIn("--cleanup-tag", stable)
         self.assertIn('gh release upload "$TAG" bundle/*', stable)
-        self.assertIn("DRAFT_CREATED=true", stable)
         self.assertIn("PUBLISHED=true", stable)
         self.assertIn("trap - EXIT", stable)
 
+        attempt = stable.index("DRAFT_ATTEMPTED=true")
+        create_start = stable.index('gh release create "$TAG"')
+        self.assertLess(attempt, create_start)
+
         create = stable.split('gh release create "$TAG"', 1)[1].split(
-            "DRAFT_CREATED=true", 1
+            'gh release upload "$TAG"', 1
         )[0]
         self.assertNotIn("bundle/*", create)
+        self.assertIn('--notes "$DRAFT_OWNER_MARKER"', create)
+        self.assertNotIn("--notes-file bundle/RELEASE_NOTES.md", create)
+
+        publish = stable.split('gh release edit "$TAG"', 1)[1].split(
+            "PUBLISHED=true", 1
+        )[0]
+        self.assertIn("--notes-file bundle/RELEASE_NOTES.md", publish)
+        self.assertIn("--draft=false", publish)
 
     def test_preview_publish_does_not_read_admin_secret(self):
         text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
