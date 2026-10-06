@@ -188,16 +188,16 @@ where
     loop {
         let available = reader.fill_buf().await.context("read App Server stdio")?;
         if available.is_empty() {
-            return if bytes.is_empty() {
-                Ok(None)
-            } else {
-                Ok(Some(bytes))
-            };
+            if bytes.is_empty() {
+                return Ok(None);
+            }
+            ensure_message_size(bytes.len(), limit, "stdio")?;
+            return Ok(Some(bytes));
         }
         let newline = available.iter().position(|byte| *byte == b'\n');
         let take = newline.map_or(available.len(), |index| index + 1);
         anyhow::ensure!(
-            bytes.len().saturating_add(take) <= limit.saturating_add(1),
+            bytes.len().saturating_add(take) <= limit.saturating_add(2),
             "App Server stdio JSON exceeds {limit} byte limit"
         );
         bytes.extend_from_slice(&available[..take]);
@@ -206,8 +206,13 @@ where
             while matches!(bytes.last(), Some(b'\n' | b'\r')) {
                 bytes.pop();
             }
+            ensure_message_size(bytes.len(), limit, "stdio")?;
             return Ok(Some(bytes));
         }
+        anyhow::ensure!(
+            bytes.len() <= limit.saturating_add(1),
+            "App Server stdio JSON exceeds {limit} byte limit"
+        );
     }
 }
 
@@ -287,6 +292,22 @@ mod tests {
             .await
             .expect_err("oversized line must fail");
         assert!(error.to_string().contains("16 byte limit"));
+        writer.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn stdio_reader_allows_exact_limit_with_crlf() {
+        use tokio::io::{AsyncWriteExt, BufReader, duplex};
+
+        let (client, mut server) = duplex(128);
+        let writer = tokio::spawn(async move {
+            server.write_all(b"1234567890abcdef\r\n").await.unwrap();
+        });
+        let mut reader = BufReader::new(client);
+        assert_eq!(
+            read_bounded_line(&mut reader, 16).await.unwrap(),
+            Some(b"1234567890abcdef".to_vec())
+        );
         writer.await.unwrap();
     }
 
