@@ -25,7 +25,7 @@ def nonempty(value: str, label: str) -> str:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", required=True)
-    parser.add_argument("--schema", default="codex-tui/release-evidence/v4")
+    parser.add_argument("--schema", default="codex-tui/release-evidence/v5")
     parser.add_argument("--compat-schema", required=True)
     parser.add_argument("--version", required=True)
     parser.add_argument("--commit", required=True)
@@ -44,7 +44,7 @@ def main() -> int:
         parser.add_argument(
             f"--{platform}-compat-observed-at", required=required, default=""
         )
-        parser.add_argument(f"--{platform}-terminal", required=required, default="")
+        parser.add_argument(f"--{platform}-terminal-sha256", required=required, default="")
         parser.add_argument(
             f"--{platform}-terminal-observed-at", required=required, default=""
         )
@@ -61,14 +61,14 @@ def main() -> int:
         source_sha = getattr(args, f"{platform}_source_sha").strip().lower()
         compat_sha = getattr(args, f"{platform}_compat_sha256").strip()
         compat_at = getattr(args, f"{platform}_compat_observed_at").strip()
-        terminal_name = getattr(args, f"{platform}_terminal").strip()
+        terminal_sha = getattr(args, f"{platform}_terminal_sha256").strip()
         terminal_at = getattr(args, f"{platform}_terminal_observed_at").strip()
 
         supplied = [
             bool(source_sha),
             bool(compat_sha),
             bool(compat_at),
-            bool(terminal_name),
+            bool(terminal_sha),
             bool(terminal_at),
         ]
         if platform != PRIMARY_PLATFORM and not any(supplied):
@@ -91,10 +91,14 @@ def main() -> int:
             "reportSha256": compat_sha.lower(),
             "observedAt": nonempty(compat_at, f"{platform} compatibility observed-at"),
         }
+        if not HEX64.fullmatch(terminal_sha):
+            raise SystemExit(
+                f"{platform} terminal receipt SHA-256 must be 64 hex characters"
+            )
         terminal[platform] = {
             "status": "pass",
             "sourceSha": source_sha,
-            "terminal": nonempty(terminal_name, f"{platform} terminal"),
+            "receiptSha256": terminal_sha.lower(),
             "observedAt": nonempty(terminal_at, f"{platform} terminal observed-at"),
         }
 
