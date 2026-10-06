@@ -33,6 +33,47 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
             step,
         )
 
+    def test_stable_publish_revalidates_live_state_after_packaging(self):
+        text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        publish = text.split("  publish:\n", 1)[1]
+        stable = publish.split(
+            "- name: Publish immutable stable GitHub Release", 1
+        )[1]
+
+        self.assertIn("actions/checkout@v7", publish)
+        self.assertIn("validate_release_branch_state.py", stable)
+        self.assertIn(
+            'git ls-remote --exit-code --tags origin "refs/tags/$TAG"',
+            stable,
+        )
+        self.assertIn(
+            "secrets.CODEX_TUI_ADMIN_READ_TOKEN",
+            stable,
+        )
+        self.assertIn(
+            "python3 scripts/release/immutable_releases.py",
+            stable,
+        )
+        self.assertIn("--draft", stable)
+        self.assertIn(
+            'gh release edit "$TAG" \\\n            --repo "$GITHUB_REPOSITORY" \\\n            --draft=false',
+            stable,
+        )
+        self.assertIn("releases/tags/$TAG", stable)
+        self.assertIn("--jq .immutable", stable)
+        self.assertIn("PUBLISHED_TAG_SHA", stable)
+
+    def test_preview_publish_does_not_read_admin_secret(self):
+        text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        publish = text.split("  publish:\n", 1)[1]
+        preview = publish.split(
+            "- name: Publish preview GitHub Release", 1
+        )[1].split("- name:", 1)[0]
+
+        self.assertIn("--prerelease", preview)
+        self.assertNotIn("CODEX_TUI_ADMIN_READ_TOKEN", preview)
+        self.assertNotIn("ADMIN_READ_TOKEN", preview)
+
 
 if __name__ == "__main__":
     unittest.main()
