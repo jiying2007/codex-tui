@@ -2024,7 +2024,10 @@ fn append_approval_scope(
     for (kind, value) in context.visible_scope() {
         let value = sanitize_inline(&value);
         let value = if kind == "permission-category" {
-            format!("{value} · {}", tr_language(language, "details hidden", "详情已隐藏"))
+            format!(
+                "{value} · {}",
+                tr_language(language, "details hidden", "详情已隐藏")
+            )
         } else {
             value
         };
