@@ -2006,12 +2006,14 @@ fn approval_scope_label(kind: &str, language: UiLanguage) -> &'static str {
         ("filesystem-read", UiLanguage::SimplifiedChinese) => "文件读取",
         ("filesystem-write", UiLanguage::SimplifiedChinese) => "文件写入",
         ("permission-category", UiLanguage::SimplifiedChinese) => "其他权限类别",
+        ("permission-detail", UiLanguage::SimplifiedChinese) => "未识别权限字段",
         ("grant-root", _) => "grant root",
         ("network", _) => "network",
         ("network-host", _) => "network host",
         ("filesystem", _) => "filesystem",
         ("filesystem-read", _) => "filesystem read",
         ("filesystem-write", _) => "filesystem write",
+        ("permission-detail", _) => "unrecognized permission field",
         _ => "other permission category",
     }
 }
@@ -2023,7 +2025,7 @@ fn append_approval_scope(
 ) {
     for (kind, value) in context.visible_scope() {
         let value = sanitize_inline(&value);
-        let value = if kind == "permission-category" {
+        let value = if matches!(kind.as_str(), "permission-category" | "permission-detail") {
             format!(
                 "{value} · {}",
                 tr_language(language, "details hidden", "详情已隐藏")

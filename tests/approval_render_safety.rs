@@ -36,8 +36,8 @@ fn base(method: &str) -> serde_json::Value {
 fn approval_context_exposes_known_scope_but_not_unknown_values() {
     let mut wire = base("item/permissions/requestApproval");
     wire["params"]["permissions"] = json!({
-        "network":{"host":"api.example.com"},
-        "fileSystem":{"read":["/safe/read"],"write":["/safe/write"]},
+        "network":{"host":"api.example.com","token":"NETWORK_SECRET"},
+        "fileSystem":{"read":["/safe/read"],"write":["/safe/write"],"credential":"FS_SECRET"},
         "mystery":{"token":"DO_NOT_RENDER"}
     });
     wire["params"]["grantRoot"] = json!("/workspace");
@@ -55,6 +55,10 @@ fn approval_context_exposes_known_scope_but_not_unknown_values() {
     assert!(scope.contains(&("grant-root".into(), "/workspace".into())));
     assert!(scope.contains(&("permission-category".into(), "mystery".into())));
     assert!(scope.contains(&("permission-category".into(), "camera".into())));
+    assert!(scope.contains(&("permission-detail".into(), "network.token".into())));
+    assert!(scope.contains(&("permission-detail".into(), "fileSystem.credential".into())));
+    assert!(!format!("{scope:?}").contains("NETWORK_SECRET"));
+    assert!(!format!("{scope:?}").contains("FS_SECRET"));
     assert!(!format!("{scope:?}").contains("DO_NOT_RENDER"));
     assert!(!format!("{scope:?}").contains("HIDDEN"));
 }

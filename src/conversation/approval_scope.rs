@@ -20,6 +20,14 @@ impl ApprovalContext {
                 for key in ["host", "hosts"] {
                     detailed |= collect_strings(&mut out, "network-host", network.get(key));
                 }
+                if let Some(object) = network.as_object() {
+                    for key in object
+                        .keys()
+                        .filter(|key| !matches!(key.as_str(), "host" | "hosts" | "enabled"))
+                    {
+                        out.insert(("permission-detail".into(), format!("network.{key}")));
+                    }
+                }
                 if !detailed {
                     out.insert(("network".into(), "requested".into()));
                 }
@@ -33,6 +41,14 @@ impl ApprovalContext {
                             &format!("filesystem-{key}"),
                             object.get(key),
                         );
+                    }
+                }
+                if let Some(object) = filesystem.as_object() {
+                    for key in object
+                        .keys()
+                        .filter(|key| !matches!(key.as_str(), "read" | "write"))
+                    {
+                        out.insert(("permission-detail".into(), format!("fileSystem.{key}")));
                     }
                 }
                 if !detailed {
