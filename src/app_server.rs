@@ -215,7 +215,7 @@ pub struct StartedRegistry {
 
 #[derive(Clone, Debug)]
 pub enum BackendCommand {
-    SubmitUserInput(crate::user_response::UserResponseSubmission),
+    SubmitUserResponse(crate::user_response::UserResponseSubmission),
     LoadConversation(ThreadId),
     StopWatchingConversation(ThreadId),
     LoadOlderConversation {
@@ -232,10 +232,6 @@ pub enum BackendCommand {
     InterruptTurn {
         thread_id: ThreadId,
         turn_id: String,
-    },
-    ResolveInteractive {
-        request_id: RpcRequestId,
-        resolution: InteractiveResolution,
     },
     RefreshGoal(ThreadId),
     SetGoal {
@@ -320,11 +316,11 @@ impl RegistryHandle {
     pub fn response_actor_finished(&self) -> bool {
         self.task.is_finished()
     }
-    pub fn submit_user_input(
+    pub fn submit_user_response(
         &self,
         submission: crate::user_response::UserResponseSubmission,
     ) -> Result<()> {
-        self.send_command(BackendCommand::SubmitUserInput(submission))
+        self.send_command(BackendCommand::SubmitUserResponse(submission))
     }
     pub fn try_recv(&mut self) -> Option<BackendSnapshot> {
         try_recv_latest_snapshot(&mut self.rx)
@@ -372,17 +368,6 @@ impl RegistryHandle {
 
     pub fn interrupt_turn(&self, thread_id: ThreadId, turn_id: String) -> Result<()> {
         self.send_command(BackendCommand::InterruptTurn { thread_id, turn_id })
-    }
-
-    pub fn resolve_interactive(
-        &self,
-        request_id: RpcRequestId,
-        resolution: InteractiveResolution,
-    ) -> Result<()> {
-        self.send_command(BackendCommand::ResolveInteractive {
-            request_id,
-            resolution,
-        })
     }
 
     pub fn refresh_goal(&self, thread_id: ThreadId) -> Result<()> {
@@ -876,7 +861,7 @@ async fn run_registry_actor(
                     return;
                 };
                 match command {
-                    BackendCommand::SubmitUserInput(submission) => {
+                    BackendCommand::SubmitUserResponse(submission) => {
                         let ticket = submission.ticket;
                         let outcome = user_response::send(&mut rpc, &mut pending_requests, &threads, submission).await;
                         let unknown = matches!(&outcome, crate::user_response::UserResponseOutcome::Unknown(_));
@@ -994,30 +979,6 @@ async fn run_registry_actor(
                                     },
                                 )
                                 .await;
-                            }
-                        }
-                    }
-                    BackendCommand::ResolveInteractive {
-                        request_id,
-                        resolution,
-                    } => {
-                        match resolve_interactive(
-                            &mut rpc,
-                            &mut pending_requests,
-                            &request_id,
-                            resolution,
-                        )
-                        .await
-                        {
-                            Ok(()) => {
-                                send_conversation_event(
-                                    &conversation_tx,
-                                    ConversationEvent::InteractiveResolved { request_id },
-                                )
-                                .await;
-                            }
-                            Err(error) => {
-                                status.error = Some(error.to_string());
                             }
                         }
                     }
@@ -2435,79 +2396,6 @@ async fn handle_unsolicited(
     Ok(false)
 }
 
-async fn resolve_interactive(
-    rpc: &mut RpcSession,
-    pending_requests: &mut BTreeMap<RpcRequestId, PendingServerRequest>,
-    request_id: &RpcRequestId,
-    resolution: InteractiveResolution,
-) -> Result<()> {
-    let pending = pending_requests
-        .get(request_id)
-        .cloned()
-        .context("interactive request is no longer pending")?;
-
-    match pending.method.as_str() {
-        "item/commandExecution/requestApproval" | "item/fileChange/requestApproval" => {
-            let decision = match resolution {
-                InteractiveResolution::Accept => "accept",
-                InteractiveResolution::Decline => "decline",
-                InteractiveResolution::Cancel => "cancel",
-                InteractiveResolution::UserInput(_) => {
-                    anyhow::bail!("user-input answer cannot resolve an approval")
-                }
-            };
-            rpc.respond_result(request_id.to_value(), json!({"decision": decision}))
-                .await?;
-        }
-        "item/permissions/requestApproval" => match resolution {
-            InteractiveResolution::Accept => {
-                let permissions = pending
-                    .params
-                    .get("permissions")
-                    .cloned()
-                    .context("permission request missing permissions")?;
-                rpc.respond_result(
-                    request_id.to_value(),
-                    json!({
-                        "permissions": permissions,
-                        "scope": "turn"
-                    }),
-                )
-                .await?;
-            }
-            InteractiveResolution::Decline | InteractiveResolution::Cancel => {
-                rpc.respond_result(
-                    request_id.to_value(),
-                    json!({
-                        "permissions": {},
-                        "scope": "turn"
-                    }),
-                )
-                .await?;
-            }
-            InteractiveResolution::UserInput(_) => {
-                anyhow::bail!("user-input answer cannot resolve a permission request")
-            }
-        },
-        "item/tool/requestUserInput" => match resolution {
-            InteractiveResolution::UserInput(_) => {
-                anyhow::bail!("user input requires the checked submission path")
-            }
-            InteractiveResolution::Decline | InteractiveResolution::Cancel => {
-                rpc.reject_request(request_id.to_value(), "user input cancelled by user")
-                    .await?;
-            }
-            InteractiveResolution::Accept => {
-                anyhow::bail!("request_user_input requires explicit answers")
-            }
-        },
-        other => anyhow::bail!("unsupported pending server request: {other}"),
-    }
-
-    pending_requests.remove(request_id);
-    Ok(())
-}
-
 fn now_unix_ms() -> u64 {
     let millis = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -2650,14 +2538,6 @@ impl RpcSession {
 
     async fn read_wire_message(&mut self) -> Result<Option<Value>> {
         self.transport.read_json().await
-    }
-
-    async fn respond_result(&mut self, id: Value, result: Value) -> Result<()> {
-        self.write_message(&json!({
-            "id": id,
-            "result": result
-        }))
-        .await
     }
 
     async fn reject_request(&mut self, id: Value, message: &str) -> Result<()> {

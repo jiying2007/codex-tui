@@ -1,4 +1,6 @@
+mod approval;
 mod user_input;
+pub use approval::ApprovalContext;
 
 use crate::domain::ThreadId;
 use anyhow::{Context, Result};
@@ -58,14 +60,17 @@ pub struct UserInputQuestion {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum InteractiveRequestKind {
     CommandApproval {
+        context: ApprovalContext,
         command: String,
         cwd: String,
         reason: Option<String>,
     },
     FileChangeApproval {
+        context: ApprovalContext,
         reason: Option<String>,
     },
     PermissionsApproval {
+        context: ApprovalContext,
         reason: Option<String>,
         network_requested: bool,
         filesystem_requested: bool,
@@ -117,6 +122,7 @@ pub fn parse_interactive_request(message: &Value) -> Result<Option<InteractiveRe
                 .context("command approval missing itemId")?
                 .to_string(),
             kind: InteractiveRequestKind::CommandApproval {
+                context: ApprovalContext::from(params.clone()),
                 command: params
                     .get("command")
                     .and_then(Value::as_str)
@@ -139,6 +145,7 @@ pub fn parse_interactive_request(message: &Value) -> Result<Option<InteractiveRe
             turn_id: required_string(params, "turnId", "file approval")?,
             item_id: required_string(params, "itemId", "file approval")?,
             kind: InteractiveRequestKind::FileChangeApproval {
+                context: ApprovalContext::from(params.clone()),
                 reason: params
                     .get("reason")
                     .and_then(Value::as_str)
@@ -159,6 +166,7 @@ pub fn parse_interactive_request(message: &Value) -> Result<Option<InteractiveRe
                 turn_id: required_string(params, "turnId", "permissions approval")?,
                 item_id: required_string(params, "itemId", "permissions approval")?,
                 kind: InteractiveRequestKind::PermissionsApproval {
+                    context: ApprovalContext::from(params.clone()),
                     reason: params
                         .get("reason")
                         .and_then(Value::as_str)

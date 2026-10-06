@@ -2007,6 +2007,7 @@ fn interactive_request_lines(
             command,
             cwd,
             reason,
+            ..
         } => {
             lines.push(Line::from(format!(
                 "{}: {command}",
@@ -2027,7 +2028,7 @@ fn interactive_request_lines(
                 "y 接受 · n 拒绝 · c 取消",
             )));
         }
-        InteractiveRequestKind::FileChangeApproval { reason } => {
+        InteractiveRequestKind::FileChangeApproval { reason, .. } => {
             lines.push(Line::from(tr_language(
                 language,
                 "File change approval",
@@ -2049,6 +2050,7 @@ fn interactive_request_lines(
             reason,
             network_requested,
             filesystem_requested,
+            ..
         } => {
             if language.is_simplified_chinese() {
                 lines.push(Line::from(format!(

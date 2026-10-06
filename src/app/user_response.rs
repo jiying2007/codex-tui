@@ -1,7 +1,7 @@
 //! Bounded, transient attempts; explicit editor close never cancels accepted work.
 use super::{Action, AppState, Effect, InputMode, local_text};
-use crate::conversation::{InteractiveResolution, RpcRequestId};
-use crate::user_response::{UserResponseAnswers, UserResponseOutcome, UserResponseSubmission};
+use crate::conversation::{InteractiveRequest, InteractiveResolution, RpcRequestId};
+use crate::user_response::{UserResponseOutcome, UserResponseSubmission};
 use std::collections::BTreeMap;
 const LIMIT: usize = 64;
 #[derive(Clone, Debug, Default)]
@@ -12,7 +12,7 @@ pub(super) struct UserResponses {
 #[derive(Clone, Debug)]
 struct Attempt {
     submission: UserResponseSubmission,
-    revision: u64,
+    revision: Option<u64>,
     unknown: bool,
 }
 impl AppState {
@@ -32,8 +32,8 @@ impl AppState {
             self.mutation_notice = Some(
                 local_text(
                     self.language,
-                    "answer is pending or delivery is unconfirmed; no duplicate response sent",
-                    "回答正在发送或送达尚未确认；未重复发送",
+                    "response is pending or delivery is unconfirmed; no duplicate response sent",
+                    "响应正在发送或送达尚未确认；未重复发送",
                 )
                 .into(),
             );
@@ -46,54 +46,86 @@ impl AppState {
         let Some(editor) = self.user_input_editor.as_ref() else {
             return vec![];
         };
-        let id = editor.request.request_id.clone();
+        self.begin_interactive_response(
+            editor.request.clone(),
+            InteractiveResolution::UserInput(editor.answers.clone()),
+        )
+    }
+    pub(super) fn begin_interactive_response(
+        &mut self,
+        request: InteractiveRequest,
+        resolution: InteractiveResolution,
+    ) -> Vec<Effect> {
+        if !self.thread_index_by_id.contains_key(&request.thread_id.0)
+            || !self.pending_requests.contains(&request)
+            || request.thread_id.0.trim().is_empty()
+            || request.turn_id.trim().is_empty()
+            || request.item_id.trim().is_empty()
+        {
+            self.mutation_notice = Some(
+                local_text(
+                    self.language,
+                    "interactive request is no longer current; no response sent",
+                    "交互请求已失效；未发送响应",
+                )
+                .into(),
+            );
+            return vec![];
+        }
+        let id = request.request_id.clone();
         if self.user_response_blocked(&id) {
             return vec![];
         }
         let Some(ticket) = self.user_responses.next_ticket.checked_add(1) else {
-            self.mutation_notice = Some("response identity exhausted; answer retained".into());
+            self.mutation_notice = Some("response identity exhausted; input retained".into());
             return vec![];
         };
         if self.user_responses.attempts.len() >= LIMIT {
             self.mutation_notice = Some(local_text(self.language,
-                "too many unconfirmed answers; answer retained, check the backend before restarting",
-                "未确认回答过多；已保留回答，请核对后端状态后再重启").into());
+                "too many unconfirmed responses; input retained, check the backend before restarting",
+                "未确认响应过多；已保留输入，请核对后端状态后再重启").into());
             return vec![];
         }
-        let editor = self.user_input_editor.as_mut().expect("unchanged editor");
-        editor.submission = Some(ticket);
+        let revision = self
+            .user_input_editor
+            .as_mut()
+            .filter(|editor| editor.request == request)
+            .map(|editor| {
+                editor.submission = Some(ticket);
+                editor.revision
+            });
         let submission = UserResponseSubmission {
             ticket,
-            request: editor.request.clone(),
-            answers: editor.answers.clone(),
+            request,
+            resolution: resolution.clone(),
         };
         let effect = Effect::ResolveInteractive {
             request_id: id.clone(),
-            resolution: InteractiveResolution::UserInput(editor.answers.clone()),
+            resolution,
         };
         self.user_responses.next_ticket = ticket;
         self.user_responses.attempts.insert(
             id,
             Attempt {
                 submission,
-                revision: editor.revision,
+                revision,
                 unknown: false,
             },
         );
         self.mutation_notice = Some(local_text(self.language,
-            "sending answer; retained until matching transport receipt (not server acknowledgement)",
-            "正在发送回答；匹配传输回执前保留内容（不等于服务端确认）").into());
+            "sending response; input retained until matching transport receipt (not server acknowledgement)",
+            "正在发送响应；匹配传输回执前保留内容（不等于服务端确认）").into());
         vec![effect]
     }
     pub fn user_response_submission(
         &self,
         id: &RpcRequestId,
-        answers: &UserResponseAnswers,
+        resolution: &InteractiveResolution,
     ) -> Option<UserResponseSubmission> {
         self.user_responses
             .attempts
             .get(id)
-            .filter(|a| !a.unknown && &a.submission.answers == answers)
+            .filter(|a| !a.unknown && &a.submission.resolution == resolution)
             .map(|a| a.submission.clone())
     }
     pub fn finish_user_response(&mut self, ticket: u64, outcome: UserResponseOutcome) {
@@ -127,8 +159,8 @@ impl AppState {
                     "{}: {error}",
                     local_text(
                         self.language,
-                        "answer not sent; input retained unless explicitly closed",
-                        "回答未发送；未主动关闭的输入已保留"
+                        "response not sent; input retained unless explicitly closed",
+                        "响应未发送；未主动关闭的输入已保留"
                     )
                 ));
             }
@@ -139,8 +171,8 @@ impl AppState {
                     "{}: {error}",
                     local_text(
                         self.language,
-                        "answer delivery unconfirmed; input retained, no automatic retry; check backend state",
-                        "回答送达未确认；已保留输入，不自动重试，请核对后端状态"
+                        "response delivery unconfirmed; input retained, no automatic retry; check backend state",
+                        "响应送达未确认；已保留输入，不自动重试，请核对后端状态"
                     )
                 ));
             }
@@ -151,15 +183,15 @@ impl AppState {
                 let unchanged = self.user_input_editor.as_ref().is_some_and(|e| {
                     e.submission == Some(ticket)
                         && e.request == attempt.submission.request
-                        && e.revision == attempt.revision
+                        && Some(e.revision) == attempt.revision
                         && e.revision != u64::MAX
                 });
                 if unchanged {
                     self.clear_user_input_editor();
                 }
                 self.mutation_notice = Some(local_text(self.language,
-                    "answer written to transport; server acknowledgement not established; later input retained",
-                    "回答已写入传输层；不代表服务端已确认，后续编辑仍保留").into());
+                    "response written to transport; server acknowledgement not established; later input retained",
+                    "响应已写入传输层；不代表服务端已确认，后续编辑仍保留").into());
                 super::ensure_selection_visible(self);
             }
         }
@@ -186,59 +218,4 @@ impl AppState {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::{
-        app::View,
-        backend::{CodexBackend, FakeBackend},
-        conversation::{InteractiveRequest, InteractiveRequestKind, UserInputQuestion},
-    };
-    fn editor() -> AppState {
-        let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
-        let request = InteractiveRequest {
-            request_id: RpcRequestId::String("r".into()),
-            thread_id: app.threads[0].id.clone(),
-            turn_id: "t".into(),
-            item_id: "i".into(),
-            kind: InteractiveRequestKind::UserInput {
-                questions: vec![UserInputQuestion {
-                    id: "q".into(),
-                    header: "H".into(),
-                    question: "Q".into(),
-                    is_secret: false,
-                    options: vec![],
-                }],
-            },
-        };
-        app.view = View::Thread(request.thread_id.clone());
-        crate::app::reduce(&mut app, Action::InteractiveRequested(request));
-        crate::app::reduce(&mut app, Action::BeginUserInput);
-        crate::app::reduce(&mut app, Action::InputText("retained".into()));
-        app
-    }
-    #[test]
-    fn ticket_exhaustion_does_not_wrap_or_drop_answer() {
-        let mut app = editor();
-        app.user_responses.next_ticket = u64::MAX;
-        assert!(crate::app::reduce(&mut app, Action::CommitInput).is_empty());
-        assert_eq!(app.input_buffer, "retained");
-        assert!(app.user_responses.attempts.is_empty());
-    }
-    #[test]
-    fn ledger_capacity_never_evicts_uncertain_entries() {
-        let mut app = editor();
-        crate::app::reduce(&mut app, Action::CommitInput);
-        let mut attempt = app.user_responses.attempts.values().next().unwrap().clone();
-        attempt.unknown = true;
-        app.user_responses.attempts.clear();
-        for i in 0..LIMIT {
-            app.user_responses.attempts.insert(
-                RpcRequestId::String(format!("uncertain-{i}")),
-                attempt.clone(),
-            );
-        }
-        assert!(crate::app::reduce(&mut app, Action::CommitInput).is_empty());
-        assert_eq!(app.user_responses.attempts.len(), LIMIT);
-        assert_eq!(app.input_buffer, "retained");
-    }
-}
+mod tests;

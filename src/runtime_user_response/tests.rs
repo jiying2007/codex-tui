@@ -5,6 +5,7 @@ use codex_tui::{
     conversation::{
         InteractiveRequest, InteractiveRequestKind, InteractiveResolution, UserInputQuestion,
     },
+    user_response::UserResponseAnswers,
 };
 fn ready() -> (AppState, RpcRequestId, UserResponseAnswers) {
     let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
@@ -40,38 +41,65 @@ fn ready() -> (AppState, RpcRequestId, UserResponseAnswers) {
 #[test]
 fn missing_backend_preserves_answer_and_allows_explicit_retry() {
     let (mut app, id, answers) = ready();
-    submit(&mut app, None, &id, &answers);
+    submit(
+        &mut app,
+        None,
+        &id,
+        &InteractiveResolution::UserInput(answers.clone()),
+    );
     assert_eq!(app.input_mode, InputMode::UserInput);
     assert_eq!(app.input_buffer, "answer");
-    assert!(app.user_response_submission(&id, &answers).is_none());
+    assert!(
+        app.user_response_submission(&id, &InteractiveResolution::UserInput(answers.clone()))
+            .is_none()
+    );
     assert_eq!(reduce(&mut app, Action::CommitInput).len(), 1);
 }
 #[test]
 fn actual_bounded_queue_refusal_is_not_a_write_receipt() {
     let (mut app, id, answers) = ready();
     let (tx, mut rx) = tokio::sync::mpsc::channel(1);
-    tx.try_send(app.user_response_submission(&id, &answers).unwrap())
-        .unwrap();
-    submit_with(&mut app, &id, &answers, |s| {
-        tx.try_send(s).map_err(|e| e.to_string())
-    });
+    tx.try_send(
+        app.user_response_submission(&id, &InteractiveResolution::UserInput(answers.clone()))
+            .unwrap(),
+    )
+    .unwrap();
+    submit_with(
+        &mut app,
+        &id,
+        &InteractiveResolution::UserInput(answers.clone()),
+        |s| tx.try_send(s).map_err(|e| e.to_string()),
+    );
     assert_eq!(app.input_buffer, "answer");
-    assert!(app.user_response_submission(&id, &answers).is_none());
+    assert!(
+        app.user_response_submission(&id, &InteractiveResolution::UserInput(answers.clone()))
+            .is_none()
+    );
     rx.try_recv().unwrap();
     reduce(&mut app, Action::CommitInput);
-    submit_with(&mut app, &id, &answers, |s| {
-        tx.try_send(s).map_err(|e| e.to_string())
-    });
-    assert!(app.user_response_submission(&id, &answers).is_some());
+    submit_with(
+        &mut app,
+        &id,
+        &InteractiveResolution::UserInput(answers.clone()),
+        |s| tx.try_send(s).map_err(|e| e.to_string()),
+    );
+    assert!(
+        app.user_response_submission(&id, &InteractiveResolution::UserInput(answers.clone()))
+            .is_some()
+    );
     assert_eq!(app.input_mode, InputMode::UserInput);
 }
 #[test]
 fn old_and_unrelated_receipts_cannot_clear_answer() {
     let (mut app, id, answers) = ready();
-    let first = app.user_response_submission(&id, &answers).unwrap();
+    let first = app
+        .user_response_submission(&id, &InteractiveResolution::UserInput(answers.clone()))
+        .unwrap();
     app.finish_user_response(first.ticket, UserResponseOutcome::NotSent("full".into()));
     reduce(&mut app, Action::CommitInput);
-    let second = app.user_response_submission(&id, &answers).unwrap();
+    let second = app
+        .user_response_submission(&id, &InteractiveResolution::UserInput(answers.clone()))
+        .unwrap();
     assert_ne!(first.ticket, second.ticket);
     app.finish_user_response(first.ticket, UserResponseOutcome::Written);
     assert_eq!(app.input_buffer, "answer");
@@ -83,7 +111,10 @@ fn old_and_unrelated_receipts_cannot_clear_answer() {
 fn later_edit_and_edit_undo_survive_success() {
     for undo in [false, true] {
         let (mut app, id, answers) = ready();
-        let ticket = app.user_response_submission(&id, &answers).unwrap().ticket;
+        let ticket = app
+            .user_response_submission(&id, &InteractiveResolution::UserInput(answers.clone()))
+            .unwrap()
+            .ticket;
         reduce(&mut app, Action::InputChar('!'));
         if undo {
             reduce(&mut app, Action::InputBackspace);
@@ -96,7 +127,10 @@ fn later_edit_and_edit_undo_survive_success() {
 #[test]
 fn uncertain_response_blocks_retry_but_keeps_answer_and_explicit_close() {
     let (mut app, id, answers) = ready();
-    let ticket = app.user_response_submission(&id, &answers).unwrap().ticket;
+    let ticket = app
+        .user_response_submission(&id, &InteractiveResolution::UserInput(answers.clone()))
+        .unwrap()
+        .ticket;
     app.finish_user_response(ticket, UserResponseOutcome::Unknown("broken pipe".into()));
     assert!(reduce(&mut app, Action::CommitInput).is_empty());
     assert_eq!(app.input_buffer, "answer");
@@ -116,7 +150,9 @@ fn disconnect_is_reported_once_and_never_retried() {
 #[test]
 fn replaced_form_is_not_removed_by_old_success() {
     let (mut app, id, answers) = ready();
-    let original = app.user_response_submission(&id, &answers).unwrap();
+    let original = app
+        .user_response_submission(&id, &InteractiveResolution::UserInput(answers.clone()))
+        .unwrap();
     let mut replacement = original.request.clone();
     replacement.item_id = "new-item".into();
     reduce(&mut app, Action::InteractiveRequested(replacement.clone()));
@@ -126,7 +162,10 @@ fn replaced_form_is_not_removed_by_old_success() {
 #[test]
 fn explicit_close_is_not_resurrected_by_failure() {
     let (mut app, id, answers) = ready();
-    let ticket = app.user_response_submission(&id, &answers).unwrap().ticket;
+    let ticket = app
+        .user_response_submission(&id, &InteractiveResolution::UserInput(answers.clone()))
+        .unwrap()
+        .ticket;
     reduce(&mut app, Action::CancelInput);
     app.finish_user_response(ticket, UserResponseOutcome::NotSent("full".into()));
     assert_eq!(app.input_mode, InputMode::Normal);
@@ -136,7 +175,10 @@ fn explicit_close_is_not_resurrected_by_failure() {
 #[test]
 fn duplicate_refusal_cannot_clear_an_uncertain_attempt() {
     let (mut app, id, answers) = ready();
-    let ticket = app.user_response_submission(&id, &answers).unwrap().ticket;
+    let ticket = app
+        .user_response_submission(&id, &InteractiveResolution::UserInput(answers.clone()))
+        .unwrap()
+        .ticket;
     app.finish_user_response(ticket, UserResponseOutcome::Unknown("partial write".into()));
     app.finish_user_response(
         ticket,

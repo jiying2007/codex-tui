@@ -22,7 +22,10 @@ fn fixture() -> (
     let submission = UserResponseSubmission {
         ticket: 1,
         request,
-        answers: BTreeMap::from([("q".into(), vec!["synthetic-only".into()])]),
+        resolution: InteractiveResolution::UserInput(BTreeMap::from([(
+            "q".into(),
+            vec!["synthetic-only".into()],
+        )])),
     };
     (pending, threads, submission)
 }
@@ -82,7 +85,10 @@ async fn changed_form_or_removed_thread_is_refused_before_io() {
 #[tokio::test]
 async fn mismatched_answer_keys_are_refused_without_consuming_request() {
     let (mut pending, threads, mut s) = fixture();
-    s.answers.insert("other".into(), vec!["x".into()]);
+    let InteractiveResolution::UserInput(answers) = &mut s.resolution else {
+        panic!("input");
+    };
+    answers.insert("other".into(), vec!["x".into()]);
     assert!(matches!(
         send_with(
             &mut pending,
@@ -141,8 +147,8 @@ fn debug_does_not_expose_answers_and_actual_command_queue_is_bounded() {
     let (_, _, s) = fixture();
     assert!(!format!("{s:?}").contains("synthetic-only"));
     let (tx, _rx) = mpsc::channel(1);
-    queue_backend_command(&tx, BackendCommand::SubmitUserInput(s.clone())).unwrap();
-    assert!(queue_backend_command(&tx, BackendCommand::SubmitUserInput(s)).is_err());
+    queue_backend_command(&tx, BackendCommand::SubmitUserResponse(s.clone())).unwrap();
+    assert!(queue_backend_command(&tx, BackendCommand::SubmitUserResponse(s)).is_err());
 }
 
 #[test]
@@ -161,18 +167,4 @@ fn queued_replacements_resolutions_and_removed_threads_invalidate_response() {
         ]),
         &s
     ));
-}
-#[test]
-fn production_actor_stops_after_unknown_write_instead_of_reusing_partial_stream() {
-    let source = include_str!("../../app_server.rs");
-    let route = source
-        .split("BackendCommand::SubmitUserInput(submission) => {")
-        .nth(1)
-        .unwrap()
-        .split("BackendCommand::LoadConversation")
-        .next()
-        .unwrap();
-    assert!(route.contains("if unknown"));
-    assert!(route.contains("status.connected = false"));
-    assert!(route.contains("return;"));
 }

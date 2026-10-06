@@ -1552,27 +1552,7 @@ fn apply_effects(
                 request_id,
                 resolution,
             } => {
-                if let codex_tui::conversation::InteractiveResolution::UserInput(answers) =
-                    &resolution
-                {
-                    runtime_user_response::submit(app, registry, &request_id, answers);
-                    continue;
-                }
-                if let Some(registry) = registry
-                    && let Err(error) = registry.resolve_interactive(request_id.clone(), resolution)
-                {
-                    reduce(
-                        app,
-                        Action::BackendStatus(backend_error_status(format!(
-                            "{}: {error}",
-                            runtime_text(
-                                app.language,
-                                "resolve interactive request failed",
-                                "处理交互请求失败",
-                            )
-                        ))),
-                    );
-                }
+                runtime_user_response::submit(app, registry, &request_id, &resolution);
             }
             Effect::InterruptTurn { thread_id, turn_id } => {
                 if let Some(registry) = registry
