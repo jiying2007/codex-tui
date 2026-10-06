@@ -3,6 +3,12 @@ use serde_json::Value;
 use std::collections::BTreeSet;
 
 impl ApprovalContext {
+    pub fn has_hidden_scope(&self) -> bool {
+        self.visible_scope()
+            .iter()
+            .any(|(kind, _)| matches!(kind.as_str(), "permission-category" | "permission-detail"))
+    }
+
     pub fn visible_scope(&self) -> Vec<(String, String)> {
         let Some(root) = self.wire_context().as_object() else {
             return Vec::new();

@@ -119,3 +119,40 @@ fn independent_requests_remain_independently_actionable() {
         1
     );
 }
+
+#[test]
+fn accept_is_fail_closed_when_permission_scope_cannot_be_fully_displayed() {
+    let (mut app, _, mut wire) = setup("item/commandExecution/requestApproval");
+    wire["params"]["additionalPermissions"] =
+        json!({"network":{"host":"api.example.com","futureGrant":"opaque"}});
+    let request = parse_interactive_request(&wire).unwrap().unwrap();
+    reduce(&mut app, Action::InteractiveRequested(request));
+    assert!(
+        reduce(
+            &mut app,
+            Action::ResolvePending(InteractiveResolution::Accept)
+        )
+        .is_empty()
+    );
+    assert!(
+        app.mutation_notice
+            .as_deref()
+            .is_some_and(|notice| notice.contains("unrecognized permission"))
+    );
+}
+
+#[test]
+fn decline_remains_available_for_unknown_permission_scope() {
+    let (mut app, _, mut wire) = setup("item/permissions/requestApproval");
+    wire["params"]["permissions"]["futurePermission"] = json!({"secret":"hidden"});
+    let request = parse_interactive_request(&wire).unwrap().unwrap();
+    reduce(&mut app, Action::InteractiveRequested(request));
+    assert_eq!(
+        reduce(
+            &mut app,
+            Action::ResolvePending(InteractiveResolution::Decline)
+        )
+        .len(),
+        1
+    );
+}

@@ -1,6 +1,6 @@
 //! Bounded, transient attempts; explicit editor close never cancels accepted work.
 use super::{Action, AppState, Effect, InputMode, local_text};
-use crate::conversation::{InteractiveRequest, InteractiveResolution, RpcRequestId};
+use crate::conversation::{InteractiveRequest, InteractiveRequestKind, InteractiveResolution, RpcRequestId};
 use crate::user_response::{UserResponseOutcome, UserResponseSubmission};
 use std::collections::BTreeMap;
 const LIMIT: usize = 64;
@@ -67,6 +67,26 @@ impl AppState {
                     self.language,
                     "interactive request is no longer current; no response sent",
                     "交互请求已失效；未发送响应",
+                )
+                .into(),
+            );
+            return vec![];
+        }
+        if matches!(resolution, InteractiveResolution::Accept)
+            && match &request.kind {
+                InteractiveRequestKind::CommandApproval { context, .. }
+                | InteractiveRequestKind::FileChangeApproval { context, .. }
+                | InteractiveRequestKind::PermissionsApproval { context, .. } => {
+                    context.has_hidden_scope()
+                }
+                InteractiveRequestKind::UserInput { .. } => false,
+            }
+        {
+            self.mutation_notice = Some(
+                local_text(
+                    self.language,
+                    "approval contains unrecognized permission details; accept is disabled, decline/cancel or use a client that can display the full scope",
+                    "审批包含未识别的权限详情；已禁用接受，请拒绝/取消，或使用能完整显示权限范围的客户端",
                 )
                 .into(),
             );
