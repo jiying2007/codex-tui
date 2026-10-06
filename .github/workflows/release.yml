@@ -610,6 +610,9 @@ jobs:
     if: inputs.publish == true
     needs: [gate, bundle]
     runs-on: ubuntu-24.04
+    concurrency:
+      group: codex-tui-release-publish
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:
@@ -671,31 +674,56 @@ jobs:
             exit 1
           fi
 
-          GH_TOKEN="$PUBLISH_TOKEN" gh release create "$TAG" bundle/* \
+          DRAFT_CREATED=false
+          PUBLISHED=false
+          cleanup_unpublished_draft() {
+            status=$?
+            if [ "$DRAFT_CREATED" = "true" ] && [ "$PUBLISHED" != "true" ]; then
+              CURRENT_DRAFT="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .draft 2>/dev/null || true)"
+              CURRENT_TAG_SHA="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha 2>/dev/null || true)"
+              if [ "$CURRENT_DRAFT" = "true" ] && [ "$CURRENT_TAG_SHA" = "$GITHUB_SHA" ]; then
+                echo "cleaning exact unpublished stable draft and tag after pre-publication failure" >&2
+                GH_TOKEN="$PUBLISH_TOKEN" gh release delete "$TAG" \
+                  --repo "$GITHUB_REPOSITORY" \
+                  --cleanup-tag \
+                  --yes || echo "automatic draft/tag cleanup failed; manual cleanup required" >&2
+              else
+                echo "refusing automatic draft cleanup because draft/tag identity is no longer exact" >&2
+              fi
+            fi
+            exit "$status"
+          }
+          trap cleanup_unpublished_draft EXIT
+
+          GH_TOKEN="$PUBLISH_TOKEN" gh release create "$TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "codex-tui $TAG" \
             --notes-file bundle/RELEASE_NOTES.md \
             --draft
+          DRAFT_CREATED=true
+
+          GH_TOKEN="$PUBLISH_TOKEN" gh release upload "$TAG" bundle/* \
+            --repo "$GITHUB_REPOSITORY"
 
           DRAFT_TAG_SHA="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha)"
           if [ "$DRAFT_TAG_SHA" != "$GITHUB_SHA" ]; then
             echo "draft release tag target drifted: expected=$GITHUB_SHA actual=$DRAFT_TAG_SHA" >&2
-            GH_TOKEN="$PUBLISH_TOKEN" gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes || true
             exit 1
           fi
 
           if ! GH_TOKEN="$ADMIN_READ_TOKEN" python3 scripts/release/immutable_releases.py \
             --repo "$GITHUB_REPOSITORY" \
             --output "$RUNNER_TEMP/publish-immutable-releases.json"; then
-            echo "immutable-release state changed before stable publication; deleting unpublished draft" >&2
-            GH_TOKEN="$PUBLISH_TOKEN" gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes || true
+            echo "immutable-release state changed before stable publication" >&2
             exit 1
           fi
 
           GH_TOKEN="$PUBLISH_TOKEN" gh release edit "$TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --draft=false
+          PUBLISHED=true
+          trap - EXIT
 
           PUBLISHED_IMMUTABLE="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .immutable)"
           PUBLISHED_TAG_SHA="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha)"
