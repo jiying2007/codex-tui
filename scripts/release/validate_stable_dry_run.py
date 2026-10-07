@@ -11,6 +11,8 @@ RELEASE_WORKFLOW = ".github/workflows/release.yml"
 VERIFY_SCHEMA = "codex-tui/release-verification/v1"
 EVIDENCE_SCHEMA = "codex-tui/release-evidence/v6"
 AUTOMATED_SCHEMA = "codex-tui/automated-qualification/v3"
+REAL_BUNDLE_SCHEMA = "codex-tui/stable-real-evidence-bundle/v1"
+HEX64 = re.compile(r"^[0-9a-f]{64}$")
 
 STABLE_BINDING_KEYS = (
     "schema",
@@ -49,6 +51,38 @@ def validate_evidence_shape(evidence: dict, commit: str, version: str, label: st
         str(evidence.get("commitSha", "")).lower() == commit,
         f"{label} commit SHA mismatch",
     )
+    real = evidence.get("realEvidenceBundle")
+    require(isinstance(real, dict), f"{label} realEvidenceBundle missing")
+    require(
+        real.get("schema") == REAL_BUNDLE_SCHEMA,
+        f"{label} realEvidenceBundle schema mismatch",
+    )
+    require(
+        str(real.get("sourceSha", "")).lower() == commit,
+        f"{label} realEvidenceBundle source SHA mismatch",
+    )
+    payload_sha = str(real.get("payloadSha256", "")).lower()
+    require(
+        bool(HEX64.fullmatch(payload_sha)),
+        f"{label} realEvidenceBundle payload SHA-256 invalid",
+    )
+    payload_chars = real.get("payloadChars")
+    require(
+        isinstance(payload_chars, int)
+        and not isinstance(payload_chars, bool)
+        and 0 < payload_chars <= 60000,
+        f"{label} realEvidenceBundle payload size invalid",
+    )
+    files = real.get("files")
+    require(isinstance(files, dict), f"{label} realEvidenceBundle files missing")
+    for key in ("linuxCompat", "linuxTerminal", "performance"):
+        row = files.get(key)
+        require(isinstance(row, dict), f"{label} realEvidenceBundle file missing: {key}")
+        require(
+            bool(HEX64.fullmatch(str(row.get("sha256", "")).lower())),
+            f"{label} realEvidenceBundle file SHA-256 invalid: {key}",
+        )
+
     automated = evidence.get("automatedQualification")
     require(isinstance(automated, dict), f"{label} automated qualification missing")
     require(
