@@ -15,6 +15,46 @@ def completed(returncode=0, stdout="", stderr=""):
     )
 
 
+class StablePublicationInputs(unittest.TestCase):
+    def evidence(self):
+        return {
+            "schema": "codex-tui/release-evidence/v6",
+            "canonicalCiRun": 123,
+            "realEvidenceBundle": {
+                "schema": "codex-tui/stable-real-evidence-bundle/v1",
+                "sourceSha": "0" * 40,
+                "payloadSha256": "a" * 64,
+            },
+        }
+
+    def test_publish_reuses_exact_raw_bundle_as_single_evidence_input(self):
+        inputs = s.stable_publish_inputs(self.evidence(), 456, "payload")
+        self.assertEqual(
+            inputs,
+            {
+                "channel": "stable",
+                "publish": "true",
+                "canonical_ci_run": "123",
+                "stable_qualification_run": "456",
+                "stable_real_evidence_bundle": "payload",
+            },
+        )
+        self.assertLessEqual(len(inputs), 25)
+
+    def test_old_schema_missing_bundle_or_empty_payload_fail_closed(self):
+        old = self.evidence()
+        old["schema"] = "codex-tui/release-evidence/v5"
+        with self.assertRaisesRegex(SystemExit, "schema mismatch"):
+            s.stable_publish_inputs(old, 456, "payload")
+
+        missing = self.evidence()
+        missing.pop("realEvidenceBundle")
+        with self.assertRaisesRegex(SystemExit, "realEvidenceBundle"):
+            s.stable_publish_inputs(missing, 456, "payload")
+
+        with self.assertRaisesRegex(SystemExit, "must not be empty"):
+            s.stable_publish_inputs(self.evidence(), 456, "")
+
 class ImmutableReleasePreflight(unittest.TestCase):
     def test_enabled_repository_passes_and_retains_owner_enforcement(self):
         response = completed(
