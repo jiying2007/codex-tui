@@ -482,6 +482,7 @@ jobs:
 
   package:
     name: package-${{ matrix.platform }}
+    if: ${{ !(inputs.channel == 'stable' && inputs.publish == true) }}
     needs: gate
     strategy:
       fail-fast: false
@@ -552,6 +553,7 @@ jobs:
 
   bundle:
     name: release-bundle
+    if: ${{ !(inputs.channel == 'stable' && inputs.publish == true) }}
     needs: [gate, package]
     runs-on: ubuntu-24.04
     steps:
@@ -608,7 +610,7 @@ jobs:
 
   publish:
     name: publish-github-release
-    if: inputs.publish == true
+    if: ${{ always() && inputs.publish == true && needs.gate.result == 'success' && (needs.gate.outputs.channel == 'stable' || needs.bundle.result == 'success') }}
     needs: [gate, bundle]
     runs-on: ubuntu-24.04
     concurrency:
@@ -623,6 +625,7 @@ jobs:
           persist-credentials: false
 
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        if: needs.gate.outputs.channel == 'preview'
         with:
           name: release-bundle
           path: bundle
@@ -642,10 +645,8 @@ jobs:
             exit 1
           }
 
-          CURRENT_BUNDLE="$RUNNER_TEMP/current-publication-run-bundle"
           PRIOR_BUNDLE="$RUNNER_TEMP/prior-stable-release-bundle"
-          rm -rf "$CURRENT_BUNDLE" "$PRIOR_BUNDLE"
-          mv bundle "$CURRENT_BUNDLE"
+          rm -rf "$PRIOR_BUNDLE" bundle
 
           gh run download "$STABLE_QUALIFICATION_RUN" \
             --repo "$GITHUB_REPOSITORY" \
