@@ -155,7 +155,7 @@
     "src/sqlite_store.rs": 2341,
     "src/forge.rs": 1345,
     "src/worktree.rs": 1006,
-    "src/release.rs": 1025,
+    "src/release.rs": 1184,
     "src/runtime_store.rs": 444,
     "src/runtime_input.rs": 267,
     "src/app_server_registry.rs": 169,
@@ -275,7 +275,14 @@
     "extractionPreference": "port behavior, not stale branch structure; extract only when it reduces mature-module growth",
     "noRegression": "Search/Queue/Remote/GitHub-safe-mutation modules and contracts may not be weakened",
     "completeSourceCoverage": true,
-    "postCompletionBaseline": "all v1.4 src/**/*.rs ceilings are frozen at current completion-state LOC; future growth requires explicit governance change"
+    "postCompletionBaseline": "all v1.4 src/**/*.rs ceilings are frozen at current completion-state LOC; future growth requires explicit governance change",
+    "releaseEvidenceV6Exception": {
+      "module": "src/release.rs",
+      "previousCeiling": 1025,
+      "currentCeiling": 1184,
+      "changeClass": "release-tooling",
+      "rationale": "release-evidence/v6 adds typed raw real-evidence bundle lineage and independent hash-binding validation under the frozen v1.4 release-governance scope"
+    }
   },
   "developmentQualification": {
     "schema": "codex-tui/development-qualification/v1",
