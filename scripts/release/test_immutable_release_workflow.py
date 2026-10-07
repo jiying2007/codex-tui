@@ -74,7 +74,7 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
         bundle = text.split("\n  bundle:\n", 1)[1].split("\n  publish:\n", 1)[0]
         publish = text.rsplit("\n  publish:\n", 1)[1]
 
-        skip = "!(inputs.channel == 'stable' && inputs.publish == true)"
+        skip = "inputs.channel != 'stable' || inputs.publish != true"
         self.assertIn(skip, package)
         self.assertIn(skip, bundle)
         self.assertIn("always() && inputs.publish == true", publish)
