@@ -10,6 +10,7 @@ import re
 from _compat import write_text_lf
 
 SCHEMA = "codex-tui/release-asset-verification/v1"
+HEX40 = re.compile(r"^[0-9a-fA-F]{40}$")
 SHA256 = re.compile(r"^sha256:([0-9a-f]{64})$")
 
 
@@ -135,11 +136,15 @@ def main() -> int:
     parser.add_argument("--tag", required=True)
     parser.add_argument("--phase", choices=["draft", "prepublish", "published"], required=True)
     parser.add_argument("--channel", choices=["preview", "stable"], required=True)
+    parser.add_argument("--source-sha", required=True)
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
 
+    source_sha = args.source_sha.strip().lower()
+    require(bool(HEX40.fullmatch(source_sha)), "--source-sha must be exactly 40 hexadecimal characters")
+    release_path = pathlib.Path(args.release_json)
     try:
-        release = json.loads(pathlib.Path(args.release_json).read_text(encoding="utf-8"))
+        release = json.loads(release_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
         raise SystemExit(f"cannot read release JSON: {error}") from error
     require(isinstance(release, dict), "release JSON must be an object")
@@ -150,6 +155,8 @@ def main() -> int:
         "schema": SCHEMA,
         "phase": args.phase,
         "channel": args.channel,
+        "sourceSha": source_sha,
+        "releaseSnapshotSha256": sha256(release_path),
         "releaseId": release.get("id"),
         "tag": args.tag,
         "draft": release.get("draft"),
