@@ -47,7 +47,6 @@ def valid_protection(app_id=ACTIONS_APP_ID):
     return {
         "required_status_checks": {
             "strict": True,
-            "contexts": list(mp.REQUIRED_CHECKS),
             "checks": [
                 {"context": name, "app_id": app_id}
                 for name in mp.REQUIRED_CHECKS
@@ -73,7 +72,7 @@ class MainProtectionConfiguration(unittest.TestCase):
     def test_payload_pins_every_required_check_to_observed_actions_app(self):
         payload = cfg.protection_payload(ACTIONS_APP_ID)
         status = payload["required_status_checks"]
-        self.assertEqual(status["contexts"], list(cfg.REQUIRED_CHECKS))
+        self.assertNotIn("contexts", status)
         self.assertEqual(
             status["checks"],
             [
@@ -156,10 +155,6 @@ class MainProtectionReceipt(unittest.TestCase):
         weakened.append(value)
 
         value = valid_protection()
-        value["required_status_checks"]["contexts"] = list(mp.REQUIRED_CHECKS[:-1])
-        weakened.append(value)
-
-        value = valid_protection()
         value["required_status_checks"]["checks"] = []
         weakened.append(value)
 
@@ -210,6 +205,10 @@ class MainProtectionReceipt(unittest.TestCase):
         mixed_app = valid_check_runs()
         mixed_app["check_runs"][0]["app"]["id"] = ACTIONS_APP_ID + 1
         cases.append(mixed_app)
+
+        boolean_app = valid_check_runs()
+        boolean_app["check_runs"][0]["app"]["id"] = True
+        cases.append(boolean_app)
 
         not_success = valid_check_runs()
         not_success["check_runs"][0]["conclusion"] = "failure"
