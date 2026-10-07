@@ -36,7 +36,7 @@ def write_bundle(root: Path):
             "evidenceStatus": "verified",
         }).encode(),
         "release-evidence.json": json.dumps({
-            "schema": "codex-tui/release-evidence/v5",
+            "schema": "codex-tui/release-evidence/v6",
             "version": VERSION,
             "commitSha": SHA,
         }).encode(),
