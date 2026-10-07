@@ -261,11 +261,18 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
             preview.count('--source-sha "$GITHUB_SHA"'),
             2,
         )
-        # Stable has three asset verifiers plus the pre-existing exact-bundle
-        # promotion source binding.
         self.assertEqual(
             stable.count('--source-sha "$GITHUB_SHA"'),
-            4,
+            3,
+        )
+        promotion = publish.split(
+            "- name: Promote exact qualified stable dry-run bundle", 1
+        )[1].split(
+            "- name: Publish preview GitHub Release", 1
+        )[0]
+        self.assertEqual(
+            promotion.count('--source-sha "$GITHUB_SHA"'),
+            1,
         )
 
         self.assertIn("name: release-asset-integrity", publish)
