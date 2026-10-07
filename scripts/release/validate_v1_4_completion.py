@@ -199,8 +199,10 @@ def main() -> int:
 
     if completion.get("stableAuthority") != "release/v1.4-criteria.json":
         raise SystemExit("completion stable authority must be release/v1.4-criteria.json")
-    if "release-evidence/v5" not in str(completion.get("stableEvidencePolicy", "")):
-        raise SystemExit("completion must retain release-evidence/v5 stable authority")
+    if "release-evidence/v6" not in str(completion.get("stableEvidencePolicy", "")):
+        raise SystemExit("completion must retain release-evidence/v6 stable authority")
+    if "stable-real-evidence-bundle/v1" not in str(completion.get("stableEvidencePolicy", "")):
+        raise SystemExit("completion must retain raw stable real-evidence bundle authority")
 
     dev = criteria.get("developmentQualification")
     if not isinstance(dev, dict):
@@ -240,6 +242,7 @@ def main() -> int:
         "architecture-ratchet",
         "protocol-replay",
         "immutable-releases",
+        "stable-real-evidence-bundle",
         "prior-stable-dry-run",
         "stable-bundle-promotion",
         "release-asset-integrity",
@@ -270,6 +273,8 @@ def main() -> int:
         "tagRefSnapshotsRetained",
         "tagRefsSourceBound",
         "publishPointMainRevalidated",
+        "rawRealEvidenceRevalidated",
+        "dryRunPublicationBundleIdentityRequired",
     ):
         if publication.get(key) is not True:
             raise SystemExit("v1.4 stable publication governance lost {}".format(key))
@@ -279,6 +284,12 @@ def main() -> int:
         raise SystemExit("v1.4 release branch-state schema drifted")
     if publication.get("releaseTagRefSchema") != "codex-tui/release-tag-ref/v1":
         raise SystemExit("v1.4 release tag-ref schema drifted")
+    if publication.get("releaseEvidenceSchema") != "codex-tui/release-evidence/v6":
+        raise SystemExit("v1.4 release evidence schema drifted")
+    if publication.get("realEvidenceBundleSchema") != "codex-tui/stable-real-evidence-bundle/v1":
+        raise SystemExit("v1.4 real evidence bundle schema drifted")
+    if publication.get("hashOnlyRealEvidenceDispatchAllowed") is not False:
+        raise SystemExit("v1.4 must not allow hash-only real evidence dispatch")
     if publication.get("postPublicationRewriteAllowed") is not False:
         raise SystemExit("v1.4 stable publication must not permit post-publication rewrite")
 
