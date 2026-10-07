@@ -78,7 +78,11 @@ def validate_release_state(release: dict, phase: str, channel: str) -> None:
     immutable = release.get("immutable")
     require(isinstance(draft, bool), "release draft state is missing or invalid")
     require(isinstance(prerelease, bool), "release prerelease state is missing or invalid")
-    require(isinstance(release.get("id"), int) and release["id"] > 0, "release id is missing or invalid")
+    release_id = release.get("id")
+    require(
+        isinstance(release_id, int) and not isinstance(release_id, bool) and release_id > 0,
+        "release id is missing or invalid",
+    )
 
     if phase in ("draft", "prepublish"):
         require(draft is True, f"{phase} release must remain draft=true")
