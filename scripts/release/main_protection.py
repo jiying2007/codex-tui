@@ -10,7 +10,11 @@ import subprocess
 import sys
 from typing import Callable, Optional
 
-from configure_main_protection import API_VERSION, REQUIRED_CHECKS
+from configure_main_protection import (
+    API_VERSION,
+    REQUIRED_CHECKS,
+    validate_applied_protection,
+)
 
 
 SCHEMA = "codex-tui/main-protection-state/v1"
@@ -42,28 +46,9 @@ def _run(
 
 
 def validate_main_protection(payload: dict) -> None:
-    status = payload.get("required_status_checks") or {}
-    if status.get("strict") is not True:
-        raise SystemExit("main protection must require strict status checks")
-
-    contexts = set(status.get("contexts") or [])
-    missing = [name for name in REQUIRED_CHECKS if name not in contexts]
-    if missing:
-        raise SystemExit(
-            "main protection is missing required checks: " + ", ".join(missing)
-        )
-
-    enforce_admins = payload.get("enforce_admins") or {}
-    if enforce_admins.get("enabled") is not True:
-        raise SystemExit("main protection must include administrators")
-
-    force = payload.get("allow_force_pushes") or {}
-    if force.get("enabled") is not False:
-        raise SystemExit("main protection must block force pushes")
-
-    deletions = payload.get("allow_deletions") or {}
-    if deletions.get("enabled") is not False:
-        raise SystemExit("main protection must block branch deletion")
+    if not isinstance(payload, dict):
+        raise SystemExit("GitHub main branch protection status must be a JSON object")
+    validate_applied_protection(payload)
 
 
 def require_main_protection(
@@ -105,9 +90,6 @@ def require_main_protection(
         raise SystemExit(
             f"cannot decode GitHub main branch protection status: {error}"
         ) from error
-    if not isinstance(payload, dict):
-        raise SystemExit("GitHub main branch protection status must be a JSON object")
-
     validate_main_protection(payload)
 
     snapshot_sha256 = hashlib.sha256(raw.encode("utf-8")).hexdigest()
