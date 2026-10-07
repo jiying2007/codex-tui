@@ -28,6 +28,8 @@ def release_for(payloads, changes=None):
     release = {
         "id": 10,
         "tag_name": "v1.4.0",
+        "target_commitish": "0123456789abcdef0123456789abcdef01234567",
+        "published_at": None,
         "draft": True,
         "prerelease": False,
         "immutable": False,
@@ -97,6 +99,11 @@ class ReleaseAssetVerification(unittest.TestCase):
             with self.assertRaisesRegex(SystemExit, "duplicate asset name"):
                 v.verify(release, root, "v1.4.0")
 
+            release = release_for(payloads)
+            release["assets"][0]["id"] = True
+            with self.assertRaisesRegex(SystemExit, "asset id is missing or invalid"):
+                v.verify(release, root, "v1.4.0")
+
     def test_phase_and_channel_state_are_fail_closed(self):
         payloads = {
             "asset": b"bytes",
@@ -145,6 +152,37 @@ class ReleaseAssetVerification(unittest.TestCase):
             with self.subTest(changes=changes):
                 with self.assertRaisesRegex(SystemExit, message):
                     v.validate_release_state(release, "draft", "preview")
+
+    def test_receipt_schema_v2_and_release_target_identity(self):
+        self.assertEqual(v.SCHEMA, "codex-tui/release-asset-verification/v2")
+        sha = "0123456789abcdef0123456789abcdef01234567"
+
+        draft = release_for({"asset": b"bytes"})
+        v.validate_release_identity(draft, sha, "draft")
+
+        published = release_for(
+            {"asset": b"bytes"},
+            {
+                "draft": False,
+                "prerelease": False,
+                "immutable": True,
+                "published_at": "2026-10-07T00:00:00Z",
+            },
+        )
+        v.validate_release_identity(published, sha, "published")
+
+        for changes, message in (
+            ({"target_commitish": "main"}, "exact 40-character source SHA"),
+            (
+                {"target_commitish": "1123456789abcdef0123456789abcdef01234567"},
+                "does not match",
+            ),
+            ({"published_at": None, "draft": False}, "must have published_at"),
+        ):
+            release = release_for({"asset": b"bytes"}, changes)
+            with self.subTest(changes=changes):
+                with self.assertRaisesRegex(SystemExit, message):
+                    v.validate_release_identity(release, sha, "published")
 
     def test_tag_mismatch_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
