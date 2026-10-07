@@ -349,3 +349,4 @@ Press `/`, type `local`, then Enter to show only sessions whose cwd exists on th
 Codex app-server may normalize a stored Windows cwd while running on Linux, yielding a value such as `/linux/current/dir/C:\\Users\\...`. codex-tui detects the embedded foreign Windows path, displays the Windows portion as foreign, and never uses that value as a Linux PTY cwd.
 
 Run `codex-tui doctor codex` to see the active Codex home plus local/foreign/stale session counts and sample cwd values.
+\n\nStable `publish=true` skips the redundant current-run three-platform package/bundle rebuild because publication authority is the exact validated prior `publish=false` release-bundle. The current exact-SHA gate still reruns before publication; preview and stable dry-runs retain the full Linux/macOS/Windows packaging and archive-smoke matrix.\n
