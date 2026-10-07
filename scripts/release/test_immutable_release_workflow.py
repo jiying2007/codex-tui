@@ -257,6 +257,10 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
             self.assertIn(f"{prefix}-published-assets.json", section)
             self.assertIn(f"--channel {prefix}", section)
         self.assertIn("stable-prepublish-assets.json", stable)
+        self.assertEqual(
+            publish.count('--source-sha "$GITHUB_SHA"'),
+            5,
+        )
 
         self.assertIn("name: release-asset-integrity", publish)
         self.assertIn("if: success()", publish)
