@@ -9,7 +9,8 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 pub const RELEASE_VERIFY_SCHEMA: &str = "codex-tui/release-verification/v1";
-pub const RELEASE_EVIDENCE_SCHEMA: &str = "codex-tui/release-evidence/v5";
+pub const RELEASE_EVIDENCE_SCHEMA: &str = "codex-tui/release-evidence/v6";
+pub const REAL_EVIDENCE_BUNDLE_SCHEMA: &str = "codex-tui/stable-real-evidence-bundle/v1";
 pub const AUTOMATED_QUALIFICATION_SCHEMA: &str = "codex-tui/automated-qualification/v3";
 pub const STABLE_CRITERIA_SCHEMA: &str = "codex-tui/stable-criteria/v2";
 pub const PRIMARY_STABLE_PLATFORM: &str = "linux";
@@ -98,6 +99,24 @@ pub struct PerformanceReceipt {
     pub observed_at: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RealEvidenceFileReceipt {
+    pub name: String,
+    pub sha256: String,
+    pub size: usize,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RealEvidenceBundleReceipt {
+    pub schema: String,
+    pub source_sha: String,
+    pub payload_sha256: String,
+    pub payload_chars: usize,
+    pub files: BTreeMap<String, RealEvidenceFileReceipt>,
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ReleaseEvidenceReceipt {
@@ -112,6 +131,7 @@ pub struct ReleaseEvidenceReceipt {
     pub terminal_restoration: BTreeMap<String, PlatformTerminalReceipt>,
     pub automated_qualification: AutomatedQualificationReceipt,
     pub performance: PerformanceReceipt,
+    pub real_evidence_bundle: RealEvidenceBundleReceipt,
 }
 
 #[derive(Clone, Debug)]
@@ -289,6 +309,7 @@ pub fn validate_evidence(path: &Path, version: &str, commit_sha: &str) -> Result
     );
 
     validate_automated_qualification(&receipt.automated_qualification, commit_sha)?;
+    validate_real_evidence_bundle(&receipt.real_evidence_bundle, commit_sha)?;
 
     validate_platform_evidence(
         PRIMARY_STABLE_PLATFORM,
@@ -346,7 +367,106 @@ pub fn validate_evidence(path: &Path, version: &str, commit_sha: &str) -> Result
         !receipt.performance.observed_at.trim().is_empty(),
         "performance observation timestamp must not be empty"
     );
+    anyhow::ensure!(
+        receipt.performance.p99_ms >= receipt.performance.p95_ms,
+        "performance p99 must be >= p95"
+    );
 
+    validate_real_evidence_hash_binding(&receipt)?;
+
+    Ok(())
+}
+
+fn validate_real_evidence_bundle(
+    receipt: &RealEvidenceBundleReceipt,
+    commit_sha: &str,
+) -> Result<()> {
+    anyhow::ensure!(
+        receipt.schema == REAL_EVIDENCE_BUNDLE_SCHEMA,
+        "real evidence bundle schema must be {REAL_EVIDENCE_BUNDLE_SCHEMA}"
+    );
+    anyhow::ensure!(
+        receipt.source_sha.eq_ignore_ascii_case(commit_sha),
+        "real evidence bundle source SHA mismatch"
+    );
+    anyhow::ensure!(
+        valid_sha256(&receipt.payload_sha256),
+        "real evidence bundle payload SHA-256 must be 64 hexadecimal characters"
+    );
+    anyhow::ensure!(
+        receipt.payload_chars > 0 && receipt.payload_chars <= 60_000,
+        "real evidence bundle payload size is outside the workflow-dispatch contract"
+    );
+    for key in ["linuxCompat", "linuxTerminal", "performance"] {
+        anyhow::ensure!(
+            receipt.files.contains_key(key),
+            "real evidence bundle is missing required file receipt {key}"
+        );
+    }
+    for (key, file) in &receipt.files {
+        anyhow::ensure!(
+            !file.name.trim().is_empty(),
+            "real evidence bundle file {key} name must not be empty"
+        );
+        anyhow::ensure!(
+            valid_sha256(&file.sha256),
+            "real evidence bundle file {key} SHA-256 must be 64 hexadecimal characters"
+        );
+    }
+    Ok(())
+}
+
+fn validate_real_evidence_hash_binding(receipt: &ReleaseEvidenceReceipt) -> Result<()> {
+    let file_hash = |key: &str| -> Result<&str> {
+        receipt
+            .real_evidence_bundle
+            .files
+            .get(key)
+            .map(|file| file.sha256.as_str())
+            .with_context(|| format!("real evidence bundle file receipt missing: {key}"))
+    };
+
+    anyhow::ensure!(
+        receipt.compatibility["linux"].report_sha256 == file_hash("linuxCompat")?,
+        "Linux compatibility hash is not bound to the real evidence bundle"
+    );
+    anyhow::ensure!(
+        receipt.terminal_restoration["linux"].receipt_sha256 == file_hash("linuxTerminal")?,
+        "Linux terminal hash is not bound to the real evidence bundle"
+    );
+    anyhow::ensure!(
+        receipt.performance.report_sha256 == file_hash("performance")?,
+        "performance hash is not bound to the real evidence bundle"
+    );
+
+    for (platform, compat_key, terminal_key) in [
+        ("macos", "macosCompat", "macosTerminal"),
+        ("windows", "windowsCompat", "windowsTerminal"),
+    ] {
+        match (
+            receipt.compatibility.get(platform),
+            receipt.terminal_restoration.get(platform),
+        ) {
+            (None, None) => {
+                anyhow::ensure!(
+                    !receipt.real_evidence_bundle.files.contains_key(compat_key)
+                        && !receipt.real_evidence_bundle.files.contains_key(terminal_key),
+                    "{platform} raw evidence exists without release evidence"
+                );
+            }
+            (Some(compat), Some(terminal)) => {
+                anyhow::ensure!(
+                    compat.report_sha256 == file_hash(compat_key)?,
+                    "{platform} compatibility hash is not bound to the real evidence bundle"
+                );
+                anyhow::ensure!(
+                    terminal.receipt_sha256 == file_hash(terminal_key)?,
+                    "{platform} terminal hash is not bound to the real evidence bundle"
+                );
+            }
+            _ => anyhow::bail!("{platform} evidence must include compatibility and terminal receipts"),
+        }
+    }
     Ok(())
 }
 
@@ -643,6 +763,41 @@ mod tests {
                 support_manifest_sha256: "d".repeat(64),
                 support_snapshot_sha256: "e".repeat(64),
             },
+        }
+    }
+
+    fn real_evidence_bundle() -> RealEvidenceBundleReceipt {
+        RealEvidenceBundleReceipt {
+            schema: REAL_EVIDENCE_BUNDLE_SCHEMA.into(),
+            source_sha: sha(),
+            payload_sha256: "f".repeat(64),
+            payload_chars: 1024,
+            files: BTreeMap::from([
+                (
+                    "linuxCompat".into(),
+                    RealEvidenceFileReceipt {
+                        name: "compat-linux.json".into(),
+                        sha256: "a".repeat(64),
+                        size: 100,
+                    },
+                ),
+                (
+                    "linuxTerminal".into(),
+                    RealEvidenceFileReceipt {
+                        name: "terminal-linux.json".into(),
+                        sha256: "c".repeat(64),
+                        size: 100,
+                    },
+                ),
+                (
+                    "performance".into(),
+                    RealEvidenceFileReceipt {
+                        name: "performance-linux.json".into(),
+                        sha256: "d".repeat(64),
+                        size: 100,
+                    },
+                ),
+            ]),
         }
     }
 
