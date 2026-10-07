@@ -94,6 +94,9 @@ def validate_ci_contract(ci_text: str) -> None:
 
 
 def validate_check_runs(payload: dict, commit_sha: str) -> int:
+    commit_sha = commit_sha.strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{40}", commit_sha):
+        raise SystemExit("canonical check source SHA must be exactly 40 hexadecimal characters")
     runs = payload.get("check_runs")
     if not isinstance(runs, list):
         raise SystemExit("GitHub check-runs response is missing check_runs")
@@ -105,6 +108,12 @@ def validate_check_runs(payload: dict, commit_sha: str) -> int:
         name = item.get("name")
         if name not in REQUIRED_CHECKS:
             continue
+        head_sha = str(item.get("head_sha", "")).strip().lower()
+        if head_sha != commit_sha:
+            raise SystemExit(
+                f"required check {name} is not bound to current main: "
+                f"expected={commit_sha} actual={head_sha or '<missing>'}"
+            )
         app = item.get("app") or {}
         if app.get("slug") != GITHUB_ACTIONS_SLUG:
             raise SystemExit(
