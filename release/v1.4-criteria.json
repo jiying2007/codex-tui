@@ -245,6 +245,7 @@
     "mainProtectionSnapshotsRetained": true,
     "mainProtectionSnapshotsDigestBound": true,
     "canonicalMainProtectionRequiredAtPublication": true,
+    "publishPointMainProtectionRevalidated": true,
     "releaseAssetVerificationSchema": "codex-tui/release-asset-verification/v2",
     "releaseTargetSourceBound": true,
     "publishedTimestampRequired": true,
