@@ -44,6 +44,10 @@ Stable publication is explicitly two-phase. A `stable + publish=true` dispatch m
 
 Stable qualification also reads the live `main` branch metadata and refuses to continue if `main` has moved away from the workflow's exact source SHA. Stable publication additionally requires `main.protected=true`, so branch protection cannot remain a documentation-only prerequisite. Detailed protection policy (for example force-push/deletion restrictions and required canonical PR checks) still remains repository configuration authority outside the release workflow.
 
+The stable publication authority is the exact retained `release-bundle` produced by the successful prior `stable + publish=false` qualification, not a fresh rebuild. Before creating any stable draft, the publish job downloads that retained bundle, requires its `SHA256SUMS` to cover every bundled file exactly, recomputes every digest, requires exactly three native Linux/macOS/Windows archives, revalidates the embedded stable `release-verification.json` and `release-evidence.json` against the exact version/tag/source SHA, and then replaces the current-run bundle with those already-qualified bytes. The promotion receipt is retained as `codex-tui/stable-bundle-promotion/v1`. This makes the bytes reviewed in `publish=false` the bytes uploaded during `publish=true` without pretending that independent hosted-runner rebuilds are bit-for-bit reproducible. Preview publication continues to use the current-run bundle.
+
+For both preview and stable publication, a successful upload is also verified against GitHub's release-asset REST metadata before the draft can be published and again after publication. The verifier requires the remote asset-name set to equal the complete local bundle, requires every asset state to be `uploaded`, and matches GitHub's API-version-2026-03-10 SHA-256 digest and byte size to the local file. Successful draft and published receipts use `codex-tui/release-asset-verification/v1` and are retained as the `release-asset-integrity` workflow artifact. This makes the published GitHub asset set itself part of the fail-closed release contract rather than treating a successful upload command as sufficient evidence.
+
 The Linux evidence source SHA is not a manual dispatch input: the workflow derives it directly from `github.sha`. This both tightens exact-source binding and keeps the dispatch contract within GitHub's top-level input budget.
 
 The recommended publication path does not manually re-enter the retained inputs. After the successful stable dry-run, use:
@@ -57,9 +61,9 @@ This performs a non-publishing preflight: clean/main/origin SHA agreement, absen
 
 `publish=true` additionally creates the GitHub Release only after every prior job succeeds and, for stable, the prior dry-run qualification has been validated.
 
-Preview publication uses the same explicit pre-publication recovery discipline as stable publication without requiring the administrative immutable-release credential. At the publish point it rechecks tag absence, creates an unpublished draft carrying a unique preview workflow run/attempt/source-SHA ownership marker, uploads all bundle assets, verifies the exact tag/body identity, then atomically replaces the marker with release notes while setting prerelease=true and draft=false. A pre-publication failure deletes release + tag only when the draft, exact tag SHA and owner marker still match this run; ambiguous/foreign identity refuses cleanup. Published preview postconditions require draft=false, prerelease=true and the exact workflow SHA.
+Preview publication uses the same explicit pre-publication recovery discipline as stable publication without requiring the administrative immutable-release credential. At the publish point it rechecks tag absence, creates an unpublished draft carrying a unique preview workflow run/attempt/source-SHA ownership marker, uploads all bundle assets, resolves that draft through the authenticated List releases endpoint, verifies the exact tag/body identity and remote asset digests, then atomically replaces the marker with release notes while setting prerelease=true and draft=false. A pre-publication failure deletes release + tag only when exactly one listed draft, exact tag SHA and owner marker still match this run; missing/ambiguous/foreign identity refuses cleanup. Published preview postconditions require draft=false, prerelease=true and the exact workflow SHA.
 
-Stable publication is recoverable before it becomes public. The workflow writes a unique ownership marker derived from the workflow run/attempt/source SHA into the draft body before asset upload. Any pre-publication failure, including an ambiguous client failure while creating the draft, may automatically delete the release and tag only when GitHub still reports all three exact conditions: the release is a draft, its tag still points to the workflow SHA, and its body still equals that workflow ownership marker. Otherwise cleanup refuses. Final publication replaces the marker with the reviewed release notes and clears draft status in the same `gh release edit` operation; after that point automatic deletion is disabled. Published stable postconditions require `draft=false`, `prerelease=false`, `immutable=true`, and the release tag to still point to the exact workflow SHA; any failed postcondition is an incident.
+Stable publication is recoverable before it becomes public. The workflow writes a unique ownership marker derived from the workflow run/attempt/source SHA into the draft body before asset upload. Draft identity/readback uses the authenticated **List releases** REST contract, which includes draft releases for callers with push access; the published-release-by-tag endpoint is deliberately reserved for post-publication verification. Any pre-publication failure, including an ambiguous client failure while creating the draft, may automatically delete the release and tag only when the listing yields exactly one draft for the tag, its tag still points to the workflow SHA, and its body still equals that workflow ownership marker. Missing or ambiguous draft identity refuses cleanup. Final publication replaces the marker with the reviewed release notes and clears draft status in the same `gh release edit` operation; after that point automatic deletion is disabled. Published stable postconditions require `draft=false`, `prerelease=false`, `immutable=true`, and the release tag to still point to the exact workflow SHA; any failed postcondition is an incident.
 
 An existing tag is treated as a collision and publishing fails closed.
 
@@ -138,17 +142,17 @@ It binds:
 - Linux retained `resident-planning-10k` diagnostic JSON with `sourceSha` equal to the release commit and SHA-256 of the exact retained report;
 - optional macOS/Windows Tier 2 retained receipts when available.
 
-The stable verifier requires at least 200 retained resident-planning-10k samples with finite nonnegative p95/p99 values, but v1.2 does not fail solely on hosted-runner latency thresholds. Compatibility report hashes, terminal-restoration receipt hashes, retained performance-report hashes and automated-qualification artifact hashes are exact SHA-256 values.
+The stable verifier requires at least 200 retained resident-planning-10k samples with finite nonnegative p95/p99 values, but the active v1.4 policy does not fail solely on hosted-runner latency thresholds. Compatibility report hashes, terminal-restoration receipt hashes, retained performance-report hashes and automated-qualification artifact hashes are exact SHA-256 values.
 
 The workflow independently calls the GitHub Actions API and verifies the supplied canonical CI run is the `ci` workflow on `main`, succeeded, and is bound to the release source SHA.
 
-## v1.2 hosted development qualification
+## Hosted development qualification
 
 Every push to `main` retains a source-bound `codex-tui/development-qualification/v1` artifact. It combines the exact-SHA automated hardening receipt with the current module ratchet and retained App Server protocol replay fixtures.
 
-This hosted receipt is development authority only: it always records `stableReady=false` and `publicationAllowed=false`. It is never accepted in place of `codex-tui/release-evidence/v5`, so automated v1.2 development can continue without fabricating Linux compatibility, real controlling-TTY restoration or retained Linux performance evidence.
+This hosted receipt is development authority only: it always records `stableReady=false` and `publicationAllowed=false`. It is never accepted in place of `codex-tui/release-evidence/v5`, so automated v1.4 development can continue without fabricating Linux compatibility, real controlling-TTY restoration or retained Linux performance evidence.
 
-The release gate independently rechecks the architecture ratchet, protocol replay, cargo-deny policy and RustSec advisories on the exact checkout before packaging. It retains both `development-qualification.json` and `security-governance.json` in the release-gate artifact so the new v1.2 gates are auditable instead of existing only as workflow logs.
+The release gate independently rechecks the architecture ratchet, protocol replay, cargo-deny policy and RustSec advisories on the exact checkout before packaging. It retains both `development-qualification.json` and `security-governance.json` in the release-gate artifact so the hosted development gates are auditable instead of existing only as workflow logs.
 
 ## Locked dependency graph
 
@@ -267,9 +271,9 @@ python3 scripts/release/terminal_smoke.py record-pass --pass
 
 ## Versioned stable criteria
 
-Release qualification uses the current major.minor criteria file. For the active v1.2.0 line the authority is `release/v1.2-criteria.json`, and archives expose it as `STABLE-CRITERIA.json`. `release/v1.0-criteria.json` and `release/v1.1-criteria.json` remain historical line authorities; the parked v1.1 candidate is preserved separately on `release/v1.1-parked`.
+Release qualification uses the current major.minor criteria file. For the active v1.4.0 line the authority is `release/v1.4-criteria.json`, and archives expose it as `STABLE-CRITERIA.json`. `release/v1.0-criteria.json` through `release/v1.3-criteria.json` remain historical line authorities; the parked v1.1 candidate is preserved separately on `release/v1.1-parked`.
 
-The repository is Apache-2.0 licensed and v1.0.0 was published on 2026-09-30. v1.2 stable publication is fail-closed on exact-commit automated hardening, architecture ratchet, protocol replay, dependency-security checks, canonical CI, Linux Tier 1 retained compatibility and real terminal restoration. macOS and Windows remain required in canonical CI and native package/archive smoke as Tier 2 automated-compatibility platforms; their real-environment retained receipts are optional.
+The repository is Apache-2.0 licensed and v1.0.0 was published on 2026-09-30. v1.4 stable publication is fail-closed on exact-commit automated hardening, architecture ratchet, protocol replay, dependency-security checks, canonical CI, Linux Tier 1 retained compatibility and real terminal restoration. macOS and Windows remain required in canonical CI and native package/archive smoke as Tier 2 automated-compatibility platforms; their real-environment retained receipts are optional.
 
 ## Non-goals
 
@@ -291,7 +295,7 @@ Stable-blocking real-world retained evidence:
 - Linux `compat/v2` readiness = READY;
 - Linux real controlling-TTY restoration smoke = PASS.
 
-Repository-internal stable gates are exact-SHA automated hardening plus canonical CI/package smoke. The Linux resident-planning-10k benchmark remains retained with >= 200 samples for diagnosis and trend comparison, but its hosted-runner p95/p99 values are not an independent v1.2 release blocker.
+Repository-internal stable gates are exact-SHA automated hardening plus canonical CI/package smoke. The Linux resident-planning-10k benchmark remains retained with >= 200 samples for diagnosis and trend comparison, but its hosted-runner p95/p99 values are not an independent v1.4 release blocker.
 
 macOS and Windows remain Tier 2 automated-compatibility platforms:
 
@@ -345,3 +349,4 @@ Press `/`, type `local`, then Enter to show only sessions whose cwd exists on th
 Codex app-server may normalize a stored Windows cwd while running on Linux, yielding a value such as `/linux/current/dir/C:\\Users\\...`. codex-tui detects the embedded foreign Windows path, displays the Windows portion as foreign, and never uses that value as a Linux PTY cwd.
 
 Run `codex-tui doctor codex` to see the active Codex home plus local/foreign/stale session counts and sample cwd values.
+\n\nStable `publish=true` skips the redundant current-run three-platform package/bundle rebuild because publication authority is the exact validated prior `publish=false` release-bundle. The current exact-SHA gate still reruns before publication; preview and stable dry-runs retain the full Linux/macOS/Windows packaging and archive-smoke matrix.\n

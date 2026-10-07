@@ -59,14 +59,50 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
         self.assertIn("--notes-file bundle/RELEASE_NOTES.md", stable)
         self.assertIn("--draft=false", stable)
         self.assertIn("releases/tags/$TAG", stable)
-        self.assertIn("--jq .draft", stable)
-        self.assertIn("--jq .prerelease", stable)
-        self.assertIn("--jq .immutable", stable)
+        self.assertIn("stable-published-release.json", stable)
+        self.assertIn("X-GitHub-Api-Version: 2026-03-10", stable)
         self.assertIn("PUBLISHED_DRAFT", stable)
         self.assertIn("PUBLISHED_PRERELEASE", stable)
         self.assertIn('test "$PUBLISHED_DRAFT" = "false"', stable)
         self.assertIn('test "$PUBLISHED_PRERELEASE" = "false"', stable)
         self.assertIn("PUBLISHED_TAG_SHA", stable)
+
+    def test_stable_publish_skips_redundant_current_run_packaging(self):
+        text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        package = text.split("\n  package:\n", 1)[1].split("\n  bundle:\n", 1)[0]
+        bundle = text.split("\n  bundle:\n", 1)[1].split("\n  publish:\n", 1)[0]
+        publish = text.rsplit("\n  publish:\n", 1)[1]
+
+        skip = "inputs.channel != 'stable' || inputs.publish != true"
+        self.assertIn(skip, package)
+        self.assertIn(skip, bundle)
+        self.assertIn("always() && inputs.publish == true", publish)
+        self.assertIn("needs.gate.result == 'success'", publish)
+        self.assertIn("needs.gate.outputs.channel == 'stable' || needs.bundle.result == 'success'", publish)
+
+        current_bundle_download = publish.split(
+            "- name: Promote exact qualified stable dry-run bundle", 1
+        )[0]
+        self.assertIn("if: needs.gate.outputs.channel == 'preview'", current_bundle_download)
+
+    def test_stable_publish_promotes_exact_qualified_dry_run_bundle(self):
+        text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        publish = text.rsplit("\n  publish:\n", 1)[1]
+        stable_start = publish.index("- name: Publish immutable stable GitHub Release")
+
+        self.assertIn("actions: read", publish)
+        self.assertIn('gh run download "$STABLE_QUALIFICATION_RUN"', publish)
+        self.assertIn("--name release-bundle", publish)
+        self.assertIn("scripts/release/promote_release_bundle.py", publish)
+        self.assertNotIn('CURRENT_BUNDLE=', publish)
+        self.assertIn('mv "$PRIOR_BUNDLE" bundle', publish)
+        self.assertIn("stable-bundle-promotion.json", publish)
+        self.assertIn("name: stable-bundle-promotion", publish)
+        self.assertNotIn("compare_release_archives.py", publish)
+        self.assertLess(
+            publish.index("scripts/release/promote_release_bundle.py"),
+            stable_start,
+        )
 
     def test_stable_publish_cleans_only_exact_unpublished_draft_and_tag(self):
         text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
@@ -161,6 +197,94 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
         self.assertIn("PUBLISHED_DRAFT", preview)
         self.assertIn("PUBLISHED_PRERELEASE", preview)
         self.assertIn("PUBLISHED_TAG_SHA", preview)
+
+    def test_stable_revalidates_exact_draft_after_immutable_check_at_publish_point(self):
+        text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        stable = text.rsplit("\n  publish:\n", 1)[1].split(
+            "- name: Publish immutable stable GitHub Release", 1
+        )[1].split("- uses: actions/upload-artifact@", 1)[0]
+
+        immutable = stable.index("scripts/release/immutable_releases.py")
+        prepublish = stable.index("--phase prepublish")
+        publish_edit = stable.index('gh release edit "$TAG"')
+        self.assertLess(immutable, prepublish)
+        self.assertLess(prepublish, publish_edit)
+        self.assertIn("stable-prepublish-release.json", stable)
+        self.assertIn("PREPUBLISH_TAG_SHA=", stable)
+        self.assertIn("PREPUBLISH_BODY=", stable)
+        self.assertIn("stable draft identity drifted at publication point", stable)
+
+    def test_published_state_uses_one_version_pinned_release_snapshot(self):
+        text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        publish = text.rsplit("\n  publish:\n", 1)[1]
+        preview = publish.split(
+            "- name: Publish preview GitHub Release", 1
+        )[1].split("- name: Publish immutable stable GitHub Release", 1)[0]
+        stable = publish.split(
+            "- name: Publish immutable stable GitHub Release", 1
+        )[1].split("- uses: actions/upload-artifact@", 1)[0]
+
+        for section, name in ((preview, "preview"), (stable, "stable")):
+            after = section.split('gh release edit "$TAG"', 1)[1]
+            self.assertEqual(after.count("releases/tags/$TAG"), 1)
+            self.assertIn("X-GitHub-Api-Version: 2026-03-10", after)
+            self.assertIn(f"{name}-published-release.json", after)
+            self.assertIn("PUBLISHED_DRAFT=", after)
+            self.assertIn("PUBLISHED_PRERELEASE=", after)
+        self.assertIn("PUBLISHED_IMMUTABLE=", stable.split('gh release edit "$TAG"', 1)[1])
+
+    def test_preview_and_stable_verify_uploaded_asset_digests_before_and_after_publish(self):
+        text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        publish = text.rsplit("\n  publish:\n", 1)[1]
+        preview = publish.split(
+            "- name: Publish preview GitHub Release", 1
+        )[1].split("- name:", 1)[0]
+        stable = publish.split(
+            "- name: Publish immutable stable GitHub Release", 1
+        )[1].split("- uses: actions/upload-artifact@", 1)[0]
+
+        self.assertEqual(
+            preview.count("scripts/release/verify_release_assets.py"),
+            2,
+        )
+        self.assertEqual(
+            stable.count("scripts/release/verify_release_assets.py"),
+            3,
+        )
+        for section, prefix in ((preview, "preview"), (stable, "stable")):
+            self.assertIn("X-GitHub-Api-Version: 2026-03-10", section)
+            self.assertIn(f"{prefix}-draft-assets.json", section)
+            self.assertIn(f"{prefix}-published-assets.json", section)
+        self.assertIn("stable-prepublish-assets.json", stable)
+
+        self.assertIn("name: release-asset-integrity", publish)
+        self.assertIn("if: always()", publish)
+        self.assertIn("*-assets.json", publish)
+        self.assertIn("*-release.json", publish)
+        self.assertIn("if-no-files-found: ignore", publish)
+
+    def test_draft_identity_uses_authenticated_release_listing_not_published_by_tag_endpoint(self):
+        text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        publish = text.rsplit("\n  publish:\n", 1)[1]
+        preview = publish.split(
+            "- name: Publish preview GitHub Release", 1
+        )[1].split("- name: Publish immutable stable GitHub Release", 1)[0]
+        stable = publish.split(
+            "- name: Publish immutable stable GitHub Release", 1
+        )[1].split("- uses: actions/upload-artifact@", 1)[0]
+
+        for section in (preview, stable):
+            before_publish = section.split('gh release edit "$TAG"', 1)[0]
+            self.assertIn("releases?per_page=100", before_publish)
+            self.assertIn("--paginate --slurp", before_publish)
+            self.assertIn("scripts/release/select_release.py", before_publish)
+            self.assertIn("--draft true", before_publish)
+            self.assertNotIn("releases/tags/$TAG", before_publish)
+
+        # Once draft=false has made the release public, the documented by-tag
+        # endpoint is the correct post-publication identity/readback path.
+        self.assertIn("releases/tags/$TAG", preview.split('gh release edit "$TAG"', 1)[1])
+        self.assertIn("releases/tags/$TAG", stable.split('gh release edit "$TAG"', 1)[1])
 
     def test_preview_publish_does_not_read_admin_secret(self):
         text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")

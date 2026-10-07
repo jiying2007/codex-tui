@@ -482,6 +482,7 @@ jobs:
 
   package:
     name: package-${{ matrix.platform }}
+    if: ${{ inputs.channel != 'stable' || inputs.publish != true }}
     needs: gate
     strategy:
       fail-fast: false
@@ -552,6 +553,7 @@ jobs:
 
   bundle:
     name: release-bundle
+    if: ${{ inputs.channel != 'stable' || inputs.publish != true }}
     needs: [gate, package]
     runs-on: ubuntu-24.04
     steps:
@@ -608,13 +610,14 @@ jobs:
 
   publish:
     name: publish-github-release
-    if: inputs.publish == true
+    if: ${{ always() && inputs.publish == true && needs.gate.result == 'success' && (needs.gate.outputs.channel == 'stable' || needs.bundle.result == 'success') }}
     needs: [gate, bundle]
     runs-on: ubuntu-24.04
     concurrency:
       group: codex-tui-release-publish
       cancel-in-progress: false
     permissions:
+      actions: read
       contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -622,9 +625,52 @@ jobs:
           persist-credentials: false
 
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        if: needs.gate.outputs.channel == 'preview'
         with:
           name: release-bundle
           path: bundle
+
+      - name: Promote exact qualified stable dry-run bundle
+        if: needs.gate.outputs.channel == 'stable'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STABLE_QUALIFICATION_RUN: ${{ inputs.stable_qualification_run }}
+          VERSION: ${{ needs.gate.outputs.version }}
+          TAG: ${{ needs.gate.outputs.tag }}
+        run: |
+          set -euo pipefail
+          [[ "$STABLE_QUALIFICATION_RUN" =~ ^[1-9][0-9]*$ ]] || {
+            echo "stable publication requires a nonzero stable_qualification_run" >&2
+            exit 1
+          }
+
+          PRIOR_BUNDLE="$RUNNER_TEMP/prior-stable-release-bundle"
+          rm -rf "$PRIOR_BUNDLE" bundle
+
+          gh run download "$STABLE_QUALIFICATION_RUN" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name release-bundle \
+            --dir "$PRIOR_BUNDLE"
+
+          python3 scripts/release/promote_release_bundle.py \
+            --bundle "$PRIOR_BUNDLE" \
+            --version "$VERSION" \
+            --tag "$TAG" \
+            --source-sha "$GITHUB_SHA" \
+            --qualification-run "$STABLE_QUALIFICATION_RUN" \
+            --publication-run "$GITHUB_RUN_ID" \
+            --output "$RUNNER_TEMP/stable-bundle-promotion.json"
+
+          mv "$PRIOR_BUNDLE" bundle
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: needs.gate.outputs.channel == 'stable'
+        with:
+          name: stable-bundle-promotion
+          path: ${{ runner.temp }}/stable-bundle-promotion.json
+          if-no-files-found: error
+          retention-days: 90
 
       - name: Publish preview GitHub Release
         if: needs.gate.outputs.channel == 'preview'
@@ -651,12 +697,32 @@ jobs:
           DRAFT_ATTEMPTED=false
           PUBLISHED=false
           DRAFT_OWNER_MARKER="<!-- codex-tui-preview-publish-run:${GITHUB_RUN_ID}:${GITHUB_RUN_ATTEMPT}:${GITHUB_SHA} -->"
+          select_preview_draft() {
+            local listing="$1"
+            local output="$2"
+            gh api --paginate --slurp \
+              -H "X-GitHub-Api-Version: 2026-03-10" \
+              "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$listing" &&
+              python3 scripts/release/select_release.py \
+                --releases-json "$listing" \
+                --tag "$TAG" \
+                --draft true \
+                --output "$output"
+          }
           cleanup_unpublished_preview() {
             status=$?
             trap - EXIT
             if [ "$DRAFT_ATTEMPTED" = "true" ] && [ "$PUBLISHED" != "true" ]; then
-              CURRENT_DRAFT="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .draft 2>/dev/null || true)"
-              CURRENT_BODY="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .body 2>/dev/null || true)"
+              CLEANUP_RELEASE="$RUNNER_TEMP/preview-cleanup-release.json"
+              if select_preview_draft \
+                "$RUNNER_TEMP/preview-cleanup-releases.json" \
+                "$CLEANUP_RELEASE" >/dev/null 2>&1; then
+                CURRENT_DRAFT=true
+                CURRENT_BODY="$(python3 -c 'import json,sys; value=json.load(open(sys.argv[1], encoding="utf-8")).get("body"); print(value if isinstance(value,str) else "")' "$CLEANUP_RELEASE")"
+              else
+                CURRENT_DRAFT=""
+                CURRENT_BODY=""
+              fi
               CURRENT_TAG_SHA="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha 2>/dev/null || true)"
               if [ "$CURRENT_DRAFT" = "true" ] && [ "$CURRENT_TAG_SHA" = "$GITHUB_SHA" ] && [ "$CURRENT_BODY" = "$DRAFT_OWNER_MARKER" ]; then
                 echo "cleaning owned unpublished preview draft and tag after pre-publication failure" >&2
@@ -683,8 +749,18 @@ jobs:
           gh release upload "$TAG" bundle/* \
             --repo "$GITHUB_REPOSITORY"
 
+          select_preview_draft \
+            "$RUNNER_TEMP/preview-draft-releases.json" \
+            "$RUNNER_TEMP/preview-draft-release.json"
+          python3 scripts/release/verify_release_assets.py \
+            --release-json "$RUNNER_TEMP/preview-draft-release.json" \
+            --bundle bundle \
+            --tag "$TAG" \
+            --phase draft \
+            --output "$RUNNER_TEMP/preview-draft-assets.json"
+
           DRAFT_TAG_SHA="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha)"
-          DRAFT_BODY="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .body)"
+          DRAFT_BODY="$(python3 -c 'import json,sys; value=json.load(open(sys.argv[1], encoding="utf-8")).get("body"); print(value if isinstance(value,str) else "")' "$RUNNER_TEMP/preview-draft-release.json")"
           if [ "$DRAFT_TAG_SHA" != "$GITHUB_SHA" ] || [ "$DRAFT_BODY" != "$DRAFT_OWNER_MARKER" ]; then
             echo "preview draft identity drifted before publication" >&2
             exit 1
@@ -698,8 +774,12 @@ jobs:
           PUBLISHED=true
           trap - EXIT
 
-          PUBLISHED_DRAFT="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .draft)"
-          PUBLISHED_PRERELEASE="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .prerelease)"
+          gh api \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" \
+            > "$RUNNER_TEMP/preview-published-release.json"
+          PUBLISHED_DRAFT="$(python3 -c 'import json,sys; print(str(json.load(open(sys.argv[1], encoding="utf-8")).get("draft")).lower())' "$RUNNER_TEMP/preview-published-release.json")"
+          PUBLISHED_PRERELEASE="$(python3 -c 'import json,sys; print(str(json.load(open(sys.argv[1], encoding="utf-8")).get("prerelease")).lower())' "$RUNNER_TEMP/preview-published-release.json")"
           PUBLISHED_TAG_SHA="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha)"
           test "$PUBLISHED_DRAFT" = "false" || {
             echo "preview release remained draft after publication" >&2
@@ -713,6 +793,13 @@ jobs:
             echo "preview release tag target mismatch after publication: expected=$GITHUB_SHA actual=$PUBLISHED_TAG_SHA" >&2
             exit 1
           }
+
+          python3 scripts/release/verify_release_assets.py \
+            --release-json "$RUNNER_TEMP/preview-published-release.json" \
+            --bundle bundle \
+            --tag "$TAG" \
+            --phase published \
+            --output "$RUNNER_TEMP/preview-published-assets.json"
 
       - name: Publish immutable stable GitHub Release
         if: needs.gate.outputs.channel == 'stable'
@@ -750,12 +837,32 @@ jobs:
           DRAFT_ATTEMPTED=false
           PUBLISHED=false
           DRAFT_OWNER_MARKER="<!-- codex-tui-publish-run:${GITHUB_RUN_ID}:${GITHUB_RUN_ATTEMPT}:${GITHUB_SHA} -->"
+          select_stable_draft() {
+            local listing="$1"
+            local output="$2"
+            GH_TOKEN="$PUBLISH_TOKEN" gh api --paginate --slurp \
+              -H "X-GitHub-Api-Version: 2026-03-10" \
+              "repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$listing" &&
+              python3 scripts/release/select_release.py \
+                --releases-json "$listing" \
+                --tag "$TAG" \
+                --draft true \
+                --output "$output"
+          }
           cleanup_unpublished_draft() {
             status=$?
             trap - EXIT
             if [ "$DRAFT_ATTEMPTED" = "true" ] && [ "$PUBLISHED" != "true" ]; then
-              CURRENT_DRAFT="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .draft 2>/dev/null || true)"
-              CURRENT_BODY="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .body 2>/dev/null || true)"
+              CLEANUP_RELEASE="$RUNNER_TEMP/stable-cleanup-release.json"
+              if select_stable_draft \
+                "$RUNNER_TEMP/stable-cleanup-releases.json" \
+                "$CLEANUP_RELEASE" >/dev/null 2>&1; then
+                CURRENT_DRAFT=true
+                CURRENT_BODY="$(python3 -c 'import json,sys; value=json.load(open(sys.argv[1], encoding="utf-8")).get("body"); print(value if isinstance(value,str) else "")' "$CLEANUP_RELEASE")"
+              else
+                CURRENT_DRAFT=""
+                CURRENT_BODY=""
+              fi
               CURRENT_TAG_SHA="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha 2>/dev/null || true)"
               if [ "$CURRENT_DRAFT" = "true" ] && [ "$CURRENT_TAG_SHA" = "$GITHUB_SHA" ] && [ "$CURRENT_BODY" = "$DRAFT_OWNER_MARKER" ]; then
                 echo "cleaning owned unpublished stable draft and tag after pre-publication failure" >&2
@@ -782,8 +889,18 @@ jobs:
           GH_TOKEN="$PUBLISH_TOKEN" gh release upload "$TAG" bundle/* \
             --repo "$GITHUB_REPOSITORY"
 
+          select_stable_draft \
+            "$RUNNER_TEMP/stable-draft-releases.json" \
+            "$RUNNER_TEMP/stable-draft-release.json"
+          python3 scripts/release/verify_release_assets.py \
+            --release-json "$RUNNER_TEMP/stable-draft-release.json" \
+            --bundle bundle \
+            --tag "$TAG" \
+            --phase draft \
+            --output "$RUNNER_TEMP/stable-draft-assets.json"
+
           DRAFT_TAG_SHA="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha)"
-          DRAFT_BODY="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .body)"
+          DRAFT_BODY="$(python3 -c 'import json,sys; value=json.load(open(sys.argv[1], encoding="utf-8")).get("body"); print(value if isinstance(value,str) else "")' "$RUNNER_TEMP/stable-draft-release.json")"
           if [ "$DRAFT_TAG_SHA" != "$GITHUB_SHA" ] || [ "$DRAFT_BODY" != "$DRAFT_OWNER_MARKER" ]; then
             echo "draft release identity drifted before publication" >&2
             exit 1
@@ -796,6 +913,22 @@ jobs:
             exit 1
           fi
 
+          select_stable_draft \
+            "$RUNNER_TEMP/stable-prepublish-releases.json" \
+            "$RUNNER_TEMP/stable-prepublish-release.json"
+          python3 scripts/release/verify_release_assets.py \
+            --release-json "$RUNNER_TEMP/stable-prepublish-release.json" \
+            --bundle bundle \
+            --tag "$TAG" \
+            --phase prepublish \
+            --output "$RUNNER_TEMP/stable-prepublish-assets.json"
+          PREPUBLISH_TAG_SHA="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha)"
+          PREPUBLISH_BODY="$(python3 -c 'import json,sys; value=json.load(open(sys.argv[1], encoding="utf-8")).get("body"); print(value if isinstance(value,str) else "")' "$RUNNER_TEMP/stable-prepublish-release.json")"
+          if [ "$PREPUBLISH_TAG_SHA" != "$GITHUB_SHA" ] || [ "$PREPUBLISH_BODY" != "$DRAFT_OWNER_MARKER" ]; then
+            echo "stable draft identity drifted at publication point" >&2
+            exit 1
+          fi
+
           GH_TOKEN="$PUBLISH_TOKEN" gh release edit "$TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --notes-file bundle/RELEASE_NOTES.md \
@@ -803,9 +936,13 @@ jobs:
           PUBLISHED=true
           trap - EXIT
 
-          PUBLISHED_DRAFT="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .draft)"
-          PUBLISHED_PRERELEASE="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .prerelease)"
-          PUBLISHED_IMMUTABLE="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .immutable)"
+          GH_TOKEN="$PUBLISH_TOKEN" gh api \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" \
+            > "$RUNNER_TEMP/stable-published-release.json"
+          PUBLISHED_DRAFT="$(python3 -c 'import json,sys; print(str(json.load(open(sys.argv[1], encoding="utf-8")).get("draft")).lower())' "$RUNNER_TEMP/stable-published-release.json")"
+          PUBLISHED_PRERELEASE="$(python3 -c 'import json,sys; print(str(json.load(open(sys.argv[1], encoding="utf-8")).get("prerelease")).lower())' "$RUNNER_TEMP/stable-published-release.json")"
+          PUBLISHED_IMMUTABLE="$(python3 -c 'import json,sys; print(str(json.load(open(sys.argv[1], encoding="utf-8")).get("immutable")).lower())' "$RUNNER_TEMP/stable-published-release.json")"
           PUBLISHED_TAG_SHA="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha)"
           test "$PUBLISHED_DRAFT" = "false" || {
             echo "stable release remained draft after publication; manual incident response required" >&2
@@ -823,3 +960,20 @@ jobs:
             echo "stable release tag target mismatch after publication: expected=$GITHUB_SHA actual=$PUBLISHED_TAG_SHA" >&2
             exit 1
           }
+
+          python3 scripts/release/verify_release_assets.py \
+            --release-json "$RUNNER_TEMP/stable-published-release.json" \
+            --bundle bundle \
+            --tag "$TAG" \
+            --phase published \
+            --output "$RUNNER_TEMP/stable-published-assets.json"
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with:
+          name: release-asset-integrity
+          path: |
+            ${{ runner.temp }}/*-assets.json
+            ${{ runner.temp }}/*-release.json
+          if-no-files-found: ignore
+          retention-days: 90
