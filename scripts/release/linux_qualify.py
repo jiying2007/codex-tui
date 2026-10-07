@@ -28,6 +28,7 @@ def run(
     capture: bool = True,
     check: bool = True,
     env_overrides=None,
+    stdin_text: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     environment = os.environ.copy()
     if env_overrides:
@@ -39,6 +40,7 @@ def run(
         stdout=subprocess.PIPE if capture else None,
         stderr=subprocess.PIPE if capture else None,
         env=environment,
+        input=stdin_text,
     )
     if check and proc.returncode != 0:
         if proc.stdout:
@@ -481,7 +483,7 @@ def main() -> int:
     }
 
     summary = {
-        "schema": "codex-tui/linux-qualification/v2",
+        "schema": "codex-tui/linux-qualification/v3",
         "version": version,
         "commitSha": commit_sha,
         "canonicalCiRun": canonical_ci_run,
@@ -511,7 +513,16 @@ def main() -> int:
         "releaseEvidence": str(evidence_path),
         "releaseVerification": str(verify_path),
         "localStableVerify": "pass",
-        "workflowInputs": workflow_inputs,
+        "workflowInputSummary": {
+            "channel": workflow_inputs["channel"],
+            "publish": workflow_inputs["publish"],
+            "canonical_ci_run": workflow_inputs["canonical_ci_run"],
+            "stable_real_evidence_bundle": {
+                "redacted": True,
+                "payloadSha256": real_summary["payloadSha256"],
+                "payloadChars": real_summary["payloadChars"],
+            },
+        },
         "next": (
             "stable publish=false workflow dispatched; after it succeeds, run "
             "scripts/release/stable_publish.py with that run ID"
@@ -540,10 +551,14 @@ def main() -> int:
             github_repo,
             "--ref",
             "main",
+            "--json",
         ]
-        for key, value in workflow_inputs.items():
-            command.extend(["-f", f"{key}={value}"])
-        run(command, cwd=root, capture=False)
+        run(
+            command,
+            cwd=root,
+            capture=False,
+            stdin_text=json.dumps(workflow_inputs, separators=(",", ":")),
+        )
         summary["next"] = (
             "stable publish=false workflow dispatched; after it succeeds, run "
             "scripts/release/stable_publish.py with that run ID"
