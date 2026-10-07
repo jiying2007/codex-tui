@@ -61,7 +61,7 @@ python3 scripts/release/stable_publish.py \
   --stable-qualification-run <successful-stable-publish-false-run-id>
 ```
 
-This performs a non-publishing preflight: clean/main/origin SHA agreement, absent stable tag, live `main.protected=true`, **GitHub repository immutable releases enabled and verifiable**, released CHANGELOG entry, prior dry-run identity and retained release-evidence validation. It reconstructs the exact publish inputs from the prior immutable `release-gate` artifact. The immutable-release check uses GitHub's repository administration API with the locally authenticated `gh` credential and fails closed if the setting is disabled, inaccessible, or malformed. The workflow repeats the same authoritative check for any direct `stable + publish=true` dispatch using repository secret `CODEX_TUI_ADMIN_READ_TOKEN`, which must be a fine-grained credential with repository **Administration(read)** only. A missing/invalid secret fails publication; preview and stable publish=false do not require it. Release immutability protects future GitHub releases only, so it must be enabled before v1.4 publication. Add `--dispatch` only after reviewing the emitted preflight summary. The helper never accepts compatibility, terminal or performance values as manual command-line inputs.
+This performs a non-publishing preflight: clean/main/origin SHA agreement, absent stable tag, live `main.protected=true`, **GitHub repository immutable releases enabled and verifiable**, released CHANGELOG entry, prior dry-run identity and retained release-evidence validation. It also loads `release/evidence/linux/stable-real-evidence.bundle` by default, revalidates the raw payload, and requires its payload SHA-256 to match the successful dry-run's `release-evidence/v6` before reconstructing the publish inputs. The immutable-release check uses GitHub's repository administration API with the locally authenticated `gh` credential and fails closed if the setting is disabled, inaccessible, or malformed. The workflow repeats the same authoritative check for any direct `stable + publish=true` dispatch using repository secret `CODEX_TUI_ADMIN_READ_TOKEN`, which must be a fine-grained credential with repository **Administration(read)** only. A missing/invalid secret fails publication; preview and stable publish=false do not require it. Release immutability protects future GitHub releases only, so it must be enabled before v1.4 publication. Add `--dispatch` only after reviewing the emitted preflight summary. The helper never accepts compatibility, terminal or performance values as manual command-line inputs.
 
 `publish=true` additionally creates the GitHub Release only after every prior job succeeds and, for stable, the prior dry-run qualification has been validated.
 
@@ -132,7 +132,7 @@ This gate prevents accidental publication when project license metadata is absen
 
 ## Stable evidence
 
-Stable evidence is represented by `codex-tui/release-evidence/v5`.
+Stable evidence is represented by `codex-tui/release-evidence/v6` and is derived from a source-bound `codex-tui/stable-real-evidence-bundle/v1` rather than manually supplied report hashes/metrics.
 
 It binds:
 
@@ -140,13 +140,13 @@ It binds:
 - exact 40-character source SHA;
 - canonical successful CI run ID;
 - compatibility schema version;
-- Linux Tier 1 compatibility report SHA-256 with READY state, observation timestamp and `sourceSha` equal to the release commit;
-- Linux Tier 1 terminal-restoration PASS receipt with `sourceSha` equal to the release commit, plus SHA-256 of the exact retained receipt JSON;
+- Linux Tier 1 compatibility raw JSON with READY state and exact `sourceSha`; the local qualification helper carries its exact bytes inside the compressed real-evidence bundle and GitHub Actions recomputes the report SHA-256;
+- Linux Tier 1 terminal-restoration raw PASS receipt with exact `sourceSha`; GitHub Actions revalidates the raw JSON and recomputes the exact receipt SHA-256;
 - an exact-SHA `codex-tui/automated-qualification/v3` receipt covering Failure Matrix, 50k scale-v4 evidence, 50k structural soak, UI contract, state migration/recovery and support-bundle redaction;
-- Linux retained `resident-planning-10k` diagnostic JSON with `sourceSha` equal to the release commit and SHA-256 of the exact retained report;
+- Linux retained raw `resident-planning-10k` diagnostic JSON with exact `sourceSha`, >=200 qualified samples and finite p95/p99; GitHub Actions recomputes its SHA-256 from the bundled bytes;
 - optional macOS/Windows Tier 2 retained receipts when available.
 
-The stable verifier requires at least 200 retained resident-planning-10k samples with finite nonnegative p95/p99 values, but the active v1.4 policy does not fail solely on hosted-runner latency thresholds. Compatibility report hashes, terminal-restoration receipt hashes, retained performance-report hashes and automated-qualification artifact hashes are exact SHA-256 values.
+The stable verifier requires at least 200 retained resident-planning-10k samples with finite nonnegative p95/p99 values, but the active v1.4 policy does not fail solely on hosted-runner latency thresholds. The local helper writes `stable-real-evidence.bundle` as gzip + URL-safe base64; its raw evidence payload is capped at 60,000 characters, below GitHub's 65,535-character total workflow-dispatch input limit. The workflow decodes the bundle, validates the raw schemas/status/source SHA again, recomputes all real-evidence file hashes, and records the payload/file digest lineage in `release-evidence/v6`. The raw bundle is not copied into the release-gate artifact; only the secret-safe summary/digests are retained there.
 
 The workflow independently calls the GitHub Actions API and verifies the supplied canonical CI run is the `ci` workflow on `main`, succeeded, and is bound to the release source SHA.
 
@@ -154,7 +154,7 @@ The workflow independently calls the GitHub Actions API and verifies the supplie
 
 Every push to `main` retains a source-bound `codex-tui/development-qualification/v1` artifact. It combines the exact-SHA automated hardening receipt with the current module ratchet and retained App Server protocol replay fixtures.
 
-This hosted receipt is development authority only: it always records `stableReady=false` and `publicationAllowed=false`. It is never accepted in place of `codex-tui/release-evidence/v5`, so automated v1.4 development can continue without fabricating Linux compatibility, real controlling-TTY restoration or retained Linux performance evidence.
+This hosted receipt is development authority only: it always records `stableReady=false` and `publicationAllowed=false`. It is never accepted in place of `codex-tui/release-evidence/v6`, so automated v1.4 development can continue without fabricating Linux compatibility, real controlling-TTY restoration or retained Linux performance evidence.
 
 The release gate independently rechecks the architecture ratchet, protocol replay, cargo-deny policy and RustSec advisories on the exact checkout before packaging. It retains both `development-qualification.json` and `security-governance.json` in the release-gate artifact so the hosted development gates are auditable instead of existing only as workflow logs.
 
@@ -333,10 +333,11 @@ It performs:
 7. `automated-qualification/v3` assembly with SHA-256 bindings for Failure Matrix, scale, soak, support manifest and support snapshot; the support snapshot source SHA must equal the candidate SHA;
 8. 20 warmup + 200 measured resident-planning-10k diagnostic samples;
 9. Linux terminal receipt validation including exact candidate `sourceSha`, followed by SHA-256 over the exact retained receipt bytes;
-10. `release-evidence/v5` assembly with source-bound compatibility report SHA-256 and terminal-restoration receipt SHA-256;
-11. local stable release verification for the current Cargo package version.
+10. create `stable-real-evidence.bundle` from the exact raw compatibility, terminal and performance JSON; immediately decode/revalidate it locally and retain `real-evidence-summary.json` with payload/file SHA-256 lineage;
+11. assemble `release-evidence/v6` from that verified summary plus automated qualification and canonical CI identity;
+12. local stable release verification for the current Cargo package version.
 
-The result is retained under `release/evidence/linux/` and includes a complete `workflowInputs` object. `--dispatch` submits those exact values to the GitHub `release.yml` workflow with `channel=stable` and `publish=false`; it never publishes a release.
+The result is retained under `release/evidence/linux/`. Its `workflowInputs` now contains one `stable_real_evidence_bundle` value rather than separately editable compatibility/terminal/performance hashes and metrics. `--dispatch` submits that exact raw-evidence payload with `channel=stable` and `publish=false`; it never publishes a release. After the dry-run succeeds, `stable_publish.py` defaults to the same local bundle file, revalidates its payload digest against the prior v6 receipt, and only then can dispatch `publish=true`.
 
 
 ### Mission Control host-local sessions
