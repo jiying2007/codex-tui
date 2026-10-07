@@ -67,6 +67,31 @@ def remote_assets(release: dict) -> dict:
     return result
 
 
+def validate_release_state(release: dict, phase: str, channel: str) -> None:
+    require(channel in ("preview", "stable"), "release channel must be preview or stable")
+    require(phase in ("draft", "prepublish", "published"), "release phase is invalid")
+    if phase == "prepublish":
+        require(channel == "stable", "prepublish phase is stable-only")
+
+    draft = release.get("draft")
+    prerelease = release.get("prerelease")
+    immutable = release.get("immutable")
+    require(isinstance(draft, bool), "release draft state is missing or invalid")
+    require(isinstance(prerelease, bool), "release prerelease state is missing or invalid")
+    require(isinstance(release.get("id"), int) and release["id"] > 0, "release id is missing or invalid")
+
+    if phase in ("draft", "prepublish"):
+        require(draft is True, f"{phase} release must remain draft=true")
+        require(prerelease is False, f"{phase} release must remain prerelease=false")
+    else:
+        require(draft is False, "published release must have draft=false")
+        if channel == "preview":
+            require(prerelease is True, "published preview must have prerelease=true")
+        else:
+            require(prerelease is False, "published stable release must have prerelease=false")
+            require(immutable is True, "published stable release must have immutable=true")
+
+
 def verify(release: dict, root: pathlib.Path, tag: str) -> list:
     require(release.get("tag_name") == tag, "release tag mismatch")
     local = local_assets(root)
@@ -105,6 +130,7 @@ def main() -> int:
     parser.add_argument("--bundle", required=True)
     parser.add_argument("--tag", required=True)
     parser.add_argument("--phase", choices=["draft", "prepublish", "published"], required=True)
+    parser.add_argument("--channel", choices=["preview", "stable"], required=True)
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
 
@@ -114,10 +140,12 @@ def main() -> int:
         raise SystemExit(f"cannot read release JSON: {error}") from error
     require(isinstance(release, dict), "release JSON must be an object")
 
+    validate_release_state(release, args.phase, args.channel)
     rows = verify(release, pathlib.Path(args.bundle), args.tag)
     receipt = {
         "schema": SCHEMA,
         "phase": args.phase,
+        "channel": args.channel,
         "releaseId": release.get("id"),
         "tag": args.tag,
         "draft": release.get("draft"),
