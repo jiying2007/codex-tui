@@ -255,13 +255,38 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
             self.assertIn("X-GitHub-Api-Version: 2026-03-10", section)
             self.assertIn(f"{prefix}-draft-assets.json", section)
             self.assertIn(f"{prefix}-published-assets.json", section)
+            self.assertIn(f"--channel {prefix}", section)
         self.assertIn("stable-prepublish-assets.json", stable)
 
         self.assertIn("name: release-asset-integrity", publish)
-        self.assertIn("if: always()", publish)
+        self.assertIn("if: success()", publish)
+        self.assertIn("if-no-files-found: error", publish)
+        self.assertIn("name: release-asset-integrity-partial", publish)
+        self.assertIn("if: failure()", publish)
+        self.assertIn("if-no-files-found: ignore", publish)
         self.assertIn("*-assets.json", publish)
         self.assertIn("*-release.json", publish)
-        self.assertIn("if-no-files-found: ignore", publish)
+        self.assertIn("publish-immutable-releases.json", publish)
+
+    def test_successful_publication_cannot_omit_integrity_receipts(self):
+        text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        publish = text.rsplit("\n  publish:\n", 1)[1]
+        success_block = publish.split(
+            "name: release-asset-integrity", 1
+        )[1].split(
+            "name: release-asset-integrity-partial", 1
+        )[0]
+        self.assertIn("if: success()", success_block)
+        self.assertIn("if-no-files-found: error", success_block)
+        self.assertIn("*-assets.json", success_block)
+        self.assertIn("*-release.json", success_block)
+        self.assertIn("publish-immutable-releases.json", success_block)
+
+        failure_block = publish.split(
+            "name: release-asset-integrity-partial", 1
+        )[1]
+        self.assertIn("if: failure()", failure_block)
+        self.assertIn("if-no-files-found: ignore", failure_block)
 
     def test_draft_identity_uses_authenticated_release_listing_not_published_by_tag_endpoint(self):
         text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
