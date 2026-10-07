@@ -41,6 +41,17 @@ class StablePublicationInputs(unittest.TestCase):
         )
         self.assertLessEqual(len(inputs), 25)
 
+    def test_dispatch_uses_json_stdin_and_summary_redacts_raw_bundle(self):
+        source = (Path(__file__).resolve().parent / "stable_publish.py").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('"--json"', source)
+        self.assertIn("stdin_text=json.dumps(workflow_inputs", source)
+        self.assertNotIn('command.extend(["-f", f"{key}={value}"])', source)
+        self.assertIn('"workflowInputSummary": {', source)
+        self.assertIn('"redacted": True', source)
+        self.assertNotIn('"workflowInputs": workflow_inputs', source)
+
     def test_old_schema_missing_bundle_or_empty_payload_fail_closed(self):
         old = self.evidence()
         old["schema"] = "codex-tui/release-evidence/v5"
