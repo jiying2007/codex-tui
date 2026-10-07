@@ -477,7 +477,7 @@ def main() -> int:
 
     workflow_inputs = {
         "channel": "stable",
-        "publish": "false",
+        "publish": False,
         "canonical_ci_run": str(canonical_ci_run),
         "stable_real_evidence_bundle": real_bundle_payload,
     }
