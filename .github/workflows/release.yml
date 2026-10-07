@@ -349,7 +349,8 @@ jobs:
           }
           python3 scripts/release/immutable_releases.py \
             --repo "$GITHUB_REPOSITORY" \
-            --output qualification/immutable-releases.json
+            --output qualification/immutable-releases.json \
+            --snapshot-output qualification/immutable-releases-snapshot.json
 
       - name: Validate stable publication notes
         if: inputs.channel == 'stable' && inputs.publish == true
@@ -440,6 +441,7 @@ jobs:
           cp release/v1.4-completion.json gate/DEVELOPMENT-COMPLETION.json
           if [ -f qualification/immutable-releases.json ]; then
             cp qualification/immutable-releases.json gate/immutable-releases.json
+            cp qualification/immutable-releases-snapshot.json gate/immutable-releases-snapshot.json
           fi
           if [ -f release-evidence.json ]; then
             cp release-evidence.json gate/release-evidence.json
@@ -945,7 +947,8 @@ jobs:
 
           if ! GH_TOKEN="$ADMIN_READ_TOKEN" python3 scripts/release/immutable_releases.py \
             --repo "$GITHUB_REPOSITORY" \
-            --output "$RUNNER_TEMP/publish-immutable-releases.json"; then
+            --output "$RUNNER_TEMP/publish-immutable-releases.json" \
+            --snapshot-output "$RUNNER_TEMP/publish-immutable-releases-snapshot.json"; then
             echo "immutable-release state changed before stable publication" >&2
             exit 1
           fi
@@ -1062,6 +1065,7 @@ jobs:
               stable-draft-tag-ref.json
               stable-draft-tag-evidence.json
               publish-immutable-releases.json
+              publish-immutable-releases-snapshot.json
               stable-prepublish-main.json
               stable-prepublish-main-state.json
               stable-prepublish-release.json
@@ -1095,6 +1099,7 @@ jobs:
             ${{ runner.temp }}/stable-prepublish-main.json
             ${{ runner.temp }}/stable-prepublish-main-state.json
             ${{ runner.temp }}/publish-immutable-releases.json
+            ${{ runner.temp }}/publish-immutable-releases-snapshot.json
           if-no-files-found: error
           retention-days: 90
 
@@ -1112,5 +1117,6 @@ jobs:
             ${{ runner.temp }}/stable-prepublish-main.json
             ${{ runner.temp }}/stable-prepublish-main-state.json
             ${{ runner.temp }}/publish-immutable-releases.json
+            ${{ runner.temp }}/publish-immutable-releases-snapshot.json
           if-no-files-found: ignore
           retention-days: 90
