@@ -126,12 +126,12 @@
     {
       "id": "checksums",
       "authority": "release aggregation",
-      "evidence": "SHA256SUMS covers release bundle files"
+      "evidence": "SHA256SUMS exactly covers every non-manifest file in the retained release bundle; stable publication rehashes the promoted prior dry-run bundle before upload"
     },
     {
       "id": "architecture-ratchet",
       "authority": "canonical CI and release gate",
-      "evidence": "v1.4 module no-growth ratchet passes for the exact source tree; workflow-completion modules and inherited v1.3 Search/Queue/Remote/GitHub-write modules remain below declared ceilings"
+      "evidence": "v1.4 complete src/**/*.rs no-growth ratchet passes for the exact source tree; every Rust source module is registered and no completion-state ceiling may grow without an explicit criteria change"
     },
     {
       "id": "protocol-replay",
@@ -142,6 +142,31 @@
       "id": "dependency-security",
       "authority": "release gate and security workflow",
       "evidence": "exact-checkout release gate reruns cargo-deny and cargo-audit and retains codex-tui/security-governance/v1 bound to the release SHA; the scheduled/PR security workflow provides earlier advisory feedback"
+    },
+    {
+      "id": "immutable-releases",
+      "authority": "GitHub repository administration state and release API",
+      "evidence": "stable publish=true requires repository immutable releases to be enabled and verifiable before packaging authorization and again immediately before publication; final release metadata must report immutable=true"
+    },
+    {
+      "id": "prior-stable-dry-run",
+      "authority": "GitHub Actions release workflow",
+      "evidence": "stable publish=true requires a successful prior stable publish=false run on main bound to the exact source SHA, version, tag, canonical CI and retained release-evidence/v5 inputs"
+    },
+    {
+      "id": "stable-bundle-promotion",
+      "authority": "retained prior stable publish=false release-bundle",
+      "evidence": "publication promotes the exact retained dry-run bundle; SHA256SUMS must exactly cover every non-manifest file, all bytes are rehashed, exactly three native archives are present, and embedded stable verification/evidence match the candidate SHA/version/tag"
+    },
+    {
+      "id": "release-asset-integrity",
+      "authority": "GitHub Releases REST API 2026-03-10",
+      "evidence": "before and after publication the complete GitHub Release asset-name set, uploaded state, byte sizes and API-provided SHA-256 digests must exactly match the local promoted bundle"
+    },
+    {
+      "id": "published-release-state",
+      "authority": "GitHub Releases and Git refs",
+      "evidence": "stable publication postconditions require draft=false, prerelease=false, immutable=true and the stable tag still pointing to the exact candidate SHA; anomalies are incidents and are never auto-rewritten"
     }
   ],
   "frozenNonGoals": [
@@ -189,5 +214,14 @@
     "multi-agent-providers",
     "job-workflow-engine",
     "cloud-sync"
-  ]
+  ],
+  "publicationGovernance": {
+    "schema": "codex-tui/stable-publication-governance/v1",
+    "exactSourceSha": true,
+    "exactQualifiedBundlePromotion": true,
+    "remoteAssetDigestVerification": true,
+    "immutableReleaseRequired": true,
+    "postPublicationRewriteAllowed": false,
+    "policy": "stable publication is a two-phase fail-closed promotion of exact qualified bytes; final public release state is immutable incident authority"
+  }
 }
