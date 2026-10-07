@@ -324,7 +324,9 @@ jobs:
           PUBLISH: ${{ inputs.publish || false }}
         run: |
           set -euo pipefail
-          gh api "repos/$GITHUB_REPOSITORY/branches/main" > current-main.json
+          gh api \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "repos/$GITHUB_REPOSITORY/branches/main" > current-main.json
           ARGS=(
             --branch-json current-main.json
             --commit "${{ github.sha }}"
@@ -835,7 +837,9 @@ jobs:
             exit 1
           }
 
-          GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/branches/main" > "$RUNNER_TEMP/publish-main.json"
+          GH_TOKEN="$PUBLISH_TOKEN" gh api \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "repos/$GITHUB_REPOSITORY/branches/main" > "$RUNNER_TEMP/publish-main.json"
           python3 scripts/release/validate_release_branch_state.py \
             --branch-json "$RUNNER_TEMP/publish-main.json" \
             --commit "$GITHUB_SHA" \
