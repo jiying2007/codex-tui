@@ -86,7 +86,7 @@ def require_immutable_releases(
     snapshot_sha256 = hashlib.sha256(raw.encode("utf-8")).hexdigest()
     if snapshot_output is not None:
         snapshot_output.parent.mkdir(parents=True, exist_ok=True)
-        snapshot_output.write_text(raw, encoding="utf-8")
+        snapshot_output.write_bytes(raw.encode("utf-8"))
 
     return {
         "schema": SCHEMA,
