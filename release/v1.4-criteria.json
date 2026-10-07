@@ -161,7 +161,7 @@
     {
       "id": "release-asset-integrity",
       "authority": "GitHub Releases REST API 2026-03-10",
-      "evidence": "draft and published releases, plus the stable publication-point draft after the immutable-release recheck, must match the complete local bundle by asset name, uploaded state, byte size and REST SHA-256; the verifier also fail-closes on channel/phase release state"
+      "evidence": "draft and published releases, plus the stable publication-point draft after the immutable-release recheck, must match the complete local bundle by asset name, uploaded state, byte size and REST SHA-256; the verifier also fail-closes on channel/phase release state; each retained receipt carries the exact candidate source SHA and SHA-256 of the raw GitHub release snapshot it validated"
     },
     {
       "id": "published-release-state",
@@ -225,6 +225,8 @@
     "policy": "stable publication is a two-phase fail-closed promotion of exact qualified bytes; final public release state is immutable incident authority",
     "successfulPublicationReceiptsRequired": true,
     "partialFailureEvidenceRetained": true,
-    "phaseStateValidated": true
+    "phaseStateValidated": true,
+    "assetReceiptsSourceBound": true,
+    "releaseSnapshotsDigestBound": true
   }
 }
