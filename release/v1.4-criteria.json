@@ -151,7 +151,7 @@
     {
       "id": "main-protection-integrity",
       "authority": "GitHub main branch protection REST state",
-      "evidence": "stable publication requires strict main protection with rust-1.88-msrv, ubuntu-24.04, macos-latest and windows-latest required checks, administrator enforcement, force pushes disabled and deletion disabled; the policy is verified before publication authorization and re-read immediately before final publication, with raw snapshots SHA-256 bound by codex-tui/main-protection-state/v1"
+      "evidence": "stable publication requires strict main protection with rust-1.88-msrv, ubuntu-24.04, macos-latest and windows-latest required checks, and each required check must be pinned through checks[].app_id to the same GitHub Actions App dynamically observed on the exact source SHA; administrator enforcement, force-push blocking and deletion blocking remain mandatory; codex-tui/main-protection-state/v2 SHA-256 binds both the raw protection response and the exact-main check-runs snapshot at authorization and publish-point revalidation"
     },
     {
       "id": "prior-stable-dry-run",
@@ -241,10 +241,12 @@
     "immutableReleaseReceiptSchema": "codex-tui/immutable-releases/v2",
     "immutableReleaseSnapshotsRetained": true,
     "immutableReleaseSnapshotsDigestBound": true,
-    "mainProtectionReceiptSchema": "codex-tui/main-protection-state/v1",
+    "mainProtectionReceiptSchema": "codex-tui/main-protection-state/v2",
     "mainProtectionSnapshotsRetained": true,
     "mainProtectionSnapshotsDigestBound": true,
+    "mainProtectionCheckRunsSnapshotsDigestBound": true,
     "canonicalMainProtectionRequiredAtPublication": true,
+    "canonicalRequiredChecksAppBound": true,
     "publishPointMainProtectionRevalidated": true,
     "releaseAssetVerificationSchema": "codex-tui/release-asset-verification/v2",
     "releaseTargetSourceBound": true,
