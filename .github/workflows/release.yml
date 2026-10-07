@@ -482,7 +482,7 @@ jobs:
 
   package:
     name: package-${{ matrix.platform }}
-    if: ${{ !(inputs.channel == 'stable' && inputs.publish == true) }}
+    if: ${{ inputs.channel != 'stable' || inputs.publish != true }}
     needs: gate
     strategy:
       fail-fast: false
@@ -553,7 +553,7 @@ jobs:
 
   bundle:
     name: release-bundle
-    if: ${{ !(inputs.channel == 'stable' && inputs.publish == true) }}
+    if: ${{ inputs.channel != 'stable' || inputs.publish != true }}
     needs: [gate, package]
     runs-on: ubuntu-24.04
     steps:
