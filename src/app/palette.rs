@@ -112,7 +112,10 @@ fn fuzzy_match(query: &str, label: &str) -> Option<FuzzyMatch> {
             score += 400;
         }
         let candidate = FuzzyMatch { score, positions };
-        if best.as_ref().is_none_or(|current| candidate.score > current.score) {
+        if best
+            .as_ref()
+            .is_none_or(|current| candidate.score > current.score)
+        {
             best = Some(candidate);
         }
     }
@@ -236,9 +239,7 @@ impl AppState {
                             fuzzy_match(&self.command_palette_query, label)?,
                         ))
                     })
-                    .max_by(|left, right| {
-                        left.2.score.cmp(&right.2.score).then_with(|| left.0.cmp(&right.0))
-                    })?;
+                    .max_by_key(|(same, _, matched)| (matched.score, *same))?;
                 Some((
                     matched.score,
                     baseline_index,
