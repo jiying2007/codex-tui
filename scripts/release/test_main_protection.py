@@ -263,7 +263,8 @@ class MainProtectionWorkflowGate(unittest.TestCase):
         self.assertIn("stable-prepublish-main-protection-snapshot.json", text)
         self.assertIn("stable-prepublish-main-protection-check-runs.json", text)
         self.assertEqual(text.count("--check-runs-json"), 2)
-        self.assertEqual(text.count("--source-sha"), 9)
+        self.assertIn('--source-sha "${{ github.sha }}"', text)
+        self.assertIn('--source-sha "$GITHUB_SHA"', text)
 
         stable = text.rsplit("\n  publish:\n", 1)[1].split(
             "- name: Publish immutable stable GitHub Release", 1
