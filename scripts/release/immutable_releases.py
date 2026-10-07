@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import pathlib
@@ -10,6 +11,7 @@ import sys
 from typing import Callable, Optional
 
 API_VERSION = "2026-03-10"
+SCHEMA = "codex-tui/immutable-releases/v2"
 
 
 def _run(
@@ -42,6 +44,7 @@ def require_immutable_releases(
     github_repo: str,
     *,
     runner: Optional[Callable[..., subprocess.CompletedProcess[str]]] = None,
+    snapshot_output: Optional[pathlib.Path] = None,
 ) -> dict:
     runner = runner or _run
     response = runner(
@@ -67,8 +70,10 @@ def require_immutable_releases(
             "and verifiable for this repository; enable release immutability with "
             "an administrator-read credential before publishing" + suffix
         )
+
+    raw = response.stdout or ""
     try:
-        payload = json.loads(response.stdout or "")
+        payload = json.loads(raw)
     except json.JSONDecodeError as error:
         raise SystemExit(
             f"cannot decode GitHub immutable-releases status: {error}"
@@ -77,12 +82,20 @@ def require_immutable_releases(
         raise SystemExit(
             "stable publication requires GitHub immutable releases enabled=true"
         )
+
+    snapshot_sha256 = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    if snapshot_output is not None:
+        snapshot_output.parent.mkdir(parents=True, exist_ok=True)
+        snapshot_output.write_text(raw, encoding="utf-8")
+
     return {
-        "schema": "codex-tui/immutable-releases/v1",
+        "schema": SCHEMA,
         "repository": github_repo,
         "enabled": True,
         "enforcedByOwner": payload.get("enforced_by_owner") is True,
         "apiVersion": API_VERSION,
+        "settingsSnapshotSha256": snapshot_sha256,
+        "authority": "github-rest-immutable-releases-readback",
     }
 
 
@@ -92,8 +105,13 @@ def main() -> int:
     )
     parser.add_argument("--repo", required=True)
     parser.add_argument("--output", type=pathlib.Path)
+    parser.add_argument("--snapshot-output", type=pathlib.Path)
     args = parser.parse_args()
-    receipt = require_immutable_releases(pathlib.Path.cwd(), args.repo)
+    receipt = require_immutable_releases(
+        pathlib.Path.cwd(),
+        args.repo,
+        snapshot_output=args.snapshot_output,
+    )
     encoded = json.dumps(receipt, indent=2, sort_keys=True) + "\n"
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
