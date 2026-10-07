@@ -56,103 +56,8 @@ on:
         type: string
         required: false
         default: "0"
-      linux_compat_sha256:
-        description: Stable only - SHA-256 of retained Linux doctor compat JSON
-        type: string
-        required: false
-        default: ""
-      linux_compat_observed_at:
-        description: Stable only - Linux compatibility observation timestamp
-        type: string
-        required: false
-        default: ""
-      linux_terminal_sha256:
-        description: Stable only - SHA-256 of retained Linux terminal-restoration PASS receipt
-        type: string
-        required: false
-        default: ""
-      linux_terminal_observed_at:
-        description: Stable only - Linux terminal smoke timestamp
-        type: string
-        required: false
-        default: ""
-      macos_source_sha:
-        description: Stable optional Tier 2 - exact candidate source SHA for paired real-environment evidence
-        type: string
-        required: false
-        default: ""
-      macos_compat_sha256:
-        description: Stable optional Tier 2 - SHA-256 of retained macOS doctor compat JSON
-        type: string
-        required: false
-        default: ""
-      macos_compat_observed_at:
-        description: Stable optional Tier 2 - macOS compatibility observation timestamp
-        type: string
-        required: false
-        default: ""
-      macos_terminal_sha256:
-        description: Stable optional Tier 2 - SHA-256 of retained macOS terminal-restoration PASS receipt
-        type: string
-        required: false
-        default: ""
-      macos_terminal_observed_at:
-        description: Stable optional Tier 2 - macOS terminal smoke timestamp
-        type: string
-        required: false
-        default: ""
-      windows_source_sha:
-        description: Stable optional Tier 2 - exact candidate source SHA for paired real-environment evidence
-        type: string
-        required: false
-        default: ""
-      windows_compat_sha256:
-        description: Stable optional Tier 2 - SHA-256 of retained Windows doctor compat JSON
-        type: string
-        required: false
-        default: ""
-      windows_compat_observed_at:
-        description: Stable optional Tier 2 - Windows compatibility observation timestamp
-        type: string
-        required: false
-        default: ""
-      windows_terminal_sha256:
-        description: Stable optional Tier 2 - SHA-256 of retained Windows terminal-restoration PASS receipt
-        type: string
-        required: false
-        default: ""
-      windows_terminal_observed_at:
-        description: Stable optional Tier 2 - Windows terminal smoke timestamp
-        type: string
-        required: false
-        default: ""
-      performance_report_sha256:
-        description: Stable diagnostic - SHA-256 of retained resident-planning-10k performance JSON
-        type: string
-        required: false
-        default: ""
-      performance_iterations:
-        description: Stable diagnostic - retained resident-planning-10k sample count (>=200)
-        type: string
-        required: false
-        default: ""
-      performance_p95_ms:
-        description: Stable diagnostic - retained p95 milliseconds (recorded, not a hosted-runner gate)
-        type: string
-        required: false
-        default: ""
-      performance_p99_ms:
-        description: Stable diagnostic - retained p99 milliseconds (recorded, not a hosted-runner gate)
-        type: string
-        required: false
-        default: ""
-      performance_source:
-        description: Stable only - retained benchmark runner/source identifier
-        type: string
-        required: false
-        default: ""
-      performance_observed_at:
-        description: Stable only - performance observation timestamp
+      stable_real_evidence_bundle:
+        description: Stable only - gzip+base64 codex-tui/stable-real-evidence-bundle/v1 created by qualification helper
         type: string
         required: false
         default: ""
@@ -365,39 +270,37 @@ jobs:
         env:
           CI_RUN: ${{ inputs.canonical_ci_run }}
           VERSION: ${{ steps.meta.outputs.version }}
-          LINUX_SOURCE_SHA: ${{ github.sha }}
-          LINUX_COMPAT_SHA: ${{ inputs.linux_compat_sha256 }}
-          LINUX_COMPAT_AT: ${{ inputs.linux_compat_observed_at }}
-          LINUX_TERMINAL_SHA: ${{ inputs.linux_terminal_sha256 }}
-          LINUX_TERMINAL_AT: ${{ inputs.linux_terminal_observed_at }}
-          MACOS_SOURCE_SHA: ${{ inputs.macos_source_sha }}
-          MACOS_COMPAT_SHA: ${{ inputs.macos_compat_sha256 }}
-          MACOS_COMPAT_AT: ${{ inputs.macos_compat_observed_at }}
-          MACOS_TERMINAL_SHA: ${{ inputs.macos_terminal_sha256 }}
-          MACOS_TERMINAL_AT: ${{ inputs.macos_terminal_observed_at }}
-          WINDOWS_SOURCE_SHA: ${{ inputs.windows_source_sha }}
-          WINDOWS_COMPAT_SHA: ${{ inputs.windows_compat_sha256 }}
-          WINDOWS_COMPAT_AT: ${{ inputs.windows_compat_observed_at }}
-          WINDOWS_TERMINAL_SHA: ${{ inputs.windows_terminal_sha256 }}
-          WINDOWS_TERMINAL_AT: ${{ inputs.windows_terminal_observed_at }}
-          PERF_SOURCE_SHA: ${{ github.sha }}
-          PERF_REPORT_SHA: ${{ inputs.performance_report_sha256 }}
-          PERF_ITERATIONS: ${{ inputs.performance_iterations }}
-          PERF_P95: ${{ inputs.performance_p95_ms }}
-          PERF_P99: ${{ inputs.performance_p99_ms }}
-          PERF_SOURCE: ${{ inputs.performance_source }}
-          PERF_AT: ${{ inputs.performance_observed_at }}
+          REAL_EVIDENCE_BUNDLE: ${{ inputs.stable_real_evidence_bundle }}
         run: |
           set -euo pipefail
           [[ "$CI_RUN" =~ ^[1-9][0-9]*$ ]] || {
             echo "stable canonical_ci_run must be a nonzero integer" >&2
             exit 1
           }
+          test -n "$REAL_EVIDENCE_BUNDLE" || {
+            echo "stable qualification requires stable_real_evidence_bundle from the real-environment qualification helper" >&2
+            exit 1
+          }
 
           gh api "repos/$GITHUB_REPOSITORY/actions/runs/$CI_RUN" > canonical-ci.json
-          python3 scripts/release/validate_ci_run.py             --run-json canonical-ci.json             --commit "${{ github.sha }}"
+          python3 scripts/release/validate_ci_run.py \
+            --run-json canonical-ci.json \
+            --commit "${{ github.sha }}"
 
-          python3 scripts/release/create_evidence.py             --output release-evidence.json             --compat-schema codex-tui/compat/v2             --version "$VERSION"             --commit "${{ github.sha }}"             --canonical-ci-run "$CI_RUN"             --automated-qualification qualification/automated-qualification.json             --linux-source-sha "$LINUX_SOURCE_SHA"             --linux-compat-sha256 "$LINUX_COMPAT_SHA"             --linux-compat-observed-at "$LINUX_COMPAT_AT"             --linux-terminal-sha256 "$LINUX_TERMINAL_SHA"             --linux-terminal-observed-at "$LINUX_TERMINAL_AT"             --macos-source-sha "$MACOS_SOURCE_SHA"             --macos-compat-sha256 "$MACOS_COMPAT_SHA"             --macos-compat-observed-at "$MACOS_COMPAT_AT"             --macos-terminal-sha256 "$MACOS_TERMINAL_SHA"             --macos-terminal-observed-at "$MACOS_TERMINAL_AT"             --windows-source-sha "$WINDOWS_SOURCE_SHA"             --windows-compat-sha256 "$WINDOWS_COMPAT_SHA"             --windows-compat-observed-at "$WINDOWS_COMPAT_AT"             --windows-terminal-sha256 "$WINDOWS_TERMINAL_SHA"             --windows-terminal-observed-at "$WINDOWS_TERMINAL_AT"             --performance-source-sha "$PERF_SOURCE_SHA"             --performance-report-sha256 "$PERF_REPORT_SHA"             --performance-iterations "$PERF_ITERATIONS"             --performance-p95-ms "$PERF_P95"             --performance-p99-ms "$PERF_P99"             --performance-source "$PERF_SOURCE"             --performance-observed-at "$PERF_AT"
+          printf '%s' "$REAL_EVIDENCE_BUNDLE" > "$RUNNER_TEMP/stable-real-evidence.bundle"
+          python3 scripts/release/real_evidence_bundle.py verify \
+            --payload-file "$RUNNER_TEMP/stable-real-evidence.bundle" \
+            --commit "${{ github.sha }}" \
+            --output-dir "$RUNNER_TEMP/stable-real-evidence" \
+            --summary qualification/real-evidence-summary.json
+
+          python3 scripts/release/create_evidence.py \
+            --output release-evidence.json \
+            --version "$VERSION" \
+            --commit "${{ github.sha }}" \
+            --canonical-ci-run "$CI_RUN" \
+            --automated-qualification qualification/automated-qualification.json \
+            --real-evidence-summary qualification/real-evidence-summary.json
 
       - name: Verify release contract
         shell: bash
@@ -436,6 +339,9 @@ jobs:
           cp qualification/support-bundle/manifest.json gate/support-bundle-manifest.json
           cp qualification/support-bundle/snapshot.json gate/support-bundle-snapshot.json
           cp qualification/security-governance.json gate/security-governance.json
+          if [ -f qualification/real-evidence-summary.json ]; then
+            cp qualification/real-evidence-summary.json gate/real-evidence-summary.json
+          fi
           cp release/v1.4-plan.json gate/DEVELOPMENT-PLAN.json
           cp release/v1.4-completion.json gate/DEVELOPMENT-COMPLETION.json
           if [ -f qualification/immutable-releases.json ]; then
