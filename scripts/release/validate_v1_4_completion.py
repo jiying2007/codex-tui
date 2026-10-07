@@ -243,6 +243,7 @@ def main() -> int:
         "prior-stable-dry-run",
         "stable-bundle-promotion",
         "release-asset-integrity",
+        "release-ref-integrity",
         "published-release-state",
     }:
         if gate not in required_gate_ids:
@@ -265,11 +266,18 @@ def main() -> int:
         "releaseSnapshotsDigestBound",
         "releaseTargetSourceBound",
         "publishedTimestampRequired",
+        "publishMainStateRetained",
+        "tagRefSnapshotsRetained",
+        "tagRefsSourceBound",
     ):
         if publication.get(key) is not True:
             raise SystemExit("v1.4 stable publication governance lost {}".format(key))
     if publication.get("releaseAssetVerificationSchema") != "codex-tui/release-asset-verification/v2":
         raise SystemExit("v1.4 release asset verification schema drifted")
+    if publication.get("releaseBranchStateSchema") != "codex-tui/release-branch-state/v1":
+        raise SystemExit("v1.4 release branch-state schema drifted")
+    if publication.get("releaseTagRefSchema") != "codex-tui/release-tag-ref/v1":
+        raise SystemExit("v1.4 release tag-ref schema drifted")
     if publication.get("postPublicationRewriteAllowed") is not False:
         raise SystemExit("v1.4 stable publication must not permit post-publication rewrite")
 
