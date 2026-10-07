@@ -2,11 +2,22 @@ name: repository-hygiene
 on:
   pull_request:
     types: [closed]
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/repository-hygiene.yml"
+      - "scripts/repository/branch_hygiene.py"
+      - "scripts/release/test_branch_hygiene.py"
+
 permissions:
   contents: read
+
+concurrency:
+  group: repository-hygiene
+  cancel-in-progress: false
 jobs:
   merged-branch:
-    if: github.event.pull_request.merged == true && github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -39,5 +50,41 @@ jobs:
         with:
           name: merged-branch-hygiene-${{ github.event.pull_request.number }}
           path: ${{ runner.temp }}/merged-branch-plan*.json
+          if-no-files-found: error
+          retention-days: 90
+
+  retained-backlog:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      # This is trusted default-branch code. The full scan is only re-run when
+      # the hygiene policy/workflow/tests themselves change on main.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Re-evaluate retained branch backlog with fresh deletion proofs
+        shell: bash
+        run: |
+          set -euo pipefail
+          PLAN="$RUNNER_TEMP/retained-branch-plan.json"
+          ARGS=(--repo "$GITHUB_REPOSITORY" --output "$PLAN")
+          python3 scripts/repository/branch_hygiene.py "${ARGS[@]}"
+          DIGEST="$(sha256sum "$PLAN" | cut -d ' ' -f 1)"
+          gh auth setup-git
+          python3 scripts/repository/branch_hygiene.py "${ARGS[@]}" \
+            --apply --confirm-repository "$GITHUB_REPOSITORY" --plan-sha256 "$DIGEST"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always()
+        with:
+          name: retained-branch-hygiene-${{ github.sha }}
+          path: ${{ runner.temp }}/retained-branch-plan*.json
           if-no-files-found: error
           retention-days: 90

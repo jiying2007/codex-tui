@@ -9,7 +9,7 @@ import re
 
 from _compat import write_text_lf
 
-SCHEMA = "codex-tui/release-asset-verification/v1"
+SCHEMA = "codex-tui/release-asset-verification/v2"
 HEX40 = re.compile(r"^[0-9a-fA-F]{40}$")
 SHA256 = re.compile(r"^sha256:([0-9a-f]{64})$")
 
@@ -60,10 +60,15 @@ def remote_assets(release: dict) -> dict:
         digest = asset.get("digest")
         match = SHA256.fullmatch(digest) if isinstance(digest, str) else None
         require(match is not None, f"release asset SHA-256 digest is missing or invalid: {name}")
+        asset_id = asset.get("id")
+        require(
+            isinstance(asset_id, int) and not isinstance(asset_id, bool) and asset_id > 0,
+            f"release asset id is missing or invalid: {name}",
+        )
         result[name] = {
             "sha256": match.group(1),
             "size": size,
-            "id": asset.get("id"),
+            "id": asset_id,
         }
     return result
 
@@ -95,6 +100,30 @@ def validate_release_state(release: dict, phase: str, channel: str) -> None:
         else:
             require(prerelease is False, "published stable release must have prerelease=false")
             require(immutable is True, "published stable release must have immutable=true")
+
+
+def validate_release_identity(release: dict, source_sha: str, phase: str) -> None:
+    target = release.get("target_commitish")
+    require(
+        isinstance(target, str) and bool(HEX40.fullmatch(target)),
+        "release target_commitish must be an exact 40-character source SHA",
+    )
+    require(
+        target.lower() == source_sha,
+        "release target_commitish does not match the expected source SHA",
+    )
+
+    published_at = release.get("published_at")
+    if phase == "published":
+        require(
+            isinstance(published_at, str) and published_at.strip() != "",
+            "published release must have published_at",
+        )
+    elif published_at is not None:
+        require(
+            isinstance(published_at, str) and published_at.strip() != "",
+            "draft published_at must be null or a non-empty timestamp",
+        )
 
 
 def verify(release: dict, root: pathlib.Path, tag: str) -> list:
@@ -150,12 +179,15 @@ def main() -> int:
     require(isinstance(release, dict), "release JSON must be an object")
 
     validate_release_state(release, args.phase, args.channel)
+    validate_release_identity(release, source_sha, args.phase)
     rows = verify(release, pathlib.Path(args.bundle), args.tag)
     receipt = {
         "schema": SCHEMA,
         "phase": args.phase,
         "channel": args.channel,
         "sourceSha": source_sha,
+        "targetCommitish": release.get("target_commitish"),
+        "publishedAt": release.get("published_at"),
         "releaseSnapshotSha256": sha256(release_path),
         "releaseId": release.get("id"),
         "tag": args.tag,

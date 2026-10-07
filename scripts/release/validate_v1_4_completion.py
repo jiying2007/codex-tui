@@ -263,9 +263,13 @@ def main() -> int:
         "phaseStateValidated",
         "assetReceiptsSourceBound",
         "releaseSnapshotsDigestBound",
+        "releaseTargetSourceBound",
+        "publishedTimestampRequired",
     ):
         if publication.get(key) is not True:
             raise SystemExit("v1.4 stable publication governance lost {}".format(key))
+    if publication.get("releaseAssetVerificationSchema") != "codex-tui/release-asset-verification/v2":
+        raise SystemExit("v1.4 release asset verification schema drifted")
     if publication.get("postPublicationRewriteAllowed") is not False:
         raise SystemExit("v1.4 stable publication must not permit post-publication rewrite")
 
