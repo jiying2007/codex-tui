@@ -299,7 +299,7 @@ class MainProtectionWorkflowGate(unittest.TestCase):
     def test_local_preflight_fetches_exact_main_check_source(self):
         text = (ROOT / "scripts/release/stable_publish.py").read_text(encoding="utf-8")
         self.assertIn('check_runs_json = temp_dir / "main-check-runs.json"', text)
-        self.assertIn("check-runs?per_page=100", text)
+        self.assertIn("check-runs?filter=latest&per_page=100", text)
         self.assertIn("source_sha=commit_sha", text)
         self.assertIn("check_runs_path=check_runs_json", text)
         self.assertIn('"mainProtection": main_protection', text)
