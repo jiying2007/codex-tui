@@ -199,6 +199,22 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
         self.assertIn("PUBLISHED_PRERELEASE", preview)
         self.assertIn("PUBLISHED_TAG_SHA", preview)
 
+    def test_stable_revalidates_exact_draft_after_immutable_check_at_publish_point(self):
+        text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        stable = text.rsplit("\n  publish:\n", 1)[1].split(
+            "- name: Publish immutable stable GitHub Release", 1
+        )[1].split("- uses: actions/upload-artifact@", 1)[0]
+
+        immutable = stable.index("scripts/release/immutable_releases.py")
+        prepublish = stable.index("--phase prepublish")
+        publish_edit = stable.index('gh release edit "$TAG"')
+        self.assertLess(immutable, prepublish)
+        self.assertLess(prepublish, publish_edit)
+        self.assertIn("stable-prepublish-release.json", stable)
+        self.assertIn("PREPUBLISH_TAG_SHA=", stable)
+        self.assertIn("PREPUBLISH_BODY=", stable)
+        self.assertIn("stable draft identity drifted at publication point", stable)
+
     def test_published_state_uses_one_version_pinned_release_snapshot(self):
         text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
         publish = text.rsplit("\n  publish:\n", 1)[1]
