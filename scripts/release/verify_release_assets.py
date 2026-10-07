@@ -104,7 +104,7 @@ def main() -> int:
     parser.add_argument("--release-json", required=True)
     parser.add_argument("--bundle", required=True)
     parser.add_argument("--tag", required=True)
-    parser.add_argument("--phase", choices=["draft", "published"], required=True)
+    parser.add_argument("--phase", choices=["draft", "prepublish", "published"], required=True)
     parser.add_argument("--output", required=True)
     args = parser.parse_args()
 
