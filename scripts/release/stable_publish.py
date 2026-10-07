@@ -16,9 +16,8 @@ HEX40 = re.compile(r"^[0-9a-fA-F]{40}$")
 STABLE_VERSION = re.compile(
     r"^[1-9][0-9]*\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)$"
 )
-RELEASE_EVIDENCE_SCHEMA = "codex-tui/release-evidence/v5"
-PRIMARY_PLATFORM = "linux"
-SECONDARY_PLATFORMS = ("macos", "windows")
+RELEASE_EVIDENCE_SCHEMA = "codex-tui/release-evidence/v6"
+REAL_EVIDENCE_BUNDLE_SCHEMA = "codex-tui/stable-real-evidence-bundle/v1"
 
 
 def run(
@@ -79,7 +78,11 @@ def nonempty(value, label: str) -> str:
     return text
 
 
-def stable_publish_inputs(evidence: dict, stable_qualification_run: int) -> dict[str, str]:
+def stable_publish_inputs(
+    evidence: dict,
+    stable_qualification_run: int,
+    real_evidence_payload: str,
+) -> dict[str, str]:
     if evidence.get("schema") != RELEASE_EVIDENCE_SCHEMA:
         raise SystemExit(
             "prior stable evidence schema mismatch: "
@@ -87,105 +90,26 @@ def stable_publish_inputs(evidence: dict, stable_qualification_run: int) -> dict
         )
     if stable_qualification_run <= 0:
         raise SystemExit("stable qualification run must be nonzero")
+    if not real_evidence_payload.strip():
+        raise SystemExit("stable real evidence bundle payload must not be empty")
 
-    compatibility = evidence.get("compatibility")
-    terminal = evidence.get("terminalRestoration")
-    performance = evidence.get("performance")
-    if not isinstance(compatibility, dict):
-        raise SystemExit("prior stable evidence compatibility map is missing")
-    if not isinstance(terminal, dict):
-        raise SystemExit("prior stable evidence terminal-restoration map is missing")
-    if not isinstance(performance, dict):
-        raise SystemExit("prior stable evidence performance receipt is missing")
-
-    linux_compat = compatibility.get(PRIMARY_PLATFORM)
-    linux_terminal = terminal.get(PRIMARY_PLATFORM)
-    if not isinstance(linux_compat, dict):
-        raise SystemExit("prior stable evidence is missing Linux compatibility")
-    if not isinstance(linux_terminal, dict):
-        raise SystemExit("prior stable evidence is missing Linux terminal restoration")
+    canonical_ci_run = nonempty(
+        evidence.get("canonicalCiRun"),
+        "canonical CI run",
+    )
+    bundle = evidence.get("realEvidenceBundle")
+    if not isinstance(bundle, dict):
+        raise SystemExit("prior stable evidence realEvidenceBundle is missing")
+    if bundle.get("schema") != REAL_EVIDENCE_BUNDLE_SCHEMA:
+        raise SystemExit("prior stable evidence bundle schema mismatch")
 
     inputs = {
         "channel": "stable",
         "publish": "true",
-        "canonical_ci_run": nonempty(
-            evidence.get("canonicalCiRun"),
-            "canonical CI run",
-        ),
+        "canonical_ci_run": canonical_ci_run,
         "stable_qualification_run": str(stable_qualification_run),
-        "linux_compat_sha256": nonempty(
-            linux_compat.get("reportSha256"),
-            "Linux compatibility SHA-256",
-        ),
-        "linux_compat_observed_at": nonempty(
-            linux_compat.get("observedAt"),
-            "Linux compatibility observed-at",
-        ),
-        "linux_terminal_sha256": nonempty(
-            linux_terminal.get("receiptSha256"),
-            "Linux terminal receipt SHA-256",
-        ),
-        "linux_terminal_observed_at": nonempty(
-            linux_terminal.get("observedAt"),
-            "Linux terminal observed-at",
-        ),
-        "performance_report_sha256": nonempty(
-            performance.get("reportSha256"),
-            "performance report SHA-256",
-        ),
-        "performance_iterations": nonempty(
-            performance.get("iterations"),
-            "performance iterations",
-        ),
-        "performance_p95_ms": nonempty(
-            performance.get("p95Ms"),
-            "performance p95",
-        ),
-        "performance_p99_ms": nonempty(
-            performance.get("p99Ms"),
-            "performance p99",
-        ),
-        "performance_source": nonempty(
-            performance.get("source"),
-            "performance source",
-        ),
-        "performance_observed_at": nonempty(
-            performance.get("observedAt"),
-            "performance observed-at",
-        ),
+        "stable_real_evidence_bundle": real_evidence_payload.strip(),
     }
-
-    for platform in SECONDARY_PLATFORMS:
-        compat = compatibility.get(platform)
-        tty = terminal.get(platform)
-        if compat is None and tty is None:
-            continue
-        if not isinstance(compat, dict) or not isinstance(tty, dict):
-            raise SystemExit(
-                f"{platform} retained evidence must include both compatibility "
-                "and terminal restoration"
-            )
-        inputs[f"{platform}_source_sha"] = nonempty(
-            compat.get("sourceSha"),
-            f"{platform} source SHA",
-        )
-        inputs[f"{platform}_compat_sha256"] = nonempty(
-            compat.get("reportSha256"),
-            f"{platform} compatibility SHA-256",
-        )
-        inputs[f"{platform}_compat_observed_at"] = nonempty(
-            compat.get("observedAt"),
-            f"{platform} compatibility observed-at",
-        )
-        inputs[f"{platform}_terminal_sha256"] = nonempty(
-            tty.get("receiptSha256"),
-            f"{platform} terminal receipt SHA-256",
-        )
-        inputs[f"{platform}_terminal_observed_at"] = nonempty(
-            tty.get("observedAt"),
-            f"{platform} terminal observed-at",
-        )
-
     if len(inputs) > 25:
         raise SystemExit(
             f"stable publication requires {len(inputs)} workflow inputs; "
@@ -203,6 +127,11 @@ def main() -> int:
     )
     parser.add_argument("--stable-qualification-run", required=True, type=int)
     parser.add_argument("--github-repo", default="")
+    parser.add_argument(
+        "--real-evidence-bundle",
+        default="release/evidence/linux/stable-real-evidence.bundle",
+        help="source-bound raw real-evidence bundle created by linux_qualify.py",
+    )
     parser.add_argument(
         "--output",
         default="release/evidence/linux/stable-publication-summary.json",
@@ -370,9 +299,49 @@ def main() -> int:
         )
 
         evidence = load_json(evidence_path, "prior stable release evidence")
+
+        real_bundle_path = (root / args.real_evidence_bundle).resolve()
+        if not real_bundle_path.is_file():
+            raise SystemExit(
+                "stable publication requires the exact local real-evidence bundle "
+                f"used for the successful dry-run: {real_bundle_path}"
+            )
+        real_payload = real_bundle_path.read_text(encoding="utf-8").strip()
+        real_summary_path = temp_dir / "real-evidence-summary.json"
+        run(
+            [
+                sys.executable,
+                "scripts/release/real_evidence_bundle.py",
+                "verify",
+                "--payload-file",
+                str(real_bundle_path),
+                "--commit",
+                commit_sha,
+                "--output-dir",
+                str(temp_dir / "real-evidence"),
+                "--summary",
+                str(real_summary_path),
+            ],
+            cwd=root,
+            capture=False,
+        )
+        real_summary = load_json(real_summary_path, "stable real evidence summary")
+        prior_bundle = evidence.get("realEvidenceBundle")
+        if not isinstance(prior_bundle, dict):
+            raise SystemExit("prior stable release evidence is missing realEvidenceBundle")
+        if prior_bundle.get("schema") != REAL_EVIDENCE_BUNDLE_SCHEMA:
+            raise SystemExit("prior stable release evidence bundle schema mismatch")
+        if str(prior_bundle.get("sourceSha", "")).lower() != commit_sha:
+            raise SystemExit("prior stable release evidence bundle source SHA mismatch")
+        if prior_bundle.get("payloadSha256") != real_summary.get("payloadSha256"):
+            raise SystemExit(
+                "local real-evidence bundle differs from the successful stable dry-run"
+            )
+
         workflow_inputs = stable_publish_inputs(
             evidence,
             args.stable_qualification_run,
+            real_payload,
         )
 
     summary = {
@@ -381,6 +350,8 @@ def main() -> int:
         "tag": tag,
         "commitSha": commit_sha,
         "stableQualificationRun": args.stable_qualification_run,
+        "realEvidenceBundle": str((root / args.real_evidence_bundle).resolve()),
+        "realEvidenceBundleSha256": workflow_inputs and evidence["realEvidenceBundle"]["payloadSha256"],
         "mainProtected": True,
         "priorDryRun": "verified",
         "releasedChangelog": "verified",
