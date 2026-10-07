@@ -166,7 +166,7 @@
     {
       "id": "release-ref-integrity",
       "authority": "GitHub branch and Git refs REST readback",
-      "evidence": "stable publication retains codex-tui/release-branch-state/v1 proving current main still equals the exact candidate SHA and remains protected; preview/stable draft, stable prepublish, and published phases retain codex-tui/release-tag-ref/v1 proving the exact tag ref is a lightweight commit ref to the candidate SHA; every receipt SHA-256 binds its raw REST snapshot"
+      "evidence": "stable publication retains codex-tui/release-branch-state/v1 both at publish-job entry and again after the second immutable-release check immediately before final publication, proving protected main still equals the exact candidate SHA; preview/stable draft, stable prepublish, and published phases retain codex-tui/release-tag-ref/v1 proving the exact tag ref is a lightweight commit ref to the candidate SHA; every receipt SHA-256 binds its raw REST snapshot"
     },
     {
       "id": "published-release-state",
@@ -240,6 +240,7 @@
     "releaseTagRefSchema": "codex-tui/release-tag-ref/v1",
     "publishMainStateRetained": true,
     "tagRefSnapshotsRetained": true,
-    "tagRefsSourceBound": true
+    "tagRefsSourceBound": true,
+    "publishPointMainRevalidated": true
   }
 }
