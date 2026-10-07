@@ -973,6 +973,38 @@ jobs:
             --channel stable \
             --output "$RUNNER_TEMP/stable-published-assets.json"
 
+      - name: Require complete successful publication evidence
+        if: success()
+        shell: bash
+        env:
+          CHANNEL: ${{ needs.gate.outputs.channel }}
+        run: |
+          set -euo pipefail
+          if [ "$CHANNEL" = "preview" ]; then
+            REQUIRED=(
+              preview-draft-release.json
+              preview-draft-assets.json
+              preview-published-release.json
+              preview-published-assets.json
+            )
+          else
+            REQUIRED=(
+              stable-draft-release.json
+              stable-draft-assets.json
+              publish-immutable-releases.json
+              stable-prepublish-release.json
+              stable-prepublish-assets.json
+              stable-published-release.json
+              stable-published-assets.json
+            )
+          fi
+          for name in "${REQUIRED[@]}"; do
+            test -s "$RUNNER_TEMP/$name" || {
+              echo "successful publication is missing retained evidence: $name" >&2
+              exit 1
+            }
+          done
+
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: success()
         with:
