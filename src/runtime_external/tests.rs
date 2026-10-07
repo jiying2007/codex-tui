@@ -53,7 +53,7 @@ fn exercise(role: &str) {
     use std::os::unix::fs::PermissionsExt;
     let root = tempfile::tempdir().unwrap();
     let script = root.path().join("helper");
-    std::fs::write(&script, "#!/bin/sh\nprintf '%s\\n' \"$\" > \"$CODEX_TUI_EXTERNAL_TEST_ROOT/pid.tmp\"\nmv \"$CODEX_TUI_EXTERNAL_TEST_ROOT/pid.tmp\" \"$CODEX_TUI_EXTERNAL_TEST_ROOT/pid\"\nprintf '%s\\n' \"$1\" > \"$CODEX_TUI_EXTERNAL_TEST_ROOT/arg\"\n").unwrap();
+    std::fs::write(&script, "#!/bin/bash\nprintf '%s\\n' \"$BASHPID\" > \"$CODEX_TUI_EXTERNAL_TEST_ROOT/pid.tmp\"\nmv \"$CODEX_TUI_EXTERNAL_TEST_ROOT/pid.tmp\" \"$CODEX_TUI_EXTERNAL_TEST_ROOT/pid\"\nprintf '%s\\n' \"$1\" > \"$CODEX_TUI_EXTERNAL_TEST_ROOT/arg\"\n").unwrap();
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
     std::fs::write(root.path().join("a file.rs"), "test").unwrap();
     let output = Command::new(std::env::current_exe().unwrap())
