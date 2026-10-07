@@ -445,9 +445,14 @@ jobs:
           PYTHONPATH=scripts/release python - <<'PY'
           import configure_main_protection as p
 
-          policy = p.protection_payload()
+          app_id = 15368
+          policy = p.protection_payload(app_id)
           assert policy["required_status_checks"]["strict"] is True
-          assert tuple(policy["required_status_checks"]["contexts"]) == p.REQUIRED_CHECKS
+          assert "contexts" not in policy["required_status_checks"]
+          assert policy["required_status_checks"]["checks"] == [
+              {"context": name, "app_id": app_id}
+              for name in p.REQUIRED_CHECKS
+          ]
           assert policy["enforce_admins"] is True
           assert policy["required_pull_request_reviews"] is None
           assert policy["restrictions"] is None
@@ -462,14 +467,15 @@ jobs:
               "check_runs": [
                   {
                       "name": name,
+                      "head_sha": sha,
                       "status": "completed",
                       "conclusion": "success",
-                      "app": {"slug": "github-actions", "id": 15368},
+                      "app": {"slug": "github-actions", "id": app_id},
                   }
                   for name in p.REQUIRED_CHECKS
               ]
           }
-          assert p.validate_check_runs(checks, sha) == 15368
+          assert p.validate_check_runs(checks, sha) == app_id
 
           broken = {"check_runs": checks["check_runs"][:-1]}
           try:
@@ -482,13 +488,33 @@ jobs:
           applied = {
               "required_status_checks": {
                   "strict": True,
-                  "contexts": list(p.REQUIRED_CHECKS),
+                  "checks": [
+                      {"context": name, "app_id": app_id}
+                      for name in p.REQUIRED_CHECKS
+                  ],
               },
               "enforce_admins": {"enabled": True},
               "allow_force_pushes": {"enabled": False},
               "allow_deletions": {"enabled": False},
           }
-          p.validate_applied_protection(applied)
+          p.validate_applied_protection(applied, app_id)
+
+          wrong_app = {
+              **applied,
+              "required_status_checks": {
+                  **applied["required_status_checks"],
+                  "checks": [
+                      {"context": name, "app_id": app_id + (1 if name == p.REQUIRED_CHECKS[0] else 0)}
+                      for name in p.REQUIRED_CHECKS
+                  ],
+              },
+          }
+          try:
+              p.validate_applied_protection(wrong_app, app_id)
+          except SystemExit:
+              pass
+          else:
+              raise AssertionError("expected wrong required-check app binding to fail")
           PY
           PYTHONPATH=scripts/release python - <<'PY'
           import termios

@@ -54,11 +54,20 @@ def github_repo_from_cargo(root: pathlib.Path) -> str:
     return match.group(1)
 
 
-def protection_payload() -> dict:
+def protection_payload(github_actions_app_id: int) -> dict:
+    if (
+        not isinstance(github_actions_app_id, int)
+        or isinstance(github_actions_app_id, bool)
+        or github_actions_app_id <= 0
+    ):
+        raise ValueError("GitHub Actions app id must be a positive integer")
     return {
         "required_status_checks": {
             "strict": True,
-            "contexts": list(REQUIRED_CHECKS),
+            "checks": [
+                {"context": name, "app_id": github_actions_app_id}
+                for name in REQUIRED_CHECKS
+            ],
         },
         "enforce_admins": True,
         "required_pull_request_reviews": None,
@@ -84,6 +93,9 @@ def validate_ci_contract(ci_text: str) -> None:
 
 
 def validate_check_runs(payload: dict, commit_sha: str) -> int:
+    commit_sha = commit_sha.strip().lower()
+    if not re.fullmatch(r"[0-9a-f]{40}", commit_sha):
+        raise SystemExit("canonical check source SHA must be exactly 40 hexadecimal characters")
     runs = payload.get("check_runs")
     if not isinstance(runs, list):
         raise SystemExit("GitHub check-runs response is missing check_runs")
@@ -95,6 +107,12 @@ def validate_check_runs(payload: dict, commit_sha: str) -> int:
         name = item.get("name")
         if name not in REQUIRED_CHECKS:
             continue
+        head_sha = str(item.get("head_sha", "")).strip().lower()
+        if head_sha != commit_sha:
+            raise SystemExit(
+                f"required check {name} is not bound to current main: "
+                f"expected={commit_sha} actual={head_sha or '<missing>'}"
+            )
         app = item.get("app") or {}
         if app.get("slug") != GITHUB_ACTIONS_SLUG:
             raise SystemExit(
@@ -112,28 +130,82 @@ def validate_check_runs(payload: dict, commit_sha: str) -> int:
             "current main is missing successful canonical checks: " + ", ".join(missing)
         )
 
-    app_ids = {value for value in selected.values() if isinstance(value, int)}
+    invalid_ids = [
+        name
+        for name, value in selected.items()
+        if (
+            not isinstance(value, int)
+            or isinstance(value, bool)
+            or value <= 0
+        )
+    ]
+    if invalid_ids:
+        raise SystemExit(
+            "canonical checks have invalid GitHub Actions app ids: "
+            + ", ".join(invalid_ids)
+        )
+
+    app_ids = set(selected.values())
     if len(app_ids) != 1:
         raise SystemExit(
             f"canonical checks must come from one GitHub Actions app; got {sorted(app_ids)}"
         )
     app_id = next(iter(app_ids))
-    if app_id <= 0:
-        raise SystemExit("GitHub Actions app id must be positive")
     return app_id
 
 
-def validate_applied_protection(response: dict) -> None:
+def validate_applied_protection(
+    response: dict,
+    github_actions_app_id: int | None = None,
+) -> None:
     status = response.get("required_status_checks") or {}
     if status.get("strict") is not True:
         raise SystemExit("applied protection does not require strict status checks")
 
-    contexts = set(status.get("contexts") or [])
-    missing = [name for name in REQUIRED_CHECKS if name not in contexts]
-    if missing:
-        raise SystemExit(
-            "applied protection is missing required checks: " + ", ".join(missing)
-        )
+    if github_actions_app_id is None:
+        contexts = set(status.get("contexts") or [])
+        missing = [name for name in REQUIRED_CHECKS if name not in contexts]
+        if missing:
+            raise SystemExit(
+                "applied protection is missing required checks: " + ", ".join(missing)
+            )
+    else:
+        if (
+            not isinstance(github_actions_app_id, int)
+            or isinstance(github_actions_app_id, bool)
+            or github_actions_app_id <= 0
+        ):
+            raise SystemExit("expected GitHub Actions app id must be positive")
+        checks = status.get("checks")
+        if not isinstance(checks, list):
+            raise SystemExit("applied protection is missing app-bound required checks")
+        observed = {}
+        for item in checks:
+            if not isinstance(item, dict):
+                continue
+            context = item.get("context")
+            if context in REQUIRED_CHECKS:
+                if context in observed:
+                    raise SystemExit(
+                        f"applied protection has duplicate required check: {context}"
+                    )
+                observed[context] = item.get("app_id")
+        missing_bound = [name for name in REQUIRED_CHECKS if name not in observed]
+        if missing_bound:
+            raise SystemExit(
+                "applied protection is missing app-bound checks: "
+                + ", ".join(missing_bound)
+            )
+        wrong_app = [
+            name
+            for name in REQUIRED_CHECKS
+            if observed.get(name) != github_actions_app_id
+        ]
+        if wrong_app:
+            raise SystemExit(
+                "applied protection required checks are not pinned to the "
+                "GitHub Actions app: " + ", ".join(wrong_app)
+            )
 
     enforce_admins = response.get("enforce_admins") or {}
     if enforce_admins.get("enabled") is not True:
@@ -203,7 +275,7 @@ def main() -> int:
             "Accept: application/vnd.github+json",
             "-H",
             f"X-GitHub-Api-Version: {API_VERSION}",
-            f"repos/{repo}/commits/{commit_sha}/check-runs?per_page=100",
+            f"repos/{repo}/commits/{commit_sha}/check-runs?filter=latest&per_page=100",
         ],
         cwd=root,
     )
@@ -212,7 +284,7 @@ def main() -> int:
         commit_sha,
     )
 
-    payload = protection_payload()
+    payload = protection_payload(github_actions_app_id)
     plan = {
         "schema": "codex-tui/main-protection-plan/v1",
         "repository": repo,
@@ -256,7 +328,7 @@ def main() -> int:
         input_text=json.dumps(payload),
     )
     response = json.loads(applied.stdout)
-    validate_applied_protection(response)
+    validate_applied_protection(response, github_actions_app_id)
 
     branch_after = json.loads(
         run(["gh", "api", f"repos/{repo}/branches/main"], cwd=root).stdout

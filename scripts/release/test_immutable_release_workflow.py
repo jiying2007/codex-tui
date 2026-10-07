@@ -298,9 +298,15 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
             preview.count('--source-sha "$GITHUB_SHA"'),
             4,
         )
+        # Stable has 3 asset verifications + 3 tag-ref verifications +
+        # 1 exact-main protection/check-runs binding, all source-bound.
         self.assertEqual(
             stable.count('--source-sha "$GITHUB_SHA"'),
-            6,
+            7,
+        )
+        self.assertEqual(
+            stable.count("scripts/release/main_protection.py"),
+            1,
         )
         promotion = publish.split(
             "- name: Promote exact qualified stable dry-run bundle", 1
