@@ -97,6 +97,54 @@ class ReleaseAssetVerification(unittest.TestCase):
             with self.assertRaisesRegex(SystemExit, "duplicate asset name"):
                 v.verify(release, root, "v1.4.0")
 
+    def test_phase_and_channel_state_are_fail_closed(self):
+        payloads = {
+            "asset": b"bytes",
+        }
+
+        draft = release_for(payloads)
+        v.validate_release_state(draft, "draft", "preview")
+        v.validate_release_state(draft, "draft", "stable")
+        v.validate_release_state(draft, "prepublish", "stable")
+
+        with self.assertRaisesRegex(SystemExit, "stable-only"):
+            v.validate_release_state(draft, "prepublish", "preview")
+
+        published_preview = release_for(
+            payloads,
+            {"draft": False, "prerelease": True, "immutable": False},
+        )
+        v.validate_release_state(published_preview, "published", "preview")
+        with self.assertRaisesRegex(SystemExit, "prerelease=false"):
+            v.validate_release_state(published_preview, "published", "stable")
+
+        published_stable = release_for(
+            payloads,
+            {"draft": False, "prerelease": False, "immutable": True},
+        )
+        v.validate_release_state(published_stable, "published", "stable")
+
+        for changes, message in (
+            ({"draft": True, "prerelease": False, "immutable": True}, "draft=false"),
+            ({"draft": False, "prerelease": False, "immutable": False}, "immutable=true"),
+        ):
+            release = release_for(payloads, changes)
+            with self.subTest(changes=changes):
+                with self.assertRaisesRegex(SystemExit, message):
+                    v.validate_release_state(release, "published", "stable")
+
+    def test_release_id_and_boolean_states_are_required(self):
+        payloads = {"asset": b"bytes"}
+        for changes, message in (
+            ({"id": None}, "release id"),
+            ({"draft": "false"}, "draft state"),
+            ({"prerelease": None}, "prerelease state"),
+        ):
+            release = release_for(payloads, changes)
+            with self.subTest(changes=changes):
+                with self.assertRaisesRegex(SystemExit, message):
+                    v.validate_release_state(release, "draft", "preview")
+
     def test_tag_mismatch_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
