@@ -950,6 +950,16 @@ jobs:
             exit 1
           fi
 
+          GH_TOKEN="$PUBLISH_TOKEN" gh api \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "repos/$GITHUB_REPOSITORY/branches/main" \
+            > "$RUNNER_TEMP/stable-prepublish-main.json"
+          python3 scripts/release/validate_release_branch_state.py \
+            --branch-json "$RUNNER_TEMP/stable-prepublish-main.json" \
+            --commit "$GITHUB_SHA" \
+            --require-protected \
+            --output "$RUNNER_TEMP/stable-prepublish-main-state.json"
+
           select_stable_draft \
             "$RUNNER_TEMP/stable-prepublish-releases.json" \
             "$RUNNER_TEMP/stable-prepublish-release.json"
@@ -1052,6 +1062,8 @@ jobs:
               stable-draft-tag-ref.json
               stable-draft-tag-evidence.json
               publish-immutable-releases.json
+              stable-prepublish-main.json
+              stable-prepublish-main-state.json
               stable-prepublish-release.json
               stable-prepublish-assets.json
               stable-prepublish-tag-ref.json
@@ -1080,6 +1092,8 @@ jobs:
             ${{ runner.temp }}/*-tag-evidence.json
             ${{ runner.temp }}/publish-main.json
             ${{ runner.temp }}/publish-main-state.json
+            ${{ runner.temp }}/stable-prepublish-main.json
+            ${{ runner.temp }}/stable-prepublish-main-state.json
             ${{ runner.temp }}/publish-immutable-releases.json
           if-no-files-found: error
           retention-days: 90
@@ -1095,6 +1109,8 @@ jobs:
             ${{ runner.temp }}/*-tag-evidence.json
             ${{ runner.temp }}/publish-main.json
             ${{ runner.temp }}/publish-main-state.json
+            ${{ runner.temp }}/stable-prepublish-main.json
+            ${{ runner.temp }}/stable-prepublish-main-state.json
             ${{ runner.temp }}/publish-immutable-releases.json
           if-no-files-found: ignore
           retention-days: 90
