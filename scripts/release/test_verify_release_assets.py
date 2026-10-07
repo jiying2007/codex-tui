@@ -137,6 +137,7 @@ class ReleaseAssetVerification(unittest.TestCase):
         payloads = {"asset": b"bytes"}
         for changes, message in (
             ({"id": None}, "release id"),
+            ({"id": True}, "release id"),
             ({"draft": "false"}, "draft state"),
             ({"prerelease": None}, "prerelease state"),
         ):
