@@ -23,10 +23,8 @@ fn fixture() -> AppState {
 fn choose(app: &mut AppState, command: Command) {
     reduce(app, Action::OpenCommandPalette);
     handle_command_palette_paste(app, command.palette_label(false).unwrap().into());
-    app.command_palette_selected = app.command_palette_choices()
-        .iter()
-        .position(|candidate| *candidate == command)
-        .expect("available command");
+    let choices = app.command_palette_choices();
+    app.command_palette_selected = choices.iter().position(|c| *c == command).expect("command");
 }
 
 fn enter(app: &mut AppState) -> Vec<Effect> {
