@@ -258,6 +258,9 @@ def main() -> int:
         "exactQualifiedBundlePromotion",
         "remoteAssetDigestVerification",
         "immutableReleaseRequired",
+        "successfulPublicationReceiptsRequired",
+        "partialFailureEvidenceRetained",
+        "phaseStateValidated",
     ):
         if publication.get(key) is not True:
             raise SystemExit("v1.4 stable publication governance lost {}".format(key))
