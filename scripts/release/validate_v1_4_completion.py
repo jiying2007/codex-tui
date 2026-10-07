@@ -264,6 +264,8 @@ def main() -> int:
         "phaseStateValidated",
         "assetReceiptsSourceBound",
         "releaseSnapshotsDigestBound",
+        "immutableReleaseSnapshotsRetained",
+        "immutableReleaseSnapshotsDigestBound",
         "releaseTargetSourceBound",
         "publishedTimestampRequired",
         "publishMainStateRetained",
@@ -273,6 +275,8 @@ def main() -> int:
     ):
         if publication.get(key) is not True:
             raise SystemExit("v1.4 stable publication governance lost {}".format(key))
+    if publication.get("immutableReleaseReceiptSchema") != "codex-tui/immutable-releases/v2":
+        raise SystemExit("v1.4 immutable-release receipt schema drifted")
     if publication.get("releaseAssetVerificationSchema") != "codex-tui/release-asset-verification/v2":
         raise SystemExit("v1.4 release asset verification schema drifted")
     if publication.get("releaseBranchStateSchema") != "codex-tui/release-branch-state/v1":
