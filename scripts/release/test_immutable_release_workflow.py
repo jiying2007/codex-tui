@@ -268,6 +268,30 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
         self.assertIn("*-release.json", publish)
         self.assertIn("publish-immutable-releases.json", publish)
 
+    def test_successful_publication_requires_complete_channel_receipts(self):
+        text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        publish = text.rsplit("\n  publish:\n", 1)[1]
+        gate = publish.split(
+            "- name: Require complete successful publication evidence", 1
+        )[1].split("- uses: actions/upload-artifact@", 1)[0]
+
+        self.assertIn("if: success()", gate)
+        for name in (
+            "preview-draft-release.json",
+            "preview-draft-assets.json",
+            "preview-published-release.json",
+            "preview-published-assets.json",
+            "stable-draft-release.json",
+            "stable-draft-assets.json",
+            "publish-immutable-releases.json",
+            "stable-prepublish-release.json",
+            "stable-prepublish-assets.json",
+            "stable-published-release.json",
+            "stable-published-assets.json",
+        ):
+            self.assertIn(name, gate)
+        self.assertIn("successful publication is missing retained evidence", gate)
+
     def test_successful_publication_cannot_omit_integrity_receipts(self):
         text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
         publish = text.rsplit("\n  publish:\n", 1)[1]
