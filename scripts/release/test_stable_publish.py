@@ -42,7 +42,7 @@ class StablePublicationInputs(unittest.TestCase):
         self.assertLessEqual(len(inputs), 25)
 
     def test_dispatch_uses_json_stdin_and_summary_redacts_raw_bundle(self):
-        source = (Path(__file__).resolve().parent / "stable_publish.py").read_text(
+        source = (pathlib.Path(__file__).resolve().parent / "stable_publish.py").read_text(
             encoding="utf-8"
         )
         self.assertIn('"--json"', source)
