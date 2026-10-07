@@ -33,7 +33,7 @@ class StablePublicationInputs(unittest.TestCase):
             inputs,
             {
                 "channel": "stable",
-                "publish": "true",
+                "publish": True,
                 "canonical_ci_run": "123",
                 "stable_qualification_run": "456",
                 "stable_real_evidence_bundle": "payload",
