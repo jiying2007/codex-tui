@@ -59,9 +59,8 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
         self.assertIn("--notes-file bundle/RELEASE_NOTES.md", stable)
         self.assertIn("--draft=false", stable)
         self.assertIn("releases/tags/$TAG", stable)
-        self.assertIn("--jq .draft", stable)
-        self.assertIn("--jq .prerelease", stable)
-        self.assertIn("--jq .immutable", stable)
+        self.assertIn("stable-published-release.json", stable)
+        self.assertIn("X-GitHub-Api-Version: 2026-03-10", stable)
         self.assertIn("PUBLISHED_DRAFT", stable)
         self.assertIn("PUBLISHED_PRERELEASE", stable)
         self.assertIn('test "$PUBLISHED_DRAFT" = "false"', stable)
@@ -244,11 +243,19 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
             "- name: Publish immutable stable GitHub Release", 1
         )[1].split("- uses: actions/upload-artifact@", 1)[0]
 
+        self.assertEqual(
+            preview.count("scripts/release/verify_release_assets.py"),
+            2,
+        )
+        self.assertEqual(
+            stable.count("scripts/release/verify_release_assets.py"),
+            3,
+        )
         for section, prefix in ((preview, "preview"), (stable, "stable")):
-            self.assertEqual(section.count("scripts/release/verify_release_assets.py"), 2)
             self.assertIn("X-GitHub-Api-Version: 2026-03-10", section)
             self.assertIn(f"{prefix}-draft-assets.json", section)
             self.assertIn(f"{prefix}-published-assets.json", section)
+        self.assertIn("stable-prepublish-assets.json", stable)
 
         self.assertIn("name: release-asset-integrity", publish)
         self.assertIn("if: always()", publish)
