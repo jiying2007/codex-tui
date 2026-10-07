@@ -761,10 +761,20 @@ jobs:
             --source-sha "$GITHUB_SHA" \
             --output "$RUNNER_TEMP/preview-draft-assets.json"
 
-          DRAFT_TAG_SHA="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha)"
+          gh api \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" \
+            > "$RUNNER_TEMP/preview-draft-tag-ref.json"
+          python3 scripts/release/verify_release_tag_ref.py \
+            --ref-json "$RUNNER_TEMP/preview-draft-tag-ref.json" \
+            --tag "$TAG" \
+            --source-sha "$GITHUB_SHA" \
+            --phase draft \
+            --channel preview \
+            --output "$RUNNER_TEMP/preview-draft-tag-evidence.json"
           DRAFT_BODY="$(python3 -c 'import json,sys; value=json.load(open(sys.argv[1], encoding="utf-8")).get("body"); print(value if isinstance(value,str) else "")' "$RUNNER_TEMP/preview-draft-release.json")"
-          if [ "$DRAFT_TAG_SHA" != "$GITHUB_SHA" ] || [ "$DRAFT_BODY" != "$DRAFT_OWNER_MARKER" ]; then
-            echo "preview draft identity drifted before publication" >&2
+          if [ "$DRAFT_BODY" != "$DRAFT_OWNER_MARKER" ]; then
+            echo "preview draft owner identity drifted before publication" >&2
             exit 1
           fi
 
@@ -780,19 +790,25 @@ jobs:
             -H "X-GitHub-Api-Version: 2026-03-10" \
             "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" \
             > "$RUNNER_TEMP/preview-published-release.json"
+          gh api \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" \
+            > "$RUNNER_TEMP/preview-published-tag-ref.json"
+          python3 scripts/release/verify_release_tag_ref.py \
+            --ref-json "$RUNNER_TEMP/preview-published-tag-ref.json" \
+            --tag "$TAG" \
+            --source-sha "$GITHUB_SHA" \
+            --phase published \
+            --channel preview \
+            --output "$RUNNER_TEMP/preview-published-tag-evidence.json"
           PUBLISHED_DRAFT="$(python3 -c 'import json,sys; print(str(json.load(open(sys.argv[1], encoding="utf-8")).get("draft")).lower())' "$RUNNER_TEMP/preview-published-release.json")"
           PUBLISHED_PRERELEASE="$(python3 -c 'import json,sys; print(str(json.load(open(sys.argv[1], encoding="utf-8")).get("prerelease")).lower())' "$RUNNER_TEMP/preview-published-release.json")"
-          PUBLISHED_TAG_SHA="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha)"
           test "$PUBLISHED_DRAFT" = "false" || {
             echo "preview release remained draft after publication" >&2
             exit 1
           }
           test "$PUBLISHED_PRERELEASE" = "true" || {
             echo "preview release was not marked prerelease after publication" >&2
-            exit 1
-          }
-          test "$PUBLISHED_TAG_SHA" = "$GITHUB_SHA" || {
-            echo "preview release tag target mismatch after publication: expected=$GITHUB_SHA actual=$PUBLISHED_TAG_SHA" >&2
             exit 1
           }
 
@@ -823,7 +839,8 @@ jobs:
           python3 scripts/release/validate_release_branch_state.py \
             --branch-json "$RUNNER_TEMP/publish-main.json" \
             --commit "$GITHUB_SHA" \
-            --require-protected
+            --require-protected \
+            --output "$RUNNER_TEMP/publish-main-state.json"
 
           set +e
           git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1
@@ -905,10 +922,20 @@ jobs:
             --source-sha "$GITHUB_SHA" \
             --output "$RUNNER_TEMP/stable-draft-assets.json"
 
-          DRAFT_TAG_SHA="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha)"
+          GH_TOKEN="$PUBLISH_TOKEN" gh api \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" \
+            > "$RUNNER_TEMP/stable-draft-tag-ref.json"
+          python3 scripts/release/verify_release_tag_ref.py \
+            --ref-json "$RUNNER_TEMP/stable-draft-tag-ref.json" \
+            --tag "$TAG" \
+            --source-sha "$GITHUB_SHA" \
+            --phase draft \
+            --channel stable \
+            --output "$RUNNER_TEMP/stable-draft-tag-evidence.json"
           DRAFT_BODY="$(python3 -c 'import json,sys; value=json.load(open(sys.argv[1], encoding="utf-8")).get("body"); print(value if isinstance(value,str) else "")' "$RUNNER_TEMP/stable-draft-release.json")"
-          if [ "$DRAFT_TAG_SHA" != "$GITHUB_SHA" ] || [ "$DRAFT_BODY" != "$DRAFT_OWNER_MARKER" ]; then
-            echo "draft release identity drifted before publication" >&2
+          if [ "$DRAFT_BODY" != "$DRAFT_OWNER_MARKER" ]; then
+            echo "stable draft owner identity drifted before publication" >&2
             exit 1
           fi
 
@@ -930,10 +957,20 @@ jobs:
             --channel stable \
             --source-sha "$GITHUB_SHA" \
             --output "$RUNNER_TEMP/stable-prepublish-assets.json"
-          PREPUBLISH_TAG_SHA="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha)"
+          GH_TOKEN="$PUBLISH_TOKEN" gh api \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" \
+            > "$RUNNER_TEMP/stable-prepublish-tag-ref.json"
+          python3 scripts/release/verify_release_tag_ref.py \
+            --ref-json "$RUNNER_TEMP/stable-prepublish-tag-ref.json" \
+            --tag "$TAG" \
+            --source-sha "$GITHUB_SHA" \
+            --phase prepublish \
+            --channel stable \
+            --output "$RUNNER_TEMP/stable-prepublish-tag-evidence.json"
           PREPUBLISH_BODY="$(python3 -c 'import json,sys; value=json.load(open(sys.argv[1], encoding="utf-8")).get("body"); print(value if isinstance(value,str) else "")' "$RUNNER_TEMP/stable-prepublish-release.json")"
-          if [ "$PREPUBLISH_TAG_SHA" != "$GITHUB_SHA" ] || [ "$PREPUBLISH_BODY" != "$DRAFT_OWNER_MARKER" ]; then
-            echo "stable draft identity drifted at publication point" >&2
+          if [ "$PREPUBLISH_BODY" != "$DRAFT_OWNER_MARKER" ]; then
+            echo "stable draft owner identity drifted at publication point" >&2
             exit 1
           fi
 
@@ -948,10 +985,20 @@ jobs:
             -H "X-GitHub-Api-Version: 2026-03-10" \
             "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" \
             > "$RUNNER_TEMP/stable-published-release.json"
+          GH_TOKEN="$PUBLISH_TOKEN" gh api \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" \
+            > "$RUNNER_TEMP/stable-published-tag-ref.json"
+          python3 scripts/release/verify_release_tag_ref.py \
+            --ref-json "$RUNNER_TEMP/stable-published-tag-ref.json" \
+            --tag "$TAG" \
+            --source-sha "$GITHUB_SHA" \
+            --phase published \
+            --channel stable \
+            --output "$RUNNER_TEMP/stable-published-tag-evidence.json"
           PUBLISHED_DRAFT="$(python3 -c 'import json,sys; print(str(json.load(open(sys.argv[1], encoding="utf-8")).get("draft")).lower())' "$RUNNER_TEMP/stable-published-release.json")"
           PUBLISHED_PRERELEASE="$(python3 -c 'import json,sys; print(str(json.load(open(sys.argv[1], encoding="utf-8")).get("prerelease")).lower())' "$RUNNER_TEMP/stable-published-release.json")"
           PUBLISHED_IMMUTABLE="$(python3 -c 'import json,sys; print(str(json.load(open(sys.argv[1], encoding="utf-8")).get("immutable")).lower())' "$RUNNER_TEMP/stable-published-release.json")"
-          PUBLISHED_TAG_SHA="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha)"
           test "$PUBLISHED_DRAFT" = "false" || {
             echo "stable release remained draft after publication; manual incident response required" >&2
             exit 1
@@ -962,10 +1009,6 @@ jobs:
           }
           test "$PUBLISHED_IMMUTABLE" = "true" || {
             echo "stable release was published without immutable=true; manual incident response required" >&2
-            exit 1
-          }
-          test "$PUBLISHED_TAG_SHA" = "$GITHUB_SHA" || {
-            echo "stable release tag target mismatch after publication: expected=$GITHUB_SHA actual=$PUBLISHED_TAG_SHA" >&2
             exit 1
           }
 
@@ -989,18 +1032,30 @@ jobs:
             REQUIRED=(
               preview-draft-release.json
               preview-draft-assets.json
+              preview-draft-tag-ref.json
+              preview-draft-tag-evidence.json
               preview-published-release.json
               preview-published-assets.json
+              preview-published-tag-ref.json
+              preview-published-tag-evidence.json
             )
           else
             REQUIRED=(
+              publish-main.json
+              publish-main-state.json
               stable-draft-release.json
               stable-draft-assets.json
+              stable-draft-tag-ref.json
+              stable-draft-tag-evidence.json
               publish-immutable-releases.json
               stable-prepublish-release.json
               stable-prepublish-assets.json
+              stable-prepublish-tag-ref.json
+              stable-prepublish-tag-evidence.json
               stable-published-release.json
               stable-published-assets.json
+              stable-published-tag-ref.json
+              stable-published-tag-evidence.json
             )
           fi
           for name in "${REQUIRED[@]}"; do
@@ -1017,6 +1072,10 @@ jobs:
           path: |
             ${{ runner.temp }}/*-assets.json
             ${{ runner.temp }}/*-release.json
+            ${{ runner.temp }}/*-tag-ref.json
+            ${{ runner.temp }}/*-tag-evidence.json
+            ${{ runner.temp }}/publish-main.json
+            ${{ runner.temp }}/publish-main-state.json
             ${{ runner.temp }}/publish-immutable-releases.json
           if-no-files-found: error
           retention-days: 90
@@ -1028,6 +1087,10 @@ jobs:
           path: |
             ${{ runner.temp }}/*-assets.json
             ${{ runner.temp }}/*-release.json
+            ${{ runner.temp }}/*-tag-ref.json
+            ${{ runner.temp }}/*-tag-evidence.json
+            ${{ runner.temp }}/publish-main.json
+            ${{ runner.temp }}/publish-main-state.json
             ${{ runner.temp }}/publish-immutable-releases.json
           if-no-files-found: ignore
           retention-days: 90
