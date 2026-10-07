@@ -261,6 +261,8 @@ def main() -> int:
         "successfulPublicationReceiptsRequired",
         "partialFailureEvidenceRetained",
         "phaseStateValidated",
+        "assetReceiptsSourceBound",
+        "releaseSnapshotsDigestBound",
     ):
         if publication.get(key) is not True:
             raise SystemExit("v1.4 stable publication governance lost {}".format(key))
