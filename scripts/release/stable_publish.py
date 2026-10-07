@@ -64,8 +64,20 @@ def require_immutable_releases(root: pathlib.Path, github_repo: str) -> dict:
     return _require_immutable_releases(root, github_repo, runner=run)
 
 
-def require_main_protection(root: pathlib.Path, github_repo: str) -> dict:
-    return _require_main_protection(root, github_repo, runner=run)
+def require_main_protection(
+    root: pathlib.Path,
+    github_repo: str,
+    *,
+    source_sha: str,
+    check_runs_path: pathlib.Path,
+) -> dict:
+    return _require_main_protection(
+        root,
+        github_repo,
+        source_sha=source_sha,
+        check_runs_path=check_runs_path,
+        runner=run,
+    )
 
 
 def load_json(path: pathlib.Path, label: str) -> dict:
@@ -296,7 +308,26 @@ def main() -> int:
             cwd=root,
             capture=False,
         )
-        main_protection = require_main_protection(root, github_repo)
+        check_runs_json = temp_dir / "main-check-runs.json"
+        check_runs = run(
+            [
+                "gh",
+                "api",
+                "-H",
+                "Accept: application/vnd.github+json",
+                "-H",
+                "X-GitHub-Api-Version: 2026-03-10",
+                f"repos/{github_repo}/commits/{commit_sha}/check-runs?per_page=100",
+            ],
+            cwd=root,
+        )
+        check_runs_json.write_bytes(check_runs.stdout.encode("utf-8"))
+        main_protection = require_main_protection(
+            root,
+            github_repo,
+            source_sha=commit_sha,
+            check_runs_path=check_runs_json,
+        )
 
         run_json = temp_dir / "prior-stable-run.json"
         prior_run = run(
