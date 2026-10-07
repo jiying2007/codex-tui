@@ -112,10 +112,7 @@ fn fuzzy_match(query: &str, label: &str) -> Option<FuzzyMatch> {
             score += 400;
         }
         let candidate = FuzzyMatch { score, positions };
-        if best
-            .as_ref()
-            .is_none_or(|current| candidate.score > current.score)
-        {
+        if best.as_ref().is_none_or(|current| candidate.score > current.score) {
             best = Some(candidate);
         }
     }
@@ -197,20 +194,28 @@ impl AppState {
                 .iter()
                 .copied()
                 // Keep the default palette control-plane-first; typing searches everything.
-                .filter(|command| !self.command_palette_open || matches!(
-                    *command,
-                    Command::Search | Command::NextAttention | Command::Board
-                    | Command::Review | Command::Workspace | Command::TogglePin
-                    | Command::Snooze | Command::ContextActions | Command::Help
-                ))
+                .filter(|command| {
+                    !self.command_palette_open
+                        || matches!(
+                            *command,
+                            Command::Search
+                                | Command::NextAttention
+                                | Command::Board
+                                | Command::Review
+                                | Command::Workspace
+                                | Command::TogglePin
+                                | Command::Snooze
+                                | Command::ContextActions
+                                | Command::Help
+                        )
+                })
                 .filter_map(|command| {
-                    command
-                        .palette_label(self.language.is_simplified_chinese())
-                        .map(|label| CommandPaletteMatch {
-                            command,
-                            label,
-                            matched_char_indices: vec![],
-                        })
+                    let label = command.palette_label(self.language.is_simplified_chinese())?;
+                    Some(CommandPaletteMatch {
+                        command,
+                        label,
+                        matched_char_indices: vec![],
+                    })
                 })
                 .collect();
         }
@@ -221,23 +226,19 @@ impl AppState {
             .copied()
             .enumerate()
             .filter_map(|(baseline_index, command)| {
-                let mut candidates = Vec::new();
-                for simplified_chinese in [display_chinese, !display_chinese] {
-                    let Some(label) = command.palette_label(simplified_chinese) else {
-                        continue;
-                    };
-                    if let Some(matched) = fuzzy_match(&self.command_palette_query, label) {
-                        candidates.push((simplified_chinese == display_chinese, label, matched));
-                    }
-                }
-                let (display_language, label, matched) =
-                    candidates.into_iter().max_by(|left, right| {
-                        left.2
-                            .score
-                            .cmp(&right.2.score)
-                            .then_with(|| left.0.cmp(&right.0))
+                let (_, label, matched) = [display_chinese, !display_chinese]
+                    .into_iter()
+                    .filter_map(|lang| {
+                        let label = command.palette_label(lang)?;
+                        Some((
+                            lang == display_chinese,
+                            label,
+                            fuzzy_match(&self.command_palette_query, label)?,
+                        ))
+                    })
+                    .max_by(|left, right| {
+                        left.2.score.cmp(&right.2.score).then_with(|| left.0.cmp(&right.0))
                     })?;
-                let _ = display_language;
                 Some((
                     matched.score,
                     baseline_index,
