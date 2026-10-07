@@ -10,6 +10,7 @@ import json
 import math
 import pathlib
 import re
+from typing import Optional, Tuple
 
 from _compat import write_text_lf
 
@@ -168,7 +169,7 @@ def validate_envelope(
     commit: str,
     payload_sha256: str,
     payload_chars: int,
-    output_dir: pathlib.Path | None = None,
+    output_dir: Optional[pathlib.Path] = None,
 ) -> dict:
     require(envelope.get("schema") == BUNDLE_SCHEMA, "real evidence bundle schema mismatch")
     exact_source(envelope.get("sourceSha"), commit, "real evidence bundle")
@@ -236,7 +237,7 @@ def read_raw(path: pathlib.Path, label: str) -> bytes:
     return raw
 
 
-def create_payload(args) -> tuple[str, dict]:
+def create_payload(args) -> Tuple[str, dict]:
     commit = args.commit.strip().lower()
     require(bool(HEX40.fullmatch(commit)), "--commit must be exactly 40 hexadecimal characters")
 
@@ -283,7 +284,7 @@ def create_payload(args) -> tuple[str, dict]:
     return payload, summary
 
 
-def decode_payload(payload: str, commit: str, output_dir: pathlib.Path | None = None) -> dict:
+def decode_payload(payload: str, commit: str, output_dir: Optional[pathlib.Path] = None) -> dict:
     payload = payload.strip()
     require(bool(payload), "stable real evidence payload is empty")
     require(len(payload) <= MAX_PAYLOAD_CHARS, f"stable real evidence payload exceeds {MAX_PAYLOAD_CHARS} characters")
