@@ -79,6 +79,17 @@ class ReleaseEvidenceV6(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, "payload SHA-256"):
             m.validate_real_summary(value, SHA)
 
+    def test_summary_hashes_must_match_raw_file_receipts(self):
+        value = summary()
+        value["compatibility"]["linux"]["reportSha256"] = "b" * 64
+        with self.assertRaisesRegex(SystemExit, "compatibility hash"):
+            m.validate_real_summary(value, SHA)
+
+        value = summary()
+        value["performance"]["p99Ms"] = float("inf")
+        with self.assertRaisesRegex(SystemExit, "p99Ms"):
+            m.validate_real_summary(value, SHA)
+
     def test_performance_and_file_receipts_are_strict(self):
         value = summary()
         value["performance"]["iterations"] = 199
