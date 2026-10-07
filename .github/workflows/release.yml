@@ -758,6 +758,7 @@ jobs:
             --tag "$TAG" \
             --phase draft \
             --channel preview \
+            --source-sha "$GITHUB_SHA" \
             --output "$RUNNER_TEMP/preview-draft-assets.json"
 
           DRAFT_TAG_SHA="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha)"
@@ -801,6 +802,7 @@ jobs:
             --tag "$TAG" \
             --phase published \
             --channel preview \
+            --source-sha "$GITHUB_SHA" \
             --output "$RUNNER_TEMP/preview-published-assets.json"
 
       - name: Publish immutable stable GitHub Release
@@ -900,6 +902,7 @@ jobs:
             --tag "$TAG" \
             --phase draft \
             --channel stable \
+            --source-sha "$GITHUB_SHA" \
             --output "$RUNNER_TEMP/stable-draft-assets.json"
 
           DRAFT_TAG_SHA="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha)"
@@ -925,6 +928,7 @@ jobs:
             --tag "$TAG" \
             --phase prepublish \
             --channel stable \
+            --source-sha "$GITHUB_SHA" \
             --output "$RUNNER_TEMP/stable-prepublish-assets.json"
           PREPUBLISH_TAG_SHA="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha)"
           PREPUBLISH_BODY="$(python3 -c 'import json,sys; value=json.load(open(sys.argv[1], encoding="utf-8")).get("body"); print(value if isinstance(value,str) else "")' "$RUNNER_TEMP/stable-prepublish-release.json")"
@@ -971,6 +975,7 @@ jobs:
             --tag "$TAG" \
             --phase published \
             --channel stable \
+            --source-sha "$GITHUB_SHA" \
             --output "$RUNNER_TEMP/stable-published-assets.json"
 
       - name: Require complete successful publication evidence
