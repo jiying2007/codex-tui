@@ -399,6 +399,32 @@ def main() -> int:
         raise SystemExit("terminal receipt observedAt is empty")
     terminal_sha256 = hashlib.sha256(terminal_path.read_bytes()).hexdigest()
 
+    real_bundle_path = output_dir / "stable-real-evidence.bundle"
+    real_summary_path = output_dir / "real-evidence-summary.json"
+    run(
+        [
+            sys.executable,
+            "scripts/release/real_evidence_bundle.py",
+            "create",
+            "--commit",
+            commit_sha,
+            "--linux-compat",
+            str(compat_path),
+            "--linux-terminal",
+            str(terminal_path),
+            "--performance",
+            str(perf_path),
+            "--output",
+            str(real_bundle_path),
+            "--summary",
+            str(real_summary_path),
+        ],
+        cwd=root,
+        capture=False,
+    )
+    real_bundle_payload = real_bundle_path.read_text(encoding="utf-8").strip()
+    real_summary = load_json(real_summary_path)
+
     evidence_path = output_dir / "release-evidence-linux.json"
     run(
         [
@@ -406,8 +432,6 @@ def main() -> int:
             "scripts/release/create_evidence.py",
             "--output",
             str(evidence_path),
-            "--compat-schema",
-            COMPAT_SCHEMA,
             "--version",
             version,
             "--commit",
@@ -416,30 +440,8 @@ def main() -> int:
             str(canonical_ci_run),
             "--automated-qualification",
             str(automated_path),
-            "--linux-source-sha",
-            commit_sha,
-            "--linux-compat-sha256",
-            compat_summary["reportSha256"],
-            "--linux-compat-observed-at",
-            compat_summary["observedAt"],
-            "--linux-terminal-sha256",
-            terminal_sha256,
-            "--linux-terminal-observed-at",
-            terminal["observedAt"],
-            "--performance-source-sha",
-            commit_sha,
-            "--performance-report-sha256",
-            performance_report_sha256,
-            "--performance-iterations",
-            str(performance["iterations"]),
-            "--performance-p95-ms",
-            str(performance["p95Ms"]),
-            "--performance-p99-ms",
-            str(performance["p99Ms"]),
-            "--performance-source",
-            performance["source"],
-            "--performance-observed-at",
-            performance["observedAt"],
+            "--real-evidence-summary",
+            str(real_summary_path),
         ],
         cwd=root,
         capture=False,
@@ -475,16 +477,7 @@ def main() -> int:
         "channel": "stable",
         "publish": "false",
         "canonical_ci_run": str(canonical_ci_run),
-        "linux_compat_sha256": compat_summary["reportSha256"],
-        "linux_compat_observed_at": compat_summary["observedAt"],
-        "linux_terminal_sha256": terminal_sha256,
-        "linux_terminal_observed_at": terminal["observedAt"],
-        "performance_report_sha256": performance_report_sha256,
-        "performance_iterations": str(performance["iterations"]),
-        "performance_p95_ms": str(performance["p95Ms"]),
-        "performance_p99_ms": str(performance["p99Ms"]),
-        "performance_source": performance["source"],
-        "performance_observed_at": performance["observedAt"],
+        "stable_real_evidence_bundle": real_bundle_payload,
     }
 
     summary = {
@@ -511,6 +504,10 @@ def main() -> int:
             "p95Ms": performance["p95Ms"],
             "p99Ms": performance["p99Ms"],
         },
+        "realEvidenceBundle": str(real_bundle_path),
+        "realEvidenceBundleSha256": real_summary["payloadSha256"],
+        "realEvidencePayloadChars": real_summary["payloadChars"],
+        "realEvidenceSummary": str(real_summary_path),
         "releaseEvidence": str(evidence_path),
         "releaseVerification": str(verify_path),
         "localStableVerify": "pass",
