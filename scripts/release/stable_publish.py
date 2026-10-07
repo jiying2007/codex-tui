@@ -317,7 +317,7 @@ def main() -> int:
                 "Accept: application/vnd.github+json",
                 "-H",
                 "X-GitHub-Api-Version: 2026-03-10",
-                f"repos/{github_repo}/commits/{commit_sha}/check-runs?per_page=100",
+                f"repos/{github_repo}/commits/{commit_sha}/check-runs?filter=latest&per_page=100",
             ],
             cwd=root,
         )
