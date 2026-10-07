@@ -130,18 +130,27 @@ def validate_check_runs(payload: dict, commit_sha: str) -> int:
             "current main is missing successful canonical checks: " + ", ".join(missing)
         )
 
-    app_ids = {
-        value
-        for value in selected.values()
-        if isinstance(value, int) and not isinstance(value, bool)
-    }
+    invalid_ids = [
+        name
+        for name, value in selected.items()
+        if (
+            not isinstance(value, int)
+            or isinstance(value, bool)
+            or value <= 0
+        )
+    ]
+    if invalid_ids:
+        raise SystemExit(
+            "canonical checks have invalid GitHub Actions app ids: "
+            + ", ".join(invalid_ids)
+        )
+
+    app_ids = set(selected.values())
     if len(app_ids) != 1:
         raise SystemExit(
             f"canonical checks must come from one GitHub Actions app; got {sorted(app_ids)}"
         )
     app_id = next(iter(app_ids))
-    if app_id <= 0:
-        raise SystemExit("GitHub Actions app id must be positive")
     return app_id
 
 
