@@ -39,6 +39,29 @@ def write_bundle(root: Path):
             "schema": "codex-tui/release-evidence/v6",
             "version": VERSION,
             "commitSha": SHA,
+            "realEvidenceBundle": {
+                "schema": "codex-tui/stable-real-evidence-bundle/v1",
+                "sourceSha": SHA,
+                "payloadSha256": "f" * 64,
+                "payloadChars": 1024,
+                "files": {
+                    "linuxCompat": {
+                        "name": "compat-linux.json",
+                        "sha256": "a" * 64,
+                        "size": 10,
+                    },
+                    "linuxTerminal": {
+                        "name": "terminal-linux.json",
+                        "sha256": "c" * 64,
+                        "size": 10,
+                    },
+                    "performance": {
+                        "name": "performance-linux.json",
+                        "sha256": "d" * 64,
+                        "size": 10,
+                    },
+                },
+            },
         }).encode(),
     }
     for name, content in payloads.items():
@@ -95,6 +118,25 @@ class StableBundlePromotion(unittest.TestCase):
                 encoding="utf-8",
             )
             with self.assertRaisesRegex(SystemExit, "must originate from publish=false"):
+                p.validate_bundle(root, VERSION, TAG, SHA)
+
+    def test_missing_or_invalid_real_evidence_lineage_fails_closed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            write_bundle(root)
+            evidence_path = root / "release-evidence.json"
+            evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
+            evidence["realEvidenceBundle"]["payloadSha256"] = "bad"
+            evidence_path.write_text(json.dumps(evidence), encoding="utf-8")
+            files = [path for path in root.iterdir() if path.name != "SHA256SUMS"]
+            (root / "SHA256SUMS").write_text(
+                "".join(
+                    f"{hashlib.sha256(path.read_bytes()).hexdigest()}  {path.name}\n"
+                    for path in sorted(files, key=lambda value: value.name)
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(SystemExit, "payload SHA-256"):
                 p.validate_bundle(root, VERSION, TAG, SHA)
 
     def test_missing_native_archive_fails_closed(self):
