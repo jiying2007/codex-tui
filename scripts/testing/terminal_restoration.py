@@ -148,8 +148,10 @@ def probe(binary, output, failed_save):
             drain(.35)
             raw = not bool(termios.tcgetattr(slave)[3] & (termios.ICANON | termios.ECHO))
             require(raw, "raw mode not entered")
-            send(b"?", "help input")
-            send(b"\x1b", "close help input")
+            send(b"?", "open help")
+            # Toggle explicitly: Esc is not a verified help-dismiss handshake and
+            # an ESC prefix can race the next control-key event on a loaded PTY.
+            send(b"?", "close help with help toggle")
             offset = send(b"\x0b", "open command palette")
             try:
                 wait_for(lambda: b"Command Palette" in text(bytes(stream[offset:])),
