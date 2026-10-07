@@ -774,8 +774,12 @@ jobs:
           PUBLISHED=true
           trap - EXIT
 
-          PUBLISHED_DRAFT="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .draft)"
-          PUBLISHED_PRERELEASE="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .prerelease)"
+          gh api \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" \
+            > "$RUNNER_TEMP/preview-published-release.json"
+          PUBLISHED_DRAFT="$(python3 -c 'import json,sys; print(str(json.load(open(sys.argv[1], encoding="utf-8")).get("draft")).lower())' "$RUNNER_TEMP/preview-published-release.json")"
+          PUBLISHED_PRERELEASE="$(python3 -c 'import json,sys; print(str(json.load(open(sys.argv[1], encoding="utf-8")).get("prerelease")).lower())' "$RUNNER_TEMP/preview-published-release.json")"
           PUBLISHED_TAG_SHA="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha)"
           test "$PUBLISHED_DRAFT" = "false" || {
             echo "preview release remained draft after publication" >&2
@@ -790,10 +794,6 @@ jobs:
             exit 1
           }
 
-          gh api \
-            -H "X-GitHub-Api-Version: 2026-03-10" \
-            "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" \
-            > "$RUNNER_TEMP/preview-published-release.json"
           python3 scripts/release/verify_release_assets.py \
             --release-json "$RUNNER_TEMP/preview-published-release.json" \
             --bundle bundle \
@@ -920,9 +920,13 @@ jobs:
           PUBLISHED=true
           trap - EXIT
 
-          PUBLISHED_DRAFT="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .draft)"
-          PUBLISHED_PRERELEASE="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .prerelease)"
-          PUBLISHED_IMMUTABLE="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq .immutable)"
+          GH_TOKEN="$PUBLISH_TOKEN" gh api \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" \
+            > "$RUNNER_TEMP/stable-published-release.json"
+          PUBLISHED_DRAFT="$(python3 -c 'import json,sys; print(str(json.load(open(sys.argv[1], encoding="utf-8")).get("draft")).lower())' "$RUNNER_TEMP/stable-published-release.json")"
+          PUBLISHED_PRERELEASE="$(python3 -c 'import json,sys; print(str(json.load(open(sys.argv[1], encoding="utf-8")).get("prerelease")).lower())' "$RUNNER_TEMP/stable-published-release.json")"
+          PUBLISHED_IMMUTABLE="$(python3 -c 'import json,sys; print(str(json.load(open(sys.argv[1], encoding="utf-8")).get("immutable")).lower())' "$RUNNER_TEMP/stable-published-release.json")"
           PUBLISHED_TAG_SHA="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha)"
           test "$PUBLISHED_DRAFT" = "false" || {
             echo "stable release remained draft after publication; manual incident response required" >&2
@@ -941,10 +945,6 @@ jobs:
             exit 1
           }
 
-          GH_TOKEN="$PUBLISH_TOKEN" gh api \
-            -H "X-GitHub-Api-Version: 2026-03-10" \
-            "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" \
-            > "$RUNNER_TEMP/stable-published-release.json"
           python3 scripts/release/verify_release_assets.py \
             --release-json "$RUNNER_TEMP/stable-published-release.json" \
             --bundle bundle \
