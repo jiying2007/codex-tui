@@ -69,6 +69,51 @@ class RealSquashProof(unittest.TestCase):
             finally:
                 os.chdir(old)
 
+class WorkflowBacklogCleanupContract(unittest.TestCase):
+    def test_policy_change_push_rechecks_retained_backlog_fail_closed(self):
+        text = (
+            Path(__file__).resolve().parents[2]
+            / ".github/workflows/repository-hygiene.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn("group: repository-hygiene", text)
+        self.assertIn("cancel-in-progress: false", text)
+        self.assertIn('if: github.event_name == \'push\'', text)
+        self.assertIn('"scripts/repository/branch_hygiene.py"', text)
+        self.assertIn('"scripts/release/test_branch_hygiene.py"', text)
+        self.assertIn('ARGS=(--repo "$GITHUB_REPOSITORY" --output "$PLAN")', text)
+        self.assertIn("--plan-sha256", text)
+        self.assertIn("--confirm-repository", text)
+        self.assertIn("retained-branch-hygiene-", text)
+        self.assertIn("if-no-files-found: error", text)
+
+    def test_release_and_historical_prefixes_remain_retained(self):
+        for name in (
+            "release/v1.1-parked",
+            "archive/v1.0",
+            "checkpoint/evidence",
+        ):
+            branch = {"name": name, "commit": {"sha": "a" * 40}, "protected": False}
+            pr = {
+                "number": 1,
+                "state": "closed",
+                "merged_at": "date",
+                "head": {
+                    "ref": name,
+                    "sha": "a" * 40,
+                    "repo": {"full_name": "owner/repo"},
+                },
+            }
+            entry = h.build_plan(
+                "owner/repo",
+                "b" * 40,
+                [branch],
+                [pr],
+                lambda *_: True,
+            )["entries"][0]
+            self.assertEqual(entry["decision"], "keep")
+            self.assertEqual(entry["reason"], "protected-or-retained-reference")
+
+
 class ScopedCleanupContract(unittest.TestCase):
     def test_scope_excludes_other_branches_and_accepts_already_absent(self):
         branches = [{"name": "fix/merged", "commit": {"sha": "a" * 40}},
