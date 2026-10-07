@@ -76,6 +76,10 @@ class WorkflowBacklogCleanupContract(unittest.TestCase):
             / ".github/workflows/repository-hygiene.yml"
         ).read_text(encoding="utf-8")
         self.assertIn("group: repository-hygiene", text)
+        self.assertIn(
+            "if: github.event_name == 'pull_request' && github.event.pull_request.merged == true",
+            text,
+        )
         self.assertIn("cancel-in-progress: false", text)
         self.assertIn('if: github.event_name == \'push\'', text)
         self.assertIn('"scripts/repository/branch_hygiene.py"', text)
