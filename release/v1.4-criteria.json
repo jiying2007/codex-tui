@@ -164,9 +164,14 @@
       "evidence": "codex-tui/release-asset-verification/v2 receipts require the GitHub Release target_commitish to equal the exact candidate source SHA, validate channel/phase publication state, bind the raw release snapshot by SHA-256, and require the complete remote asset set to match the local bundle by positive asset identity, uploaded state, byte size and REST SHA-256"
     },
     {
+      "id": "release-ref-integrity",
+      "authority": "GitHub branch and Git refs REST readback",
+      "evidence": "stable publication retains codex-tui/release-branch-state/v1 proving current main still equals the exact candidate SHA and remains protected; preview/stable draft, stable prepublish, and published phases retain codex-tui/release-tag-ref/v1 proving the exact tag ref is a lightweight commit ref to the candidate SHA; every receipt SHA-256 binds its raw REST snapshot"
+    },
+    {
       "id": "published-release-state",
       "authority": "GitHub Releases and Git refs",
-      "evidence": "successful publication requires retained integrity receipts; stable postconditions require draft=false, prerelease=false, immutable=true and the stable tag still pointing to the exact candidate SHA; preview requires draft=false and prerelease=true; anomalies are incidents and are never auto-rewritten"
+      "evidence": "successful publication requires retained Release/asset/ref integrity receipts; stable postconditions require draft=false, prerelease=false, immutable=true, protected main still bound to the exact candidate at publish point, and the stable tag ref still pointing to the exact candidate SHA; preview requires draft=false, prerelease=true and an exact candidate tag ref; anomalies are incidents and are never auto-rewritten"
     }
   ],
   "frozenNonGoals": [
@@ -230,6 +235,11 @@
     "releaseSnapshotsDigestBound": true,
     "releaseAssetVerificationSchema": "codex-tui/release-asset-verification/v2",
     "releaseTargetSourceBound": true,
-    "publishedTimestampRequired": true
+    "publishedTimestampRequired": true,
+    "releaseBranchStateSchema": "codex-tui/release-branch-state/v1",
+    "releaseTagRefSchema": "codex-tui/release-tag-ref/v1",
+    "publishMainStateRetained": true,
+    "tagRefSnapshotsRetained": true,
+    "tagRefsSourceBound": true
   }
 }
