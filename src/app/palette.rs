@@ -184,28 +184,25 @@ impl AppState {
     }
 
     pub(crate) fn command_palette_matches(&self) -> Vec<CommandPaletteMatch> {
+        let fallback;
         let baseline = if self.command_palette_open {
             &self.command_palette_items
         } else {
-            return self
-                .build_command_palette_choices()
-                .into_iter()
-                .filter_map(|command| {
-                    command
-                        .palette_label(self.language.is_simplified_chinese())
-                        .map(|label| CommandPaletteMatch {
-                            command,
-                            label,
-                            matched_char_indices: vec![],
-                        })
-                })
-                .collect();
+            fallback = self.build_command_palette_choices();
+            &fallback
         };
 
-        if self.command_palette_query.trim().is_empty() {
+        if !self.command_palette_open || self.command_palette_query.trim().is_empty() {
             return baseline
                 .iter()
                 .copied()
+                // Keep the default palette control-plane-first; typing searches everything.
+                .filter(|command| !self.command_palette_open || matches!(
+                    *command,
+                    Command::Search | Command::NextAttention | Command::Board
+                    | Command::Review | Command::Workspace | Command::TogglePin
+                    | Command::Snooze | Command::ContextActions | Command::Help
+                ))
                 .filter_map(|command| {
                     command
                         .palette_label(self.language.is_simplified_chinese())
@@ -388,9 +385,9 @@ mod tests {
     fn frozen_palette_baseline_survives_context_change() {
         let mut app = app();
         app.open_command_palette();
-        let baseline = app.command_palette_items.clone();
+        let default_choices = app.command_palette_choices();
         app.view = View::Board;
         app.command_palette_query.clear();
-        assert_eq!(app.command_palette_choices(), baseline);
+        assert_eq!(app.command_palette_choices(), default_choices);
     }
 }
