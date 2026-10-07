@@ -149,6 +149,11 @@
       "evidence": "stable publish=true requires repository immutable releases to be enabled and verifiable before packaging authorization and again immediately before publication; both administrator-state readbacks retain the raw GitHub settings snapshot plus codex-tui/immutable-releases/v2 whose settingsSnapshotSha256 binds those exact bytes; final release metadata must report immutable=true"
     },
     {
+      "id": "main-protection-integrity",
+      "authority": "GitHub main branch protection REST state",
+      "evidence": "stable publication requires strict main protection with rust-1.88-msrv, ubuntu-24.04, macos-latest and windows-latest required checks, administrator enforcement, force pushes disabled and deletion disabled; the policy is verified before publication authorization and re-read immediately before final publication, with raw snapshots SHA-256 bound by codex-tui/main-protection-state/v1"
+    },
+    {
       "id": "prior-stable-dry-run",
       "authority": "GitHub Actions release workflow",
       "evidence": "stable publish=true requires a successful prior stable publish=false run on main bound to the exact source SHA, version, tag, canonical CI and retained release-evidence/v5 inputs"
@@ -236,6 +241,10 @@
     "immutableReleaseReceiptSchema": "codex-tui/immutable-releases/v2",
     "immutableReleaseSnapshotsRetained": true,
     "immutableReleaseSnapshotsDigestBound": true,
+    "mainProtectionReceiptSchema": "codex-tui/main-protection-state/v1",
+    "mainProtectionSnapshotsRetained": true,
+    "mainProtectionSnapshotsDigestBound": true,
+    "canonicalMainProtectionRequiredAtPublication": true,
     "releaseAssetVerificationSchema": "codex-tui/release-asset-verification/v2",
     "releaseTargetSourceBound": true,
     "publishedTimestampRequired": true,
