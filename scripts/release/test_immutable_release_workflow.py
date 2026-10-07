@@ -199,6 +199,25 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
         self.assertIn("PUBLISHED_PRERELEASE", preview)
         self.assertIn("PUBLISHED_TAG_SHA", preview)
 
+    def test_published_state_uses_one_version_pinned_release_snapshot(self):
+        text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        publish = text.rsplit("\n  publish:\n", 1)[1]
+        preview = publish.split(
+            "- name: Publish preview GitHub Release", 1
+        )[1].split("- name: Publish immutable stable GitHub Release", 1)[0]
+        stable = publish.split(
+            "- name: Publish immutable stable GitHub Release", 1
+        )[1].split("- uses: actions/upload-artifact@", 1)[0]
+
+        for section, name in ((preview, "preview"), (stable, "stable")):
+            after = section.split('gh release edit "$TAG"', 1)[1]
+            self.assertEqual(after.count("releases/tags/$TAG"), 1)
+            self.assertIn("X-GitHub-Api-Version: 2026-03-10", after)
+            self.assertIn(f"{name}-published-release.json", after)
+            self.assertIn("PUBLISHED_DRAFT=", after)
+            self.assertIn("PUBLISHED_PRERELEASE=", after)
+        self.assertIn("PUBLISHED_IMMUTABLE=", stable.split('gh release edit "$TAG"', 1)[1])
+
     def test_preview_and_stable_verify_uploaded_asset_digests_before_and_after_publish(self):
         text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
         publish = text.rsplit("\n  publish:\n", 1)[1]
