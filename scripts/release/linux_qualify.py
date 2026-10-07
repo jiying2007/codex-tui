@@ -28,7 +28,7 @@ def run(
     capture: bool = True,
     check: bool = True,
     env_overrides=None,
-    stdin_text: str | None = None,
+    stdin_text=None,
 ) -> subprocess.CompletedProcess[str]:
     environment = os.environ.copy()
     if env_overrides:
