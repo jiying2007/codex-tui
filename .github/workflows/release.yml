@@ -337,7 +337,7 @@ jobs:
             gh api \
               -H "Accept: application/vnd.github+json" \
               -H "X-GitHub-Api-Version: 2026-03-10" \
-              "repos/$GITHUB_REPOSITORY/commits/${{ github.sha }}/check-runs?per_page=100" \
+              "repos/$GITHUB_REPOSITORY/commits/${{ github.sha }}/check-runs?filter=latest&per_page=100" \
               > qualification/main-protection-check-runs.json
           fi
           python3 scripts/release/validate_release_branch_state.py "${ARGS[@]}"
@@ -973,7 +973,7 @@ jobs:
           GH_TOKEN="$PUBLISH_TOKEN" gh api \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2026-03-10" \
-            "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/check-runs?per_page=100" \
+            "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/check-runs?filter=latest&per_page=100" \
             > "$RUNNER_TEMP/stable-prepublish-main-protection-check-runs.json"
           if ! GH_TOKEN="$ADMIN_READ_TOKEN" python3 scripts/release/main_protection.py \
             --repo "$GITHUB_REPOSITORY" \
