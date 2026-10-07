@@ -1,5 +1,5 @@
 {
-  "schema": "codex-tui/release-evidence/v5",
+  "schema": "codex-tui/release-evidence/v6",
   "version": "1.4.0",
   "commitSha": "0000000000000000000000000000000000000000",
   "canonicalCiRun": 1,
@@ -55,5 +55,28 @@
     "source": "replace-with-linux-retained-runner",
     "observedAt": "2026-10-06T00:00:00Z",
     "reportSha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "realEvidenceBundle": {
+    "schema": "codex-tui/stable-real-evidence-bundle/v1",
+    "sourceSha": "0000000000000000000000000000000000000000",
+    "payloadSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "payloadChars": 1024,
+    "files": {
+      "linuxCompat": {
+        "name": "compat-linux.json",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "size": 1024
+      },
+      "linuxTerminal": {
+        "name": "terminal-linux.json",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "size": 512
+      },
+      "performance": {
+        "name": "performance-linux.json",
+        "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+        "size": 1024
+      }
+    }
   }
 }
