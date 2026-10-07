@@ -30,12 +30,23 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
             "gate/immutable-releases-snapshot.json",
             text,
         )
-        self.assertEqual(text.count("--snapshot-output"), 2)
+        self.assertEqual(
+            text.count("python3 scripts/release/immutable_releases.py"),
+            2,
+        )
+        self.assertIn(
+            "--snapshot-output qualification/immutable-releases-snapshot.json",
+            text,
+        )
+        self.assertIn(
+            '--snapshot-output "$RUNNER_TEMP/publish-immutable-releases-snapshot.json"',
+            text,
+        )
 
     def test_preview_path_does_not_require_admin_secret(self):
         text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
         step = text.split(
-            "- name: Require immutable releases before stable publication", 1
+            "- name: Require publication administration state before stable publication", 1
         )[1].split("- name:", 1)[0]
         self.assertIn(
             "if: inputs.channel == 'stable' && inputs.publish == true",

@@ -57,10 +57,16 @@ def github_repo_from_cargo(root: pathlib.Path) -> str:
 
 
 from immutable_releases import require_immutable_releases as _require_immutable_releases
+from main_protection import require_main_protection as _require_main_protection
 
 
 def require_immutable_releases(root: pathlib.Path, github_repo: str) -> dict:
     return _require_immutable_releases(root, github_repo, runner=run)
+
+
+def require_main_protection(root: pathlib.Path, github_repo: str) -> dict:
+    return _require_main_protection(root, github_repo, runner=run)
+
 
 def load_json(path: pathlib.Path, label: str) -> dict:
     try:
@@ -290,6 +296,7 @@ def main() -> int:
             cwd=root,
             capture=False,
         )
+        main_protection = require_main_protection(root, github_repo)
 
         run_json = temp_dir / "prior-stable-run.json"
         prior_run = run(
@@ -382,6 +389,7 @@ def main() -> int:
         "commitSha": commit_sha,
         "stableQualificationRun": args.stable_qualification_run,
         "mainProtected": True,
+        "mainProtection": main_protection,
         "priorDryRun": "verified",
         "releasedChangelog": "verified",
         "tagCollision": False,

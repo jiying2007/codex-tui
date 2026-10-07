@@ -336,7 +336,7 @@ jobs:
           fi
           python3 scripts/release/validate_release_branch_state.py "${ARGS[@]}"
 
-      - name: Require immutable releases before stable publication
+      - name: Require publication administration state before stable publication
         if: inputs.channel == 'stable' && inputs.publish == true
         shell: bash
         env:
@@ -347,6 +347,10 @@ jobs:
             echo "stable publish=true requires CODEX_TUI_ADMIN_READ_TOKEN with repository Administration(read)" >&2
             exit 1
           }
+          python3 scripts/release/main_protection.py \
+            --repo "$GITHUB_REPOSITORY" \
+            --output qualification/main-protection-state.json \
+            --snapshot-output qualification/main-protection-snapshot.json
           python3 scripts/release/immutable_releases.py \
             --repo "$GITHUB_REPOSITORY" \
             --output qualification/immutable-releases.json \
@@ -439,6 +443,10 @@ jobs:
           cp qualification/security-governance.json gate/security-governance.json
           cp release/v1.4-plan.json gate/DEVELOPMENT-PLAN.json
           cp release/v1.4-completion.json gate/DEVELOPMENT-COMPLETION.json
+          if [ -f qualification/main-protection-state.json ]; then
+            cp qualification/main-protection-state.json gate/main-protection-state.json
+            cp qualification/main-protection-snapshot.json gate/main-protection-snapshot.json
+          fi
           if [ -f qualification/immutable-releases.json ]; then
             cp qualification/immutable-releases.json gate/immutable-releases.json
             cp qualification/immutable-releases-snapshot.json gate/immutable-releases-snapshot.json
@@ -952,6 +960,13 @@ jobs:
             echo "immutable-release state changed before stable publication" >&2
             exit 1
           fi
+          if ! GH_TOKEN="$ADMIN_READ_TOKEN" python3 scripts/release/main_protection.py \
+            --repo "$GITHUB_REPOSITORY" \
+            --output "$RUNNER_TEMP/stable-prepublish-main-protection-state.json" \
+            --snapshot-output "$RUNNER_TEMP/stable-prepublish-main-protection-snapshot.json"; then
+            echo "main protection policy changed before stable publication" >&2
+            exit 1
+          fi
 
           GH_TOKEN="$PUBLISH_TOKEN" gh api \
             -H "X-GitHub-Api-Version: 2026-03-10" \
@@ -1066,6 +1081,8 @@ jobs:
               stable-draft-tag-evidence.json
               publish-immutable-releases.json
               publish-immutable-releases-snapshot.json
+              stable-prepublish-main-protection-state.json
+              stable-prepublish-main-protection-snapshot.json
               stable-prepublish-main.json
               stable-prepublish-main-state.json
               stable-prepublish-release.json
@@ -1100,6 +1117,8 @@ jobs:
             ${{ runner.temp }}/stable-prepublish-main-state.json
             ${{ runner.temp }}/publish-immutable-releases.json
             ${{ runner.temp }}/publish-immutable-releases-snapshot.json
+            ${{ runner.temp }}/stable-prepublish-main-protection-state.json
+            ${{ runner.temp }}/stable-prepublish-main-protection-snapshot.json
           if-no-files-found: error
           retention-days: 90
 
@@ -1118,5 +1137,7 @@ jobs:
             ${{ runner.temp }}/stable-prepublish-main-state.json
             ${{ runner.temp }}/publish-immutable-releases.json
             ${{ runner.temp }}/publish-immutable-releases-snapshot.json
+            ${{ runner.temp }}/stable-prepublish-main-protection-state.json
+            ${{ runner.temp }}/stable-prepublish-main-protection-snapshot.json
           if-no-files-found: ignore
           retention-days: 90

@@ -123,7 +123,7 @@ Stable tags are exactly:
 vX.Y.Z
 ```
 
-The first permitted stable product line is v1.0.0. Stable publication fails closed if any required evidence is absent. Both the supported `stable_publish.py` path and a direct `stable + publish=true` workflow dispatch require GitHub repository **release immutability** to be enabled and verifiable before publishing. Direct workflow publication additionally requires repository secret `CODEX_TUI_ADMIN_READ_TOKEN` with fine-grained **Administration(read)** permission; absence or verification failure is fail-closed. Preview and stable publish=false remain credential-free. Enable immutability before the v1.4 release. The setting protects future releases and does not retroactively make older releases immutable.
+The first permitted stable product line is v1.0.0. Stable publication fails closed if any required evidence is absent. Both the supported `stable_publish.py` path and a direct `stable + publish=true` workflow dispatch require GitHub repository **release immutability** to be enabled and verifiable and require the canonical **main branch protection policy** to remain intact: strict canonical checks, administrator enforcement, force pushes disabled and branch deletion disabled. Direct workflow publication additionally requires repository secret `CODEX_TUI_ADMIN_READ_TOKEN` with fine-grained **Administration(read)** permission; absence, inaccessible administration state or policy drift is fail-closed. Preview and stable publish=false remain credential-free. Enable immutability before the v1.4 release. The setting protects future releases and does not retroactively make older releases immutable.
 
 ## Project license
 

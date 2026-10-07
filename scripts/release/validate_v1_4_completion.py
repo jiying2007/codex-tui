@@ -240,6 +240,7 @@ def main() -> int:
         "architecture-ratchet",
         "protocol-replay",
         "immutable-releases",
+        "main-protection-integrity",
         "prior-stable-dry-run",
         "stable-bundle-promotion",
         "release-asset-integrity",
@@ -266,6 +267,10 @@ def main() -> int:
         "releaseSnapshotsDigestBound",
         "immutableReleaseSnapshotsRetained",
         "immutableReleaseSnapshotsDigestBound",
+        "mainProtectionSnapshotsRetained",
+        "mainProtectionSnapshotsDigestBound",
+        "canonicalMainProtectionRequiredAtPublication",
+        "publishPointMainProtectionRevalidated",
         "releaseTargetSourceBound",
         "publishedTimestampRequired",
         "publishMainStateRetained",
@@ -277,6 +282,8 @@ def main() -> int:
             raise SystemExit("v1.4 stable publication governance lost {}".format(key))
     if publication.get("immutableReleaseReceiptSchema") != "codex-tui/immutable-releases/v2":
         raise SystemExit("v1.4 immutable-release receipt schema drifted")
+    if publication.get("mainProtectionReceiptSchema") != "codex-tui/main-protection-state/v1":
+        raise SystemExit("v1.4 main-protection receipt schema drifted")
     if publication.get("releaseAssetVerificationSchema") != "codex-tui/release-asset-verification/v2":
         raise SystemExit("v1.4 release asset verification schema drifted")
     if publication.get("releaseBranchStateSchema") != "codex-tui/release-branch-state/v1":
