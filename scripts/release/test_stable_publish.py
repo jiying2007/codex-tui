@@ -57,7 +57,7 @@ class ImmutableReleasePreflight(unittest.TestCase):
                 runner=mock.Mock(return_value=response),
                 snapshot_output=snapshot,
             )
-            self.assertEqual(snapshot.read_text(encoding="utf-8"), raw)
+            self.assertEqual(snapshot.read_bytes(), raw.encode("utf-8"))
             self.assertEqual(
                 receipt["settingsSnapshotSha256"],
                 hashlib.sha256(raw.encode("utf-8")).hexdigest(),
