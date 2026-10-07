@@ -107,7 +107,7 @@ def stable_publish_inputs(
 
     inputs = {
         "channel": "stable",
-        "publish": "true",
+        "publish": True,
         "canonical_ci_run": canonical_ci_run,
         "stable_qualification_run": str(stable_qualification_run),
         "stable_real_evidence_bundle": real_evidence_payload.strip(),
