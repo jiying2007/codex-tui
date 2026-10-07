@@ -1,12 +1,14 @@
 # codex-tui
 
-A local-first terminal workbench for managing multiple Codex projects and conversations.
+A local-first Mission Control for multiple Codex projects, repositories, targets and delivery systems.
 
 **License:** Apache-2.0 · **Stable release:** v1.0.0 · **Parked v1.1 candidate:** `release/v1.1-parked` · **Current development line:** v1.4.0 · **Tier 1:** Linux.
 
 ## Development status
 
 v1.4 has reached development-scope completion and is frozen against new core functionality under `release/v1.4-completion.json`. It preserves v1.3 Search & Multi-Target and closes the remaining workflow/UX gaps: large Board navigation, WorkCard relationships, thread start/fork handoff, unified metadata search, Saved View editing, Review evidence/external open, bounded long-thread rendering, fuzzy Command Palette, runtime decomposition and exact-SHA 10k Board/Thread render diagnostics. This is not stable readiness: v1.4 stable publication still requires exact-SHA real Linux compatibility, controlling-TTY restoration, performance diagnostics and release evidence defined by `release/v1.4-criteria.json`. GitLab Issue Board membership remains evidence-gated until the native-transport/refresh-budget trigger is satisfied. The v1.3/v1.2 completion checkpoints and parked v1.1 candidate remain historical and separate.
+
+A post-v1.4 **upstream convergence** policy is now active under `release/v1.5-convergence.json` without changing the package version or claiming v1.5 release readiness. codex-tui is intentionally a thin local control plane: Mission Control, cross-target registry, Attention, derived Board/WorkCard projection, GitLab/GitHub Forge integration, Saved Views and diagnostics are the differentiating surfaces. Conversation-client, Thread Queue UI and embedded Terminal Drawer code is maintenance-only; official Codex remains authoritative for conversation, agents/orchestration and queue semantics, Git for repository/worktree state, the Forge for delivery, and the user's shell stack for general terminal-session management. Canonical CI enforces this boundary with `scripts/architecture/check_upstream_convergence.py`.
 
 ## Audit hardening
 
@@ -31,7 +33,7 @@ codex-tui answers four questions quickly:
 3. How do I jump into the exact conversation and continue?
 4. What changed in the working tree?
 
-The chat view is part of the product, but the default product surface is a multi-project thread registry.
+The default product surface is Mission Control. The local chat/thread client is a compatibility surface, not the long-term product differentiator.
 
 ## v1 principles
 
@@ -55,7 +57,7 @@ The chat view is part of the product, but the default product surface is a multi
 - Exact-thread navigation
 - Jump to next attention item
 
-### Thread View
+### Thread View (maintenance-only compatibility surface)
 
 - Paginated transcript
 - Composer
@@ -63,6 +65,7 @@ The chat view is part of the product, but the default product surface is a multi
 - Approval UI
 - Effective model, cwd, sandbox and approval state
 - Per-thread draft and scroll restoration
+- Defect/security/compatibility fixes remain supported; feature expansion defaults upstream to Codex
 
 ### Git Context
 
@@ -99,7 +102,7 @@ The chat view is part of the product, but the default product surface is a multi
 - cost/accounting platform
 - organization analytics
 
-These can be separate optional layers later if real usage justifies them.
+These are frozen duplicate capabilities unless a future evidence-backed architecture decision explicitly changes the control-plane boundary.
 
 ## Long-term target
 
@@ -111,11 +114,14 @@ The mature product adds planning without creating a second task authority:
 - worktree lifecycle and review
 - GitLab Work Item/Issue Board/MR/Pipeline projection first; GitHub through the same forge abstraction
 - notes/bookmarks, snooze/unread and lightweight notifications
-- optional thread queue UI as upstream support stabilizes
+- upstream Thread Queue projection only where it improves Mission Control; no independent queue authority
 
 Board cards should project existing Codex/Git/forge work whenever possible; Needs You is an attention overlay, not a workflow column.
 
 ## Architecture
+
+The architecture follows ADR-009 and ADR-012: **project upstream state; do not recreate its authority**.
+
 
 ```text
 Codex App Server ───── conversation/runtime authority
