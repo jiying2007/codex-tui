@@ -151,8 +151,17 @@ def probe(binary, output, failed_save):
             send(b"?", "help input")
             send(b"\x1b", "close help input")
             offset = send(b"\x0b", "open command palette")
-            wait_for(lambda: b"Command Palette" in text(bytes(stream[offset:])),
-                     "command palette heading not observed")
+            try:
+                wait_for(lambda: b"Command Palette" in text(bytes(stream[offset:])),
+                         "command palette heading not observed")
+            except ProbeFailure as error:
+                # The fake backend uses an isolated HOME. Emit bounded frame context
+                # so a rendering regression is not misdiagnosed as a timing timeout.
+                frame_tail = text(bytes(stream[offset:]))[-384:]
+                raise ProbeFailure(
+                    f"{error}; child_exit={proc.poll()}; emitted_bytes={len(stream) - offset}; "
+                    f"frame_tail={frame_tail!r}"
+                ) from error
             send(b"\x1b", "close palette")
             fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 28, 100, 0, 0))
             os.kill(proc.pid, signal.SIGWINCH)
