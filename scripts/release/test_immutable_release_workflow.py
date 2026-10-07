@@ -19,9 +19,18 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
             text,
         )
         self.assertIn(
+            "qualification/immutable-releases-snapshot.json",
+            text,
+        )
+        self.assertIn(
             "gate/immutable-releases.json",
             text,
         )
+        self.assertIn(
+            "gate/immutable-releases-snapshot.json",
+            text,
+        )
+        self.assertEqual(text.count("--snapshot-output"), 2)
 
     def test_preview_path_does_not_require_admin_secret(self):
         text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
@@ -218,6 +227,8 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
         self.assertIn("stable-prepublish-release.json", stable)
         self.assertIn("stable-prepublish-tag-ref.json", stable)
         self.assertIn("stable-prepublish-tag-evidence.json", stable)
+        self.assertIn("publish-immutable-releases.json", stable)
+        self.assertIn("publish-immutable-releases-snapshot.json", stable)
         self.assertIn("PREPUBLISH_BODY=", stable)
         self.assertIn("stable draft owner identity drifted at publication point", stable)
 
@@ -305,6 +316,7 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
         self.assertIn("stable-prepublish-main.json", publish)
         self.assertIn("stable-prepublish-main-state.json", publish)
         self.assertIn("publish-immutable-releases.json", publish)
+        self.assertIn("publish-immutable-releases-snapshot.json", publish)
 
     def test_successful_publication_requires_complete_channel_receipts(self):
         text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
@@ -330,6 +342,7 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
             "stable-draft-tag-ref.json",
             "stable-draft-tag-evidence.json",
             "publish-immutable-releases.json",
+            "publish-immutable-releases-snapshot.json",
             "stable-prepublish-main.json",
             "stable-prepublish-main-state.json",
             "stable-prepublish-release.json",
@@ -359,6 +372,7 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
         self.assertIn("*-assets.json", publish)
         self.assertIn("*-release.json", publish)
         self.assertIn("publish-immutable-releases.json", publish)
+        self.assertIn("publish-immutable-releases-snapshot.json", publish)
 
         self.assertIn(
             "if: failure()\n        with:\n          name: release-asset-integrity-partial",
