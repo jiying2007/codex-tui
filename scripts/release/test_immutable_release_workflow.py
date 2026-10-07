@@ -65,7 +65,8 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
         self.assertIn("PUBLISHED_PRERELEASE", stable)
         self.assertIn('test "$PUBLISHED_DRAFT" = "false"', stable)
         self.assertIn('test "$PUBLISHED_PRERELEASE" = "false"', stable)
-        self.assertIn("PUBLISHED_TAG_SHA", stable)
+        self.assertIn("stable-published-tag-ref.json", stable)
+        self.assertIn("stable-published-tag-evidence.json", stable)
 
     def test_stable_publish_skips_redundant_current_run_packaging(self):
         text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
@@ -196,7 +197,8 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
         self.assertIn("--draft=false", final_publish)
         self.assertIn("PUBLISHED_DRAFT", preview)
         self.assertIn("PUBLISHED_PRERELEASE", preview)
-        self.assertIn("PUBLISHED_TAG_SHA", preview)
+        self.assertIn("preview-published-tag-ref.json", preview)
+        self.assertIn("preview-published-tag-evidence.json", preview)
 
     def test_stable_revalidates_exact_draft_after_immutable_check_at_publish_point(self):
         text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
@@ -205,14 +207,19 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
         )[1].split("- uses: actions/upload-artifact@", 1)[0]
 
         immutable = stable.index("scripts/release/immutable_releases.py")
+        prepublish_main = stable.index("stable-prepublish-main-state.json")
         prepublish = stable.index("--phase prepublish")
         publish_edit = stable.index('gh release edit "$TAG"')
-        self.assertLess(immutable, prepublish)
+        self.assertLess(immutable, prepublish_main)
+        self.assertLess(prepublish_main, prepublish)
         self.assertLess(prepublish, publish_edit)
+        self.assertIn("stable-prepublish-main.json", stable)
+        self.assertIn("stable-prepublish-main-state.json", stable)
         self.assertIn("stable-prepublish-release.json", stable)
-        self.assertIn("PREPUBLISH_TAG_SHA=", stable)
+        self.assertIn("stable-prepublish-tag-ref.json", stable)
+        self.assertIn("stable-prepublish-tag-evidence.json", stable)
         self.assertIn("PREPUBLISH_BODY=", stable)
-        self.assertIn("stable draft identity drifted at publication point", stable)
+        self.assertIn("stable draft owner identity drifted at publication point", stable)
 
     def test_published_state_uses_one_version_pinned_release_snapshot(self):
         text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
@@ -258,12 +265,20 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
             self.assertIn(f"--channel {prefix}", section)
         self.assertIn("stable-prepublish-assets.json", stable)
         self.assertEqual(
-            preview.count('--source-sha "$GITHUB_SHA"'),
+            preview.count("scripts/release/verify_release_tag_ref.py"),
             2,
         )
         self.assertEqual(
-            stable.count('--source-sha "$GITHUB_SHA"'),
+            stable.count("scripts/release/verify_release_tag_ref.py"),
             3,
+        )
+        self.assertEqual(
+            preview.count('--source-sha "$GITHUB_SHA"'),
+            4,
+        )
+        self.assertEqual(
+            stable.count('--source-sha "$GITHUB_SHA"'),
+            6,
         )
         promotion = publish.split(
             "- name: Promote exact qualified stable dry-run bundle", 1
@@ -283,6 +298,12 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
         self.assertIn("if-no-files-found: ignore", publish)
         self.assertIn("*-assets.json", publish)
         self.assertIn("*-release.json", publish)
+        self.assertIn("*-tag-ref.json", publish)
+        self.assertIn("*-tag-evidence.json", publish)
+        self.assertIn("publish-main.json", publish)
+        self.assertIn("publish-main-state.json", publish)
+        self.assertIn("stable-prepublish-main.json", publish)
+        self.assertIn("stable-prepublish-main-state.json", publish)
         self.assertIn("publish-immutable-releases.json", publish)
 
     def test_successful_publication_requires_complete_channel_receipts(self):
@@ -296,15 +317,29 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
         for name in (
             "preview-draft-release.json",
             "preview-draft-assets.json",
+            "preview-draft-tag-ref.json",
+            "preview-draft-tag-evidence.json",
             "preview-published-release.json",
             "preview-published-assets.json",
+            "preview-published-tag-ref.json",
+            "preview-published-tag-evidence.json",
+            "publish-main.json",
+            "publish-main-state.json",
             "stable-draft-release.json",
             "stable-draft-assets.json",
+            "stable-draft-tag-ref.json",
+            "stable-draft-tag-evidence.json",
             "publish-immutable-releases.json",
+            "stable-prepublish-main.json",
+            "stable-prepublish-main-state.json",
             "stable-prepublish-release.json",
             "stable-prepublish-assets.json",
+            "stable-prepublish-tag-ref.json",
+            "stable-prepublish-tag-evidence.json",
             "stable-published-release.json",
             "stable-published-assets.json",
+            "stable-published-tag-ref.json",
+            "stable-published-tag-evidence.json",
         ):
             self.assertIn(name, gate)
         self.assertIn("successful publication is missing retained evidence", gate)
@@ -333,6 +368,43 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
             "name: release-asset-integrity-partial", 1
         )[1]
         self.assertIn("if-no-files-found: ignore", partial)
+
+    def test_tag_ref_and_main_state_checks_are_retained_not_log_only(self):
+        text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        publish = text.rsplit("\n  publish:\n", 1)[1]
+        preview = publish.split(
+            "- name: Publish preview GitHub Release", 1
+        )[1].split("- name: Publish immutable stable GitHub Release", 1)[0]
+        stable = publish.split(
+            "- name: Publish immutable stable GitHub Release", 1
+        )[1].split("- uses: actions/upload-artifact@", 1)[0]
+
+        for section, prefix, count in (
+            (preview, "preview", 2),
+            (stable, "stable", 3),
+        ):
+            self.assertEqual(
+                section.count("scripts/release/verify_release_tag_ref.py"),
+                count,
+            )
+            self.assertIn(f"{prefix}-draft-tag-ref.json", section)
+            self.assertIn(f"{prefix}-draft-tag-evidence.json", section)
+            self.assertIn(f"{prefix}-published-tag-ref.json", section)
+            self.assertIn(f"{prefix}-published-tag-evidence.json", section)
+        self.assertIn("stable-prepublish-tag-ref.json", stable)
+        self.assertIn("stable-prepublish-tag-evidence.json", stable)
+        self.assertIn("publish-main.json", stable)
+        self.assertIn("publish-main-state.json", stable)
+        self.assertIn('--output "$RUNNER_TEMP/publish-main-state.json"', stable)
+        self.assertIn("stable-prepublish-main.json", stable)
+        self.assertIn("stable-prepublish-main-state.json", stable)
+        self.assertIn(
+            '--output "$RUNNER_TEMP/stable-prepublish-main-state.json"',
+            stable,
+        )
+        self.assertNotIn("PUBLISHED_TAG_SHA=", publish)
+        self.assertNotIn("PREPUBLISH_TAG_SHA=", publish)
+        self.assertNotIn("DRAFT_TAG_SHA=", publish)
 
     def test_draft_identity_uses_authenticated_release_listing_not_published_by_tag_endpoint(self):
         text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
