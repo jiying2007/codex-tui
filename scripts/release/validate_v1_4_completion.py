@@ -204,6 +204,24 @@ def main() -> int:
     if "stable-real-evidence-bundle/v1" not in str(completion.get("stableEvidencePolicy", "")):
         raise SystemExit("completion must retain raw stable real-evidence bundle authority")
 
+    real = criteria.get("realEnvironmentEvidence")
+    if not isinstance(real, dict):
+        raise SystemExit("stable criteria realEnvironmentEvidence is missing")
+    if real.get("schema") != "codex-tui/real-environment-evidence/v2":
+        raise SystemExit("v1.4 real-environment evidence schema drifted")
+    if real.get("bundleSchema") != "codex-tui/stable-real-evidence-bundle/v1":
+        raise SystemExit("v1.4 real-environment bundle schema drifted")
+    if real.get("summarySchema") != "codex-tui/stable-real-evidence-summary/v1":
+        raise SystemExit("v1.4 real-environment summary schema drifted")
+    if real.get("releaseEvidenceSchema") != "codex-tui/release-evidence/v6":
+        raise SystemExit("v1.4 real-environment release evidence schema drifted")
+    if real.get("workflowRecomputesRawHashes") is not True:
+        raise SystemExit("stable workflow must recompute raw real-evidence hashes")
+    if real.get("hashOnlyDispatchAllowed") is not False:
+        raise SystemExit("hash-only real-environment dispatch must remain disabled")
+    if real.get("maxPayloadChars") != 60000:
+        raise SystemExit("stable real-evidence payload limit drifted")
+
     dev = criteria.get("developmentQualification")
     if not isinstance(dev, dict):
         raise SystemExit("stable criteria developmentQualification is missing")
