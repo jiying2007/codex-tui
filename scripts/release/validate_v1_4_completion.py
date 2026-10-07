@@ -269,6 +269,7 @@ def main() -> int:
         "publishMainStateRetained",
         "tagRefSnapshotsRetained",
         "tagRefsSourceBound",
+        "publishPointMainRevalidated",
     ):
         if publication.get(key) is not True:
             raise SystemExit("v1.4 stable publication governance lost {}".format(key))
