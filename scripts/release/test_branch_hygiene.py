@@ -84,11 +84,76 @@ class WorkflowBacklogCleanupContract(unittest.TestCase):
         self.assertIn('if: github.event_name == \'push\'', text)
         self.assertIn('"scripts/repository/branch_hygiene.py"', text)
         self.assertIn('"scripts/release/test_branch_hygiene.py"', text)
-        self.assertIn('ARGS=(--repo "$GITHUB_REPOSITORY" --output "$PLAN")', text)
+        self.assertIn(
+            'ARGS=(--repo "$GITHUB_REPOSITORY" --output "$PLAN" --allow-ancestor-only)',
+            text,
+        )
         self.assertIn("--plan-sha256", text)
         self.assertIn("--confirm-repository", text)
         self.assertIn("retained-branch-hygiene-", text)
         self.assertIn("if-no-files-found: error", text)
+
+    def test_ancestor_only_backlog_deletes_only_ephemeral_reachable_heads(self):
+        sha = "a" * 40
+        main = "b" * 40
+
+        def plan(name, allow=True, state="closed"):
+            branch = {"name": name, "commit": {"sha": sha}, "protected": False}
+            prs = []
+            if state == "open":
+                prs = [{
+                    "number": 3,
+                    "state": "open",
+                    "merged_at": None,
+                    "head": {
+                        "ref": name,
+                        "sha": sha,
+                        "repo": {"full_name": "owner/repo"},
+                    },
+                }]
+            return h.build_plan(
+                "owner/repo",
+                main,
+                [branch],
+                prs,
+                lambda *_: True,
+                allow_ancestor_only=allow,
+            )["entries"][0]
+
+        for name in (
+            "feat/old",
+            "fix/old",
+            "hardening/old",
+            "perf/old",
+            "refactor/old",
+            "rebase/old",
+            "chore/old",
+            "v1.2/old",
+            "v1.3/old",
+            "v1.4/old",
+        ):
+            with self.subTest(name=name):
+                entry = plan(name)
+                self.assertEqual(entry["decision"], "delete")
+                self.assertEqual(entry["reason"], "ancestor-only-no-unique-commits")
+
+        self.assertEqual(plan("feat/old", allow=False)["decision"], "keep")
+        self.assertEqual(plan("milestone/demo")["decision"], "keep")
+        self.assertEqual(plan("feat/active", state="open")["decision"], "keep")
+
+    def test_branch_hygiene_v2_records_backlog_policy(self):
+        plan = h.build_plan(
+            "owner/repo",
+            "b" * 40,
+            [],
+            [],
+            lambda *_: True,
+            allow_ancestor_only=True,
+        )
+        self.assertEqual(plan["schema"], "codex-tui/branch-hygiene/v2")
+        self.assertTrue(plan["policy"]["ancestorOnlyEnabled"])
+        self.assertIn("feat/", plan["policy"]["ancestorOnlyPrefixes"])
+        self.assertNotIn("release/", plan["policy"]["ancestorOnlyPrefixes"])
 
     def test_release_and_historical_prefixes_remain_retained(self):
         for name in (
