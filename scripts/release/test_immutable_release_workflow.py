@@ -255,13 +255,84 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
             self.assertIn("X-GitHub-Api-Version: 2026-03-10", section)
             self.assertIn(f"{prefix}-draft-assets.json", section)
             self.assertIn(f"{prefix}-published-assets.json", section)
+            self.assertIn(f"--channel {prefix}", section)
         self.assertIn("stable-prepublish-assets.json", stable)
+        self.assertEqual(
+            preview.count('--source-sha "$GITHUB_SHA"'),
+            2,
+        )
+        self.assertEqual(
+            stable.count('--source-sha "$GITHUB_SHA"'),
+            3,
+        )
+        promotion = publish.split(
+            "- name: Promote exact qualified stable dry-run bundle", 1
+        )[1].split(
+            "- name: Publish preview GitHub Release", 1
+        )[0]
+        self.assertEqual(
+            promotion.count('--source-sha "$GITHUB_SHA"'),
+            1,
+        )
 
         self.assertIn("name: release-asset-integrity", publish)
-        self.assertIn("if: always()", publish)
+        self.assertIn("if: success()", publish)
+        self.assertIn("if-no-files-found: error", publish)
+        self.assertIn("name: release-asset-integrity-partial", publish)
+        self.assertIn("if: failure()", publish)
+        self.assertIn("if-no-files-found: ignore", publish)
         self.assertIn("*-assets.json", publish)
         self.assertIn("*-release.json", publish)
-        self.assertIn("if-no-files-found: ignore", publish)
+        self.assertIn("publish-immutable-releases.json", publish)
+
+    def test_successful_publication_requires_complete_channel_receipts(self):
+        text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        publish = text.rsplit("\n  publish:\n", 1)[1]
+        gate = publish.split(
+            "- name: Require complete successful publication evidence", 1
+        )[1].split("- uses: actions/upload-artifact@", 1)[0]
+
+        self.assertIn("if: success()", gate)
+        for name in (
+            "preview-draft-release.json",
+            "preview-draft-assets.json",
+            "preview-published-release.json",
+            "preview-published-assets.json",
+            "stable-draft-release.json",
+            "stable-draft-assets.json",
+            "publish-immutable-releases.json",
+            "stable-prepublish-release.json",
+            "stable-prepublish-assets.json",
+            "stable-published-release.json",
+            "stable-published-assets.json",
+        ):
+            self.assertIn(name, gate)
+        self.assertIn("successful publication is missing retained evidence", gate)
+
+    def test_successful_publication_cannot_omit_integrity_receipts(self):
+        text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        publish = text.rsplit("\n  publish:\n", 1)[1]
+        self.assertIn(
+            "if: success()\n        with:\n          name: release-asset-integrity",
+            publish,
+        )
+        self.assertIn(
+            "name: release-asset-integrity\n          path:",
+            publish,
+        )
+        self.assertIn("if-no-files-found: error", publish)
+        self.assertIn("*-assets.json", publish)
+        self.assertIn("*-release.json", publish)
+        self.assertIn("publish-immutable-releases.json", publish)
+
+        self.assertIn(
+            "if: failure()\n        with:\n          name: release-asset-integrity-partial",
+            publish,
+        )
+        partial = publish.split(
+            "name: release-asset-integrity-partial", 1
+        )[1]
+        self.assertIn("if-no-files-found: ignore", partial)
 
     def test_draft_identity_uses_authenticated_release_listing_not_published_by_tag_endpoint(self):
         text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")

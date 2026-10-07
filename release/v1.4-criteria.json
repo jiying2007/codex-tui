@@ -161,12 +161,12 @@
     {
       "id": "release-asset-integrity",
       "authority": "GitHub Releases REST API 2026-03-10",
-      "evidence": "before and after publication the complete GitHub Release asset-name set, uploaded state, byte sizes and API-provided SHA-256 digests must exactly match the local promoted bundle"
+      "evidence": "draft and published releases, plus the stable publication-point draft after the immutable-release recheck, must match the complete local bundle by asset name, uploaded state, byte size and REST SHA-256; the verifier also fail-closes on channel/phase release state; each retained receipt carries the exact candidate source SHA and SHA-256 of the raw GitHub release snapshot it validated"
     },
     {
       "id": "published-release-state",
       "authority": "GitHub Releases and Git refs",
-      "evidence": "stable publication postconditions require draft=false, prerelease=false, immutable=true and the stable tag still pointing to the exact candidate SHA; anomalies are incidents and are never auto-rewritten"
+      "evidence": "successful publication requires retained integrity receipts; stable postconditions require draft=false, prerelease=false, immutable=true and the stable tag still pointing to the exact candidate SHA; preview requires draft=false and prerelease=true; anomalies are incidents and are never auto-rewritten"
     }
   ],
   "frozenNonGoals": [
@@ -222,6 +222,11 @@
     "remoteAssetDigestVerification": true,
     "immutableReleaseRequired": true,
     "postPublicationRewriteAllowed": false,
-    "policy": "stable publication is a two-phase fail-closed promotion of exact qualified bytes; final public release state is immutable incident authority"
+    "policy": "stable publication is a two-phase fail-closed promotion of exact qualified bytes; final public release state is immutable incident authority",
+    "successfulPublicationReceiptsRequired": true,
+    "partialFailureEvidenceRetained": true,
+    "phaseStateValidated": true,
+    "assetReceiptsSourceBound": true,
+    "releaseSnapshotsDigestBound": true
   }
 }

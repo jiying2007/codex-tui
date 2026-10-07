@@ -757,6 +757,8 @@ jobs:
             --bundle bundle \
             --tag "$TAG" \
             --phase draft \
+            --channel preview \
+            --source-sha "$GITHUB_SHA" \
             --output "$RUNNER_TEMP/preview-draft-assets.json"
 
           DRAFT_TAG_SHA="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha)"
@@ -799,6 +801,8 @@ jobs:
             --bundle bundle \
             --tag "$TAG" \
             --phase published \
+            --channel preview \
+            --source-sha "$GITHUB_SHA" \
             --output "$RUNNER_TEMP/preview-published-assets.json"
 
       - name: Publish immutable stable GitHub Release
@@ -897,6 +901,8 @@ jobs:
             --bundle bundle \
             --tag "$TAG" \
             --phase draft \
+            --channel stable \
+            --source-sha "$GITHUB_SHA" \
             --output "$RUNNER_TEMP/stable-draft-assets.json"
 
           DRAFT_TAG_SHA="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha)"
@@ -921,6 +927,8 @@ jobs:
             --bundle bundle \
             --tag "$TAG" \
             --phase prepublish \
+            --channel stable \
+            --source-sha "$GITHUB_SHA" \
             --output "$RUNNER_TEMP/stable-prepublish-assets.json"
           PREPUBLISH_TAG_SHA="$(GH_TOKEN="$PUBLISH_TOKEN" gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$TAG" --jq .object.sha)"
           PREPUBLISH_BODY="$(python3 -c 'import json,sys; value=json.load(open(sys.argv[1], encoding="utf-8")).get("body"); print(value if isinstance(value,str) else "")' "$RUNNER_TEMP/stable-prepublish-release.json")"
@@ -966,14 +974,60 @@ jobs:
             --bundle bundle \
             --tag "$TAG" \
             --phase published \
+            --channel stable \
+            --source-sha "$GITHUB_SHA" \
             --output "$RUNNER_TEMP/stable-published-assets.json"
 
+      - name: Require complete successful publication evidence
+        if: success()
+        shell: bash
+        env:
+          CHANNEL: ${{ needs.gate.outputs.channel }}
+        run: |
+          set -euo pipefail
+          if [ "$CHANNEL" = "preview" ]; then
+            REQUIRED=(
+              preview-draft-release.json
+              preview-draft-assets.json
+              preview-published-release.json
+              preview-published-assets.json
+            )
+          else
+            REQUIRED=(
+              stable-draft-release.json
+              stable-draft-assets.json
+              publish-immutable-releases.json
+              stable-prepublish-release.json
+              stable-prepublish-assets.json
+              stable-published-release.json
+              stable-published-assets.json
+            )
+          fi
+          for name in "${REQUIRED[@]}"; do
+            test -s "$RUNNER_TEMP/$name" || {
+              echo "successful publication is missing retained evidence: $name" >&2
+              exit 1
+            }
+          done
+
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
-        if: always()
+        if: success()
         with:
           name: release-asset-integrity
           path: |
             ${{ runner.temp }}/*-assets.json
             ${{ runner.temp }}/*-release.json
+            ${{ runner.temp }}/publish-immutable-releases.json
+          if-no-files-found: error
+          retention-days: 90
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: failure()
+        with:
+          name: release-asset-integrity-partial
+          path: |
+            ${{ runner.temp }}/*-assets.json
+            ${{ runner.temp }}/*-release.json
+            ${{ runner.temp }}/publish-immutable-releases.json
           if-no-files-found: ignore
           retention-days: 90
