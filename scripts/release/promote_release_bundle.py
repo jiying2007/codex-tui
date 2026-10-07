@@ -11,7 +11,7 @@ from _compat import write_text_lf
 
 SCHEMA = "codex-tui/stable-bundle-promotion/v1"
 VERIFY_SCHEMA = "codex-tui/release-verification/v1"
-EVIDENCE_SCHEMA = "codex-tui/release-evidence/v5"
+EVIDENCE_SCHEMA = "codex-tui/release-evidence/v6"
 HEX40 = re.compile(r"^[0-9a-fA-F]{40}$")
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 
