@@ -12,6 +12,7 @@ from _compat import write_text_lf
 SCHEMA = "codex-tui/stable-bundle-promotion/v1"
 VERIFY_SCHEMA = "codex-tui/release-verification/v1"
 EVIDENCE_SCHEMA = "codex-tui/release-evidence/v6"
+REAL_BUNDLE_SCHEMA = "codex-tui/stable-real-evidence-bundle/v1"
 HEX40 = re.compile(r"^[0-9a-fA-F]{40}$")
 HEX64 = re.compile(r"^[0-9a-f]{64}$")
 
@@ -123,6 +124,33 @@ def validate_bundle(root: pathlib.Path, version: str, tag: str, source_sha: str)
         str(evidence.get("commitSha", "")).lower() == source_sha.lower(),
         "qualified release evidence source SHA mismatch",
     )
+    real = evidence.get("realEvidenceBundle")
+    require(isinstance(real, dict), "qualified release evidence realEvidenceBundle is missing")
+    require(real.get("schema") == REAL_BUNDLE_SCHEMA, "qualified real evidence bundle schema mismatch")
+    require(
+        str(real.get("sourceSha", "")).lower() == source_sha.lower(),
+        "qualified real evidence bundle source SHA mismatch",
+    )
+    require(
+        bool(HEX64.fullmatch(str(real.get("payloadSha256", "")).lower())),
+        "qualified real evidence bundle payload SHA-256 is invalid",
+    )
+    payload_chars = real.get("payloadChars")
+    require(
+        isinstance(payload_chars, int)
+        and not isinstance(payload_chars, bool)
+        and 0 < payload_chars <= 60000,
+        "qualified real evidence bundle payload size is invalid",
+    )
+    real_files = real.get("files")
+    require(isinstance(real_files, dict), "qualified real evidence bundle files are missing")
+    for key in ("linuxCompat", "linuxTerminal", "performance"):
+        row = real_files.get(key)
+        require(isinstance(row, dict), f"qualified real evidence bundle file is missing: {key}")
+        require(
+            bool(HEX64.fullmatch(str(row.get("sha256", "")).lower())),
+            f"qualified real evidence bundle file SHA-256 is invalid: {key}",
+        )
 
     require((root / "RELEASE_NOTES.md").is_file(), "qualified bundle RELEASE_NOTES.md is missing")
     require((root / "STABLE-CRITERIA.json").is_file(), "qualified bundle STABLE-CRITERIA.json is missing")
