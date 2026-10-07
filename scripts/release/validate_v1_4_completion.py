@@ -270,6 +270,7 @@ def main() -> int:
         "mainProtectionSnapshotsRetained",
         "mainProtectionSnapshotsDigestBound",
         "canonicalMainProtectionRequiredAtPublication",
+        "publishPointMainProtectionRevalidated",
         "releaseTargetSourceBound",
         "publishedTimestampRequired",
         "publishMainStateRetained",
