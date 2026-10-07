@@ -26,6 +26,7 @@ def run(
     cwd: pathlib.Path,
     capture: bool = True,
     check: bool = True,
+    stdin_text=None,
 ) -> subprocess.CompletedProcess[str]:
     proc = subprocess.run(
         command,
@@ -34,6 +35,7 @@ def run(
         stdout=subprocess.PIPE if capture else None,
         stderr=subprocess.PIPE if capture else None,
         env=os.environ.copy(),
+        input=stdin_text,
     )
     if check and proc.returncode != 0:
         if proc.stdout:
@@ -345,7 +347,7 @@ def main() -> int:
         )
 
     summary = {
-        "schema": "codex-tui/stable-publication-preflight/v1",
+        "schema": "codex-tui/stable-publication-preflight/v2",
         "version": version,
         "tag": tag,
         "commitSha": commit_sha,
@@ -357,7 +359,17 @@ def main() -> int:
         "releasedChangelog": "verified",
         "tagCollision": False,
         "immutableReleases": immutable_releases,
-        "workflowInputs": workflow_inputs,
+        "workflowInputSummary": {
+            "channel": workflow_inputs["channel"],
+            "publish": workflow_inputs["publish"],
+            "canonical_ci_run": workflow_inputs["canonical_ci_run"],
+            "stable_qualification_run": workflow_inputs["stable_qualification_run"],
+            "stable_real_evidence_bundle": {
+                "redacted": True,
+                "payloadSha256": real_summary["payloadSha256"],
+                "payloadChars": real_summary["payloadChars"],
+            },
+        },
         "dispatchRequested": args.dispatch,
         "next": (
             "stable publish=true workflow dispatched"
@@ -376,10 +388,14 @@ def main() -> int:
             github_repo,
             "--ref",
             "main",
+            "--json",
         ]
-        for key, value in workflow_inputs.items():
-            command.extend(["-f", f"{key}={value}"])
-        run(command, cwd=root, capture=False)
+        run(
+            command,
+            cwd=root,
+            capture=False,
+            stdin_text=json.dumps(workflow_inputs, separators=(",", ":")),
+        )
 
     output_path = (root / args.output).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
