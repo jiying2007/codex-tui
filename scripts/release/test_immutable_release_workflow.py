@@ -207,10 +207,14 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
         )[1].split("- uses: actions/upload-artifact@", 1)[0]
 
         immutable = stable.index("scripts/release/immutable_releases.py")
+        prepublish_main = stable.index("stable-prepublish-main-state.json")
         prepublish = stable.index("--phase prepublish")
         publish_edit = stable.index('gh release edit "$TAG"')
-        self.assertLess(immutable, prepublish)
+        self.assertLess(immutable, prepublish_main)
+        self.assertLess(prepublish_main, prepublish)
         self.assertLess(prepublish, publish_edit)
+        self.assertIn("stable-prepublish-main.json", stable)
+        self.assertIn("stable-prepublish-main-state.json", stable)
         self.assertIn("stable-prepublish-release.json", stable)
         self.assertIn("stable-prepublish-tag-ref.json", stable)
         self.assertIn("stable-prepublish-tag-evidence.json", stable)
@@ -298,6 +302,8 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
         self.assertIn("*-tag-evidence.json", publish)
         self.assertIn("publish-main.json", publish)
         self.assertIn("publish-main-state.json", publish)
+        self.assertIn("stable-prepublish-main.json", publish)
+        self.assertIn("stable-prepublish-main-state.json", publish)
         self.assertIn("publish-immutable-releases.json", publish)
 
     def test_successful_publication_requires_complete_channel_receipts(self):
@@ -324,6 +330,8 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
             "stable-draft-tag-ref.json",
             "stable-draft-tag-evidence.json",
             "publish-immutable-releases.json",
+            "stable-prepublish-main.json",
+            "stable-prepublish-main-state.json",
             "stable-prepublish-release.json",
             "stable-prepublish-assets.json",
             "stable-prepublish-tag-ref.json",
@@ -388,6 +396,12 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
         self.assertIn("publish-main.json", stable)
         self.assertIn("publish-main-state.json", stable)
         self.assertIn('--output "$RUNNER_TEMP/publish-main-state.json"', stable)
+        self.assertIn("stable-prepublish-main.json", stable)
+        self.assertIn("stable-prepublish-main-state.json", stable)
+        self.assertIn(
+            '--output "$RUNNER_TEMP/stable-prepublish-main-state.json"',
+            stable,
+        )
         self.assertNotIn("PUBLISHED_TAG_SHA=", publish)
         self.assertNotIn("PREPUBLISH_TAG_SHA=", publish)
         self.assertNotIn("DRAFT_TAG_SHA=", publish)
