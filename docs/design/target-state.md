@@ -5,9 +5,9 @@ Status: target architecture
 
 ## Product definition
 
-codex-tui is a local-first Codex engineering workbench that connects planning, parallel execution, attention routing, conversation control, Git/worktree context and review in one terminal.
+codex-tui is a local-first **Mission Control / thin control plane** across Codex projects and targets, Git repositories/worktrees, and GitLab/GitHub delivery state.
 
-It is not a replacement for Codex, Git or the configured code forge. It is the personal operator surface across them.
+It is not a replacement for Codex, Git, the configured code forge or the user's terminal stack. It projects those authorities into one personal operator surface and deliberately avoids competing with the official Codex CLI on agent orchestration, conversation-client UX or general terminal management.
 
 ## Target user outcomes
 
@@ -44,22 +44,21 @@ No duplicated canonical transcript or Git state.
 
 ## Target layers
 
-### Layer 1 — Codex Control Core
+### Layer 1 — Mission Control Core
 
 Always present.
 
 Capabilities:
 
 - backend compatibility/capability negotiation
-- workspace/thread registry
+- cross-target workspace/thread registry
 - attention state
-- conversation
-- approvals
-- interrupt/steer
-- resume/fork
-- goals
+- Goal/status projection
 - model/sandbox/permission visibility
+- exact-thread navigation/handoff
 - diagnostics
+
+Conversation rendering, approvals, interrupt/steer and other direct Codex interaction remain supported as maintenance-only compatibility surfaces, not a separate product authority.
 
 This layer must work with no network service owned by codex-tui.
 
@@ -75,7 +74,7 @@ Capabilities:
 - changed files and diff
 - review workspace
 - external editor
-- lightweight terminal drawer / commands
+- maintenance-only embedded Terminal Drawer for compatibility; general terminal-session management stays with the user's shell/terminal stack
 - notifications
 - saved views/search
 
@@ -88,7 +87,7 @@ Capabilities:
 - list/board views over WorkCards
 - Codex Goal projection
 - lightweight local Scratch items
-- optional thread queue UI
+- upstream-authoritative thread queue projection only
 - priorities/pins/snooze
 - review queue
 - saved custom views

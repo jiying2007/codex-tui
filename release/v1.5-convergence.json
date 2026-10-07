@@ -1,0 +1,97 @@
+{
+  "schema": "codex-tui/upstream-convergence/v1",
+  "status": "active",
+  "packageVersion": "1.4.0",
+  "nextDevelopmentTheme": "v1.5-upstream-convergence",
+  "productRole": "thin-local-control-plane",
+  "defaultSurface": "mission-control",
+  "upstreamFirst": true,
+  "authorities": {
+    "codex": [
+      "conversation",
+      "agent-runtime",
+      "agent-orchestration",
+      "thread-lifecycle-semantics",
+      "thread-queue"
+    ],
+    "git": [
+      "repository-state",
+      "worktree-state"
+    ],
+    "forge": [
+      "delivery",
+      "change-review",
+      "pipeline-state"
+    ],
+    "shell": [
+      "terminal-session"
+    ]
+  },
+  "differentiation": [
+    "cross-repository-mission-control",
+    "cross-target-codex-registry",
+    "attention-routing",
+    "derived-board-projection",
+    "gitlab-github-forge-projection",
+    "safe-forge-mutations",
+    "saved-views",
+    "doctor-headless-support-bundle"
+  ],
+  "maintenanceOnlyCapabilities": {
+    "conversation-client": {
+      "policy": "bugfix-compatibility-security-only",
+      "modulePrefixes": [
+        "src/runtime_prompt",
+        "src/runtime_user_response",
+        "src/user_response",
+        "src/transcript_search",
+        "src/ui/thread"
+      ],
+      "modules": {
+        "src/runtime_prompt.rs": 93,
+        "src/runtime_user_response.rs": 45,
+        "src/runtime_user_response/approval_tests.rs": 160,
+        "src/runtime_user_response/tests.rs": 189,
+        "src/transcript_search.rs": 211,
+        "src/ui/thread.rs": 381,
+        "src/ui/thread/tests.rs": 77,
+        "src/user_response.rs": 29
+      }
+    },
+    "thread-queue-ui": {
+      "policy": "upstream-projection-only",
+      "modulePrefixes": [
+        "src/thread_queue"
+      ],
+      "modules": {
+        "src/thread_queue.rs": 350
+      }
+    },
+    "embedded-terminal": {
+      "policy": "bugfix-compatibility-security-only",
+      "modulePrefixes": [
+        "src/terminal"
+      ],
+      "modules": {
+        "src/terminal.rs": 131,
+        "src/terminal_drawer.rs": 381
+      }
+    }
+  },
+  "frozenDuplicateCapabilities": [
+    "local-agent-orchestrator",
+    "local-agent-delegation-runtime",
+    "local-agent-to-agent-messaging",
+    "independent-task-authority",
+    "independent-thread-queue-authority",
+    "independent-conversation-protocol",
+    "independent-terminal-manager",
+    "generic-coding-agent-provider-layer"
+  ],
+  "changePolicy": {
+    "maintenanceOnlyGrowth": "requires-explicit-manifest-ratchet-update-and-rationale",
+    "newProductCapability": "must-strengthen-control-plane-differentiation-or-replace-local-duplication",
+    "upstreamOverlap": "prefer-delete-reduce-or-project",
+    "sourceOfTruth": "never-create-second-authority"
+  }
+}

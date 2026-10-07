@@ -4,6 +4,15 @@ All notable codex-tui changes are recorded here.
 
 ## [1.4.0] - Unreleased
 
+### Upstream convergence
+
+- formalized the post-v1.4 product boundary: codex-tui is a thin local Mission Control/control plane rather than a second Codex CLI;
+- kept Mission Control, cross-target registry, Attention, derived Board/WorkCard projection, GitLab/GitHub Forge integration, Saved Views and diagnostics as differentiating surfaces;
+- moved the local conversation client, Thread Queue UI and embedded Terminal Drawer to maintenance-only status while keeping compatibility and defect/security fixes;
+- froze local agent orchestration, agent-to-agent messaging, independent task/queue/conversation authority, general terminal management and generic coding-agent-provider expansion;
+- added `release/v1.5-convergence.json` plus a canonical-CI convergence guard that prevents silent LOC/file growth in upstream-overlapping maintenance surfaces without an explicit reviewed ratchet update.
+
+
 ### Audit hardening
 
 - preserved operator changes made during initial connection, selected WorkCard identity across asynchronous projections, and Saved View identity across list reordering;
