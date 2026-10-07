@@ -75,7 +75,7 @@ jobs:
         run: |
           set -euo pipefail
           PLAN="$RUNNER_TEMP/retained-branch-plan.json"
-          ARGS=(--repo "$GITHUB_REPOSITORY" --output "$PLAN")
+          ARGS=(--repo "$GITHUB_REPOSITORY" --output "$PLAN" --allow-ancestor-only)
           python3 scripts/repository/branch_hygiene.py "${ARGS[@]}"
           DIGEST="$(sha256sum "$PLAN" | cut -d ' ' -f 1)"
           gh auth setup-git

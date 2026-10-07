@@ -8,7 +8,23 @@ from pathlib import Path
 import re
 import subprocess
 
-SCHEMA = "codex-tui/branch-hygiene/v1"
+SCHEMA = "codex-tui/branch-hygiene/v2"
+EPHEMERAL_PREFIXES = (
+    "feat/",
+    "fix/",
+    "hardening/",
+    "perf/",
+    "refactor/",
+    "rebase/",
+    "chore/",
+    "v1.2/",
+    "v1.3/",
+    "v1.4/",
+)
+
+def ephemeral_branch(name: str) -> bool:
+    return name.startswith(EPHEMERAL_PREFIXES)
+
 
 def checked(*args: str) -> str:
     return subprocess.run(args, check=True, capture_output=True, text=True, timeout=120).stdout.strip()
@@ -19,7 +35,15 @@ def api(repo: str, path: str):
 def pages(repo: str, path: str):
     return [item for page in json.loads(checked("gh", "api", "--paginate", "--slurp", "repos/" + repo + "/" + path)) for item in page]
 
-def build_plan(repo: str, main: str, branches: list, prs: list, ancestor, equivalent=None) -> dict:
+def build_plan(
+    repo: str,
+    main: str,
+    branches: list,
+    prs: list,
+    ancestor,
+    equivalent=None,
+    allow_ancestor_only: bool = False,
+) -> dict:
     entries = []
     for branch in branches:
         name, sha = branch["name"], branch["commit"]["sha"]
@@ -30,18 +54,38 @@ def build_plan(repo: str, main: str, branches: list, prs: list, ancestor, equiva
             reason = "protected-or-retained-reference"
         elif any(pr["state"] == "open" for pr in relevant):
             reason = "active-pull-request"
-        elif not re.fullmatch(r"[0-9a-f]{40}", sha) or not merged:
-            reason = "no-exact-merged-pull-request"
-        elif ancestor(sha, main):
-            reason = "exact-merged-head-reachable-from-main"
+        elif not re.fullmatch(r"[0-9a-f]{40}", sha):
+            reason = "invalid-head"
         else:
-            proof = equivalent(sha, merged.get("merge_commit_sha"), main) if equivalent else None
-            reason = "exact-merged-squash-tree-delta" if proof else "head-not-reachable-from-main"
-        entry = {"branch": name, "sha": sha, "decision": "delete" if reason in ("exact-merged-head-reachable-from-main", "exact-merged-squash-tree-delta") else "keep", "reason": reason, "mergedPr": merged["number"] if merged else None}
+            reachable = ancestor(sha, main)
+            if merged and reachable:
+                reason = "exact-merged-head-reachable-from-main"
+            elif allow_ancestor_only and reachable and ephemeral_branch(name):
+                reason = "ancestor-only-no-unique-commits"
+            elif not merged:
+                reason = "no-exact-merged-pull-request"
+            else:
+                proof = equivalent(sha, merged.get("merge_commit_sha"), main) if equivalent else None
+                reason = "exact-merged-squash-tree-delta" if proof else "head-not-reachable-from-main"
+        delete_reasons = (
+            "exact-merged-head-reachable-from-main",
+            "exact-merged-squash-tree-delta",
+            "ancestor-only-no-unique-commits",
+        )
+        entry = {"branch": name, "sha": sha, "decision": "delete" if reason in delete_reasons else "keep", "reason": reason, "mergedPr": merged["number"] if merged else None}
         if proof:
             entry["equivalenceProof"] = proof
         entries.append(entry)
-    return {"schema": SCHEMA, "repository": repo, "mainSha": main, "entries": entries}
+    return {
+        "schema": SCHEMA,
+        "repository": repo,
+        "mainSha": main,
+        "policy": {
+            "ancestorOnlyEnabled": allow_ancestor_only,
+            "ancestorOnlyPrefixes": list(EPHEMERAL_PREFIXES),
+        },
+        "entries": entries,
+    }
 
 def is_ancestor(head: str, main: str) -> bool:
     code = subprocess.run(["git", "merge-base", "--is-ancestor", head, main], capture_output=True, timeout=30).returncode
@@ -88,15 +132,30 @@ def main() -> int:
     parser.add_argument("--only-branch")
     parser.add_argument("--expected-head")
     parser.add_argument("--apply", action="store_true")
+    parser.add_argument(
+        "--allow-ancestor-only",
+        action="store_true",
+        help="full backlog only: allow ephemeral branch deletion when exact HEAD is already an ancestor of main",
+    )
     parser.add_argument("--plan-sha256")
     parser.add_argument("--confirm-repository")
     args = parser.parse_args()
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", args.repo):
         parser.error("expected owner/name repository")
+    if args.allow_ancestor_only and (args.only_branch or args.expected_head):
+        parser.error("--allow-ancestor-only is forbidden for scoped merged-branch cleanup")
     head = api(args.repo, "git/ref/heads/main")["object"]["sha"]
     branches = scoped_branches(pages(args.repo, "branches?per_page=100"), args.only_branch, args.expected_head)
     prs = pages(args.repo, "pulls?state=all&per_page=100")
-    plan = build_plan(args.repo, head, branches, prs, is_ancestor, squash_equivalence)
+    plan = build_plan(
+        args.repo,
+        head,
+        branches,
+        prs,
+        is_ancestor,
+        squash_equivalence,
+        allow_ancestor_only=args.allow_ancestor_only,
+    )
     encoded = (json.dumps(plan, indent=2, sort_keys=True) + "\n").encode()
     digest = hashlib.sha256(encoded).hexdigest()
     if not args.apply:
