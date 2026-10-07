@@ -170,6 +170,7 @@ jobs:
     runs-on: ubuntu-24.04
     permissions:
       actions: read
+      checks: read
       contents: read
     outputs:
       version: ${{ steps.meta.outputs.version }}
@@ -333,6 +334,11 @@ jobs:
           )
           if [ "$PUBLISH" = "true" ]; then
             ARGS+=(--require-protected)
+            gh api \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2026-03-10" \
+              "repos/$GITHUB_REPOSITORY/commits/${{ github.sha }}/check-runs?per_page=100" \
+              > qualification/main-protection-check-runs.json
           fi
           python3 scripts/release/validate_release_branch_state.py "${ARGS[@]}"
 
@@ -349,6 +355,8 @@ jobs:
           }
           python3 scripts/release/main_protection.py \
             --repo "$GITHUB_REPOSITORY" \
+            --source-sha "${{ github.sha }}" \
+            --check-runs-json qualification/main-protection-check-runs.json \
             --output qualification/main-protection-state.json \
             --snapshot-output qualification/main-protection-snapshot.json
           python3 scripts/release/immutable_releases.py \
@@ -446,6 +454,7 @@ jobs:
           if [ -f qualification/main-protection-state.json ]; then
             cp qualification/main-protection-state.json gate/main-protection-state.json
             cp qualification/main-protection-snapshot.json gate/main-protection-snapshot.json
+            cp qualification/main-protection-check-runs.json gate/main-protection-check-runs.json
           fi
           if [ -f qualification/immutable-releases.json ]; then
             cp qualification/immutable-releases.json gate/immutable-releases.json
@@ -630,6 +639,7 @@ jobs:
       cancel-in-progress: false
     permissions:
       actions: read
+      checks: read
       contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -960,8 +970,15 @@ jobs:
             echo "immutable-release state changed before stable publication" >&2
             exit 1
           fi
+          GH_TOKEN="$PUBLISH_TOKEN" gh api \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "repos/$GITHUB_REPOSITORY/commits/$GITHUB_SHA/check-runs?per_page=100" \
+            > "$RUNNER_TEMP/stable-prepublish-main-protection-check-runs.json"
           if ! GH_TOKEN="$ADMIN_READ_TOKEN" python3 scripts/release/main_protection.py \
             --repo "$GITHUB_REPOSITORY" \
+            --source-sha "$GITHUB_SHA" \
+            --check-runs-json "$RUNNER_TEMP/stable-prepublish-main-protection-check-runs.json" \
             --output "$RUNNER_TEMP/stable-prepublish-main-protection-state.json" \
             --snapshot-output "$RUNNER_TEMP/stable-prepublish-main-protection-snapshot.json"; then
             echo "main protection policy changed before stable publication" >&2
@@ -1083,6 +1100,7 @@ jobs:
               publish-immutable-releases-snapshot.json
               stable-prepublish-main-protection-state.json
               stable-prepublish-main-protection-snapshot.json
+              stable-prepublish-main-protection-check-runs.json
               stable-prepublish-main.json
               stable-prepublish-main-state.json
               stable-prepublish-release.json
@@ -1119,6 +1137,7 @@ jobs:
             ${{ runner.temp }}/publish-immutable-releases-snapshot.json
             ${{ runner.temp }}/stable-prepublish-main-protection-state.json
             ${{ runner.temp }}/stable-prepublish-main-protection-snapshot.json
+            ${{ runner.temp }}/stable-prepublish-main-protection-check-runs.json
           if-no-files-found: error
           retention-days: 90
 
@@ -1139,5 +1158,6 @@ jobs:
             ${{ runner.temp }}/publish-immutable-releases-snapshot.json
             ${{ runner.temp }}/stable-prepublish-main-protection-state.json
             ${{ runner.temp }}/stable-prepublish-main-protection-snapshot.json
+            ${{ runner.temp }}/stable-prepublish-main-protection-check-runs.json
           if-no-files-found: ignore
           retention-days: 90
