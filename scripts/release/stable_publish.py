@@ -351,7 +351,7 @@ def main() -> int:
         "commitSha": commit_sha,
         "stableQualificationRun": args.stable_qualification_run,
         "realEvidenceBundle": str((root / args.real_evidence_bundle).resolve()),
-        "realEvidenceBundleSha256": workflow_inputs and evidence["realEvidenceBundle"]["payloadSha256"],
+        "realEvidenceBundleSha256": evidence["realEvidenceBundle"]["payloadSha256"],
         "mainProtected": True,
         "priorDryRun": "verified",
         "releasedChangelog": "verified",
