@@ -65,7 +65,8 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
         self.assertIn("PUBLISHED_PRERELEASE", stable)
         self.assertIn('test "$PUBLISHED_DRAFT" = "false"', stable)
         self.assertIn('test "$PUBLISHED_PRERELEASE" = "false"', stable)
-        self.assertIn("PUBLISHED_TAG_SHA", stable)
+        self.assertIn("stable-published-tag-ref.json", stable)
+        self.assertIn("stable-published-tag-evidence.json", stable)
 
     def test_stable_publish_skips_redundant_current_run_packaging(self):
         text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
