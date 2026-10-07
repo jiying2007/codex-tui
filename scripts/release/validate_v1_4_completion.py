@@ -239,9 +239,30 @@ def main() -> int:
         "dependency-security",
         "architecture-ratchet",
         "protocol-replay",
+        "immutable-releases",
+        "prior-stable-dry-run",
+        "stable-bundle-promotion",
+        "release-asset-integrity",
+        "published-release-state",
     }:
         if gate not in required_gate_ids:
             raise SystemExit("stable criteria lost required gate: {}".format(gate))
+
+    publication = criteria.get("publicationGovernance")
+    if not isinstance(publication, dict):
+        raise SystemExit("v1.4 stable publicationGovernance is missing")
+    if publication.get("schema") != "codex-tui/stable-publication-governance/v1":
+        raise SystemExit("v1.4 stable publication governance schema drifted")
+    for key in (
+        "exactSourceSha",
+        "exactQualifiedBundlePromotion",
+        "remoteAssetDigestVerification",
+        "immutableReleaseRequired",
+    ):
+        if publication.get(key) is not True:
+            raise SystemExit("v1.4 stable publication governance lost {}".format(key))
+    if publication.get("postPublicationRewriteAllowed") is not False:
+        raise SystemExit("v1.4 stable publication must not permit post-publication rewrite")
 
     if set(plan.get("evidenceGatedDecisions", {})) != {"gitlab-issue-board-projection"}:
         raise SystemExit("unexpected v1.4 evidence-gated decision set")
