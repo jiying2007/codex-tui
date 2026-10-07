@@ -19,7 +19,7 @@ pub(super) fn render_command_palette(frame: &mut Frame<'_>, app: &AppState) {
             Style::default().add_modifier(Modifier::BOLD),
         ),
         Span::raw(if app.command_palette_query.is_empty() {
-            tr(app, "<type to filter>", "<输入以筛选>").to_string()
+            tr(app, "<type to show all commands>", "<输入以搜索全部命令>").to_string()
         } else {
             app.command_palette_query.clone()
         }),
