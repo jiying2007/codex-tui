@@ -35,7 +35,7 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
     def test_preview_path_does_not_require_admin_secret(self):
         text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
         step = text.split(
-            "- name: Require immutable releases before stable publication", 1
+            "- name: Require publication administration state before stable publication", 1
         )[1].split("- name:", 1)[0]
         self.assertIn(
             "if: inputs.channel == 'stable' && inputs.publish == true",
