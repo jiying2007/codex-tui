@@ -235,7 +235,10 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
             self.assertIn(f"{prefix}-published-assets.json", section)
 
         self.assertIn("name: release-asset-integrity", publish)
+        self.assertIn("if: always()", publish)
         self.assertIn("*-assets.json", publish)
+        self.assertIn("*-release.json", publish)
+        self.assertIn("if-no-files-found: ignore", publish)
 
     def test_draft_identity_uses_authenticated_release_listing_not_published_by_tag_endpoint(self):
         text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
