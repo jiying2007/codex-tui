@@ -68,6 +68,24 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
         self.assertIn('test "$PUBLISHED_PRERELEASE" = "false"', stable)
         self.assertIn("PUBLISHED_TAG_SHA", stable)
 
+    def test_stable_publish_skips_redundant_current_run_packaging(self):
+        text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        package = text.split("\n  package:\n", 1)[1].split("\n  bundle:\n", 1)[0]
+        bundle = text.split("\n  bundle:\n", 1)[1].split("\n  publish:\n", 1)[0]
+        publish = text.rsplit("\n  publish:\n", 1)[1]
+
+        skip = "!(inputs.channel == 'stable' && inputs.publish == true)"
+        self.assertIn(skip, package)
+        self.assertIn(skip, bundle)
+        self.assertIn("always() && inputs.publish == true", publish)
+        self.assertIn("needs.gate.result == 'success'", publish)
+        self.assertIn("needs.gate.outputs.channel == 'stable' || needs.bundle.result == 'success'", publish)
+
+        current_bundle_download = publish.split(
+            "- name: Promote exact qualified stable dry-run bundle", 1
+        )[0]
+        self.assertIn("if: needs.gate.outputs.channel == 'preview'", current_bundle_download)
+
     def test_stable_publish_promotes_exact_qualified_dry_run_bundle(self):
         text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
         publish = text.rsplit("\n  publish:\n", 1)[1]
@@ -77,7 +95,7 @@ class ImmutableReleaseWorkflowGate(unittest.TestCase):
         self.assertIn('gh run download "$STABLE_QUALIFICATION_RUN"', publish)
         self.assertIn("--name release-bundle", publish)
         self.assertIn("scripts/release/promote_release_bundle.py", publish)
-        self.assertIn('mv bundle "$CURRENT_BUNDLE"', publish)
+        self.assertNotIn('CURRENT_BUNDLE=', publish)
         self.assertIn('mv "$PRIOR_BUNDLE" bundle', publish)
         self.assertIn("stable-bundle-promotion.json", publish)
         self.assertIn("name: stable-bundle-promotion", publish)
