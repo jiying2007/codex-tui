@@ -3,7 +3,9 @@ use codex_tui::{
     backend::{CodexBackend, FakeBackend},
     command::Command,
     i18n::UiLanguage,
+    ui,
 };
+use ratatui::{Terminal, backend::TestBackend};
 
 fn app() -> AppState {
     AppState::new(FakeBackend::seeded().snapshot().threads)
@@ -84,4 +86,23 @@ fn empty_query_keeps_primary_order_and_full_command_context_on_reopen() {
     reduce(&mut app, Action::CloseCommandPalette);
     reduce(&mut app, Action::OpenCommandPalette);
     assert_eq!(app.command_palette_choice(), Some(Command::Search));
+}
+
+#[test]
+fn palette_heading_is_visible_at_the_real_pty_test_size() {
+    let mut app = app();
+    reduce(&mut app, Action::OpenCommandPalette);
+    assert!(app.command_palette_open);
+
+    let mut terminal = Terminal::new(TestBackend::new(160, 40)).expect("terminal");
+    terminal.draw(|frame| ui::render(frame, &app)).expect("render");
+    let buffer = terminal.backend().buffer();
+    let mut screen = String::new();
+    for y in 0..buffer.area.height {
+        for x in 0..buffer.area.width {
+            screen.push_str(buffer[(x, y)].symbol());
+        }
+        screen.push('\n');
+    }
+    assert!(screen.contains("Command Palette"), "palette title must be rendered");
 }
