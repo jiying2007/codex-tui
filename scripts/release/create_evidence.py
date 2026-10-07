@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import pathlib
 import re
 
@@ -51,6 +52,7 @@ def validate_real_summary(summary: dict, commit: str) -> dict:
         "real evidence payload character count is invalid",
     )
 
+    require(summary.get("compatSchema") == "codex-tui/compat/v2", "real evidence compatibility schema mismatch")
     compatibility = summary.get("compatibility")
     terminal = summary.get("terminalRestoration")
     performance = summary.get("performance")
@@ -88,7 +90,13 @@ def validate_real_summary(summary: dict, commit: str) -> dict:
     require(isinstance(iterations, int) and not isinstance(iterations, bool) and iterations >= 200, "performance iterations must be >= 200")
     for field in ("p95Ms", "p99Ms"):
         value = performance.get(field)
-        require(isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0, f"performance {field} is invalid")
+        require(
+            isinstance(value, (int, float))
+            and not isinstance(value, bool)
+            and math.isfinite(float(value))
+            and float(value) >= 0,
+            f"performance {field} is invalid",
+        )
     require(float(performance["p99Ms"]) >= float(performance["p95Ms"]), "performance p99Ms must be >= p95Ms")
     require(bool(str(performance.get("source", "")).strip()), "performance source is missing")
     require(bool(str(performance.get("observedAt", "")).strip()), "performance observedAt is missing")
@@ -103,6 +111,41 @@ def validate_real_summary(summary: dict, commit: str) -> dict:
         require(bool(HEX64.fullmatch(digest)), f"real evidence file receipt {key} SHA-256 is invalid")
         require(isinstance(size, int) and not isinstance(size, bool) and size >= 0, f"real evidence file receipt {key} size is invalid")
         compact_files[key] = {"name": name, "sha256": digest, "size": size}
+
+    allowed_platforms = {PRIMARY_PLATFORM, *SECONDARY_PLATFORMS}
+    require(set(compatibility).issubset(allowed_platforms), "real evidence has unknown compatibility platform")
+    require(set(terminal).issubset(allowed_platforms), "real evidence has unknown terminal platform")
+
+    bindings = [
+        ("linux", "linuxCompat", "linuxTerminal"),
+        ("macos", "macosCompat", "macosTerminal"),
+        ("windows", "windowsCompat", "windowsTerminal"),
+    ]
+    for platform, compat_key, terminal_key in bindings:
+        compat = compatibility.get(platform)
+        tty = terminal.get(platform)
+        if compat is None and tty is None:
+            require(
+                compat_key not in compact_files and terminal_key not in compact_files,
+                f"{platform} raw file receipts exist without platform evidence",
+            )
+            continue
+        require(isinstance(compat, dict) and isinstance(tty, dict), f"{platform} evidence pair is incomplete")
+        require(compat_key in compact_files and terminal_key in compact_files, f"{platform} raw file receipt pair is missing")
+        require(
+            compat["reportSha256"] == compact_files[compat_key]["sha256"],
+            f"{platform} compatibility hash is not bound to raw file receipt",
+        )
+        require(
+            tty["receiptSha256"] == compact_files[terminal_key]["sha256"],
+            f"{platform} terminal hash is not bound to raw file receipt",
+        )
+
+    require("performance" in compact_files, "performance raw file receipt is missing")
+    require(
+        performance["reportSha256"] == compact_files["performance"]["sha256"],
+        "performance hash is not bound to raw file receipt",
+    )
 
     return {
         "schema": REAL_BUNDLE_SCHEMA,
