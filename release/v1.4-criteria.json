@@ -146,7 +146,7 @@
     {
       "id": "immutable-releases",
       "authority": "GitHub repository administration state and release API",
-      "evidence": "stable publish=true requires repository immutable releases to be enabled and verifiable before packaging authorization and again immediately before publication; final release metadata must report immutable=true"
+      "evidence": "stable publish=true requires repository immutable releases to be enabled and verifiable before packaging authorization and again immediately before publication; both administrator-state readbacks retain the raw GitHub settings snapshot plus codex-tui/immutable-releases/v2 whose settingsSnapshotSha256 binds those exact bytes; final release metadata must report immutable=true"
     },
     {
       "id": "prior-stable-dry-run",
@@ -233,6 +233,9 @@
     "phaseStateValidated": true,
     "assetReceiptsSourceBound": true,
     "releaseSnapshotsDigestBound": true,
+    "immutableReleaseReceiptSchema": "codex-tui/immutable-releases/v2",
+    "immutableReleaseSnapshotsRetained": true,
+    "immutableReleaseSnapshotsDigestBound": true,
     "releaseAssetVerificationSchema": "codex-tui/release-asset-verification/v2",
     "releaseTargetSourceBound": true,
     "publishedTimestampRequired": true,
