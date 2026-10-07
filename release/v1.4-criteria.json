@@ -111,12 +111,12 @@
     {
       "id": "terminal-restoration",
       "authority": "retained real interaction smoke",
-      "evidence": "Linux real controlling-TTY PASS receipt is required; its sourceSha must equal the exact release commit and its exact JSON bytes are SHA-256 bound into release-evidence/v5; this evidence cannot be synthesized by repository CI"
+      "evidence": "Linux real controlling-TTY PASS receipt is required; its sourceSha must equal the exact release commit; the raw JSON is carried inside codex-tui/stable-real-evidence-bundle/v1, revalidated by GitHub Actions and SHA-256 bound into release-evidence/v6; this evidence still depends on explicit human observation"
     },
     {
       "id": "performance-diagnostics",
       "authority": "retained benchmark run",
-      "evidence": "Linux retained resident-planning-10k JSON is SHA-256 bound into release-evidence/v5, has sourceSha equal to the exact release commit, and contains >=200 iterations with finite p95/p99; exact-SHA Board/Thread 10k render diagnostics are retained separately for comparison, not as hosted-runner latency thresholds"
+      "evidence": "Linux retained resident-planning-10k raw JSON is carried inside codex-tui/stable-real-evidence-bundle/v1; GitHub Actions revalidates sourceSha/schema/sample qualification, recomputes its SHA-256 and records it in release-evidence/v6; hosted wall-clock values remain diagnostics rather than thresholds"
     },
     {
       "id": "archive-smoke",
@@ -149,9 +149,14 @@
       "evidence": "stable publish=true requires repository immutable releases to be enabled and verifiable before packaging authorization and again immediately before publication; final release metadata must report immutable=true"
     },
     {
+      "id": "stable-real-evidence-bundle",
+      "authority": "local real-environment qualification helper plus GitHub Actions revalidation",
+      "evidence": "stable workflow accepts one gzip+base64 codex-tui/stable-real-evidence-bundle/v1 instead of user-supplied report hashes/metrics; GitHub Actions decodes the raw compat/terminal/performance JSON, validates schemas/status/source SHA/sample qualification, recomputes every file SHA-256 and binds the payload/file digest lineage into release-evidence/v6; payload is limited to 60000 characters under GitHub workflow_dispatch's 65535-character total input limit"
+    },
+    {
       "id": "prior-stable-dry-run",
       "authority": "GitHub Actions release workflow",
-      "evidence": "stable publish=true requires a successful prior stable publish=false run on main bound to the exact source SHA, version, tag, canonical CI and retained release-evidence/v5 inputs"
+      "evidence": "stable publish=true requires a successful prior stable publish=false run on main bound to the exact source SHA, version, tag, canonical CI, release-evidence/v6 and the identical realEvidenceBundle payload digest"
     },
     {
       "id": "stable-bundle-promotion",
@@ -188,9 +193,15 @@
     "cloud-sync"
   ],
   "realEnvironmentEvidence": {
-    "schema": "codex-tui/real-environment-evidence/v1",
+    "schema": "codex-tui/real-environment-evidence/v2",
     "exactSourceSha": true,
-    "policy": "compatibility and terminal-restoration receipts must each carry sourceSha equal to the exact release commit; compatibility report bytes and terminal-restoration receipt bytes are SHA-256 bound into release evidence; old candidate receipts cannot be replayed or silently substituted"
+    "bundleSchema": "codex-tui/stable-real-evidence-bundle/v1",
+    "summarySchema": "codex-tui/stable-real-evidence-summary/v1",
+    "releaseEvidenceSchema": "codex-tui/release-evidence/v6",
+    "workflowRecomputesRawHashes": true,
+    "hashOnlyDispatchAllowed": false,
+    "maxPayloadChars": 60000,
+    "policy": "real compatibility, controlling-TTY and retained performance JSON are created locally from the exact candidate; stable workflow decodes and revalidates the raw bundle and recomputes hashes. Terminal PASS remains a human attestation boundary and is not inferred by CI."
   },
   "developmentQualification": {
     "schema": "codex-tui/development-qualification/v1",
@@ -203,7 +214,7 @@
       "protocol-replay",
       "scope-completion"
     ],
-    "policy": "every main SHA retains repository-hosted development qualification including the validated v1.4 scope-completion manifest; stable publication still requires release-evidence/v5 and real-environment evidence",
+    "policy": "every main SHA retains repository-hosted development qualification including the validated v1.4 scope-completion manifest; stable publication still requires release-evidence/v6 and real-environment evidence",
     "scopeCompletionSchema": "codex-tui/v1.4-completion/v1"
   },
   "deferredUntilEvidence": [
@@ -241,6 +252,11 @@
     "publishMainStateRetained": true,
     "tagRefSnapshotsRetained": true,
     "tagRefsSourceBound": true,
-    "publishPointMainRevalidated": true
+    "publishPointMainRevalidated": true,
+    "releaseEvidenceSchema": "codex-tui/release-evidence/v6",
+    "realEvidenceBundleSchema": "codex-tui/stable-real-evidence-bundle/v1",
+    "rawRealEvidenceRevalidated": true,
+    "hashOnlyRealEvidenceDispatchAllowed": false,
+    "dryRunPublicationBundleIdentityRequired": true
   }
 }
