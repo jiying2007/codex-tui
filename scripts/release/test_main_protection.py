@@ -30,6 +30,7 @@ def valid_check_runs(app_id=ACTIONS_APP_ID):
         "check_runs": [
             {
                 "name": name,
+                "head_sha": SOURCE_SHA,
                 "status": "completed",
                 "conclusion": "success",
                 "app": {
@@ -213,6 +214,10 @@ class MainProtectionReceipt(unittest.TestCase):
         not_success = valid_check_runs()
         not_success["check_runs"][0]["conclusion"] = "failure"
         cases.append(not_success)
+
+        wrong_source = valid_check_runs()
+        wrong_source["check_runs"][0]["head_sha"] = "b" * 40
+        cases.append(wrong_source)
 
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)
