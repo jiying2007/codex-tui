@@ -64,7 +64,6 @@ def protection_payload(github_actions_app_id: int) -> dict:
     return {
         "required_status_checks": {
             "strict": True,
-            "contexts": list(REQUIRED_CHECKS),
             "checks": [
                 {"context": name, "app_id": github_actions_app_id}
                 for name in REQUIRED_CHECKS
@@ -131,7 +130,11 @@ def validate_check_runs(payload: dict, commit_sha: str) -> int:
             "current main is missing successful canonical checks: " + ", ".join(missing)
         )
 
-    app_ids = {value for value in selected.values() if isinstance(value, int)}
+    app_ids = {
+        value
+        for value in selected.values()
+        if isinstance(value, int) and not isinstance(value, bool)
+    }
     if len(app_ids) != 1:
         raise SystemExit(
             f"canonical checks must come from one GitHub Actions app; got {sorted(app_ids)}"
@@ -150,14 +153,14 @@ def validate_applied_protection(
     if status.get("strict") is not True:
         raise SystemExit("applied protection does not require strict status checks")
 
-    contexts = set(status.get("contexts") or [])
-    missing = [name for name in REQUIRED_CHECKS if name not in contexts]
-    if missing:
-        raise SystemExit(
-            "applied protection is missing required checks: " + ", ".join(missing)
-        )
-
-    if github_actions_app_id is not None:
+    if github_actions_app_id is None:
+        contexts = set(status.get("contexts") or [])
+        missing = [name for name in REQUIRED_CHECKS if name not in contexts]
+        if missing:
+            raise SystemExit(
+                "applied protection is missing required checks: " + ", ".join(missing)
+            )
+    else:
         if (
             not isinstance(github_actions_app_id, int)
             or isinstance(github_actions_app_id, bool)
