@@ -972,6 +972,7 @@ mod tests {
                     source: "retained-linux".into(),
                     observed_at: "2026-09-30T00:00:00Z".into(),
                 },
+                real_evidence_bundle: real_evidence_bundle(),
             })
             .expect("evidence json"),
         )
@@ -1040,6 +1041,7 @@ mod tests {
                     source: "retained-linux".into(),
                     observed_at: "2026-09-30T00:00:00Z".into(),
                 },
+                real_evidence_bundle: real_evidence_bundle(),
             })
             .expect("evidence json"),
         )
@@ -1098,6 +1100,7 @@ mod tests {
                     source: "fixture".into(),
                     observed_at: "2026-10-01T00:00:00Z".into(),
                 },
+                real_evidence_bundle: real_evidence_bundle(),
             })
             .expect("evidence json"),
         )
@@ -1161,6 +1164,7 @@ mod tests {
                     source: "test".into(),
                     observed_at: "2026-09-30T00:00:00Z".into(),
                 },
+                real_evidence_bundle: real_evidence_bundle(),
             })
             .expect("evidence json"),
         )
