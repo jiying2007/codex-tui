@@ -34,6 +34,47 @@ REQUIRED_FROZEN_DUPLICATES = {
     "generic-coding-agent-provider-layer",
 }
 
+# These are exact observed source boundaries, not user-extensible selectors.
+# A weakened prefix list must not silently exempt a duplicate local subsystem.
+REQUIRED_PREFIXES = {
+    "conversation-client": [
+        "src/runtime_prompt",
+        "src/runtime_user_response",
+        "src/user_response",
+        "src/transcript_search",
+        "src/ui/thread",
+        "src/app/prompt",
+        "src/app/user_input",
+        "src/app/user_response",
+        "src/conversation",
+    ],
+    "thread-queue-ui": ["src/thread_queue", "src/app/queue"],
+    "embedded-terminal": ["src/terminal", "src/ui/terminal", "src/pty"],
+}
+REQUIRED_CAPABILITY_POLICIES = {
+    "conversation-client": "bugfix-compatibility-security-only",
+    "thread-queue-ui": "upstream-projection-only",
+    "embedded-terminal": "bugfix-compatibility-security-only",
+}
+REQUIRED_AUTHORITIES = {
+    "codex": [
+        "conversation",
+        "agent-runtime",
+        "agent-orchestration",
+        "thread-lifecycle-semantics",
+        "thread-queue",
+    ],
+    "git": ["repository-state", "worktree-state"],
+    "forge": ["delivery", "change-review", "pipeline-state"],
+    "shell": ["terminal-session"],
+}
+REQUIRED_CHANGE_POLICY = {
+    "maintenanceOnlyGrowth": "requires-explicit-manifest-ratchet-update-and-rationale",
+    "newProductCapability": "must-strengthen-control-plane-differentiation-or-replace-local-duplication",
+    "upstreamOverlap": "prefer-delete-reduce-or-project",
+    "sourceOfTruth": "never-create-second-authority",
+}
+
 
 def matches_prefix(path: str, prefix: str) -> bool:
     return (
@@ -60,6 +101,8 @@ def main() -> int:
         failures.append("Mission Control must remain the default product surface")
     if manifest.get("upstreamFirst") is not True:
         failures.append("upstreamFirst must remain true")
+    if manifest.get("authorities") != REQUIRED_AUTHORITIES:
+        failures.append("upstream authorities drifted; do not establish competing local state")
 
     differentiation = manifest.get("differentiation")
     if not isinstance(differentiation, list) or set(differentiation) != REQUIRED_DIFFERENTIATION:
@@ -86,9 +129,11 @@ def main() -> int:
             continue
         prefixes = policy.get("modulePrefixes")
         modules = policy.get("modules")
-        if not isinstance(prefixes, list) or not prefixes:
-            failures.append(f"{capability}: modulePrefixes must be non-empty")
+        if prefixes != REQUIRED_PREFIXES[capability]:
+            failures.append(f"{capability}: guarded source prefixes drifted")
             continue
+        if policy.get("policy") != REQUIRED_CAPABILITY_POLICIES[capability]:
+            failures.append(f"{capability}: maintenance-only policy drifted")
         if not isinstance(modules, dict) or not modules:
             failures.append(f"{capability}: modules must be non-empty")
             continue
@@ -124,14 +169,8 @@ def main() -> int:
                     f"{ceiling}; reduce the overlap or explicitly ratchet the manifest with rationale"
                 )
 
-    policy = manifest.get("changePolicy")
-    if not isinstance(policy, dict):
-        failures.append("changePolicy is missing")
-    else:
-        if policy.get("upstreamOverlap") != "prefer-delete-reduce-or-project":
-            failures.append("upstream overlap policy drifted")
-        if policy.get("sourceOfTruth") != "never-create-second-authority":
-            failures.append("source-of-truth policy drifted")
+    if manifest.get("changePolicy") != REQUIRED_CHANGE_POLICY:
+        failures.append("changePolicy drifted or lost fail-closed controls")
 
     if failures:
         raise SystemExit("upstream convergence guard failed:\n" + "\n".join(failures))
