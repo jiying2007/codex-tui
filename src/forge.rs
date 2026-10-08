@@ -782,8 +782,13 @@ fn redact_git_remote_url(raw: &str) -> Result<String> {
     let (authority, path) = raw
         .split_once(':')
         .ok_or_else(|| anyhow!("unsupported Git remote URL (redacted)"))?;
-    let host = authority.rsplit_once('@').map_or(authority, |(_, host)| host);
-    anyhow::ensure!(!host.is_empty() && !path.is_empty(), "invalid Git remote identity");
+    let host = authority
+        .rsplit_once('@')
+        .map_or(authority, |(_, host)| host);
+    anyhow::ensure!(
+        !host.is_empty() && !path.is_empty(),
+        "invalid Git remote identity"
+    );
     Ok(format!("{host}:{path}"))
 }
 
