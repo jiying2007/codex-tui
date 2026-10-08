@@ -103,7 +103,10 @@ async fn remote_websocket_handshake_has_a_bounded_connection_deadline() {
         .expect("bind stalled handshake peer");
     let address = listener.local_addr().expect("stalled peer address");
     let server = tokio::spawn(async move {
-        let (_stream, _) = listener.accept().await.expect("accept TCP without WS reply");
+        let (_stream, _) = listener
+            .accept()
+            .await
+            .expect("accept TCP without WS reply");
         tokio::time::sleep(Duration::from_millis(250)).await;
     });
     let target = ResolvedAppServerTarget {

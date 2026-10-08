@@ -18,11 +18,7 @@ impl SlowProbeProvider {
 }
 
 impl ForgeProvider for SlowProbeProvider {
-    fn probe<'a>(
-        &'a self,
-        thread_id: ThreadId,
-        cwd: String,
-    ) -> ForgeFuture<'a, ForgeObservation> {
+    fn probe<'a>(&'a self, thread_id: ThreadId, cwd: String) -> ForgeFuture<'a, ForgeObservation> {
         let active = Arc::clone(&self.active);
         let max_active = Arc::clone(&self.max_active);
         let delay = self.delay;
