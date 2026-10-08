@@ -12,9 +12,12 @@ on:
 permissions:
   contents: read
 
+# Serialize branch writes without dropping older pending merged-PR cleanups.
+# GitHub's default single-pending queue replaces prior pending runs.
 concurrency:
   group: repository-hygiene
   cancel-in-progress: false
+  queue: max
 jobs:
   merged-branch:
     if: github.event_name == 'pull_request' && github.event.pull_request.merged == true && github.event.pull_request.head.repo.full_name == github.repository
