@@ -67,8 +67,15 @@ class CursorReplies:
 
 
 def text(data):
-    # Only used to recognize a freshly emitted palette heading, not a screen model.
+    # Normalize CSI styling, but do not mistake sparse terminal writes for a screen model.
     return re.sub(rb"\x1b\[[0-?]*[ -/]*[@-~]", b"", data)
+
+
+def palette_observed(data):
+    # Ratatui writes only changed cells: unchanged title spaces may be absent.
+    # Require both the title and the query row in the new frame, not a bare keyword.
+    frame = text(data)
+    return re.search(rb"Command\s*Palette", frame) is not None and b"Query" in frame
 
 
 def probe(binary, output, failed_save):
@@ -152,8 +159,8 @@ def probe(binary, output, failed_save):
             # and must not make palette visibility depend on prior modal timing.
             offset = send(b"\x0b", "open command palette")
             try:
-                wait_for(lambda: b"Command Palette" in text(bytes(stream[offset:])),
-                         "command palette heading not observed")
+                wait_for(lambda: palette_observed(bytes(stream[offset:])),
+                         "command palette title and query row not observed")
             except ProbeFailure as error:
                 # The fake backend uses an isolated HOME. Emit bounded frame context
                 # so a rendering regression is not misdiagnosed as a timing timeout.
