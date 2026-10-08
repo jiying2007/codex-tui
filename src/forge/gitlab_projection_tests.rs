@@ -13,7 +13,10 @@ fn a_single_failed_gitlab_endpoint_does_not_discard_healthy_data_capabilities() 
         let (capabilities, freshness, error) =
             gitlab_observation_status(issues, merge_requests, pipelines);
         assert_eq!(freshness, ForgeFreshness::Fresh);
-        assert!(error.is_none(), "partially healthy project must remain usable");
+        assert!(
+            error.is_none(),
+            "partially healthy project must remain usable"
+        );
         for (kind, healthy) in [
             (ForgeCapability::Issues, issues),
             (ForgeCapability::MergeRequests, merge_requests),
@@ -44,7 +47,10 @@ fn all_failed_gitlab_data_endpoints_mark_the_projection_unavailable() {
         ForgeCapability::MergeRequests,
         ForgeCapability::Pipelines,
     ] {
-        assert_eq!(capabilities.get(&capability), Some(&CapabilityState::Unavailable));
+        assert_eq!(
+            capabilities.get(&capability),
+            Some(&CapabilityState::Unavailable)
+        );
     }
 }
 
@@ -58,6 +64,9 @@ fn all_healthy_gitlab_data_endpoints_remain_fresh() {
         ForgeCapability::MergeRequests,
         ForgeCapability::Pipelines,
     ] {
-        assert_eq!(capabilities.get(&capability), Some(&CapabilityState::Available));
+        assert_eq!(
+            capabilities.get(&capability),
+            Some(&CapabilityState::Available)
+        );
     }
 }

@@ -337,7 +337,11 @@ fn gitlab_observation_status(
     issues_available: bool,
     merge_requests_available: bool,
     pipelines_available: bool,
-) -> (BTreeMap<ForgeCapability, CapabilityState>, ForgeFreshness, Option<String>) {
+) -> (
+    BTreeMap<ForgeCapability, CapabilityState>,
+    ForgeFreshness,
+    Option<String>,
+) {
     let mut capabilities = default_capabilities();
     for (capability, available) in [
         (ForgeCapability::Issues, issues_available),
@@ -1060,6 +1064,6 @@ fn now_unix_ms() -> u64 {
 mod tests;
 
 #[cfg(test)]
-mod read_order_tests;
-#[cfg(test)]
 mod gitlab_projection_tests;
+#[cfg(test)]
+mod read_order_tests;
