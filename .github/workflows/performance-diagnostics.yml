@@ -32,8 +32,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: performance-diagnostics-${{ github.ref }}
-  cancel-in-progress: true
+  group: performance-diagnostics-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   retained-performance:
