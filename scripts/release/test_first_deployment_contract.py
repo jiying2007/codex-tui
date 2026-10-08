@@ -59,6 +59,17 @@ class FirstDeploymentTests(unittest.TestCase):
                     "scripts/architecture/disabled_first_deployment.py")
         self.assertTrue(any("first-deployment qualification guard" in x for x in guard.inspect(self.root)))
 
+    def test_undeployed_qualification_fallback_is_rejected(self):
+        path = self.root / "scripts/release/create_development_qualification.py"
+        path.write_text(path.read_text(encoding="utf-8") +
+                        '\nV13_PLAN_SCHEMA = "obsolete"\n', encoding="utf-8")
+        self.assertTrue(any("qualification fallback returned" in x for x in guard.inspect(self.root)))
+
+    def test_historical_executable_qualifier_is_rejected(self):
+        path = self.root / "scripts/release/validate_v1_3_plan.py"
+        path.write_text("# obsolete helper\n", encoding="utf-8")
+        self.assertTrue(any("historical executable qualifier" in x for x in guard.inspect(self.root)))
+
     def test_no_fabricated_stable_status(self):
         self.change("release/v1.4-completion.json", '"publicationAllowed": false',
                     '"publicationAllowed": true')
