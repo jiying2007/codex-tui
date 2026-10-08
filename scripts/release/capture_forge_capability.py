@@ -67,18 +67,22 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory() as temp:
         bundle = pathlib.Path(temp) / "bundle"
-        proc = subprocess.run(
-            [str(binary), "doctor", "bundle", "--output", str(bundle)],
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
+        try:
+            proc = subprocess.run(
+                [str(binary), "doctor", "bundle", "--output", str(bundle)],
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=45,
+            )
+        except subprocess.TimeoutExpired:
+            # Child stdout/stderr can contain server URLs or auth diagnostics.
+            # Never echo arbitrary failure output into user or CI logs.
+            raise SystemExit("doctor bundle timed out after 45s (output redacted)")
         if proc.returncode != 0:
-            if proc.stdout:
-                print(proc.stdout, end="")
-            if proc.stderr:
-                print(proc.stderr, end="")
-            raise SystemExit(f"doctor bundle failed with exit code {proc.returncode}")
+            raise SystemExit(
+                f"doctor bundle failed with exit code {proc.returncode} (output redacted)"
+            )
 
         snapshot_path = bundle / "snapshot.json"
         snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
