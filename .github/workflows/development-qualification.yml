@@ -49,6 +49,8 @@ jobs:
 
       - name: Enforce v1.4 module ratchet
         run: python scripts/architecture/check_module_ratchet.py release/v1.4-plan.json
+      - name: Enforce upstream convergence contract
+        run: python scripts/architecture/check_upstream_convergence.py
 
       - name: Record security governance authority
         shell: bash

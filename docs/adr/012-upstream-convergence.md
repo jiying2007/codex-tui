@@ -48,7 +48,12 @@ not the default. Any LOC growth or new source file under their guarded prefixes 
 an explicit update to `release/v1.5-convergence.json` with reviewable rationale.
 
 The machine guard is `scripts/architecture/check_upstream_convergence.py` and runs in
-canonical CI.
+canonical CI, development qualification, and the release gate. Explicit guarded prefixes
+include local conversation/editor modules, upstream Queue adapter/UI, the PTY engine and
+embedded terminal UI; a prefix cannot silently disappear alongside its tracked modules.
+Separate negative-fixture tests reject new untracked files, LOC growth, prefix narrowing,
+authority theft and policy weakening. These are non-publishing architecture checks and
+do not replace real Codex, GitLab or controlling-TTY qualification.
 
 ## Explicitly frozen duplicate capabilities
 
