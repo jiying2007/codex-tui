@@ -6,6 +6,7 @@ All notable codex-tui changes are recorded here.
 
 ### Upstream convergence
 
+- cancel superseded PR-only 10k/50k scale runs to avoid duplicate builds while preserving exact-main-SHA and manual retained evidence.
 - refocused the empty Command Palette on control-plane operations while keeping upstream-overlapping Thread/Queue/Terminal actions fully searchable with bilingual names and unchanged direct keys; added regression coverage for both paths.
 - formalized the post-v1.4 product boundary: codex-tui is a thin local Mission Control/control plane rather than a second Codex CLI;
 - kept Mission Control, cross-target registry, Attention, derived Board/WorkCard projection, GitLab/GitHub Forge integration, Saved Views and diagnostics as differentiating surfaces;
