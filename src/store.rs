@@ -121,8 +121,8 @@ impl FileStore {
         self.config_dir.join("config.toml")
     }
 
-    pub fn state_path(&self) -> PathBuf {
-        self.state_dir.join("state-v1.json")
+    pub fn data_dir(&self) -> &Path {
+        &self.state_dir
     }
 
     fn ensure_default_config(&self) -> Result<()> {
@@ -136,8 +136,8 @@ impl FileStore {
     }
 }
 
-impl LocalStore for FileStore {
-    fn load_config(&self) -> Result<AppConfig> {
+impl FileStore {
+    pub fn load_config(&self) -> Result<AppConfig> {
         self.ensure_default_config()?;
         let path = self.config_path();
         let text =
@@ -145,27 +145,7 @@ impl LocalStore for FileStore {
         toml::from_str(&text).with_context(|| format!("parse config {}", path.display()))
     }
 
-    fn load_state(&self) -> Result<LocalStateV1> {
-        let path = self.state_path();
-        if !path.exists() {
-            return Ok(LocalStateV1::default());
-        }
-        let text =
-            fs::read_to_string(&path).with_context(|| format!("read state {}", path.display()))?;
-        let state: LocalStateV1 = serde_json::from_str(&text)
-            .with_context(|| format!("parse state {}", path.display()))?;
-        anyhow::ensure!(
-            state.schema_version == 1,
-            "unsupported LocalStore schemaVersion {}",
-            state.schema_version
-        );
-        Ok(state)
-    }
 
-    fn save_state(&self, state: &LocalStateV1) -> Result<()> {
-        let bytes = serde_json::to_vec_pretty(state).context("serialize local state")?;
-        atomic_write(&self.state_path(), &bytes)
-    }
 }
 
 fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
@@ -193,7 +173,7 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    fn config_is_toml_and_machine_state_is_versioned_json() {
+    fn config_defaults_are_toml() {
         let root = tempdir().expect("tempdir");
         let store = FileStore::at(root.path());
         let config = store.load_config().expect("config");
@@ -204,16 +184,7 @@ mod tests {
         assert_eq!(config.app_server.active, "local");
         assert!(config.app_server.targets.is_empty());
 
-        let mut state = LocalStateV1::default();
-        state.pins.insert("thread-1".into());
-        state.host_local_only = true;
-        state.repo_backed_only = true;
-        store.save_state(&state).expect("save");
-        let loaded = store.load_state().expect("load");
-        assert_eq!(loaded, state);
-
         let config_text = fs::read_to_string(store.config_path()).expect("read config");
-        let state_text = fs::read_to_string(store.state_path()).expect("read state");
         assert!(config_text.contains("[ui]"));
         assert!(config_text.contains("language = \"auto\""));
         assert!(config_text.contains("presentation = \"normal\""));
@@ -221,15 +192,7 @@ mod tests {
         assert!(config_text.contains("mode = \"off\""));
         assert!(config_text.contains("[app_server]"));
         assert!(config_text.contains("active = \"local\""));
-        assert!(state_text.contains("\"schemaVersion\": 1"));
-        assert!(state_text.contains("\"hostLocalOnly\": true"));
-        assert!(state_text.contains("\"repoBackedOnly\": true"));
 
-        let legacy = r#"{"schemaVersion":1}"#;
-        fs::write(store.state_path(), legacy).expect("write legacy state");
-        let legacy_loaded = store.load_state().expect("load legacy state");
-        assert!(!legacy_loaded.host_local_only);
-        assert!(!legacy_loaded.repo_backed_only);
     }
 
     #[test]
@@ -330,14 +293,4 @@ mod tests {
         }
     }
 
-    #[test]
-    fn repeated_state_write_replaces_previous_content() {
-        let root = tempdir().expect("tempdir");
-        let store = FileStore::at(root.path());
-        let mut state = LocalStateV1::default();
-        store.save_state(&state).expect("first save");
-        state.pins.insert("thread-2".into());
-        store.save_state(&state).expect("second save");
-        assert_eq!(store.load_state().expect("load"), state);
-    }
 }

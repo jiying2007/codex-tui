@@ -96,7 +96,7 @@
     {
       "id": "state-migration-recovery",
       "authority": "retained automated qualification",
-      "evidence": "legacy config/operator state import, SQLite migration through transcript-index schema v4, idempotent restart, backup/restore, forward refusal and corrupt-live recovery pass"
+      "evidence": "fresh first-install SQLite schema and state, idempotent reopen, backup/restore, forward-envelope refusal, truncated live-envelope refusal and corrupt-live recovery pass"
     },
     {
       "id": "support-bundle-redaction",

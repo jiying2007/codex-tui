@@ -6,6 +6,15 @@ A local-first Mission Control for multiple Codex projects, repositories, targets
 
 ## Development status
 
+**First production deployment baseline:** Neither v1.0.0 nor v1.4.0 has
+been adopted in a deployed installation. The next v1.4 candidate starts with
+fresh SQLite operator state and does **not** auto-import v1.0 `state-v1.json`
+or promise a v1.0-to-v1.4 upgrade path. Historical GitHub tags/releases remain
+audit records. Current Codex/GitLab/GitHub capabilities, forward-schema refusal,
+recovery, Linux TTY and production release qualification remain required.
+See `docs/implementation/v1.4-first-deployment-baseline.md`.
+
+
 v1.4 has reached development-scope completion and is frozen against new core functionality under `release/v1.4-completion.json`. It preserves v1.3 Search & Multi-Target and closes the remaining workflow/UX gaps: large Board navigation, WorkCard relationships, thread start/fork handoff, unified metadata search, Saved View editing, Review evidence/external open, bounded long-thread rendering, fuzzy Command Palette, runtime decomposition and exact-SHA 10k Board/Thread render diagnostics. This is not stable readiness: v1.4 stable publication still requires exact-SHA real Linux compatibility, controlling-TTY restoration, performance diagnostics and release evidence defined by `release/v1.4-criteria.json`. GitLab Issue Board membership remains evidence-gated until the native-transport/refresh-budget trigger is satisfied. The v1.3/v1.2 completion checkpoints and parked v1.1 candidate remain historical and separate.
 
 A post-v1.4 **upstream convergence** policy is now active under `release/v1.5-convergence.json` without changing the package version or claiming v1.5 release readiness. codex-tui is intentionally a thin local control plane: Mission Control, cross-target registry, Attention, derived Board/WorkCard projection, GitLab/GitHub Forge integration, Saved Views and diagnostics are the differentiating surfaces. Conversation-client, Thread Queue UI and embedded Terminal Drawer code is maintenance-only; official Codex remains authoritative for conversation, agents/orchestration and queue semantics, Git for repository/worktree state, the Forge for delivery, and the user's shell stack for general terminal-session management. Canonical CI, development qualification and the release gate enforce this boundary

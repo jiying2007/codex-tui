@@ -112,13 +112,13 @@ pub const FAILURE_MATRIX: &[FailureCase] = &[
         evidence: &["corrupt_sqlite_is_not_reinitialized_or_overwritten"],
     },
     FailureCase {
-        id: "legacy-state-truncated",
+        id: "operator-state-truncated",
         domain: FailureDomain::Store,
-        injection: "state-v1.json is truncated before first SQLite import",
+        injection: "SQLite operator_state envelope contains truncated JSON",
         expected: QualificationState::Blocked,
         max_recovery_ms: 3_000,
         writes_allowed: false,
-        evidence: &["truncated_legacy_state_is_preserved_for_recovery"],
+        evidence: &["truncated_operator_envelope_is_refused_without_replacement"],
     },
     FailureCase {
         id: "forward-store-schema",

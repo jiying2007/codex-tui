@@ -1,48 +1,27 @@
 use codex_tui::{
-    domain::ThreadId,
+    domain::{ThreadId, ThreadUiState},
     planning::{LocalNote, SavedView, SavedViewLayout, SourceKind, SourceRef, WorkCardRecord},
     sqlite_store::SqliteStore,
-    store::{FileStore, LocalStateV1, LocalStore},
+    store::{LocalStateV1, LocalStore},
 };
 use rusqlite::Connection;
 use std::fs;
 use tempfile::tempdir;
 
-fn v1_operator_fixture() -> LocalStateV1 {
-    serde_json::from_str(include_str!("fixtures/v1.0/state-v1.json"))
-        .expect("v1.0 operator fixture")
-}
-
-fn install_v1_operator_fixture(root: &std::path::Path) -> LocalStateV1 {
-    let expected = v1_operator_fixture();
-    let legacy = FileStore::at(root);
-    fs::create_dir_all(legacy.state_path().parent().expect("state parent"))
-        .expect("create state dir");
-    fs::write(
-        legacy.state_path(),
-        include_str!("fixtures/v1.0/state-v1.json"),
-    )
-    .expect("install v1 operator fixture");
-    expected
-}
-
-#[test]
-fn v1_config_fixture_preserves_settings_and_defaults_new_fields() {
-    let root = tempdir().expect("tempdir");
-    let legacy = FileStore::at(root.path());
-    fs::create_dir_all(legacy.config_path().parent().expect("config parent"))
-        .expect("create config dir");
-    fs::write(
-        legacy.config_path(),
-        include_str!("fixtures/v1.0/config.toml"),
-    )
-    .expect("install v1 config fixture");
-
-    let config = legacy.load_config().expect("load v1 config");
-    assert!(!config.ui.mouse);
-    assert_eq!(config.ui.language.as_str(), "auto");
-    assert_eq!(config.app_server.active, "local");
-    assert!(config.app_server.targets.is_empty());
+fn seed_operator(store: &SqliteStore) -> LocalStateV1 {
+    let mut state = LocalStateV1::default();
+    state.pins.insert("thread-1".into());
+    state.aliases.insert("thread-1".into(), "primary".into());
+    state.thread_ui.insert(
+        "thread-1".into(),
+        ThreadUiState {
+            draft: "fresh first-deployment draft".into(),
+            scroll: 7,
+            follow: false,
+        },
+    );
+    store.save_state(&state).expect("seed fresh SQLite state");
+    state
 }
 
 fn populate_planning(store: &SqliteStore) {
@@ -89,39 +68,21 @@ fn populate_planning(store: &SqliteStore) {
 }
 
 #[test]
-fn v1_operator_and_sqlite_schema_upgrade_preserve_user_state_idempotently() {
+fn first_install_and_reopen_preserve_sqlite_operator_and_planning_state() {
     let root = tempdir().expect("tempdir");
-    let expected_operator = install_v1_operator_fixture(root.path());
     let store = SqliteStore::at(root.path());
-
-    assert_eq!(
-        store.load_state().expect("import v1 operator state"),
-        expected_operator
-    );
+    assert_eq!(store.load_state().expect("fresh state"), LocalStateV1::default());
+    let expected_operator = seed_operator(&store);
     populate_planning(&store);
     let expected_planning = store
         .load_planning_snapshot()
-        .expect("planning before downgrade");
+        .expect("planning after first install");
 
-    {
-        let conn = Connection::open(store.db_path()).expect("raw sqlite");
-        conn.execute_batch(
-            "DROP TABLE managed_worktrees;
-             DROP TABLE operation_receipts;
-             DROP TABLE forge_mutation_receipts;
-             DROP TABLE IF EXISTS transcript_fts;
-             DROP TABLE IF EXISTS transcript_documents;
-             PRAGMA user_version = 1;",
-        )
-        .expect("create retained schema-v1 fixture");
-    }
-
-    let reopened = SqliteStore::at(root.path());
-    let health = reopened.health().expect("migrate schema 1 -> latest");
+    let health = store.health().expect("fresh SQLite schema");
     assert_eq!(health.schema_version, 4);
     assert_eq!(health.integrity, "ok");
     {
-        let conn = Connection::open(reopened.db_path()).expect("inspect migrated schema");
+        let conn = Connection::open(store.db_path()).expect("inspect fresh schema");
         let transcript_tables: i64 = conn
             .query_row(
                 "SELECT count(*) FROM sqlite_master
@@ -129,49 +90,24 @@ fn v1_operator_and_sqlite_schema_upgrade_preserve_user_state_idempotently() {
                 [],
                 |row| row.get(0),
             )
-            .expect("count transcript search tables");
+            .expect("count transcript tables");
         assert_eq!(transcript_tables, 2);
     }
-    assert_eq!(
-        reopened.load_state().expect("operator after migration"),
-        expected_operator
-    );
-    assert_eq!(
-        reopened
-            .load_planning_snapshot()
-            .expect("planning after migration"),
-        expected_planning
-    );
 
-    let reopened_again = SqliteStore::at(root.path());
+    let reopened = SqliteStore::at(root.path());
+    assert_eq!(reopened.load_state().expect("state after reopen"), expected_operator);
     assert_eq!(
-        reopened_again
-            .health()
-            .expect("idempotent reopen")
-            .schema_version,
-        4
-    );
-    assert_eq!(
-        reopened_again.load_state().expect("idempotent operator"),
-        expected_operator
-    );
-    assert_eq!(
-        reopened_again
-            .load_planning_snapshot()
-            .expect("idempotent planning"),
+        reopened.load_planning_snapshot().expect("planning after reopen"),
         expected_planning
     );
+    assert_eq!(reopened.health().expect("idempotent reopen").schema_version, 4);
 }
 
 #[test]
 fn backup_restore_round_trip_preserves_operator_and_planning_state() {
     let root = tempdir().expect("tempdir");
-    let expected_operator = install_v1_operator_fixture(root.path());
     let store = SqliteStore::at(root.path());
-    assert_eq!(
-        store.load_state().expect("import operator"),
-        expected_operator
-    );
+    let expected_operator = seed_operator(&store);
     populate_planning(&store);
     let expected_planning = store
         .load_planning_snapshot()
@@ -226,12 +162,8 @@ fn backup_restore_round_trip_preserves_operator_and_planning_state() {
 #[test]
 fn corrupt_restore_source_is_refused_without_touching_live_state() {
     let root = tempdir().expect("tempdir");
-    let expected_operator = install_v1_operator_fixture(root.path());
     let store = SqliteStore::at(root.path());
-    assert_eq!(
-        store.load_state().expect("import operator"),
-        expected_operator
-    );
+    let expected_operator = seed_operator(&store);
 
     let corrupt = root.path().join("corrupt.sqlite3");
     fs::write(&corrupt, b"not a database").expect("corrupt fixture");
@@ -252,12 +184,8 @@ fn corrupt_restore_source_is_refused_without_touching_live_state() {
 #[test]
 fn validated_backup_restores_over_corrupt_live_database_and_preserves_raw_image() {
     let root = tempdir().expect("tempdir");
-    let expected_operator = install_v1_operator_fixture(root.path());
     let store = SqliteStore::at(root.path());
-    assert_eq!(
-        store.load_state().expect("import operator"),
-        expected_operator
-    );
+    let expected_operator = seed_operator(&store);
     populate_planning(&store);
     let expected_planning = store
         .load_planning_snapshot()

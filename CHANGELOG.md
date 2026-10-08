@@ -17,6 +17,9 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
+- Treat v1.4 as the first actual production installation: remove unused v1.0 JSON-to-SQLite state import, backup/status and migration-specific fixture surface; preserve SQLite corruption, forward-schema, backup and restore safeguards.
+
+
 - preserved operator changes made during initial connection, selected WorkCard identity across asynchronous projections, and Saved View identity across list reordering;
 - refreshed time-derived snooze and provenance state at its next deadline, rejecting expired in-flight results without rebuilding on every idle poll;
 - measured actual planning reconciliation calls in soak rather than orchestrator intent, with mutation-tested UI-only regression detection;
