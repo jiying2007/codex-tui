@@ -22,7 +22,7 @@ on:
       - "release/v1.4-criteria.json"
       - "release/v1.4-completion.json"
       - "release/v1.4-plan.json"
-      - "scripts/release/**"
+      - "scripts/release/validate_diagnostics.py"
       - "src/ui/**"
       - "Cargo.toml"
       - "Cargo.lock"
