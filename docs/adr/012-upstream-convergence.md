@@ -44,15 +44,19 @@ Existing local conversation-client, Thread Queue UI and embedded Terminal Drawer
 retained for compatibility and current users, but is maintenance-only.
 
 Those surfaces may receive defect, security and compatibility fixes. Feature expansion is
-not the default. Any LOC growth or new source file under their guarded prefixes requires
-an explicit update to `release/v1.5-convergence.json` with reviewable rationale.
+not the default. `release/v1.4-plan.json` remains the **single numeric LOC authority**
+ via its complete-source-coverage module ratchet. `release/v1.5-convergence.json`
+ records only the upstream-overlapping module **identities, categories and policy**.
+ Growth must pass the frozen module ratchet; a new guarded source identity additionally
+ requires an explicit reviewed convergence-manifest update.
 
 The machine guard is `scripts/architecture/check_upstream_convergence.py` and runs in
 canonical CI, development qualification, and the release gate. Explicit guarded prefixes
 include local conversation/editor modules, upstream Queue adapter/UI, the PTY engine and
 embedded terminal UI; a prefix cannot silently disappear alongside its tracked modules.
-Separate negative-fixture tests reject new untracked files, LOC growth, prefix narrowing,
-authority theft and policy weakening. These are non-publishing architecture checks and
+The convergence guard reuses `check_module_ratchet.inspect_plan` instead of maintaining
+ duplicate LOC ceilings. Negative-fixture tests reject untracked files, growth against
+ the shared ratchet, prefix narrowing, authority theft and policy weakening. These are non-publishing architecture checks and
 do not replace real Codex, GitLab or controlling-TTY qualification.
 
 ## Explicitly frozen duplicate capabilities

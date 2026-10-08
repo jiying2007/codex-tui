@@ -1,5 +1,5 @@
 {
-  "schema": "codex-tui/upstream-convergence/v1",
+  "schema": "codex-tui/upstream-convergence/v2",
   "status": "active",
   "packageVersion": "1.4.0",
   "nextDevelopmentTheme": "v1.5-upstream-convergence",
@@ -51,24 +51,24 @@
         "src/app/user_response",
         "src/conversation"
       ],
-      "modules": {
-        "src/runtime_prompt.rs": 93,
-        "src/runtime_user_response.rs": 45,
-        "src/runtime_user_response/approval_tests.rs": 160,
-        "src/runtime_user_response/tests.rs": 189,
-        "src/transcript_search.rs": 211,
-        "src/ui/thread.rs": 381,
-        "src/ui/thread/tests.rs": 77,
-        "src/user_response.rs": 29,
-        "src/app/prompt.rs": 145,
-        "src/app/user_input.rs": 145,
-        "src/app/user_response.rs": 243,
-        "src/app/user_response/tests.rs": 54,
-        "src/conversation.rs": 892,
-        "src/conversation/approval.rs": 23,
-        "src/conversation/approval_scope.rs": 92,
-        "src/conversation/user_input.rs": 32
-      }
+      "modules": [
+        "src/runtime_prompt.rs",
+        "src/runtime_user_response.rs",
+        "src/runtime_user_response/approval_tests.rs",
+        "src/runtime_user_response/tests.rs",
+        "src/transcript_search.rs",
+        "src/ui/thread.rs",
+        "src/ui/thread/tests.rs",
+        "src/user_response.rs",
+        "src/app/prompt.rs",
+        "src/app/user_input.rs",
+        "src/app/user_response.rs",
+        "src/app/user_response/tests.rs",
+        "src/conversation.rs",
+        "src/conversation/approval.rs",
+        "src/conversation/approval_scope.rs",
+        "src/conversation/user_input.rs"
+      ]
     },
     "thread-queue-ui": {
       "policy": "upstream-projection-only",
@@ -76,11 +76,11 @@
         "src/thread_queue",
         "src/app/queue"
       ],
-      "modules": {
-        "src/thread_queue.rs": 350,
-        "src/app/queue_confirmation.rs": 97,
-        "src/app/queue_editor.rs": 151
-      }
+      "modules": [
+        "src/thread_queue.rs",
+        "src/app/queue_confirmation.rs",
+        "src/app/queue_editor.rs"
+      ]
     },
     "embedded-terminal": {
       "policy": "bugfix-compatibility-security-only",
@@ -89,12 +89,12 @@
         "src/ui/terminal",
         "src/pty"
       ],
-      "modules": {
-        "src/terminal.rs": 131,
-        "src/terminal_drawer.rs": 381,
-        "src/ui/terminal.rs": 126,
-        "src/pty.rs": 602
-      }
+      "modules": [
+        "src/terminal.rs",
+        "src/terminal_drawer.rs",
+        "src/ui/terminal.rs",
+        "src/pty.rs"
+      ]
     }
   },
   "frozenDuplicateCapabilities": [
@@ -108,9 +108,10 @@
     "generic-coding-agent-provider-layer"
   ],
   "changePolicy": {
-    "maintenanceOnlyGrowth": "requires-explicit-manifest-ratchet-update-and-rationale",
+    "maintenanceOnlyGrowth": "requires-reviewed-shared-module-ratchet-and-convergence-identity-update",
     "newProductCapability": "must-strengthen-control-plane-differentiation-or-replace-local-duplication",
     "upstreamOverlap": "prefer-delete-reduce-or-project",
     "sourceOfTruth": "never-create-second-authority"
-  }
+  },
+  "moduleRatchetAuthority": "release/v1.4-plan.json"
 }

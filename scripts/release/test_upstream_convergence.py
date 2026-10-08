@@ -23,18 +23,29 @@ class UpstreamConvergenceGuardTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.root = pathlib.Path(self.tmp.name)
         self.manifest = copy.deepcopy(MANIFEST)
-        for policy in self.manifest["maintenanceOnlyCapabilities"].values():
-            for name in policy["modules"]:
-                path = self.root / name
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text("// fixture\n", encoding="utf-8")
+        modules = {
+            name
+            for policy in self.manifest["maintenanceOnlyCapabilities"].values()
+            for name in policy["modules"]
+        }
+        for name in modules:
+            path = self.root / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("// fixture\n", encoding="utf-8")
+        # There is only one numeric ceiling authority, including in fixtures.
+        self.ratchet = {
+            "moduleRatchet": {name: 1 for name in sorted(modules)},
+            "ratchetPolicy": {"completeSourceCoverage": True},
+        }
 
     def check(self):
-        path = self.root / "release/v1.5-convergence.json"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(self.manifest), encoding="utf-8")
+        manifest_path = self.root / "release/v1.5-convergence.json"
+        manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        manifest_path.write_text(json.dumps(self.manifest), encoding="utf-8")
+        ratchet_path = self.root / "release/v1.4-plan.json"
+        ratchet_path.write_text(json.dumps(self.ratchet), encoding="utf-8")
         return subprocess.run(
-            [sys.executable, str(GUARD), str(path.relative_to(self.root))],
+            [sys.executable, str(GUARD), str(manifest_path.relative_to(self.root))],
             cwd=str(self.root),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -57,21 +68,55 @@ class UpstreamConvergenceGuardTests(unittest.TestCase):
     def test_dropping_prefix_and_owned_modules_does_not_escape_guard(self):
         policy = self.manifest["maintenanceOnlyCapabilities"]["thread-queue-ui"]
         policy["modulePrefixes"].remove("src/app/queue")
-        del policy["modules"]["src/app/queue_editor.rs"]
-        del policy["modules"]["src/app/queue_confirmation.rs"]
+        policy["modules"].remove("src/app/queue_editor.rs")
+        policy["modules"].remove("src/app/queue_confirmation.rs")
         result = self.check()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("source prefixes drifted", result.stderr)
 
-    def test_increased_local_module_size_fails(self):
-        path = self.root / "src/pty.rs"
-        ceiling = self.manifest["maintenanceOnlyCapabilities"]["embedded-terminal"][
-            "modules"
-        ]["src/pty.rs"]
-        path.write_text("// row\n" * (ceiling + 1), encoding="utf-8")
+    def test_growth_fails_via_single_shared_ratchet(self):
+        (self.root / "src/pty.rs").write_text("// row\n" * 2, encoding="utf-8")
         result = self.check()
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("maintenance-only ceiling", result.stderr)
+        self.assertIn("shared module ratchet", result.stderr)
+        self.assertIn("no-growth ceiling", result.stderr)
+
+    def test_dropping_module_ratchet_coverage_fails(self):
+        del self.ratchet["moduleRatchet"]["src/pty.rs"]
+        result = self.check()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("shared v1.4 module ratchet", result.stderr)
+
+    def test_shared_ratchet_must_stay_complete(self):
+        self.ratchet["ratchetPolicy"]["completeSourceCoverage"] = False
+        result = self.check()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("lost complete source coverage", result.stderr)
+
+    def test_duplicate_module_names_fail(self):
+        self.manifest["maintenanceOnlyCapabilities"]["embedded-terminal"][
+            "modules"
+        ].append("src/pty.rs")
+        result = self.check()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("distinct source paths", result.stderr)
+
+    def test_legacy_numeric_limits_do_not_reenter_manifest(self):
+        modules = self.manifest["maintenanceOnlyCapabilities"]["embedded-terminal"][
+            "modules"
+        ]
+        self.manifest["maintenanceOnlyCapabilities"]["embedded-terminal"]["modules"] = {
+            name: 602 for name in modules
+        }
+        result = self.check()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("distinct source paths", result.stderr)
+
+    def test_ratchet_source_drift_fails(self):
+        self.manifest["moduleRatchetAuthority"] = "release/other-plan.json"
+        result = self.check()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("shared module ratchet authority drifted", result.stderr)
 
     def test_stealing_codex_authority_fails(self):
         self.manifest["authorities"]["codex"].remove("agent-orchestration")
@@ -89,7 +134,7 @@ class UpstreamConvergenceGuardTests(unittest.TestCase):
         self.manifest["maintenanceOnlyCapabilities"]["agent-runtime"] = {
             "policy": "duplicate",
             "modulePrefixes": [],
-            "modules": {},
+            "modules": [],
         }
         result = self.check()
         self.assertNotEqual(result.returncode, 0)
