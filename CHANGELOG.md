@@ -17,6 +17,8 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
+- Make GitLab Issue, MR and Pipeline reads independent and concurrently bounded, keeping healthy data available when one endpoint fails; all-endpoint failure remains fail-closed and no raw CLI error enters the projection.
+
 - Bound App Server network connect and handshake to a five-second deadline; redact Git remote userinfo/query/fragment in Forge diagnostics to prevent accidental token exposure.
 
 - Preserve all pending exact-source release self-tests (up to the provider's documented queue bound) with serial, non-cancelling `queue: max` release workflow concurrency, while keeping publication separately serialized.
