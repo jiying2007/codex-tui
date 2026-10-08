@@ -25,7 +25,7 @@ pub(super) fn validate_recovery_database(path: &Path) -> Result<i64> {
         .with_context(|| format!("open read-only recovery SQLite {}", path.display()))?;
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     anyhow::ensure!(
-        (1..=DB_SCHEMA_VERSION).contains(&version),
+        version == DB_SCHEMA_VERSION,
         "unsupported recovery SQLite schema version {version}"
     );
     validate_operator_envelope(&conn)?;

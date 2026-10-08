@@ -96,7 +96,7 @@
     {
       "id": "state-migration-recovery",
       "authority": "retained automated qualification",
-      "evidence": "fresh first-install SQLite schema and state, idempotent reopen, backup/restore, forward-envelope refusal, truncated live-envelope refusal and corrupt-live recovery pass"
+      "evidence": "direct first-install SQLite v4 schema and state, obsolete predeployment schema refusal without mutation, idempotent reopen, backup/restore, forward-envelope refusal, truncated live-envelope refusal and corrupt-live recovery pass"
     },
     {
       "id": "support-bundle-redaction",

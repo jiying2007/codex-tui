@@ -18,6 +18,7 @@ All notable codex-tui changes are recorded here.
 ### Audit hardening
 
 - Treat v1.4 as the first actual production installation: remove unused v1.0 JSON-to-SQLite state import, backup/status and migration-specific fixture surface; preserve SQLite corruption, forward-schema, backup and restore safeguards.
+- Initialize SQLite directly at the first-deployment v4 schema; reject earlier undeployed versions and old backup images instead of retaining unused v1-v3 migrations.
 
 
 - preserved operator changes made during initial connection, selected WorkCard identity across asynchronous projections, and Saved View identity across list reordering;
