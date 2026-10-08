@@ -46,6 +46,18 @@ class WorkflowConcurrencyContract(unittest.TestCase):
             source,
         )
 
+    def test_release_gate_preserves_serial_pending_runs(self):
+        source = (ROOT / ".github/workflows/release.yml").read_text(
+            encoding="utf-8"
+        )
+        _, marker, rest = source.partition("\nconcurrency:\n")
+        self.assertTrue(marker, "release workflow-level concurrency missing")
+        policy = rest.split("\njobs:\n", 1)[0]
+        self.assertIn("group: release-", policy)
+        self.assertIn("github.ref", policy)
+        self.assertIn("cancel-in-progress: false", policy)
+        self.assertIn("queue: max", policy)
+
     def test_release_publication_remains_non_cancelling(self):
         source = (ROOT / ".github/workflows/release.yml").read_text(
             encoding="utf-8"
