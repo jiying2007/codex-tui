@@ -95,7 +95,9 @@ fn palette_heading_is_visible_at_the_real_pty_test_size() {
     assert!(app.command_palette_open);
 
     let mut terminal = Terminal::new(TestBackend::new(160, 40)).expect("terminal");
-    terminal.draw(|frame| ui::render(frame, &app)).expect("render");
+    terminal
+        .draw(|frame| ui::render(frame, &app))
+        .expect("render");
     let buffer = terminal.backend().buffer();
     let mut screen = String::new();
     for y in 0..buffer.area.height {
@@ -104,5 +106,8 @@ fn palette_heading_is_visible_at_the_real_pty_test_size() {
         }
         screen.push('\n');
     }
-    assert!(screen.contains("Command Palette"), "palette title must be rendered");
+    assert!(
+        screen.contains("Command Palette"),
+        "palette title must be rendered"
+    );
 }
