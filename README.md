@@ -35,6 +35,8 @@ codex-tui answers four questions quickly:
 
 The default product surface is Mission Control. The local chat/thread client is a compatibility surface, not the long-term product differentiator.
 
+The global `Ctrl+K` Command Palette now shows **Mission Control actions first** with an empty query. Type a command name (English or Simplified Chinese) to reveal less-frequent upstream-overlapping compatibility actions such as transcript search, quick prompt, Thread Queue, managed worktrees or Terminal Drawer. Existing direct keys and commands remain available; this is a presentation-only convergence, not a removal of capabilities.
+
 ## v1 principles
 
 - Codex App Server owns conversation and runtime state.

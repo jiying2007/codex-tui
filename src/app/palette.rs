@@ -184,36 +184,41 @@ impl AppState {
     }
 
     pub(crate) fn command_palette_matches(&self) -> Vec<CommandPaletteMatch> {
+        let fallback;
         let baseline = if self.command_palette_open {
             &self.command_palette_items
         } else {
-            return self
-                .build_command_palette_choices()
-                .into_iter()
-                .filter_map(|command| {
-                    command
-                        .palette_label(self.language.is_simplified_chinese())
-                        .map(|label| CommandPaletteMatch {
-                            command,
-                            label,
-                            matched_char_indices: vec![],
-                        })
-                })
-                .collect();
+            fallback = self.build_command_palette_choices();
+            &fallback
         };
 
-        if self.command_palette_query.trim().is_empty() {
+        if !self.command_palette_open || self.command_palette_query.trim().is_empty() {
             return baseline
                 .iter()
                 .copied()
+                // Keep the default palette control-plane-first; typing searches everything.
+                .filter(|command| {
+                    !self.command_palette_open
+                        || matches!(
+                            *command,
+                            Command::Search
+                                | Command::NextAttention
+                                | Command::Board
+                                | Command::Review
+                                | Command::Workspace
+                                | Command::TogglePin
+                                | Command::Snooze
+                                | Command::ContextActions
+                                | Command::Help
+                        )
+                })
                 .filter_map(|command| {
-                    command
-                        .palette_label(self.language.is_simplified_chinese())
-                        .map(|label| CommandPaletteMatch {
-                            command,
-                            label,
-                            matched_char_indices: vec![],
-                        })
+                    let label = command.palette_label(self.language.is_simplified_chinese())?;
+                    Some(CommandPaletteMatch {
+                        command,
+                        label,
+                        matched_char_indices: vec![],
+                    })
                 })
                 .collect();
         }
@@ -224,23 +229,17 @@ impl AppState {
             .copied()
             .enumerate()
             .filter_map(|(baseline_index, command)| {
-                let mut candidates = Vec::new();
-                for simplified_chinese in [display_chinese, !display_chinese] {
-                    let Some(label) = command.palette_label(simplified_chinese) else {
-                        continue;
-                    };
-                    if let Some(matched) = fuzzy_match(&self.command_palette_query, label) {
-                        candidates.push((simplified_chinese == display_chinese, label, matched));
-                    }
-                }
-                let (display_language, label, matched) =
-                    candidates.into_iter().max_by(|left, right| {
-                        left.2
-                            .score
-                            .cmp(&right.2.score)
-                            .then_with(|| left.0.cmp(&right.0))
-                    })?;
-                let _ = display_language;
+                let (_, label, matched) = [display_chinese, !display_chinese]
+                    .into_iter()
+                    .filter_map(|lang| {
+                        let label = command.palette_label(lang)?;
+                        Some((
+                            lang == display_chinese,
+                            label,
+                            fuzzy_match(&self.command_palette_query, label)?,
+                        ))
+                    })
+                    .max_by_key(|(same, _, matched)| (matched.score, *same))?;
                 Some((
                     matched.score,
                     baseline_index,
@@ -388,9 +387,9 @@ mod tests {
     fn frozen_palette_baseline_survives_context_change() {
         let mut app = app();
         app.open_command_palette();
-        let baseline = app.command_palette_items.clone();
+        let default_choices = app.command_palette_choices();
         app.view = View::Board;
         app.command_palette_query.clear();
-        assert_eq!(app.command_palette_choices(), baseline);
+        assert_eq!(app.command_palette_choices(), default_choices);
     }
 }

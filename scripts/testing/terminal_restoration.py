@@ -67,8 +67,15 @@ class CursorReplies:
 
 
 def text(data):
-    # Only used to recognize a freshly emitted palette heading, not a screen model.
+    # Normalize CSI styling, but do not mistake sparse terminal writes for a screen model.
     return re.sub(rb"\x1b\[[0-?]*[ -/]*[@-~]", b"", data)
+
+
+def palette_observed(data):
+    # Ratatui writes only changed cells: unchanged title spaces may be absent.
+    # Require both the title and the query row in the new frame, not a bare keyword.
+    frame = text(data)
+    return re.search(rb"Command\s*Palette", frame) is not None and b"Query" in frame
 
 
 def probe(binary, output, failed_save):
@@ -148,12 +155,26 @@ def probe(binary, output, failed_save):
             drain(.35)
             raw = not bool(termios.tcgetattr(slave)[3] & (termios.ICANON | termios.ECHO))
             require(raw, "raw mode not entered")
-            send(b"?", "help input")
-            send(b"\x1b", "close help input")
+            # Exercise palette from a clean Registry: help is a separate overlay
+            # and must not make palette visibility depend on prior modal timing.
             offset = send(b"\x0b", "open command palette")
-            wait_for(lambda: b"Command Palette" in text(bytes(stream[offset:])),
-                     "command palette heading not observed")
+            try:
+                wait_for(lambda: palette_observed(bytes(stream[offset:])),
+                         "command palette title and query row not observed")
+            except ProbeFailure as error:
+                # The fake backend uses an isolated HOME. Emit bounded frame context
+                # so a rendering regression is not misdiagnosed as a timing timeout.
+                frame = text(bytes(stream[offset:]))
+                markers = {name.decode(): name in frame for name in
+                           (b"Command", b"Palette", b"Query", b"Search", b"Help",
+                            b"Board", b"Terminal", b"filter")}
+                raise ProbeFailure(
+                    f"{error}; child_exit={proc.poll()}; emitted_bytes={len(stream) - offset}; "
+                    f"markers={markers!r}; frame_head={frame[:400]!r}; frame_tail={frame[-384:]!r}"
+                ) from error
             send(b"\x1b", "close palette")
+            send(b"?", "open help")
+            send(b"?", "close help with help toggle")
             fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 28, 100, 0, 0))
             os.kill(proc.pid, signal.SIGWINCH)
             events.append({"action": "resize 100x28"})
