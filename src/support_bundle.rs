@@ -53,7 +53,6 @@ pub struct StoreSnapshot {
     pub available: bool,
     pub schema_version: Option<i64>,
     pub integrity: Option<String>,
-    pub legacy_import: Option<String>,
     pub operator_pins: usize,
     pub operator_aliases: usize,
     pub operator_drafts: usize,
@@ -340,7 +339,6 @@ fn collect_store() -> StoreSnapshot {
         available: false,
         schema_version: None,
         integrity: None,
-        legacy_import: None,
         operator_pins: 0,
         operator_aliases: 0,
         operator_drafts: 0,
@@ -373,7 +371,6 @@ fn collect_store() -> StoreSnapshot {
         available: true,
         schema_version: Some(health.schema_version),
         integrity: Some(health.integrity),
-        legacy_import: health.legacy_import,
         operator_pins: operator.pins.len(),
         operator_aliases: operator.aliases.len(),
         operator_drafts: operator
@@ -406,7 +403,6 @@ fn collect_store() -> StoreSnapshot {
 fn safe_component_facts(facts: BTreeMap<String, String>) -> BTreeMap<String, String> {
     const SAFE_KEYS: &[&str] = &[
         "integrity",
-        "legacyImport",
         "platform",
         "capabilityCount",
         "optionalCapabilitiesMissing",
@@ -467,7 +463,7 @@ mod tests {
             schema: SUPPORT_BUNDLE_SCHEMA,
             generated_at_unix_ms: 1,
             build: BuildSnapshot {
-                product_version: "1.1.0",
+                product_version: "1.4.0",
                 source_sha: "abc123",
                 os: "linux",
                 arch: "x86_64",
@@ -481,9 +477,8 @@ mod tests {
             },
             store: StoreSnapshot {
                 available: true,
-                schema_version: Some(3),
+                schema_version: Some(4),
                 integrity: Some("ok".into()),
-                legacy_import: Some("imported".into()),
                 operator_pins: 1,
                 operator_aliases: 1,
                 operator_drafts: 1,

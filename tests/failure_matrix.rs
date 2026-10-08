@@ -4,7 +4,7 @@ use codex_tui::{
     hardening::{FAILURE_MATRIX, QualificationState, failure_case},
     pty::{PtyEvent, PtyHandle, TerminalSize},
     sqlite_store::SqliteStore,
-    store::{FileStore, LocalStore},
+    store::LocalStore,
 };
 use rusqlite::Connection;
 use std::{
@@ -24,7 +24,7 @@ fn retained_failure_matrix_contains_the_release_blocking_cases() {
         "forge-command-timeout",
         "sqlite-busy-or-write-failure",
         "sqlite-corrupt",
-        "legacy-state-truncated",
+        "operator-state-truncated",
         "forward-store-schema",
         "pty-child-abnormal-exit",
         "bounded-queue-backpressure",
@@ -149,55 +149,62 @@ fn forward_sqlite_schema_is_refused_without_downgrade() {
     assert_eq!(version, 99, "old binary must not rewrite a newer schema");
 }
 
-#[test]
-fn truncated_legacy_state_is_preserved_for_recovery() {
-    let root = tempdir().expect("tempdir");
-    let legacy = FileStore::at(root.path());
-    fs::create_dir_all(legacy.state_path().parent().expect("legacy state parent"))
-        .expect("create state dir");
-    let truncated = br#"{"schemaVersion":1,"pins":["thread-1"]"#;
-    fs::write(legacy.state_path(), truncated).expect("write truncated fixture");
+fn inject_operator_envelope(store: &SqliteStore, json: &str) {
+    store
+        .load_state()
+        .expect("initialize SQLite before raw injection");
+    let conn = Connection::open(store.db_path()).expect("raw SQLite");
+    conn.execute(
+        "INSERT INTO operator_state(key,value_json,updated_at_unix_ms)
+         VALUES('operator-state-v1',?1,0)
+         ON CONFLICT(key) DO UPDATE SET value_json=excluded.value_json",
+        [json],
+    )
+    .expect("inject operator envelope");
+}
 
+fn read_operator_envelope(store: &SqliteStore) -> String {
+    let conn = Connection::open(store.db_path()).expect("read SQLite");
+    conn.query_row(
+        "SELECT value_json FROM operator_state WHERE key='operator-state-v1'",
+        [],
+        |row| row.get(0),
+    )
+    .expect("read exact operator envelope")
+}
+
+#[test]
+fn truncated_operator_envelope_is_refused_without_replacement() {
+    let root = tempdir().expect("tempdir");
     let store = SqliteStore::at(root.path());
+    let truncated = r#"{"schemaVersion":1,"pins":["thread-1"]"#;
+    inject_operator_envelope(&store, truncated);
+
     let error = store
         .load_state()
-        .expect_err("truncated legacy state must block migration");
+        .expect_err("truncated live SQLite operator envelope must fail closed");
     assert!(
-        error.to_string().contains("legacy") || error.to_string().contains("state-v1"),
-        "unexpected legacy error: {error:#}"
+        format!("{error:#}").contains("operator envelope"),
+        "unexpected operator corruption error: {error:#}"
     );
-    assert_eq!(
-        fs::read(store.legacy_state_path()).expect("read retained legacy state"),
-        truncated
-    );
-    assert!(
-        !store.legacy_backup_path().exists(),
-        "a backup must only be declared valid after the legacy document parses"
-    );
+    assert_eq!(read_operator_envelope(&store), truncated);
 }
 
 #[test]
 fn forward_operator_state_schema_is_refused_without_replacement() {
     let root = tempdir().expect("tempdir");
-    let store = FileStore::at(root.path());
-    fs::create_dir_all(store.state_path().parent().expect("state parent"))
-        .expect("create state dir");
-    let future = br#"{"schemaVersion":2,"pins":["keep-me"]}"#;
-    fs::write(store.state_path(), future).expect("write forward operator fixture");
+    let store = SqliteStore::at(root.path());
+    let future = r#"{"schemaVersion":2,"pins":["keep-me"]}"#;
+    inject_operator_envelope(&store, future);
 
     let error = store
         .load_state()
-        .expect_err("forward operator schema must be refused");
+        .expect_err("future operator envelope must be refused");
     assert!(
-        error
-            .to_string()
-            .contains("unsupported LocalStore schemaVersion 2"),
+        format!("{error:#}").contains("unsupported LocalStore schemaVersion 2"),
         "unexpected operator schema error: {error:#}"
     );
-    assert_eq!(
-        fs::read(store.state_path()).expect("read retained state"),
-        future
-    );
+    assert_eq!(read_operator_envelope(&store), future);
 }
 
 #[test]

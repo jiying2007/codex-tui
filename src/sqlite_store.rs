@@ -17,7 +17,6 @@ use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::collections::BTreeMap;
 use std::fs;
-use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tempfile::NamedTempFile;
@@ -26,11 +25,10 @@ mod recovery;
 use recovery::{preserve_sqlite_image, restore_preserved_sqlite_image, validate_recovery_database};
 
 const OPERATOR_STATE_KEY: &str = "operator-state-v1";
-const LEGACY_IMPORT_KEY: &str = "legacy-state-v1-imported";
 
 #[derive(Clone, Debug)]
 pub struct SqliteStore {
-    legacy: FileStore,
+    config_store: FileStore,
     db_path: PathBuf,
 }
 
@@ -39,7 +37,6 @@ pub struct StoreHealth {
     pub schema_version: i64,
     pub integrity: String,
     pub db_path: PathBuf,
-    pub legacy_import: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -60,27 +57,18 @@ pub struct RecoveryRestoreReceipt {
 
 impl SqliteStore {
     pub fn discover() -> Result<Self> {
-        Self::from_legacy(FileStore::discover()?)
+        Ok(Self::from_config_store(FileStore::discover()?))
     }
 
     pub fn at(root: impl Into<PathBuf>) -> Self {
-        let root = root.into();
-        let legacy = FileStore::at(&root);
-        Self {
-            db_path: root.join("state").join("state-v2.sqlite3"),
-            legacy,
-        }
+        Self::from_config_store(FileStore::at(root))
     }
 
-    pub fn from_legacy(legacy: FileStore) -> Result<Self> {
-        let state_path = legacy.state_path();
-        let state_dir = state_path
-            .parent()
-            .context("legacy state path has no parent")?;
-        Ok(Self {
-            db_path: state_dir.join("state-v2.sqlite3"),
-            legacy,
-        })
+    fn from_config_store(config_store: FileStore) -> Self {
+        Self {
+            db_path: config_store.data_dir().join("state-v2.sqlite3"),
+            config_store,
+        }
     }
 
     pub fn db_path(&self) -> &Path {
@@ -88,28 +76,16 @@ impl SqliteStore {
     }
 
     pub fn config_path(&self) -> PathBuf {
-        self.legacy.config_path()
-    }
-
-    pub fn legacy_state_path(&self) -> PathBuf {
-        self.legacy.state_path()
-    }
-
-    pub fn legacy_backup_path(&self) -> PathBuf {
-        self.legacy
-            .state_path()
-            .with_file_name("state-v1.json.pre-sqlite-backup")
+        self.config_store.config_path()
     }
 
     pub fn health(&self) -> Result<StoreHealth> {
         let conn = self.open_ready()?;
         let integrity = quick_check(&conn)?;
-        let legacy_import = metadata_get(&conn, LEGACY_IMPORT_KEY)?;
         Ok(StoreHealth {
             schema_version: conn.query_row("PRAGMA user_version", [], |row| row.get(0))?,
             integrity,
             db_path: self.db_path.clone(),
-            legacy_import,
         })
     }
 
@@ -1060,7 +1036,6 @@ impl SqliteStore {
             .with_context(|| format!("open SQLite store {}", self.db_path.display()))?;
         configure_connection(&conn)?;
         ensure_schema(&mut conn)?;
-        self.migrate_legacy_state(&mut conn)?;
         recovery::validate_operator_envelope(&conn)?;
         let integrity = quick_check(&conn)?;
         anyhow::ensure!(
@@ -1070,55 +1045,11 @@ impl SqliteStore {
         ensure_private_file(&self.db_path)?;
         Ok(conn)
     }
-
-    fn migrate_legacy_state(&self, conn: &mut Connection) -> Result<()> {
-        if metadata_get(conn, LEGACY_IMPORT_KEY)?.is_some() {
-            return Ok(());
-        }
-
-        let legacy_path = self.legacy_state_path();
-        if !legacy_path.exists() {
-            metadata_set(conn, LEGACY_IMPORT_KEY, "none")?;
-            return Ok(());
-        }
-
-        let bytes = fs::read(&legacy_path)
-            .with_context(|| format!("read legacy state {}", legacy_path.display()))?;
-        let state: LocalStateV1 =
-            serde_json::from_slice(&bytes).context("parse legacy state-v1.json")?;
-        anyhow::ensure!(
-            state.schema_version == 1,
-            "unsupported legacy schemaVersion {}",
-            state.schema_version
-        );
-
-        let backup = self.legacy_backup_path();
-        if !backup.exists() {
-            write_private_file(&backup, &bytes).context("backup legacy state-v1.json")?;
-        }
-
-        let tx = conn.transaction().context("begin legacy state migration")?;
-        save_operator_state_tx(&tx, &state)?;
-        metadata_set_tx(&tx, LEGACY_IMPORT_KEY, "imported")?;
-        tx.commit().context("commit legacy state migration")?;
-
-        let migrated = legacy_path.with_file_name("state-v1.json.migrated");
-        if !migrated.exists() {
-            fs::rename(&legacy_path, &migrated).with_context(|| {
-                format!(
-                    "archive migrated legacy state {} -> {}",
-                    legacy_path.display(),
-                    migrated.display()
-                )
-            })?;
-        }
-        Ok(())
-    }
 }
 
 impl LocalStore for SqliteStore {
     fn load_config(&self) -> Result<AppConfig> {
-        self.legacy.load_config()
+        self.config_store.load_config()
     }
 
     fn load_state(&self) -> Result<LocalStateV1> {
@@ -1570,32 +1501,6 @@ fn load_hot_slots(conn: &Connection) -> Result<Vec<HotSlot>> {
     .collect()
 }
 
-fn metadata_get(conn: &Connection, key: &str) -> Result<Option<String>> {
-    conn.query_row("SELECT value FROM metadata WHERE key=?1", [key], |row| {
-        row.get(0)
-    })
-    .optional()
-    .map_err(Into::into)
-}
-
-fn metadata_set(conn: &Connection, key: &str, value: &str) -> Result<()> {
-    conn.execute(
-        "INSERT INTO metadata(key,value) VALUES(?1,?2)
-         ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-        params![key, value],
-    )?;
-    Ok(())
-}
-
-fn metadata_set_tx(tx: &Transaction<'_>, key: &str, value: &str) -> Result<()> {
-    tx.execute(
-        "INSERT INTO metadata(key,value) VALUES(?1,?2)
-         ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-        params![key, value],
-    )?;
-    Ok(())
-}
-
 fn quick_check(conn: &Connection) -> Result<String> {
     conn.query_row("PRAGMA quick_check(1)", [], |row| row.get(0))
         .context("SQLite quick_check")
@@ -1667,21 +1572,6 @@ fn ensure_private_parent(path: &Path) -> Result<()> {
     set_dir_private(parent)
 }
 
-fn write_private_file(path: &Path, bytes: &[u8]) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-        set_dir_private(parent)?;
-    }
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)
-        .with_context(|| format!("create private file {}", path.display()))?;
-    file.write_all(bytes)?;
-    file.sync_all()?;
-    ensure_private_file(path)
-}
-
 #[cfg(unix)]
 fn set_dir_private(path: &Path) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
@@ -1709,7 +1599,6 @@ fn ensure_private_file(_path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::domain::ThreadUiState;
     use crate::forge::{ForgeIdentity, ForgeProviderKind};
     use crate::forge_mutation::{ForgeMutationPlan, ForgeMutationReceipt};
     use crate::planning::{LinkRole, SavedViewLayout};
@@ -1863,60 +1752,21 @@ mod tests {
     }
 
     #[test]
-    fn imports_legacy_json_transactionally_and_preserves_backup() {
+    fn first_install_ignores_obsolete_json_state_without_modifying_it() {
         let root = tempdir().expect("tempdir");
-        let legacy = FileStore::at(root.path());
-        let mut state = LocalStateV1::default();
-        state.pins.insert("thread-1".into());
-        state.aliases.insert("thread-1".into(), "primary".into());
-        state.thread_ui.insert(
-            "thread-1".into(),
-            ThreadUiState {
-                draft: "draft".into(),
-                scroll: 4,
-                follow: false,
-            },
-        );
-        legacy.save_state(&state).expect("legacy state");
-
+        let obsolete = root.path().join("state").join("state-v1.json");
+        fs::create_dir_all(obsolete.parent().unwrap()).expect("state directory");
+        let old_bytes = br#"{"schemaVersion":1,"pins":["old-session"]}"#;
+        fs::write(&obsolete, old_bytes).expect("write obsolete state");
         let store = SqliteStore::at(root.path());
-        let loaded = store.load_state().expect("migrated state");
-        assert_eq!(loaded, state);
-        assert!(store.db_path().exists());
-        assert!(store.legacy_backup_path().exists());
-        assert!(!store.legacy_state_path().exists());
-        assert!(
-            store
-                .legacy_state_path()
-                .with_file_name("state-v1.json.migrated")
-                .exists()
-        );
 
-        let health = store.health().expect("health");
+        let state = store.load_state().expect("fresh SQLite");
+        assert!(state.pins.is_empty(), "old JSON state must not be imported");
+        assert_eq!(fs::read(&obsolete).expect("read obsolete state"), old_bytes);
+        assert!(store.db_path().exists());
+        let health = store.health().expect("fresh health");
         assert_eq!(health.schema_version, DB_SCHEMA_VERSION);
         assert_eq!(health.integrity, "ok");
-        assert_eq!(health.legacy_import.as_deref(), Some("imported"));
-    }
-
-    #[test]
-    fn legacy_file_is_not_reimported_after_sqlite_changes() {
-        let root = tempdir().expect("tempdir");
-        let legacy = FileStore::at(root.path());
-        let mut old = LocalStateV1::default();
-        old.pins.insert("old".into());
-        legacy.save_state(&old).expect("legacy");
-
-        let store = SqliteStore::at(root.path());
-        let mut current = store.load_state().expect("import");
-        current.pins.clear();
-        current.pins.insert("new".into());
-        store.save_state(&current).expect("save SQLite");
-
-        fs::copy(store.legacy_backup_path(), store.legacy_state_path())
-            .expect("restore stale legacy file");
-
-        let reloaded = store.load_state().expect("reload");
-        assert_eq!(reloaded.pins, BTreeSet::from(["new".into()]));
     }
 
     #[test]
@@ -2314,7 +2164,7 @@ mod tests {
         let store = SqliteStore::at(root.path());
         let config = store.load_config().expect("config");
         assert!(config.ui.mouse);
-        assert!(store.legacy.config_path().exists());
+        assert!(store.config_store.config_path().exists());
         store
             .save_state(&LocalStateV1::default())
             .expect("save state");

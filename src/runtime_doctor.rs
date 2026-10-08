@@ -47,10 +47,6 @@ pub(crate) async fn doctor(scope: Option<&str>, target_override: Option<&str>) -
                 println!("store-backend: sqlite");
                 println!("store-schema: {}", health.schema_version);
                 println!("integrity: {}", health.integrity);
-                println!(
-                    "legacy-import: {}",
-                    health.legacy_import.as_deref().unwrap_or("unknown")
-                );
                 match store.load_planning_snapshot() {
                     Ok(snapshot) => {
                         println!("work-cards: {}", snapshot.cards.len());

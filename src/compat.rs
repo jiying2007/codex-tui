@@ -147,10 +147,6 @@ pub async fn probe() -> CompatReport {
                 "SQLite integrity check passed",
             );
             component.facts.insert("integrity".into(), health.integrity);
-            component.facts.insert(
-                "legacyImport".into(),
-                health.legacy_import.unwrap_or_else(|| "unknown".into()),
-            );
             component
         }
         Ok(health) => {
