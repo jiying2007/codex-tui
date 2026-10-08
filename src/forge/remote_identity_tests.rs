@@ -14,9 +14,7 @@ fn uri_credentials_never_become_a_forge_project_identity() {
             "credential-bearing URL must fail closed"
         );
     }
-    assert!(
-        redact_git_remote_url("user@internal.example:team/repo.git?token=SECRET").is_err()
-    );
+    assert!(redact_git_remote_url("user@internal.example:team/repo.git?token=SECRET").is_err());
 }
 
 #[test]
