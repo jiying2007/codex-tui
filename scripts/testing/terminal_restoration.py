@@ -148,10 +148,8 @@ def probe(binary, output, failed_save):
             drain(.35)
             raw = not bool(termios.tcgetattr(slave)[3] & (termios.ICANON | termios.ECHO))
             require(raw, "raw mode not entered")
-            send(b"?", "open help")
-            # Toggle explicitly: Esc is not a verified help-dismiss handshake and
-            # an ESC prefix can race the next control-key event on a loaded PTY.
-            send(b"?", "close help with help toggle")
+            # Exercise palette from a clean Registry: help is a separate overlay
+            # and must not make palette visibility depend on prior modal timing.
             offset = send(b"\x0b", "open command palette")
             try:
                 wait_for(lambda: b"Command Palette" in text(bytes(stream[offset:])),
@@ -168,6 +166,8 @@ def probe(binary, output, failed_save):
                     f"markers={markers!r}; frame_head={frame[:400]!r}; frame_tail={frame[-384:]!r}"
                 ) from error
             send(b"\x1b", "close palette")
+            send(b"?", "open help")
+            send(b"?", "close help with help toggle")
             fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 28, 100, 0, 0))
             os.kill(proc.pid, signal.SIGWINCH)
             events.append({"action": "resize 100x28"})
