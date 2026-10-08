@@ -22,6 +22,7 @@ PATHS = {
     "tests": "tests/state_migration_qualification.rs",
     "matrix": "tests/failure_matrix.rs",
     "plan": "scripts/release/validate_v1_4_plan.py",
+    "qualification": "scripts/release/create_development_qualification.py",
     "ratchet": "scripts/architecture/check_module_ratchet.py",
     "ci": ".github/workflows/ci.yml",
     "development": ".github/workflows/development-qualification.yml",
@@ -81,6 +82,22 @@ def inspect(root: pathlib.Path = ROOT) -> list[str]:
     forbid("tests", "fixtures/v1.0", "v1.0 product upgrade fixture returned")
     require("plan", "completion=load(V14_COMPLETION)", "current v1.4 authority missing")
     forbid("plan", "V13_COMPLETION", "undeployed predecessor became a live gate")
+    require("qualification", 'return pathlib.Path("release/v1.4-plan.json")',
+            "current plan must be the only qualification default")
+    require("qualification", 'return pathlib.Path("release/v1.4-completion.json")',
+            "current completion must be the only qualification default")
+    for obsolete in ("V12_PLAN_SCHEMA", "V13_PLAN_SCHEMA", "V12_COMPLETION_SCHEMA",
+                     "V13_COMPLETION_SCHEMA", "predecessor-development-completion",
+                     'return "in-progress"'):
+        forbid("qualification", obsolete, "undeployed qualification fallback returned")
+    for obsolete in (
+        "scripts/release/validate_v1_2_plan.py",
+        "scripts/release/validate_v1_2_completion.py",
+        "scripts/release/validate_v1_3_plan.py",
+        "scripts/release/validate_v1_3_completion.py",
+    ):
+        if (root / obsolete).is_file():
+            failures.append(obsolete + ": historical executable qualifier still active")
     require("ratchet", 'DEFAULT_PLAN = pathlib.Path("release/v1.4-plan.json")',
             "single module LOC authority missing")
     forbid("ci", "Enforce v1.3 stable-predecessor module ratchet",

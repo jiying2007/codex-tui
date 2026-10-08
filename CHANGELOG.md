@@ -17,6 +17,10 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
+- Preserve all pending exact-source release self-tests (up to the provider's documented queue bound) with serial, non-cancelling `queue: max` release workflow concurrency, while keeping publication separately serialized.
+
+- Remove unused v1.2/v1.3 standalone qualification scripts and their live development-receipt fallbacks; accept only completed v1.4 first-deployment scope while retaining historical JSON audit records.
+
 - Narrow PR-only performance diagnostics to benchmark-affecting code, policy and validators instead of all release helper edits; preserve unconditional fresh-main evidence and release gates.
 
 - Enforce the first-deployment compatibility boundary across canonical CI, qualification and release gates; retire duplicate undeployed v1.3 module ceilings and live predecessor dependencies. v1.0-v1.3 product upgrade paths are not supported.
