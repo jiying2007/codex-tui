@@ -19,6 +19,10 @@ The repository must have the forge remote that should be qualified. Authenticati
 - GitHub.com: `gh`
 
 No token is copied into codex-tui state or into the retained fixture.
+The capture wrapper limits doctor bundle to 45 seconds and never echoes raw
+subprocess stdout/stderr on failure; only a bounded exit/timeout reason is
+displayed, so token-bearing CLI diagnostics cannot escape to CI logs through
+this capture path.
 
 ## Internal GitLab qualification
 
