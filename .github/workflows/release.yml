@@ -237,6 +237,8 @@ jobs:
 
       - name: Enforce v1.4 module ratchet
         run: python3 scripts/architecture/check_module_ratchet.py release/v1.4-plan.json
+      - name: Enforce first-deployment compatibility contract
+        run: python3 scripts/architecture/check_first_deployment.py
       - name: Enforce upstream convergence contract
         run: python3 scripts/architecture/check_upstream_convergence.py
 

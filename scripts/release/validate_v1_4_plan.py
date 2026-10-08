@@ -6,7 +6,6 @@ import pathlib
 import re
 
 PLAN = pathlib.Path("release/v1.4-plan.json")
-V13_COMPLETION = pathlib.Path("release/v1.3-completion.json")
 V14_COMPLETION = pathlib.Path("release/v1.4-completion.json")
 EXPECTED = [
     ("board-large-dataset-navigation", "P0"),
@@ -33,7 +32,7 @@ def package_version() -> str:
 
 def main() -> int:
     plan=load(PLAN)
-    v13=load(V13_COMPLETION)
+    completion=load(V14_COMPLETION)
     if plan.get("schema")!="codex-tui/v1.4-plan/v1":
         raise SystemExit("unexpected v1.4 plan schema")
     if plan.get("targetVersion")!="1.4.0":
@@ -41,15 +40,16 @@ def main() -> int:
     if plan.get("entryMainSha")!="01e1f3d20d7b234b1ff17f85cc05321450e9fcf5":
         raise SystemExit("v1.4 entry main SHA drifted")
     current = package_version()
-    if V14_COMPLETION.is_file():
-        if current != "1.4.0":
-            raise SystemExit("v1.4 completion requires package version 1.4.0")
-    elif current != "1.3.0":
-        raise SystemExit("v1.4 integration must retain stable predecessor package version 1.3.0 until completion")
-    if v13.get("schema")!="codex-tui/v1.3-completion/v1" or v13.get("status")!="development-scope-complete":
-        raise SystemExit("v1.3 predecessor completion is not retained")
-    if v13.get("stableReady") is not False or v13.get("publicationAllowed") is not False:
-        raise SystemExit("v1.4 must not reinterpret hosted v1.3 evidence as stable PASS")
+    if not V14_COMPLETION.is_file():
+        raise SystemExit("first-deployment completion is missing")
+    if current != "1.4.0":
+        raise SystemExit("first-deployment candidate must be 1.4.0")
+    if completion.get("schema") != "codex-tui/v1.4-completion/v1":
+        raise SystemExit("completion schema drifted")
+    if completion.get("status") != "development-scope-complete":
+        raise SystemExit("scope completion must remain complete")
+    if completion.get("stableReady") is not False or completion.get("publicationAllowed") is not False:
+        raise SystemExit("development completion cannot claim stable readiness/publication")
     actual=[(x.get("id"),x.get("priority")) for x in plan.get("priorities",[])]
     if actual!=EXPECTED:
         raise SystemExit("v1.4 priority/order drifted: {!r}".format(actual))
@@ -66,8 +66,7 @@ def main() -> int:
     for path in ("src/app.rs","src/ui.rs","src/app_server.rs","src/main.rs","src/conversation.rs"):
         if not isinstance(ratchet.get(path),int) or ratchet[path] <= 0:
             raise SystemExit("v1.4 ratchet missing {}".format(path))
-    state = "completion-active" if V14_COMPLETION.is_file() else "integration-active"
-    print("VALID v1.4 plan: workflow-completion reconciliation authorized; " + state)
+    print("VALID first-deployment v1.4 plan; historical predecessor is audit-only")
     return 0
 
 if __name__=="__main__":
