@@ -10,6 +10,7 @@ pub use crate::forge_types::{
 use crate::latest_read::{ReadEnvelope, ReadFence, ReadScope, next_current};
 use anyhow::{Context, Result, anyhow, bail};
 use serde::Deserialize;
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::Stdio;
 use std::sync::Arc;
@@ -332,6 +333,41 @@ pub async fn probe_thread(thread_id: ThreadId, cwd: String) -> ForgeObservation 
     RoutingForgeProvider.probe(thread_id, cwd).await
 }
 
+fn gitlab_observation_status(
+    issues_available: bool,
+    merge_requests_available: bool,
+    pipelines_available: bool,
+) -> (
+    BTreeMap<ForgeCapability, CapabilityState>,
+    ForgeFreshness,
+    Option<String>,
+) {
+    let mut capabilities = default_capabilities();
+    for (capability, available) in [
+        (ForgeCapability::Issues, issues_available),
+        (ForgeCapability::MergeRequests, merge_requests_available),
+        (ForgeCapability::Pipelines, pipelines_available),
+    ] {
+        capabilities.insert(
+            capability,
+            if available {
+                CapabilityState::Available
+            } else {
+                CapabilityState::Unavailable
+            },
+        );
+    }
+    if !issues_available && !merge_requests_available && !pipelines_available {
+        (
+            capabilities,
+            ForgeFreshness::Unavailable,
+            Some("all GitLab read-only data endpoints are unavailable".into()),
+        )
+    } else {
+        (capabilities, ForgeFreshness::Fresh, None)
+    }
+}
+
 pub async fn probe_gitlab(thread_id: ThreadId, cwd: String) -> Result<ForgeObservation> {
     let remote = resolve_git_remote(Path::new(&cwd)).await?;
     probe_gitlab_with_remote(thread_id, cwd, remote).await
@@ -352,38 +388,27 @@ pub(crate) async fn probe_gitlab_with_remote(
     let project_id = json_id_to_string(&project.id)?;
     let encoded_id = percent_encode_component(&project_id);
 
-    // Keep the normal user-visible refresh at four glab API subprocesses:
-    // project identity + issues + merge requests + pipelines.
-    let issues: Vec<GitLabIssue> = glab_api_json(
-        &cwd,
-        &remote.host,
-        &format!(
-            "/projects/{encoded_id}/issues?scope=all&state=all&order_by=updated_at&sort=desc&per_page={DEFAULT_PAGE_SIZE}"
-        ),
-    )
-    .await
-    .context("load GitLab issues")?;
-
-    let merge_requests: Vec<GitLabMergeRequest> = glab_api_json(
-        &cwd,
-        &remote.host,
-        &format!("/projects/{encoded_id}/merge_requests?scope=all&state=opened&per_page={DEFAULT_PAGE_SIZE}"),
-    )
-    .await
-    .context("load GitLab merge requests")?;
-
-    let pipelines: Vec<GitLabPipeline> = glab_api_json(
-        &cwd,
-        &remote.host,
-        &format!("/projects/{encoded_id}/pipelines?per_page={DEFAULT_PAGE_SIZE}"),
-    )
-    .await
-    .context("load GitLab pipelines")?;
-
-    let mut capabilities = default_capabilities();
-    capabilities.insert(ForgeCapability::Issues, CapabilityState::Available);
-    capabilities.insert(ForgeCapability::MergeRequests, CapabilityState::Available);
-    capabilities.insert(ForgeCapability::Pipelines, CapabilityState::Available);
+    // Resolve project identity first; the three dependent data reads then
+    // execute concurrently with independent capability outcomes. The Forge
+    // actor bounds concurrent projects, and each glab child has a deadline.
+    let issues_endpoint = format!(
+        "/projects/{encoded_id}/issues?scope=all&state=all&order_by=updated_at&sort=desc&per_page={DEFAULT_PAGE_SIZE}"
+    );
+    let merge_requests_endpoint = format!(
+        "/projects/{encoded_id}/merge_requests?scope=all&state=opened&per_page={DEFAULT_PAGE_SIZE}"
+    );
+    let pipelines_endpoint =
+        format!("/projects/{encoded_id}/pipelines?per_page={DEFAULT_PAGE_SIZE}");
+    let (issues_result, merge_requests_result, pipelines_result) = tokio::join!(
+        glab_api_json::<Vec<GitLabIssue>>(&cwd, &remote.host, &issues_endpoint),
+        glab_api_json::<Vec<GitLabMergeRequest>>(&cwd, &remote.host, &merge_requests_endpoint),
+        glab_api_json::<Vec<GitLabPipeline>>(&cwd, &remote.host, &pipelines_endpoint),
+    );
+    let (capabilities, freshness, error) = gitlab_observation_status(
+        issues_result.is_ok(),
+        merge_requests_result.is_ok(),
+        pipelines_result.is_ok(),
+    );
 
     Ok(ForgeObservation {
         thread_id,
@@ -399,7 +424,8 @@ pub(crate) async fn probe_gitlab_with_remote(
             default_branch: project.default_branch,
         }),
         capabilities,
-        issues: issues
+        issues: issues_result
+            .unwrap_or_default()
             .into_iter()
             .map(|issue| ForgeIssueSummary {
                 iid: issue.iid,
@@ -409,7 +435,8 @@ pub(crate) async fn probe_gitlab_with_remote(
                 updated_at: issue.updated_at,
             })
             .collect(),
-        change_requests: merge_requests
+        change_requests: merge_requests_result
+            .unwrap_or_default()
             .into_iter()
             .map(|change| ChangeRequestSummary {
                 iid: change.iid,
@@ -424,7 +451,8 @@ pub(crate) async fn probe_gitlab_with_remote(
                 blocking_discussions_resolved: change.blocking_discussions_resolved,
             })
             .collect(),
-        pipelines: pipelines
+        pipelines: pipelines_result
+            .unwrap_or_default()
             .into_iter()
             .map(|pipeline| PipelineSummary {
                 id: pipeline.id,
@@ -436,8 +464,8 @@ pub(crate) async fn probe_gitlab_with_remote(
             .collect(),
         review: None,
         observed_at_unix_ms: now_unix_ms(),
-        freshness: ForgeFreshness::Fresh,
-        error: None,
+        freshness,
+        error,
     })
 }
 
@@ -1035,5 +1063,7 @@ fn now_unix_ms() -> u64 {
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+mod gitlab_projection_tests;
 #[cfg(test)]
 mod read_order_tests;

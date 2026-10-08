@@ -49,6 +49,21 @@ Probes are coalesced conservatively: threads sharing one checkout share the init
 
 This preserves ADR-011's decision to stay on `glab` unless a measured hard trigger justifies native transport.
 
+## Fault-isolated normal refresh (v1.4 pre-release)
+
+Numeric project identity remains a required read; a failed project lookup
+fails closed. After identity, Issues, Merge Requests and Pipelines now use
+three bounded concurrent glab reads. Each endpoint independently updates
+its capability state. A failing endpoint contributes an empty projection
+and an unavailable capability, **not** an empty-but-healthy result. Any
+successful endpoint keeps the project observation fresh and usable.
+If all three fail, the observation is unavailable with a bounded generic
+reason, without copying raw CLI stderr into the shared view.
+
+The initial project read plus three data reads remains four subprocesses
+per logical refresh. The actor remains bounded and coalesces repository
+observations. This does not claim any real internal GitLab server is healthy.
+
 ## Planning projection
 
 ### Issues
