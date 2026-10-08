@@ -74,3 +74,27 @@ The output schema is `codex-tui/forge-capability-fixture/v1`. It contains:
 It deliberately excludes authentication tokens, repository paths, remote URLs, prompts/transcripts, comment bodies and raw error text.
 
 A nonzero exit code means the fixture was still written, but one or more requested requirements did not match the observed environment.
+
+## Internal first-deployment admission (provider-specific)
+
+Public Stable releases remain provider-neutral. Internal GitLab adoption
+additionally requires a real, authenticated capability fixture from a
+representative internal repository using the exact candidate binary.
+
+After running the GitLab capture command above, validate the retained fixture:
+
+```bash
+SHA="$(git rev-parse HEAD)"
+python3 scripts/release/validate_internal_gitlab.py \
+  --fixture release/evidence/provider/gitlab.json \
+  --source-sha "$SHA" \
+  --output release/evidence/provider/internal-gitlab-admission.json
+```
+
+This admission requires fresh (at most 7-day-old) Linux / glab evidence,
+authenticated GitLab access, and explicitly requested **and observed**
+available Issues, Merge Requests and Pipelines. Its receipt hashes the exact
+input fixture, reports only reason codes and cannot overwrite prior evidence.
+Unit tests use synthetic fixtures to test rejections; they never establish
+real provider PASS. The validation also does not substitute for real Codex,
+controlling SSH TTY, administrator protection or publishing authorization.
