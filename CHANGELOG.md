@@ -17,6 +17,8 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
+- Enforce the first-deployment compatibility boundary across canonical CI, qualification and release gates; retire duplicate undeployed v1.3 module ceilings and live predecessor dependencies. v1.0-v1.3 product upgrade paths are not supported.
+
 - Treat v1.4 as the first actual production installation: remove unused v1.0 JSON-to-SQLite state import, backup/status and migration-specific fixture surface; preserve SQLite corruption, forward-schema, backup and restore safeguards.
 - Initialize SQLite directly at the first-deployment v4 schema; reject earlier undeployed versions and old backup images instead of retaining unused v1-v3 migrations.
 

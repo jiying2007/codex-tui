@@ -628,10 +628,10 @@ jobs:
           PYTHONPATH=scripts/release python -c 'import linux_qualify as q; assert q.stable_version_allowed("1.0.0"); assert q.stable_version_allowed("1.1.0"); assert q.stable_version_allowed("2.3.4"); assert not q.stable_version_allowed("0.9.0"); assert not q.stable_version_allowed("1.1.0-rc.1"); assert not q.stable_version_allowed("01.1.0")'
       - name: Verify Python scripts parse
         run: python -c "import pathlib, py_compile; [py_compile.compile(str(p), doraise=True) for p in pathlib.Path('scripts').rglob('*.py')]"
-      - name: Enforce v1.3 stable-predecessor module ratchet
-        run: python scripts/architecture/check_module_ratchet.py release/v1.3-plan.json
       - name: Enforce v1.4 active module ratchet
         run: python scripts/architecture/check_module_ratchet.py release/v1.4-plan.json
+      - name: Enforce first-deployment compatibility contract
+        run: python scripts/architecture/check_first_deployment.py
       - name: Enforce upstream convergence boundary
         run: python scripts/architecture/check_upstream_convergence.py
       - run: cargo fmt --all -- --check

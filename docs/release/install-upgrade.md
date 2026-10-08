@@ -81,7 +81,25 @@ binary ABI are separate tested contracts. Musl/Alpine is not this GNU target.
 
 No Nerd Font is required.
 
+## First production deployment (v1.4)
+
+The public v1.0.0 GitHub Release is retained as history, but the maintainer
+confirms that neither v1.0 nor v1.4 has been deployed. v1.4 is the first
+operational installation, **not a v1.0-v1.3 in-place upgrade**. Start with
+fresh local state and normal TOML configuration. Do not expect legacy
+`state-v1.json` import or old SQLite version migration. Obsolete state
+files are neither imported nor deleted: retain them for audit.
+
+New SQLite state initializes at schema v4; only current v4 is accepted for
+existing databases and recovery. Predeployment v1-v3 images and unsupported
+future versions fail closed without overwriting them. Current Codex App Server,
+GitLab/GitHub, Linux ABI and SSH controlling-TTY still require qualification.
+
 ## Upgrade
+
+The following procedure applies **only after an actual v1.4-or-newer
+deployment** and an explicit storage/rollback compatibility review. It
+does not authorize upgrading v1.0-v1.3 product state.
 
 Before replacing an existing binary:
 
