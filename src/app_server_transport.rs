@@ -3,11 +3,13 @@ use anyhow::{Context, Result};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::Value;
 use std::process::Stdio;
+use std::time::Duration;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::TcpStream;
 #[cfg(unix)]
 use tokio::net::UnixStream;
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
+use tokio::time::timeout;
 #[cfg(unix)]
 use tokio_tungstenite::client_async_with_config;
 use tokio_tungstenite::{
@@ -41,6 +43,7 @@ pub struct AppServerTransport {
 
 const APP_SERVER_MAX_MESSAGE_BYTES: usize = 64 * 1024 * 1024;
 const APP_SERVER_MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
+const APP_SERVER_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
 fn websocket_config() -> WebSocketConfig {
     WebSocketConfig::default()
@@ -50,6 +53,25 @@ fn websocket_config() -> WebSocketConfig {
 
 impl AppServerTransport {
     pub async fn connect(target: &ResolvedAppServerTarget) -> Result<Self> {
+        Self::connect_with_deadline(target, APP_SERVER_CONNECT_TIMEOUT).await
+    }
+
+    async fn connect_with_deadline(
+        target: &ResolvedAppServerTarget,
+        deadline: Duration,
+    ) -> Result<Self> {
+        timeout(deadline, Self::connect_unbounded(target))
+            .await
+            .with_context(|| {
+                format!(
+                    "App Server target {:?} connect/handshake timed out after {}ms",
+                    target.name,
+                    deadline.as_millis()
+                )
+            })?
+    }
+
+    async fn connect_unbounded(target: &ResolvedAppServerTarget) -> Result<Self> {
         let inner = match &target.endpoint {
             ResolvedAppServerEndpoint::Stdio { codex_bin } => {
                 let mut command = Command::new(codex_bin.clone().unwrap_or_else(|| "codex".into()));
@@ -365,6 +387,32 @@ mod tests {
         );
         let target = ResolvedAppServerTarget::resolve(&config, None).expect("remote target");
         assert_eq!(target.diagnostic_endpoint(), "wss://example.test/rpc");
+    }
+
+    #[tokio::test]
+    async fn remote_websocket_handshake_has_a_bounded_connection_deadline() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind stalled handshake peer");
+        let address = listener.local_addr().expect("stalled peer address");
+        let server = tokio::spawn(async move {
+            let (_stream, _) = listener.accept().await.expect("accept TCP without WS reply");
+            tokio::time::sleep(Duration::from_millis(250)).await;
+        });
+        let target = ResolvedAppServerTarget {
+            name: "stalled-websocket-fixture".into(),
+            endpoint: ResolvedAppServerEndpoint::WebSocket {
+                url: format!("ws://{address}/rpc"),
+                auth_token: None,
+            },
+        };
+        let error = AppServerTransport::connect_with_deadline(&target, Duration::from_millis(35))
+            .await
+            .err()
+            .expect("stalled WebSocket upgrade must time out");
+        assert!(error.to_string().contains("connect/handshake timed out"));
+        assert!(!format!("{error:#}").contains("Bearer"));
+        server.abort();
     }
 
     #[tokio::test]

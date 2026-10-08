@@ -703,11 +703,12 @@ pub(crate) async fn resolve_git_remote(cwd: &Path) -> Result<RemoteIdentity> {
 
     let selected = select_remote(&remotes, branch_remote.as_deref())?;
     let (host, path_with_namespace) = parse_git_remote_url(&selected.1)
-        .ok_or_else(|| anyhow!("unsupported Git remote URL: {}", selected.1))?;
+        .ok_or_else(|| anyhow!("unsupported Git remote URL (redacted)"))?;
+    let remote_url = redact_git_remote_url(&selected.1)?;
 
     Ok(RemoteIdentity {
         remote_name: selected.0.clone(),
-        remote_url: selected.1.clone(),
+        remote_url,
         host,
         path_with_namespace,
     })
@@ -760,6 +761,30 @@ fn select_remote<'a>(
             .collect::<Vec<_>>()
             .join(", ")
     )
+}
+
+fn redact_git_remote_url(raw: &str) -> Result<String> {
+    let raw = raw.trim();
+    // Display/diagnostic identity is not a Git command authority. Never retain
+    // embedded URL userinfo, query secrets or fragments in Forge observations.
+    if raw.contains("://") {
+        let mut url = url::Url::parse(raw).context("parse Git remote URL (redacted)")?;
+        url.set_username("")
+            .map_err(|_| anyhow!("cannot redact Git remote username"))?;
+        url.set_password(None)
+            .map_err(|_| anyhow!("cannot redact Git remote password"))?;
+        url.set_query(None);
+        url.set_fragment(None);
+        return Ok(url.to_string());
+    }
+    // SCP-style remotes have login@host:path. Keep the hostname/path without
+    // retaining the username, which could be a credential-like identifier.
+    let (authority, path) = raw
+        .split_once(':')
+        .ok_or_else(|| anyhow!("unsupported Git remote URL (redacted)"))?;
+    let host = authority.rsplit_once('@').map_or(authority, |(_, host)| host);
+    anyhow::ensure!(!host.is_empty() && !path.is_empty(), "invalid Git remote identity");
+    Ok(format!("{host}:{path}"))
 }
 
 pub fn parse_git_remote_url(url: &str) -> Option<(String, String)> {
@@ -1216,6 +1241,26 @@ mod tests {
         assert_eq!(
             github.change_request_source_ref(7),
             "github://github.com/repositories/99/pull-requests/7"
+        );
+    }
+
+    #[test]
+    fn forge_remote_display_redacts_url_credentials_query_and_fragments() {
+        let redacted = redact_git_remote_url(
+            "https://alice:never-print@internal.example/group/repo.git?access_token=secret#opaque",
+        )
+        .expect("redact password-bearing remote");
+        assert!(redacted.starts_with("https://internal.example/"));
+        for sensitive in ["alice", "never-print", "secret", "opaque", "access_token"] {
+            assert!(!redacted.contains(sensitive), "remote leaked {sensitive}");
+        }
+        assert_eq!(
+            redact_git_remote_url("git@internal.example:team/repo.git").unwrap(),
+            "internal.example:team/repo.git"
+        );
+        assert_eq!(
+            redact_git_remote_url("ssh://git@internal.example:2222/group/repo.git").unwrap(),
+            "ssh://internal.example:2222/group/repo.git"
         );
     }
 
