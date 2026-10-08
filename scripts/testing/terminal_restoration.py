@@ -159,10 +159,13 @@ def probe(binary, output, failed_save):
             except ProbeFailure as error:
                 # The fake backend uses an isolated HOME. Emit bounded frame context
                 # so a rendering regression is not misdiagnosed as a timing timeout.
-                frame_tail = text(bytes(stream[offset:]))[-384:]
+                frame = text(bytes(stream[offset:]))
+                markers = {name.decode(): name in frame for name in
+                           (b"Command", b"Palette", b"Query", b"Search", b"Help",
+                            b"Board", b"Terminal", b"filter")}
                 raise ProbeFailure(
                     f"{error}; child_exit={proc.poll()}; emitted_bytes={len(stream) - offset}; "
-                    f"frame_tail={frame_tail!r}"
+                    f"markers={markers!r}; frame_head={frame[:400]!r}; frame_tail={frame[-384:]!r}"
                 ) from error
             send(b"\x1b", "close palette")
             fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", 28, 100, 0, 0))
