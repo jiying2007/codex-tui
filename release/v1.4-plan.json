@@ -270,7 +270,8 @@
     "src/ui/overlays.rs": 872,
     "src/ui/terminal.rs": 126,
     "src/forge/tests.rs": 356,
-    "src/app_server_transport/tests.rs": 244
+    "src/app_server_transport/tests.rs": 244,
+    "src/forge/gitlab_projection_tests.rs": 72
   },
   "ratchetPolicy": {
     "baseline": "inherit v1.3 Search & Multi-Target ceilings; feature work may only add bounded module-specific ceilings",
