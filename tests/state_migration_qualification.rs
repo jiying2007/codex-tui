@@ -115,6 +115,52 @@ fn first_install_and_reopen_preserve_sqlite_operator_and_planning_state() {
 }
 
 #[test]
+fn undeployed_sqlite_schema_versions_are_rejected_unchanged() {
+    for old_version in [1_i64, 2, 3] {
+        let root = tempdir().expect("tempdir");
+        let store = SqliteStore::at(root.path());
+        fs::create_dir_all(store.db_path().parent().unwrap()).expect("state dir");
+        let conn = Connection::open(store.db_path()).expect("old schema database");
+        conn.pragma_update(None, "user_version", old_version)
+            .expect("set obsolete schema version");
+        drop(conn);
+
+        let error = store
+            .health()
+            .expect_err("obsolete schema must fail closed");
+        assert!(
+            format!("{error:#}").contains("unsupported SQLite schema version"),
+            "version {old_version} unexpectedly accepted: {error:#}"
+        );
+        let retained = Connection::open(store.db_path()).expect("preserved old database");
+        let version: i64 = retained
+            .query_row("PRAGMA user_version", [], |row| row.get(0))
+            .expect("preserved version");
+        assert_eq!(version, old_version, "old schema must not be auto-upgraded");
+    }
+}
+
+#[test]
+fn obsolete_recovery_image_does_not_replace_current_state() {
+    let root = tempdir().expect("tempdir");
+    let store = SqliteStore::at(root.path());
+    let expected = seed_operator(&store);
+    let old = root.path().join("obsolete-recovery.sqlite3");
+    let conn = Connection::open(&old).expect("create old recovery image");
+    conn.pragma_update(None, "user_version", 2_i64)
+        .expect("mark undeployed schema");
+    drop(conn);
+    let error = store
+        .restore_recovery_backup(&old)
+        .expect_err("unsupported old recovery must fail closed");
+    assert!(
+        format!("{error:#}").contains("unsupported recovery SQLite schema version"),
+        "unexpected recovery refusal: {error:#}"
+    );
+    assert_eq!(store.load_state().expect("live state preserved"), expected);
+}
+
+#[test]
 fn backup_restore_round_trip_preserves_operator_and_planning_state() {
     let root = tempdir().expect("tempdir");
     let store = SqliteStore::at(root.path());

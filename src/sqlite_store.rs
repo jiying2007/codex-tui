@@ -1873,39 +1873,6 @@ mod tests {
     }
 
     #[test]
-    fn schema_v1_upgrades_to_latest_without_losing_m4_state() {
-        let root = tempdir().expect("tempdir");
-        let store = SqliteStore::at(root.path());
-
-        let mut state = LocalStateV1::default();
-        state.pins.insert("thread-1".into());
-        store.save_state(&state).expect("state");
-
-        let mut card = WorkCardRecord::implicit_thread(&crate::domain::ThreadId::new("thread-1"));
-        card.overlay.note = Some("keep me".into());
-        store.upsert_work_card(&card).expect("card");
-
-        {
-            let conn = Connection::open(store.db_path()).expect("open raw database");
-            conn.execute_batch(
-                "DROP TABLE managed_worktrees;
-                 DROP TABLE operation_receipts;
-                 DROP TABLE forge_mutation_receipts;
-                 PRAGMA user_version = 1;",
-            )
-            .expect("downgrade fixture to v1");
-        }
-
-        let health = store.health().expect("upgrade to latest");
-        assert_eq!(health.schema_version, DB_SCHEMA_VERSION);
-        assert_eq!(store.load_state().expect("state after upgrade"), state);
-        assert_eq!(
-            store.load_planning_snapshot().expect("planning").cards,
-            vec![card]
-        );
-    }
-
-    #[test]
     fn managed_worktree_and_unknown_receipt_survive_restart() {
         let root = tempdir().expect("tempdir");
         let store = SqliteStore::at(root.path());
@@ -2028,45 +1995,6 @@ mod tests {
             web_url: "https://gitlab.example.com/team/repo".into(),
             default_branch: Some("main".into()),
         }
-    }
-
-    #[test]
-    fn schema_v2_upgrades_to_latest_and_preserves_m5_receipts() {
-        let root = tempdir().expect("tempdir");
-        let store = SqliteStore::at(root.path());
-        let repo = crate::domain::LocalRepoIdentity {
-            git_common_dir: "/repo/.git".into(),
-            primary_root: "/repo".into(),
-        };
-        let plan = OperationPlan::delete_branch(repo, "/repo".into(), "feature/old".into(), 1);
-        let receipt = OperationReceipt::planned(plan.clone());
-        store
-            .save_operation_receipt(&receipt)
-            .expect("save M5 receipt");
-
-        {
-            let conn = Connection::open(store.db_path()).expect("open raw database");
-            conn.execute_batch(
-                "DROP TABLE forge_mutation_receipts;
-                 PRAGMA user_version = 2;",
-            )
-            .expect("downgrade fixture to v2");
-        }
-
-        let health = store.health().expect("upgrade to latest");
-        assert_eq!(health.schema_version, DB_SCHEMA_VERSION);
-        assert_eq!(
-            store
-                .operation_receipt(&plan.operation_id)
-                .expect("load M5 receipt"),
-            Some(receipt)
-        );
-        assert!(
-            store
-                .load_recent_forge_mutation_receipts(10)
-                .expect("forge receipts")
-                .is_empty()
-        );
     }
 
     #[test]

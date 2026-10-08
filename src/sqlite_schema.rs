@@ -27,22 +27,18 @@ pub(crate) fn configure_connection(conn: &Connection) -> Result<()> {
 }
 
 pub(crate) fn ensure_schema(conn: &mut Connection) -> Result<()> {
-    let mut version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+    let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     anyhow::ensure!(
-        (0..=DB_SCHEMA_VERSION).contains(&version),
+        version == 0 || version == DB_SCHEMA_VERSION,
         "unsupported SQLite schema version {version}"
     );
 
     if version == 0 {
         let tx = conn
             .transaction()
-            .context("begin SQLite schema v1 migration")?;
+            .context("begin first-deployment SQLite schema initialization")?;
         tx.execute_batch(
-            "CREATE TABLE metadata (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL
-             );
-             CREATE TABLE operator_state (
+            "CREATE TABLE operator_state (
                 key TEXT PRIMARY KEY,
                 value_json TEXT NOT NULL,
                 updated_at_unix_ms INTEGER NOT NULL
@@ -110,19 +106,7 @@ pub(crate) fn ensure_schema(conn: &mut Connection) -> Result<()> {
                 target_ref TEXT NOT NULL,
                 updated_at_unix_ms INTEGER NOT NULL
              );
-             PRAGMA user_version = 1;",
-        )
-        .context("create SQLite schema v1")?;
-        tx.commit().context("commit SQLite schema v1")?;
-        version = 1;
-    }
-
-    if version == 1 {
-        let tx = conn
-            .transaction()
-            .context("begin SQLite schema v2 migration")?;
-        tx.execute_batch(
-            "CREATE TABLE managed_worktrees (
+             CREATE TABLE managed_worktrees (
                 repo_common_dir TEXT NOT NULL,
                 repo_primary_root TEXT NOT NULL,
                 canonical_path TEXT NOT NULL,
@@ -146,19 +130,7 @@ pub(crate) fn ensure_schema(conn: &mut Connection) -> Result<()> {
              );
              CREATE INDEX operation_receipts_state_idx
                  ON operation_receipts(state, updated_at_unix_ms DESC);
-             PRAGMA user_version = 2;",
-        )
-        .context("upgrade SQLite schema v1 -> v2")?;
-        tx.commit().context("commit SQLite schema v2")?;
-        version = 2;
-    }
-
-    if version == 2 {
-        let tx = conn
-            .transaction()
-            .context("begin SQLite schema v3 migration")?;
-        tx.execute_batch(
-            "CREATE TABLE forge_mutation_receipts (
+             CREATE TABLE forge_mutation_receipts (
                 operation_id TEXT PRIMARY KEY,
                 plan_json TEXT NOT NULL,
                 state TEXT NOT NULL,
@@ -171,19 +143,7 @@ pub(crate) fn ensure_schema(conn: &mut Connection) -> Result<()> {
              );
              CREATE INDEX forge_mutation_receipts_state_idx
                  ON forge_mutation_receipts(state, updated_at_unix_ms DESC);
-             PRAGMA user_version = 3;",
-        )
-        .context("upgrade SQLite schema v2 -> v3")?;
-        tx.commit().context("commit SQLite schema v3")?;
-        version = 3;
-    }
-
-    if version == 3 {
-        let tx = conn
-            .transaction()
-            .context("begin SQLite schema v4 migration")?;
-        tx.execute_batch(
-            "CREATE TABLE IF NOT EXISTS transcript_documents (
+             CREATE TABLE IF NOT EXISTS transcript_documents (
                 thread_id TEXT NOT NULL,
                 turn_id TEXT NOT NULL,
                 item_id TEXT NOT NULL,
@@ -197,8 +157,9 @@ pub(crate) fn ensure_schema(conn: &mut Connection) -> Result<()> {
                  ON transcript_documents(thread_id);
              PRAGMA user_version = 4;",
         )
-        .context("upgrade SQLite schema v3 -> v4")?;
-        tx.commit().context("commit SQLite schema v4")?;
+        .context("create first-deployment SQLite schema")?;
+        tx.commit()
+            .context("commit first-deployment SQLite schema")?;
     }
 
     // FTS is a derived acceleration layer. The bundled distribution includes FTS5,
