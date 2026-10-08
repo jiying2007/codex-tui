@@ -3,11 +3,13 @@ use anyhow::{Context, Result};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::Value;
 use std::process::Stdio;
+use std::time::Duration;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::TcpStream;
 #[cfg(unix)]
 use tokio::net::UnixStream;
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
+use tokio::time::timeout;
 #[cfg(unix)]
 use tokio_tungstenite::client_async_with_config;
 use tokio_tungstenite::{
@@ -41,6 +43,7 @@ pub struct AppServerTransport {
 
 const APP_SERVER_MAX_MESSAGE_BYTES: usize = 64 * 1024 * 1024;
 const APP_SERVER_MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
+const APP_SERVER_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
 fn websocket_config() -> WebSocketConfig {
     WebSocketConfig::default()
@@ -50,6 +53,25 @@ fn websocket_config() -> WebSocketConfig {
 
 impl AppServerTransport {
     pub async fn connect(target: &ResolvedAppServerTarget) -> Result<Self> {
+        Self::connect_with_deadline(target, APP_SERVER_CONNECT_TIMEOUT).await
+    }
+
+    async fn connect_with_deadline(
+        target: &ResolvedAppServerTarget,
+        deadline: Duration,
+    ) -> Result<Self> {
+        timeout(deadline, Self::connect_unbounded(target))
+            .await
+            .with_context(|| {
+                format!(
+                    "App Server target {:?} connect/handshake timed out after {}ms",
+                    target.name,
+                    deadline.as_millis()
+                )
+            })?
+    }
+
+    async fn connect_unbounded(target: &ResolvedAppServerTarget) -> Result<Self> {
         let inner = match &target.endpoint {
             ResolvedAppServerEndpoint::Stdio { codex_bin } => {
                 let mut command = Command::new(codex_bin.clone().unwrap_or_else(|| "codex".into()));
@@ -268,220 +290,4 @@ where
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::app_server_target::{
-        AppServerConfig, AppServerTargetConfig, ResolvedAppServerEndpoint, ResolvedAppServerTarget,
-    };
-    use serde_json::json;
-    use tokio_tungstenite::accept_async;
-
-    #[tokio::test]
-    async fn stdio_reader_enforces_limit_before_unbounded_line_growth() {
-        use tokio::io::{AsyncWriteExt, BufReader, duplex};
-
-        let (client, mut server) = duplex(128);
-        let writer = tokio::spawn(async move {
-            server
-                .write_all(b"{\"value\":\"abcdefghijklmnopqrstuvwxyz\"}\n")
-                .await
-                .unwrap();
-        });
-        let mut reader = BufReader::new(client);
-        let error = read_bounded_line(&mut reader, 16)
-            .await
-            .expect_err("oversized line must fail");
-        assert!(error.to_string().contains("16 byte limit"));
-        writer.await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn stdio_reader_allows_exact_limit_with_crlf() {
-        use tokio::io::{AsyncWriteExt, BufReader, duplex};
-
-        let (client, mut server) = duplex(128);
-        let writer = tokio::spawn(async move {
-            server.write_all(b"1234567890abcdef\r\n").await.unwrap();
-        });
-        let mut reader = BufReader::new(client);
-        assert_eq!(
-            read_bounded_line(&mut reader, 16).await.unwrap(),
-            Some(b"1234567890abcdef".to_vec())
-        );
-        writer.await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn stdio_reader_skips_blank_lines_and_decodes_json() {
-        use tokio::io::{AsyncWriteExt, BufReader, duplex};
-
-        let (client, mut server) = duplex(128);
-        let writer = tokio::spawn(async move {
-            server.write_all(b"\n  \r\n{\"id\":1}\n").await.unwrap();
-        });
-        let mut reader = BufReader::new(client);
-        assert_eq!(
-            read_stdio_json(&mut reader).await.unwrap(),
-            Some(json!({"id":1}))
-        );
-        writer.await.unwrap();
-    }
-
-    #[test]
-    fn websocket_limits_are_explicit_and_defense_in_depth_check_matches() {
-        let config = websocket_config();
-        assert_eq!(config.max_message_size, Some(APP_SERVER_MAX_MESSAGE_BYTES));
-        assert_eq!(config.max_frame_size, Some(APP_SERVER_MAX_FRAME_BYTES));
-        ensure_message_size(
-            APP_SERVER_MAX_MESSAGE_BYTES,
-            APP_SERVER_MAX_MESSAGE_BYTES,
-            "fixture",
-        )
-        .unwrap();
-        assert!(
-            ensure_message_size(
-                APP_SERVER_MAX_MESSAGE_BYTES + 1,
-                APP_SERVER_MAX_MESSAGE_BYTES,
-                "fixture"
-            )
-            .unwrap_err()
-            .to_string()
-            .contains("byte limit")
-        );
-    }
-
-    #[test]
-    fn remote_target_error_context_never_formats_bearer_token() {
-        let mut config = AppServerConfig {
-            active: "remote".into(),
-            ..AppServerConfig::default()
-        };
-        config.targets.insert(
-            "remote".into(),
-            AppServerTargetConfig::Websocket {
-                url: "wss://example.test/rpc?workspace=a".into(),
-                auth_token_env: None,
-            },
-        );
-        let target = ResolvedAppServerTarget::resolve(&config, None).expect("remote target");
-        assert_eq!(target.diagnostic_endpoint(), "wss://example.test/rpc");
-    }
-
-    #[tokio::test]
-    async fn websocket_transport_round_trips_json_rpc_frames() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("bind websocket fixture");
-        let address = listener.local_addr().expect("fixture address");
-        let server = tokio::spawn(async move {
-            let (stream, _) = listener.accept().await.expect("accept websocket");
-            let mut websocket = accept_async(stream).await.expect("server handshake");
-            let request = websocket
-                .next()
-                .await
-                .expect("request frame")
-                .expect("request");
-            let Message::Text(text) = request else {
-                panic!("expected text JSON-RPC frame");
-            };
-            let value: Value = serde_json::from_str(text.as_str()).expect("request json");
-            assert_eq!(value["method"], "thread/list");
-            websocket
-                .send(Message::Text(
-                    serde_json::to_string(&json!({
-                        "id": 1,
-                        "result": {"data": []}
-                    }))
-                    .expect("response json")
-                    .into(),
-                ))
-                .await
-                .expect("send response");
-        });
-
-        let target = ResolvedAppServerTarget {
-            name: "fixture".into(),
-            endpoint: ResolvedAppServerEndpoint::WebSocket {
-                url: format!("ws://{address}/rpc"),
-                auth_token: None,
-            },
-        };
-        let mut transport = AppServerTransport::connect(&target)
-            .await
-            .expect("connect websocket target");
-        transport
-            .write_json(&json!({
-                "id": 1,
-                "method": "thread/list",
-                "params": {}
-            }))
-            .await
-            .expect("write request");
-        let response = transport
-            .read_json()
-            .await
-            .expect("read response")
-            .expect("response");
-        assert_eq!(response["id"], 1);
-        assert_eq!(response["result"]["data"], json!([]));
-        server.await.expect("fixture server");
-    }
-
-    #[cfg(unix)]
-    #[tokio::test]
-    async fn unix_socket_transport_uses_websocket_framing() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let path = dir.path().join("app-server.sock");
-        let listener = tokio::net::UnixListener::bind(&path).expect("bind unix fixture");
-        let server = tokio::spawn(async move {
-            let (stream, _) = listener.accept().await.expect("accept unix socket");
-            let mut websocket = accept_async(stream)
-                .await
-                .expect("unix websocket handshake");
-            let request = websocket
-                .next()
-                .await
-                .expect("request frame")
-                .expect("request");
-            let Message::Text(text) = request else {
-                panic!("expected text JSON-RPC frame");
-            };
-            let value: Value = serde_json::from_str(text.as_str()).expect("request json");
-            assert_eq!(value["method"], "initialize");
-            websocket
-                .send(Message::Text(
-                    serde_json::to_string(&json!({
-                        "id": 1,
-                        "result": {"serverInfo": {"version": "fixture"}}
-                    }))
-                    .expect("response json")
-                    .into(),
-                ))
-                .await
-                .expect("send response");
-        });
-
-        let target = ResolvedAppServerTarget {
-            name: "unix-fixture".into(),
-            endpoint: ResolvedAppServerEndpoint::UnixSocket { path },
-        };
-        let mut transport = AppServerTransport::connect(&target)
-            .await
-            .expect("connect unix target");
-        transport
-            .write_json(&json!({
-                "id": 1,
-                "method": "initialize",
-                "params": {}
-            }))
-            .await
-            .expect("write initialize");
-        let response = transport
-            .read_json()
-            .await
-            .expect("read response")
-            .expect("response");
-        assert_eq!(response["result"]["serverInfo"]["version"], "fixture");
-        server.await.expect("fixture server");
-    }
-}
+mod tests;

@@ -17,6 +17,8 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
+- Bound App Server network connect and handshake to a five-second deadline; redact Git remote userinfo/query/fragment in Forge diagnostics to prevent accidental token exposure.
+
 - Preserve all pending exact-source release self-tests (up to the provider's documented queue bound) with serial, non-cancelling `queue: max` release workflow concurrency, while keeping publication separately serialized.
 
 - Remove unused v1.2/v1.3 standalone qualification scripts and their live development-receipt fallbacks; accept only completed v1.4 first-deployment scope while retaining historical JSON audit records.
