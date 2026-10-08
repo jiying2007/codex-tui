@@ -28,8 +28,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: protocol-compatibility-${{ github.ref }}
-  cancel-in-progress: true
+  group: protocol-compatibility-${{ github.event_name == 'pull_request' && github.ref || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   replay:

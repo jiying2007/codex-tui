@@ -1,35 +1,57 @@
+"""Preserve exact-SHA evidence for main/dispatch and cancel only superseded PRs."""
 from pathlib import Path
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 
+EVIDENCE_WORKFLOWS = (
+    "ci",
+    "development-qualification",
+    "performance-diagnostics",
+    "protocol-compatibility",
+    "scale-evidence",
+    "security",
+    "terminal-regression",
+)
+
 
 class WorkflowConcurrencyContract(unittest.TestCase):
-    def test_development_qualification_cancels_only_superseded_pr_runs(self):
-        text = (ROOT / ".github/workflows/development-qualification.yml").read_text(
+    def test_evidence_workflows_isolate_non_pr_shas_and_cancel_only_prs(self):
+        for name in EVIDENCE_WORKFLOWS:
+            with self.subTest(workflow=name):
+                source = (ROOT / ".github/workflows" / (name + ".yml")).read_text(
+                    encoding="utf-8"
+                )
+                self.assertIn(
+                    "group: " + name
+                    + "-${{ github.event_name == 'pull_request' && github.ref || github.sha }}",
+                    source,
+                )
+                self.assertIn(
+                    "cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
+                    source,
+                )
+                self.assertNotIn("cancel-in-progress: true", source)
+
+    def test_convergence_manifest_only_pr_triggers_development_qualification(self):
+        source = (ROOT / ".github/workflows/development-qualification.yml").read_text(
             encoding="utf-8"
         )
+        pr_paths = source.split("  pull_request:\n", 1)[1].split(
+            "  workflow_dispatch:\n", 1
+        )[0]
+        self.assertIn('      - "release/v1.5-convergence.json"', pr_paths)
         self.assertIn(
-            "group: development-qualification-${{ github.ref }}",
-            text,
-        )
-        self.assertIn(
-            "cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
-            text,
-        )
-        self.assertNotIn("cancel-in-progress: true", text)
-
-    def test_canonical_ci_keeps_same_pr_only_cancellation_policy(self):
-        text = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
-        self.assertIn(
-            "cancel-in-progress: ${{ github.event_name == 'pull_request' }}",
-            text,
+            "scripts/architecture/check_upstream_convergence.py",
+            source,
         )
 
     def test_release_publication_remains_non_cancelling(self):
-        text = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
-        self.assertIn("group: codex-tui-release-publish", text)
-        self.assertIn("cancel-in-progress: false", text)
+        source = (ROOT / ".github/workflows/release.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("group: codex-tui-release-publish", source)
+        self.assertIn("cancel-in-progress: false", source)
 
 
 if __name__ == "__main__":
