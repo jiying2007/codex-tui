@@ -144,8 +144,6 @@ impl FileStore {
             fs::read_to_string(&path).with_context(|| format!("read config {}", path.display()))?;
         toml::from_str(&text).with_context(|| format!("parse config {}", path.display()))
     }
-
-
 }
 
 fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
@@ -192,7 +190,6 @@ mod tests {
         assert!(config_text.contains("mode = \"off\""));
         assert!(config_text.contains("[app_server]"));
         assert!(config_text.contains("active = \"local\""));
-
     }
 
     #[test]
@@ -292,5 +289,4 @@ mod tests {
             );
         }
     }
-
 }

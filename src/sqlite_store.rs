@@ -1045,8 +1045,6 @@ impl SqliteStore {
         ensure_private_file(&self.db_path)?;
         Ok(conn)
     }
-
-
 }
 
 impl LocalStore for SqliteStore {

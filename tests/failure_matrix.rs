@@ -150,7 +150,9 @@ fn forward_sqlite_schema_is_refused_without_downgrade() {
 }
 
 fn inject_operator_envelope(store: &SqliteStore, json: &str) {
-    store.load_state().expect("initialize SQLite before raw injection");
+    store
+        .load_state()
+        .expect("initialize SQLite before raw injection");
     let conn = Connection::open(store.db_path()).expect("raw SQLite");
     conn.execute(
         "INSERT INTO operator_state(key,value_json,updated_at_unix_ms)

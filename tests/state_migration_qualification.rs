@@ -71,7 +71,10 @@ fn populate_planning(store: &SqliteStore) {
 fn first_install_and_reopen_preserve_sqlite_operator_and_planning_state() {
     let root = tempdir().expect("tempdir");
     let store = SqliteStore::at(root.path());
-    assert_eq!(store.load_state().expect("fresh state"), LocalStateV1::default());
+    assert_eq!(
+        store.load_state().expect("fresh state"),
+        LocalStateV1::default()
+    );
     let expected_operator = seed_operator(&store);
     populate_planning(&store);
     let expected_planning = store
@@ -95,12 +98,20 @@ fn first_install_and_reopen_preserve_sqlite_operator_and_planning_state() {
     }
 
     let reopened = SqliteStore::at(root.path());
-    assert_eq!(reopened.load_state().expect("state after reopen"), expected_operator);
     assert_eq!(
-        reopened.load_planning_snapshot().expect("planning after reopen"),
+        reopened.load_state().expect("state after reopen"),
+        expected_operator
+    );
+    assert_eq!(
+        reopened
+            .load_planning_snapshot()
+            .expect("planning after reopen"),
         expected_planning
     );
-    assert_eq!(reopened.health().expect("idempotent reopen").schema_version, 4);
+    assert_eq!(
+        reopened.health().expect("idempotent reopen").schema_version,
+        4
+    );
 }
 
 #[test]
