@@ -1039,11 +1039,29 @@ where
 }
 
 pub(crate) fn trim_error(stderr: &str, fallback: &str) -> String {
-    let value = stderr.trim();
-    if value.is_empty() {
+    // Never pass untrusted child stderr through to TUI, logs, or receipts.
+    // Native gh/glab/git stderr may contain bearer tokens and credential URLs.
+    let lower = stderr.to_ascii_lowercase();
+    let category = if lower.contains("401") || lower.contains("unauthorized") {
+        "authentication rejected"
+    } else if lower.contains("403")
+        || lower.contains("forbidden")
+        || lower.contains("permission denied")
+    {
+        "access denied"
+    } else if lower.contains("404") || lower.contains("not found") {
+        "remote resource not found"
+    } else if lower.contains("timeout") || lower.contains("timed out") {
+        "request timed out"
+    } else if lower.contains("connection refused") {
+        "connection refused"
+    } else {
+        "error details withheld"
+    };
+    if stderr.trim().is_empty() {
         fallback.to_string()
     } else {
-        value.chars().take(500).collect()
+        format!("{fallback}: {category}")
     }
 }
 
@@ -1063,6 +1081,8 @@ fn now_unix_ms() -> u64 {
 #[cfg(test)]
 mod tests;
 
+#[cfg(test)]
+mod error_redaction_tests;
 #[cfg(test)]
 mod gitlab_projection_tests;
 #[cfg(test)]

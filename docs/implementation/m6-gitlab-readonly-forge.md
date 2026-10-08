@@ -117,7 +117,10 @@ Issue Boards are capability-probed by `doctor forge`. codex-tui does not mirror 
 - Issue/MR/Pipeline/Issue Board counts;
 - degraded error when present.
 
-Raw authentication output and tokens are never printed.
+Raw authentication output and tokens are never printed. Provider errors now
+classify common 401/403/404/network failures without forwarding any raw
+subprocess stderr into operator UI or retained reports. For complete native
+diagnostics, run the authenticated client directly in a trusted local shell.
 
 ## Freshness and degradation
 
