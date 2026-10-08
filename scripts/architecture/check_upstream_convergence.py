@@ -5,7 +5,10 @@ import json
 import pathlib
 import sys
 
-SCHEMA = "codex-tui/upstream-convergence/v1"
+from check_module_ratchet import inspect_plan
+
+SCHEMA = "codex-tui/upstream-convergence/v2"
+RATCHET_AUTHORITY = "release/v1.4-plan.json"
 REQUIRED_ROLE = "thin-local-control-plane"
 REQUIRED_DEFAULT_SURFACE = "mission-control"
 REQUIRED_DIFFERENTIATION = {
@@ -69,7 +72,7 @@ REQUIRED_AUTHORITIES = {
     "shell": ["terminal-session"],
 }
 REQUIRED_CHANGE_POLICY = {
-    "maintenanceOnlyGrowth": "requires-explicit-manifest-ratchet-update-and-rationale",
+    "maintenanceOnlyGrowth": "requires-reviewed-shared-module-ratchet-and-convergence-identity-update",
     "newProductCapability": "must-strengthen-control-plane-differentiation-or-replace-local-duplication",
     "upstreamOverlap": "prefer-delete-reduce-or-project",
     "sourceOfTruth": "never-create-second-authority",
@@ -103,6 +106,21 @@ def main() -> int:
         failures.append("upstreamFirst must remain true")
     if manifest.get("authorities") != REQUIRED_AUTHORITIES:
         failures.append("upstream authorities drifted; do not establish competing local state")
+    if manifest.get("moduleRatchetAuthority") != RATCHET_AUTHORITY:
+        failures.append("shared module ratchet authority drifted")
+
+    # Reuse the already enforced v1.4 module-ratchet implementation and LOC
+    # ceilings: convergence only owns capability identity, never duplicate limits.
+    governed = set()
+    try:
+        rows, ratchet_failures, complete = inspect_plan(pathlib.Path(RATCHET_AUTHORITY))
+    except (OSError, ValueError, json.JSONDecodeError) as error:
+        failures.append(f"shared module ratchet unavailable: {error}")
+    else:
+        governed = {path for path, _, _ in rows}
+        if not complete:
+            failures.append("shared module ratchet lost complete source coverage")
+        failures.extend(f"shared module ratchet: {message}" for message in ratchet_failures)
 
     differentiation = manifest.get("differentiation")
     if not isinstance(differentiation, list) or set(differentiation) != REQUIRED_DIFFERENTIATION:
@@ -134,8 +152,13 @@ def main() -> int:
             continue
         if policy.get("policy") != REQUIRED_CAPABILITY_POLICIES[capability]:
             failures.append(f"{capability}: maintenance-only policy drifted")
-        if not isinstance(modules, dict) or not modules:
-            failures.append(f"{capability}: modules must be non-empty")
+        if (
+            not isinstance(modules, list)
+            or not modules
+            or any(not isinstance(name, str) or not name for name in modules)
+            or len(modules) != len(set(modules))
+        ):
+            failures.append(f"{capability}: modules must be distinct source paths")
             continue
 
         discovered = {
@@ -154,20 +177,14 @@ def main() -> int:
         for path in stale:
             failures.append(f"{capability}: tracked maintenance-only source {path} is missing")
 
-        for path, ceiling in sorted(modules.items()):
-            if not isinstance(ceiling, int) or isinstance(ceiling, bool) or ceiling <= 0:
-                failures.append(f"{capability}: invalid LOC ceiling for {path}: {ceiling!r}")
-                continue
-            file_path = pathlib.Path(path)
-            if not file_path.is_file():
-                continue
-            lines = len(file_path.read_text(encoding="utf-8").splitlines())
-            print(f"{capability}: {path}: {lines}/{ceiling} LOC")
-            if lines > ceiling:
+        for path in sorted(tracked):
+            if path not in governed:
                 failures.append(
-                    f"{capability}: {path}: {lines} LOC exceeds maintenance-only ceiling "
-                    f"{ceiling}; reduce the overlap or explicitly ratchet the manifest with rationale"
+                    f"{capability}: {path} is not governed by the shared v1.4 module ratchet"
                 )
+            else:
+                print(f"{capability}: {path}: shared v1.4 module ratchet")
+
 
     if manifest.get("changePolicy") != REQUIRED_CHANGE_POLICY:
         failures.append("changePolicy drifted or lost fail-closed controls")
