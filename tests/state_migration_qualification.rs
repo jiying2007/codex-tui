@@ -125,7 +125,9 @@ fn undeployed_sqlite_schema_versions_are_rejected_unchanged() {
             .expect("set obsolete schema version");
         drop(conn);
 
-        let error = store.health().expect_err("obsolete schema must fail closed");
+        let error = store
+            .health()
+            .expect_err("obsolete schema must fail closed");
         assert!(
             format!("{error:#}").contains("unsupported SQLite schema version"),
             "version {old_version} unexpectedly accepted: {error:#}"
