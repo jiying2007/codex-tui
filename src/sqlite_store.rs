@@ -379,7 +379,10 @@ impl SqliteStore {
         } else {
             // LIKE wildcard characters in a user query are data, not SQL syntax.
             // Escape backslash first to keep literal %, _ and \ searchable.
-            let literal = query.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+            let literal = query
+                .replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_");
             let pattern = format!("%{literal}%");
             let mut stmt = conn.prepare(
                 "SELECT thread_id, turn_id, item_id,
@@ -1783,7 +1786,9 @@ mod tests {
         };
         store.index_conversation_page(&page).expect("index");
         for literal in ["%", "_", "\\"] {
-            let result = store.search_transcript(literal, 20).expect("literal search");
+            let result = store
+                .search_transcript(literal, 20)
+                .expect("literal search");
             assert_eq!(result.hits.len(), 1, "query {literal:?} must not wildcard");
             assert_eq!(result.hits[0].item_id.as_deref(), Some("literal"));
             assert!(!result.complete);
