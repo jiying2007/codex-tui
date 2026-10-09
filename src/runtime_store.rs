@@ -64,10 +64,15 @@ impl RuntimeStore {
         } else {
             PlanningSnapshot::default()
         };
-        if !index_transcripts && error.is_none() {
-            if let Err(clear_error) = sqlite.clear_transcript_index() {
+        if error.is_none() {
+            let maintenance = if index_transcripts {
+                sqlite.prune_transcript_index()
+            } else {
+                sqlite.clear_transcript_index()
+            };
+            if let Err(index_error) = maintenance {
                 error = Some(format!(
-                    "SQLite derived transcript cleanup failed: {clear_error:#}"
+                    "SQLite derived transcript maintenance failed: {index_error:#}"
                 ));
             }
         }
