@@ -474,6 +474,10 @@ async fn verify_success(store: &SqliteStore, plan: &OperationPlan) -> Result<(St
                     .any(|worktree| same_path(&worktree.path, target)),
                 "removed worktree still appears in git worktree list"
             );
+            anyhow::ensure!(
+                worktree_path_absent(target)?,
+                "removed worktree filesystem entry still exists"
+            );
             store.remove_managed_worktree(&plan.repo.git_common_dir, target)?;
             Ok((
                 target.to_string(),
@@ -555,6 +559,16 @@ enum ReconciledOutcome {
     Unknown(String),
 }
 
+// Check the directory entry, including dangling symlinks, rather than just
+// Path::exists(), which returns false for broken symlinks.
+fn worktree_path_absent(target: &str) -> Result<bool> {
+    match std::fs::symlink_metadata(target) {
+        Ok(_) => Ok(false),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(true),
+        Err(error) => Err(error).with_context(|| format!("stat worktree target {target}")),
+    }
+}
+
 async fn reconcile_outcome(store: &SqliteStore, plan: &OperationPlan) -> Result<ReconciledOutcome> {
     match plan.kind {
         OperationKind::CreateWorktree => {
@@ -606,8 +620,14 @@ async fn reconcile_outcome(store: &SqliteStore, plan: &OperationPlan) -> Result<
                 .iter()
                 .any(|worktree| same_path(&worktree.path, target))
             {
-                return Ok(ReconciledOutcome::Failed(
-                    "reconciliation confirms worktree still exists".into(),
+                return Ok(ReconciledOutcome::Unknown(
+                    "Git still registers the worktree; partial remove effects are not excluded"
+                        .into(),
+                ));
+            }
+            if !worktree_path_absent(target)? {
+                return Ok(ReconciledOutcome::Unknown(
+                    "Git unregistered the worktree but its filesystem entry remains".into(),
                 ));
             }
             verify_success(store, plan)
