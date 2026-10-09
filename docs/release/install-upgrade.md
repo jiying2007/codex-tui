@@ -1,8 +1,15 @@
+<!-- docs-id: install-upgrade -->
+<!-- docs-lang: en -->
 # Install and upgrade
+<!-- docs-section: overview -->
+
+**Language / 语言:** [English](install-upgrade.md) · [简体中文](../zh-CN/release/install-upgrade.md)
+
 
 This document describes the archive-based codex-tui release contract. It does not introduce an installer service or auto-updater.
 
 ## Verify a release bundle
+<!-- docs-section: verify -->
 
 Every release bundle contains:
 
@@ -28,6 +35,7 @@ Each platform archive contains:
 - `LICENSE` with the Apache License 2.0.
 
 ## Native archive identity
+<!-- docs-section: identity -->
 
 Every newly built platform archive uses `codex-tui/release-artifact/v2` and
 records `binarySha256` plus exact rustc/cargo build-toolchain provenance in
@@ -51,6 +59,7 @@ The verifier intentionally refuses older metadata lacking a payload hash rather
 than silently weakening the current release contract.
 
 ## Linux ABI baseline
+<!-- docs-section: abi -->
 
 The v1.4 GNU x86-64 distributable is built and archive-smoked in Ubuntu 20.04
 (glibc 2.31). `LINUX-ABI.json` records the binary hash, exact source SHA and
@@ -62,6 +71,7 @@ Git command compatibility, Python 3.8 release-helper compatibility, and the GNU
 binary ABI are separate tested contracts. Musl/Alpine is not this GNU target.
 
 ## Install
+<!-- docs-section: install -->
 
 1. Extract the archive for the current platform/host triple.
 2. Move the binary to a directory on `PATH`, or run it directly from the extracted directory.
@@ -82,6 +92,7 @@ binary ABI are separate tested contracts. Musl/Alpine is not this GNU target.
 No Nerd Font is required.
 
 ## First production deployment (v1.4)
+<!-- docs-section: first-deploy -->
 
 The public v1.0.0 GitHub Release is retained as history, but the maintainer
 confirms that neither v1.0 nor v1.4 has been deployed. v1.4 is the first
@@ -96,6 +107,7 @@ future versions fail closed without overwriting them. Current Codex App Server,
 GitLab/GitHub, Linux ABI and SSH controlling-TTY still require qualification.
 
 ## Upgrade
+<!-- docs-section: upgrade -->
 
 The following procedure applies **only after an actual v1.4-or-newer
 deployment** and an explicit storage/rollback compatibility review. It
@@ -115,6 +127,7 @@ Canonical Codex, Git and Forge data remain owned by those systems. codex-tui loc
 Do not copy a SQLite database between two simultaneously running codex-tui instances.
 
 ## Rollback
+<!-- docs-section: rollback -->
 
 If an upgrade cannot pass Doctor:
 
@@ -126,6 +139,7 @@ If an upgrade cannot pass Doctor:
 A rollback must not be represented as a successful stable upgrade until the compatibility blocker is understood.
 
 ## Preview versus stable
+<!-- docs-section: preview -->
 
 Preview artifacts use tags shaped like:
 
@@ -144,10 +158,12 @@ vX.Y.Z
 The first permitted stable product line is v1.0.0. Stable publication fails closed if any required evidence is absent. Both the supported `stable_publish.py` path and a direct `stable + publish=true` workflow dispatch require GitHub repository **release immutability** to be enabled and verifiable and require the canonical **main branch protection policy** to remain intact: strict canonical checks, each check pinned to the GitHub Actions App dynamically observed on the exact source SHA, administrator enforcement, force pushes disabled and branch deletion disabled. Direct workflow publication additionally requires repository secret `CODEX_TUI_ADMIN_READ_TOKEN` with fine-grained **Administration(read)** permission; absence, inaccessible administration state, app-source drift or policy drift is fail-closed. Preview and stable publish=false remain credential-free. Enable immutability before the v1.4 release. The setting protects future releases and does not retroactively make older releases immutable.
 
 ## Project license
+<!-- docs-section: license -->
 
 codex-tui is licensed under Apache-2.0. Release packaging requires both `Cargo.toml license = "Apache-2.0"` and the root `LICENSE`; extracted archive smoke verifies that the license is present and identified as Apache License 2.0.
 
 ## Consistent backups and recovery
+<!-- docs-section: backup -->
 
 Recovery backups use SQLite's online backup API, not a copy of the live main
 database. Committed WAL data is included even when an older reader prevents a

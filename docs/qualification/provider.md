@@ -1,10 +1,17 @@
+<!-- docs-id: provider -->
+<!-- docs-lang: en -->
 # Provider qualification
+<!-- docs-section: overview -->
+
+**Language / 语言:** [English](provider.md) · [简体中文](../zh-CN/qualification/provider.md)
+
 
 Provider qualification is observation-driven. codex-tui does not infer capabilities from a GitLab/GitHub version number.
 
 The retained authority is a secret-safe capability fixture captured from the exact candidate binary while it is running inside a representative repository.
 
 ## Preconditions
+<!-- docs-section: requirements -->
 
 Use a clean checkout of the candidate SHA and build it with the SHA embedded:
 
@@ -25,6 +32,7 @@ displayed, so token-bearing CLI diagnostics cannot escape to CI logs through
 this capture path.
 
 ## Internal GitLab qualification
+<!-- docs-section: gitlab -->
 
 Run inside a representative internal GitLab repository:
 
@@ -45,6 +53,7 @@ Add a capability requirement only when the team actually depends on it. For exam
 The fixture records the observed client/server version and edition when discoverable, but those fields are descriptive evidence only. Capability state is authoritative.
 
 ## GitHub read-only qualification
+<!-- docs-section: github -->
 
 Run inside a representative GitHub.com repository:
 
@@ -63,6 +72,7 @@ python3 scripts/release/capture_forge_capability.py \
 This qualifies the read-only GitHub provider. It does not introduce GitHub write mutations.
 
 ## Fixture contract
+<!-- docs-section: fixture -->
 
 The output schema is `codex-tui/forge-capability-fixture/v1`. It contains:
 
@@ -80,6 +90,7 @@ It deliberately excludes authentication tokens, repository paths, remote URLs, p
 A nonzero exit code means the fixture was still written, but one or more requested requirements did not match the observed environment.
 
 ## Internal first-deployment admission (provider-specific)
+<!-- docs-section: internal -->
 
 Public Stable releases remain provider-neutral. Internal GitLab adoption
 additionally requires a real, authenticated capability fixture from a

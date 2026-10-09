@@ -1,8 +1,15 @@
+<!-- docs-id: team-quickstart -->
+<!-- docs-lang: en -->
 # Team quickstart
+<!-- docs-section: overview -->
+
+**Language / 语言:** [English](team-quickstart.md) · [简体中文](zh-CN/team-quickstart.md)
+
 
 codex-tui is personal-first. Team reuse comes from the repository and existing forge; there is no codex-tui team server, shared database or RBAC layer.
 
 ## 1. Install and verify
+<!-- docs-section: install -->
 
 Use the native archive for the current platform and verify it against the release bundle `SHA256SUMS`.
 
@@ -16,6 +23,7 @@ codex-tui doctor compat
 `doctor` prints the local config/state paths. Keep those files per developer; do not check local SQLite/operator state into the repository.
 
 ## 2. Keep team authority in the repository
+<!-- docs-section: authority -->
 
 Use:
 
@@ -26,6 +34,7 @@ Use:
 codex-tui projects those authorities and stores only local operator/planning state.
 
 ## 3. Optional safe launch presets
+<!-- docs-section: presets -->
 
 If the team wants shared shortcuts, add only the narrow repository-root `.codex-tui.toml` format:
 
@@ -52,6 +61,7 @@ codex-tui doctor presets
 Presets are argv-only. Shell strings, environment templating, chaining, hooks and schedulers are intentionally unsupported.
 
 ## 4. Forge setup
+<!-- docs-section: forge -->
 
 For an internal GitLab repository, authenticate `glab` to that exact host. For GitHub.com read-only projection, authenticate `gh`.
 
@@ -64,6 +74,7 @@ codex-tui doctor forge
 Maintainers can retain a capability fixture with `scripts/release/capture_forge_capability.py`; capabilities come from the observed environment, not from a guessed server-version matrix.
 
 ## 5. Daily flow
+<!-- docs-section: daily -->
 
 The small set worth learning first:
 
@@ -76,6 +87,7 @@ The small set worth learning first:
 `?` is the executable Help contract; CI checks it against the keymap/Command/reducer surface.
 
 ## 6. Troubleshooting
+<!-- docs-section: troubleshooting -->
 
 Start with:
 
@@ -97,6 +109,7 @@ The bundle is metadata-only and excludes environment variables, authentication t
 If local state is damaged after an upgrade, do not repeatedly delete/reinitialize it. Preserve the state directory and support bundle first; forward/unknown schemas and corrupt stores fail closed.
 
 ## Deliberate non-goals
+<!-- docs-section: boundaries -->
 
 Do not add these merely for team reuse without evidence:
 
