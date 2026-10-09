@@ -968,6 +968,7 @@ branch refs/heads/feature
         let receipt = execute_request(
             &store,
             MutationRequest {
+                admitted_at: Instant::now(),
                 plan,
                 active_scopes: vec![],
             },
