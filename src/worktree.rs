@@ -237,7 +237,14 @@ async fn execute_request(
         }
     };
 
-    if let Err(error) = check_preconditions(store, &receipt.plan, &request.active_scopes, request.admitted_at).await {
+    if let Err(error) = check_preconditions(
+        store,
+        &receipt.plan,
+        &request.active_scopes,
+        request.admitted_at,
+    )
+    .await
+    {
         receipt.fail(now_unix_ms(), error.to_string());
         store.save_operation_receipt(&receipt)?;
         return Ok(receipt);
@@ -314,7 +321,10 @@ async fn check_preconditions(
     active_scopes: &[MutationScope],
     admitted_at: Instant,
 ) -> Result<()> {
-    if matches!(plan.kind, OperationKind::RemoveWorktree | OperationKind::DeleteBranch) {
+    if matches!(
+        plan.kind,
+        OperationKind::RemoveWorktree | OperationKind::DeleteBranch
+    ) {
         anyhow::ensure!(
             admitted_at.elapsed() <= SCOPE_ADMISSION_MAX_AGE,
             "active operation scope snapshot expired; review and confirm again"
@@ -705,12 +715,8 @@ mod tests {
             git_common_dir: "/repo/.git".into(),
             primary_root: "/repo".into(),
         };
-        let plan = OperationPlan::remove_worktree(
-            repo,
-            "/repo".into(),
-            "/repo/stale-target".into(),
-            1,
-        );
+        let plan =
+            OperationPlan::remove_worktree(repo, "/repo".into(), "/repo/stale-target".into(), 1);
         let error = check_preconditions(
             &store,
             &plan,
@@ -1049,9 +1055,12 @@ branch refs/heads/feature
         .await
         .expect("conservative reject");
         assert_eq!(rejected.state, OperationState::Failed);
-        assert!(rejected.failure.as_deref().is_some_and(|message| {
-            message.contains("no longer registered")
-        }));
+        assert!(
+            rejected
+                .failure
+                .as_deref()
+                .is_some_and(|message| { message.contains("no longer registered") })
+        );
     }
 
     #[tokio::test]
