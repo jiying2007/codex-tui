@@ -28,6 +28,12 @@ def read(root, relpath, overrides):
 
 
 def local_links(markdown):
+    """Parse document links; reject unsafe URI forms before path resolution.
+
+    Public http(s)/mailto/tel/app links are allowed but never fetched.
+    Local links must be relative file paths without query strings; fragments
+    remain valid. This mirrors the non-publishing archive link verifier.
+    """
     fenced = False
     for line in markdown.splitlines():
         stripped = line.lstrip()
@@ -38,12 +44,25 @@ def local_links(markdown):
             continue
         for match in LINK.finditer(line):
             raw = match.group(1).strip().strip("<>")
-            if raw.startswith(("http:", "https:", "mailto:", "tel:", "app:")):
-                continue
             raw = raw.split(' "', 1)[0]
-            parsed = urlsplit(raw)
-            if not parsed.scheme and not parsed.netloc and parsed.path:
-                yield unquote(parsed.path)
+            try:
+                parsed = urlsplit(raw)
+            except ValueError:
+                raise ValueError("malformed Markdown URI")
+            if parsed.scheme:
+                if parsed.scheme.lower() in ("http", "https", "mailto", "tel", "app"):
+                    continue
+                raise ValueError("unsupported Markdown link scheme")
+            if parsed.netloc or raw.startswith("//"):
+                raise ValueError("protocol-relative Markdown link")
+            if "?" in raw or parsed.query:
+                raise ValueError("query-bearing local Markdown link")
+            if not parsed.path:
+                continue
+            target = unquote(parsed.path)
+            if target.startswith("/") or "\\" in target:
+                raise ValueError("absolute or backslash Markdown link")
+            yield target
 
 
 def inspect(root=ROOT, overrides=None):
@@ -124,7 +143,12 @@ def inspect(root=ROOT, overrides=None):
                     errors.append(name + ": empty section " + item.group(1))
 
             found = []
-            for target in local_links(content):
+            try:
+                links = list(local_links(content))
+            except ValueError as error:
+                errors.append(name + ": unsafe Markdown link: " + str(error))
+                links = []
+            for target in links:
                 found.append(target)
                 dest = (absolute.parent / target).resolve()
                 try:

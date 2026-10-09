@@ -27,7 +27,7 @@ python scripts/docs/check_docs.py
 python -m unittest discover -s scripts/release -p "test_*.py"
 ~~~
 
-The checker is standard-library Python 3.8 compatible and verifies exact pairs, docs-id/locale/section structure, reciprocal language links, local Markdown targets and no untracked current Chinese pages. Canonical CI compares each PR to its exact GitHub event Base SHA (or a main push to its prior SHA), fetching only that missing commit if shallow checkout omitted it. When an active English or Chinese page changes, its registered counterpart must change in the same PR/commit. This is a *changed-file* check, not automatic translation quality verification. Negative tests exercise missing pairs, broken links, missing topics and language drift. It does **not** fetch websites or reinterpret historical markdown.
+The checker is standard-library Python 3.8 compatible and verifies exact pairs, docs-id/locale/section structure, reciprocal language links, local Markdown targets and no untracked current Chinese pages. Local links reject unknown URI schemes, absolute/protocol-relative paths, query parameters and repository traversal; public HTTPS links are allowed but never fetched. Canonical CI compares each PR to its exact GitHub event Base SHA (or a main push to its prior SHA), fetching only that missing commit if shallow checkout omitted it. When an active English or Chinese page changes, its registered counterpart must change in the same PR/commit. This is a *changed-file* check, not automatic translation quality verification. Negative tests exercise missing pairs, broken links, missing topics and language drift. It does **not** fetch websites or reinterpret historical markdown.
 
 ## Packaging and history
 <!-- docs-section: archive -->
