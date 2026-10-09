@@ -441,6 +441,15 @@ pub(crate) async fn probe_gitlab_with_remote(
         pipelines_result.is_ok(),
     );
 
+    let overview_source_page_saturated =
+        issues_result.as_ref().is_ok_and(|rows| rows.len() >= DEFAULT_PAGE_SIZE)
+            || merge_requests_result
+                .as_ref()
+                .is_ok_and(|rows| rows.len() >= DEFAULT_PAGE_SIZE)
+            || pipelines_result
+                .as_ref()
+                .is_ok_and(|rows| rows.len() >= DEFAULT_PAGE_SIZE);
+
     Ok(ForgeObservation {
         thread_id,
         cwd,
@@ -493,6 +502,7 @@ pub(crate) async fn probe_gitlab_with_remote(
                 updated_at: pipeline.updated_at,
             })
             .collect(),
+        overview_source_page_saturated,
         review: None,
         observed_at_unix_ms: now_unix_ms(),
         freshness,
