@@ -215,7 +215,11 @@ async fn websocket_notification_order_and_clean_close_are_observed() {
     };
     let mut client = AppServerTransport::connect(&target).await.expect("connect");
     for expected in [1, 2] {
-        let event = client.read_json().await.expect("read event").expect("event");
+        let event = client
+            .read_json()
+            .await
+            .expect("read event")
+            .expect("event");
         assert_eq!(event["params"]["sequence"], expected);
     }
     assert!(client.read_json().await.expect("clean close").is_none());
@@ -244,7 +248,10 @@ async fn malformed_websocket_event_is_rejected_without_echoing_payload() {
         },
     };
     let mut client = AppServerTransport::connect(&target).await.expect("connect");
-    let err = client.read_json().await.expect_err("bad JSON must not become a frame");
+    let err = client
+        .read_json()
+        .await
+        .expect_err("bad JSON must not become a frame");
     let safe = format!("{err:#}");
     assert!(safe.contains("decode App Server WebSocket JSON"));
     assert!(!safe.contains("INVALID_SECRET_VALUE_not_json"));
