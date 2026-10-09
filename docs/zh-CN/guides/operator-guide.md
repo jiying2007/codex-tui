@@ -33,7 +33,7 @@ Mission Control 按仓库/项目聚合会话，显示 Needs You / Working / Read
 
 MR/PR 创建、评论、批准、合并遵循先预览→明确确认→再执行；Approval/Merge 会重新校验目标修订版本，结果不确定时禁止盲目重试。Review 状态权威在 GitLab/GitHub。见 [真实资格采集](../qualification/provider.md)。
 
-删除受管 Worktree 时，仓库或 cwd 未知的活跃 Codex 会话按潜在冲突保守拒绝；破坏性操作排队过久将使操作范围证据过期，需要重新审阅和确认。Git 命令非零退出会依据实际 Git 状态协调，不假设没有副作用。这不能对独立 Codex 进程建立原子锁，必须继续进行真实并发操作验证。
+删除受管 Worktree 时，仓库或 cwd 未知的活跃 Codex 会话按潜在冲突保守拒绝；破坏性操作排队过久将使操作范围证据过期，需要重新审阅和确认。Git 命令非零退出会依据实际 Git 状态协调，不假设没有副作用。删除 Worktree 只有在 Git 注册信息与磁盘目录**均已消失**时才视作已验证成功；两者不一致时回执保持 `OutcomeUnknown`，禁止自动重试。这不能对独立 Codex 进程建立原子锁，必须继续进行真实并发操作验证。
 
 ## 本地语言与可访问性
 <!-- docs-section: language -->
