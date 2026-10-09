@@ -174,9 +174,9 @@
     "src/thread_queue.rs": 350,
     "src/app_server_target.rs": 282,
     "src/app_server_transport.rs": 487,
-    "src/forge_github_mutation.rs": 606,
-    "src/forge_mutation.rs": 1534,
-    "src/forge_github_mutation/tests.rs": 87,
+    "src/forge_github_mutation.rs": 612,
+    "src/forge_mutation.rs": 1578,
+    "src/forge_github_mutation/tests.rs": 94,
     "src/forge_github_mutation/api.rs": 61,
     "src/conversation.rs": 892,
     "src/app/lifecycle.rs": 203,
@@ -348,6 +348,16 @@
       "modules": [
         "src/worktree.rs",
         "src/hardening.rs"
+      ]
+    },
+    {
+      "date": "2026-10-09",
+      "kind": "security-defect-fix",
+      "scope": "Forge merge requires known readiness/approval and write preflight scans complete bounded pages",
+      "modules": [
+        "src/forge_mutation.rs",
+        "src/forge_github_mutation.rs",
+        "src/forge_github_mutation/tests.rs"
       ]
     }
   ]
