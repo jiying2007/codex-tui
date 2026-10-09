@@ -2263,12 +2263,23 @@ mod tests {
     #[test]
     fn integrity_scan_remains_on_explicit_health_not_per_operation() {
         let source = include_str!("sqlite_store.rs");
-        let health = source.split("pub fn health(&self)").nth(1)
+        let health = source
+            .split("pub fn health(&self)")
+            .nth(1)
             .expect("health method");
-        assert!(health.split("pub fn create_recovery_backup").next()
-            .expect("health method body").contains("quick_check(&conn)?"));
-        let hot_path = source.split("fn open_ready(&self)").nth(1)
-            .expect("open_ready method").split("impl LocalStore").next()
+        assert!(
+            health
+                .split("pub fn create_recovery_backup")
+                .next()
+                .expect("health method body")
+                .contains("quick_check(&conn)?")
+        );
+        let hot_path = source
+            .split("fn open_ready(&self)")
+            .nth(1)
+            .expect("open_ready method")
+            .split("impl LocalStore")
+            .next()
             .expect("open_ready body");
         assert!(!hot_path.contains("quick_check(&conn)"));
         let root = tempdir().expect("tempdir");
