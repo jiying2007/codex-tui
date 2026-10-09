@@ -25,6 +25,15 @@ mod recovery;
 use recovery::{preserve_sqlite_image, restore_preserved_sqlite_image, validate_recovery_database};
 
 const OPERATOR_STATE_KEY: &str = "operator-state-v1";
+const TRANSCRIPT_MAX_DOCUMENTS: i64 = 10_000;
+const TRANSCRIPT_MAX_CHARS: usize = 4_096;
+const TRANSCRIPT_RETENTION_MS: u64 = 30 * 24 * 60 * 60 * 1000;
+
+// The SQLite connection maintains an OS-released cross-process exclusive
+// lease; process crashes cannot strand an advisory lockfile.
+pub struct LocalWriterGuard {
+    _connection: Connection,
+}
 
 #[derive(Clone, Debug)]
 pub struct SqliteStore {
@@ -77,6 +86,21 @@ impl SqliteStore {
 
     pub fn config_path(&self) -> PathBuf {
         self.config_store.config_path()
+    }
+
+    pub fn acquire_local_writer(&self) -> Result<LocalWriterGuard> {
+        ensure_private_parent(&self.db_path)?;
+        let lock_path = self.db_path.with_extension("sqlite3.owner-lock");
+        let connection =
+            Connection::open(&lock_path).context("open codex-tui local writer lock")?;
+        connection.busy_timeout(std::time::Duration::ZERO)?;
+        connection
+            .execute_batch("PRAGMA journal_mode=DELETE; BEGIN EXCLUSIVE;")
+            .context("codex-tui local state is already held by another writer")?;
+        ensure_private_file(&lock_path)?;
+        Ok(LocalWriterGuard {
+            _connection: connection,
+        })
     }
 
     pub fn health(&self) -> Result<StoreHealth> {
@@ -139,6 +163,9 @@ impl SqliteStore {
     ) -> Result<RecoveryRestoreReceipt> {
         let source = source.as_ref();
         recovery::ensure_distinct_source(source, &self.db_path)?;
+        // Check alias safety without touching the store; then exclude live
+        // writers before validating, preserving or installing any image.
+        let _guard = self.acquire_local_writer()?;
         validate_recovery_database(source)?;
         let parent = self
             .db_path
@@ -241,7 +268,10 @@ impl SqliteStore {
                     item.item_id.as_str(),
                     kind,
                     page.title.as_deref(),
-                    item.text.as_str(),
+                    item.text
+                        .chars()
+                        .take(TRANSCRIPT_MAX_CHARS)
+                        .collect::<String>(),
                     observed_at,
                 ],
             )
@@ -268,7 +298,10 @@ impl SqliteStore {
                         item.item_id.as_str(),
                         kind,
                         page.title.as_deref(),
-                        item.text.as_str(),
+                        item.text
+                            .chars()
+                            .take(TRANSCRIPT_MAX_CHARS)
+                            .collect::<String>(),
                     ],
                 )
                 .context("insert transcript FTS row")?;
@@ -276,8 +309,35 @@ impl SqliteStore {
             indexed += 1;
         }
 
+        prune_transcript_documents(&tx, has_fts, observed_at)?;
         tx.commit().context("commit transcript index transaction")?;
         Ok(indexed)
+    }
+
+    pub fn prune_transcript_index(&self) -> Result<()> {
+        let mut conn = self.open_ready()?;
+        let has_fts = transcript_fts_available(&conn)?;
+        let tx = conn
+            .transaction()
+            .context("begin index retention cleanup")?;
+        prune_transcript_documents(&tx, has_fts, u64_to_i64(now_unix_ms())?)?;
+        tx.commit().context("commit index retention cleanup")
+    }
+
+    /// Clear derivative message text and FTS rows when local indexing is disabled.
+    /// Logical erasure is not a guarantee of physical flash-block sanitization.
+    pub fn clear_transcript_index(&self) -> Result<()> {
+        let mut conn = self.open_ready()?;
+        let has_fts = transcript_fts_available(&conn)?;
+        let tx = conn.transaction().context("begin local index cleanup")?;
+        if has_fts {
+            tx.execute("DELETE FROM transcript_fts", [])
+                .context("clear derived FTS rows")?;
+        }
+        tx.execute("DELETE FROM transcript_documents", [])
+            .context("clear derived transcript rows")?;
+        tx.commit().context("commit index cleanup")?;
+        Ok(())
     }
 
     pub fn search_transcript(&self, query: &str, limit: usize) -> Result<TranscriptSearchResults> {
@@ -1075,6 +1135,30 @@ impl LocalStore for SqliteStore {
     }
 }
 
+fn prune_transcript_documents(tx: &Transaction<'_>, has_fts: bool, observed_at: i64) -> Result<()> {
+    let cutoff = observed_at
+        .saturating_sub(i64::try_from(TRANSCRIPT_RETENTION_MS).context("retention bound")?);
+    const STALE: &str = "observed_at_unix_ms < ?1 OR rowid NOT IN (
+        SELECT rowid FROM transcript_documents
+        ORDER BY observed_at_unix_ms DESC, rowid DESC LIMIT ?2
+    )";
+    if has_fts {
+        tx.execute(
+            &format!(
+                "DELETE FROM transcript_fts WHERE (thread_id, turn_id, item_id) IN (
+                    SELECT thread_id, turn_id, item_id FROM transcript_documents WHERE {STALE}
+                )"
+            ),
+            params![cutoff, TRANSCRIPT_MAX_DOCUMENTS],
+        )?;
+    }
+    tx.execute(
+        &format!("DELETE FROM transcript_documents WHERE {STALE}"),
+        params![cutoff, TRANSCRIPT_MAX_DOCUMENTS],
+    )?;
+    Ok(())
+}
+
 fn transcript_fts_available(conn: &Connection) -> Result<bool> {
     Ok(conn
         .query_row(
@@ -1669,6 +1753,65 @@ mod tests {
     }
 
     #[test]
+    fn transcript_retention_removes_stale_fts_and_opt_out_clears_remaining_text() {
+        use crate::conversation::{ConversationItem, ConversationItemKind, ConversationPage};
+        use crate::domain::ThreadId;
+
+        let root = tempdir().expect("tempdir");
+        let store = SqliteStore::at(root.path());
+        let item = |id: &str, text: &str| ConversationItem {
+            turn_id: "turn".into(),
+            item_id: id.into(),
+            kind: ConversationItemKind::User,
+            text: text.into(),
+            status: None,
+        };
+        let page = ConversationPage {
+            thread_id: ThreadId::new("private"),
+            title: None,
+            turns: vec![],
+            items: vec![
+                item("old", "old-private-needle"),
+                item("new", "new-private-needle"),
+            ],
+            next_turn_cursor: None,
+            next_item_cursor: None,
+        };
+        store.index_conversation_page(&page).expect("index fixture");
+        let conn = store.open_ready().expect("fixture connection");
+        conn.execute(
+            "UPDATE transcript_documents SET observed_at_unix_ms=1 WHERE item_id='old'",
+            [],
+        )
+        .expect("age old row");
+        drop(conn);
+        store.prune_transcript_index().expect("retention prune");
+        assert!(
+            store
+                .search_transcript("old-private-needle", 10)
+                .expect("search old")
+                .hits
+                .is_empty()
+        );
+        assert_eq!(
+            store
+                .search_transcript("new-private-needle", 10)
+                .expect("search new")
+                .hits
+                .len(),
+            1
+        );
+        store.clear_transcript_index().expect("opt-out purge");
+        assert!(
+            store
+                .search_transcript("new-private-needle", 10)
+                .expect("search after purge")
+                .hits
+                .is_empty()
+        );
+    }
+
+    #[test]
     fn local_batch_is_atomic_when_a_frozen_target_disappears() {
         use crate::batch_local::{LocalBatchAction, LocalBatchPlan, LocalBatchTarget};
 
@@ -2097,6 +2240,27 @@ mod tests {
             .save_state(&LocalStateV1::default())
             .expect("save state");
         assert!(store.db_path().exists());
+    }
+
+    #[test]
+    fn local_writer_is_exclusive_and_releases_after_drop() {
+        let root = tempdir().expect("tempdir");
+        let store = SqliteStore::at(root.path());
+        let owner = store.acquire_local_writer().expect("first writer");
+        let contender = SqliteStore::at(root.path());
+        let denied = contender
+            .acquire_local_writer()
+            .err()
+            .expect("second writer must be denied");
+        assert!(format!("{denied:#}").contains("another writer"));
+        assert!(
+            store
+                .restore_recovery_backup(root.path().join("backup.sqlite3"))
+                .is_err(),
+            "offline restore must refuse while TUI owns state"
+        );
+        drop(owner);
+        let _second = contender.acquire_local_writer().expect("released lock");
     }
 
     #[test]

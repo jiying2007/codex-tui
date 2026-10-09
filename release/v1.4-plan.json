@@ -156,7 +156,7 @@
     "src/forge.rs": 1345,
     "src/worktree.rs": 1218,
     "src/release.rs": 1025,
-    "src/runtime_store.rs": 444,
+    "src/runtime_store.rs": 477,
     "src/runtime_input.rs": 267,
     "src/app_server_registry.rs": 169,
     "src/app_server_wire.rs": 7,
@@ -358,6 +358,16 @@
         "src/forge_mutation.rs",
         "src/forge_github_mutation.rs",
         "src/forge_github_mutation/tests.rs"
+      ]
+    },
+    {
+      "date": "2026-10-09",
+      "kind": "privacy-and-state-correctness",
+      "scope": "Exclusive cross-process local SQLite writer/restore lock, opt-in derived transcript index with TTL and record/text budgets, logical cleanup and regression tests",
+      "modules": [
+        "src/sqlite_store.rs",
+        "src/runtime_store.rs",
+        "src/store.rs"
       ]
     },
     {

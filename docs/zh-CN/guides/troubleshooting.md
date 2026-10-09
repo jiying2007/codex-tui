@@ -30,7 +30,7 @@ Windows→SSH Ubuntu 使用的是 **Ubuntu 侧** Codex Home、当前工作目录
 ## SQLite 损坏或未来 Schema 拒绝
 <!-- docs-section: store -->
 
-先运行 `codex-tui doctor store`，停止所有进程并保留数据库/WAL/SHM 和恢复镜像。不要把正在写的数据库直接复制为一致性备份，或让多个进程同时改写。v1.4 首次安装只使用当前 SQLite v4，拒绝未部署的 v1–v3 镜像且不自动清空。
+先运行 `codex-tui doctor store`，停止所有进程并保留数据库/WAL/SHM 和恢复镜像。不要把正在写的数据库直接复制为一致性备份，或让多个进程同时改写。 TUI 运行期间保持跨进程 SQLite 独占写者锁；如有写者，离线恢复会被拒绝。v1.4 首次安装只使用当前 SQLite v4，拒绝未部署的 v1–v3 镜像且不自动清空。
 
 ## 提供最小脱敏证据
 <!-- docs-section: artifacts -->
