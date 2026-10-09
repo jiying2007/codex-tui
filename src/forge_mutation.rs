@@ -904,9 +904,9 @@ fn require_gitlab_merge_ready(status: Option<&str>) -> Result<()> {
 }
 
 fn require_gitlab_approval_fallback(approvals: &GitLabApprovals) -> Result<()> {
-    let remaining = approvals.approvals_left.context(
-        "GitLab approval_state unavailable; fallback approvals_left is unknown",
-    )?;
+    let remaining = approvals
+        .approvals_left
+        .context("GitLab approval_state unavailable; fallback approvals_left is unknown")?;
     anyhow::ensure!(remaining == 0, "GitLab merge needs {remaining} approvals");
     Ok(())
 }
@@ -1501,17 +1501,21 @@ mod tests {
     #[test]
     fn gitlab_approval_fallback_rejects_missing_or_positive_counts() {
         for remaining in [None, Some(1), Some(10)] {
-            assert!(require_gitlab_approval_fallback(&GitLabApprovals {
-                approvals_left: remaining,
+            assert!(
+                require_gitlab_approval_fallback(&GitLabApprovals {
+                    approvals_left: remaining,
+                    approved_by: vec![],
+                })
+                .is_err()
+            );
+        }
+        assert!(
+            require_gitlab_approval_fallback(&GitLabApprovals {
+                approvals_left: Some(0),
                 approved_by: vec![],
             })
-            .is_err());
-        }
-        assert!(require_gitlab_approval_fallback(&GitLabApprovals {
-            approvals_left: Some(0),
-            approved_by: vec![],
-        })
-        .is_ok());
+            .is_ok()
+        );
     }
 
     #[test]
