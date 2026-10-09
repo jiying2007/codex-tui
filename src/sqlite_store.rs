@@ -25,6 +25,9 @@ mod recovery;
 use recovery::{preserve_sqlite_image, restore_preserved_sqlite_image, validate_recovery_database};
 
 const OPERATOR_STATE_KEY: &str = "operator-state-v1";
+const TRANSCRIPT_MAX_DOCUMENTS: i64 = 10_000;
+const TRANSCRIPT_MAX_CHARS: usize = 4_096;
+const TRANSCRIPT_RETENTION_MS: u64 = 30 * 24 * 60 * 60 * 1000;
 
 // The SQLite connection maintains an OS-released cross-process exclusive
 // lease; process crashes cannot strand an advisory lockfile.
@@ -264,7 +267,7 @@ impl SqliteStore {
                     item.item_id.as_str(),
                     kind,
                     page.title.as_deref(),
-                    item.text.as_str(),
+                    item.text.chars().take(TRANSCRIPT_MAX_CHARS).collect::<String>(),
                     observed_at,
                 ],
             )
@@ -291,7 +294,7 @@ impl SqliteStore {
                         item.item_id.as_str(),
                         kind,
                         page.title.as_deref(),
-                        item.text.as_str(),
+                        item.text.chars().take(TRANSCRIPT_MAX_CHARS).collect::<String>(),
                     ],
                 )
                 .context("insert transcript FTS row")?;
@@ -299,8 +302,25 @@ impl SqliteStore {
             indexed += 1;
         }
 
+        prune_transcript_documents(&tx, has_fts, observed_at)?;
         tx.commit().context("commit transcript index transaction")?;
         Ok(indexed)
+    }
+
+    /// Clear derivative message text and FTS rows when local indexing is disabled.
+    /// Logical erasure is not a guarantee of physical flash-block sanitization.
+    pub fn clear_transcript_index(&self) -> Result<()> {
+        let mut conn = self.open_ready()?;
+        let has_fts = transcript_fts_available(&conn)?;
+        let tx = conn.transaction().context("begin local index cleanup")?;
+        if has_fts {
+            tx.execute("DELETE FROM transcript_fts", [])
+                .context("clear derived FTS rows")?;
+        }
+        tx.execute("DELETE FROM transcript_documents", [])
+            .context("clear derived transcript rows")?;
+        tx.commit().context("commit index cleanup")?;
+        Ok(())
     }
 
     pub fn search_transcript(&self, query: &str, limit: usize) -> Result<TranscriptSearchResults> {
@@ -1096,6 +1116,35 @@ impl LocalStore for SqliteStore {
         save_operator_state_tx(&tx, state)?;
         tx.commit().context("commit operator state")
     }
+}
+
+fn prune_transcript_documents(
+    tx: &Transaction<'_>,
+    has_fts: bool,
+    observed_at: i64,
+) -> Result<()> {
+    let cutoff = observed_at.saturating_sub(
+        i64::try_from(TRANSCRIPT_RETENTION_MS).context("retention bound")?,
+    );
+    const STALE: &str = "observed_at_unix_ms < ?1 OR rowid NOT IN (
+        SELECT rowid FROM transcript_documents
+        ORDER BY observed_at_unix_ms DESC, rowid DESC LIMIT ?2
+    )";
+    if has_fts {
+        tx.execute(
+            &format!(
+                "DELETE FROM transcript_fts WHERE (thread_id, turn_id, item_id) IN (
+                    SELECT thread_id, turn_id, item_id FROM transcript_documents WHERE {STALE}
+                )"
+            ),
+            params![cutoff, TRANSCRIPT_MAX_DOCUMENTS],
+        )?;
+    }
+    tx.execute(
+        &format!("DELETE FROM transcript_documents WHERE {STALE}"),
+        params![cutoff, TRANSCRIPT_MAX_DOCUMENTS],
+    )?;
+    Ok(())
 }
 
 fn transcript_fts_available(conn: &Connection) -> Result<bool> {
