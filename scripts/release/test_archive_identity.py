@@ -54,6 +54,9 @@ class ArchiveIdentity(unittest.TestCase):
             # contract. Copy only tracked manifest-listed pages into the
             # isolated synthetic archive fixture; do not mock verification away.
             package.stage_active_bilingual_docs(ROOT, root)
+            # The verifier now requires navigable offline docs. Mirror the
+            # production staging rewrite instead of weakening the check.
+            package.rewrite_packaged_links(root, ROOT, SHA)
             (root / "STABLE-CRITERIA.json").write_text(json.dumps({"schema": "codex-tui/stable-criteria/v2", "stableVersion": "1.4.0"}), encoding="utf-8")
             metadata = {"schema": "codex-tui/release-artifact/v2", "version": "1.4.0", "tag": "audit", "commitSha": SHA,
                         "license": "Apache-2.0", "platform": PLATFORM, "hostTriple": TRIPLES[PLATFORM],
