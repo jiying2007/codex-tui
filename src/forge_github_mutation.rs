@@ -58,6 +58,13 @@ struct GitHubPullRef {
     #[serde(rename = "ref")]
     reference: String,
     sha: String,
+    repo: Option<GitHubPullRepository>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+struct GitHubPullRepository {
+    id: u64,
+    full_name: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -88,6 +95,20 @@ struct GitHubMergeResult {
     merged: bool,
     message: String,
     sha: Option<String>,
+}
+
+fn require_local_head_identity(pull: &GitHubPullRequest, plan: &ForgeMutationPlan) -> Result<()> {
+    let head_repo = pull
+        .head
+        .repo
+        .as_ref()
+        .context("GitHub PR head repository identity is missing; cannot bind to local branch")?;
+    anyhow::ensure!(
+        head_repo.id.to_string() == plan.project_id
+            && head_repo.full_name.eq_ignore_ascii_case(&plan.project_path),
+        "GitHub PR head belongs to a different repository; local branch authority unavailable"
+    );
+    Ok(())
 }
 
 fn require_github_mergeable(mergeable: Option<bool>) -> Result<()> {
@@ -489,6 +510,9 @@ async fn validate_exact_open_pull(plan: &ForgeMutationPlan) -> Result<GitHubPull
         "GitHub pull request #{number} is already merged"
     );
     if let Some(source) = &plan.source_branch {
+        // A fork can reuse the same short ref. Both repository identity and
+        // branch ref must agree before any branch-bound operation.
+        require_local_head_identity(&pull, plan)?;
         anyhow::ensure!(
             pull.head.reference == *source,
             "GitHub pull request source branch changed: expected {source}, observed {}",
@@ -579,10 +603,24 @@ async fn matching_pull_requests(
         async move { gh_api_json::<Vec<GitHubPullRequest>>(&plan.cwd, &plan.host, &endpoint).await }
     })
     .await?;
-    Ok(pulls
-        .into_iter()
-        .filter(|pull| pull.head.reference == source && pull.base.reference == target)
-        .collect())
+    let mut matches = Vec::new();
+    for pull in pulls {
+        if pull.head.reference != source || pull.base.reference != target {
+            continue;
+        }
+        let Some(source_repo) = pull.head.repo.as_ref() else {
+            anyhow::bail!(
+                "GitHub PR #{} has an unverified source repository; cannot prove absence",
+                pull.number
+            );
+        };
+        if source_repo.id.to_string() == plan.project_id
+            && source_repo.full_name.eq_ignore_ascii_case(&plan.project_path)
+        {
+            matches.push(pull);
+        }
+    }
+    Ok(matches)
 }
 
 fn repository_endpoint(plan: &ForgeMutationPlan) -> Result<String> {
