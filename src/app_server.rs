@@ -2587,7 +2587,17 @@ impl RpcSession {
                     .ok_or_else(|| anyhow!("{method} response missing result"));
             }
             if should_queue_rpc_message(&message) {
+                // An inbound server request may require a user approval before
+                // the current RPC can complete. Preserve it and yield the
+                // actor to the normal request dispatcher immediately instead
+                // of waiting for the RPC deadline while the server waits for us.
+                let server_request = message.get("id").is_some() && message.get("method").is_some();
                 enqueue_rpc_message(&mut self.queued_messages, message)?;
+                if server_request {
+                    anyhow::bail!(
+                        "{method} interrupted by pending App Server request; RPC outcome unknown"
+                    );
+                }
             }
         }
     }
@@ -2711,6 +2721,90 @@ mod tests {
             error.to_string().contains("fixture/request timed out"),
             "timeout must retain method context: {error:#}"
         );
+    }
+
+    #[tokio::test]
+    async fn interactive_server_request_yields_blocked_rpc_before_deadline() {
+        use crate::app_server_target::ResolvedAppServerEndpoint;
+        use futures_util::{SinkExt, StreamExt};
+        use tokio_tungstenite::{accept_async, tungstenite::Message};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind mock");
+        let address = listener.local_addr().expect("mock address");
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("accept");
+            let mut socket = accept_async(stream).await.expect("handshake");
+            let first = socket.next().await.expect("request frame").expect("frame");
+            let Message::Text(first) = first else {
+                panic!("expected JSON-RPC text request")
+            };
+            let sent: Value = serde_json::from_str(first.as_str()).expect("request JSON");
+            assert_eq!(sent["method"], "fixture/pending");
+            // The mocked server refuses to answer the active RPC until it has
+            // received a response to this separate interactive server request.
+            socket
+                .send(Message::Text(
+                    json!({
+                        "id": "approval-42",
+                        "method": "item/commandExecution/requestApproval",
+                        "params": {
+                            "threadId": "thread-1",
+                            "turnId": "turn-1",
+                            "itemId": "item-1",
+                            "command": "echo fixture",
+                            "cwd": "/repo"
+                        }
+                    })
+                    .to_string()
+                    .into(),
+                ))
+                .await
+                .expect("send server request");
+            let next = tokio::time::timeout(Duration::from_secs(2), socket.next())
+                .await
+                .expect("interactive response must arrive before RPC deadline")
+                .expect("response frame")
+                .expect("response");
+            let Message::Text(next) = next else {
+                panic!("expected interactive response text frame")
+            };
+            let reply: Value = serde_json::from_str(next.as_str()).expect("reply JSON");
+            assert_eq!(reply["id"], "approval-42");
+            assert!(reply.get("error").is_some());
+        });
+        let target = ResolvedAppServerTarget {
+            name: "interactive-yield-fixture".into(),
+            endpoint: ResolvedAppServerEndpoint::WebSocket {
+                url: format!("ws://{address}/rpc"),
+                auth_token: None,
+            },
+        };
+        let mut rpc = RpcSession::connect(&target).await.expect("connect");
+        let error = tokio::time::timeout(
+            Duration::from_secs(2),
+            rpc.request("fixture/pending", json!({})),
+        )
+        .await
+        .expect("yield without five-second RPC timeout")
+        .expect_err("RPC must yield to the interactive request");
+        assert!(error.to_string().contains("RPC outcome unknown"));
+        let pending = rpc
+            .read_message()
+            .await
+            .expect("read queued request")
+            .expect("queued request");
+        assert_eq!(pending["id"], "approval-42");
+        assert!(
+            parse_interactive_request(&pending)
+                .expect("parse queued interactive request")
+                .is_some()
+        );
+        rpc.reject_request(pending["id"].clone(), "test fixture rejection")
+            .await
+            .expect("answer queued server request");
+        server.await.expect("mock server");
     }
 
     #[tokio::test]
