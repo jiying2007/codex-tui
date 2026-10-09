@@ -149,7 +149,7 @@
   ],
   "moduleRatchet": {
     "src/app.rs": 7162,
-    "src/ui.rs": 2925,
+    "src/ui.rs": 2931,
     "src/app_server.rs": 3393,
     "src/main.rs": 1854,
     "src/sqlite_store.rs": 2341,
@@ -162,7 +162,7 @@
     "src/app_server_wire.rs": 7,
     "src/sqlite_schema.rs": 220,
     "src/worktree_git.rs": 180,
-    "src/forge_types.rs": 347,
+    "src/forge_types.rs": 411,
     "src/headless.rs": 561,
     "src/headless/surfaces.rs": 487,
     "src/notification.rs": 257,
@@ -191,7 +191,7 @@
     "src/app/mutation_editor.rs": 135,
     "src/app/context_menu.rs": 93,
     "src/app/review.rs": 121,
-    "src/ui/review.rs": 290,
+    "src/ui/review.rs": 302,
     "src/runtime_external.rs": 76,
     "src/runtime_external/tests.rs": 82,
     "src/detached_process.rs": 134,
@@ -376,6 +376,19 @@
       "scope": "Move transcript search to isolated cancellable read-only session with bounded 12s deadline; reject partial occurrence completeness; mock two-connection regression",
       "modules": [
         "src/app_server.rs"
+      ]
+    },
+    {
+      "date": "2026-10-09",
+      "kind": "correctness-defect-fix",
+      "scope": "Forge recent first-page summaries and unavailable endpoints must not be treated as exhaustive PR/Pipeline absence; expose bounded coverage in Review, Board provenance and bilingual UI",
+      "modules": [
+        "src/forge_types.rs",
+        "src/forge.rs",
+        "src/forge_github.rs",
+        "src/ui.rs",
+        "src/ui/review.rs",
+        "src/planning.rs"
       ]
     }
   ]
