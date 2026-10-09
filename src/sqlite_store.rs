@@ -2271,7 +2271,8 @@ mod tests {
             .expect("open_ready method").split("impl LocalStore").next()
             .expect("open_ready body");
         assert!(!hot_path.contains("quick_check(&conn)"));
-        let store = SqliteStore::at(tempdir().expect("tempdir").path());
+        let root = tempdir().expect("tempdir");
+        let store = SqliteStore::at(root.path());
         // The existing health API keeps explicit corruption screening.
         assert_eq!(store.health().expect("health").integrity, "ok");
     }
