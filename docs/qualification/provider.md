@@ -13,12 +13,20 @@ The retained authority is a secret-safe capability fixture captured from the exa
 ## Preconditions
 <!-- docs-section: requirements -->
 
-Use a clean checkout of the candidate SHA and build it with the SHA embedded:
+In the **codex-tui source checkout** (not the repository to be probed),
+capture its exact source commit and build the binary with that identity:
 
 ```bash
-SHA="$(git rev-parse HEAD)"
-CODEX_TUI_GIT_SHA="$SHA" cargo build --release --locked
+cd /path/to/codex-tui
+SOURCE_DIR="$(pwd)"
+SOURCE_SHA="$(git rev-parse HEAD)"
+CODEX_TUI_GIT_SHA="$SOURCE_SHA" cargo build --release --locked
+BINARY="$SOURCE_DIR/target/release/codex-tui"
 ```
+
+Keep these shell variables while changing to the **representative Forge
+repository** for each probe. Its `git rev-parse HEAD` is the *business
+repository* commit, **not** the codex-tui binary's source SHA.
 
 The repository must have the forge remote that should be qualified. Authentication is owned by the native client:
 
@@ -34,14 +42,16 @@ this capture path.
 ## Internal GitLab qualification
 <!-- docs-section: gitlab -->
 
-Run inside a representative internal GitLab repository:
+Run from the **actual internal GitLab repository**; the script and binary
+remain absolute paths to the codex-tui source checkout:
 
 ```bash
-python3 scripts/release/capture_forge_capability.py \
-  --binary target/release/codex-tui \
-  --output release/evidence/provider/gitlab.json \
+cd /path/to/internal-gitlab-repository
+python3 "$SOURCE_DIR/scripts/release/capture_forge_capability.py" \
+  --binary "$BINARY" \
+  --output "$SOURCE_DIR/release/evidence/provider/gitlab.json" \
   --expected-provider gitlab \
-  --expected-source-sha "$(git rev-parse HEAD)" \
+  --expected-source-sha "$SOURCE_SHA" \
   --require-authenticated \
   --required-capability issues=available \
   --required-capability merge-requests=available \
@@ -55,14 +65,16 @@ The fixture records the observed client/server version and edition when discover
 ## GitHub read-only qualification
 <!-- docs-section: github -->
 
-Run inside a representative GitHub.com repository:
+Run from a representative GitHub.com repository using that **same**
+codex-tui source build and preserved `SOURCE_SHA`:
 
 ```bash
-python3 scripts/release/capture_forge_capability.py \
-  --binary target/release/codex-tui \
-  --output release/evidence/provider/github.json \
+cd /path/to/github-repository
+python3 "$SOURCE_DIR/scripts/release/capture_forge_capability.py" \
+  --binary "$BINARY" \
+  --output "$SOURCE_DIR/release/evidence/provider/github.json" \
   --expected-provider github \
-  --expected-source-sha "$(git rev-parse HEAD)" \
+  --expected-source-sha "$SOURCE_SHA" \
   --require-authenticated \
   --required-capability issues=available \
   --required-capability merge-requests=available \
@@ -96,14 +108,14 @@ Public Stable releases remain provider-neutral. Internal GitLab adoption
 additionally requires a real, authenticated capability fixture from a
 representative internal repository using the exact candidate binary.
 
-After running the GitLab capture command above, validate the retained fixture:
+After a real GitLab capture, validate the retained fixture using the
+**original codex-tui source SHA**, never the internal repository's HEAD:
 
 ```bash
-SHA="$(git rev-parse HEAD)"
-python3 scripts/release/validate_internal_gitlab.py \
-  --fixture release/evidence/provider/gitlab.json \
-  --source-sha "$SHA" \
-  --output release/evidence/provider/internal-gitlab-admission.json
+python3 "$SOURCE_DIR/scripts/release/validate_internal_gitlab.py" \
+  --fixture "$SOURCE_DIR/release/evidence/provider/gitlab.json" \
+  --source-sha "$SOURCE_SHA" \
+  --output "$SOURCE_DIR/release/evidence/provider/internal-gitlab-admission.json"
 ```
 
 This admission requires fresh (at most 7-day-old) Linux / glab evidence,

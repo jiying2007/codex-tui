@@ -27,7 +27,7 @@
 
 - [中文贡献流程](../CONTRIBUTING.zh-CN.md) · [安全披露](../SECURITY.zh-CN.md)
 - [支持与诊断](../SUPPORT.zh-CN.md) · [协作行为规范](../CODE_OF_CONDUCT.zh-CN.md)
-- [双语维护约定](i18n/README.md) · [配对清单](i18n/manifest.json)
+- [双语维护约定](i18n/README.zh-CN.md) · [配对清单](i18n/manifest.json)
 - [Bug Issue 模板](../.github/ISSUE_TEMPLATE/bug_report.yml) · [PR 审查表](../.github/pull_request_template.md)
 
 ## 历史工程证据

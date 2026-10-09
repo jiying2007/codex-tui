@@ -5,6 +5,8 @@
 
 **Language / 语言:** [English](README.md) · [简体中文](README.zh-CN.md)
 
+**Current documentation:** [Index](docs/README.md) · [Quickstart](docs/team-quickstart.md) · [CLI](docs/guides/cli-reference.md) · [Troubleshooting](docs/guides/troubleshooting.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)
+
 
 A local-first Mission Control for multiple Codex projects, repositories, targets and delivery systems.
 
