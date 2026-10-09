@@ -545,7 +545,10 @@ mod tests {
         .expect("unverified head");
         assert_eq!(local.branch_for_local_projection(123), "feature");
         assert_eq!(fork.branch_for_local_projection(123), "alice/repo:feature");
-        assert_eq!(unknown.branch_for_local_projection(123), "unverified-source:feature");
+        assert_eq!(
+            unknown.branch_for_local_projection(123),
+            "unverified-source:feature"
+        );
         assert_ne!(fork.branch_for_local_projection(123), "feature");
         assert_ne!(unknown.branch_for_local_projection(123), "feature");
     }
