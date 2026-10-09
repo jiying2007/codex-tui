@@ -1749,6 +1749,46 @@ mod tests {
     }
 
     #[test]
+    fn transcript_retention_removes_stale_fts_and_opt_out_clears_remaining_text() {
+        use crate::conversation::{ConversationItem, ConversationItemKind, ConversationPage};
+        use crate::domain::ThreadId;
+
+        let root = tempdir().expect("tempdir");
+        let store = SqliteStore::at(root.path());
+        let item = |id: &str, text: &str| ConversationItem {
+            turn_id: "turn".into(),
+            item_id: id.into(),
+            kind: ConversationItemKind::User,
+            text: text.into(),
+            status: None,
+        };
+        let page = ConversationPage {
+            thread_id: ThreadId::new("private"),
+            title: None,
+            turns: vec![],
+            items: vec![item("old", "old-private-needle"), item("new", "new-private-needle")],
+            next_turn_cursor: None,
+            next_item_cursor: None,
+        };
+        store.index_conversation_page(&page).expect("index fixture");
+        let conn = store.open_ready().expect("fixture connection");
+        conn.execute(
+            "UPDATE transcript_documents SET observed_at_unix_ms=1 WHERE item_id='old'",
+            [],
+        )
+        .expect("age old row");
+        drop(conn);
+        store.prune_transcript_index().expect("retention prune");
+        assert!(store.search_transcript("old-private-needle", 10)
+            .expect("search old").hits.is_empty());
+        assert_eq!(store.search_transcript("new-private-needle", 10)
+            .expect("search new").hits.len(), 1);
+        store.clear_transcript_index().expect("opt-out purge");
+        assert!(store.search_transcript("new-private-needle", 10)
+            .expect("search after purge").hits.is_empty());
+    }
+
+    #[test]
     fn local_batch_is_atomic_when_a_frozen_target_disappears() {
         use crate::batch_local::{LocalBatchAction, LocalBatchPlan, LocalBatchTarget};
 
