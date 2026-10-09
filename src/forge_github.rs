@@ -205,6 +205,17 @@ pub(crate) async fn probe_github_with_remote(
     capabilities.insert(ForgeCapability::IssueBoards, CapabilityState::Unavailable);
     capabilities.insert(ForgeCapability::WorkItems, CapabilityState::Unavailable);
 
+    // GitHub's Issues endpoint also returns PRs. Filtering them must not
+    // erase the evidence that the *raw* first page was already full.
+    let overview_source_page_saturated = issues_result
+        .as_ref()
+        .is_ok_and(|rows| rows.len() >= DEFAULT_PAGE_SIZE)
+        || pulls_result
+            .as_ref()
+            .is_ok_and(|rows| rows.len() >= DEFAULT_PAGE_SIZE)
+        || runs_result
+            .as_ref()
+            .is_ok_and(|page| page.workflow_runs.len() >= DEFAULT_PAGE_SIZE);
     let issues = issues_result.unwrap_or_default();
     let pulls = pulls_result.unwrap_or_default();
     let runs = runs_result.unwrap_or_default();
@@ -263,6 +274,7 @@ pub(crate) async fn probe_github_with_remote(
                 })
             })
             .collect(),
+        overview_source_page_saturated,
         review: None,
         observed_at_unix_ms: now_unix_ms(),
         freshness,

@@ -148,7 +148,7 @@
     "user-perceived-performance-evidence"
   ],
   "moduleRatchet": {
-    "src/app.rs": 7162,
+    "src/app.rs": 7166,
     "src/ui.rs": 2931,
     "src/app_server.rs": 3393,
     "src/main.rs": 1854,
@@ -162,7 +162,7 @@
     "src/app_server_wire.rs": 7,
     "src/sqlite_schema.rs": 220,
     "src/worktree_git.rs": 180,
-    "src/forge_types.rs": 421,
+    "src/forge_types.rs": 451,
     "src/headless.rs": 561,
     "src/headless/surfaces.rs": 487,
     "src/notification.rs": 257,
@@ -182,7 +182,7 @@
     "src/app/lifecycle.rs": 203,
     "src/app_server/lifecycle.rs": 198,
     "src/runtime_lifecycle.rs": 67,
-    "src/metadata_search.rs": 417,
+    "src/metadata_search.rs": 418,
     "src/saved_view_editor.rs": 347,
     "src/saved_view_editor/tests.rs": 60,
     "src/app/queue_editor.rs": 151,
@@ -246,7 +246,7 @@
     "src/command.rs": 130,
     "src/compat.rs": 574,
     "src/domain.rs": 342,
-    "src/forge_github.rs": 632,
+    "src/forge_github.rs": 644,
     "src/git.rs": 978,
     "src/goal.rs": 194,
     "src/hardening.rs": 329,
@@ -256,7 +256,7 @@
     "src/lib.rs": 57,
     "src/notification/tests.rs": 230,
     "src/operation.rs": 447,
-    "src/planning.rs": 1774,
+    "src/planning.rs": 1777,
     "src/pty.rs": 602,
     "src/release_benchmark.rs": 219,
     "src/replay_backend.rs": 48,
@@ -398,6 +398,33 @@
         "src/ui.rs",
         "src/ui/review.rs",
         "src/planning.rs"
+      ]
+    },
+    {
+      "date": "2026-10-09",
+      "kind": "defect-fix",
+      "scope": "Preserve raw GitHub Issues API page saturation before PR filtering; prevent zero-row false absence in Forge/Board provenance",
+      "modules": [
+        "src/forge_types.rs",
+        "src/forge.rs",
+        "src/forge_github.rs",
+        "src/planning.rs",
+        "src/app.rs",
+        "src/forge/tests.rs"
+      ]
+    },
+    {
+      "date": "2026-10-09",
+      "kind": "rustfmt-and-negative-fixture",
+      "scope": "Preserve GitHub raw-page saturation even when derived Issues filter removes all PRs; normalize fixture/source formatting",
+      "modules": [
+        "src/forge_types.rs",
+        "src/forge.rs",
+        "src/forge_github.rs",
+        "src/planning.rs",
+        "src/app.rs",
+        "src/forge/tests.rs",
+        "src/metadata_search.rs"
       ]
     }
   ]

@@ -303,6 +303,7 @@ mod tests {
                 blocking_discussions_resolved: None,
             }],
             pipelines: vec![],
+            overview_source_page_saturated: false,
             review: None,
             observed_at_unix_ms: 1,
             freshness: ForgeFreshness::Fresh,
