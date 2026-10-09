@@ -67,7 +67,10 @@ pub(crate) async fn branch_exists(cwd: &str, branch: &str) -> Result<bool> {
     match output.code {
         Some(0) => Ok(true),
         Some(1) => Ok(false),
-        _ => Err(anyhow!("git show-ref failed: {}", crate::hardening::safe_external_stderr(&output.stderr, "git child"))),
+        _ => Err(anyhow!(
+            "git show-ref failed: {}",
+            crate::hardening::safe_external_stderr(&output.stderr, "git child")
+        )),
     }
 }
 
