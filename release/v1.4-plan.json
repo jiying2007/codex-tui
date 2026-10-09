@@ -151,10 +151,10 @@
     "src/app.rs": 7162,
     "src/ui.rs": 2925,
     "src/app_server.rs": 3197,
-    "src/main.rs": 1853,
+    "src/main.rs": 1854,
     "src/sqlite_store.rs": 2341,
     "src/forge.rs": 1345,
-    "src/worktree.rs": 1006,
+    "src/worktree.rs": 1151,
     "src/release.rs": 1025,
     "src/runtime_store.rs": 444,
     "src/runtime_input.rs": 267,
@@ -255,7 +255,7 @@
     "src/launch.rs": 309,
     "src/lib.rs": 57,
     "src/notification/tests.rs": 230,
-    "src/operation.rs": 403,
+    "src/operation.rs": 447,
     "src/planning.rs": 1774,
     "src/pty.rs": 602,
     "src/release_benchmark.rs": 219,
@@ -270,7 +270,7 @@
     "src/ui/overlays.rs": 872,
     "src/ui/terminal.rs": 126,
     "src/forge/tests.rs": 356,
-    "src/app_server_transport/tests.rs": 244,
+    "src/app_server_transport/tests.rs": 317,
     "src/forge/gitlab_projection_tests.rs": 131,
     "src/forge/error_redaction_tests.rs": 43,
     "src/forge/remote_identity_tests.rs": 47
@@ -321,6 +321,24 @@
         "src/headless/surfaces.rs",
         "src/ui.rs",
         "src/forge/gitlab_projection_tests.rs"
+      ]
+    },
+    {
+      "date": "2026-10-09",
+      "kind": "destructive-operation-defect-fix",
+      "scope": "Unknown active scope fail-closed, queued admission TTL, nonzero Git result reconciliation, targeted negative tests",
+      "modules": [
+        "src/operation.rs",
+        "src/worktree.rs",
+        "src/main.rs"
+      ]
+    },
+    {
+      "date": "2026-10-09",
+      "kind": "protocol-qualification",
+      "scope": "Synthetic WebSocket notification ordering, close/invalid-message negative fixtures; L1/L2 CI separate from L3 real acceptance",
+      "modules": [
+        "src/app_server_transport/tests.rs"
       ]
     }
   ]

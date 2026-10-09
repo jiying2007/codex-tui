@@ -11,17 +11,21 @@ use anyhow::{Context, Result, anyhow};
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, mpsc};
 use tokio::task::{JoinHandle, JoinSet};
 
 const MUTATION_COMMAND_QUEUE_CAPACITY: usize = 32;
 const MUTATION_EVENT_QUEUE_CAPACITY: usize = 64;
 const MUTATION_MAX_CONCURRENCY: usize = 4;
+const SCOPE_ADMISSION_MAX_AGE: Duration = Duration::from_secs(5);
 
 #[derive(Clone, Debug)]
 pub struct MutationRequest {
     pub plan: OperationPlan,
     pub active_scopes: Vec<MutationScope>,
+    /// Age of the UI-projected activity proof, not a lease from upstream Codex.
+    pub admitted_at: Instant,
 }
 
 #[derive(Clone, Debug)]
@@ -233,7 +237,14 @@ async fn execute_request(
         }
     };
 
-    if let Err(error) = check_preconditions(store, &receipt.plan, &request.active_scopes).await {
+    if let Err(error) = check_preconditions(
+        store,
+        &receipt.plan,
+        &request.active_scopes,
+        request.admitted_at,
+    )
+    .await
+    {
         receipt.fail(now_unix_ms(), error.to_string());
         store.save_operation_receipt(&receipt)?;
         return Ok(receipt);
@@ -271,18 +282,7 @@ async fn execute_request(
                 );
             }
         },
-        Ok(output) => {
-            receipt.fail(
-                now_unix_ms(),
-                format!(
-                    "git mutation failed with exit status {}: {}",
-                    output
-                        .code
-                        .map_or_else(|| "unknown".into(), |code| code.to_string()),
-                    output.stderr.trim()
-                ),
-            );
-        }
+        Ok(output) => record_nonzero_mutation(&mut receipt, &output),
         Err(error) => {
             receipt.outcome_unknown(now_unix_ms(), format!("{error:#}"));
         }
@@ -297,11 +297,39 @@ async fn execute_request(
     Ok(receipt)
 }
 
+// A nonzero exit can occur after Git already created, moved or removed state.
+// Durable reconciliation must decide the actual result; raw hook stderr is never stored.
+fn record_nonzero_mutation(
+    receipt: &mut OperationReceipt,
+    output: &crate::worktree_git::MutationOutput,
+) {
+    receipt.outcome_unknown(
+        now_unix_ms(),
+        format!(
+            "git mutation returned status {}: {}",
+            output
+                .code
+                .map_or_else(|| "unknown".into(), |code| code.to_string()),
+            crate::hardening::safe_external_stderr(&output.stderr, "git mutation")
+        ),
+    );
+}
+
 async fn check_preconditions(
     store: &SqliteStore,
     plan: &OperationPlan,
     active_scopes: &[MutationScope],
+    admitted_at: Instant,
 ) -> Result<()> {
+    if matches!(
+        plan.kind,
+        OperationKind::RemoveWorktree | OperationKind::DeleteBranch
+    ) {
+        anyhow::ensure!(
+            admitted_at.elapsed() <= SCOPE_ADMISSION_MAX_AGE,
+            "active operation scope snapshot expired; review and confirm again"
+        );
+    }
     match plan.kind {
         OperationKind::CreateWorktree => {
             let target = plan
@@ -336,6 +364,13 @@ async fn check_preconditions(
             anyhow::ensure!(
                 managed.canonical_path == target,
                 "managed worktree identity mismatch"
+            );
+            let inventory = list_worktrees(&plan.cwd).await?;
+            anyhow::ensure!(
+                inventory
+                    .iter()
+                    .any(|worktree| same_path(&worktree.path, target)),
+                "managed worktree is no longer registered with Git"
             );
             anyhow::ensure!(
                 worktree_is_clean(target).await?,
@@ -648,6 +683,51 @@ mod tests {
     use crate::worktree_git::parse_worktree_porcelain;
     use tempfile::tempdir;
 
+    #[test]
+    fn nonzero_git_exit_is_reconciled_without_persisting_hook_secrets() {
+        let repo = LocalRepoIdentity {
+            git_common_dir: "/repo/.git".into(),
+            primary_root: "/repo".into(),
+        };
+        let plan = OperationPlan::delete_branch(repo, "/repo".into(), "feature".into(), 1);
+        let mut receipt = OperationReceipt::planned(plan);
+        record_nonzero_mutation(
+            &mut receipt,
+            &crate::worktree_git::MutationOutput {
+                success: false,
+                code: Some(1),
+                stdout: String::new(),
+                stderr: "Bearer sk-private https://alice:secret@internal.invalid/".into(),
+            },
+        );
+        assert_eq!(receipt.state, OperationState::OutcomeUnknown);
+        let failure = receipt.failure.expect("classified failure");
+        for secret in ["sk-private", "alice", "secret", "internal.invalid"] {
+            assert!(!failure.contains(secret));
+        }
+    }
+
+    #[tokio::test]
+    async fn queued_destructive_mutation_requires_fresh_admission_proof() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let store = SqliteStore::at(temp.path());
+        let repo = LocalRepoIdentity {
+            git_common_dir: "/repo/.git".into(),
+            primary_root: "/repo".into(),
+        };
+        let plan =
+            OperationPlan::remove_worktree(repo, "/repo".into(), "/repo/stale-target".into(), 1);
+        let error = check_preconditions(
+            &store,
+            &plan,
+            &[],
+            Instant::now() - SCOPE_ADMISSION_MAX_AGE - Duration::from_secs(1),
+        )
+        .await
+        .expect_err("expired scope proof must fail before git access");
+        assert!(error.to_string().contains("snapshot expired"));
+    }
+
     fn git(cwd: &Path, args: &[&str]) {
         let status = std::process::Command::new("git")
             .arg("-C")
@@ -774,6 +854,7 @@ branch refs/heads/feature
         let receipt = execute_request(
             &store,
             MutationRequest {
+                admitted_at: Instant::now(),
                 plan: create,
                 active_scopes: vec![],
             },
@@ -797,6 +878,7 @@ branch refs/heads/feature
         let receipt = execute_request(
             &store,
             MutationRequest {
+                admitted_at: Instant::now(),
                 plan: remove,
                 active_scopes: vec![],
             },
@@ -832,6 +914,7 @@ branch refs/heads/feature
         let create = execute_request(
             &store,
             MutationRequest {
+                admitted_at: Instant::now(),
                 plan: create,
                 active_scopes: vec![],
             },
@@ -850,6 +933,7 @@ branch refs/heads/feature
         let remove = execute_request(
             &store,
             MutationRequest {
+                admitted_at: Instant::now(),
                 plan: remove,
                 active_scopes: vec![],
             },
@@ -886,6 +970,7 @@ branch refs/heads/feature
         let create = execute_request(
             &store,
             MutationRequest {
+                admitted_at: Instant::now(),
                 plan: create,
                 active_scopes: vec![],
             },
@@ -903,6 +988,7 @@ branch refs/heads/feature
         let remove = execute_request(
             &store,
             MutationRequest {
+                admitted_at: Instant::now(),
                 plan: remove,
                 active_scopes: vec![MutationScope {
                     repo: Some(repo),
@@ -919,6 +1005,64 @@ branch refs/heads/feature
                 .failure
                 .as_deref()
                 .is_some_and(|failure| failure.contains("active mutation scope"))
+        );
+    }
+
+    #[tokio::test]
+    async fn stale_managed_record_does_not_authorize_unregistered_worktree_removal() {
+        let temp = tempdir().expect("tempdir");
+        let repo_root = temp.path().join("repo");
+        let repo = init_repo(&repo_root);
+        let store = SqliteStore::at(temp.path().join("store"));
+        let target = temp.path().join("stale-wt");
+        let target_text = target.to_string_lossy().into_owned();
+
+        let create = OperationPlan::create_worktree(
+            repo.clone(),
+            repo_root.to_string_lossy().into_owned(),
+            target_text.clone(),
+            "stale-wt-branch".into(),
+            "HEAD".into(),
+            1,
+        );
+        let created = execute_request(
+            &store,
+            MutationRequest {
+                admitted_at: Instant::now(),
+                plan: create,
+                active_scopes: vec![],
+            },
+        )
+        .await
+        .expect("create");
+        assert_eq!(created.state, OperationState::Succeeded);
+        // macOS may canonicalize /var to /private/var. Retain the exact
+        // persisted path before deleting its target on disk.
+        let managed_path = created.result_ref.expect("canonical managed path");
+        git(&repo_root, &["worktree", "remove", &target_text]);
+
+        let remove = OperationPlan::remove_worktree(
+            repo,
+            repo_root.to_string_lossy().into_owned(),
+            managed_path,
+            2,
+        );
+        let rejected = execute_request(
+            &store,
+            MutationRequest {
+                admitted_at: Instant::now(),
+                plan: remove,
+                active_scopes: vec![],
+            },
+        )
+        .await
+        .expect("conservative reject");
+        assert_eq!(rejected.state, OperationState::Failed);
+        assert!(
+            rejected
+                .failure
+                .as_deref()
+                .is_some_and(|message| { message.contains("no longer registered") })
         );
     }
 
@@ -944,6 +1088,7 @@ branch refs/heads/feature
         let receipt = execute_request(
             &store,
             MutationRequest {
+                admitted_at: Instant::now(),
                 plan,
                 active_scopes: vec![],
             },

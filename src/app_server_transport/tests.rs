@@ -185,6 +185,79 @@ async fn websocket_transport_round_trips_json_rpc_frames() {
     server.await.expect("fixture server");
 }
 
+#[tokio::test]
+async fn websocket_notification_order_and_clean_close_are_observed() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("notification fixture");
+    let address = listener.local_addr().expect("address");
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept");
+        let mut socket = accept_async(stream).await.expect("handshake");
+        for sequence in [1, 2] {
+            socket
+                .send(Message::Text(
+                    json!({"method": "thread/updated", "params": {"sequence": sequence}})
+                        .to_string()
+                        .into(),
+                ))
+                .await
+                .expect("notification");
+        }
+        socket.close(None).await.expect("close fixture");
+    });
+    let target = ResolvedAppServerTarget {
+        name: "notification-fixture".into(),
+        endpoint: ResolvedAppServerEndpoint::WebSocket {
+            url: format!("ws://{address}/rpc"),
+            auth_token: None,
+        },
+    };
+    let mut client = AppServerTransport::connect(&target).await.expect("connect");
+    for expected in [1, 2] {
+        let event = client
+            .read_json()
+            .await
+            .expect("read event")
+            .expect("event");
+        assert_eq!(event["params"]["sequence"], expected);
+    }
+    assert!(client.read_json().await.expect("clean close").is_none());
+    server.await.expect("server");
+}
+
+#[tokio::test]
+async fn malformed_websocket_event_is_rejected_without_echoing_payload() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("malformed fixture");
+    let address = listener.local_addr().expect("address");
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.expect("accept");
+        let mut socket = accept_async(stream).await.expect("handshake");
+        socket
+            .send(Message::Text("INVALID_SECRET_VALUE_not_json".into()))
+            .await
+            .expect("send invalid event");
+    });
+    let target = ResolvedAppServerTarget {
+        name: "bad-json-fixture".into(),
+        endpoint: ResolvedAppServerEndpoint::WebSocket {
+            url: format!("ws://{address}/rpc"),
+            auth_token: None,
+        },
+    };
+    let mut client = AppServerTransport::connect(&target).await.expect("connect");
+    let err = client
+        .read_json()
+        .await
+        .expect_err("bad JSON must not become a frame");
+    let safe = format!("{err:#}");
+    assert!(safe.contains("decode App Server WebSocket JSON"));
+    assert!(!safe.contains("INVALID_SECRET_VALUE_not_json"));
+    server.await.expect("server");
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn unix_socket_transport_uses_websocket_framing() {

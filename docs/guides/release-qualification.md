@@ -12,6 +12,8 @@ v1.4 is development-scope-complete, **not** a published Stable version or a prov
 
 On the **same protected main SHA**, require Linux/macOS/Windows Rust CI, Development Qualification, Security/Release Gate, 10k/50k scale, rendered interaction diagnostics, terminal PTY regression and retained structural soak as triggered by current policy. Retain workflow IDs and artifact SHA-256. Release artifacts must pass native metadata, ABI, license/notice and checksum validation. A green PR does not replace fresh-main qualification.
 
+Protocol qualification is intentionally tiered: **L1** replays retained registry/unknown/malformed frames; **L2** uses synthetic WebSocket/Unix transport and App Server registry lifecycle tests (including ordered notifications, disconnect and bad JSON). Neither tier authenticates a live Codex target. **L3** requires real current Codex App Server, actual capabilities and terminal/provider evidence, and remains externally blocked until observed on the exact candidate.
+
 ## Real environment requirements
 <!-- docs-section: external -->
 

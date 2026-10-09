@@ -33,6 +33,8 @@ Switch to a repository with a configured Git remote and run `codex-tui doctor gi
 
 Forge writes (create/comment/approve/merge MR/PR) are **plan-first, confirm-first**. Approve/merge recheck the target revision; unknown external results are **not** blindly retried. Review page contents remain owned by GitLab/GitHub. See [provider evidence](../qualification/provider.md).
 
+For managed Worktree deletion, active Codex threads with unknown repository or cwd are treated as possible conflicts. A destructive operation queued for too long expires its UI activity proof and must be reviewed and confirmed again; a nonzero Git exit is reconciled against observed Git state rather than assumed side-effect-free. This guard cannot atomically reserve a Worktree against independent Codex processes. Do not use it as a substitute for real concurrent-process qualification.
+
 ## Local language and accessibility
 <!-- docs-section: language -->
 
