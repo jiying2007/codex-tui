@@ -1,7 +1,14 @@
 # Minimal Core Design
 
 Date: 2026-09-29
-Status: implementation baseline
+Status: historical implementation baseline
+
+> **Archived design context.** For the active v1.4 boundary use
+> [ADR-012](../adr/012-upstream-convergence.md) and the
+> [first-deployment contract](../implementation/v1.4-first-deployment-baseline.md).
+> Historical JSON-state and locally duplicated Codex behaviors are not active
+> compatibility promises.
+
 
 ## 1. Scope
 

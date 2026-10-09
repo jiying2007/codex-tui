@@ -6,6 +6,13 @@ Product priority: personal-first, local-first, Codex-native
 Team model: repository reuse + code-forge projection
 Forge priority: GitLab Self-Managed first, GitHub second
 
+> **历史设计归档，非当前发布承诺。** 本方案保留 2026-09-29 的设计取舍，
+> 实际研发边界以 [ADR-012 薄 Mission Control](../zh-CN/adr/012-upstream-convergence.md)、
+> [v1.4 首次部署基线](../zh-CN/implementation/v1.4-first-deployment-baseline.md)
+> 和现行发布资格为准。涉及独立会话、Queue、Terminal、Worktree 的扩展设想
+> 已受上游收敛和维护冻结策略约束。
+
+
 ---
 
 ## 0. Executive summary

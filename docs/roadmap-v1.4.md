@@ -40,6 +40,16 @@ list/card authority from data it does not have.
 GitHub safe writes remain frozen by the inherited v1.3 Search & Multi-Target
 contract.
 
+## Upstream overlap tracked after development freeze
+
+Codex v0.162.0 introduced feature-gated managed Worktree create/list operations.
+The inherited local worktree coordinator stays a **maintenance-only safety and
+fallback path**, not a new independent authority. Its complete module identity
+is now enforced in `release/v1.5-convergence.json` by the shared v1.4 no-growth
+ratchet. [ADR-012](adr/012-upstream-convergence.md) defines the capability,
+identity and recovery parity checks required before delegating to Codex.
+This is architecture governance; it does not imply live provider or TTY PASS.
+
 ## Freeze
 
 New core functionality requires a new development plan. Until then, only

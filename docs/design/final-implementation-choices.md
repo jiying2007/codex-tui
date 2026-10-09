@@ -1,7 +1,15 @@
 # Final implementation choices
 
 Date: 2026-09-29
-Status: Accepted implementation baseline
+Status: historical implementation baseline (superseded in deployed-state design)
+
+> **Historical, not current implementation guidance.** The JSON `state-v1.json`
+> decision below was retired before any real deployment. Current first install
+> initializes SQLite v4 directly while human-edited settings remain TOML.
+> See [v1.4 first deployment](../implementation/v1.4-first-deployment-baseline.md)
+> and [ADR-012](../adr/012-upstream-convergence.md). Do not reintroduce
+> migrations or duplicate upstream authorities from this archive.
+
 
 This document closes the remaining implementation choices before M0/M1.
 
