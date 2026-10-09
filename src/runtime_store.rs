@@ -458,6 +458,8 @@ mod tests {
         std::fs::write(&blocked, "not a directory").expect("blocked parent fixture");
         let mut store = RuntimeStore {
             sqlite: SqliteStore::at(blocked),
+            _writer_guard: None,
+            index_transcripts: false,
             writable: true,
             error: None,
         };
