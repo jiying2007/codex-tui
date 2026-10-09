@@ -1482,6 +1482,39 @@ mod tests {
     }
 
     #[test]
+    fn only_explicit_gitlab_mergeable_status_passes() {
+        for status in [
+            None,
+            Some("checking"),
+            Some("ci_still_running"),
+            Some("not_approved"),
+            Some("policies_denied"),
+            Some("conflict"),
+            Some("unchecked"),
+            Some("can_be_merged"),
+        ] {
+            assert!(require_gitlab_merge_ready(status).is_err(), "{status:?}");
+        }
+        assert!(require_gitlab_merge_ready(Some("mergeable")).is_ok());
+    }
+
+    #[test]
+    fn gitlab_approval_fallback_rejects_missing_or_positive_counts() {
+        for remaining in [None, Some(1), Some(10)] {
+            assert!(require_gitlab_approval_fallback(&GitLabApprovals {
+                approvals_left: remaining,
+                approved_by: vec![],
+            })
+            .is_err());
+        }
+        assert!(require_gitlab_approval_fallback(&GitLabApprovals {
+            approvals_left: Some(0),
+            approved_by: vec![],
+        })
+        .is_ok());
+    }
+
+    #[test]
     fn github_plans_reuse_confirmation_contract_and_provider_identity() {
         let create = ForgeMutationPlan::create_merge_request(
             &github_identity(),
