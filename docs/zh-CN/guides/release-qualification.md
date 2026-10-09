@@ -5,7 +5,7 @@
 
 **Language / 语言:** [English](../../guides/release-qualification.md) · [简体中文](release-qualification.md)
 
-v1.4 已完成开发范围，**并非**已发布的 Stable，也不是完成真实部署的产品。公开 v1.0.0 只是历史发布记录，未被应用部署。本页是使用指南，不设立新发布权威；以 [正式资格 JSON](../../release/v1.4-criteria.json) 和 [#211 交接单](https://github.com/jiying2007/codex-tui/issues/211) 为准。
+v1.4 已完成开发范围，**并非**已发布的 Stable，也不是完成真实部署的产品。公开 v1.0.0 只是历史发布记录，未被应用部署。本页是使用指南，不设立新发布权威；以 [正式资格 JSON](../../../release/v1.4-criteria.json) 和 [#211 交接单](https://github.com/jiying2007/codex-tui/issues/211) 为准。
 
 ## 机器自动化资格
 <!-- docs-section: automated -->

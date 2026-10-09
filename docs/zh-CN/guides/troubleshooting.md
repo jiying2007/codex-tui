@@ -5,7 +5,7 @@
 
 **Language / 语言:** [English](../../guides/troubleshooting.md) · [简体中文](troubleshooting.md)
 
-先确认失败的是哪个权威，不要靠删除本地状态、改写上游凭据或伪造恢复成功。记录精确源码 SHA、目标类型和脱敏错误类别。敏感漏洞按 [安全披露](../../SECURITY.zh-CN.md) 处理。
+先确认失败的是哪个权威，不要靠删除本地状态、改写上游凭据或伪造恢复成功。记录精确源码 SHA、目标类型和脱敏错误类别。敏感漏洞按 [安全披露](../../../SECURITY.zh-CN.md) 处理。
 
 ## App Server 连接失败或线程缺失
 <!-- docs-section: codex -->
