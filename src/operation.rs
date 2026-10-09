@@ -50,6 +50,16 @@ pub fn scopes_overlap(left: &MutationScope, right: &MutationScope) -> bool {
         return false;
     }
 
+    // Unknown repository or missing writable roots cannot prove non-overlap.
+    // Prefer blocking an unrelated Worktree deletion to deleting active work.
+    if left.repo.is_none()
+        || right.repo.is_none()
+        || left.writable_roots.is_empty()
+        || right.writable_roots.is_empty()
+    {
+        return true;
+    }
+
     left.writable_roots.iter().any(|left_root| {
         right
             .writable_roots
@@ -354,6 +364,40 @@ mod tests {
             confidence: MutationScopeConfidence::ConservativeCwd,
         };
         assert!(scopes_overlap(&left, &right));
+    }
+
+    #[test]
+    fn unknown_or_empty_active_scope_blocks_destructive_overlap() {
+        let repo = LocalRepoIdentity {
+            git_common_dir: "/repo/.git".into(),
+            primary_root: "/repo".into(),
+        };
+        let target = MutationScope {
+            repo: Some(repo.clone()),
+            writable_roots: vec!["/repo/worktree".into()],
+            confidence: MutationScopeConfidence::ExactWorktree,
+        };
+        let unknown = MutationScope {
+            repo: None,
+            writable_roots: vec![],
+            confidence: MutationScopeConfidence::ConservativeCwd,
+        };
+        assert!(scopes_overlap(&target, &unknown));
+        let same_repo_no_cwd = MutationScope {
+            repo: Some(repo.clone()),
+            writable_roots: vec![],
+            confidence: MutationScopeConfidence::ConservativeCwd,
+        };
+        assert!(scopes_overlap(&target, &same_repo_no_cwd));
+        let distinct_repo = MutationScope {
+            repo: Some(LocalRepoIdentity {
+                git_common_dir: "/elsewhere/.git".into(),
+                primary_root: "/elsewhere".into(),
+            }),
+            writable_roots: vec![],
+            confidence: MutationScopeConfidence::ConservativeCwd,
+        };
+        assert!(!scopes_overlap(&target, &distinct_repo));
     }
 
     #[test]
