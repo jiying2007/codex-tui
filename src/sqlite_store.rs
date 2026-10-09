@@ -377,7 +377,13 @@ impl SqliteStore {
                 hits = rows.collect::<rusqlite::Result<Vec<_>>>()?;
             }
         } else {
-            let pattern = format!("%{query}%");
+            // LIKE wildcard characters in a user query are data, not SQL syntax.
+            // Escape backslash first to keep literal %, _ and \ searchable.
+            let literal = query
+                .replace('\\', "\\\\")
+                .replace('%', "\\%")
+                .replace('_', "\\_");
+            let pattern = format!("%{literal}%");
             let mut stmt = conn.prepare(
                 "SELECT thread_id, turn_id, item_id,
                         CASE
@@ -385,8 +391,8 @@ impl SqliteStore {
                           ELSE substr(text, 1, 237) || '…'
                         END
                  FROM transcript_documents
-                 WHERE lower(title) LIKE lower(?1)
-                    OR lower(text) LIKE lower(?1)
+                 WHERE lower(title) LIKE lower(?1) ESCAPE '\\'
+                    OR lower(text) LIKE lower(?1) ESCAPE '\\'
                  ORDER BY observed_at_unix_ms DESC
                  LIMIT ?2",
             )?;
@@ -1747,6 +1753,46 @@ mod tests {
             .search_transcript("远场", 20)
             .expect("short LIKE fallback");
         assert_eq!(short.hits.len(), 1);
+    }
+
+    #[test]
+    fn local_short_search_treats_sql_like_metacharacters_as_literals() {
+        use crate::conversation::{ConversationItem, ConversationItemKind, ConversationPage};
+        use crate::domain::ThreadId;
+        let root = tempdir().expect("tempdir");
+        let store = SqliteStore::at(root.path());
+        let page = ConversationPage {
+            thread_id: ThreadId::new("literal-like"),
+            title: None,
+            turns: vec![],
+            items: vec![
+                ConversationItem {
+                    turn_id: "t".into(),
+                    item_id: "literal".into(),
+                    kind: ConversationItemKind::User,
+                    text: "100% under_score C:\\data".into(),
+                    status: None,
+                },
+                ConversationItem {
+                    turn_id: "t".into(),
+                    item_id: "ordinary".into(),
+                    kind: ConversationItemKind::User,
+                    text: "100x underXscore C:/data".into(),
+                    status: None,
+                },
+            ],
+            next_turn_cursor: None,
+            next_item_cursor: None,
+        };
+        store.index_conversation_page(&page).expect("index");
+        for literal in ["%", "_", "\\"] {
+            let result = store
+                .search_transcript(literal, 20)
+                .expect("literal search");
+            assert_eq!(result.hits.len(), 1, "query {literal:?} must not wildcard");
+            assert_eq!(result.hits[0].item_id.as_deref(), Some("literal"));
+            assert!(!result.complete);
+        }
     }
 
     #[test]
