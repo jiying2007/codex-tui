@@ -68,6 +68,13 @@ class ProtocolCompatibilityTriggerScopeTests(unittest.TestCase):
         paths = set(trigger_paths("push"))
         self.assertFalse(REQUIRED - paths, "missing protocol adapter path triggers")
 
+    def test_l2_transport_and_registry_scenarios_are_explicit(self):
+        source = WORKFLOW.read_text(encoding="utf-8")
+        self.assertIn("Exercise mock transport and registry lifecycle (L2)", source)
+        self.assertIn("cargo test --locked --lib app_server_transport::tests::", source)
+        self.assertIn("cargo test --locked --lib app_server::tests::", source)
+        self.assertIn("src/app_server_*", trigger_paths("push"))
+
     def test_scheduled_and_manual_replay_are_retained(self):
         text = WORKFLOW.read_text(encoding="utf-8")
         self.assertIn('  schedule:\n    - cron: "41 2 * * 3"', text)
