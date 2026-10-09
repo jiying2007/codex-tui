@@ -65,6 +65,37 @@ class UpstreamConvergenceGuardTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("untracked", result.stderr)
 
+    def test_untracked_managed_worktree_adapter_fails(self):
+        path = self.root / "src/worktree_shadow.rs"
+        path.write_text("// independent adapter must be reviewed\n", encoding="utf-8")
+        result = self.check()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("managed-worktree-operations", result.stderr)
+        self.assertIn("untracked", result.stderr)
+
+    def test_worktree_guard_prefix_cannot_be_narrowed(self):
+        policy = self.manifest["maintenanceOnlyCapabilities"]["managed-worktree-operations"]
+        policy["modulePrefixes"].remove("src/runtime_commands")
+        policy["modules"].remove("src/runtime_commands.rs")
+        result = self.check()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("source prefixes drifted", result.stderr)
+
+    def test_worktree_guard_policy_and_duplicate_freeze_cannot_be_weakened(self):
+        self.manifest["maintenanceOnlyCapabilities"]["managed-worktree-operations"]["policy"] = "new-features-allowed"
+        self.manifest["frozenDuplicateCapabilities"].remove("independent-managed-worktree-authority")
+        result = self.check()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("maintenance-only policy drifted", result.stderr)
+        self.assertIn("frozen duplicate capability set drifted", result.stderr)
+
+    def test_worktree_adapter_growth_fails_under_shared_ratchet(self):
+        (self.root / "src/worktree_git.rs").write_text("// expanded\n" * 2, encoding="utf-8")
+        result = self.check()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("shared module ratchet", result.stderr)
+        self.assertIn("no-growth ceiling", result.stderr)
+
     def test_dropping_prefix_and_owned_modules_does_not_escape_guard(self):
         policy = self.manifest["maintenanceOnlyCapabilities"]["thread-queue-ui"]
         policy["modulePrefixes"].remove("src/app/queue")

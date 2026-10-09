@@ -25,6 +25,7 @@ REQUIRED_MAINTENANCE_CAPABILITIES = {
     "conversation-client",
     "thread-queue-ui",
     "embedded-terminal",
+    "managed-worktree-operations",
 }
 REQUIRED_FROZEN_DUPLICATES = {
     "local-agent-orchestrator",
@@ -35,6 +36,7 @@ REQUIRED_FROZEN_DUPLICATES = {
     "independent-conversation-protocol",
     "independent-terminal-manager",
     "generic-coding-agent-provider-layer",
+    "independent-managed-worktree-authority",
 }
 
 # These are exact observed source boundaries, not user-extensible selectors.
@@ -53,11 +55,13 @@ REQUIRED_PREFIXES = {
     ],
     "thread-queue-ui": ["src/thread_queue", "src/app/queue"],
     "embedded-terminal": ["src/terminal", "src/ui/terminal", "src/pty"],
+    "managed-worktree-operations": ["src/worktree", "src/operation", "src/runtime_commands"],
 }
 REQUIRED_CAPABILITY_POLICIES = {
     "conversation-client": "bugfix-compatibility-security-only",
     "thread-queue-ui": "upstream-projection-only",
     "embedded-terminal": "bugfix-compatibility-security-only",
+    "managed-worktree-operations": "upstream-projection-and-git-safety-only",
 }
 REQUIRED_AUTHORITIES = {
     "codex": [
