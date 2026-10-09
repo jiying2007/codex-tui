@@ -1,0 +1,52 @@
+name: "Bug report / 缺陷报告"
+description: "Report a reproducible codex-tui defect / 报告可复现问题"
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please sanitize all paths, credentials, internal domains, prompts and CLI stderr before posting.
+        提交前请去除账号、令牌、内部主机名、Prompt 和原始错误日志。
+        Security vulnerabilities must be reported privately as described in SECURITY.md.
+  - type: input
+    id: version
+    attributes:
+      label: "Version and source SHA / 版本及源码 SHA"
+      description: "e.g. codex-tui 1.4.0, commit 40-char SHA"
+      placeholder: "codex-tui 1.4.0 / <commit>"
+    validations:
+      required: true
+  - type: dropdown
+    id: environment
+    attributes:
+      label: "Environment / 运行环境"
+      options:
+        - "Ubuntu / Linux local TTY"
+        - "Windows SSH to Ubuntu"
+        - "macOS terminal"
+        - "Windows native"
+        - "GitHub Actions synthetic CI"
+        - "Other / 其他"
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: "Steps to reproduce / 最小复现步骤"
+      placeholder: "Sanitized steps, key presses, expected versus actual behavior"
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: "Diagnostics / 脱敏诊断"
+      description: "Doctor scope/status; Codex and Forge versions; TERM/TTY; nonsecret CI run IDs"
+    validations:
+      required: false
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: "Privacy confirmation / 隐私确认"
+      options:
+        - label: "I removed secrets and private project data / 已移除令牌、私有路径和敏感内容"
+          required: true

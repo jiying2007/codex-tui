@@ -1,0 +1,37 @@
+name: "Feature or design proposal / 功能与架构建议"
+description: "Propose a measured Mission Control improvement / 提交有证据的控制平面改进"
+title: "[Proposal] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        codex-tui is a thin control plane. Do not recreate Codex agents, conversation authority, queue or generic terminal management.
+        codex-tui 是薄控制平面，不重复建设 Codex Agent/Queue/对话权威。
+  - type: textarea
+    id: problem
+    attributes:
+      label: "Current user problem / 当前问题"
+      description: "Which workflow and observable cost should improve?"
+    validations:
+      required: true
+  - type: textarea
+    id: upstream
+    attributes:
+      label: "Upstream alternatives / 上游能力与现有替代"
+      description: "Existing Codex CLI, Git, glab/gh or other approaches considered"
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: "Evidence and acceptance / 证据与验收"
+      description: "Falsifiable target metrics, tests, resource budget and rollback"
+    validations:
+      required: true
+  - type: checkboxes
+    id: boundary
+    attributes:
+      label: "Policy / 权威边界"
+      options:
+        - label: "No second agent/task/forge authority; no secrets / 不新增第二套权威或提交秘密"
+          required: true
