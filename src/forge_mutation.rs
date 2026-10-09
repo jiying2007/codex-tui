@@ -895,6 +895,38 @@ async fn approval_state(plan: &ForgeMutationPlan, iid: u64) -> Result<GitLabAppr
     .await
 }
 
+fn require_gitlab_merge_ready(status: Option<&str>) -> Result<()> {
+    anyhow::ensure!(
+        status.is_some_and(|value| value.eq_ignore_ascii_case("mergeable")),
+        "GitLab merge readiness is not confirmed: {status:?}"
+    );
+    Ok(())
+}
+
+fn require_gitlab_approval_fallback(approvals: &GitLabApprovals) -> Result<()> {
+    let remaining = approvals.approvals_left.context(
+        "GitLab approval_state unavailable; fallback approvals_left is unknown",
+    )?;
+    anyhow::ensure!(remaining == 0, "GitLab merge needs {remaining} approvals");
+    Ok(())
+}
+
+async fn require_gitlab_approvals(plan: &ForgeMutationPlan, iid: u64) -> Result<()> {
+    match approval_state(plan, iid).await {
+        Ok(state) => {
+            let pending = unsatisfied_required_approval_rules(&state);
+            anyhow::ensure!(pending == 0, "GitLab merge has {pending} unsatisfied rules");
+            Ok(())
+        }
+        Err(_) => {
+            let fallback = approvals(plan, iid)
+                .await
+                .context("both GitLab approval_state and approvals fallback unavailable")?;
+            require_gitlab_approval_fallback(&fallback)
+        }
+    }
+}
+
 fn unsatisfied_required_approval_rules(state: &GitLabApprovalState) -> usize {
     state
         .rules
