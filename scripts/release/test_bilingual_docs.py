@@ -107,7 +107,7 @@ class BilingualDocsContract(unittest.TestCase):
             "docs\\\\secret.md",
         ):
             with self.subTest(target=unsafe):
-                errors = self.changed(path, original + "\\n[invalid](" + unsafe + ")\\n")
+                errors = self.changed(path, original + "\n[invalid](" + unsafe + ")\n")
                 self.assertTrue(any("unsafe Markdown link" in e for e in errors), errors)
 
     def test_safe_public_links_and_in_doc_anchors_remain_allowed(self):
