@@ -102,6 +102,13 @@ jobs:
 
           python scripts/release/check_failure_evidence.py             --matrix qualification/failure-matrix.json             --test-list qualification/test-list.txt
 
+          # Individually execute each retained case fixture, retaining wall-clock
+          # process evidence without equating test process time to recovery latency.
+          python scripts/release/capture_failure_case_execution.py \
+            --matrix qualification/failure-matrix.json \
+            --commit "$CODEX_TUI_GIT_SHA" \
+            --output qualification/failure-case-execution.json
+
           ./target/release/codex-tui release scale             --rows 50000             --warmup 5             --iterations 50             --source "development-qualification:ubuntu-24.04"             --json > qualification/scale-evidence.json
 
           ./target/release/codex-tui soak             --rows 50000             --cycles 256             --json > qualification/soak-evidence.json
