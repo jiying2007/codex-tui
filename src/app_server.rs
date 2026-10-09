@@ -2591,8 +2591,7 @@ impl RpcSession {
                 // the current RPC can complete. Preserve it and yield the
                 // actor to the normal request dispatcher immediately instead
                 // of waiting for the RPC deadline while the server waits for us.
-                let server_request = message.get("id").is_some()
-                    && message.get("method").is_some();
+                let server_request = message.get("id").is_some() && message.get("method").is_some();
                 enqueue_rpc_message(&mut self.queued_messages, message)?;
                 if server_request {
                     anyhow::bail!(
@@ -2797,9 +2796,11 @@ mod tests {
             .expect("read queued request")
             .expect("queued request");
         assert_eq!(pending["id"], "approval-42");
-        assert!(parse_interactive_request(&pending)
-            .expect("parse queued interactive request")
-            .is_some());
+        assert!(
+            parse_interactive_request(&pending)
+                .expect("parse queued interactive request")
+                .is_some()
+        );
         rpc.reject_request(pending["id"].clone(), "test fixture rejection")
             .await
             .expect("answer queued server request");
