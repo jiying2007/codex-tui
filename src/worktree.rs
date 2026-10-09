@@ -11,17 +11,21 @@ use anyhow::{Context, Result, anyhow};
 use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::sync::{Mutex, mpsc};
 use tokio::task::{JoinHandle, JoinSet};
 
 const MUTATION_COMMAND_QUEUE_CAPACITY: usize = 32;
 const MUTATION_EVENT_QUEUE_CAPACITY: usize = 64;
 const MUTATION_MAX_CONCURRENCY: usize = 4;
+const SCOPE_ADMISSION_MAX_AGE: Duration = Duration::from_secs(5);
 
 #[derive(Clone, Debug)]
 pub struct MutationRequest {
     pub plan: OperationPlan,
     pub active_scopes: Vec<MutationScope>,
+    /// Age of the UI-projected activity proof, not a lease from upstream Codex.
+    pub admitted_at: Instant,
 }
 
 #[derive(Clone, Debug)]
@@ -233,7 +237,7 @@ async fn execute_request(
         }
     };
 
-    if let Err(error) = check_preconditions(store, &receipt.plan, &request.active_scopes).await {
+    if let Err(error) = check_preconditions(store, &receipt.plan, &request.active_scopes, request.admitted_at).await {
         receipt.fail(now_unix_ms(), error.to_string());
         store.save_operation_receipt(&receipt)?;
         return Ok(receipt);
@@ -271,18 +275,7 @@ async fn execute_request(
                 );
             }
         },
-        Ok(output) => {
-            receipt.fail(
-                now_unix_ms(),
-                format!(
-                    "git mutation failed with exit status {}: {}",
-                    output
-                        .code
-                        .map_or_else(|| "unknown".into(), |code| code.to_string()),
-                    output.stderr.trim()
-                ),
-            );
-        }
+        Ok(output) => record_nonzero_mutation(&mut receipt, &output),
         Err(error) => {
             receipt.outcome_unknown(now_unix_ms(), format!("{error:#}"));
         }
@@ -297,11 +290,36 @@ async fn execute_request(
     Ok(receipt)
 }
 
+// A nonzero exit can occur after Git already created, moved or removed state.
+// Durable reconciliation must decide the actual result; raw hook stderr is never stored.
+fn record_nonzero_mutation(
+    receipt: &mut OperationReceipt,
+    output: &crate::worktree_git::MutationOutput,
+) {
+    receipt.outcome_unknown(
+        now_unix_ms(),
+        format!(
+            "git mutation returned status {}: {}",
+            output
+                .code
+                .map_or_else(|| "unknown".into(), |code| code.to_string()),
+            crate::hardening::safe_external_stderr(&output.stderr, "git mutation")
+        ),
+    );
+}
+
 async fn check_preconditions(
     store: &SqliteStore,
     plan: &OperationPlan,
     active_scopes: &[MutationScope],
+    admitted_at: Instant,
 ) -> Result<()> {
+    if matches!(plan.kind, OperationKind::RemoveWorktree | OperationKind::DeleteBranch) {
+        anyhow::ensure!(
+            admitted_at.elapsed() <= SCOPE_ADMISSION_MAX_AGE,
+            "active operation scope snapshot expired; review and confirm again"
+        );
+    }
     match plan.kind {
         OperationKind::CreateWorktree => {
             let target = plan
@@ -774,6 +792,7 @@ branch refs/heads/feature
         let receipt = execute_request(
             &store,
             MutationRequest {
+                admitted_at: Instant::now(),
                 plan: create,
                 active_scopes: vec![],
             },
@@ -797,6 +816,7 @@ branch refs/heads/feature
         let receipt = execute_request(
             &store,
             MutationRequest {
+                admitted_at: Instant::now(),
                 plan: remove,
                 active_scopes: vec![],
             },
@@ -832,6 +852,7 @@ branch refs/heads/feature
         let create = execute_request(
             &store,
             MutationRequest {
+                admitted_at: Instant::now(),
                 plan: create,
                 active_scopes: vec![],
             },
@@ -850,6 +871,7 @@ branch refs/heads/feature
         let remove = execute_request(
             &store,
             MutationRequest {
+                admitted_at: Instant::now(),
                 plan: remove,
                 active_scopes: vec![],
             },
@@ -886,6 +908,7 @@ branch refs/heads/feature
         let create = execute_request(
             &store,
             MutationRequest {
+                admitted_at: Instant::now(),
                 plan: create,
                 active_scopes: vec![],
             },
@@ -903,6 +926,7 @@ branch refs/heads/feature
         let remove = execute_request(
             &store,
             MutationRequest {
+                admitted_at: Instant::now(),
                 plan: remove,
                 active_scopes: vec![MutationScope {
                     repo: Some(repo),
