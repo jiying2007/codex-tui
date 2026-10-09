@@ -1465,6 +1465,42 @@ mod tests {
         );
     }
     #[test]
+    fn branch_bound_gitlab_mutation_refuses_fork_or_unknown_source_project() {
+        let plan = ForgeMutationPlan::merge_merge_request(
+            &identity(),
+            "/repo".into(),
+            7,
+            "feature".into(),
+            "main".into(),
+            1,
+        )
+        .expect("plan");
+        let mut mr: GitLabMergeRequest = serde_json::from_value(serde_json::json!({
+            "iid": 7,
+            "title": "Cross project",
+            "state": "opened",
+            "source_branch": "feature",
+            "target_branch": "main",
+            "source_project_id": 42,
+            "target_project_id": 42,
+            "web_url": "https://gitlab.example.com/team/repo/-/merge_requests/7",
+            "sha": "0123456789abcdef"
+        }))
+        .expect("MR fixture");
+        assert!(is_own_project_mr(&mr, &plan).expect("source identity"));
+
+        mr.source_project_id = Some(999);
+        assert!(!is_own_project_mr(&mr, &plan).expect("fork identity"));
+        mr.source_project_id = None;
+        assert!(is_own_project_mr(&mr, &plan).is_err());
+        mr.source_project_id = Some(42);
+        mr.target_project_id = None;
+        assert!(is_own_project_mr(&mr, &plan).is_err());
+        mr.target_project_id = Some(999);
+        assert!(is_own_project_mr(&mr, &plan).is_err());
+    }
+
+    #[test]
     fn gitlab_mr_fixture_requires_exact_head_sha() {
         let mr: GitLabMergeRequest = serde_json::from_value(serde_json::json!({
             "iid": 7,
