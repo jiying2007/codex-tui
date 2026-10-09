@@ -30,8 +30,6 @@ pub fn safe_external_stderr(stderr: &str, fallback: &str) -> String {
     }
 }
 
-
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum FailureDomain {
@@ -249,8 +247,19 @@ mod tests {
             "GIT_ASKPASS reported token=hidden",
         ] {
             let safe = safe_external_stderr(raw, "git failure");
-            for secret in ["sk-secret", "alice", "password", "sensitive", "private", "token", "hidden"] {
-                assert!(!safe.contains(secret), "untrusted stderr escaped sanitization");
+            for secret in [
+                "sk-secret",
+                "alice",
+                "password",
+                "sensitive",
+                "private",
+                "token",
+                "hidden",
+            ] {
+                assert!(
+                    !safe.contains(secret),
+                    "untrusted stderr escaped sanitization"
+                );
             }
             assert!(safe.starts_with("git failure"));
         }
