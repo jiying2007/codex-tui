@@ -666,6 +666,55 @@ mod tests {
     use crate::worktree_git::parse_worktree_porcelain;
     use tempfile::tempdir;
 
+    #[test]
+    fn nonzero_git_exit_is_reconciled_without_persisting_hook_secrets() {
+        let repo = LocalRepoIdentity {
+            git_common_dir: "/repo/.git".into(),
+            primary_root: "/repo".into(),
+        };
+        let plan = OperationPlan::delete_branch(repo, "/repo".into(), "feature".into(), 1);
+        let mut receipt = OperationReceipt::planned(plan);
+        record_nonzero_mutation(
+            &mut receipt,
+            &crate::worktree_git::MutationOutput {
+                success: false,
+                code: Some(1),
+                stdout: String::new(),
+                stderr: "Bearer sk-private https://alice:secret@internal.invalid/".into(),
+            },
+        );
+        assert_eq!(receipt.state, OperationState::OutcomeUnknown);
+        let failure = receipt.failure.expect("classified failure");
+        for secret in ["sk-private", "alice", "secret", "internal.invalid"] {
+            assert!(!failure.contains(secret));
+        }
+    }
+
+    #[tokio::test]
+    async fn queued_destructive_mutation_requires_fresh_admission_proof() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let store = SqliteStore::at(temp.path());
+        let repo = LocalRepoIdentity {
+            git_common_dir: "/repo/.git".into(),
+            primary_root: "/repo".into(),
+        };
+        let plan = OperationPlan::remove_worktree(
+            repo,
+            "/repo".into(),
+            "/repo/stale-target".into(),
+            1,
+        );
+        let error = check_preconditions(
+            &store,
+            &plan,
+            &[],
+            Instant::now() - SCOPE_ADMISSION_MAX_AGE - Duration::from_secs(1),
+        )
+        .await
+        .expect_err("expired scope proof must fail before git access");
+        assert!(error.to_string().contains("snapshot expired"));
+    }
+
     fn git(cwd: &Path, args: &[&str]) {
         let status = std::process::Command::new("git")
             .arg("-C")
