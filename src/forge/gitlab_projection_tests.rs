@@ -108,3 +108,18 @@ async fn failed_later_page_discards_previous_partial_result() {
     .expect_err("partial result must be unavailable");
     assert!(error.to_string().contains("subsequent page unavailable"));
 }
+
+#[test]
+fn headless_and_ui_see_partial_core_data_as_degraded() {
+    let mut observation = ForgeObservation::pending(ThreadId::new("probe"), "repo".into());
+    for core in [
+        ForgeCapability::Issues,
+        ForgeCapability::MergeRequests,
+        ForgeCapability::Pipelines,
+    ] {
+        observation.capabilities.insert(core, CapabilityState::Available);
+    }
+    assert!(!observation.core_data_incomplete());
+    observation.capabilities.insert(ForgeCapability::MergeRequests, CapabilityState::Unavailable);
+    assert!(observation.core_data_incomplete());
+}
