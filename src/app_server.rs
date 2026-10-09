@@ -2587,7 +2587,18 @@ impl RpcSession {
                     .ok_or_else(|| anyhow!("{method} response missing result"));
             }
             if should_queue_rpc_message(&message) {
+                // An inbound server request may require a user approval before
+                // the current RPC can complete. Preserve it and yield the
+                // actor to the normal request dispatcher immediately instead
+                // of waiting for the RPC deadline while the server waits for us.
+                let server_request = message.get("id").is_some()
+                    && message.get("method").is_some();
                 enqueue_rpc_message(&mut self.queued_messages, message)?;
+                if server_request {
+                    anyhow::bail!(
+                        "{method} interrupted by pending App Server request; RPC outcome unknown"
+                    );
+                }
             }
         }
     }
