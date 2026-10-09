@@ -474,6 +474,10 @@ async fn verify_success(store: &SqliteStore, plan: &OperationPlan) -> Result<(St
                     .any(|worktree| same_path(&worktree.path, target)),
                 "removed worktree still appears in git worktree list"
             );
+            anyhow::ensure!(
+                worktree_path_absent(target)?,
+                "removed worktree filesystem entry still exists"
+            );
             store.remove_managed_worktree(&plan.repo.git_common_dir, target)?;
             Ok((
                 target.to_string(),
@@ -555,6 +559,16 @@ enum ReconciledOutcome {
     Unknown(String),
 }
 
+// Check the directory entry, including dangling symlinks, rather than just
+// Path::exists(), which returns false for broken symlinks.
+fn worktree_path_absent(target: &str) -> Result<bool> {
+    match std::fs::symlink_metadata(target) {
+        Ok(_) => Ok(false),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(true),
+        Err(error) => Err(error).with_context(|| format!("stat worktree target {target}")),
+    }
+}
+
 async fn reconcile_outcome(store: &SqliteStore, plan: &OperationPlan) -> Result<ReconciledOutcome> {
     match plan.kind {
         OperationKind::CreateWorktree => {
@@ -606,8 +620,14 @@ async fn reconcile_outcome(store: &SqliteStore, plan: &OperationPlan) -> Result<
                 .iter()
                 .any(|worktree| same_path(&worktree.path, target))
             {
-                return Ok(ReconciledOutcome::Failed(
-                    "reconciliation confirms worktree still exists".into(),
+                return Ok(ReconciledOutcome::Unknown(
+                    "Git still registers the worktree; partial remove effects are not excluded"
+                        .into(),
+                ));
+            }
+            if !worktree_path_absent(target)? {
+                return Ok(ReconciledOutcome::Unknown(
+                    "Git unregistered the worktree but its filesystem entry remains".into(),
                 ));
             }
             verify_success(store, plan)
@@ -892,6 +912,53 @@ branch refs/heads/feature
                 .await
                 .expect("branch preserved")
         );
+    }
+
+    #[tokio::test]
+    async fn uncertain_remove_requires_both_git_and_filesystem_absence() {
+        let temp = tempdir().expect("tempdir");
+        let repo_root = temp.path().join("repo");
+        let repo = init_repo(&repo_root);
+        let store = SqliteStore::at(temp.path().join("store"));
+        let target = temp.path().join("uncertain-wt");
+        let target_text = target.to_string_lossy().into_owned();
+        git(
+            &repo_root,
+            &["worktree", "add", "-b", "uncertain", &target_text],
+        );
+        let remove = OperationPlan::remove_worktree(
+            repo,
+            repo_root.to_string_lossy().into_owned(),
+            canonical_path(&target_text),
+            1,
+        );
+
+        // Even when Git still registers the target, an attempted removal
+        // could have partially deleted files: do not claim side-effect-free failure.
+        let registered = reconcile_outcome(&store, &remove)
+            .await
+            .expect("registered");
+        assert!(matches!(registered, ReconciledOutcome::Unknown(_)));
+
+        git(&repo_root, &["worktree", "remove", &target_text]);
+        // Simulate a failed cleanup after the metadata record was removed.
+        std::fs::create_dir_all(&target).expect("restore orphan directory");
+        std::fs::write(target.join("orphan.txt"), "not deleted").expect("orphan file");
+        let leftover = reconcile_outcome(&store, &remove).await.expect("leftover");
+        assert!(matches!(leftover, ReconciledOutcome::Unknown(_)));
+        let error = verify_success(&store, &remove)
+            .await
+            .expect_err("existing target cannot be a verified removal");
+        assert!(error.to_string().contains("filesystem entry still exists"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dangling_symlink_is_not_treated_as_absent_worktree() {
+        let temp = tempdir().expect("tempdir");
+        let link = temp.path().join("orphan-link");
+        std::os::unix::fs::symlink(temp.path().join("missing"), &link).expect("dangling test link");
+        assert!(!worktree_path_absent(link.to_str().expect("utf8 path")).expect("stat link"));
     }
 
     #[tokio::test]

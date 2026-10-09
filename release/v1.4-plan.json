@@ -154,7 +154,7 @@
     "src/main.rs": 1854,
     "src/sqlite_store.rs": 2341,
     "src/forge.rs": 1345,
-    "src/worktree.rs": 1151,
+    "src/worktree.rs": 1218,
     "src/release.rs": 1025,
     "src/runtime_store.rs": 444,
     "src/runtime_input.rs": 267,
@@ -249,7 +249,7 @@
     "src/forge_github.rs": 632,
     "src/git.rs": 978,
     "src/goal.rs": 194,
-    "src/hardening.rs": 317,
+    "src/hardening.rs": 329,
     "src/i18n.rs": 222,
     "src/keymap.rs": 372,
     "src/launch.rs": 309,
@@ -339,6 +339,15 @@
       "scope": "Synthetic WebSocket notification ordering, close/invalid-message negative fixtures; L1/L2 CI separate from L3 real acceptance",
       "modules": [
         "src/app_server_transport/tests.rs"
+      ]
+    },
+    {
+      "date": "2026-10-09",
+      "kind": "defect-fix",
+      "scope": "P1 Worktree uncertain removal distinguishes Git metadata from residual disk directory; no green status from split-brain, with retained Failure Matrix and symlink negative tests",
+      "modules": [
+        "src/worktree.rs",
+        "src/hardening.rs"
       ]
     }
   ]
