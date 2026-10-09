@@ -5,7 +5,7 @@ use codex_tui::{
         LocalNote, PlanningSnapshot, SavedView, ScratchState, SourceKind, SourceRef, WorkCardRecord,
     },
     saved_view_editor::validate_saved_view,
-    sqlite_store::SqliteStore,
+    sqlite_store::{LocalWriterGuard, SqliteStore},
     store::{AppConfig, LocalStateV1, LocalStore},
     transcript_search::TranscriptSearchResults,
 };
@@ -13,6 +13,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 pub(crate) struct RuntimeStore {
     sqlite: SqliteStore,
+    _writer_guard: Option<LocalWriterGuard>,
+    index_transcripts: bool,
     writable: bool,
     error: Option<String>,
 }
@@ -28,6 +30,8 @@ impl RuntimeStore {
     pub(crate) fn at_for_test(root: &std::path::Path) -> Self {
         Self {
             sqlite: SqliteStore::at(root),
+            _writer_guard: None,
+            index_transcripts: true,
             writable: true,
             error: None,
         }
@@ -36,6 +40,8 @@ impl RuntimeStore {
     pub(crate) fn discover() -> Result<(Self, StoreBootstrap)> {
         let sqlite = SqliteStore::discover()?;
         let config = sqlite.load_config()?;
+        let guard = sqlite.acquire_local_writer()?;
+        let index_transcripts = config.search.persist_local_transcripts;
 
         let mut error = None;
         let local = match sqlite.load_state() {
@@ -58,11 +64,25 @@ impl RuntimeStore {
         } else {
             PlanningSnapshot::default()
         };
+        if error.is_none() {
+            let maintenance = if index_transcripts {
+                sqlite.prune_transcript_index()
+            } else {
+                sqlite.clear_transcript_index()
+            };
+            if let Err(index_error) = maintenance {
+                error = Some(format!(
+                    "SQLite derived transcript maintenance failed: {index_error:#}"
+                ));
+            }
+        }
         let writable = error.is_none();
 
         Ok((
             Self {
                 sqlite,
+                _writer_guard: Some(guard),
+                index_transcripts,
                 writable,
                 error,
             },
@@ -109,6 +129,9 @@ impl RuntimeStore {
     }
 
     pub(crate) fn index_conversation_page(&self, page: &ConversationPage) -> Option<String> {
+        if !self.index_transcripts {
+            return None;
+        }
         self.sqlite
             .index_conversation_page(page)
             .err()
@@ -120,6 +143,14 @@ impl RuntimeStore {
         query: &str,
         limit: usize,
     ) -> Result<TranscriptSearchResults, String> {
+        if !self.index_transcripts {
+            return Ok(TranscriptSearchResults {
+                query: query.to_string(),
+                source: codex_tui::transcript_search::TranscriptSearchSource::LocalFts,
+                hits: vec![],
+                complete: false,
+            });
+        }
         self.sqlite
             .search_transcript(query, limit)
             .map_err(|error| format!("local transcript search unavailable: {error:#}"))
@@ -427,6 +458,8 @@ mod tests {
         std::fs::write(&blocked, "not a directory").expect("blocked parent fixture");
         let mut store = RuntimeStore {
             sqlite: SqliteStore::at(blocked),
+            _writer_guard: None,
+            index_transcripts: false,
             writable: true,
             error: None,
         };

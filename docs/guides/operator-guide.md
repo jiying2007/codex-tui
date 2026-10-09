@@ -48,5 +48,5 @@ When using a Windows SSH client to operate an Ubuntu host, the TUI runs on **Ubu
 ## Evidence and state safety
 <!-- docs-section: safety -->
 
-Only personal metadata and planning overlays persist in SQLite; Codex conversations, Git and Forge remain authoritative. Never delete/overwrite a corrupt DB as a substitute for diagnosis; preserve store/WAL/SHM and create an offline recovery plan. Use `doctor bundle --output ./codex-tui-support` after checking privacy, and keep exact source SHA in bug reports. Do not publish Stable from the TUI.
+SQLite persists personal metadata/planning overlays. Derived raw user/assistant message text is **not** indexed by default. To opt into searchable local transcript caching, set `[search] persist_local_transcripts = true` in config.toml; up to 10,000 items, at most 4,096 characters each, retained no more than 30 days when maintenance runs. Turning the option off triggers logical removal of local transcript/FTS rows at the next startup, not forensic flash erasure. Codex remains the transcript authority. Never delete/overwrite a corrupt DB as a substitute for diagnosis; preserve store/WAL/SHM and create an offline recovery plan. Use `doctor bundle --output ./codex-tui-support` after checking privacy, and keep exact source SHA in bug reports. Do not publish Stable from the TUI.
 

@@ -43,6 +43,13 @@ pub struct NotificationsConfig {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SearchConfig {
+    // Raw user/assistant messages never persist without explicit local opt-in.
+    #[serde(default)]
+    pub persist_local_transcripts: bool,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AppConfig {
     #[serde(default)]
     pub ui: UiConfig,
@@ -50,6 +57,8 @@ pub struct AppConfig {
     pub notifications: NotificationsConfig,
     #[serde(default)]
     pub app_server: AppServerConfig,
+    #[serde(default)]
+    pub search: SearchConfig,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -169,6 +178,14 @@ fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    #[test]
+    fn transcript_persistence_is_opt_in_only() {
+        assert!(!AppConfig::default().search.persist_local_transcripts);
+        let configured: AppConfig =
+            toml::from_str("[search]\npersist_local_transcripts = true\n").expect("opt-in config");
+        assert!(configured.search.persist_local_transcripts);
+    }
 
     #[test]
     fn config_defaults_are_toml() {
