@@ -32,5 +32,5 @@ The checker is standard-library Python 3.8 compatible and verifies exact pairs, 
 ## Packaging and history
 <!-- docs-section: archive -->
 
-Current release archives contain validated English and Simplified Chinese README, quickstart and installation guides plus existing license/notices. Newly introduced bilingual assets are required during native archive verification; neither old public releases nor retained historical versions are retroactively modified. If a historical document is made active again, first register it as a paired current page. Stable remains non-publishing until all external release gates and explicit authorization are satisfied.
+Starting with the v1.4 first-deployment candidate, release archives must retain and validate all manifest-listed English/Simplified Chinese current guides, their canonical paths and localized top-level install/quickstart aliases, as well as license/notices. Newly introduced bilingual assets are required during native archive verification; neither old public releases nor retained historical versions are retroactively modified. If a historical document is made active again, first register it as a paired current page. Stable remains non-publishing until all external release gates and explicit authorization are satisfied.
 

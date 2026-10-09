@@ -12,7 +12,7 @@
 
 可信 Bundle 应包含 Linux/macOS/Windows 的原生归档、`SHA256SUMS`、`RELEASE_NOTES.md`、`release-verification.json` 和对应 `STABLE-CRITERIA.json`。稳定渠道还需要有效的真实环境证据。安装前确认目标 Commit/Tag 与 Bundle 来源，校验要安装的归档校验和后再解压，切勿执行来历不明的二进制。
 
-每个平台包包含二进制、README、CHANGELOG、INSTALL-UPGRADE、TEAM-QUICKSTART、Apache LICENSE、第三方 Notices 和 Release Metadata。双语发行文件也属于后续归档检查的受约束输入，详见英文 [归档约定](../../release/install-upgrade.md)。
+每个平台包包含二进制、README、CHANGELOG、INSTALL-UPGRADE、TEAM-QUICKSTART、Apache LICENSE、第三方 Notices 和 Release Metadata。**v1.4 首次部署候选包**还必须保留并校验英文/简体中文版 README、安装、快速入门（含根目录 `README.zh-CN.md`、`INSTALL-UPGRADE.zh-CN.md`、`TEAM-QUICKSTART.zh-CN.md`），以及 `docs/i18n/manifest.json` 指定的所有当前双语操作/治理页面（以原仓库相对路径存放）。缺任何配对页面、章节或语言声明将拒绝归档；历史 v1.0 包的原始英文布局不会被追溯修改。详见英文 [归档约定](../../release/install-upgrade.md)。
 
 ## 二进制、来源与归档身份
 <!-- docs-section: identity -->
