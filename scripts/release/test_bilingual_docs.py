@@ -62,6 +62,39 @@ class BilingualDocsContract(unittest.TestCase):
         errors = self.changed(path, json.dumps(data))
         self.assertTrue(any("unpaired current Chinese" in e for e in errors))
 
+    def test_active_english_and_chinese_must_change_together(self):
+        manifest = json.loads(self.read("docs/i18n/manifest.json"))
+        self.assertEqual(check.changed_pair_issues(manifest, set()), [])
+        self.assertEqual(
+            check.changed_pair_issues(manifest, {"README.md", "README.zh-CN.md"}), []
+        )
+        for only in ({"README.md"}, {"README.zh-CN.md"}):
+            errors = check.changed_pair_issues(manifest, only)
+            self.assertTrue(any("only one language" in item for item in errors))
+
+    def test_changed_pair_guard_covers_each_manifest_identity(self):
+        manifest = json.loads(self.read("docs/i18n/manifest.json"))
+        for pair in manifest["pairs"]:
+            with self.subTest(id=pair["id"]):
+                self.assertTrue(check.changed_pair_issues(manifest, {pair["en"]}))
+                self.assertTrue(check.changed_pair_issues(manifest, {pair["zh-CN"]}))
+                self.assertEqual(
+                    check.changed_pair_issues(
+                        manifest, {pair["en"], pair["zh-CN"]}
+                    ),
+                    [],
+                )
+
+    def test_github_event_exact_sha_pinned_git_comparison(self):
+        workflow = self.read(".github/workflows/ci.yml")
+        self.assertIn("github.event.pull_request.base.sha", workflow)
+        self.assertIn("github.event.before", workflow)
+        self.assertIn("git -c protocol.version=2 fetch --no-tags --depth=1", workflow)
+        self.assertIn('git config --global --add safe.directory "$GITHUB_WORKSPACE"', workflow)
+        self.assertNotIn("safe.directory=*", workflow)
+        self.assertIn('python scripts/docs/check_docs.py --changed-base "$DOCS_DIFF_BASE"', workflow)
+        self.assertNotIn("--changed-base HEAD^", workflow)
+
     def test_fenced_code_is_not_navigation(self):
         raw = "~~~bash\n[bad](../../missing)\n~~~\n[good](README.md)\n"
         self.assertEqual(list(check.local_links(raw)), ["README.md"])

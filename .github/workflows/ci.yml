@@ -630,6 +630,23 @@ jobs:
         run: python -c "import pathlib, py_compile; [py_compile.compile(str(p), doraise=True) for p in pathlib.Path('scripts').rglob('*.py')]"
       - name: Validate bilingual Markdown and local links
         run: python scripts/docs/check_docs.py
+      - name: Require EN and zh-CN active pages to change together
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          DOCS_DIFF_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          # The Linux ABI job runs inside Ubuntu 20.04 as root while the
+          # checkout is mounted with different ownership. Trust only the
+          # current checkout, never every directory.
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          [[ "$DOCS_DIFF_BASE" =~ ^[0-9a-f]{40}$ ]] || { echo 'Invalid exact base SHA'; exit 1; }
+          if ! git cat-file -e "${DOCS_DIFF_BASE}^{commit}" 2>/dev/null; then
+            git -c protocol.version=2 fetch --no-tags --depth=1 origin "$DOCS_DIFF_BASE"
+          fi
+          git cat-file -e "${DOCS_DIFF_BASE}^{commit}"
+          python scripts/docs/check_docs.py --changed-base "$DOCS_DIFF_BASE"
       - name: Enforce v1.4 active module ratchet
         run: python scripts/architecture/check_module_ratchet.py release/v1.4-plan.json
       - name: Enforce first-deployment compatibility contract

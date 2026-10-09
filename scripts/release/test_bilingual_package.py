@@ -1,5 +1,7 @@
 """Bilingual release artifacts preserve current guides and historical v1.0 audits."""
+import fnmatch
 import json
+import re
 from pathlib import Path
 import tempfile
 import unittest
@@ -71,14 +73,23 @@ class BilingualReleaseDocumentation(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             verify.verify_active_bilingual_docs(Path(directory), "1.0.0")
 
-    def test_release_push_trigger_covers_localized_archive_sources(self):
+    def test_release_push_trigger_covers_every_current_packaged_pair(self):
         release = (ROOT / ".github/workflows/release.yml").read_text(encoding="utf-8")
+        self.assertIn("  push:\n", release)
         prefix = release.split("  workflow_dispatch:\n", 1)[0]
-        for needed in ('      - "README.zh-CN.md"',
-                       '      - "docs/zh-CN/**"',
-                       '      - "docs/i18n/**"',
-                       '      - "scripts/docs/**"'):
-            self.assertIn(needed, prefix)
+        patterns = re.findall(r'(?m)^      - "([^"]+)"$', prefix)
+        self.assertIn("scripts/release/**", patterns)
+        self.assertIn("scripts/docs/**", patterns)
+        self.assertIn("docs/i18n/**", patterns)
+        for pair in MANIFEST["pairs"]:
+            for locale in ("en", "zh-CN"):
+                file = pair[locale]
+                with self.subTest(pair=pair["id"], locale=locale):
+                    self.assertTrue(
+                        any(fnmatch.fnmatchcase(file, pattern) for pattern in patterns),
+                        "release push cannot see a packaged documentation change: " + file,
+                    )
+
 
 
 if __name__ == "__main__":
