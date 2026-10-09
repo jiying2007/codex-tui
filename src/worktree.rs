@@ -915,6 +915,50 @@ branch refs/heads/feature
     }
 
     #[tokio::test]
+    async fn uncertain_remove_requires_both_git_and_filesystem_absence() {
+        let temp = tempdir().expect("tempdir");
+        let repo_root = temp.path().join("repo");
+        let repo = init_repo(&repo_root);
+        let store = SqliteStore::at(temp.path().join("store"));
+        let target = temp.path().join("uncertain-wt");
+        let target_text = target.to_string_lossy().into_owned();
+        git(&repo_root, &["worktree", "add", "-b", "uncertain", &target_text]);
+        let remove = OperationPlan::remove_worktree(
+            repo,
+            repo_root.to_string_lossy().into_owned(),
+            canonical_path(&target_text),
+            1,
+        );
+
+        // Even when Git still registers the target, an attempted removal
+        // could have partially deleted files: do not claim side-effect-free failure.
+        let registered = reconcile_outcome(&store, &remove).await.expect("registered");
+        assert!(matches!(registered, ReconciledOutcome::Unknown(_)));
+
+        git(&repo_root, &["worktree", "remove", &target_text]);
+        // Simulate a failed cleanup after the metadata record was removed.
+        std::fs::create_dir_all(&target).expect("restore orphan directory");
+        std::fs::write(target.join("orphan.txt"), "not deleted").expect("orphan file");
+        let leftover = reconcile_outcome(&store, &remove).await.expect("leftover");
+        assert!(matches!(leftover, ReconciledOutcome::Unknown(_)));
+        let error = verify_success(&store, &remove)
+            .await
+            .expect_err("existing target cannot be a verified removal");
+        assert!(error.to_string().contains("filesystem entry still exists"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn dangling_symlink_is_not_treated_as_absent_worktree() {
+        let temp = tempdir().expect("tempdir");
+        let link = temp.path().join("orphan-link");
+        std::os::unix::fs::symlink(temp.path().join("missing"), &link)
+            .expect("dangling test link");
+        assert!(!worktree_path_absent(link.to_str().expect("utf8 path"))
+            .expect("stat link"));
+    }
+
+    #[tokio::test]
     async fn dirty_managed_worktree_is_refused_without_force() {
         let temp = tempdir().expect("tempdir");
         let repo_root = temp.path().join("repo");
