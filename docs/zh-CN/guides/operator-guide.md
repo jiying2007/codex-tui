@@ -29,7 +29,7 @@ Mission Control 按仓库/项目聚合会话，显示 Needs You / Working / Read
 ## 仓库和交付状态
 <!-- docs-section: forge -->
 
-在有 Git Remote 的目标仓库执行 `codex-tui doctor git` 和 `codex-tui doctor forge`。内部 GitLab 使用已认证 `glab`，GitHub 使用 `gh`。GitLab 某一只读接口失败时，对应能力会降级，其他成功的 Issues/MRs/Pipelines 数据可以保留。
+在有 Git Remote 的目标仓库执行 `codex-tui doctor git` 和 `codex-tui doctor forge`。内部 GitLab 使用已认证 `glab`，GitHub 使用 `gh`。GitLab/GitHub 某一只读接口失败时，对应能力会降级，其他成功的数据可保留，但 Forge 会明确提示不完整；三个核心接口全部失败时不得报告“最新空结果”。Headless Forge 若缺少核心能力应以降级退出码返回。
 
 MR/PR 创建、评论、批准、合并遵循先预览→明确确认→再执行；Approval/Merge 会重新校验目标修订版本，结果不确定时禁止盲目重试。Review 状态权威在 GitLab/GitHub。见 [真实资格采集](../qualification/provider.md)。
 
