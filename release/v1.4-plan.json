@@ -270,7 +270,7 @@
     "src/ui/overlays.rs": 872,
     "src/ui/terminal.rs": 126,
     "src/forge/tests.rs": 356,
-    "src/app_server_transport/tests.rs": 244,
+    "src/app_server_transport/tests.rs": 310,
     "src/forge/gitlab_projection_tests.rs": 131,
     "src/forge/error_redaction_tests.rs": 43,
     "src/forge/remote_identity_tests.rs": 47
@@ -331,6 +331,14 @@
         "src/operation.rs",
         "src/worktree.rs",
         "src/main.rs"
+      ]
+    },
+    {
+      "date": "2026-10-09",
+      "kind": "protocol-qualification",
+      "scope": "Synthetic WebSocket notification ordering, close/invalid-message negative fixtures; L1/L2 CI separate from L3 real acceptance",
+      "modules": [
+        "src/app_server_transport/tests.rs"
       ]
     }
   ]
