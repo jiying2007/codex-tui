@@ -90,6 +90,8 @@ class BilingualDocsContract(unittest.TestCase):
         self.assertIn("github.event.pull_request.base.sha", workflow)
         self.assertIn("github.event.before", workflow)
         self.assertIn("git -c protocol.version=2 fetch --no-tags --depth=1", workflow)
+        self.assertIn('git config --global --add safe.directory "$GITHUB_WORKSPACE"', workflow)
+        self.assertNotIn("safe.directory=*", workflow)
         self.assertIn('python scripts/docs/check_docs.py --changed-base "$DOCS_DIFF_BASE"', workflow)
         self.assertNotIn("--changed-base HEAD^", workflow)
 
