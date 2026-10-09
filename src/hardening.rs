@@ -3,6 +3,35 @@ use serde::Serialize;
 
 pub const FAILURE_MATRIX_SCHEMA: &str = "codex-tui/failure-matrix/v2";
 
+/// Classify external Git/Forge child stderr without persisting its raw bytes.
+/// A subprocess may echo bearer tokens, credential URLs or environment values.
+pub fn safe_external_stderr(stderr: &str, fallback: &str) -> String {
+    let lower = stderr.to_ascii_lowercase();
+    let category = if lower.contains("401") || lower.contains("unauthorized") {
+        "authentication rejected"
+    } else if lower.contains("403")
+        || lower.contains("forbidden")
+        || lower.contains("permission denied")
+    {
+        "access denied"
+    } else if lower.contains("404") || lower.contains("not found") {
+        "remote resource not found"
+    } else if lower.contains("timeout") || lower.contains("timed out") {
+        "request timed out"
+    } else if lower.contains("connection refused") {
+        "connection refused"
+    } else {
+        "error details withheld"
+    };
+    if stderr.trim().is_empty() {
+        fallback.to_string()
+    } else {
+        format!("{fallback}: {category}")
+    }
+}
+
+
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum FailureDomain {
@@ -211,6 +240,21 @@ pub fn run_cli(args: &[String]) -> Result<i32> {
 mod tests {
     use super::*;
     use std::collections::BTreeSet;
+
+    #[test]
+    fn git_and_forge_error_classification_never_echoes_untrusted_stderr() {
+        for raw in [
+            "Bearer sk-secret https://alice:password@internal.invalid/ 401 Unauthorized",
+            "git hook says password=sensitive in https://bob:private@repo/",
+            "GIT_ASKPASS reported token=hidden",
+        ] {
+            let safe = safe_external_stderr(raw, "git failure");
+            for secret in ["sk-secret", "alice", "password", "sensitive", "private", "token", "hidden"] {
+                assert!(!safe.contains(secret), "untrusted stderr escaped sanitization");
+            }
+            assert!(safe.starts_with("git failure"));
+        }
+    }
 
     #[test]
     fn failure_matrix_ids_are_unique_and_fail_closed_cases_do_not_allow_writes() {
