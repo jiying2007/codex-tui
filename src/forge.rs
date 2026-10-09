@@ -55,7 +55,6 @@ where
     bail!("review result exceeds bounded pagination budget; totals unavailable")
 }
 
-
 pub fn canonical_provider_for_host(host: &str) -> Option<ForgeProviderKind> {
     if host.eq_ignore_ascii_case("github.com") {
         Some(ForgeProviderKind::GitHub)
@@ -389,7 +388,10 @@ pub(crate) fn core_observation_status(
         (
             capabilities,
             ForgeFreshness::Unavailable,
-            Some(format!("all {} core read endpoints are unavailable", provider.label())),
+            Some(format!(
+                "all {} core read endpoints are unavailable",
+                provider.label()
+            )),
         )
     } else {
         (capabilities, ForgeFreshness::Fresh, None)
