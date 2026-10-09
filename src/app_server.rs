@@ -29,7 +29,7 @@ use std::ffi::OsString;
 use std::fmt;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::{mpsc, watch};
-use tokio::task::JoinHandle;
+use tokio::task::{JoinHandle, JoinSet};
 
 mod lifecycle;
 mod user_response;
@@ -45,6 +45,7 @@ const APP_SERVER_COMMAND_QUEUE_CAPACITY: usize = 64;
 const APP_SERVER_CONVERSATION_QUEUE_CAPACITY: usize = 256;
 const RPC_QUEUED_MESSAGE_CAPACITY: usize = 1024;
 const RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+const SEARCH_TOTAL_TIMEOUT: Duration = Duration::from_secs(12);
 
 #[derive(Debug)]
 struct RpcResponseError {
@@ -532,6 +533,7 @@ pub async fn start_target(target: ResolvedAppServerTarget) -> Result<StartedRegi
         conversation_tx,
         command_rx,
         hydration,
+        target,
     ));
 
     Ok(StartedRegistry {
@@ -819,6 +821,7 @@ async fn run_registry_actor(
     conversation_tx: mpsc::Sender<ConversationEvent>,
     mut command_rx: mpsc::Receiver<BackendCommand>,
     mut hydration: Option<RegistryHydration>,
+    target: ResolvedAppServerTarget,
 ) {
     let mut generation = 0_u64;
     let mut threads = by_id(initial_threads);
@@ -826,6 +829,9 @@ async fn run_registry_actor(
     let mut watched_threads = BTreeSet::new();
     let mut watched_queue_threads = BTreeSet::new();
     let mut goal_supported: Option<bool> = None;
+    let mut search_generation = 0_u64;
+    let mut search_tasks = JoinSet::new();
+    let mut active_search_query = String::new();
     let mut goal_probed = BTreeSet::new();
     let mut goal_queued = BTreeSet::new();
     let mut goal_probe_queue = VecDeque::new();
@@ -1073,29 +1079,26 @@ async fn run_registry_actor(
                         }
                     }
                     BackendCommand::SearchTranscript(query) => {
-                        match search_transcript(&mut rpc, query.clone()).await {
-                            Ok(results) => {
-                                mark_optional_capability(&mut status, "thread/search", true);
-                                send_conversation_event(
-                                    &conversation_tx,
-                                    ConversationEvent::TranscriptSearchLoaded(results),
-                                )
-                                .await;
-                            }
-                            Err(error) => {
-                                if is_transcript_search_unsupported(&error) {
-                                    mark_optional_capability(&mut status, "thread/search", false);
-                                }
-                                send_conversation_event(
-                                    &conversation_tx,
-                                    ConversationEvent::TranscriptSearchFailed {
-                                        query,
-                                        error: error.to_string(),
-                                    },
-                                )
-                                .await;
-                            }
-                        }
+                        // Read-only full-history search never monopolizes the live
+                        // registry/approval/prompt connection. Only one isolated
+                        // auxiliary target session exists at a time.
+                        search_tasks = JoinSet::new();
+                        search_generation = search_generation.saturating_add(1);
+                        let generation = search_generation;
+                        active_search_query = query.clone();
+                        let search_target = target.clone();
+                        search_tasks.spawn(async move {
+                            let result = tokio::time::timeout(
+                                SEARCH_TOTAL_TIMEOUT,
+                                isolated_transcript_search(&search_target, query.clone()),
+                            )
+                            .await
+                            .unwrap_or_else(|_| Err(anyhow!(
+                                "transcript search exceeded bounded {}s deadline",
+                                SEARCH_TOTAL_TIMEOUT.as_secs()
+                            )));
+                            (generation, query, result)
+                        });
                     }
                     BackendCommand::JumpToTranscriptHit(hit) => {
                         let thread_id = hit.thread_id.clone();
@@ -1418,6 +1421,42 @@ async fn run_registry_actor(
                         generation = generation.saturating_add(1);
                         let _ = tx.send(snapshot(generation, &threads, &status));
                     }
+                }
+            }
+            search_done = search_tasks.join_next(), if !search_tasks.is_empty() => {
+                if let Some(Ok((completed_generation, query, result))) = search_done {
+                    if completed_generation != search_generation {
+                        continue;
+                    }
+                    match result {
+                        Ok(results) => {
+                            mark_optional_capability(&mut status, "thread/search", true);
+                            send_conversation_event(
+                                &conversation_tx,
+                                ConversationEvent::TranscriptSearchLoaded(results),
+                            ).await;
+                        }
+                        Err(error) => {
+                            if is_transcript_search_unsupported(&error) {
+                                mark_optional_capability(&mut status, "thread/search", false);
+                            }
+                            send_conversation_event(
+                                &conversation_tx,
+                                ConversationEvent::TranscriptSearchFailed {
+                                    query,
+                                    error: error.to_string(),
+                                },
+                            ).await;
+                        }
+                    }
+                } else {
+                    send_conversation_event(
+                        &conversation_tx,
+                        ConversationEvent::TranscriptSearchFailed {
+                            query: active_search_query.clone(),
+                            error: "isolated transcript search task failed".into(),
+                        },
+                    ).await;
                 }
             }
             message = rpc.read_message() => {
@@ -2110,6 +2149,15 @@ async fn execute_thread_queue_mutation(
         }
     }
     Ok(())
+}
+
+async fn isolated_transcript_search(
+    target: &ResolvedAppServerTarget,
+    query: String,
+) -> Result<TranscriptSearchResults> {
+    let mut isolated_rpc = RpcSession::connect(target).await?;
+    initialize(&mut isolated_rpc).await?;
+    search_transcript(&mut isolated_rpc, query).await
 }
 
 async fn search_transcript(rpc: &mut RpcSession, query: String) -> Result<TranscriptSearchResults> {
