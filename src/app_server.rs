@@ -2719,6 +2719,80 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn isolated_search_does_not_block_live_app_server_transport() {
+        use crate::app_server_target::ResolvedAppServerEndpoint;
+        use futures_util::{SinkExt, StreamExt};
+        use tokio_tungstenite::{accept_async, tungstenite::Message};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind mock");
+        let addr = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move {
+            let (live, _) = listener.accept().await.expect("live connection");
+            let mut live = accept_async(live).await.expect("live handshake");
+            let (search, _) = listener.accept().await.expect("search connection");
+            let mut search = accept_async(search).await.expect("search handshake");
+
+            let initialize = search.next().await.expect("initialize").expect("frame");
+            let Message::Text(initialize) = initialize else { panic!("initialize text") };
+            let request: Value = serde_json::from_str(initialize.as_str()).expect("JSON");
+            assert_eq!(request["method"], "initialize");
+            search.send(Message::Text(
+                json!({"id":request["id"],"result":{"serverInfo":{"version":"fixture"}}})
+                    .to_string().into()
+            )).await.expect("initialize reply");
+            let initialized = search.next().await.expect("initialized").expect("frame");
+            let Message::Text(initialized) = initialized else { panic!("initialized text") };
+            assert_eq!(serde_json::from_str::<Value>(initialized.as_str()).unwrap()["method"], "initialized");
+
+            let request = search.next().await.expect("thread search").expect("frame");
+            let Message::Text(request) = request else { panic!("search text") };
+            let request: Value = serde_json::from_str(request.as_str()).expect("search json");
+            assert_eq!(request["method"], "thread/search");
+
+            let live_request = live.next().await.expect("live command").expect("frame");
+            let Message::Text(live_request) = live_request else { panic!("live text") };
+            let live_request: Value = serde_json::from_str(live_request.as_str()).expect("live json");
+            assert_eq!(live_request["method"], "fixture/heartbeat");
+            live.send(Message::Text(
+                json!({"id":live_request["id"],"result":{"healthy":true}}).to_string().into()
+            )).await.expect("live reply");
+
+            tokio::time::sleep(Duration::from_millis(75)).await;
+            search.send(Message::Text(
+                json!({"id":request["id"],"result":{"data":[],"nextCursor":null}})
+                    .to_string().into()
+            )).await.expect("search reply");
+        });
+
+        let target = ResolvedAppServerTarget {
+            name: "two-connection-fixture".into(),
+            endpoint: ResolvedAppServerEndpoint::WebSocket {
+                url: format!("ws://{addr}/rpc"),
+                auth_token: None,
+            },
+        };
+        let mut live = AppServerTransport::connect(&target).await.expect("live connect");
+        let task_target = target.clone();
+        let search = tokio::spawn(async move {
+            isolated_transcript_search(&task_target, "needle".into()).await
+        });
+        live.write_json(&json!({"id":77,"method":"fixture/heartbeat","params":{}}))
+            .await.expect("live write");
+        let live_response = tokio::time::timeout(
+            Duration::from_secs(2),
+            live.read_json(),
+        ).await.expect("live reply must remain responsive").expect("read")
+            .expect("response");
+        assert_eq!(live_response["result"]["healthy"], true);
+        let result = search.await.expect("search task").expect("search result");
+        assert!(result.complete);
+        assert!(result.hits.is_empty());
+        server.await.expect("mock server");
+    }
+
     #[test]
     fn transcript_complete_requires_all_occurrences_and_budget_headroom() {
         assert!(transcript_results_complete(None, false, 3));
