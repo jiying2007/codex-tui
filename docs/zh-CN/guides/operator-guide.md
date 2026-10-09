@@ -31,7 +31,7 @@ Mission Control 按仓库/项目聚合会话，显示 Needs You / Working / Read
 
 在有 Git Remote 的目标仓库执行 `codex-tui doctor git` 和 `codex-tui doctor forge`。内部 GitLab 使用已认证 `glab`，GitHub 使用 `gh`。GitLab/GitHub 某一只读接口失败时，对应能力会降级，其他成功的数据可保留，但 Forge 会明确提示不完整；三个核心接口全部失败时不得报告“最新空结果”。Headless Forge 若缺少核心能力应以降级退出码返回。
 
-Forge 概览仅获取各能力最近 20 条记录。GitHub Issues API 会混入 PR，系统在过滤 PR 前保留原始分页是否触顶的证据；因此即使展示 0 条 Issue，只要原始页已满，也不得断言不存在。当前分支的 CR/Pipeline 未命中**不代表不存在**；Board 数据来源与 Review 会提示该不确定性，精确结果仍应向平台核实。MR/PR 创建、评论、批准、合并遵循先预览→明确确认→再执行；Approval/Merge 会重新校验目标修订版本，结果不确定时禁止盲目重试。Review 状态权威在 GitLab/GitHub。Forge Merge 要求明确可合并状态和经验证的审批信息；GitHub 合并性未知、GitLab 审批数量缺失或详细状态未知时必须阻止执行。创建/审批的前置检查使用有界完整分页，不把第一页当作全部数据，服务端仍为最终权威。见 [真实资格采集](../qualification/provider.md)。
+Forge 概览仅获取各能力最近 20 条记录。GitHub Issues API 会混入 PR，系统在过滤 PR 前保留原始分页是否触顶的证据；因此即使展示 0 条 Issue，只要原始页已满，也不得断言不存在。当前分支的 CR/Pipeline 未命中**不代表不存在**；Board 数据来源与 Review 会提示该不确定性，精确结果仍应向平台核实。MR/PR 创建、评论、批准、合并遵循先预览→明确确认→再执行；Approval/Merge 会重新校验目标修订版本，结果不确定时禁止盲目重试。Review 状态权威在 GitLab/GitHub。Forge Merge 要求明确可合并状态和经验证的审批信息；GitHub 合并性未知、GitLab 审批数量缺失或详细状态未知时必须阻止执行。创建/审批的前置检查使用有界完整分页，不把第一页当作全部数据，服务端仍为最终权威。GitHub Fork PR 使用 `owner/repo:branch` 等完整源仓库标识展示，不得仅凭同名分支绑定到本地 Git 分支。与本地分支绑定的审批、评论和合并需要 PR 源仓库 ID 与路径均匹配；缺少来源信息时保守拒绝。见 [真实资格采集](../qualification/provider.md)。
 
 删除受管 Worktree 时，仓库或 cwd 未知的活跃 Codex 会话按潜在冲突保守拒绝；破坏性操作排队过久将使操作范围证据过期，需要重新审阅和确认。Git 命令非零退出会依据实际 Git 状态协调，不假设没有副作用。删除 Worktree 只有在 Git 注册信息与磁盘目录**均已消失**时才视作已验证成功；两者不一致时回执保持 `OutcomeUnknown`，禁止自动重试。这不能对独立 Codex 进程建立原子锁，必须继续进行真实并发操作验证。
 
