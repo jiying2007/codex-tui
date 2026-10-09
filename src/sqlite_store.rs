@@ -1857,10 +1857,8 @@ mod tests {
             next_item_cursor: None,
         };
         store.index_conversation_page(&page).expect("first index");
-        let first_seen = u64_to_i64(
-            now_unix_ms().saturating_sub(TRANSCRIPT_RETENTION_MS / 2),
-        )
-        .expect("valid first seen time");
+        let first_seen = u64_to_i64(now_unix_ms().saturating_sub(TRANSCRIPT_RETENTION_MS / 2))
+            .expect("valid first seen time");
         let conn = store.open_ready().expect("open database");
         conn.execute(
             "UPDATE transcript_documents SET observed_at_unix_ms=?1 WHERE item_id='item'",
@@ -1868,14 +1866,17 @@ mod tests {
         )
         .expect("fixture timestamp");
         drop(conn);
-        store.index_conversation_page(&page).expect("replay existing item");
+        store
+            .index_conversation_page(&page)
+            .expect("replay existing item");
         let conn = store.open_ready().expect("check database");
-        let kept: i64 = conn.query_row(
-            "SELECT observed_at_unix_ms FROM transcript_documents WHERE item_id='item'",
-            [],
-            |row| row.get(0),
-        )
-        .expect("first-seen value");
+        let kept: i64 = conn
+            .query_row(
+                "SELECT observed_at_unix_ms FROM transcript_documents WHERE item_id='item'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("first-seen value");
         assert_eq!(kept, first_seen, "replay must not renew retention");
         conn.execute(
             "UPDATE transcript_documents SET observed_at_unix_ms=1 WHERE item_id='item'",
@@ -1883,7 +1884,9 @@ mod tests {
         )
         .expect("expire cached item");
         drop(conn);
-        store.index_conversation_page(&page).expect("replay expired item");
+        store
+            .index_conversation_page(&page)
+            .expect("replay expired item");
         assert!(
             store
                 .search_transcript("sensitive-lifetime-sentinel", 10)
