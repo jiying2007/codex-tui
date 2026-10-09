@@ -239,6 +239,10 @@ impl SqliteStore {
         let mut conn = self.open_ready()?;
         let has_fts = transcript_fts_available(&conn)?;
         let observed_at = u64_to_i64(now_unix_ms())?;
+        let bounded_title = page
+            .title
+            .as_deref()
+            .map(|title| title.chars().take(TRANSCRIPT_MAX_CHARS).collect::<String>());
         let tx = conn
             .transaction()
             .context("begin transcript index transaction")?;
@@ -253,6 +257,8 @@ impl SqliteStore {
             if item.text.trim().is_empty() {
                 continue;
             }
+            // Retention is from first local ingestion, not the latest reread.
+            // Repeated hydration must not silently renew stored-message lifetime.
             tx.execute(
                 "INSERT INTO transcript_documents (
                     thread_id, turn_id, item_id, kind, title, text, observed_at_unix_ms
@@ -260,14 +266,13 @@ impl SqliteStore {
                  ON CONFLICT(thread_id, turn_id, item_id) DO UPDATE SET
                     kind=excluded.kind,
                     title=excluded.title,
-                    text=excluded.text,
-                    observed_at_unix_ms=excluded.observed_at_unix_ms",
+                    text=excluded.text",
                 params![
                     page.thread_id.0.as_str(),
                     item.turn_id.as_str(),
                     item.item_id.as_str(),
                     kind,
-                    page.title.as_deref(),
+                    bounded_title.as_deref(),
                     item.text
                         .chars()
                         .take(TRANSCRIPT_MAX_CHARS)
@@ -297,7 +302,7 @@ impl SqliteStore {
                         item.turn_id.as_str(),
                         item.item_id.as_str(),
                         kind,
-                        page.title.as_deref(),
+                        bounded_title.as_deref(),
                         item.text
                             .chars()
                             .take(TRANSCRIPT_MAX_CHARS)
@@ -1793,6 +1798,103 @@ mod tests {
             assert_eq!(result.hits[0].item_id.as_deref(), Some("literal"));
             assert!(!result.complete);
         }
+    }
+
+    #[test]
+    fn transcript_title_and_text_persistence_share_explicit_size_budget() {
+        use crate::conversation::{ConversationItem, ConversationItemKind, ConversationPage};
+        use crate::domain::ThreadId;
+
+        let root = tempdir().expect("tempdir");
+        let store = SqliteStore::at(root.path());
+        let page = ConversationPage {
+            thread_id: ThreadId::new("bounded-title"),
+            title: Some("T".repeat(TRANSCRIPT_MAX_CHARS + 50)),
+            turns: vec![],
+            items: vec![ConversationItem {
+                turn_id: "turn".into(),
+                item_id: "item".into(),
+                kind: ConversationItemKind::Assistant,
+                text: "S".repeat(TRANSCRIPT_MAX_CHARS + 50),
+                status: None,
+            }],
+            next_turn_cursor: None,
+            next_item_cursor: None,
+        };
+        store.index_conversation_page(&page).expect("bounded index");
+        let conn = store.open_ready().expect("open database");
+        let (title_len, text_len): (i64, i64) = conn
+            .query_row(
+                "SELECT length(title), length(text) FROM transcript_documents
+                 WHERE thread_id='bounded-title' AND item_id='item'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("bounded stored values");
+        assert_eq!(title_len, TRANSCRIPT_MAX_CHARS as i64);
+        assert_eq!(text_len, TRANSCRIPT_MAX_CHARS as i64);
+    }
+
+    #[test]
+    fn rehydrating_transcript_does_not_extend_retention() {
+        use crate::conversation::{ConversationItem, ConversationItemKind, ConversationPage};
+        use crate::domain::ThreadId;
+
+        let root = tempdir().expect("tempdir");
+        let store = SqliteStore::at(root.path());
+        let page = ConversationPage {
+            thread_id: ThreadId::new("ttl-fixture"),
+            title: Some("First seen retention".into()),
+            turns: vec![],
+            items: vec![ConversationItem {
+                turn_id: "turn".into(),
+                item_id: "item".into(),
+                kind: ConversationItemKind::User,
+                text: "sensitive-lifetime-sentinel".into(),
+                status: None,
+            }],
+            next_turn_cursor: None,
+            next_item_cursor: None,
+        };
+        store.index_conversation_page(&page).expect("first index");
+        let first_seen = u64_to_i64(now_unix_ms().saturating_sub(TRANSCRIPT_RETENTION_MS / 2))
+            .expect("valid first seen time");
+        let conn = store.open_ready().expect("open database");
+        conn.execute(
+            "UPDATE transcript_documents SET observed_at_unix_ms=?1 WHERE item_id='item'",
+            [first_seen],
+        )
+        .expect("fixture timestamp");
+        drop(conn);
+        store
+            .index_conversation_page(&page)
+            .expect("replay existing item");
+        let conn = store.open_ready().expect("check database");
+        let kept: i64 = conn
+            .query_row(
+                "SELECT observed_at_unix_ms FROM transcript_documents WHERE item_id='item'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("first-seen value");
+        assert_eq!(kept, first_seen, "replay must not renew retention");
+        conn.execute(
+            "UPDATE transcript_documents SET observed_at_unix_ms=1 WHERE item_id='item'",
+            [],
+        )
+        .expect("expire cached item");
+        drop(conn);
+        store
+            .index_conversation_page(&page)
+            .expect("replay expired item");
+        assert!(
+            store
+                .search_transcript("sensitive-lifetime-sentinel", 10)
+                .expect("post-expiry search")
+                .hits
+                .is_empty(),
+            "old user text must not survive replay in local FTS"
+        );
     }
 
     #[test]
