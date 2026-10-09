@@ -162,7 +162,7 @@
     "src/app_server_wire.rs": 7,
     "src/sqlite_schema.rs": 220,
     "src/worktree_git.rs": 180,
-    "src/forge_types.rs": 411,
+    "src/forge_types.rs": 421,
     "src/headless.rs": 561,
     "src/headless/surfaces.rs": 487,
     "src/notification.rs": 257,
