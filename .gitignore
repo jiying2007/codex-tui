@@ -5,3 +5,10 @@
 __pycache__/
 *.py[cod]
 /release/evidence/
+/codex-tui-support/
+/qualification/
+/.env
+/.env.*
+!/.env.example
+/.idea/
+/.vscode/

@@ -11,6 +11,8 @@ on:
       - ".github/workflows/security.yml"
       - "scripts/release/**"
       - "scripts/architecture/**"
+      - "scripts/docs/**"
+      - "docs/i18n/**"
       - "deny.toml"
       - "src/**"
       - "tests/**"
@@ -20,6 +22,20 @@ on:
       - "CHANGELOG.md"
       - "docs/release/**"
       - "docs/team-quickstart.md"
+      - "docs/zh-CN/**"
+      - "docs/guides/**"
+      - "docs/README.md"
+      - "docs/README.zh-CN.md"
+      - "README.md"
+      - "README.zh-CN.md"
+      - "CONTRIBUTING.md"
+      - "CONTRIBUTING.zh-CN.md"
+      - "SECURITY.md"
+      - "SECURITY.zh-CN.md"
+      - "SUPPORT.md"
+      - "SUPPORT.zh-CN.md"
+      - "CODE_OF_CONDUCT.md"
+      - "CODE_OF_CONDUCT.zh-CN.md"
       - "docs/qualification/provider.md"
       - "docs/implementation/m7d3-release.md"
       - "Cargo.lock"
@@ -230,6 +246,8 @@ jobs:
           set -euo pipefail
           test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq .id)" = "$GITHUB_RUN_ID"
 
+      - name: Validate bilingual Markdown and local links
+        run: python3 scripts/docs/check_docs.py
       - name: Validate v1.4 development authority
         run: python3 scripts/release/validate_v1_4_plan.py
 

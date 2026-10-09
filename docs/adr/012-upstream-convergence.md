@@ -1,9 +1,16 @@
+<!-- docs-id: upstream-convergence -->
+<!-- docs-lang: en -->
 # ADR-012: Upstream convergence — Mission Control, not a second Codex CLI
+<!-- docs-section: overview -->
+
+**Language / 语言:** [English](012-upstream-convergence.md) · [简体中文](../zh-CN/adr/012-upstream-convergence.md)
+
 
 Date: 2026-10-08  
 Status: Accepted
 
 ## Context
+<!-- docs-section: context -->
 
 The official Codex CLI is rapidly absorbing interaction features that previously justified
 local convenience layers: richer agent views, multi-agent workflows, worktree workflows,
@@ -17,6 +24,7 @@ terminal and coding-client UX would increase maintenance cost while creating dup
 authorities.
 
 ## Decision
+<!-- docs-section: decision -->
 
 codex-tui is a **thin local control plane**.
 
@@ -39,6 +47,7 @@ Authority remains external:
 - the user's shell/terminal stack owns general terminal-session management.
 
 ## Maintenance-only local surfaces
+<!-- docs-section: maintenance -->
 
 Existing local conversation-client, Thread Queue UI and embedded Terminal Drawer code is
 retained for compatibility and current users, but is maintenance-only.
@@ -60,6 +69,7 @@ The convergence guard reuses `check_module_ratchet.inspect_plan` instead of main
 do not replace real Codex, GitLab or controlling-TTY qualification.
 
 ## Explicitly frozen duplicate capabilities
+<!-- docs-section: freeze -->
 
 codex-tui will not introduce a local agent orchestrator, agent delegation runtime,
 agent-to-agent messaging layer, independent task/queue authority, independent
@@ -69,6 +79,7 @@ When upstream Codex makes an existing compatibility layer redundant, prefer dele
 reducing or projecting the upstream capability rather than extending the local layer.
 
 ## Consequences
+<!-- docs-section: effects -->
 
 This ADR intentionally favors a smaller product:
 

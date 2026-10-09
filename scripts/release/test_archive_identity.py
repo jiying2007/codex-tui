@@ -10,6 +10,9 @@ import unittest
 from unittest import mock
 
 import verify_archive as v
+import package_release as package
+
+ROOT = Path(__file__).resolve().parents[2]
 
 SHA = "a" * 40
 TOOL_SHA = "b" * 40
@@ -47,6 +50,10 @@ class ArchiveIdentity(unittest.TestCase):
             for name in ("README.md", "CHANGELOG.md", "INSTALL-UPGRADE.md", "TEAM-QUICKSTART.md", "THIRD_PARTY_NOTICES.txt"):
                 (root / name).write_text("fixture", encoding="utf-8")
             (root / "LICENSE").write_text("Apache License Version 2.0", encoding="utf-8")
+            # Current v1.4 archives must retain the real bilingual documentation
+            # contract. Copy only tracked manifest-listed pages into the
+            # isolated synthetic archive fixture; do not mock verification away.
+            package.stage_active_bilingual_docs(ROOT, root)
             (root / "STABLE-CRITERIA.json").write_text(json.dumps({"schema": "codex-tui/stable-criteria/v2", "stableVersion": "1.4.0"}), encoding="utf-8")
             metadata = {"schema": "codex-tui/release-artifact/v2", "version": "1.4.0", "tag": "audit", "commitSha": SHA,
                         "license": "Apache-2.0", "platform": PLATFORM, "hostTriple": TRIPLES[PLATFORM],

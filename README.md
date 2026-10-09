@@ -1,10 +1,19 @@
+<!-- docs-id: home -->
+<!-- docs-lang: en -->
 # codex-tui
+<!-- docs-section: overview -->
+
+**Language / 语言:** [English](README.md) · [简体中文](README.zh-CN.md)
+
+**Current documentation:** [Index](docs/README.md) · [Quickstart](docs/team-quickstart.md) · [CLI](docs/guides/cli-reference.md) · [Troubleshooting](docs/guides/troubleshooting.md) · [Contributing](CONTRIBUTING.md) · [Security](SECURITY.md)
+
 
 A local-first Mission Control for multiple Codex projects, repositories, targets and delivery systems.
 
 **License:** Apache-2.0 · **Stable release:** v1.0.0 · **Parked v1.1 candidate:** `release/v1.1-parked` · **Current development line:** v1.4.0 · **Tier 1:** Linux.
 
 ## Development status
+<!-- docs-section: status -->
 
 **First production deployment baseline:** Neither v1.0.0 nor v1.4.0 has
 been adopted in a deployed installation. The next v1.4 candidate starts with
@@ -37,6 +46,7 @@ acceptance or demonstrated human-time/token-cost savings. Details and remaining
 external evidence are in `docs/implementation/v1.4-audit-closure.md`.
 
 ## Product goal
+<!-- docs-section: product -->
 
 codex-tui answers four questions quickly:
 
@@ -102,6 +112,7 @@ The global `Ctrl+K` Command Palette now shows **Mission Control actions first** 
 - Clear degraded-mode explanations
 
 ## Explicit non-goals for v1
+<!-- docs-section: boundaries -->
 
 - shared team database
 - team presence or RBAC
@@ -133,6 +144,7 @@ The mature product adds planning without creating a second task authority:
 Board cards should project existing Codex/Git/forge work whenever possible; Needs You is an attention overlay, not a workflow column.
 
 ## Architecture
+<!-- docs-section: architecture -->
 
 The architecture follows ADR-009 and ADR-012: **project upstream state; do not recreate its authority**.
 
@@ -162,6 +174,7 @@ Codex App Server ───── conversation/runtime authority
 The v1 line remains a single binary with no codex-tui-owned daemon.
 
 ## Running the current implementation
+<!-- docs-section: run -->
 
 Requirements:
 
@@ -215,6 +228,7 @@ codex-tui has already observed. Reasoning/tool-internal content is not written t
 local transcript index.
 
 ### Language / 语言
+<!-- docs-section: language -->
 
 The TUI supports English and Simplified Chinese. The language is selected in the local config printed by `codex-tui doctor`:
 
@@ -382,6 +396,7 @@ See:
 - `CHANGELOG.md`
 
 ## License
+<!-- docs-section: license -->
 
 codex-tui is licensed under the Apache License 2.0. See `LICENSE`.
 
@@ -406,6 +421,7 @@ Codex app-server may normalize a stored Windows cwd while running on Linux, yiel
 Run `codex-tui doctor codex` to see the active Codex home plus local/foreign/stale session counts and sample cwd values.
 
 ## Linux Tier 1 stable qualification
+<!-- docs-section: qualification -->
 
 Release helper scripts require **Python 3.8+**. Use `python3`; do not rely on a `python` alias.
 

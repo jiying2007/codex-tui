@@ -1,0 +1,224 @@
+{
+  "schema": "codex-tui/bilingual-docs/v1",
+  "version": "v1.4-first-deployment",
+  "authority": "active-operator-and-repository-governance-only",
+  "historicalPolicy": "retain English-only historical design/research/reviews/older release plans; do not imply actual deployment",
+  "pairs": [
+    {
+      "id": "home",
+      "en": "README.md",
+      "zh-CN": "README.zh-CN.md",
+      "sections": [
+        "overview",
+        "status",
+        "product",
+        "architecture",
+        "run",
+        "language",
+        "boundaries",
+        "qualification",
+        "license"
+      ]
+    },
+    {
+      "id": "docs-index",
+      "en": "docs/README.md",
+      "zh-CN": "docs/README.zh-CN.md",
+      "sections": [
+        "overview",
+        "start",
+        "operators",
+        "governance",
+        "archive",
+        "translation"
+      ]
+    },
+    {
+      "id": "team-quickstart",
+      "en": "docs/team-quickstart.md",
+      "zh-CN": "docs/zh-CN/team-quickstart.md",
+      "sections": [
+        "overview",
+        "install",
+        "authority",
+        "presets",
+        "forge",
+        "daily",
+        "troubleshooting",
+        "boundaries"
+      ]
+    },
+    {
+      "id": "install-upgrade",
+      "en": "docs/release/install-upgrade.md",
+      "zh-CN": "docs/zh-CN/release/install-upgrade.md",
+      "sections": [
+        "overview",
+        "verify",
+        "identity",
+        "abi",
+        "install",
+        "first-deploy",
+        "upgrade",
+        "rollback",
+        "preview",
+        "license",
+        "backup"
+      ]
+    },
+    {
+      "id": "provider",
+      "en": "docs/qualification/provider.md",
+      "zh-CN": "docs/zh-CN/qualification/provider.md",
+      "sections": [
+        "overview",
+        "requirements",
+        "gitlab",
+        "github",
+        "fixture",
+        "internal"
+      ]
+    },
+    {
+      "id": "upstream-convergence",
+      "en": "docs/adr/012-upstream-convergence.md",
+      "zh-CN": "docs/zh-CN/adr/012-upstream-convergence.md",
+      "sections": [
+        "overview",
+        "context",
+        "decision",
+        "maintenance",
+        "freeze",
+        "effects"
+      ]
+    },
+    {
+      "id": "first-deployment",
+      "en": "docs/implementation/v1.4-first-deployment-baseline.md",
+      "zh-CN": "docs/zh-CN/implementation/v1.4-first-deployment-baseline.md",
+      "sections": [
+        "overview",
+        "retired",
+        "regression",
+        "safety"
+      ]
+    },
+    {
+      "id": "contributing",
+      "en": "CONTRIBUTING.md",
+      "zh-CN": "CONTRIBUTING.zh-CN.md",
+      "sections": [
+        "overview",
+        "scope",
+        "setup",
+        "branch",
+        "gates",
+        "docs",
+        "security",
+        "release"
+      ]
+    },
+    {
+      "id": "security",
+      "en": "SECURITY.md",
+      "zh-CN": "SECURITY.zh-CN.md",
+      "sections": [
+        "overview",
+        "scope",
+        "report",
+        "data",
+        "response"
+      ]
+    },
+    {
+      "id": "support",
+      "en": "SUPPORT.md",
+      "zh-CN": "SUPPORT.zh-CN.md",
+      "sections": [
+        "overview",
+        "triage",
+        "issue",
+        "limits"
+      ]
+    },
+    {
+      "id": "conduct",
+      "en": "CODE_OF_CONDUCT.md",
+      "zh-CN": "CODE_OF_CONDUCT.zh-CN.md",
+      "sections": [
+        "overview",
+        "expected",
+        "unacceptable",
+        "escalation"
+      ]
+    },
+    {
+      "id": "operator",
+      "en": "docs/guides/operator-guide.md",
+      "zh-CN": "docs/zh-CN/guides/operator-guide.md",
+      "sections": [
+        "overview",
+        "first",
+        "daily",
+        "forge",
+        "language",
+        "ssh",
+        "safety"
+      ]
+    },
+    {
+      "id": "cli",
+      "en": "docs/guides/cli-reference.md",
+      "zh-CN": "docs/zh-CN/guides/cli-reference.md",
+      "sections": [
+        "overview",
+        "interactive",
+        "doctor",
+        "headless",
+        "diagnostics",
+        "exit",
+        "authority"
+      ]
+    },
+    {
+      "id": "troubleshooting",
+      "en": "docs/guides/troubleshooting.md",
+      "zh-CN": "docs/zh-CN/guides/troubleshooting.md",
+      "sections": [
+        "overview",
+        "codex",
+        "forge",
+        "cwd",
+        "terminal",
+        "store",
+        "artifacts"
+      ]
+    },
+    {
+      "id": "release-qualification",
+      "en": "docs/guides/release-qualification.md",
+      "zh-CN": "docs/zh-CN/guides/release-qualification.md",
+      "sections": [
+        "overview",
+        "automated",
+        "external",
+        "admin",
+        "dryrun",
+        "publication",
+        "archive"
+      ]
+    },
+    {
+      "id": "docs-policy",
+      "en": "docs/i18n/README.md",
+      "zh-CN": "docs/i18n/README.zh-CN.md",
+      "sections": [
+        "overview",
+        "scope",
+        "changes",
+        "ci",
+        "archive"
+      ]
+    }
+  ]
+}

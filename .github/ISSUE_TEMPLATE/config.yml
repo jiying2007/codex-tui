@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: "Security policy / 安全披露"
+    url: "https://github.com/jiying2007/codex-tui/blob/main/SECURITY.md"
+    about: "Read private reporting instructions; do not disclose vulnerabilities in public issues / 不在公开 Issue 中披露漏洞"
+  - name: "Documentation / 中英文文档"
+    url: "https://github.com/jiying2007/codex-tui/blob/main/docs/README.md"
+    about: "Operator guides, language links and support / 使用、语言与支持说明"
