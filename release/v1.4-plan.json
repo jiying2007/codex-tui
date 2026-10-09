@@ -154,7 +154,7 @@
     "src/main.rs": 1854,
     "src/sqlite_store.rs": 2341,
     "src/forge.rs": 1345,
-    "src/worktree.rs": 1139,
+    "src/worktree.rs": 1148,
     "src/release.rs": 1025,
     "src/runtime_store.rs": 444,
     "src/runtime_input.rs": 267,
@@ -270,7 +270,7 @@
     "src/ui/overlays.rs": 872,
     "src/ui/terminal.rs": 126,
     "src/forge/tests.rs": 356,
-    "src/app_server_transport/tests.rs": 310,
+    "src/app_server_transport/tests.rs": 317,
     "src/forge/gitlab_projection_tests.rs": 131,
     "src/forge/error_redaction_tests.rs": 43,
     "src/forge/remote_identity_tests.rs": 47
