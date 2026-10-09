@@ -48,5 +48,5 @@ Forge 概览仅获取各能力最近 20 条记录。GitHub Issues API 会混入 
 ## 证据与数据安全
 <!-- docs-section: safety -->
 
-SQLite 保存个人元数据与规划覆盖层；默认**不持久化**用户和助手消息原文。若需本地全文检索，在 config.toml 中配置 `[search] persist_local_transcripts = true`；最多 10,000 条、每条最多 4,096 字符，在维护运行时清理超过 30 天的数据。关闭此选项后下次启动逻辑删除本地文本/FTS 行，但不保证闪存物理擦除。Codex 仍是对话权威。数据损坏时不得用删除数据库代替诊断，先保留 Store/WAL/SHM 并设计离线恢复。`doctor bundle --output ./codex-tui-support` 需复核隐私；Bug 记录必须带精确源码 SHA。TUI 操作不授权 Stable 发布。
+SQLite 保存个人元数据与规划覆盖层；默认**不持久化**用户和助手消息原文。若需本地全文检索，在 config.toml 中配置 `[search] persist_local_transcripts = true`；最多 10,000 条，消息原文和标题分别最多存储 4,096 字符；按首次本地索引时间计算最多保留 30 天（在维护运行时清理）。重复打开同一已缓存消息不会延长其保留期限。关闭此选项后下次启动逻辑删除本地文本/FTS 行，但不保证闪存物理擦除。Codex 仍是对话权威。数据损坏时不得用删除数据库代替诊断，先保留 Store/WAL/SHM 并设计离线恢复。`doctor bundle --output ./codex-tui-support` 需复核隐私；Bug 记录必须带精确源码 SHA。TUI 操作不授权 Stable 发布。
 
