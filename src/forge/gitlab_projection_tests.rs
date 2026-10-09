@@ -1,6 +1,5 @@
 use super::*;
 
-
 #[test]
 fn fork_and_unverified_gitlab_mr_sources_never_match_a_local_branch() {
     let make = |source: serde_json::Value, target: serde_json::Value| {
@@ -16,7 +15,10 @@ fn fork_and_unverified_gitlab_mr_sources_never_match_a_local_branch() {
         }))
         .expect("GitLab MR fixture")
     };
-    assert_eq!(make(42.into(), 42.into()).branch_for_local_projection("42"), "feature");
+    assert_eq!(
+        make(42.into(), 42.into()).branch_for_local_projection("42"),
+        "feature"
+    );
     assert_eq!(
         make(43.into(), 42.into()).branch_for_local_projection("42"),
         "project/43:feature"
