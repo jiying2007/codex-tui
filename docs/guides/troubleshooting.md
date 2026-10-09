@@ -30,7 +30,7 @@ Try the in-app `?` keymap: `t` opens the Drawer and `F6` (or `Ctrl+]`) returns f
 ## SQLite state damaged or forward schema rejected
 <!-- docs-section: store -->
 
-Run `codex-tui doctor store`. Stop all running codex-tui processes, preserve database/WAL/SHM and any recovery backups, and inspect before restoring. Never copy a live SQLite DB as a backup or allow two processes to rewrite the same state concurrently. The TUI retains a cross-process SQLite owner lease while running, and offline restore rejects a concurrent owner. First v1.4 installation opens only current SQLite v4, intentionally refusing undeployed v1-v3 images without data loss.
+Run `codex-tui doctor store` for an explicit SQLite integrity scan. The interactive application also runs integrity screening once on startup; ordinary state/index reads and writes no longer repeat a full quick_check for every connection. Stop all running codex-tui processes, preserve database/WAL/SHM and any recovery backups, and inspect before restoring. Never copy a live SQLite DB as a backup or allow two processes to rewrite the same state concurrently. The TUI retains a cross-process SQLite owner lease while running, and offline restore rejects a concurrent owner. First v1.4 installation opens only current SQLite v4, intentionally refusing undeployed v1-v3 images without data loss.
 
 ## Share a minimal safe diagnostic
 <!-- docs-section: artifacts -->
