@@ -32,7 +32,7 @@ Remote selection is deterministic:
 3. the only fetch remote;
 4. otherwise fail closed.
 
-HTTPS, SSH URL, and SCP-like Git remote forms are parsed. Project identity is resolved through GitLab and then uses the numeric project id.
+HTTPS, SSH URL, and SCP-like Git remote forms are parsed. URI query and fragment fields, and ambiguous token-like suffixes on SCP-style remotes, fail closed before building a project REST path; HTTP userinfo is excluded from derived remote identity and diagnostics. Project identity is resolved through GitLab and then uses the numeric project id.
 
 ## Normal refresh budget
 

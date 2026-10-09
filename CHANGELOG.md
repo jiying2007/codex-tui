@@ -17,6 +17,8 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
+- Refuse Git remote URL query and fragment fields during Forge identity derivation so URL secrets can never become encoded project API paths or error contexts; ordinary SSH/SCP/HTTPS remotes remain supported.
+
 - Make GitLab Issue, MR and Pipeline reads independent and concurrently bounded, keeping healthy data available when one endpoint fails; all-endpoint failure remains fail-closed and no raw CLI error enters the projection.
 
 - Bound App Server network connect and handshake to a five-second deadline; redact Git remote userinfo/query/fragment in Forge diagnostics to prevent accidental token exposure.

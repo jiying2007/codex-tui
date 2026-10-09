@@ -807,6 +807,10 @@ fn redact_git_remote_url(raw: &str) -> Result<String> {
     }
     // SCP-style remotes have login@host:path. Keep the hostname/path without
     // retaining the username, which could be a credential-like identifier.
+    anyhow::ensure!(
+        !raw.contains('?') && !raw.contains('#'),
+        "Git remote query/fragment is unsupported (redacted)"
+    );
     let (authority, path) = raw
         .split_once(':')
         .ok_or_else(|| anyhow!("unsupported Git remote URL (redacted)"))?;
@@ -826,28 +830,26 @@ pub fn parse_git_remote_url(url: &str) -> Option<(String, String)> {
         return None;
     }
 
-    if let Some(rest) = trimmed.strip_prefix("ssh://") {
-        let without_user = rest.split_once('@').map_or(rest, |(_, tail)| tail);
-        let (host_port, path) = without_user.split_once('/')?;
-        let host = host_port.split(':').next()?.trim();
-        return normalize_remote_parts(host, path);
+    if trimmed.contains("://") {
+        // Parse URL components rather than treating the query or fragment as
+        // a GitLab project path. Those fields may contain credentials that
+        // must never reach an API endpoint or error diagnostic.
+        let parsed = url::Url::parse(trimmed).ok()?;
+        if !matches!(parsed.scheme(), "ssh" | "http" | "https" | "git")
+            || parsed.query().is_some()
+            || parsed.fragment().is_some()
+        {
+            return None;
+        }
+        return normalize_remote_parts(parsed.host_str()?, parsed.path());
     }
 
-    if let Some((scheme, rest)) = trimmed.split_once("://")
-        && matches!(scheme, "http" | "https" | "git")
-    {
-        let (authority, path) = rest.split_once('/')?;
-        let host = authority
-            .rsplit_once('@')
-            .map_or(authority, |(_, tail)| tail)
-            .split(':')
-            .next()?
-            .trim();
-        return normalize_remote_parts(host, path);
-    }
-
+    // SCP-like remotes may carry user@host:path, not URI query/fragment.
+    // Refuse ambiguous token-bearing suffixes instead of forwarding them.
     if let Some((left, path)) = trimmed.split_once(':')
         && !left.contains('/')
+        && !path.contains('?')
+        && !path.contains('#')
     {
         let host = left.rsplit_once('@').map_or(left, |(_, tail)| tail).trim();
         return normalize_remote_parts(host, path);
@@ -1087,3 +1089,5 @@ mod error_redaction_tests;
 mod gitlab_projection_tests;
 #[cfg(test)]
 mod read_order_tests;
+#[cfg(test)]
+mod remote_identity_tests;
