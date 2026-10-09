@@ -175,7 +175,7 @@
     "src/app_server_target.rs": 282,
     "src/app_server_transport.rs": 487,
     "src/forge_github_mutation.rs": 651,
-    "src/forge_mutation.rs": 1582,
+    "src/forge_mutation.rs": 1649,
     "src/forge_github_mutation/tests.rs": 135,
     "src/forge_github_mutation/api.rs": 61,
     "src/conversation.rs": 892,
@@ -271,7 +271,7 @@
     "src/ui/terminal.rs": 126,
     "src/forge/tests.rs": 356,
     "src/app_server_transport/tests.rs": 317,
-    "src/forge/gitlab_projection_tests.rs": 131,
+    "src/forge/gitlab_projection_tests.rs": 162,
     "src/forge/error_redaction_tests.rs": 43,
     "src/forge/remote_identity_tests.rs": 47
   },
@@ -459,6 +459,16 @@
         "src/forge_github.rs",
         "src/forge_github_mutation.rs",
         "src/forge_github_mutation/tests.rs"
+      ]
+    },
+    {
+      "date": "2026-10-10",
+      "kind": "provider-source-provenance",
+      "scope": "GitLab MR source_project_id and target_project_id must match selected project before branch-bound writes, while cross-project MRs stay clearly qualified read-only; no fork ref collision in duplicate preflight.",
+      "modules": [
+        "src/forge.rs",
+        "src/forge_mutation.rs",
+        "src/forge/gitlab_projection_tests.rs"
       ]
     }
   ]
