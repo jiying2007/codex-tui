@@ -26,6 +26,13 @@ use recovery::{preserve_sqlite_image, restore_preserved_sqlite_image, validate_r
 
 const OPERATOR_STATE_KEY: &str = "operator-state-v1";
 
+// The SQLite connection maintains an OS-released cross-process exclusive
+// lease; process crashes cannot strand an advisory lockfile.
+pub struct LocalWriterGuard {
+    _connection: Connection,
+}
+
+
 #[derive(Clone, Debug)]
 pub struct SqliteStore {
     config_store: FileStore,
@@ -77,6 +84,20 @@ impl SqliteStore {
 
     pub fn config_path(&self) -> PathBuf {
         self.config_store.config_path()
+    }
+
+    pub fn acquire_local_writer(&self) -> Result<LocalWriterGuard> {
+        ensure_private_parent(&self.db_path)?;
+        let lock_path = self.db_path.with_extension("sqlite3.owner-lock");
+        let connection = Connection::open(&lock_path)
+            .context("open codex-tui local writer lock")?;
+        connection.busy_timeout(std::time::Duration::ZERO)?;
+        connection.execute_batch("PRAGMA journal_mode=DELETE; BEGIN EXCLUSIVE;")
+            .context("codex-tui local state is already held by another writer")?;
+        ensure_private_file(&lock_path)?;
+        Ok(LocalWriterGuard {
+            _connection: connection,
+        })
     }
 
     pub fn health(&self) -> Result<StoreHealth> {
@@ -137,6 +158,8 @@ impl SqliteStore {
         &self,
         source: impl AsRef<Path>,
     ) -> Result<RecoveryRestoreReceipt> {
+        // Offline recovery must be excluded while a TUI writer is still running.
+        let _guard = self.acquire_local_writer()?;
         let source = source.as_ref();
         recovery::ensure_distinct_source(source, &self.db_path)?;
         validate_recovery_database(source)?;
@@ -2097,6 +2120,22 @@ mod tests {
             .save_state(&LocalStateV1::default())
             .expect("save state");
         assert!(store.db_path().exists());
+    }
+
+    #[test]
+    fn local_writer_is_exclusive_and_releases_after_drop() {
+        let root = tempdir().expect("tempdir");
+        let store = SqliteStore::at(root.path());
+        let owner = store.acquire_local_writer().expect("first writer");
+        let contender = SqliteStore::at(root.path());
+        let denied = contender.acquire_local_writer()
+            .err()
+            .expect("second writer must be denied");
+        assert!(format!("{denied:#}").contains("another writer"));
+        assert!(store.restore_recovery_backup(root.path().join("backup.sqlite3"))
+            .is_err(), "offline restore must refuse while TUI owns state");
+        drop(owner);
+        let _second = contender.acquire_local_writer().expect("released lock");
     }
 
     #[test]
