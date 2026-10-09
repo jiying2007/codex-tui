@@ -2167,6 +2167,8 @@ async fn search_transcript(rpc: &mut RpcSession, query: String) -> Result<Transc
     let mut cursor: Option<String> = None;
     let mut hits = Vec::new();
     let mut complete = false;
+    let mut occurrence_partial = false;
+    let mut seen_cursors = BTreeSet::new();
 
     while hits.len() < TRANSCRIPT_SEARCH_RESULT_LIMIT {
         let result = rpc
@@ -2181,7 +2183,12 @@ async fn search_transcript(rpc: &mut RpcSession, query: String) -> Result<Transc
                 }),
             )
             .await
-            .context("search persisted Codex threads")?;
+            .context("search persisted Codex threads");
+        let result = match result {
+            Ok(result) => result,
+            Err(error) if hits.is_empty() => return Err(error),
+            Err(_) => break, // Retain partial results rather than claiming completeness.
+        };
         let (candidates, next_cursor) = parse_thread_search(result)?;
 
         for candidate in candidates {
@@ -2202,30 +2209,44 @@ async fn search_transcript(rpc: &mut RpcSession, query: String) -> Result<Transc
 
             match occurrence {
                 Ok(result) => {
-                    let (mut exact, _) =
-                        parse_search_occurrences(candidate.thread_id.clone(), result)?;
-                    if exact.is_empty() {
-                        hits.push(thread_level_hit(candidate));
-                    } else {
-                        let remaining = TRANSCRIPT_SEARCH_RESULT_LIMIT.saturating_sub(hits.len());
-                        exact.truncate(remaining);
-                        hits.extend(exact);
+                    match parse_search_occurrences(candidate.thread_id.clone(), result) {
+                        Ok((mut exact, next_occurrence)) => {
+                            occurrence_partial |= next_occurrence.is_some();
+                            if exact.is_empty() {
+                                hits.push(thread_level_hit(candidate));
+                            } else {
+                                let remaining =
+                                    TRANSCRIPT_SEARCH_RESULT_LIMIT.saturating_sub(hits.len());
+                                occurrence_partial |= exact.len() > remaining;
+                                exact.truncate(remaining);
+                                hits.extend(exact);
+                            }
+                        }
+                        Err(_) => {
+                            occurrence_partial = true;
+                            hits.push(thread_level_hit(candidate));
+                        }
                     }
                 }
                 Err(error) if is_transcript_search_unsupported(&error) => {
+                    occurrence_partial = true;
                     hits.push(thread_level_hit(candidate));
                 }
                 Err(_) => {
-                    // Thread-level search is still authoritative even if occurrence lookup
-                    // fails for one row. Preserve the result instead of failing the search.
+                    occurrence_partial = true;
                     hits.push(thread_level_hit(candidate));
                 }
             }
         }
 
+        if let Some(ref next) = next_cursor {
+            if !seen_cursors.insert(next.clone()) {
+                break; // Repeated server cursor must not cause an endless scan.
+            }
+        }
         cursor = next_cursor;
         if cursor.is_none() {
-            complete = true;
+            complete = !occurrence_partial && hits.len() < TRANSCRIPT_SEARCH_RESULT_LIMIT;
             break;
         }
     }
