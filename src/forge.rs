@@ -503,10 +503,10 @@ pub(crate) async fn probe_gitlab_with_remote(
             .unwrap_or_default()
             .into_iter()
             .map(|change| ChangeRequestSummary {
+                source_branch: change.branch_for_local_projection(&project_source_id),
                 iid: change.iid,
                 title: change.title,
                 state: change.state,
-                source_branch: change.branch_for_local_projection(&project_source_id),
                 target_branch: change.target_branch,
                 web_url: change.web_url,
                 updated_at: change.updated_at,
