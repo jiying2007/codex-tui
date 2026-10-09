@@ -1,9 +1,9 @@
 use crate::domain::ThreadId;
 use crate::forge::{
-    CapabilityState, ChangeRequestSummary, ForgeCapability, ForgeFuture,
-    ForgeIdentity, ForgeIssueSummary, ForgeObservation, ForgeProvider, ForgeProviderKind,
-    ForgeReviewSummary, ForgeReviewTarget, PipelineSummary, RemoteIdentity,
-    resolve_git_remote, run_command, trim_error,
+    CapabilityState, ChangeRequestSummary, ForgeCapability, ForgeFuture, ForgeIdentity,
+    ForgeIssueSummary, ForgeObservation, ForgeProvider, ForgeProviderKind, ForgeReviewSummary,
+    ForgeReviewTarget, PipelineSummary, RemoteIdentity, resolve_git_remote, run_command,
+    trim_error,
 };
 use crate::operation::now_unix_ms;
 use anyhow::{Context, Result, anyhow, bail};
@@ -283,8 +283,7 @@ async fn probe_github_review(
             return unavailable_review(thread_id, cwd, change_request_iid, error.to_string());
         }
     };
-    let reviews_endpoint =
-        format!("/repos/{owner}/{repo}/pulls/{change_request_iid}/reviews");
+    let reviews_endpoint = format!("/repos/{owner}/{repo}/pulls/{change_request_iid}/reviews");
 
     let reviews = crate::forge::bounded_review_pages(|page| {
         let cwd = cwd.clone();
@@ -562,14 +561,14 @@ mod tests {
 
     #[test]
     fn all_github_core_reads_failed_are_not_fresh_or_successful() {
-        let (capabilities, freshness, error) = crate::forge::core_observation_status(
-            ForgeProviderKind::GitHub,
-            false,
-            false,
-            false,
-        );
+        let (capabilities, freshness, error) =
+            crate::forge::core_observation_status(ForgeProviderKind::GitHub, false, false, false);
         assert_eq!(freshness, crate::forge::ForgeFreshness::Unavailable);
-        assert!(error.as_deref().is_some_and(|message| message.contains("github")));
+        assert!(
+            error
+                .as_deref()
+                .is_some_and(|message| message.contains("github"))
+        );
         for core in [
             ForgeCapability::Issues,
             ForgeCapability::MergeRequests,
@@ -581,16 +580,18 @@ mod tests {
 
     #[test]
     fn one_github_capability_failure_preserves_healthy_capabilities() {
-        let (caps, freshness, error) = crate::forge::core_observation_status(
-            ForgeProviderKind::GitHub,
-            true,
-            false,
-            true,
-        );
+        let (caps, freshness, error) =
+            crate::forge::core_observation_status(ForgeProviderKind::GitHub, true, false, true);
         assert_eq!(freshness, crate::forge::ForgeFreshness::Fresh);
         assert!(error.is_none());
-        assert_eq!(caps.get(&ForgeCapability::MergeRequests), Some(&CapabilityState::Unavailable));
-        assert_eq!(caps.get(&ForgeCapability::Issues), Some(&CapabilityState::Available));
+        assert_eq!(
+            caps.get(&ForgeCapability::MergeRequests),
+            Some(&CapabilityState::Unavailable)
+        );
+        assert_eq!(
+            caps.get(&ForgeCapability::Issues),
+            Some(&CapabilityState::Available)
+        );
     }
 
     #[test]
