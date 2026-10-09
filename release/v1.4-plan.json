@@ -150,7 +150,7 @@
   "moduleRatchet": {
     "src/app.rs": 7162,
     "src/ui.rs": 2925,
-    "src/app_server.rs": 3366,
+    "src/app_server.rs": 3393,
     "src/main.rs": 1854,
     "src/sqlite_store.rs": 2341,
     "src/forge.rs": 1345,
@@ -234,7 +234,7 @@
     "src/runtime_user_response.rs": 45,
     "src/runtime_user_response/tests.rs": 189,
     "src/app/user_response/tests.rs": 54,
-    "src/app_server/user_response/approval_tests.rs": 266,
+    "src/app_server/user_response/approval_tests.rs": 267,
     "src/app_server/user_response/payload.rs": 67,
     "src/conversation/approval.rs": 23,
     "src/conversation/approval_scope.rs": 92,
