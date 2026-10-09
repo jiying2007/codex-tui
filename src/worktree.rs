@@ -1036,12 +1036,15 @@ branch refs/heads/feature
         .await
         .expect("create");
         assert_eq!(created.state, OperationState::Succeeded);
+        // macOS may canonicalize /var to /private/var. Retain the exact
+        // persisted path before deleting its target on disk.
+        let managed_path = created.result_ref.expect("canonical managed path");
         git(&repo_root, &["worktree", "remove", &target_text]);
 
         let remove = OperationPlan::remove_worktree(
             repo,
             repo_root.to_string_lossy().into_owned(),
-            target_text,
+            managed_path,
             2,
         );
         let rejected = execute_request(
