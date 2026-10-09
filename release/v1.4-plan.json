@@ -246,7 +246,7 @@
     "src/command.rs": 130,
     "src/compat.rs": 574,
     "src/domain.rs": 342,
-    "src/forge_github.rs": 612,
+    "src/forge_github.rs": 630,
     "src/git.rs": 972,
     "src/goal.rs": 194,
     "src/hardening.rs": 264,
@@ -271,7 +271,7 @@
     "src/ui/terminal.rs": 126,
     "src/forge/tests.rs": 356,
     "src/app_server_transport/tests.rs": 244,
-    "src/forge/gitlab_projection_tests.rs": 110,
+    "src/forge/gitlab_projection_tests.rs": 125,
     "src/forge/error_redaction_tests.rs": 43,
     "src/forge/remote_identity_tests.rs": 47
   },
