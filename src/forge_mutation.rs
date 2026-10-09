@@ -977,9 +977,7 @@ async fn matching_merge_requests(
     .await?;
     let mut matches = Vec::new();
     for mr in entries {
-        if mr.source_branch == source
-            && mr.target_branch == target
-            && is_own_project_mr(&mr, plan)?
+        if mr.source_branch == source && mr.target_branch == target && is_own_project_mr(&mr, plan)?
         {
             matches.push(mr);
         }
