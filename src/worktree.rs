@@ -922,7 +922,10 @@ branch refs/heads/feature
         let store = SqliteStore::at(temp.path().join("store"));
         let target = temp.path().join("uncertain-wt");
         let target_text = target.to_string_lossy().into_owned();
-        git(&repo_root, &["worktree", "add", "-b", "uncertain", &target_text]);
+        git(
+            &repo_root,
+            &["worktree", "add", "-b", "uncertain", &target_text],
+        );
         let remove = OperationPlan::remove_worktree(
             repo,
             repo_root.to_string_lossy().into_owned(),
@@ -932,7 +935,9 @@ branch refs/heads/feature
 
         // Even when Git still registers the target, an attempted removal
         // could have partially deleted files: do not claim side-effect-free failure.
-        let registered = reconcile_outcome(&store, &remove).await.expect("registered");
+        let registered = reconcile_outcome(&store, &remove)
+            .await
+            .expect("registered");
         assert!(matches!(registered, ReconciledOutcome::Unknown(_)));
 
         git(&repo_root, &["worktree", "remove", &target_text]);
@@ -952,10 +957,8 @@ branch refs/heads/feature
     fn dangling_symlink_is_not_treated_as_absent_worktree() {
         let temp = tempdir().expect("tempdir");
         let link = temp.path().join("orphan-link");
-        std::os::unix::fs::symlink(temp.path().join("missing"), &link)
-            .expect("dangling test link");
-        assert!(!worktree_path_absent(link.to_str().expect("utf8 path"))
-            .expect("stat link"));
+        std::os::unix::fs::symlink(temp.path().join("missing"), &link).expect("dangling test link");
+        assert!(!worktree_path_absent(link.to_str().expect("utf8 path")).expect("stat link"));
     }
 
     #[tokio::test]
