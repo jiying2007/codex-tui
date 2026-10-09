@@ -97,6 +97,11 @@ struct GitHubMergeResult {
     sha: Option<String>,
 }
 
+fn is_local_source_repo(repo: &GitHubPullRepository, plan: &ForgeMutationPlan) -> bool {
+    repo.id.to_string() == plan.project_id
+        && repo.full_name.eq_ignore_ascii_case(&plan.project_path)
+}
+
 fn require_local_head_identity(pull: &GitHubPullRequest, plan: &ForgeMutationPlan) -> Result<()> {
     let head_repo = pull
         .head
@@ -104,8 +109,7 @@ fn require_local_head_identity(pull: &GitHubPullRequest, plan: &ForgeMutationPla
         .as_ref()
         .context("GitHub PR head repository identity is missing; cannot bind to local branch")?;
     anyhow::ensure!(
-        head_repo.id.to_string() == plan.project_id
-            && head_repo.full_name.eq_ignore_ascii_case(&plan.project_path),
+        is_local_source_repo(head_repo, plan),
         "GitHub PR head belongs to a different repository; local branch authority unavailable"
     );
     Ok(())
@@ -614,8 +618,7 @@ async fn matching_pull_requests(
                 pull.number
             );
         };
-        if source_repo.id.to_string() == plan.project_id
-            && source_repo.full_name.eq_ignore_ascii_case(&plan.project_path)
+        if is_local_source_repo(source_repo, plan)
         {
             matches.push(pull);
         }
