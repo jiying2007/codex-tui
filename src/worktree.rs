@@ -355,6 +355,13 @@ async fn check_preconditions(
                 managed.canonical_path == target,
                 "managed worktree identity mismatch"
             );
+            let inventory = list_worktrees(&plan.cwd).await?;
+            anyhow::ensure!(
+                inventory
+                    .iter()
+                    .any(|worktree| same_path(&worktree.path, target)),
+                "managed worktree is no longer registered with Git"
+            );
             anyhow::ensure!(
                 worktree_is_clean(target).await?,
                 "refusing to remove dirty worktree: {target}"
