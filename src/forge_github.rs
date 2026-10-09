@@ -93,6 +93,25 @@ struct GitHubPullRequest {
 struct GitHubPullRef {
     #[serde(rename = "ref")]
     reference: String,
+    repo: Option<GitHubPullRepository>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GitHubPullRepository {
+    id: u64,
+    full_name: String,
+}
+
+impl GitHubPullRef {
+    fn branch_for_local_projection(&self, target_repo_id: u64) -> String {
+        match self.repo.as_ref() {
+            Some(repo) if repo.id == target_repo_id => self.reference.clone(),
+            // Git does not allow ':' in branch names: a fork-qualified ref
+            // cannot accidentally match the locally checked-out branch.
+            Some(repo) => format!("{}:{}", repo.full_name, self.reference),
+            None => format!("unverified-source:{}", self.reference),
+        }
+    }
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -219,6 +238,7 @@ pub(crate) async fn probe_github_with_remote(
     let issues = issues_result.unwrap_or_default();
     let pulls = pulls_result.unwrap_or_default();
     let runs = runs_result.unwrap_or_default();
+    let project_repo_id = repository.id;
 
     Ok(ForgeObservation {
         thread_id,
@@ -251,7 +271,7 @@ pub(crate) async fn probe_github_with_remote(
                 iid: pull.number,
                 title: pull.title,
                 state: pull.state,
-                source_branch: pull.head.reference,
+                source_branch: pull.head.branch_for_local_projection(project_repo_id),
                 target_branch: pull.base.reference,
                 web_url: pull.html_url,
                 updated_at: pull.updated_at,
@@ -508,6 +528,30 @@ fn unavailable_review(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fork_and_unverified_sources_cannot_match_a_local_branch_name() {
+        let local: GitHubPullRef = serde_json::from_value(serde_json::json!({
+            "ref": "feature", "repo": {"id": 123, "full_name": "octo/repo"}
+        }))
+        .expect("same-repo head");
+        let fork: GitHubPullRef = serde_json::from_value(serde_json::json!({
+            "ref": "feature", "repo": {"id": 999, "full_name": "alice/repo"}
+        }))
+        .expect("fork head");
+        let unknown: GitHubPullRef = serde_json::from_value(serde_json::json!({
+            "ref": "feature", "repo": null
+        }))
+        .expect("unverified head");
+        assert_eq!(local.branch_for_local_projection(123), "feature");
+        assert_eq!(fork.branch_for_local_projection(123), "alice/repo:feature");
+        assert_eq!(
+            unknown.branch_for_local_projection(123),
+            "unverified-source:feature"
+        );
+        assert_ne!(fork.branch_for_local_projection(123), "feature");
+        assert_ne!(unknown.branch_for_local_projection(123), "feature");
+    }
 
     #[test]
     fn github_repository_path_is_exact_owner_repo() {

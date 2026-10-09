@@ -174,9 +174,9 @@
     "src/thread_queue.rs": 350,
     "src/app_server_target.rs": 282,
     "src/app_server_transport.rs": 487,
-    "src/forge_github_mutation.rs": 612,
+    "src/forge_github_mutation.rs": 651,
     "src/forge_mutation.rs": 1582,
-    "src/forge_github_mutation/tests.rs": 94,
+    "src/forge_github_mutation/tests.rs": 135,
     "src/forge_github_mutation/api.rs": 61,
     "src/conversation.rs": 892,
     "src/app/lifecycle.rs": 203,
@@ -246,7 +246,7 @@
     "src/command.rs": 130,
     "src/compat.rs": 574,
     "src/domain.rs": 342,
-    "src/forge_github.rs": 644,
+    "src/forge_github.rs": 688,
     "src/git.rs": 978,
     "src/goal.rs": 194,
     "src/hardening.rs": 329,
@@ -449,6 +449,16 @@
       "scope": "Preserve first local transcript observation across replay so 30-day retention is not silently extended; bound persisted title as well as message body; real-SQLite negative fixtures.",
       "modules": [
         "src/sqlite_store.rs"
+      ]
+    },
+    {
+      "date": "2026-10-10",
+      "kind": "provider-identity-security-defect",
+      "scope": "GitHub source repository provenance governs branch projection and write preflight; fork/missing head source cannot impersonate local branch. Negative fixture for same short ref in different head repos.",
+      "modules": [
+        "src/forge_github.rs",
+        "src/forge_github_mutation.rs",
+        "src/forge_github_mutation/tests.rs"
       ]
     }
   ]

@@ -92,3 +92,44 @@ fn github_merge_preflight_rejects_unknown_and_false() {
     assert!(require_github_mergeable(Some(false)).is_err());
     assert!(require_github_mergeable(Some(true)).is_ok());
 }
+
+#[test]
+fn same_name_fork_head_cannot_pass_local_branch_mutation_preflight() {
+    let parsed = |repo: serde_json::Value| -> GitHubPullRequest {
+        serde_json::from_value(serde_json::json!({
+            "number": 7,
+            "title": "Fork collision",
+            "state": "open",
+            "html_url": "https://github.com/octo/repo/pull/7",
+            "draft": false,
+            "merged": false,
+            "mergeable": true,
+            "head": {
+                "ref": "feature",
+                "sha": "0123456789abcdef",
+                "repo": repo
+            },
+            "base": {"ref": "main", "sha": "abcdef"}
+        }))
+        .expect("PR fixture")
+    };
+    let mutation_plan = plan(ForgeMutationKind::MergeMergeRequest);
+    let local = parsed(serde_json::json!({"id": 123, "full_name": "octo/repo"}));
+    let fork = parsed(serde_json::json!({"id": 999, "full_name": "alice/repo"}));
+    let renamed = parsed(serde_json::json!({"id": 123, "full_name": "other/repo"}));
+    let missing = parsed(serde_json::Value::Null);
+
+    assert!(require_local_head_identity(&local, &mutation_plan).is_ok());
+    assert!(require_local_head_identity(&fork, &mutation_plan).is_err());
+    assert!(require_local_head_identity(&renamed, &mutation_plan).is_err());
+    assert!(require_local_head_identity(&missing, &mutation_plan).is_err());
+
+    assert!(is_local_source_repo(
+        local.head.repo.as_ref().unwrap(),
+        &mutation_plan
+    ));
+    assert!(!is_local_source_repo(
+        fork.head.repo.as_ref().unwrap(),
+        &mutation_plan
+    ));
+}
