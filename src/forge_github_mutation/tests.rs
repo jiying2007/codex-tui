@@ -124,6 +124,12 @@ fn same_name_fork_head_cannot_pass_local_branch_mutation_preflight() {
     assert!(require_local_head_identity(&renamed, &mutation_plan).is_err());
     assert!(require_local_head_identity(&missing, &mutation_plan).is_err());
 
-    assert!(is_local_source_repo(local.head.repo.as_ref().unwrap(), &mutation_plan));
-    assert!(!is_local_source_repo(fork.head.repo.as_ref().unwrap(), &mutation_plan));
+    assert!(is_local_source_repo(
+        local.head.repo.as_ref().unwrap(),
+        &mutation_plan
+    ));
+    assert!(!is_local_source_repo(
+        fork.head.repo.as_ref().unwrap(),
+        &mutation_plan
+    ));
 }
