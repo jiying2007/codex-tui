@@ -94,6 +94,18 @@ pub const FAILURE_MATRIX: &[FailureCase] = &[
         evidence: &["app_server::tests::rpc_deadline_fails_closed_without_waiting_forever"],
     },
     FailureCase {
+        id: "git-worktree-remove-split-brain",
+        domain: FailureDomain::Git,
+        injection: "worktree removal has uncertain Git registration and filesystem side effects",
+        expected: QualificationState::Degraded,
+        max_recovery_ms: 30_000,
+        writes_allowed: false,
+        evidence: &[
+            "worktree::tests::uncertain_remove_requires_both_git_and_filesystem_absence",
+            "worktree::tests::nonzero_git_exit_is_reconciled_without_persisting_hook_secrets",
+        ],
+    },
+    FailureCase {
         id: "git-cwd-disappears",
         domain: FailureDomain::Git,
         injection: "repository cwd disappears before or during a probe",
