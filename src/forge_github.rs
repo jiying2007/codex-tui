@@ -11,7 +11,7 @@ use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::path::Path;
 
-const DEFAULT_PAGE_SIZE: usize = 20;
+const DEFAULT_PAGE_SIZE: usize = crate::forge_types::FORGE_OVERVIEW_PAGE_SIZE;
 const REVIEW_THREAD_PAGE_SIZE: usize = 100;
 
 #[derive(Clone, Copy, Debug, Default)]
