@@ -387,7 +387,6 @@ mod overview_tests {
     use super::*;
 
     #[test]
-    #[test]
     fn filtered_api_page_saturation_is_preserved_even_if_projected_rows_are_empty() {
         let mut observed = ForgeObservation::pending(ThreadId::new("raw-page"), "/repo".into());
         for capability in [
