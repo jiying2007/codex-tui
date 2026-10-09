@@ -24,7 +24,7 @@ codex-tui
 
 Mission Control 按仓库/项目聚合会话，显示 Needs You / Working / Ready / Inactive。优先处理 Needs You；`j/k` 选中、Enter 打开、`/` 筛选、`Ctrl+K` 命令面板、`?` 查看实时键位；`b` 进入 Board 后用 `h/l` 切换列和 `j/k` 选择卡片。Board/Attention 是派生视图，不是第二套团队任务数据库。
 
-搜索与 Saved View 仅管理个人工作流；未知上游历史不会被虚构。要区分 Windows 路径残影与 Ubuntu 本机会话，应检查仓库 cwd 和 Codex Home。
+搜索与 Saved View 仅管理个人工作流；未知上游历史不会被虚构。全文搜索使用短生命周期独立 Codex App Server 连接，不占用主审批/会话 Actor；只允许一个搜索，新请求取消旧请求，总体 12 秒超时会明确提示。单 Thread 匹配项分页未耗尽时不得标记全部完成。要区分 Windows 路径残影与 Ubuntu 本机会话，应检查仓库 cwd 和 Codex Home。
 
 ## 仓库和交付状态
 <!-- docs-section: forge -->

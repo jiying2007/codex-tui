@@ -29,7 +29,7 @@ use std::ffi::OsString;
 use std::fmt;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::{mpsc, watch};
-use tokio::task::JoinHandle;
+use tokio::task::{JoinHandle, JoinSet};
 
 mod lifecycle;
 mod user_response;
@@ -45,6 +45,7 @@ const APP_SERVER_COMMAND_QUEUE_CAPACITY: usize = 64;
 const APP_SERVER_CONVERSATION_QUEUE_CAPACITY: usize = 256;
 const RPC_QUEUED_MESSAGE_CAPACITY: usize = 1024;
 const RPC_REQUEST_TIMEOUT: Duration = Duration::from_secs(5);
+const SEARCH_TOTAL_TIMEOUT: Duration = Duration::from_secs(12);
 
 #[derive(Debug)]
 struct RpcResponseError {
@@ -531,7 +532,7 @@ pub async fn start_target(target: ResolvedAppServerTarget) -> Result<StartedRegi
         tx,
         conversation_tx,
         command_rx,
-        hydration,
+        (hydration, target),
     ));
 
     Ok(StartedRegistry {
@@ -818,14 +819,18 @@ async fn run_registry_actor(
     tx: watch::Sender<BackendSnapshot>,
     conversation_tx: mpsc::Sender<ConversationEvent>,
     mut command_rx: mpsc::Receiver<BackendCommand>,
-    mut hydration: Option<RegistryHydration>,
+    setup: (Option<RegistryHydration>, ResolvedAppServerTarget),
 ) {
+    let (mut hydration, target) = setup;
     let mut generation = 0_u64;
     let mut threads = by_id(initial_threads);
     let mut pending_requests: BTreeMap<RpcRequestId, PendingServerRequest> = BTreeMap::new();
     let mut watched_threads = BTreeSet::new();
     let mut watched_queue_threads = BTreeSet::new();
     let mut goal_supported: Option<bool> = None;
+    let mut search_generation = 0_u64;
+    let mut search_tasks = JoinSet::new();
+    let mut active_search_query = String::new();
     let mut goal_probed = BTreeSet::new();
     let mut goal_queued = BTreeSet::new();
     let mut goal_probe_queue = VecDeque::new();
@@ -1073,29 +1078,26 @@ async fn run_registry_actor(
                         }
                     }
                     BackendCommand::SearchTranscript(query) => {
-                        match search_transcript(&mut rpc, query.clone()).await {
-                            Ok(results) => {
-                                mark_optional_capability(&mut status, "thread/search", true);
-                                send_conversation_event(
-                                    &conversation_tx,
-                                    ConversationEvent::TranscriptSearchLoaded(results),
-                                )
-                                .await;
-                            }
-                            Err(error) => {
-                                if is_transcript_search_unsupported(&error) {
-                                    mark_optional_capability(&mut status, "thread/search", false);
-                                }
-                                send_conversation_event(
-                                    &conversation_tx,
-                                    ConversationEvent::TranscriptSearchFailed {
-                                        query,
-                                        error: error.to_string(),
-                                    },
-                                )
-                                .await;
-                            }
-                        }
+                        // Read-only full-history search never monopolizes the live
+                        // registry/approval/prompt connection. Only one isolated
+                        // auxiliary target session exists at a time.
+                        search_tasks = JoinSet::new();
+                        search_generation = search_generation.saturating_add(1);
+                        let generation = search_generation;
+                        active_search_query = query.clone();
+                        let search_target = target.clone();
+                        search_tasks.spawn(async move {
+                            let result = tokio::time::timeout(
+                                SEARCH_TOTAL_TIMEOUT,
+                                isolated_transcript_search(&search_target, query.clone()),
+                            )
+                            .await
+                            .unwrap_or_else(|_| Err(anyhow!(
+                                "transcript search exceeded bounded {}s deadline",
+                                SEARCH_TOTAL_TIMEOUT.as_secs()
+                            )));
+                            (generation, query, result)
+                        });
                     }
                     BackendCommand::JumpToTranscriptHit(hit) => {
                         let thread_id = hit.thread_id.clone();
@@ -1418,6 +1420,42 @@ async fn run_registry_actor(
                         generation = generation.saturating_add(1);
                         let _ = tx.send(snapshot(generation, &threads, &status));
                     }
+                }
+            }
+            search_done = search_tasks.join_next(), if !search_tasks.is_empty() => {
+                if let Some(Ok((completed_generation, query, result))) = search_done {
+                    if completed_generation != search_generation {
+                        continue;
+                    }
+                    match result {
+                        Ok(results) => {
+                            mark_optional_capability(&mut status, "thread/search", true);
+                            send_conversation_event(
+                                &conversation_tx,
+                                ConversationEvent::TranscriptSearchLoaded(results),
+                            ).await;
+                        }
+                        Err(error) => {
+                            if is_transcript_search_unsupported(&error) {
+                                mark_optional_capability(&mut status, "thread/search", false);
+                            }
+                            send_conversation_event(
+                                &conversation_tx,
+                                ConversationEvent::TranscriptSearchFailed {
+                                    query,
+                                    error: error.to_string(),
+                                },
+                            ).await;
+                        }
+                    }
+                } else {
+                    send_conversation_event(
+                        &conversation_tx,
+                        ConversationEvent::TranscriptSearchFailed {
+                            query: active_search_query.clone(),
+                            error: "isolated transcript search task failed".into(),
+                        },
+                    ).await;
                 }
             }
             message = rpc.read_message() => {
@@ -2112,6 +2150,23 @@ async fn execute_thread_queue_mutation(
     Ok(())
 }
 
+fn transcript_results_complete(
+    thread_cursor: Option<&str>,
+    occurrence_partial: bool,
+    count: usize,
+) -> bool {
+    thread_cursor.is_none() && !occurrence_partial && count < TRANSCRIPT_SEARCH_RESULT_LIMIT
+}
+
+async fn isolated_transcript_search(
+    target: &ResolvedAppServerTarget,
+    query: String,
+) -> Result<TranscriptSearchResults> {
+    let mut isolated_rpc = RpcSession::connect(target).await?;
+    initialize(&mut isolated_rpc).await?;
+    search_transcript(&mut isolated_rpc, query).await
+}
+
 async fn search_transcript(rpc: &mut RpcSession, query: String) -> Result<TranscriptSearchResults> {
     let query = query.trim().to_string();
     anyhow::ensure!(!query.is_empty(), "transcript search query is empty");
@@ -2119,6 +2174,8 @@ async fn search_transcript(rpc: &mut RpcSession, query: String) -> Result<Transc
     let mut cursor: Option<String> = None;
     let mut hits = Vec::new();
     let mut complete = false;
+    let mut occurrence_partial = false;
+    let mut seen_cursors = BTreeSet::new();
 
     while hits.len() < TRANSCRIPT_SEARCH_RESULT_LIMIT {
         let result = rpc
@@ -2133,7 +2190,12 @@ async fn search_transcript(rpc: &mut RpcSession, query: String) -> Result<Transc
                 }),
             )
             .await
-            .context("search persisted Codex threads")?;
+            .context("search persisted Codex threads");
+        let result = match result {
+            Ok(result) => result,
+            Err(error) if hits.is_empty() => return Err(error),
+            Err(_) => break, // Retain partial results rather than claiming completeness.
+        };
         let (candidates, next_cursor) = parse_thread_search(result)?;
 
         for candidate in candidates {
@@ -2153,31 +2215,44 @@ async fn search_transcript(rpc: &mut RpcSession, query: String) -> Result<Transc
                 .await;
 
             match occurrence {
-                Ok(result) => {
-                    let (mut exact, _) =
-                        parse_search_occurrences(candidate.thread_id.clone(), result)?;
-                    if exact.is_empty() {
-                        hits.push(thread_level_hit(candidate));
-                    } else {
-                        let remaining = TRANSCRIPT_SEARCH_RESULT_LIMIT.saturating_sub(hits.len());
-                        exact.truncate(remaining);
-                        hits.extend(exact);
+                Ok(result) => match parse_search_occurrences(candidate.thread_id.clone(), result) {
+                    Ok((mut exact, next_occurrence)) => {
+                        occurrence_partial |= next_occurrence.is_some();
+                        if exact.is_empty() {
+                            hits.push(thread_level_hit(candidate));
+                        } else {
+                            let remaining =
+                                TRANSCRIPT_SEARCH_RESULT_LIMIT.saturating_sub(hits.len());
+                            occurrence_partial |= exact.len() > remaining;
+                            exact.truncate(remaining);
+                            hits.extend(exact);
+                        }
                     }
-                }
+                    Err(_) => {
+                        occurrence_partial = true;
+                        hits.push(thread_level_hit(candidate));
+                    }
+                },
                 Err(error) if is_transcript_search_unsupported(&error) => {
+                    occurrence_partial = true;
                     hits.push(thread_level_hit(candidate));
                 }
                 Err(_) => {
-                    // Thread-level search is still authoritative even if occurrence lookup
-                    // fails for one row. Preserve the result instead of failing the search.
+                    occurrence_partial = true;
                     hits.push(thread_level_hit(candidate));
                 }
             }
         }
 
+        if let Some(ref next) = next_cursor
+            && !seen_cursors.insert(next.clone())
+        {
+            break; // Repeated server cursor must not cause an endless scan.
+        }
         cursor = next_cursor;
         if cursor.is_none() {
-            complete = true;
+            complete =
+                transcript_results_complete(cursor.as_deref(), occurrence_partial, hits.len());
             break;
         }
     }
@@ -2636,6 +2711,126 @@ mod tests {
             error.to_string().contains("fixture/request timed out"),
             "timeout must retain method context: {error:#}"
         );
+    }
+
+    #[tokio::test]
+    async fn isolated_search_does_not_block_live_app_server_transport() {
+        use crate::app_server_target::ResolvedAppServerEndpoint;
+        use futures_util::{SinkExt, StreamExt};
+        use tokio_tungstenite::{accept_async, tungstenite::Message};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind mock");
+        let addr = listener.local_addr().expect("address");
+        let server = tokio::spawn(async move {
+            let (live, _) = listener.accept().await.expect("live connection");
+            let mut live = accept_async(live).await.expect("live handshake");
+            let (search, _) = listener.accept().await.expect("search connection");
+            let mut search = accept_async(search).await.expect("search handshake");
+
+            let initialize = search.next().await.expect("initialize").expect("frame");
+            let Message::Text(initialize) = initialize else {
+                panic!("initialize text")
+            };
+            let request: Value = serde_json::from_str(initialize.as_str()).expect("JSON");
+            assert_eq!(request["method"], "initialize");
+            search
+                .send(Message::Text(
+                    json!({"id":request["id"],"result":{"serverInfo":{"version":"fixture"}}})
+                        .to_string()
+                        .into(),
+                ))
+                .await
+                .expect("initialize reply");
+            let initialized = search.next().await.expect("initialized").expect("frame");
+            let Message::Text(initialized) = initialized else {
+                panic!("initialized text")
+            };
+            assert_eq!(
+                serde_json::from_str::<Value>(initialized.as_str()).unwrap()["method"],
+                "initialized"
+            );
+
+            let request = search.next().await.expect("thread search").expect("frame");
+            let Message::Text(request) = request else {
+                panic!("search text")
+            };
+            let request: Value = serde_json::from_str(request.as_str()).expect("search json");
+            assert_eq!(request["method"], "thread/search");
+
+            let live_request = live.next().await.expect("live command").expect("frame");
+            let Message::Text(live_request) = live_request else {
+                panic!("live text")
+            };
+            let live_request: Value =
+                serde_json::from_str(live_request.as_str()).expect("live json");
+            assert_eq!(live_request["method"], "fixture/heartbeat");
+            live.send(Message::Text(
+                json!({"id":live_request["id"],"result":{"healthy":true}})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .expect("live reply");
+
+            tokio::time::sleep(Duration::from_millis(75)).await;
+            search
+                .send(Message::Text(
+                    json!({"id":request["id"],"result":{"data":[],"nextCursor":null}})
+                        .to_string()
+                        .into(),
+                ))
+                .await
+                .expect("search reply");
+        });
+
+        let target = ResolvedAppServerTarget {
+            name: "two-connection-fixture".into(),
+            endpoint: ResolvedAppServerEndpoint::WebSocket {
+                url: format!("ws://{addr}/rpc"),
+                auth_token: None,
+            },
+        };
+        let mut live = AppServerTransport::connect(&target)
+            .await
+            .expect("live connect");
+        let task_target = target.clone();
+        let search =
+            tokio::spawn(
+                async move { isolated_transcript_search(&task_target, "needle".into()).await },
+            );
+        live.write_json(&json!({"id":77,"method":"fixture/heartbeat","params":{}}))
+            .await
+            .expect("live write");
+        let live_response = tokio::time::timeout(Duration::from_secs(2), live.read_json())
+            .await
+            .expect("live reply must remain responsive")
+            .expect("read")
+            .expect("response");
+        assert_eq!(live_response["result"]["healthy"], true);
+        let result = search.await.expect("search task").expect("search result");
+        assert!(result.complete);
+        assert!(result.hits.is_empty());
+        server.await.expect("mock server");
+    }
+
+    #[test]
+    fn transcript_complete_requires_all_occurrences_and_budget_headroom() {
+        assert!(transcript_results_complete(None, false, 3));
+        assert!(!transcript_results_complete(None, true, 3));
+        assert!(!transcript_results_complete(Some("next"), false, 3));
+        assert!(!transcript_results_complete(
+            None,
+            false,
+            TRANSCRIPT_SEARCH_RESULT_LIMIT
+        ));
+        let (_, cursor) = crate::transcript_search::parse_search_occurrences(
+            ThreadId::new("T"),
+            json!({"data":[],"nextCursor":"next-occurrences"}),
+        )
+        .expect("fixture");
+        assert!(!transcript_results_complete(None, cursor.is_some(), 1));
     }
 
     #[test]
