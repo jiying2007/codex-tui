@@ -85,6 +85,14 @@ class BilingualDocsContract(unittest.TestCase):
                     [],
                 )
 
+    def test_github_event_exact_sha_pinned_git_comparison(self):
+        workflow = self.read(".github/workflows/ci.yml")
+        self.assertIn("github.event.pull_request.base.sha", workflow)
+        self.assertIn("github.event.before", workflow)
+        self.assertIn("git -c protocol.version=2 fetch --no-tags --depth=1", workflow)
+        self.assertIn('python scripts/docs/check_docs.py --changed-base "$DOCS_DIFF_BASE"', workflow)
+        self.assertNotIn("--changed-base HEAD^", workflow)
+
     def test_fenced_code_is_not_navigation(self):
         raw = "~~~bash\n[bad](../../missing)\n~~~\n[good](README.md)\n"
         self.assertEqual(list(check.local_links(raw)), ["README.md"])

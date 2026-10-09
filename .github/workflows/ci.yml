@@ -43,8 +43,6 @@ jobs:
           apt-get update -qq
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential pkg-config curl ca-certificates git python3 python-is-python3 binutils
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          fetch-depth: 2
       - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
         with:
           components: rustfmt, clippy
@@ -634,7 +632,17 @@ jobs:
         run: python scripts/docs/check_docs.py
       - name: Require EN and zh-CN active pages to change together
         if: runner.os == 'Linux'
-        run: python scripts/docs/check_docs.py --changed-base HEAD^
+        shell: bash
+        env:
+          DOCS_DIFF_BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          [[ "$DOCS_DIFF_BASE" =~ ^[0-9a-f]{40}$ ]] || { echo 'Invalid exact base SHA'; exit 1; }
+          if ! git cat-file -e "${DOCS_DIFF_BASE}^{commit}" 2>/dev/null; then
+            git -c protocol.version=2 fetch --no-tags --depth=1 origin "$DOCS_DIFF_BASE"
+          fi
+          git cat-file -e "${DOCS_DIFF_BASE}^{commit}"
+          python scripts/docs/check_docs.py --changed-base "$DOCS_DIFF_BASE"
       - name: Enforce v1.4 active module ratchet
         run: python scripts/architecture/check_module_ratchet.py release/v1.4-plan.json
       - name: Enforce first-deployment compatibility contract
