@@ -322,7 +322,10 @@ pub async fn probe_context(thread_id: ThreadId, cwd: String) -> Result<GitContex
     if !status.success {
         return Err(anyhow!(
             "git status failed: {}",
-            crate::hardening::safe_external_stderr(&String::from_utf8_lossy(&status.stderr), "git status")
+            crate::hardening::safe_external_stderr(
+                &String::from_utf8_lossy(&status.stderr),
+                "git status"
+            )
         ));
     }
     let parsed = parse_porcelain_v2(&status.stdout)?;
@@ -376,7 +379,10 @@ pub async fn load_review(thread_id: ThreadId, cwd: String) -> Result<GitReview> 
     )
     .await?;
     if !staged.success {
-        return Err(anyhow!("git staged diff failed: {}", crate::hardening::safe_external_stderr(&staged.stderr, "git staged diff")));
+        return Err(anyhow!(
+            "git staged diff failed: {}",
+            crate::hardening::safe_external_stderr(&staged.stderr, "git staged diff")
+        ));
     }
 
     let unstaged = run_git_capped(
