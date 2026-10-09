@@ -532,8 +532,7 @@ pub async fn start_target(target: ResolvedAppServerTarget) -> Result<StartedRegi
         tx,
         conversation_tx,
         command_rx,
-        hydration,
-        target,
+        (hydration, target),
     ));
 
     Ok(StartedRegistry {
@@ -820,9 +819,9 @@ async fn run_registry_actor(
     tx: watch::Sender<BackendSnapshot>,
     conversation_tx: mpsc::Sender<ConversationEvent>,
     mut command_rx: mpsc::Receiver<BackendCommand>,
-    mut hydration: Option<RegistryHydration>,
-    target: ResolvedAppServerTarget,
+    setup: (Option<RegistryHydration>, ResolvedAppServerTarget),
 ) {
+    let (mut hydration, target) = setup;
     let mut generation = 0_u64;
     let mut threads = by_id(initial_threads);
     let mut pending_requests: BTreeMap<RpcRequestId, PendingServerRequest> = BTreeMap::new();
@@ -2245,10 +2244,10 @@ async fn search_transcript(rpc: &mut RpcSession, query: String) -> Result<Transc
             }
         }
 
-        if let Some(ref next) = next_cursor {
-            if !seen_cursors.insert(next.clone()) {
-                break; // Repeated server cursor must not cause an endless scan.
-            }
+        if let Some(ref next) = next_cursor
+            && !seen_cursors.insert(next.clone())
+        {
+            break; // Repeated server cursor must not cause an endless scan.
         }
         cursor = next_cursor;
         if cursor.is_none() {
