@@ -5,7 +5,7 @@ use codex_tui::{
         LocalNote, PlanningSnapshot, SavedView, ScratchState, SourceKind, SourceRef, WorkCardRecord,
     },
     saved_view_editor::validate_saved_view,
-    sqlite_store::SqliteStore,
+    sqlite_store::{LocalWriterGuard, SqliteStore},
     store::{AppConfig, LocalStateV1, LocalStore},
     transcript_search::TranscriptSearchResults,
 };
@@ -13,6 +13,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 pub(crate) struct RuntimeStore {
     sqlite: SqliteStore,
+    _writer_guard: Option<LocalWriterGuard>,
     writable: bool,
     error: Option<String>,
 }
@@ -28,6 +29,7 @@ impl RuntimeStore {
     pub(crate) fn at_for_test(root: &std::path::Path) -> Self {
         Self {
             sqlite: SqliteStore::at(root),
+            _writer_guard: None,
             writable: true,
             error: None,
         }
@@ -36,6 +38,7 @@ impl RuntimeStore {
     pub(crate) fn discover() -> Result<(Self, StoreBootstrap)> {
         let sqlite = SqliteStore::discover()?;
         let config = sqlite.load_config()?;
+        let guard = sqlite.acquire_local_writer()?;
 
         let mut error = None;
         let local = match sqlite.load_state() {
@@ -63,6 +66,7 @@ impl RuntimeStore {
         Ok((
             Self {
                 sqlite,
+                _writer_guard: Some(guard),
                 writable,
                 error,
             },
