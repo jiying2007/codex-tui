@@ -191,7 +191,20 @@ def changed_paths(root, base_ref):
     except (OSError, subprocess.TimeoutExpired):
         raise ValueError("cannot inspect changed Git paths")
     if result.returncode != 0:
-        raise ValueError("cannot inspect changed Git paths: missing checkout parent")
+        # Never include raw Git stderr in a CI log: it may include sensitive
+        # repository coordinates. Distinguish shallow parents from other Git
+        # errors using an isolated, bounded probe.
+        try:
+            parent = subprocess.run(
+                ["git", "rev-parse", "--verify", "--quiet", base_ref],
+                cwd=str(root), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                timeout=5, check=False,
+            )
+            category = ("checkout parent not available" if parent.returncode
+                        else "git diff unavailable")
+        except (OSError, subprocess.TimeoutExpired):
+            category = "cannot probe checkout parent"
+        raise ValueError("cannot inspect changed Git paths: " + category)
     try:
         return set(value.decode("utf-8") for value in result.stdout.split(b"\0") if value)
     except UnicodeDecodeError:
@@ -211,8 +224,10 @@ def main():
             pairs = json.loads((root / MANIFEST).read_text(encoding="utf-8"))
             files = changed_paths(root, args.changed_base)
             failures.extend(changed_pair_issues(pairs, files))
-        except (OSError, UnicodeError, ValueError):
-            failures.append("cannot validate paired Git changes")
+        except ValueError as error:
+            failures.append("cannot validate paired Git changes: " + str(error))
+        except (OSError, UnicodeError):
+            failures.append("cannot validate paired Git changes: inaccessible input")
     if failures:
         for error in failures:
             print("DOC FAIL: " + error, file=sys.stderr)
