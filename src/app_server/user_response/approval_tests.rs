@@ -234,8 +234,7 @@ async fn production_actor_stops_after_actual_websocket_write_failure() {
             tx,
             events,
             command_rx,
-            None,
-            target,
+            (None, target),
         ));
         assert!(matches!(
             received.recv().await,
