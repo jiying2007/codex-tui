@@ -1003,6 +1003,58 @@ branch refs/heads/feature
     }
 
     #[tokio::test]
+    async fn stale_managed_record_does_not_authorize_unregistered_worktree_removal() {
+        let temp = tempdir().expect("tempdir");
+        let repo_root = temp.path().join("repo");
+        let repo = init_repo(&repo_root);
+        let store = SqliteStore::at(temp.path().join("store"));
+        let target = temp.path().join("stale-wt");
+        let target_text = target.to_string_lossy().into_owned();
+
+        let create = OperationPlan::create_worktree(
+            repo.clone(),
+            repo_root.to_string_lossy().into_owned(),
+            target_text.clone(),
+            "stale-wt-branch".into(),
+            "HEAD".into(),
+            1,
+        );
+        let created = execute_request(
+            &store,
+            MutationRequest {
+                admitted_at: Instant::now(),
+                plan: create,
+                active_scopes: vec![],
+            },
+        )
+        .await
+        .expect("create");
+        assert_eq!(created.state, OperationState::Succeeded);
+        git(&repo_root, &["worktree", "remove", &target_text]);
+
+        let remove = OperationPlan::remove_worktree(
+            repo,
+            repo_root.to_string_lossy().into_owned(),
+            target_text,
+            2,
+        );
+        let rejected = execute_request(
+            &store,
+            MutationRequest {
+                admitted_at: Instant::now(),
+                plan: remove,
+                active_scopes: vec![],
+            },
+        )
+        .await
+        .expect("conservative reject");
+        assert_eq!(rejected.state, OperationState::Failed);
+        assert!(rejected.failure.as_deref().is_some_and(|message| {
+            message.contains("no longer registered")
+        }));
+    }
+
+    #[tokio::test]
     async fn adopt_records_existing_worktree_without_running_git_mutation() {
         let temp = tempdir().expect("tempdir");
         let repo_root = temp.path().join("repo");
