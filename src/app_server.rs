@@ -2216,26 +2216,24 @@ async fn search_transcript(rpc: &mut RpcSession, query: String) -> Result<Transc
                 .await;
 
             match occurrence {
-                Ok(result) => {
-                    match parse_search_occurrences(candidate.thread_id.clone(), result) {
-                        Ok((mut exact, next_occurrence)) => {
-                            occurrence_partial |= next_occurrence.is_some();
-                            if exact.is_empty() {
-                                hits.push(thread_level_hit(candidate));
-                            } else {
-                                let remaining =
-                                    TRANSCRIPT_SEARCH_RESULT_LIMIT.saturating_sub(hits.len());
-                                occurrence_partial |= exact.len() > remaining;
-                                exact.truncate(remaining);
-                                hits.extend(exact);
-                            }
-                        }
-                        Err(_) => {
-                            occurrence_partial = true;
+                Ok(result) => match parse_search_occurrences(candidate.thread_id.clone(), result) {
+                    Ok((mut exact, next_occurrence)) => {
+                        occurrence_partial |= next_occurrence.is_some();
+                        if exact.is_empty() {
                             hits.push(thread_level_hit(candidate));
+                        } else {
+                            let remaining =
+                                TRANSCRIPT_SEARCH_RESULT_LIMIT.saturating_sub(hits.len());
+                            occurrence_partial |= exact.len() > remaining;
+                            exact.truncate(remaining);
+                            hits.extend(exact);
                         }
                     }
-                }
+                    Err(_) => {
+                        occurrence_partial = true;
+                        hits.push(thread_level_hit(candidate));
+                    }
+                },
                 Err(error) if is_transcript_search_unsupported(&error) => {
                     occurrence_partial = true;
                     hits.push(thread_level_hit(candidate));
@@ -2254,11 +2252,8 @@ async fn search_transcript(rpc: &mut RpcSession, query: String) -> Result<Transc
         }
         cursor = next_cursor;
         if cursor.is_none() {
-            complete = transcript_results_complete(
-                cursor.as_deref(),
-                occurrence_partial,
-                hits.len(),
-            );
+            complete =
+                transcript_results_complete(cursor.as_deref(), occurrence_partial, hits.len());
             break;
         }
     }
@@ -2736,35 +2731,59 @@ mod tests {
             let mut search = accept_async(search).await.expect("search handshake");
 
             let initialize = search.next().await.expect("initialize").expect("frame");
-            let Message::Text(initialize) = initialize else { panic!("initialize text") };
+            let Message::Text(initialize) = initialize else {
+                panic!("initialize text")
+            };
             let request: Value = serde_json::from_str(initialize.as_str()).expect("JSON");
             assert_eq!(request["method"], "initialize");
-            search.send(Message::Text(
-                json!({"id":request["id"],"result":{"serverInfo":{"version":"fixture"}}})
-                    .to_string().into()
-            )).await.expect("initialize reply");
+            search
+                .send(Message::Text(
+                    json!({"id":request["id"],"result":{"serverInfo":{"version":"fixture"}}})
+                        .to_string()
+                        .into(),
+                ))
+                .await
+                .expect("initialize reply");
             let initialized = search.next().await.expect("initialized").expect("frame");
-            let Message::Text(initialized) = initialized else { panic!("initialized text") };
-            assert_eq!(serde_json::from_str::<Value>(initialized.as_str()).unwrap()["method"], "initialized");
+            let Message::Text(initialized) = initialized else {
+                panic!("initialized text")
+            };
+            assert_eq!(
+                serde_json::from_str::<Value>(initialized.as_str()).unwrap()["method"],
+                "initialized"
+            );
 
             let request = search.next().await.expect("thread search").expect("frame");
-            let Message::Text(request) = request else { panic!("search text") };
+            let Message::Text(request) = request else {
+                panic!("search text")
+            };
             let request: Value = serde_json::from_str(request.as_str()).expect("search json");
             assert_eq!(request["method"], "thread/search");
 
             let live_request = live.next().await.expect("live command").expect("frame");
-            let Message::Text(live_request) = live_request else { panic!("live text") };
-            let live_request: Value = serde_json::from_str(live_request.as_str()).expect("live json");
+            let Message::Text(live_request) = live_request else {
+                panic!("live text")
+            };
+            let live_request: Value =
+                serde_json::from_str(live_request.as_str()).expect("live json");
             assert_eq!(live_request["method"], "fixture/heartbeat");
             live.send(Message::Text(
-                json!({"id":live_request["id"],"result":{"healthy":true}}).to_string().into()
-            )).await.expect("live reply");
+                json!({"id":live_request["id"],"result":{"healthy":true}})
+                    .to_string()
+                    .into(),
+            ))
+            .await
+            .expect("live reply");
 
             tokio::time::sleep(Duration::from_millis(75)).await;
-            search.send(Message::Text(
-                json!({"id":request["id"],"result":{"data":[],"nextCursor":null}})
-                    .to_string().into()
-            )).await.expect("search reply");
+            search
+                .send(Message::Text(
+                    json!({"id":request["id"],"result":{"data":[],"nextCursor":null}})
+                        .to_string()
+                        .into(),
+                ))
+                .await
+                .expect("search reply");
         });
 
         let target = ResolvedAppServerTarget {
@@ -2774,17 +2793,21 @@ mod tests {
                 auth_token: None,
             },
         };
-        let mut live = AppServerTransport::connect(&target).await.expect("live connect");
+        let mut live = AppServerTransport::connect(&target)
+            .await
+            .expect("live connect");
         let task_target = target.clone();
-        let search = tokio::spawn(async move {
-            isolated_transcript_search(&task_target, "needle".into()).await
-        });
+        let search =
+            tokio::spawn(
+                async move { isolated_transcript_search(&task_target, "needle".into()).await },
+            );
         live.write_json(&json!({"id":77,"method":"fixture/heartbeat","params":{}}))
-            .await.expect("live write");
-        let live_response = tokio::time::timeout(
-            Duration::from_secs(2),
-            live.read_json(),
-        ).await.expect("live reply must remain responsive").expect("read")
+            .await
+            .expect("live write");
+        let live_response = tokio::time::timeout(Duration::from_secs(2), live.read_json())
+            .await
+            .expect("live reply must remain responsive")
+            .expect("read")
             .expect("response");
         assert_eq!(live_response["result"]["healthy"], true);
         let result = search.await.expect("search task").expect("search result");
@@ -2798,7 +2821,11 @@ mod tests {
         assert!(transcript_results_complete(None, false, 3));
         assert!(!transcript_results_complete(None, true, 3));
         assert!(!transcript_results_complete(Some("next"), false, 3));
-        assert!(!transcript_results_complete(None, false, TRANSCRIPT_SEARCH_RESULT_LIMIT));
+        assert!(!transcript_results_complete(
+            None,
+            false,
+            TRANSCRIPT_SEARCH_RESULT_LIMIT
+        ));
         let (_, cursor) = crate::transcript_search::parse_search_occurrences(
             ThreadId::new("T"),
             json!({"data":[],"nextCursor":"next-occurrences"}),
