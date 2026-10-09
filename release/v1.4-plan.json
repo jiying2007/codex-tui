@@ -271,7 +271,7 @@
     "src/ui/terminal.rs": 126,
     "src/forge/tests.rs": 356,
     "src/app_server_transport/tests.rs": 317,
-    "src/forge/gitlab_projection_tests.rs": 162,
+    "src/forge/gitlab_projection_tests.rs": 164,
     "src/forge/error_redaction_tests.rs": 43,
     "src/forge/remote_identity_tests.rs": 47
   },
