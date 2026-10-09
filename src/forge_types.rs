@@ -388,7 +388,9 @@ mod overview_tests {
             ForgeCapability::MergeRequests,
             ForgeCapability::Pipelines,
         ] {
-            observed.capabilities.insert(item, CapabilityState::Available);
+            observed
+                .capabilities
+                .insert(item, CapabilityState::Available);
         }
         assert!(observed.incomplete_overview_reason().is_none());
         observed.pipelines = (0..FORGE_OVERVIEW_PAGE_SIZE)
@@ -400,12 +402,20 @@ mod overview_tests {
                 updated_at: None,
             })
             .collect();
-        assert!(observed.incomplete_overview_reason()
-            .expect("page boundary is ambiguous")
-            .contains("page limit"));
-        observed.capabilities.insert(ForgeCapability::Issues, CapabilityState::Unavailable);
-        assert!(observed.incomplete_overview_reason()
-            .expect("partial status")
-            .contains("unavailable"));
+        assert!(
+            observed
+                .incomplete_overview_reason()
+                .expect("page boundary is ambiguous")
+                .contains("page limit")
+        );
+        observed
+            .capabilities
+            .insert(ForgeCapability::Issues, CapabilityState::Unavailable);
+        assert!(
+            observed
+                .incomplete_overview_reason()
+                .expect("partial status")
+                .contains("unavailable")
+        );
     }
 }
