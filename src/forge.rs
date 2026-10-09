@@ -1075,30 +1075,7 @@ where
 }
 
 pub(crate) fn trim_error(stderr: &str, fallback: &str) -> String {
-    // Never pass untrusted child stderr through to TUI, logs, or receipts.
-    // Native gh/glab/git stderr may contain bearer tokens and credential URLs.
-    let lower = stderr.to_ascii_lowercase();
-    let category = if lower.contains("401") || lower.contains("unauthorized") {
-        "authentication rejected"
-    } else if lower.contains("403")
-        || lower.contains("forbidden")
-        || lower.contains("permission denied")
-    {
-        "access denied"
-    } else if lower.contains("404") || lower.contains("not found") {
-        "remote resource not found"
-    } else if lower.contains("timeout") || lower.contains("timed out") {
-        "request timed out"
-    } else if lower.contains("connection refused") {
-        "connection refused"
-    } else {
-        "error details withheld"
-    };
-    if stderr.trim().is_empty() {
-        fallback.to_string()
-    } else {
-        format!("{fallback}: {category}")
-    }
+    crate::hardening::safe_external_stderr(stderr, fallback)
 }
 
 pub(crate) fn first_nonempty_line(value: &str) -> Option<&str> {
