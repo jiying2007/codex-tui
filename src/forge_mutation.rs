@@ -940,13 +940,20 @@ async fn matching_merge_requests(
     source: &str,
     target: &str,
 ) -> Result<Vec<GitLabMergeRequest>> {
-    let endpoint = format!(
-        "{}/merge_requests?scope=all&state=opened&source_branch={}&target_branch={}&per_page=20",
+    let prefix = format!(
+        "{}/merge_requests?scope=all&state=opened&source_branch={}&target_branch={}",
         project_endpoint(plan),
         percent_encode_component(source),
         percent_encode_component(target)
     );
-    glab_api_json(&plan.cwd, &plan.host, &endpoint).await
+    crate::forge::bounded_review_pages(|page| {
+        let endpoint = format!(
+            "{prefix}&per_page={}&page={page}",
+            crate::forge::REVIEW_PAGE_SIZE
+        );
+        async move { glab_api_json(&plan.cwd, &plan.host, &endpoint).await }
+    })
+    .await
 }
 
 fn project_endpoint(plan: &ForgeMutationPlan) -> String {
