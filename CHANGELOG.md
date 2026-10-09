@@ -17,6 +17,8 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
+- Verify that v1.4+ release packages contain navigable EN/zh-CN documentation; keep current pages offline and rewrite unbundled historical links to immutable exact-source GitHub URLs, with negative archive-link tests.
+
 - Add complete EN/zh-CN operator and repository-governance documentation, protected issue/PR templates, a Python 3.8-compatible bilingual docs contract and archive-mandatory first-deployment translations.
 
 - Refuse Git remote URL query and fragment fields during Forge identity derivation so URL secrets can never become encoded project API paths or error contexts; ordinary SSH/SCP/HTTPS remotes remain supported.

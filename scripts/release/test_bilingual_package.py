@@ -5,6 +5,7 @@ import tempfile
 import unittest
 
 import package_release as package
+from archive_doc_links import rewrite_packaged_links, verify_packaged_links
 import verify_archive as verify
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -29,6 +30,17 @@ class BilingualReleaseDocumentation(unittest.TestCase):
         actual = {x.relative_to(stage).as_posix() for x in stage.rglob("*") if x.is_file()}
         self.assertEqual(actual, expected)
         verify.verify_active_bilingual_docs(stage, "1.4.0")
+
+    def test_all_current_bundled_pages_have_live_navigation(self):
+        stage = self.stage()
+        rewrite_packaged_links(stage, ROOT, "a" * 40)
+        verify_packaged_links(stage)
+        index = (stage / "docs/README.md").read_text(encoding="utf-8")
+        self.assertIn(
+            "https://github.com/jiying2007/codex-tui/blob/" +
+            "a" * 40 + "/docs/design/final-plan.md", index
+        )
+        self.assertIn("[Team quickstart](team-quickstart.md)", index)
 
     def test_a_missing_translation_fails_archive_verification(self):
         stage = self.stage()

@@ -14,6 +14,11 @@
 
 每个平台包包含二进制、README、CHANGELOG、INSTALL-UPGRADE、TEAM-QUICKSTART、Apache LICENSE、第三方 Notices 和 Release Metadata。**v1.4 首次部署候选包**还必须保留并校验英文/简体中文版 README、安装、快速入门（含根目录 `README.zh-CN.md`、`INSTALL-UPGRADE.zh-CN.md`、`TEAM-QUICKSTART.zh-CN.md`），以及 `docs/i18n/manifest.json` 指定的所有当前双语操作/治理页面（以原仓库相对路径存放）。缺任何配对页面、章节或语言声明将拒绝归档；历史 v1.0 包的原始英文布局不会被追溯修改。详见英文 [归档约定](../../release/install-upgrade.md)。
 
+随包的**当前中英文指南**可离线浏览；若链接指向未打包的历史设计、
+实现或源码，打包器会把该相对链接转换为绑定**精确源码 SHA** 的
+GitHub 只读地址。历史链接需要联网，但当前双语指南和语言切换不需要。
+归档校验会拒绝残留的无效本地 Markdown 链接，避免安装包内出现死链。
+
 ## 二进制、来源与归档身份
 <!-- docs-section: identity -->
 

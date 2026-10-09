@@ -16,6 +16,7 @@ import zipfile
 from _compat import cargo_package, write_text_lf
 from check_linux_abi import inspect_binary
 from archive_identity import validate_metadata
+from archive_doc_links import rewrite_packaged_links
 
 
 def verbose_tool_identity(command: list[str], name: str) -> dict:
@@ -231,6 +232,10 @@ def main() -> int:
             stage / "RELEASE-METADATA.json",
             json.dumps(metadata, indent=2, sort_keys=True) + "\n",
         )
+
+        # All shipped current guides must remain navigable. Unbundled historical
+        # references point to immutable source-SHA GitHub files, not dead paths.
+        rewrite_packaged_links(stage, root, args.commit)
 
         if args.platform == "windows":
             output = output_dir / f"{package_name}.zip"

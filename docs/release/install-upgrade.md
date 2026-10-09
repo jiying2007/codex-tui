@@ -22,6 +22,13 @@ Every release bundle contains:
 
 Verify the checksum for the archive you plan to install before extracting it.
 
+Current bilingual guide files remain usable offline. When a linked historical
+design/implementation/source document is not bundled, the packager replaces
+that relative link with a GitHub URL pinned to the **exact source commit SHA**.
+These historical links require network access; the current bilingual pages
+and language switches do not. Archive verification rejects any remaining
+broken local Markdown link instead of silently shipping dead navigation.
+
 Each platform archive contains:
 
 - `codex-tui` or `codex-tui.exe`;
