@@ -2151,6 +2151,14 @@ async fn execute_thread_queue_mutation(
     Ok(())
 }
 
+fn transcript_results_complete(
+    thread_cursor: Option<&str>,
+    occurrence_partial: bool,
+    count: usize,
+) -> bool {
+    thread_cursor.is_none() && !occurrence_partial && count < TRANSCRIPT_SEARCH_RESULT_LIMIT
+}
+
 async fn isolated_transcript_search(
     target: &ResolvedAppServerTarget,
     query: String,
@@ -2246,7 +2254,11 @@ async fn search_transcript(rpc: &mut RpcSession, query: String) -> Result<Transc
         }
         cursor = next_cursor;
         if cursor.is_none() {
-            complete = !occurrence_partial && hits.len() < TRANSCRIPT_SEARCH_RESULT_LIMIT;
+            complete = transcript_results_complete(
+                cursor.as_deref(),
+                occurrence_partial,
+                hits.len(),
+            );
             break;
         }
     }
@@ -2705,6 +2717,20 @@ mod tests {
             error.to_string().contains("fixture/request timed out"),
             "timeout must retain method context: {error:#}"
         );
+    }
+
+    #[test]
+    fn transcript_complete_requires_all_occurrences_and_budget_headroom() {
+        assert!(transcript_results_complete(None, false, 3));
+        assert!(!transcript_results_complete(None, true, 3));
+        assert!(!transcript_results_complete(Some("next"), false, 3));
+        assert!(!transcript_results_complete(None, false, TRANSCRIPT_SEARCH_RESULT_LIMIT));
+        let (_, cursor) = crate::transcript_search::parse_search_occurrences(
+            ThreadId::new("T"),
+            json!({"data":[],"nextCursor":"next-occurrences"}),
+        )
+        .expect("fixture");
+        assert!(!transcript_results_complete(None, cursor.is_some(), 1));
     }
 
     #[test]
