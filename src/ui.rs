@@ -1052,6 +1052,14 @@ fn forge_context_lines(
         )
     ))];
 
+    if observation.core_data_incomplete() {
+        lines.push(Line::from(tr(
+            app,
+            "Forge data incomplete · inspect capability status",
+            "Forge 数据不完整 · 请检查能力状态",
+        )));
+    }
+
     let branch = app
         .git_context(thread_id)
         .and_then(|context| context.branch.as_deref());
