@@ -11,6 +11,8 @@ on:
       - ".github/workflows/security.yml"
       - "scripts/release/**"
       - "scripts/architecture/**"
+      - "scripts/docs/**"
+      - "docs/i18n/**"
       - "deny.toml"
       - "src/**"
       - "tests/**"
@@ -230,6 +232,8 @@ jobs:
           set -euo pipefail
           test "$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" --jq .id)" = "$GITHUB_RUN_ID"
 
+      - name: Validate bilingual Markdown and local links
+        run: python3 scripts/docs/check_docs.py
       - name: Validate v1.4 development authority
         run: python3 scripts/release/validate_v1_4_plan.py
 

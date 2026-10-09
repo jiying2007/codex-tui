@@ -12,6 +12,8 @@ on:
       - "Cargo.lock"
       - "scripts/release/**"
       - "scripts/architecture/**"
+      - "scripts/docs/**"
+      - "docs/i18n/**"
       - "release/v1.4-plan.json"
       - "release/v1.4-completion.json"
       - "release/v1.4-criteria.json"
@@ -42,6 +44,8 @@ jobs:
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
 
+      - name: Validate bilingual Markdown and local links
+        run: python scripts/docs/check_docs.py
       - name: Validate v1.4 development authority
         run: python scripts/release/validate_v1_4_plan.py
 
