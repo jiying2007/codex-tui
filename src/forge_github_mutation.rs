@@ -90,6 +90,14 @@ struct GitHubMergeResult {
     sha: Option<String>,
 }
 
+fn require_github_mergeable(mergeable: Option<bool>) -> Result<()> {
+    anyhow::ensure!(
+        mergeable == Some(true),
+        "GitHub pull request mergeability is unknown or not mergeable"
+    );
+    Ok(())
+}
+
 pub(crate) async fn validate_preconditions(plan: &ForgeMutationPlan) -> Result<GitHubPreflight> {
     let repository = repository(plan).await?;
     anyhow::ensure!(
@@ -178,10 +186,7 @@ pub(crate) async fn validate_preconditions(plan: &ForgeMutationPlan) -> Result<G
             let pull = validate_exact_open_pull(plan).await?;
             let sha = required_head_sha(&pull)?;
             anyhow::ensure!(!pull.draft, "GitHub pull request is still a draft");
-            anyhow::ensure!(
-                pull.mergeable != Some(false),
-                "GitHub reports the pull request as not mergeable"
-            );
+            require_github_mergeable(pull.mergeable)?;
             Ok(GitHubPreflight {
                 user_login: None,
                 head_sha: Some(sha),
@@ -538,14 +543,11 @@ async fn get_pull(plan: &ForgeMutationPlan, number: u64) -> Result<GitHubPullReq
 }
 
 async fn reviews(plan: &ForgeMutationPlan, number: u64) -> Result<Vec<GitHubReview>> {
-    gh_api_json(
-        &plan.cwd,
-        &plan.host,
-        &format!(
-            "{}/pulls/{number}/reviews?per_page={MAX_PULL_PAGE}",
-            repository_endpoint(plan)?
-        ),
-    )
+    let prefix = format!("{}/pulls/{number}/reviews", repository_endpoint(plan)?);
+    crate::forge::bounded_review_pages(|page| {
+        let endpoint = format!("{prefix}?per_page={MAX_PULL_PAGE}&page={page}");
+        async move { gh_api_json(&plan.cwd, &plan.host, &endpoint).await }
+    })
     .await
 }
 
@@ -567,12 +569,16 @@ async fn matching_pull_requests(
     source: &str,
     target: &str,
 ) -> Result<Vec<GitHubPullRequest>> {
-    let endpoint = format!(
-        "{}/pulls?state=open&base={}&per_page={MAX_PULL_PAGE}",
+    let prefix = format!(
+        "{}/pulls?state=open&base={}",
         repository_endpoint(plan)?,
         percent_encode_component(target)
     );
-    let pulls: Vec<GitHubPullRequest> = gh_api_json(&plan.cwd, &plan.host, &endpoint).await?;
+    let pulls = crate::forge::bounded_review_pages(|page| {
+        let endpoint = format!("{prefix}&per_page={MAX_PULL_PAGE}&page={page}");
+        async move { gh_api_json::<Vec<GitHubPullRequest>>(&plan.cwd, &plan.host, &endpoint).await }
+    })
+    .await?;
     Ok(pulls
         .into_iter()
         .filter(|pull| pull.head.reference == source && pull.base.reference == target)

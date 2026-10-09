@@ -796,46 +796,18 @@ async fn validate_preconditions(plan: &ForgeMutationPlan) -> Result<Preflight> {
             let sha = required_mr_sha(&mr)?;
             anyhow::ensure!(!mr.draft, "merge request is still a draft");
             anyhow::ensure!(
-                mr.blocking_discussions_resolved != Some(false),
-                "merge request still has blocking unresolved discussions"
+                mr.blocking_discussions_resolved == Some(true),
+                "GitLab merge discussions must be explicitly resolved"
             );
-            if let Some(status) = mr.detailed_merge_status.as_deref() {
-                let normalized = status.to_ascii_lowercase();
-                anyhow::ensure!(
-                    !normalized.contains("conflict"),
-                    "merge request reports conflict status: {status}"
-                );
-            }
+            require_gitlab_merge_ready(mr.detailed_merge_status.as_deref())?;
             if let Some(pipeline) = &mr.head_pipeline {
                 anyhow::ensure!(
-                    !matches!(
-                        pipeline.status.to_ascii_lowercase().as_str(),
-                        "failed" | "canceled" | "cancelled"
-                    ),
-                    "head pipeline is {}",
+                    pipeline.status.eq_ignore_ascii_case("success"),
+                    "GitLab head pipeline is not successful: {}",
                     pipeline.status
                 );
             }
-
-            match approval_state(plan, mr.iid).await {
-                Ok(state) => {
-                    let unsatisfied = unsatisfied_required_approval_rules(&state);
-                    anyhow::ensure!(
-                        unsatisfied == 0,
-                        "merge request has {unsatisfied} unsatisfied approval rule(s)"
-                    );
-                }
-                Err(_) => {
-                    if let Ok(approvals) = approvals(plan, mr.iid).await
-                        && let Some(left) = approvals.approvals_left
-                    {
-                        anyhow::ensure!(
-                            left == 0,
-                            "merge request still requires {left} approval(s)"
-                        );
-                    }
-                }
-            }
+            require_gitlab_approvals(plan, mr.iid).await?;
 
             Ok(Preflight {
                 authenticated_user_id: None,
@@ -923,6 +895,38 @@ async fn approval_state(plan: &ForgeMutationPlan, iid: u64) -> Result<GitLabAppr
     .await
 }
 
+fn require_gitlab_merge_ready(status: Option<&str>) -> Result<()> {
+    anyhow::ensure!(
+        status.is_some_and(|value| value.eq_ignore_ascii_case("mergeable")),
+        "GitLab merge readiness is not confirmed: {status:?}"
+    );
+    Ok(())
+}
+
+fn require_gitlab_approval_fallback(approvals: &GitLabApprovals) -> Result<()> {
+    let remaining = approvals
+        .approvals_left
+        .context("GitLab approval_state unavailable; fallback approvals_left is unknown")?;
+    anyhow::ensure!(remaining == 0, "GitLab merge needs {remaining} approvals");
+    Ok(())
+}
+
+async fn require_gitlab_approvals(plan: &ForgeMutationPlan, iid: u64) -> Result<()> {
+    match approval_state(plan, iid).await {
+        Ok(state) => {
+            let pending = unsatisfied_required_approval_rules(&state);
+            anyhow::ensure!(pending == 0, "GitLab merge has {pending} unsatisfied rules");
+            Ok(())
+        }
+        Err(_) => {
+            let fallback = approvals(plan, iid)
+                .await
+                .context("both GitLab approval_state and approvals fallback unavailable")?;
+            require_gitlab_approval_fallback(&fallback)
+        }
+    }
+}
+
 fn unsatisfied_required_approval_rules(state: &GitLabApprovalState) -> usize {
     state
         .rules
@@ -936,13 +940,20 @@ async fn matching_merge_requests(
     source: &str,
     target: &str,
 ) -> Result<Vec<GitLabMergeRequest>> {
-    let endpoint = format!(
-        "{}/merge_requests?scope=all&state=opened&source_branch={}&target_branch={}&per_page=20",
+    let prefix = format!(
+        "{}/merge_requests?scope=all&state=opened&source_branch={}&target_branch={}",
         project_endpoint(plan),
         percent_encode_component(source),
         percent_encode_component(target)
     );
-    glab_api_json(&plan.cwd, &plan.host, &endpoint).await
+    crate::forge::bounded_review_pages(|page| {
+        let endpoint = format!(
+            "{prefix}&per_page={}&page={page}",
+            crate::forge::REVIEW_PAGE_SIZE
+        );
+        async move { glab_api_json(&plan.cwd, &plan.host, &endpoint).await }
+    })
+    .await
 }
 
 fn project_endpoint(plan: &ForgeMutationPlan) -> String {
@@ -1468,6 +1479,43 @@ mod tests {
         .expect("decode approval-state fixture");
 
         assert_eq!(unsatisfied_required_approval_rules(&state), 1);
+    }
+
+    #[test]
+    fn only_explicit_gitlab_mergeable_status_passes() {
+        for status in [
+            None,
+            Some("checking"),
+            Some("ci_still_running"),
+            Some("not_approved"),
+            Some("policies_denied"),
+            Some("conflict"),
+            Some("unchecked"),
+            Some("can_be_merged"),
+        ] {
+            assert!(require_gitlab_merge_ready(status).is_err(), "{status:?}");
+        }
+        assert!(require_gitlab_merge_ready(Some("mergeable")).is_ok());
+    }
+
+    #[test]
+    fn gitlab_approval_fallback_rejects_missing_or_positive_counts() {
+        for remaining in [None, Some(1), Some(10)] {
+            assert!(
+                require_gitlab_approval_fallback(&GitLabApprovals {
+                    approvals_left: remaining,
+                    approved_by: vec![],
+                })
+                .is_err()
+            );
+        }
+        assert!(
+            require_gitlab_approval_fallback(&GitLabApprovals {
+                approvals_left: Some(0),
+                approved_by: vec![],
+            })
+            .is_ok()
+        );
     }
 
     #[test]

@@ -85,3 +85,10 @@ fn approval_mutation_binds_exact_commit_id() {
     assert!(source.contains(r#"[("event", "APPROVE"), ("commit_id", expected_sha)]"#));
     assert!(source.contains("revalidate_head(plan, number, expected_sha).await?"));
 }
+
+#[test]
+fn github_merge_preflight_rejects_unknown_and_false() {
+    assert!(require_github_mergeable(None).is_err());
+    assert!(require_github_mergeable(Some(false)).is_err());
+    assert!(require_github_mergeable(Some(true)).is_ok());
+}
