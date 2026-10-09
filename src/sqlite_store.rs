@@ -307,6 +307,14 @@ impl SqliteStore {
         Ok(indexed)
     }
 
+    pub fn prune_transcript_index(&self) -> Result<()> {
+        let mut conn = self.open_ready()?;
+        let has_fts = transcript_fts_available(&conn)?;
+        let tx = conn.transaction().context("begin index retention cleanup")?;
+        prune_transcript_documents(&tx, has_fts, u64_to_i64(now_unix_ms())?)?;
+        tx.commit().context("commit index retention cleanup")
+    }
+
     /// Clear derivative message text and FTS rows when local indexing is disabled.
     /// Logical erasure is not a guarantee of physical flash-block sanitization.
     pub fn clear_transcript_index(&self) -> Result<()> {
