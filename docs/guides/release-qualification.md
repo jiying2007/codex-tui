@@ -14,7 +14,7 @@ On the **same protected main SHA**, require Linux/macOS/Windows Rust CI, Develop
 
 Development Qualification also retains `failure-case-execution.json` for exact individually rerun Failure Matrix test identifiers, measured process wall times and output digests. The receipt sets `recoveryLatencyMeasured=false`: process startup and test-harness time are NOT the application's fault-recovery latency, and no `maxRecoveryMs` target is declared passed without independent fault-injection timing evidence.
 
-Protocol qualification is intentionally tiered: **L1** replays retained registry/unknown/malformed frames; **L2** uses synthetic WebSocket/Unix transport and App Server registry lifecycle tests (including ordered notifications, disconnect and bad JSON). Neither tier authenticates a live Codex target. **L3** requires real current Codex App Server, actual capabilities and terminal/provider evidence, and remains externally blocked until observed on the exact candidate.
+Protocol qualification is intentionally tiered: **L1** replays retained registry/unknown/malformed frames; **L2** uses synthetic WebSocket/Unix transport and App Server registry lifecycle tests (including ordered notifications, disconnect and bad JSON). L2 also verifies that a synthetic server request arriving during an awaited RPC is handed back to the event dispatcher promptly (without claiming RPC success or dropping the request). Neither tier authenticates a live Codex target. **L3** requires real current Codex App Server, actual capabilities and terminal/provider evidence, and remains externally blocked until observed on the exact candidate.
 
 ## Real environment requirements
 <!-- docs-section: external -->
