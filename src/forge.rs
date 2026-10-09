@@ -28,7 +28,7 @@ const FORGE_EVENT_QUEUE_CAPACITY: usize = 128;
 const FORGE_MAX_CONCURRENCY: usize = 4;
 const MAX_STDOUT_BYTES: usize = 1024 * 1024;
 const MAX_STDERR_BYTES: usize = 64 * 1024;
-const DEFAULT_PAGE_SIZE: usize = 20;
+const DEFAULT_PAGE_SIZE: usize = crate::forge_types::FORGE_OVERVIEW_PAGE_SIZE;
 pub(crate) const REVIEW_PAGE_SIZE: usize = 100;
 const REVIEW_MAX_PAGES: usize = 4;
 
