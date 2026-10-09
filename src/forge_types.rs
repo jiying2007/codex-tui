@@ -186,6 +186,9 @@ pub struct ForgeObservation {
     pub issues: Vec<ForgeIssueSummary>,
     pub change_requests: Vec<ChangeRequestSummary>,
     pub pipelines: Vec<PipelineSummary>,
+    /// True when an upstream raw overview page reached its bounded API limit,
+    /// before any provider-specific filtering or invalid-row exclusion.
+    pub overview_source_page_saturated: bool,
     pub review: Option<ForgeReviewSummary>,
     pub observed_at_unix_ms: u64,
     pub freshness: ForgeFreshness,
@@ -204,6 +207,7 @@ impl ForgeObservation {
             issues: vec![],
             change_requests: vec![],
             pipelines: vec![],
+            overview_source_page_saturated: false,
             review: None,
             observed_at_unix_ms: 0,
             freshness: ForgeFreshness::Unavailable,
@@ -222,6 +226,7 @@ impl ForgeObservation {
             issues: vec![],
             change_requests: vec![],
             pipelines: vec![],
+            overview_source_page_saturated: false,
             review: None,
             observed_at_unix_ms: now_unix_ms(),
             freshness: ForgeFreshness::Unavailable,
@@ -255,7 +260,8 @@ impl ForgeObservation {
     /// An available endpoint is not evidence that its first page covers an
     /// entire repository, especially on repositories with busy CI histories.
     pub fn overview_limit_reached(&self) -> bool {
-        self.issues.len() >= FORGE_OVERVIEW_PAGE_SIZE
+        self.overview_source_page_saturated
+            || self.issues.len() >= FORGE_OVERVIEW_PAGE_SIZE
             || self.change_requests.len() >= FORGE_OVERVIEW_PAGE_SIZE
             || self.pipelines.len() >= FORGE_OVERVIEW_PAGE_SIZE
     }
@@ -379,6 +385,28 @@ pub(crate) fn default_capabilities() -> BTreeMap<ForgeCapability, CapabilityStat
 #[cfg(test)]
 mod overview_tests {
     use super::*;
+
+    #[test]
+    #[test]
+    fn filtered_api_page_saturation_is_preserved_even_if_projected_rows_are_empty() {
+        let mut observed = ForgeObservation::pending(ThreadId::new("raw-page"), "/repo".into());
+        for capability in [
+            ForgeCapability::Issues,
+            ForgeCapability::MergeRequests,
+            ForgeCapability::Pipelines,
+        ] {
+            observed
+                .capabilities
+                .insert(capability, CapabilityState::Available);
+        }
+        assert!(observed.issues.is_empty());
+        assert!(!observed.overview_limit_reached());
+        observed.overview_source_page_saturated = true;
+        assert!(observed.overview_limit_reached());
+        assert!(observed.incomplete_overview_reason()
+            .expect("raw full page remains ambiguous")
+            .contains("page limit"));
+    }
 
     #[test]
     fn missing_capability_or_full_recent_page_never_proves_absence() {
