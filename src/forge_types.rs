@@ -402,9 +402,12 @@ mod overview_tests {
         assert!(!observed.overview_limit_reached());
         observed.overview_source_page_saturated = true;
         assert!(observed.overview_limit_reached());
-        assert!(observed.incomplete_overview_reason()
-            .expect("raw full page remains ambiguous")
-            .contains("page limit"));
+        assert!(
+            observed
+                .incomplete_overview_reason()
+                .expect("raw full page remains ambiguous")
+                .contains("page limit")
+        );
     }
 
     #[test]
