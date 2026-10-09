@@ -5,20 +5,46 @@ on:
     branches: [main]
     paths:
       - "src/app_server.rs"
+      - "src/app_server/**"
+      - "src/app_server_*"
       - "src/codex_protocol.rs"
+      - "src/compat.rs"
+      - "src/conversation.rs"
+      - "src/conversation/**"
       - "src/replay_backend.rs"
       - "src/domain.rs"
+      - "src/thread_queue.rs"
+      - "src/app/queue_*.rs"
+      - "src/user_response.rs"
+      - "src/app/user_*.rs"
+      - "src/runtime_connection.rs"
+      - "src/runtime_user_response.rs"
+      - "src/runtime_user_response/**"
       - "tests/protocol_replay.rs"
       - "tests/fixtures/protocol/**"
+      - "scripts/release/test_protocol_compatibility_trigger_scope.py"
       - ".github/workflows/protocol-compatibility.yml"
   pull_request:
     paths:
       - "src/app_server.rs"
+      - "src/app_server/**"
+      - "src/app_server_*"
       - "src/codex_protocol.rs"
+      - "src/compat.rs"
+      - "src/conversation.rs"
+      - "src/conversation/**"
       - "src/replay_backend.rs"
       - "src/domain.rs"
+      - "src/thread_queue.rs"
+      - "src/app/queue_*.rs"
+      - "src/user_response.rs"
+      - "src/app/user_*.rs"
+      - "src/runtime_connection.rs"
+      - "src/runtime_user_response.rs"
+      - "src/runtime_user_response/**"
       - "tests/protocol_replay.rs"
       - "tests/fixtures/protocol/**"
+      - "scripts/release/test_protocol_compatibility_trigger_scope.py"
       - ".github/workflows/protocol-compatibility.yml"
   schedule:
     - cron: "41 2 * * 3"
@@ -38,6 +64,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - name: Verify protocol event-adapter trigger coverage
+        run: python3 -m unittest discover -s scripts/release -p 'test_protocol_compatibility_trigger_scope.py'
       - name: Validate retained protocol fixture manifest
         shell: bash
         run: |

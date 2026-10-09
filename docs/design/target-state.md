@@ -1,7 +1,14 @@
 # codex-tui target state
 
 Date: 2026-09-29
-Status: target architecture
+Status: historical target architecture (superseded for active scope)
+
+> **Historical design, not a deployment contract.** The current v1.4 first-install
+> baseline and the accepted [ADR-012 upstream convergence](../adr/012-upstream-convergence.md)
+> override older aspirations to build full conversation, queue, terminal or
+> Worktree control. Consult [first deployment](../implementation/v1.4-first-deployment-baseline.md)
+> and exact-SHA release evidence before claiming production readiness.
+
 
 ## Product definition
 

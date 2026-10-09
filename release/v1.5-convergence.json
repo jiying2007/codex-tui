@@ -95,6 +95,20 @@
         "src/ui/terminal.rs",
         "src/pty.rs"
       ]
+    },
+    "managed-worktree-operations": {
+      "policy": "upstream-projection-and-git-safety-only",
+      "modulePrefixes": [
+        "src/worktree",
+        "src/operation",
+        "src/runtime_commands"
+      ],
+      "modules": [
+        "src/worktree.rs",
+        "src/worktree_git.rs",
+        "src/operation.rs",
+        "src/runtime_commands.rs"
+      ]
     }
   },
   "frozenDuplicateCapabilities": [
@@ -105,7 +119,8 @@
     "independent-thread-queue-authority",
     "independent-conversation-protocol",
     "independent-terminal-manager",
-    "generic-coding-agent-provider-layer"
+    "generic-coding-agent-provider-layer",
+    "independent-managed-worktree-authority"
   ],
   "changePolicy": {
     "maintenanceOnlyGrowth": "requires-reviewed-shared-module-ratchet-and-convergence-identity-update",
