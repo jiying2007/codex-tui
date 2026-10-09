@@ -43,13 +43,22 @@ impl RuntimeStore {
         let guard = sqlite.acquire_local_writer()?;
         let index_transcripts = config.search.persist_local_transcripts;
 
-        let mut error = None;
-        let local = match sqlite.load_state() {
-            Ok(state) => state,
-            Err(store_error) => {
-                error = Some(format!("SQLite LocalStore unavailable: {store_error:#}"));
-                LocalStateV1::default()
+        // Validate database integrity once at interactive startup. A failed
+        // scan degrades the store to read-only rather than overwriting state.
+        let mut error = sqlite
+            .health()
+            .err()
+            .map(|issue| format!("SQLite startup integrity unavailable: {issue:#}"));
+        let local = if error.is_none() {
+            match sqlite.load_state() {
+                Ok(state) => state,
+                Err(store_error) => {
+                    error = Some(format!("SQLite LocalStore unavailable: {store_error:#}"));
+                    LocalStateV1::default()
+                }
             }
+        } else {
+            LocalStateV1::default()
         };
         let planning = if error.is_none() {
             match sqlite.load_planning_snapshot() {

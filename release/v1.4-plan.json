@@ -156,7 +156,7 @@
     "src/forge.rs": 1345,
     "src/worktree.rs": 1218,
     "src/release.rs": 1025,
-    "src/runtime_store.rs": 477,
+    "src/runtime_store.rs": 486,
     "src/runtime_input.rs": 267,
     "src/app_server_registry.rs": 169,
     "src/app_server_wire.rs": 7,
@@ -376,6 +376,15 @@
       "scope": "Move transcript search to isolated cancellable read-only session with bounded 12s deadline; reject partial occurrence completeness; mock two-connection regression",
       "modules": [
         "src/app_server.rs"
+      ]
+    },
+    {
+      "date": "2026-10-09",
+      "kind": "sqlite-hotpath-defect-fix",
+      "scope": "Move full quick_check from every SQLite connection to startup and explicit Doctor health; maintain fail-closed startup read-only and add regression coverage",
+      "modules": [
+        "src/sqlite_store.rs",
+        "src/runtime_store.rs"
       ]
     },
     {
