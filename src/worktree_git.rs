@@ -20,7 +20,7 @@ pub(crate) async fn list_worktrees(cwd: &str) -> Result<Vec<WorktreeEntry>> {
     anyhow::ensure!(
         output.success,
         "git worktree list failed: {}",
-        output.stderr.trim()
+        crate::hardening::safe_external_stderr(&output.stderr, "git child")
     );
     Ok(parse_worktree_porcelain(&output.stdout))
 }
@@ -67,7 +67,10 @@ pub(crate) async fn branch_exists(cwd: &str, branch: &str) -> Result<bool> {
     match output.code {
         Some(0) => Ok(true),
         Some(1) => Ok(false),
-        _ => Err(anyhow!("git show-ref failed: {}", output.stderr.trim())),
+        _ => Err(anyhow!(
+            "git show-ref failed: {}",
+            crate::hardening::safe_external_stderr(&output.stderr, "git child")
+        )),
     }
 }
 
@@ -76,7 +79,7 @@ pub(crate) async fn worktree_is_clean(path: &str) -> Result<bool> {
     anyhow::ensure!(
         output.success,
         "git status failed: {}",
-        output.stderr.trim()
+        crate::hardening::safe_external_stderr(&output.stderr, "git child")
     );
     Ok(output.stdout.trim().is_empty())
 }

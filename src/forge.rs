@@ -11,6 +11,7 @@ use crate::latest_read::{ReadEnvelope, ReadFence, ReadScope, next_current};
 use anyhow::{Context, Result, anyhow, bail};
 use serde::Deserialize;
 use std::collections::BTreeMap;
+use std::future::Future;
 use std::path::Path;
 use std::process::Stdio;
 use std::sync::Arc;
@@ -28,6 +29,31 @@ const FORGE_MAX_CONCURRENCY: usize = 4;
 const MAX_STDOUT_BYTES: usize = 1024 * 1024;
 const MAX_STDERR_BYTES: usize = 64 * 1024;
 const DEFAULT_PAGE_SIZE: usize = 20;
+pub(crate) const REVIEW_PAGE_SIZE: usize = 100;
+const REVIEW_MAX_PAGES: usize = 4;
+
+// Never report partial review totals as complete. An exactly full page
+// requires a further read; the whole bounded result fails if a page fails.
+pub(crate) async fn bounded_review_pages<T, F, Fut>(mut fetch: F) -> Result<Vec<T>>
+where
+    F: FnMut(usize) -> Fut,
+    Fut: Future<Output = Result<Vec<T>>>,
+{
+    let mut combined = Vec::new();
+    for number in 1..=REVIEW_MAX_PAGES {
+        let page = fetch(number).await?;
+        anyhow::ensure!(
+            page.len() <= REVIEW_PAGE_SIZE,
+            "review API returned more than {REVIEW_PAGE_SIZE} rows per page"
+        );
+        let complete = page.len() < REVIEW_PAGE_SIZE;
+        combined.extend(page);
+        if complete {
+            return Ok(combined);
+        }
+    }
+    bail!("review result exceeds bounded pagination budget; totals unavailable")
+}
 
 pub fn canonical_provider_for_host(host: &str) -> Option<ForgeProviderKind> {
     if host.eq_ignore_ascii_case("github.com") {
@@ -333,7 +359,8 @@ pub async fn probe_thread(thread_id: ThreadId, cwd: String) -> ForgeObservation 
     RoutingForgeProvider.probe(thread_id, cwd).await
 }
 
-fn gitlab_observation_status(
+pub(crate) fn core_observation_status(
+    provider: ForgeProviderKind,
     issues_available: bool,
     merge_requests_available: bool,
     pipelines_available: bool,
@@ -361,7 +388,10 @@ fn gitlab_observation_status(
         (
             capabilities,
             ForgeFreshness::Unavailable,
-            Some("all GitLab read-only data endpoints are unavailable".into()),
+            Some(format!(
+                "all {} core read endpoints are unavailable",
+                provider.label()
+            )),
         )
     } else {
         (capabilities, ForgeFreshness::Fresh, None)
@@ -404,7 +434,8 @@ pub(crate) async fn probe_gitlab_with_remote(
         glab_api_json::<Vec<GitLabMergeRequest>>(&cwd, &remote.host, &merge_requests_endpoint),
         glab_api_json::<Vec<GitLabPipeline>>(&cwd, &remote.host, &pipelines_endpoint),
     );
-    let (capabilities, freshness, error) = gitlab_observation_status(
+    let (capabilities, freshness, error) = core_observation_status(
+        ForgeProviderKind::GitLab,
         issues_result.is_ok(),
         merge_requests_result.is_ok(),
         pipelines_result.is_ok(),
@@ -500,13 +531,18 @@ pub async fn probe_change_request_review(
     let encoded_project_id = percent_encode_component(&project_id);
     let approvals_endpoint =
         format!("/projects/{encoded_project_id}/merge_requests/{change_request_iid}/approvals");
-    let discussions_endpoint = format!(
-        "/projects/{encoded_project_id}/merge_requests/{change_request_iid}/discussions?per_page=100"
-    );
+    let discussions_endpoint =
+        format!("/projects/{encoded_project_id}/merge_requests/{change_request_iid}/discussions");
 
     let (approvals_result, discussions_result) = tokio::join!(
         glab_api_json::<GitLabApprovals>(&cwd, &host, &approvals_endpoint),
-        glab_api_json::<Vec<GitLabDiscussion>>(&cwd, &host, &discussions_endpoint),
+        bounded_review_pages(|page| {
+            let cwd = cwd.clone();
+            let host = host.clone();
+            let endpoint =
+                format!("{discussions_endpoint}?per_page={REVIEW_PAGE_SIZE}&page={page}");
+            async move { glab_api_json::<Vec<GitLabDiscussion>>(&cwd, &host, &endpoint).await }
+        }),
     );
 
     let approvals_available = approvals_result.is_ok();
@@ -1041,30 +1077,7 @@ where
 }
 
 pub(crate) fn trim_error(stderr: &str, fallback: &str) -> String {
-    // Never pass untrusted child stderr through to TUI, logs, or receipts.
-    // Native gh/glab/git stderr may contain bearer tokens and credential URLs.
-    let lower = stderr.to_ascii_lowercase();
-    let category = if lower.contains("401") || lower.contains("unauthorized") {
-        "authentication rejected"
-    } else if lower.contains("403")
-        || lower.contains("forbidden")
-        || lower.contains("permission denied")
-    {
-        "access denied"
-    } else if lower.contains("404") || lower.contains("not found") {
-        "remote resource not found"
-    } else if lower.contains("timeout") || lower.contains("timed out") {
-        "request timed out"
-    } else if lower.contains("connection refused") {
-        "connection refused"
-    } else {
-        "error details withheld"
-    };
-    if stderr.trim().is_empty() {
-        fallback.to_string()
-    } else {
-        format!("{fallback}: {category}")
-    }
+    crate::hardening::safe_external_stderr(stderr, fallback)
 }
 
 pub(crate) fn first_nonempty_line(value: &str) -> Option<&str> {

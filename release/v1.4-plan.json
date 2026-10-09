@@ -149,7 +149,7 @@
   ],
   "moduleRatchet": {
     "src/app.rs": 7162,
-    "src/ui.rs": 2917,
+    "src/ui.rs": 2925,
     "src/app_server.rs": 3197,
     "src/main.rs": 1853,
     "src/sqlite_store.rs": 2341,
@@ -161,10 +161,10 @@
     "src/app_server_registry.rs": 169,
     "src/app_server_wire.rs": 7,
     "src/sqlite_schema.rs": 220,
-    "src/worktree_git.rs": 177,
-    "src/forge_types.rs": 336,
+    "src/worktree_git.rs": 180,
+    "src/forge_types.rs": 347,
     "src/headless.rs": 561,
-    "src/headless/surfaces.rs": 486,
+    "src/headless/surfaces.rs": 487,
     "src/notification.rs": 257,
     "src/runtime_notifications.rs": 283,
     "src/syntax_highlight.rs": 336,
@@ -246,10 +246,10 @@
     "src/command.rs": 130,
     "src/compat.rs": 574,
     "src/domain.rs": 342,
-    "src/forge_github.rs": 612,
-    "src/git.rs": 972,
+    "src/forge_github.rs": 632,
+    "src/git.rs": 978,
     "src/goal.rs": 194,
-    "src/hardening.rs": 264,
+    "src/hardening.rs": 317,
     "src/i18n.rs": 222,
     "src/keymap.rs": 372,
     "src/launch.rs": 309,
@@ -271,7 +271,7 @@
     "src/ui/terminal.rs": 126,
     "src/forge/tests.rs": 356,
     "src/app_server_transport/tests.rs": 244,
-    "src/forge/gitlab_projection_tests.rs": 72,
+    "src/forge/gitlab_projection_tests.rs": 131,
     "src/forge/error_redaction_tests.rs": 43,
     "src/forge/remote_identity_tests.rs": 47
   },
@@ -310,5 +310,18 @@
       "stateMigrationRecovery",
       "supportBundleRedaction"
     ]
-  }
+  },
+  "ratchetReviews": [
+    {
+      "date": "2026-10-09",
+      "kind": "defect-and-security-fix",
+      "scope": "Forge partial/total read failures; bounded Review page completion; UI/Headless truthful degradation; negative tests",
+      "modules": [
+        "src/forge_types.rs",
+        "src/headless/surfaces.rs",
+        "src/ui.rs",
+        "src/forge/gitlab_projection_tests.rs"
+      ]
+    }
+  ]
 }

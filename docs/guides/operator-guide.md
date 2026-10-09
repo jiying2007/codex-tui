@@ -29,7 +29,7 @@ Search and Saved Views are local organization; unseen upstream history is not fa
 ## Repository and delivery context
 <!-- docs-section: forge -->
 
-Switch to a repository with a configured Git remote and run `codex-tui doctor git` and `codex-tui doctor forge`. Internal GitLab uses authenticated `glab`; GitHub uses `gh`. A partial GitLab API failure may degrade its specific Issues/MRs/Pipelines surface without hiding successful other data.
+Switch to a repository with a configured Git remote and run `codex-tui doctor git` and `codex-tui doctor forge`. Internal GitLab uses authenticated `glab`; GitHub uses `gh`. A partial GitLab/GitHub read failure keeps healthy capabilities visible but marks Forge data incomplete; failure of all core read endpoints is unavailable, not a fresh empty result. Headless Forge returns a degraded exit code when any core capability is missing.
 
 Forge writes (create/comment/approve/merge MR/PR) are **plan-first, confirm-first**. Approve/merge recheck the target revision; unknown external results are **not** blindly retried. Review page contents remain owned by GitLab/GitHub. See [provider evidence](../qualification/provider.md).
 

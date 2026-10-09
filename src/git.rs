@@ -275,7 +275,7 @@ pub async fn probe_context(thread_id: ThreadId, cwd: String) -> Result<GitContex
         }
         return Err(anyhow!(
             "git worktree-root probe failed: {}",
-            worktree_probe.stderr.trim()
+            crate::hardening::safe_external_stderr(&worktree_probe.stderr, "git root probe")
         ));
     }
 
@@ -283,7 +283,7 @@ pub async fn probe_context(thread_id: ThreadId, cwd: String) -> Result<GitContex
     if !common_dir_probe.success {
         return Err(anyhow!(
             "git common-dir probe failed: {}",
-            common_dir_probe.stderr.trim()
+            crate::hardening::safe_external_stderr(&common_dir_probe.stderr, "git common-dir")
         ));
     }
 
@@ -322,7 +322,10 @@ pub async fn probe_context(thread_id: ThreadId, cwd: String) -> Result<GitContex
     if !status.success {
         return Err(anyhow!(
             "git status failed: {}",
-            String::from_utf8_lossy(&status.stderr).trim()
+            crate::hardening::safe_external_stderr(
+                &String::from_utf8_lossy(&status.stderr),
+                "git status"
+            )
         ));
     }
     let parsed = parse_porcelain_v2(&status.stdout)?;
@@ -376,7 +379,10 @@ pub async fn load_review(thread_id: ThreadId, cwd: String) -> Result<GitReview> 
     )
     .await?;
     if !staged.success {
-        return Err(anyhow!("git staged diff failed: {}", staged.stderr.trim()));
+        return Err(anyhow!(
+            "git staged diff failed: {}",
+            crate::hardening::safe_external_stderr(&staged.stderr, "git staged diff")
+        ));
     }
 
     let unstaged = run_git_capped(
@@ -388,7 +394,7 @@ pub async fn load_review(thread_id: ThreadId, cwd: String) -> Result<GitReview> 
     if !unstaged.success {
         return Err(anyhow!(
             "git unstaged diff failed: {}",
-            unstaged.stderr.trim()
+            crate::hardening::safe_external_stderr(&unstaged.stderr, "git unstaged diff")
         ));
     }
 

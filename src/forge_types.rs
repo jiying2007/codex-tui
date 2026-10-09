@@ -238,6 +238,17 @@ impl ForgeObservation {
             .find(|pipeline| pipeline.reference == branch)
     }
 
+    /// A timely Forge snapshot may still lack one or more core data capabilities.
+    pub fn core_data_incomplete(&self) -> bool {
+        [
+            ForgeCapability::Issues,
+            ForgeCapability::MergeRequests,
+            ForgeCapability::Pipelines,
+        ]
+        .iter()
+        .any(|kind| self.capabilities.get(kind) != Some(&CapabilityState::Available))
+    }
+
     pub fn freshness_at(&self, now_unix_ms: u64) -> ForgeFreshness {
         if self.observed_at_unix_ms == 0 || self.error.is_some() || self.identity.is_none() {
             return ForgeFreshness::Unavailable;

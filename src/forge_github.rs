@@ -1,9 +1,9 @@
 use crate::domain::ThreadId;
 use crate::forge::{
-    CapabilityState, ChangeRequestSummary, ForgeCapability, ForgeFreshness, ForgeFuture,
-    ForgeIdentity, ForgeIssueSummary, ForgeObservation, ForgeProvider, ForgeProviderKind,
-    ForgeReviewSummary, ForgeReviewTarget, PipelineSummary, RemoteIdentity, default_capabilities,
-    resolve_git_remote, run_command, trim_error,
+    CapabilityState, ChangeRequestSummary, ForgeCapability, ForgeFuture, ForgeIdentity,
+    ForgeIssueSummary, ForgeObservation, ForgeProvider, ForgeProviderKind, ForgeReviewSummary,
+    ForgeReviewTarget, PipelineSummary, RemoteIdentity, resolve_git_remote, run_command,
+    trim_error,
 };
 use crate::operation::now_unix_ms;
 use anyhow::{Context, Result, anyhow, bail};
@@ -196,30 +196,11 @@ pub(crate) async fn probe_github_with_remote(
         gh_api_json::<GitHubWorkflowRuns>(&cwd, &remote.host, &runs_endpoint),
     );
 
-    let mut capabilities = default_capabilities();
-    capabilities.insert(
-        ForgeCapability::Issues,
-        if issues_result.is_ok() {
-            CapabilityState::Available
-        } else {
-            CapabilityState::Unavailable
-        },
-    );
-    capabilities.insert(
-        ForgeCapability::MergeRequests,
-        if pulls_result.is_ok() {
-            CapabilityState::Available
-        } else {
-            CapabilityState::Unavailable
-        },
-    );
-    capabilities.insert(
-        ForgeCapability::Pipelines,
-        if runs_result.is_ok() {
-            CapabilityState::Available
-        } else {
-            CapabilityState::Unavailable
-        },
+    let (mut capabilities, freshness, error) = crate::forge::core_observation_status(
+        ForgeProviderKind::GitHub,
+        issues_result.is_ok(),
+        pulls_result.is_ok(),
+        runs_result.is_ok(),
     );
     capabilities.insert(ForgeCapability::IssueBoards, CapabilityState::Unavailable);
     capabilities.insert(ForgeCapability::WorkItems, CapabilityState::Unavailable);
@@ -284,8 +265,8 @@ pub(crate) async fn probe_github_with_remote(
             .collect(),
         review: None,
         observed_at_unix_ms: now_unix_ms(),
-        freshness: ForgeFreshness::Fresh,
-        error: None,
+        freshness,
+        error,
     })
 }
 
@@ -302,10 +283,14 @@ async fn probe_github_review(
             return unavailable_review(thread_id, cwd, change_request_iid, error.to_string());
         }
     };
-    let reviews_endpoint =
-        format!("/repos/{owner}/{repo}/pulls/{change_request_iid}/reviews?per_page=100");
+    let reviews_endpoint = format!("/repos/{owner}/{repo}/pulls/{change_request_iid}/reviews");
 
-    let reviews = gh_api_json::<Vec<GitHubPullReview>>(&cwd, &host, &reviews_endpoint);
+    let reviews = crate::forge::bounded_review_pages(|page| {
+        let cwd = cwd.clone();
+        let host = host.clone();
+        let endpoint = format!("{reviews_endpoint}?per_page=100&page={page}");
+        async move { gh_api_json::<Vec<GitHubPullReview>>(&cwd, &host, &endpoint).await }
+    });
     let threads = github_review_threads(&cwd, &host, owner, repo, change_request_iid);
     let (reviews_result, threads_result) = tokio::join!(reviews, threads);
 
@@ -571,6 +556,41 @@ mod tests {
         assert_eq!(
             normalize_run_status("completed", Some("success")),
             "success"
+        );
+    }
+
+    #[test]
+    fn all_github_core_reads_failed_are_not_fresh_or_successful() {
+        let (capabilities, freshness, error) =
+            crate::forge::core_observation_status(ForgeProviderKind::GitHub, false, false, false);
+        assert_eq!(freshness, crate::forge::ForgeFreshness::Unavailable);
+        assert!(
+            error
+                .as_deref()
+                .is_some_and(|message| message.contains("github"))
+        );
+        for core in [
+            ForgeCapability::Issues,
+            ForgeCapability::MergeRequests,
+            ForgeCapability::Pipelines,
+        ] {
+            assert_eq!(capabilities.get(&core), Some(&CapabilityState::Unavailable));
+        }
+    }
+
+    #[test]
+    fn one_github_capability_failure_preserves_healthy_capabilities() {
+        let (caps, freshness, error) =
+            crate::forge::core_observation_status(ForgeProviderKind::GitHub, true, false, true);
+        assert_eq!(freshness, crate::forge::ForgeFreshness::Fresh);
+        assert!(error.is_none());
+        assert_eq!(
+            caps.get(&ForgeCapability::MergeRequests),
+            Some(&CapabilityState::Unavailable)
+        );
+        assert_eq!(
+            caps.get(&ForgeCapability::Issues),
+            Some(&CapabilityState::Available)
         );
     }
 

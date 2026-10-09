@@ -250,7 +250,8 @@ pub(super) async fn run_forge(fake: bool, format: OutputFormat) -> Result<i32> {
         capabilities.sort_by(|left, right| left.name.cmp(&right.name));
         let degraded = doctor.observation.error.is_some()
             || doctor.authenticated == Some(false)
-            || doctor.observation.freshness == ForgeFreshness::Unavailable;
+            || doctor.observation.freshness == ForgeFreshness::Unavailable
+            || doctor.observation.core_data_incomplete();
         ForgeStatusSnapshot {
             schema: "codex-tui/headless-forge/v1",
             generated_at_unix_ms: super::now_unix_ms(),

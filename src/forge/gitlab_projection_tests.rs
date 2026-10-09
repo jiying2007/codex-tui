@@ -11,7 +11,7 @@ fn a_single_failed_gitlab_endpoint_does_not_discard_healthy_data_capabilities() 
         (false, false, true),
     ] {
         let (capabilities, freshness, error) =
-            gitlab_observation_status(issues, merge_requests, pipelines);
+            core_observation_status(ForgeProviderKind::GitLab, issues, merge_requests, pipelines);
         assert_eq!(freshness, ForgeFreshness::Fresh);
         assert!(
             error.is_none(),
@@ -39,7 +39,8 @@ fn a_single_failed_gitlab_endpoint_does_not_discard_healthy_data_capabilities() 
 
 #[test]
 fn all_failed_gitlab_data_endpoints_mark_the_projection_unavailable() {
-    let (capabilities, freshness, error) = gitlab_observation_status(false, false, false);
+    let (capabilities, freshness, error) =
+        core_observation_status(ForgeProviderKind::GitLab, false, false, false);
     assert_eq!(freshness, ForgeFreshness::Unavailable);
     assert!(error.is_some());
     for capability in [
@@ -56,7 +57,8 @@ fn all_failed_gitlab_data_endpoints_mark_the_projection_unavailable() {
 
 #[test]
 fn all_healthy_gitlab_data_endpoints_remain_fresh() {
-    let (capabilities, freshness, error) = gitlab_observation_status(true, true, true);
+    let (capabilities, freshness, error) =
+        core_observation_status(ForgeProviderKind::GitLab, true, true, true);
     assert_eq!(freshness, ForgeFreshness::Fresh);
     assert!(error.is_none());
     for capability in [
@@ -69,4 +71,61 @@ fn all_healthy_gitlab_data_endpoints_remain_fresh() {
             Some(&CapabilityState::Available)
         );
     }
+}
+
+#[tokio::test]
+async fn exactly_full_review_page_requires_another_page() {
+    let pages = bounded_review_pages(|number| async move {
+        Ok::<Vec<u16>, anyhow::Error>(if number == 1 {
+            vec![1; REVIEW_PAGE_SIZE]
+        } else {
+            vec![2]
+        })
+    })
+    .await
+    .expect("complete review pages");
+    assert_eq!(pages.len(), REVIEW_PAGE_SIZE + 1);
+}
+
+#[tokio::test]
+async fn exhausted_review_page_budget_is_not_a_complete_count() {
+    let error = bounded_review_pages(|_| async {
+        Ok::<Vec<u16>, anyhow::Error>(vec![1; REVIEW_PAGE_SIZE])
+    })
+    .await
+    .expect_err("exceeded cap must fail");
+    assert!(error.to_string().contains("pagination budget"));
+}
+
+#[tokio::test]
+async fn failed_later_page_discards_previous_partial_result() {
+    let error = bounded_review_pages(|number| async move {
+        if number == 1 {
+            Ok::<Vec<u16>, anyhow::Error>(vec![1; REVIEW_PAGE_SIZE])
+        } else {
+            anyhow::bail!("subsequent page unavailable")
+        }
+    })
+    .await
+    .expect_err("partial result must be unavailable");
+    assert!(error.to_string().contains("subsequent page unavailable"));
+}
+
+#[test]
+fn headless_and_ui_see_partial_core_data_as_degraded() {
+    let mut observation = ForgeObservation::pending(ThreadId::new("probe"), "repo".into());
+    for core in [
+        ForgeCapability::Issues,
+        ForgeCapability::MergeRequests,
+        ForgeCapability::Pipelines,
+    ] {
+        observation
+            .capabilities
+            .insert(core, CapabilityState::Available);
+    }
+    assert!(!observation.core_data_incomplete());
+    observation
+        .capabilities
+        .insert(ForgeCapability::MergeRequests, CapabilityState::Unavailable);
+    assert!(observation.core_data_incomplete());
 }
