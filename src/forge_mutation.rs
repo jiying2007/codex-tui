@@ -796,46 +796,18 @@ async fn validate_preconditions(plan: &ForgeMutationPlan) -> Result<Preflight> {
             let sha = required_mr_sha(&mr)?;
             anyhow::ensure!(!mr.draft, "merge request is still a draft");
             anyhow::ensure!(
-                mr.blocking_discussions_resolved != Some(false),
-                "merge request still has blocking unresolved discussions"
+                mr.blocking_discussions_resolved == Some(true),
+                "GitLab merge discussions must be explicitly resolved"
             );
-            if let Some(status) = mr.detailed_merge_status.as_deref() {
-                let normalized = status.to_ascii_lowercase();
-                anyhow::ensure!(
-                    !normalized.contains("conflict"),
-                    "merge request reports conflict status: {status}"
-                );
-            }
+            require_gitlab_merge_ready(mr.detailed_merge_status.as_deref())?;
             if let Some(pipeline) = &mr.head_pipeline {
                 anyhow::ensure!(
-                    !matches!(
-                        pipeline.status.to_ascii_lowercase().as_str(),
-                        "failed" | "canceled" | "cancelled"
-                    ),
-                    "head pipeline is {}",
+                    pipeline.status.eq_ignore_ascii_case("success"),
+                    "GitLab head pipeline is not successful: {}",
                     pipeline.status
                 );
             }
-
-            match approval_state(plan, mr.iid).await {
-                Ok(state) => {
-                    let unsatisfied = unsatisfied_required_approval_rules(&state);
-                    anyhow::ensure!(
-                        unsatisfied == 0,
-                        "merge request has {unsatisfied} unsatisfied approval rule(s)"
-                    );
-                }
-                Err(_) => {
-                    if let Ok(approvals) = approvals(plan, mr.iid).await
-                        && let Some(left) = approvals.approvals_left
-                    {
-                        anyhow::ensure!(
-                            left == 0,
-                            "merge request still requires {left} approval(s)"
-                        );
-                    }
-                }
-            }
+            require_gitlab_approvals(plan, mr.iid).await?;
 
             Ok(Preflight {
                 authenticated_user_id: None,
