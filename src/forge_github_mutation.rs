@@ -90,6 +90,14 @@ struct GitHubMergeResult {
     sha: Option<String>,
 }
 
+fn require_github_mergeable(mergeable: Option<bool>) -> Result<()> {
+    anyhow::ensure!(
+        mergeable == Some(true),
+        "GitHub pull request mergeability is unknown or not mergeable"
+    );
+    Ok(())
+}
+
 pub(crate) async fn validate_preconditions(plan: &ForgeMutationPlan) -> Result<GitHubPreflight> {
     let repository = repository(plan).await?;
     anyhow::ensure!(
@@ -178,10 +186,7 @@ pub(crate) async fn validate_preconditions(plan: &ForgeMutationPlan) -> Result<G
             let pull = validate_exact_open_pull(plan).await?;
             let sha = required_head_sha(&pull)?;
             anyhow::ensure!(!pull.draft, "GitHub pull request is still a draft");
-            anyhow::ensure!(
-                pull.mergeable == Some(true),
-                "GitHub pull request mergeability is unknown or not mergeable"
-            );
+            require_github_mergeable(pull.mergeable)?;
             Ok(GitHubPreflight {
                 user_login: None,
                 head_sha: Some(sha),
