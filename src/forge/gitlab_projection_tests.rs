@@ -39,7 +39,8 @@ fn a_single_failed_gitlab_endpoint_does_not_discard_healthy_data_capabilities() 
 
 #[test]
 fn all_failed_gitlab_data_endpoints_mark_the_projection_unavailable() {
-    let (capabilities, freshness, error) = core_observation_status(ForgeProviderKind::GitLab, false, false, false);
+    let (capabilities, freshness, error) =
+        core_observation_status(ForgeProviderKind::GitLab, false, false, false);
     assert_eq!(freshness, ForgeFreshness::Unavailable);
     assert!(error.is_some());
     for capability in [
@@ -56,7 +57,8 @@ fn all_failed_gitlab_data_endpoints_mark_the_projection_unavailable() {
 
 #[test]
 fn all_healthy_gitlab_data_endpoints_remain_fresh() {
-    let (capabilities, freshness, error) = core_observation_status(ForgeProviderKind::GitLab, true, true, true);
+    let (capabilities, freshness, error) =
+        core_observation_status(ForgeProviderKind::GitLab, true, true, true);
     assert_eq!(freshness, ForgeFreshness::Fresh);
     assert!(error.is_none());
     for capability in [
@@ -117,9 +119,13 @@ fn headless_and_ui_see_partial_core_data_as_degraded() {
         ForgeCapability::MergeRequests,
         ForgeCapability::Pipelines,
     ] {
-        observation.capabilities.insert(core, CapabilityState::Available);
+        observation
+            .capabilities
+            .insert(core, CapabilityState::Available);
     }
     assert!(!observation.core_data_incomplete());
-    observation.capabilities.insert(ForgeCapability::MergeRequests, CapabilityState::Unavailable);
+    observation
+        .capabilities
+        .insert(ForgeCapability::MergeRequests, CapabilityState::Unavailable);
     assert!(observation.core_data_incomplete());
 }
