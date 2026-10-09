@@ -27,7 +27,7 @@ python scripts/docs/check_docs.py
 python -m unittest discover -s scripts/release -p "test_*.py"
 ~~~
 
-脚本仅用 Python 3.8 标准库，检查配对、docs-id/语言/章节、本地 Markdown 路径、双向语言导航，且禁止遗漏当前新增的中文页。负例检查丢失翻译、断链、缺章节和语言漂移，不访问网络、不把历史文档当成当前协议。
+脚本仅用 Python 3.8 标准库，检查配对、docs-id/语言/章节、本地 Markdown 路径、双向语言导航，且禁止遗漏当前新增的中文页。 Canonical CI 还会比较本次提交与检出提交的直接父版本：活跃英文或中文文档发生变化时，对应的另一语言必须在同一 PR/提交中变化。它只能检查文件成对修改，不能替代对翻译含义的人工审阅。负例检查丢失翻译、断链、缺章节和语言漂移，不访问网络、不把历史文档当成当前协议。
 
 ## 发行包与历史
 <!-- docs-section: archive -->

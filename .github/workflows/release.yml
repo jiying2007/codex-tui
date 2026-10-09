@@ -37,6 +37,8 @@ on:
       - "CODE_OF_CONDUCT.md"
       - "CODE_OF_CONDUCT.zh-CN.md"
       - "docs/qualification/provider.md"
+      - "docs/adr/012-upstream-convergence.md"
+      - "docs/implementation/v1.4-first-deployment-baseline.md"
       - "docs/implementation/m7d3-release.md"
       - "Cargo.lock"
       - "Cargo.toml"

@@ -7,6 +7,7 @@ import json
 import os
 import pathlib
 import re
+import subprocess
 import sys
 from urllib.parse import unquote, urlsplit
 
@@ -153,11 +154,65 @@ def inspect(root=ROOT, overrides=None):
     return errors
 
 
+
+def changed_pair_issues(manifest, changed):
+    """Require both active language files in a single PR/main change."""
+    violations = []
+    if not isinstance(manifest, dict):
+        return ["cannot inspect bilingual pair changes: invalid manifest"]
+    entries = manifest.get("pairs")
+    if not isinstance(entries, list):
+        return ["cannot inspect bilingual pair changes: missing pairs"]
+    changed = set(changed)
+    for pair in entries:
+        if not isinstance(pair, dict):
+            violations.append("cannot inspect bilingual pair changes: invalid pair")
+            continue
+        en, zh = pair.get("en"), pair.get("zh-CN")
+        if not isinstance(en, str) or not isinstance(zh, str):
+            violations.append("cannot inspect bilingual pair changes: invalid paths")
+            continue
+        if (en in changed) != (zh in changed):
+            violations.append(
+                "only one language of active pair changed: " + str(pair.get("id", "unknown"))
+            )
+    return violations
+
+
+def changed_paths(root, base_ref):
+    """Read a shallow, pinned checkout's first-parent diff without a network API."""
+    try:
+        result = subprocess.run(
+            ["git", "diff", "--name-only", "-z", "--diff-filter=ACMRTD",
+             base_ref, "HEAD", "--"],
+            cwd=str(root), stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            timeout=15, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        raise ValueError("cannot inspect changed Git paths")
+    if result.returncode != 0:
+        raise ValueError("cannot inspect changed Git paths: missing checkout parent")
+    try:
+        return set(value.decode("utf-8") for value in result.stdout.split(b"\0") if value)
+    except UnicodeDecodeError:
+        raise ValueError("changed Git paths are not valid UTF-8")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Validate EN/zh-CN active docs")
     parser.add_argument("--root", default=str(ROOT))
+    parser.add_argument("--changed-base", default=None,
+                        help="check that each modified active pair has both languages")
     args = parser.parse_args()
-    failures = inspect(pathlib.Path(args.root))
+    root = pathlib.Path(args.root)
+    failures = inspect(root)
+    if args.changed_base:
+        try:
+            pairs = json.loads((root / MANIFEST).read_text(encoding="utf-8"))
+            files = changed_paths(root, args.changed_base)
+            failures.extend(changed_pair_issues(pairs, files))
+        except (OSError, UnicodeError, ValueError):
+            failures.append("cannot validate paired Git changes")
     if failures:
         for error in failures:
             print("DOC FAIL: " + error, file=sys.stderr)

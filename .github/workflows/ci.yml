@@ -43,6 +43,8 @@ jobs:
           apt-get update -qq
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential pkg-config curl ca-certificates git python3 python-is-python3 binutils
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 2
       - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
         with:
           components: rustfmt, clippy
@@ -630,6 +632,9 @@ jobs:
         run: python -c "import pathlib, py_compile; [py_compile.compile(str(p), doraise=True) for p in pathlib.Path('scripts').rglob('*.py')]"
       - name: Validate bilingual Markdown and local links
         run: python scripts/docs/check_docs.py
+      - name: Require EN and zh-CN active pages to change together
+        if: runner.os == 'Linux'
+        run: python scripts/docs/check_docs.py --changed-base HEAD^
       - name: Enforce v1.4 active module ratchet
         run: python scripts/architecture/check_module_ratchet.py release/v1.4-plan.json
       - name: Enforce first-deployment compatibility contract

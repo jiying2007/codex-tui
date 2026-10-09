@@ -17,6 +17,8 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
+- Enforce same-change EN/zh-CN document-pair updates in canonical CI, and bind Release push path filters to every active bundled guide through manifest-derived regression tests.
+
 - Verify that v1.4+ release packages contain navigable EN/zh-CN documentation; keep current pages offline and rewrite unbundled historical links to immutable exact-source GitHub URLs, with negative archive-link tests.
 
 - Add complete EN/zh-CN operator and repository-governance documentation, protected issue/PR templates, a Python 3.8-compatible bilingual docs contract and archive-mandatory first-deployment translations.
