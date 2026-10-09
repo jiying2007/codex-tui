@@ -15,6 +15,7 @@ import zipfile
 from _compat import safe_extract_tar
 from check_linux_abi import MAX_GLIBC, version
 from archive_identity import validate_metadata, validate_compiled_source, validate_members
+from archive_doc_links import verify_packaged_links
 
 
 def extract(archive: pathlib.Path, destination: pathlib.Path) -> pathlib.Path:
@@ -168,6 +169,11 @@ def main() -> int:
             raise SystemExit("archive missing required files: " + ", ".join(missing))
 
         verify_active_bilingual_docs(root, args.version)
+        if tuple(int(part) for part in args.version.split(".")) >= (1, 4, 0):
+            try:
+                verify_packaged_links(root)
+            except ValueError as error:
+                raise SystemExit(str(error)) from error
 
         license_text = (root / "LICENSE").read_text(encoding="utf-8")
         if "Apache License" not in license_text or "Version 2.0" not in license_text:
