@@ -95,6 +95,35 @@ class BilingualDocsContract(unittest.TestCase):
         self.assertIn('python scripts/docs/check_docs.py --changed-base "$DOCS_DIFF_BASE"', workflow)
         self.assertNotIn("--changed-base HEAD^", workflow)
 
+    def test_unsafe_markdown_schemes_and_query_links_are_rejected(self):
+        path = "docs/README.md"
+        original = self.read(path)
+        for unsafe in (
+            "file:///etc/passwd",
+            "data:text/plain,secret",
+            "//internal.example/private",
+            "/etc/passwd",
+            "README.md?access_token=not-a-real-secret",
+            "docs\\\\secret.md",
+        ):
+            with self.subTest(target=unsafe):
+                errors = self.changed(path, original + "\\n[invalid](" + unsafe + ")\\n")
+                self.assertTrue(any("unsafe Markdown link" in e for e in errors), errors)
+
+    def test_safe_public_links_and_in_doc_anchors_remain_allowed(self):
+        sample = (
+            "[source](https://github.com/jiying2007/codex-tui) "
+            "[email](mailto:maintainer@example.invalid) "
+            "[jump](README.md#section)"
+        )
+        self.assertEqual(list(check.local_links(sample)), ["README.md"])
+
+    def test_unsafe_link_does_not_pass_through_local_links(self):
+        with self.assertRaisesRegex(ValueError, "unsupported Markdown link scheme"):
+            list(check.local_links("[bad](file:///etc/passwd)"))
+        with self.assertRaisesRegex(ValueError, "query-bearing"):
+            list(check.local_links("[bad](README.md?token=redacted)"))
+
     def test_fenced_code_is_not_navigation(self):
         raw = "~~~bash\n[bad](../../missing)\n~~~\n[good](README.md)\n"
         self.assertEqual(list(check.local_links(raw)), ["README.md"])
