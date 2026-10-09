@@ -150,7 +150,7 @@
   "moduleRatchet": {
     "src/app.rs": 7162,
     "src/ui.rs": 2925,
-    "src/app_server.rs": 3197,
+    "src/app_server.rs": 3366,
     "src/main.rs": 1854,
     "src/sqlite_store.rs": 2341,
     "src/forge.rs": 1345,
@@ -358,6 +358,14 @@
         "src/forge_mutation.rs",
         "src/forge_github_mutation.rs",
         "src/forge_github_mutation/tests.rs"
+      ]
+    },
+    {
+      "date": "2026-10-09",
+      "kind": "responsiveness-defect-fix",
+      "scope": "Move transcript search to isolated cancellable read-only session with bounded 12s deadline; reject partial occurrence completeness; mock two-connection regression",
+      "modules": [
+        "src/app_server.rs"
       ]
     }
   ]
