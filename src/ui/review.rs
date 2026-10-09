@@ -48,6 +48,14 @@ fn review_evidence_lines(app: &AppState, thread_id: &str) -> Vec<Line<'static>> 
         lines.push(Line::from(tr(app, "Forge: unavailable", "Forge: 不可用")));
     }
 
+    if observation.incomplete_overview_reason().is_some() {
+        lines.push(Line::from(tr(
+            app,
+            "Forge overview partial or capped; verify directly with provider",
+            "Forge 概览部分不可用或已达分页上限，请向平台核实",
+        )));
+    }
+
     let branch = app
         .git_contexts
         .get(thread_id)
@@ -67,7 +75,11 @@ fn review_evidence_lines(app: &AppState, thread_id: &str) -> Vec<Line<'static>> 
         } else {
             lines.push(Line::from(format!(
                 "{}: {branch}",
-                tr(app, "CR: none for branch", "CR: 当前分支无合并请求")
+                tr(
+                    app,
+                    "CR: no match in observed recent results",
+                    "CR: 最近结果中未找到，不代表不存在",
+                )
             )));
         }
 
@@ -79,8 +91,8 @@ fn review_evidence_lines(app: &AppState, thread_id: &str) -> Vec<Line<'static>> 
         } else {
             lines.push(Line::from(tr(
                 app,
-                "Pipeline: none for current branch",
-                "Pipeline: 当前分支无流水线",
+                "Pipeline: not observed in recent results",
+                "Pipeline: 最近结果中未找到",
             )));
         }
     }

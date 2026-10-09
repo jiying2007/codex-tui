@@ -1052,11 +1052,11 @@ fn forge_context_lines(
         )
     ))];
 
-    if observation.core_data_incomplete() {
+    if observation.incomplete_overview_reason().is_some() {
         lines.push(Line::from(tr(
             app,
-            "Forge data incomplete · inspect capability status",
-            "Forge 数据不完整 · 请检查能力状态",
+            "Forge overview is partial or bounded · verify in provider",
+            "Forge 概览可能不完整或达到分页上限 · 请向平台核实",
         )));
     }
 
@@ -1077,9 +1077,15 @@ fn forge_context_lines(
                 truncate_display(&change.title, 58)
             )));
         } else if app.language.is_simplified_chinese() {
-            lines.push(Line::from(format!("CR: 分支 {branch} 没有合并请求")));
+            lines.push(Line::from(format!(
+                "CR: 最近结果未发现分支 {}（不代表不存在）",
+                truncate_display(branch, 42)
+            )));
         } else {
-            lines.push(Line::from(format!("CR: none for branch {branch}")));
+            lines.push(Line::from(format!(
+                "CR: no match in recent results for {} (not proof of absence)",
+                truncate_display(branch, 42)
+            )));
         }
         if let Some(pipeline) = observation.pipeline_for_branch(branch) {
             lines.push(Line::from(format!(
@@ -1089,8 +1095,8 @@ fn forge_context_lines(
         } else {
             lines.push(Line::from(tr(
                 app,
-                "Pipeline: none for current branch",
-                "Pipeline: 当前分支没有流水线",
+                "Pipeline: not found in recent results (not exhaustive)",
+                "Pipeline: 最近结果未命中（不代表不存在）",
             )));
         }
     } else {

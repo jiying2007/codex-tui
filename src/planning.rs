@@ -770,7 +770,7 @@ pub fn reconcile_thread_card_with_goal_and_forge(
                 ForgeFreshness::Stale => Freshness::Stale,
                 ForgeFreshness::Unavailable => Freshness::Unavailable,
             },
-            degraded_reason: forge.error.clone(),
+            degraded_reason: forge.incomplete_overview_reason(),
         });
 
         if let (Some(identity), Some(change_request)) = (identity, change_request) {
@@ -896,7 +896,7 @@ pub fn reconcile_forge_issue_card(
                 ForgeFreshness::Stale => Freshness::Stale,
                 ForgeFreshness::Unavailable => Freshness::Unavailable,
             },
-            degraded_reason: observation.error.clone(),
+            degraded_reason: observation.incomplete_overview_reason(),
         }],
     })
 }
