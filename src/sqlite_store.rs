@@ -161,10 +161,11 @@ impl SqliteStore {
         &self,
         source: impl AsRef<Path>,
     ) -> Result<RecoveryRestoreReceipt> {
-        // Offline recovery must be excluded while a TUI writer is still running.
-        let _guard = self.acquire_local_writer()?;
         let source = source.as_ref();
         recovery::ensure_distinct_source(source, &self.db_path)?;
+        // Check alias safety without touching the store; then exclude live
+        // writers before validating, preserving or installing any image.
+        let _guard = self.acquire_local_writer()?;
         validate_recovery_database(source)?;
         let parent = self
             .db_path
