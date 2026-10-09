@@ -117,6 +117,9 @@ impl ForgeFreshness {
     }
 }
 
+// The overview is intentionally only a recent first-page projection.
+pub(crate) const FORGE_OVERVIEW_PAGE_SIZE: usize = 20;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ForgeIssueSummary {
     pub iid: u64,
@@ -249,6 +252,33 @@ impl ForgeObservation {
         .any(|kind| self.capabilities.get(kind) != Some(&CapabilityState::Available))
     }
 
+    /// An available endpoint is not evidence that its first page covers an
+    /// entire repository, especially on repositories with busy CI histories.
+    pub fn overview_limit_reached(&self) -> bool {
+        self.issues.len() >= FORGE_OVERVIEW_PAGE_SIZE
+            || self.change_requests.len() >= FORGE_OVERVIEW_PAGE_SIZE
+            || self.pipelines.len() >= FORGE_OVERVIEW_PAGE_SIZE
+    }
+
+    pub fn incomplete_overview_reason(&self) -> Option<String> {
+        if self.error.is_some() {
+            return self.error.clone();
+        }
+        let missing = self.core_data_incomplete();
+        let saturated = self.overview_limit_reached();
+        match (missing, saturated) {
+            (true, true) => Some(
+                "some Forge endpoints unavailable; other recent listings may be truncated".into(),
+            ),
+            (true, false) => Some("some Forge core endpoints unavailable".into()),
+            (false, true) => Some(
+                "Forge listings reached the recent-results page limit; missing items are unverified"
+                    .into(),
+            ),
+            (false, false) => None,
+        }
+    }
+
     pub fn freshness_at(&self, now_unix_ms: u64) -> ForgeFreshness {
         if self.observed_at_unix_ms == 0 || self.error.is_some() || self.identity.is_none() {
             return ForgeFreshness::Unavailable;
@@ -344,4 +374,38 @@ pub(crate) fn default_capabilities() -> BTreeMap<ForgeCapability, CapabilityStat
     ]
     .into_iter()
     .collect()
+}
+
+#[cfg(test)]
+mod overview_tests {
+    use super::*;
+
+    #[test]
+    fn missing_capability_or_full_recent_page_never_proves_absence() {
+        let mut observed = ForgeObservation::pending(ThreadId::new("t"), "/repo".into());
+        for item in [
+            ForgeCapability::Issues,
+            ForgeCapability::MergeRequests,
+            ForgeCapability::Pipelines,
+        ] {
+            observed.capabilities.insert(item, CapabilityState::Available);
+        }
+        assert!(observed.incomplete_overview_reason().is_none());
+        observed.pipelines = (0..FORGE_OVERVIEW_PAGE_SIZE)
+            .map(|id| PipelineSummary {
+                id: id as u64,
+                status: "success".into(),
+                reference: format!("branch-{id}"),
+                web_url: "https://example.invalid/ci".into(),
+                updated_at: None,
+            })
+            .collect();
+        assert!(observed.incomplete_overview_reason()
+            .expect("page boundary is ambiguous")
+            .contains("page limit"));
+        observed.capabilities.insert(ForgeCapability::Issues, CapabilityState::Unavailable);
+        assert!(observed.incomplete_overview_reason()
+            .expect("partial status")
+            .contains("unavailable"));
+    }
 }
