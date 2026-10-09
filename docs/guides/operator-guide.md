@@ -24,7 +24,7 @@ Default target is local `codex app-server --listen stdio://`. Named targets are 
 
 Mission Control groups threads by repository/project and presents Needs You / Working / Ready / Inactive. Check Needs You first; select with `j/k`, open with Enter, filter via `/`, use `Ctrl+K` for commands, and `?` for the live keymap. `b` opens the Board; `h/l` changes columns, `j/k` changes selected WorkCard. Board and Attention are **projections**, never a second team task authority.
 
-Search and Saved Views are local organization; unseen upstream history is not fabricated. Use a concrete repository/cwd to distinguish foreign Windows paths from Ubuntu-local Codex threads.
+Search and Saved Views are local organization; unseen upstream history is not fabricated. Full-history search uses a short-lived isolated Codex App Server connection so it cannot monopolize the live approval/session actor; only one search runs at once, newer requests cancel older searches, and an overall 12-second deadline fails visibly. Partial per-thread occurrences never claim complete history. Use a concrete repository/cwd to distinguish foreign Windows paths from Ubuntu-local Codex threads.
 
 ## Repository and delivery context
 <!-- docs-section: forge -->
