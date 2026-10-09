@@ -182,10 +182,8 @@ mod tests {
     #[test]
     fn transcript_persistence_is_opt_in_only() {
         assert!(!AppConfig::default().search.persist_local_transcripts);
-        let configured: AppConfig = toml::from_str(
-            "[search]\npersist_local_transcripts = true\n",
-        )
-        .expect("opt-in config");
+        let configured: AppConfig =
+            toml::from_str("[search]\npersist_local_transcripts = true\n").expect("opt-in config");
         assert!(configured.search.persist_local_transcripts);
     }
 
