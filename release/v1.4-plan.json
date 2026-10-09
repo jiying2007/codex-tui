@@ -154,7 +154,7 @@
     "src/main.rs": 1854,
     "src/sqlite_store.rs": 2341,
     "src/forge.rs": 1345,
-    "src/worktree.rs": 1148,
+    "src/worktree.rs": 1151,
     "src/release.rs": 1025,
     "src/runtime_store.rs": 444,
     "src/runtime_input.rs": 267,
