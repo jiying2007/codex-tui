@@ -29,6 +29,14 @@ codex-tui 必须维持**本地优先的薄 Mission Control**，其差异化能�
 
 现有本地会话编辑器、Thread Queue UI 与 Terminal Drawer 仅作安全/缺陷/互操作维护；新功能优先在官方 Codex 中实现。`release/v1.5-convergence.json` 维护重叠模块的名称、分类和策略（**不**保存第二套数值 LOC 上限）；`release/v1.4-plan.json` 是唯一的全 Rust 模块 LOC Ratchet。CI、Development Qualification 与 Release Gate 都会运行 `scripts/architecture/check_upstream_convergence.py` 并拒绝绕开冻结。
 
+上游 Worktree 能力另设冻结边界：官方 Codex v0.162.0 已增加受功能开关
+控制的托管 Worktree 创建与列表。原有 `src/worktree*`、`src/operation.rs`
+与 `src/runtime_commands.rs` 仅保留 Git 安全校验、恢复和必要的兼容后备，
+统一登记为 `managed-worktree-operations`；不新建第二套 Worktree 权威，
+也不继续堆叠重复创建/列表界面。只有真实 Codex 目标完成能力协商、
+工作树身份与冲突安全等价及失败恢复验证后，才能考虑委托上游。
+合成测试不能代替互操作验收，Git 始终是仓库/Worktree 状态的权威。
+
 ## 明确冻结的重复能力
 <!-- docs-section: freeze -->
 
