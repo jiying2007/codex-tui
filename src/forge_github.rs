@@ -561,6 +561,39 @@ mod tests {
     }
 
     #[test]
+    fn all_github_core_reads_failed_are_not_fresh_or_successful() {
+        let (capabilities, freshness, error) = crate::forge::core_observation_status(
+            ForgeProviderKind::GitHub,
+            false,
+            false,
+            false,
+        );
+        assert_eq!(freshness, crate::forge::ForgeFreshness::Unavailable);
+        assert!(error.as_deref().is_some_and(|message| message.contains("github")));
+        for core in [
+            ForgeCapability::Issues,
+            ForgeCapability::MergeRequests,
+            ForgeCapability::Pipelines,
+        ] {
+            assert_eq!(capabilities.get(&core), Some(&CapabilityState::Unavailable));
+        }
+    }
+
+    #[test]
+    fn one_github_capability_failure_preserves_healthy_capabilities() {
+        let (caps, freshness, error) = crate::forge::core_observation_status(
+            ForgeProviderKind::GitHub,
+            true,
+            false,
+            true,
+        );
+        assert_eq!(freshness, crate::forge::ForgeFreshness::Fresh);
+        assert!(error.is_none());
+        assert_eq!(caps.get(&ForgeCapability::MergeRequests), Some(&CapabilityState::Unavailable));
+        assert_eq!(caps.get(&ForgeCapability::Issues), Some(&CapabilityState::Available));
+    }
+
+    #[test]
     fn bounded_review_threads_fail_closed_when_pagination_is_needed() {
         let envelope: GitHubGraphQlEnvelope = serde_json::from_value(serde_json::json!({
             "data": {
