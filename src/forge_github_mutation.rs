@@ -103,11 +103,10 @@ fn is_local_source_repo(repo: &GitHubPullRepository, plan: &ForgeMutationPlan) -
 }
 
 fn require_local_head_identity(pull: &GitHubPullRequest, plan: &ForgeMutationPlan) -> Result<()> {
-    let head_repo = pull
-        .head
-        .repo
-        .as_ref()
-        .context("GitHub PR head repository identity is missing; cannot bind to local branch")?;
+    let head_repo =
+        pull.head.repo.as_ref().context(
+            "GitHub PR head repository identity is missing; cannot bind to local branch",
+        )?;
     anyhow::ensure!(
         is_local_source_repo(head_repo, plan),
         "GitHub PR head belongs to a different repository; local branch authority unavailable"
@@ -618,8 +617,7 @@ async fn matching_pull_requests(
                 pull.number
             );
         };
-        if is_local_source_repo(source_repo, plan)
-        {
+        if is_local_source_repo(source_repo, plan) {
             matches.push(pull);
         }
     }
