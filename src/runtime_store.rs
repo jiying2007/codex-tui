@@ -14,6 +14,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 pub(crate) struct RuntimeStore {
     sqlite: SqliteStore,
     _writer_guard: Option<LocalWriterGuard>,
+    index_transcripts: bool,
     writable: bool,
     error: Option<String>,
 }
@@ -30,6 +31,7 @@ impl RuntimeStore {
         Self {
             sqlite: SqliteStore::at(root),
             _writer_guard: None,
+            index_transcripts: true,
             writable: true,
             error: None,
         }
@@ -39,6 +41,7 @@ impl RuntimeStore {
         let sqlite = SqliteStore::discover()?;
         let config = sqlite.load_config()?;
         let guard = sqlite.acquire_local_writer()?;
+        let index_transcripts = config.search.persist_local_transcripts;
 
         let mut error = None;
         let local = match sqlite.load_state() {
@@ -61,12 +64,20 @@ impl RuntimeStore {
         } else {
             PlanningSnapshot::default()
         };
+        if !index_transcripts && error.is_none() {
+            if let Err(clear_error) = sqlite.clear_transcript_index() {
+                error = Some(format!(
+                    "SQLite derived transcript cleanup failed: {clear_error:#}"
+                ));
+            }
+        }
         let writable = error.is_none();
 
         Ok((
             Self {
                 sqlite,
                 _writer_guard: Some(guard),
+                index_transcripts,
                 writable,
                 error,
             },
@@ -113,6 +124,9 @@ impl RuntimeStore {
     }
 
     pub(crate) fn index_conversation_page(&self, page: &ConversationPage) -> Option<String> {
+        if !self.index_transcripts {
+            return None;
+        }
         self.sqlite
             .index_conversation_page(page)
             .err()
@@ -124,6 +138,14 @@ impl RuntimeStore {
         query: &str,
         limit: usize,
     ) -> Result<TranscriptSearchResults, String> {
+        if !self.index_transcripts {
+            return Ok(TranscriptSearchResults {
+                query: query.to_string(),
+                source: codex_tui::transcript_search::TranscriptSearchSource::LocalFts,
+                hits: vec![],
+                complete: false,
+            });
+        }
         self.sqlite
             .search_transcript(query, limit)
             .map_err(|error| format!("local transcript search unavailable: {error:#}"))
