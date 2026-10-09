@@ -12,6 +12,8 @@ v1.4 已完成开发范围，**并非**已发布的 Stable，也不是完成真�
 
 同一**受保护 main 精确 SHA** 应按现行策略通过 Linux/macOS/Windows + Rust CI、Development Qualification、Security/Release Gate、10k/50k 规模、UI 诊断、PTY 和结构化 Soak。保留每个 Run ID 及 Artifact SHA-256。发行包还需原生元数据、ABI、许可证、Notices 与校验和。PR 通过不能替代 fresh-main。
 
+协议资格按证据级别区分：**L1** 是注册表、未知事件与非法 JSON 回放；**L2** 使用合成 WebSocket/Unix 传输和 App Server Registry 生命周期测试（含通知顺序、断开与非法消息）。两者均非真实 Codex 认证。**L3** 必须在同一候选 SHA 上实际观察最新 Codex App Server 能力、真实终端和 Provider，未完成前保持外部阻塞。
+
 ## 真实环境必须单独验收
 <!-- docs-section: external -->
 
