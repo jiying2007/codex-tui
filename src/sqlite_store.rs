@@ -391,8 +391,8 @@ impl SqliteStore {
                           ELSE substr(text, 1, 237) || '…'
                         END
                  FROM transcript_documents
-                 WHERE lower(title) LIKE lower(?1) ESCAPE '\'
-                    OR lower(text) LIKE lower(?1) ESCAPE '\'
+                 WHERE lower(title) LIKE lower(?1) ESCAPE '\\'
+                    OR lower(text) LIKE lower(?1) ESCAPE '\\'
                  ORDER BY observed_at_unix_ms DESC
                  LIMIT ?2",
             )?;
