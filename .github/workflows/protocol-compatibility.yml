@@ -82,5 +82,11 @@ jobs:
               assert path.is_file(), path
               assert path.stat().st_size > 0, path
           PY
-      - name: Replay App Server protocol fixtures
+      - name: Replay App Server protocol fixtures (L1)
         run: cargo test --locked --test protocol_replay
+      - name: Exercise mock transport and registry lifecycle (L2)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test --locked --lib app_server_transport::tests::
+          cargo test --locked --lib app_server::tests::
