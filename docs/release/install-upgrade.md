@@ -25,14 +25,22 @@ Verify the checksum for the archive you plan to install before extracting it.
 Each platform archive contains:
 
 - `codex-tui` or `codex-tui.exe`;
-- `README.md`;
+- `README.md` and `README.zh-CN.md`;
 - `CHANGELOG.md`;
-- `INSTALL-UPGRADE.md`;
-- `TEAM-QUICKSTART.md`;
+- `INSTALL-UPGRADE.md` and `INSTALL-UPGRADE.zh-CN.md`;
+- `TEAM-QUICKSTART.md` and `TEAM-QUICKSTART.zh-CN.md`;
 - `THIRD_PARTY_NOTICES.txt`;
 - `STABLE-CRITERIA.json`;
 - `RELEASE-METADATA.json`;
 - `LICENSE` with the Apache License 2.0.
+
+Starting with the v1.4 first-deployment packaging contract, archives also
+retain `docs/i18n/manifest.json` and **both locales of every active
+operator/governance page** at its original repository-relative path,
+including CONTRIBUTING, SECURITY, SUPPORT, CLI and troubleshooting.
+The independent archive verifier refuses a missing page, wrong locale or
+missing section. Historical v1.0 archives retain their original English-only
+layout for verifiability; this addition does not rewrite an old GitHub release.
 
 ## Native archive identity
 <!-- docs-section: identity -->

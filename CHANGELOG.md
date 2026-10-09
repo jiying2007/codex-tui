@@ -17,6 +17,8 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
+- Add complete EN/zh-CN operator and repository-governance documentation, protected issue/PR templates, a Python 3.8-compatible bilingual docs contract and archive-mandatory first-deployment translations.
+
 - Refuse Git remote URL query and fragment fields during Forge identity derivation so URL secrets can never become encoded project API paths or error contexts; ordinary SSH/SCP/HTTPS remotes remain supported.
 
 - Make GitLab Issue, MR and Pipeline reads independent and concurrently bounded, keeping healthy data available when one endpoint fails; all-endpoint failure remains fail-closed and no raw CLI error enters the projection.

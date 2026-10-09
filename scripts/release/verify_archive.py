@@ -54,6 +54,72 @@ def run_checked(command: list[str]) -> str:
     return proc.stdout
 
 
+def verify_active_bilingual_docs(root: pathlib.Path, version: str) -> None:
+    """Keep v1.0 historical archives verifiable; require bilingual v1.4+."""
+    try:
+        parts = tuple(int(x) for x in version.split("."))
+    except ValueError:
+        raise SystemExit("invalid release version in bilingual archive check")
+    if len(parts) != 3:
+        raise SystemExit("invalid version components in bilingual archive check")
+    if parts < (1, 4, 0):
+        return
+    manifest_path = root / "docs/i18n/manifest.json"
+    if not manifest_path.is_file():
+        raise SystemExit("release archive missing bilingual manifest")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("schema") != "codex-tui/bilingual-docs/v1":
+        raise SystemExit("release archive bilingual schema mismatch")
+    pairs = manifest.get("pairs")
+    if not isinstance(pairs, list):
+        raise SystemExit("release archive bilingual list missing")
+    required_ids = {
+        "home", "docs-index", "team-quickstart", "install-upgrade",
+        "provider", "upstream-convergence", "first-deployment",
+        "contributing", "security", "support", "conduct", "operator",
+        "cli", "troubleshooting", "release-qualification", "docs-policy",
+    }
+    found_ids = set()
+    for entry in pairs:
+        if not isinstance(entry, dict):
+            raise SystemExit("release archive bilingual entry is invalid")
+        identity = entry.get("id")
+        if identity in found_ids:
+            raise SystemExit("release archive has duplicate docs-id")
+        found_ids.add(identity)
+        expected_sections = entry.get("sections")
+        if not isinstance(expected_sections, list) or "overview" not in expected_sections:
+            raise SystemExit("release archive has invalid documentation section contract")
+        for locale in ("en", "zh-CN"):
+            relpath = entry.get(locale)
+            if not isinstance(relpath, str) or not relpath.endswith(".md"):
+                raise SystemExit("release archive bilingual path invalid")
+            source = (root / relpath).resolve()
+            try:
+                source.relative_to(root.resolve())
+            except ValueError:
+                raise SystemExit("release archive bilingual path escapes root")
+            if not source.is_file():
+                raise SystemExit("release archive missing bilingual document: " + relpath)
+            page = source.read_text(encoding="utf-8")
+            if ("<!-- docs-id: " + identity + " -->") not in page:
+                raise SystemExit("release archive docs-id mismatch: " + relpath)
+            if ("<!-- docs-lang: " + locale + " -->") not in page:
+                raise SystemExit("release archive locale mismatch: " + relpath)
+            markers = [
+                part.split(" -->", 1)[0]
+                for part in page.split("<!-- docs-section: ")[1:]
+            ]
+            if len(markers) != len(set(markers)) or set(markers) != set(expected_sections):
+                raise SystemExit("release archive bilingual sections mismatch: " + relpath)
+    if not required_ids.issubset(found_ids):
+        raise SystemExit("release archive missing required bilingual guide identities")
+    for alias in ("README.zh-CN.md", "INSTALL-UPGRADE.zh-CN.md",
+                  "TEAM-QUICKSTART.zh-CN.md"):
+        if not (root / alias).is_file():
+            raise SystemExit("release archive missing localized top-level guide: " + alias)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     source = parser.add_mutually_exclusive_group(required=True)
@@ -100,6 +166,8 @@ def main() -> int:
         missing = [name for name in required if not (root / name).is_file()]
         if missing:
             raise SystemExit("archive missing required files: " + ", ".join(missing))
+
+        verify_active_bilingual_docs(root, args.version)
 
         license_text = (root / "LICENSE").read_text(encoding="utf-8")
         if "Apache License" not in license_text or "Version 2.0" not in license_text:

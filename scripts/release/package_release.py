@@ -110,6 +110,44 @@ def create_zip(stage: pathlib.Path, package_name: str, output: pathlib.Path) -> 
             archive.writestr(info, path.read_bytes())
 
 
+def stage_active_bilingual_docs(root: pathlib.Path, stage: pathlib.Path) -> None:
+    """Copy only declared current documentation, never untracked local files."""
+    manifest_path = root / "docs/i18n/manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("schema") != "codex-tui/bilingual-docs/v1":
+        raise SystemExit("invalid bilingual documentation manifest during packaging")
+    pairs = manifest.get("pairs")
+    if not isinstance(pairs, list) or not pairs:
+        raise SystemExit("no active bilingual package pages")
+    copy_file(manifest_path, stage / "docs/i18n/manifest.json")
+    seen = set()
+    for pair in pairs:
+        if not isinstance(pair, dict):
+            raise SystemExit("malformed bilingual package record")
+        for locale in ("en", "zh-CN"):
+            raw = pair.get(locale)
+            if not isinstance(raw, str) or not raw.endswith(".md"):
+                raise SystemExit("invalid bilingual package path")
+            relative = pathlib.Path(raw)
+            source = (root / relative).resolve()
+            try:
+                source.relative_to(root.resolve())
+            except ValueError:
+                raise SystemExit("bilingual package path escapes repository")
+            if relative.is_absolute() or raw in seen or not source.is_file():
+                raise SystemExit("missing, duplicate or absolute bilingual package file")
+            seen.add(raw)
+            copy_file(source, stage / relative)
+
+    # Legacy English aliases remain available next to the binary. These
+    # localized aliases make the same instructions discoverable offline.
+    for source, alias in (
+        ("docs/zh-CN/release/install-upgrade.md", "INSTALL-UPGRADE.zh-CN.md"),
+        ("docs/zh-CN/team-quickstart.md", "TEAM-QUICKSTART.zh-CN.md"),
+    ):
+        copy_file(root / source, stage / alias)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--binary", required=True)
@@ -166,6 +204,7 @@ def main() -> int:
             root / "docs/team-quickstart.md",
             stage / "TEAM-QUICKSTART.md",
         )
+        stage_active_bilingual_docs(root, stage)
         copy_file(notices, stage / "THIRD_PARTY_NOTICES.txt")
         copy_file(criteria, stage / "STABLE-CRITERIA.json")
 
