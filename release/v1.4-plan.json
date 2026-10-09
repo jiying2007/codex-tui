@@ -156,7 +156,7 @@
     "src/forge.rs": 1345,
     "src/worktree.rs": 1218,
     "src/release.rs": 1025,
-    "src/runtime_store.rs": 475,
+    "src/runtime_store.rs": 477,
     "src/runtime_input.rs": 267,
     "src/app_server_registry.rs": 169,
     "src/app_server_wire.rs": 7,
