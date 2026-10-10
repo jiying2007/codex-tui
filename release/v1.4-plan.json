@@ -246,7 +246,7 @@
     "src/command.rs": 130,
     "src/compat.rs": 574,
     "src/domain.rs": 342,
-    "src/forge_github.rs": 724,
+    "src/forge_github.rs": 741,
     "src/git.rs": 1003,
     "src/goal.rs": 194,
     "src/hardening.rs": 329,
