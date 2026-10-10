@@ -126,8 +126,23 @@ struct GitHubWorkflowRun {
     status: String,
     conclusion: Option<String>,
     head_branch: Option<String>,
+    head_repository: Option<GitHubPullRepository>,
     html_url: String,
     updated_at: Option<String>,
+}
+
+impl GitHubWorkflowRun {
+    fn branch_for_local_projection(&self, target_repo_id: u64) -> Option<String> {
+        let reference = self.head_branch.as_ref()?;
+        Some(GitHubPullRef {
+            reference: reference.clone(),
+            repo: self.head_repository.as_ref().map(|repo| GitHubPullRepository {
+                id: repo.id,
+                full_name: repo.full_name.clone(),
+            }),
+        }
+        .branch_for_local_projection(target_repo_id))
+    }
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -284,7 +299,7 @@ pub(crate) async fn probe_github_with_remote(
             .workflow_runs
             .into_iter()
             .filter_map(|run| {
-                let reference = run.head_branch?;
+                let reference = run.branch_for_local_projection(project_repo_id)?;
                 Some(PipelineSummary {
                     id: run.id,
                     status: normalize_run_status(&run.status, run.conclusion.as_deref()),
@@ -528,6 +543,30 @@ fn unavailable_review(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pipeline_head_repository_prevents_fork_branch_collision() {
+        let row = |repo: serde_json::Value| {
+            serde_json::from_value::<GitHubWorkflowRun>(serde_json::json!({
+                "id": 123,
+                "status": "completed",
+                "conclusion": "failure",
+                "head_branch": "feature",
+                "head_repository": repo,
+                "html_url": "https://github.com/octo/repo/actions/runs/123",
+                "updated_at": "2026-10-10T12:00:00Z"
+            }))
+            .expect("GitHub Actions row")
+        };
+        let own = row(serde_json::json!({"id": 10, "full_name": "octo/repo"}));
+        let fork = row(serde_json::json!({"id": 20, "full_name": "alice/repo"}));
+        let unknown = row(serde_json::Value::Null);
+        assert_eq!(own.branch_for_local_projection(10).as_deref(), Some("feature"));
+        assert_eq!(fork.branch_for_local_projection(10).as_deref(), Some("alice/repo:feature"));
+        assert_eq!(unknown.branch_for_local_projection(10).as_deref(), Some("unverified-source:feature"));
+        assert_ne!(fork.branch_for_local_projection(10).as_deref(), Some("feature"));
+        assert_ne!(unknown.branch_for_local_projection(10).as_deref(), Some("feature"));
+    }
 
     #[test]
     fn fork_and_unverified_sources_cannot_match_a_local_branch_name() {
