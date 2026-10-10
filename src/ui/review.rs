@@ -91,7 +91,8 @@ fn review_evidence_lines(app: &AppState, thread_id: &str) -> Vec<Line<'static>> 
         if let Some(pipeline) = observation.pipeline_for_branch(branch) {
             lines.push(Line::from(format!(
                 "Pipeline #{}: {}",
-                pipeline.id, sanitize_inline(&pipeline.status)
+                pipeline.id,
+                sanitize_inline(&pipeline.status)
             )));
         } else {
             lines.push(Line::from(tr(
