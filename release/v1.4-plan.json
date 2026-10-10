@@ -152,7 +152,7 @@
     "src/ui.rs": 2946,
     "src/app_server.rs": 3562,
     "src/main.rs": 1854,
-    "src/sqlite_store.rs": 2456,
+    "src/sqlite_store.rs": 2524,
     "src/forge.rs": 1345,
     "src/worktree.rs": 1218,
     "src/release.rs": 1025,
@@ -501,6 +501,14 @@
         "src/runtime_store.rs"
       ],
       "policy": "Defect-only growth under existing single LOC ledger; external L3 still blocked"
+    },
+    {
+      "date": "2026-10-10",
+      "kind": "storage-security-defect-fix",
+      "scope": "Before opening SQLite state and its cross-process writer-lock, refuse pre-existing symlink/non-regular files to avoid implicit writes/chmod of unintended targets; Unix filesystem negative fixtures and cross-platform regular-file test. Best-effort pathname preflight not a same-user atomic anti-swap guarantee.",
+      "modules": [
+        "src/sqlite_store.rs"
+      ]
     }
   ]
 }
