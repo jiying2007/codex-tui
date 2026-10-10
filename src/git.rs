@@ -489,7 +489,7 @@ where
 pub fn presentation_diff_lines(review: &GitReview, word_diff: bool) -> Vec<String> {
     let raw = review.combined_diff();
     if !word_diff {
-        return raw.lines().map(ToOwned::to_owned).collect();
+        return raw.lines().map(crate::text::sanitize_inline).collect();
     }
 
     let source = raw.lines().collect::<Vec<_>>();
@@ -513,6 +513,9 @@ pub fn presentation_diff_lines(review: &GitReview, word_diff: bool) -> Vec<Strin
         index += 1;
     }
     lines
+        .into_iter()
+        .map(|line| crate::text::sanitize_inline(&line))
+        .collect()
 }
 
 fn inline_word_pair(old: &str, new: &str) -> (String, String) {
@@ -838,6 +841,28 @@ mod tests {
         let word = presentation_diff_lines(&review, true);
         assert!(word.iter().any(|line| line.contains("[-old-]")));
         assert!(word.iter().any(|line| line.contains("{+new+}")));
+    }
+
+    #[test]
+    fn git_diff_body_does_not_reach_terminal_with_control_or_bidi_sequences() {
+        let mut review = GitReview::pending(ThreadId::new("hostile"), "/repo");
+        review.staged_diff = format!(
+            "diff --git a/file b/file\n-old{}[31m\n+new{}concealed{}next\n",
+            '\u{001b}', '\u{202e}', '\u{2029}'
+        );
+        // Review authority retains source bytes; only the terminal projection is cleaned.
+        assert!(review.staged_diff.contains('\u{001b}'));
+        for word_diff in [false, true] {
+            let shown = presentation_diff_lines(&review, word_diff);
+            assert!(shown.iter().any(|line| line.contains("new")));
+            for line in shown {
+                assert!(!line.contains('\u{001b}'));
+                assert!(!line.contains('\u{202e}'));
+                assert!(!line.contains('\u{2029}'));
+                assert!(!line.contains('\n'));
+                assert!(!line.contains('\r'));
+            }
+        }
     }
 
     #[tokio::test]
