@@ -191,7 +191,7 @@
     "src/app/mutation_editor.rs": 135,
     "src/app/context_menu.rs": 93,
     "src/app/review.rs": 121,
-    "src/ui/review.rs": 302,
+    "src/ui/review.rs": 324,
     "src/runtime_external.rs": 76,
     "src/runtime_external/tests.rs": 82,
     "src/detached_process.rs": 134,
@@ -469,6 +469,15 @@
         "src/forge.rs",
         "src/forge_mutation.rs",
         "src/forge/gitlab_projection_tests.rs"
+      ]
+    },
+    {
+      "date": "2026-10-10",
+      "kind": "presentation-security-defect-fix",
+      "scope": "Escaped untrusted Git filenames and Forge identities/status in Review and overview display; visual-only change and malicious-control-character negative test",
+      "modules": [
+        "src/ui.rs",
+        "src/ui/review.rs"
       ]
     }
   ]
