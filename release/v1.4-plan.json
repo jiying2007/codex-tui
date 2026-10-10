@@ -246,7 +246,7 @@
     "src/command.rs": 130,
     "src/compat.rs": 574,
     "src/domain.rs": 342,
-    "src/forge_github.rs": 688,
+    "src/forge_github.rs": 741,
     "src/git.rs": 1003,
     "src/goal.rs": 194,
     "src/hardening.rs": 329,
@@ -509,6 +509,15 @@
       "modules": [
         "src/sqlite_store.rs"
       ]
+    },
+    {
+      "date": "2026-10-10",
+      "kind": "forge-identity-correctness",
+      "scope": "GitHub Actions workflow head_repository identity prevents fork/missing-origin same-branch Pipeline projection false positives, with negative fixtures and bilingual operator docs",
+      "modules": [
+        "src/forge_github.rs"
+      ],
+      "policy": "Bugfix-only; no new pipeline fetches, schema changes, or new feature authority"
     }
   ]
 }
