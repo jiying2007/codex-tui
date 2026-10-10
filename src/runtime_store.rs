@@ -488,12 +488,14 @@ mod tests {
             next_item_cursor: None,
         };
         assert!(store.index_conversation_page(&page).is_none());
-        assert!(store
-            .sqlite
-            .search_transcript("private-degraded-sentinel", 10)
-            .expect("query empty derived store")
-            .hits
-            .is_empty());
+        assert!(
+            store
+                .sqlite
+                .search_transcript("private-degraded-sentinel", 10)
+                .expect("query empty derived store")
+                .hits
+                .is_empty()
+        );
         assert!(store.error().is_some());
     }
 
