@@ -110,7 +110,10 @@ mod tests {
 
     #[test]
     fn bidi_and_line_separators_cannot_spoof_review_or_thread_chrome() {
-        let hostile = format!("safe{}reversed{}hidden{}next", '\u{202e}', '\u{2066}', '\u{2029}');
+        let hostile = format!(
+            "safe{}reversed{}hidden{}next",
+            '\u{202e}', '\u{2066}', '\u{2029}'
+        );
         let displayed = sanitize_inline(&hostile);
         assert_eq!(displayed, "safe�reversed�hidden�next");
         for control in ['\u{202e}', '\u{2066}', '\u{2029}', '\u{061c}', '\u{200f}'] {
