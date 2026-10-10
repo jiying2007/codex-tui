@@ -266,7 +266,7 @@
     "src/support_bundle.rs": 566,
     "src/terminal.rs": 131,
     "src/terminal_drawer.rs": 381,
-    "src/text.rs": 132,
+    "src/text.rs": 147,
     "src/ui/overlays.rs": 872,
     "src/ui/terminal.rs": 126,
     "src/forge/tests.rs": 356,
@@ -518,6 +518,15 @@
         "src/forge_github.rs"
       ],
       "policy": "Bugfix-only; no new pipeline fetches, schema changes, or new feature authority"
+    },
+    {
+      "date": "2026-10-10",
+      "kind": "terminal-invisible-label-security",
+      "scope": "Expose soft hyphen, zero-width space and word joiner in untrusted inline labels while preserving emoji ZWJ, with explicit terminal projection regression and matching EN/zh-CN operator guidance",
+      "modules": [
+        "src/text.rs"
+      ],
+      "policy": "Security-only display transformation; canonical Git/Codex/Forge strings unchanged, no new product capability or release authority"
     }
   ]
 }

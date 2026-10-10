@@ -10,10 +10,13 @@ pub fn sanitize_inline(value: &str) -> String {
             } else if ch.is_control()
                 || matches!(
                     ch,
-                    '\u{061c}'
+                    '\u{00ad}'
+                        | '\u{061c}'
+                        | '\u{200b}'
                         | '\u{200e}'
                         | '\u{200f}'
                         | '\u{2028}'..='\u{202e}'
+                        | '\u{2060}'
                         | '\u{2066}'..='\u{206f}'
                         | '\u{feff}'
                 )
@@ -122,6 +125,18 @@ mod tests {
         // Emoji graphemes still require their ZWJ and combining marks.
         let family = "👨‍👩‍👧‍👦";
         assert_eq!(sanitize_inline(family), family);
+    }
+
+    #[test]
+    fn invisible_format_characters_cannot_spoof_git_or_forge_labels() {
+        for marker in ['\u{00ad}', '\u{200b}', '\u{2060}'] {
+            let label = format!("main{marker}");
+            assert_eq!(sanitize_inline(&label), "main\u{fffd}");
+            assert_eq!(truncate_display(&label, 5), "main\u{fffd}");
+            assert_eq!(display_width(&truncate_display(&label, 5)), 5);
+        }
+        // The emoji joiner is intentionally preserved for proper grapheme rendering.
+        assert_eq!(sanitize_inline("中文👨‍👩‍👧‍👦"), "中文👨‍👩‍👧‍👦");
     }
 
     #[test]
