@@ -1616,7 +1616,11 @@ fn render_workspace(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area
     };
 
     let mut lines = vec![
-        Line::from(format!("{}: {}", tr(app, "Thread", "会话"), sanitize_inline(&thread.id.0))),
+        Line::from(format!(
+            "{}: {}",
+            tr(app, "Thread", "会话"),
+            sanitize_inline(&thread.id.0)
+        )),
         Line::from(format!("Cwd: {}", sanitize_inline(&thread.metadata.cwd))),
     ];
 
@@ -1629,12 +1633,11 @@ fn render_workspace(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area
             lines.push(Line::from(format!(
                 "{} · {}",
                 tr(app, "Git: degraded", "Git: 已降级"),
-                sanitize_inline(
-                    context
-                        .error
-                        .as_deref()
-                        .unwrap_or_else(|| tr(app, "unknown error", "未知错误"))
-                )
+                sanitize_inline(context.error.as_deref().unwrap_or_else(|| tr(
+                    app,
+                    "unknown error",
+                    "未知错误"
+                )))
             )));
         }
         Some(context) if !context.is_repository => {
@@ -1657,7 +1660,10 @@ fn render_workspace(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area
                 )));
             }
             if let Some(worktree) = &context.worktree {
-                lines.push(Line::from(format!("Worktree: {}", sanitize_inline(&worktree.canonical_path))));
+                lines.push(Line::from(format!(
+                    "Worktree: {}",
+                    sanitize_inline(&worktree.canonical_path)
+                )));
             }
             lines.push(Line::from(format!(
                 "{}: {}",
