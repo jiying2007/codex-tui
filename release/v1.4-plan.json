@@ -149,7 +149,7 @@
   ],
   "moduleRatchet": {
     "src/app.rs": 7166,
-    "src/ui.rs": 2932,
+    "src/ui.rs": 2940,
     "src/app_server.rs": 3486,
     "src/main.rs": 1854,
     "src/sqlite_store.rs": 2456,
@@ -196,7 +196,7 @@
     "src/runtime_external/tests.rs": 82,
     "src/detached_process.rs": 134,
     "src/detached_process/tests.rs": 174,
-    "src/ui/thread.rs": 381,
+    "src/ui/thread.rs": 383,
     "src/app/palette.rs": 396,
     "src/app/palette_intent.rs": 113,
     "src/runtime_palette/intent_tests.rs": 222,
@@ -209,7 +209,7 @@
     "src/app/planning_worker.rs": 189,
     "src/sqlite_backup.rs": 81,
     "src/interaction_performance.rs": 185,
-    "src/ui/thread/tests.rs": 77,
+    "src/ui/thread/tests.rs": 91,
     "src/sqlite_store/recovery.rs": 243,
     "src/runtime_shutdown.rs": 62,
     "src/runtime_connection.rs": 26,
@@ -247,7 +247,7 @@
     "src/compat.rs": 574,
     "src/domain.rs": 342,
     "src/forge_github.rs": 688,
-    "src/git.rs": 978,
+    "src/git.rs": 1003,
     "src/goal.rs": 194,
     "src/hardening.rs": 329,
     "src/i18n.rs": 222,
@@ -266,7 +266,7 @@
     "src/support_bundle.rs": 566,
     "src/terminal.rs": 131,
     "src/terminal_drawer.rs": 381,
-    "src/text.rs": 106,
+    "src/text.rs": 129,
     "src/ui/overlays.rs": 872,
     "src/ui/terminal.rs": 126,
     "src/forge/tests.rs": 356,
@@ -478,6 +478,18 @@
       "modules": [
         "src/ui.rs",
         "src/ui/review.rs"
+      ]
+    },
+    {
+      "date": "2026-10-10",
+      "kind": "security-defect-fix",
+      "scope": "Neutralize terminal control and Unicode directional spoofing in Git diff, conversation and Workspace presentation without mutating Git/Codex authority; adversarial fixtures",
+      "modules": [
+        "src/text.rs",
+        "src/git.rs",
+        "src/ui.rs",
+        "src/ui/thread.rs",
+        "src/ui/thread/tests.rs"
       ]
     }
   ]
