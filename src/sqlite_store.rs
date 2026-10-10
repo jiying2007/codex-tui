@@ -1671,7 +1671,10 @@ fn refuse_unsafe_sqlite_path(path: &Path) -> Result<()> {
             );
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => return Err(error).with_context(|| format!("inspect SQLite state path {}", path.display())),
+        Err(error) => {
+            return Err(error)
+                .with_context(|| format!("inspect SQLite state path {}", path.display()));
+        }
     }
     Ok(())
 }
@@ -2410,42 +2413,64 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn sqlite_open_rejects_symlinked_database_before_touching_target() {
-        use std::os::unix::fs::{symlink, PermissionsExt};
+        use std::os::unix::fs::{PermissionsExt, symlink};
 
         let root = tempdir().expect("tempdir");
         let store = SqliteStore::at(root.path());
         let target = root.path().join("unrelated-data");
         fs::write(&target, b"preserve unrelated contents").expect("target");
-        fs::set_permissions(&target, fs::Permissions::from_mode(0o644))
-            .expect("target mode");
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o644)).expect("target mode");
         fs::create_dir_all(store.db_path().parent().expect("state parent"))
             .expect("create state dir");
         symlink(&target, store.db_path()).expect("install unsafe link");
-        let err = store.load_state().expect_err("SQLite must reject file link");
+        let err = store
+            .load_state()
+            .expect_err("SQLite must reject file link");
         assert!(format!("{err:#}").contains("must be a regular file"));
-        assert_eq!(fs::read(&target).expect("target still readable"), b"preserve unrelated contents");
-        assert_eq!(fs::metadata(&target).expect("target metadata").permissions().mode() & 0o777, 0o644);
+        assert_eq!(
+            fs::read(&target).expect("target still readable"),
+            b"preserve unrelated contents"
+        );
+        assert_eq!(
+            fs::metadata(&target)
+                .expect("target metadata")
+                .permissions()
+                .mode()
+                & 0o777,
+            0o644
+        );
     }
 
     #[cfg(unix)]
     #[test]
     fn sqlite_writer_lock_rejects_symlinked_file_without_touching_target() {
-        use std::os::unix::fs::{symlink, PermissionsExt};
+        use std::os::unix::fs::{PermissionsExt, symlink};
 
         let root = tempdir().expect("tempdir");
         let store = SqliteStore::at(root.path());
         let target = root.path().join("unrelated-owner-target");
         fs::write(&target, b"preserve owner target").expect("target");
-        fs::set_permissions(&target, fs::Permissions::from_mode(0o644))
-            .expect("target mode");
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o644)).expect("target mode");
         let lock_path = store.db_path().with_extension("sqlite3.owner-lock");
-        fs::create_dir_all(lock_path.parent().expect("owner directory"))
-            .expect("state dir");
+        fs::create_dir_all(lock_path.parent().expect("owner directory")).expect("state dir");
         symlink(&target, &lock_path).expect("unsafe owner symlink");
-        let err = store.acquire_local_writer().err().expect("reject linked owner");
+        let err = store
+            .acquire_local_writer()
+            .err()
+            .expect("reject linked owner");
         assert!(format!("{err:#}").contains("must be a regular file"));
-        assert_eq!(fs::read(&target).expect("target still readable"), b"preserve owner target");
-        assert_eq!(fs::metadata(&target).expect("metadata").permissions().mode() & 0o777, 0o644);
+        assert_eq!(
+            fs::read(&target).expect("target still readable"),
+            b"preserve owner target"
+        );
+        assert_eq!(
+            fs::metadata(&target)
+                .expect("metadata")
+                .permissions()
+                .mode()
+                & 0o777,
+            0o644
+        );
     }
 
     #[test]
