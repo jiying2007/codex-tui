@@ -1044,8 +1044,8 @@ fn forge_context_lines(
     let mut lines = vec![Line::from(format!(
         "Forge: {} · {}/{} · {}",
         identity.provider.label(),
-        identity.host,
-        identity.path_with_namespace,
+        sanitize_inline(&identity.host),
+        sanitize_inline(&identity.path_with_namespace),
         forge_freshness_label(
             observation.freshness_at(crate::operation::now_unix_ms()),
             app.language,
@@ -1073,7 +1073,7 @@ fn forge_context_lines(
                 } else {
                     ""
                 },
-                change.state,
+                sanitize_inline(&change.state),
                 truncate_display(&change.title, 58)
             )));
         } else if app.language.is_simplified_chinese() {
@@ -1090,7 +1090,7 @@ fn forge_context_lines(
         if let Some(pipeline) = observation.pipeline_for_branch(branch) {
             lines.push(Line::from(format!(
                 "Pipeline: #{} · {}",
-                pipeline.id, pipeline.status
+                pipeline.id, sanitize_inline(&pipeline.status)
             )));
         } else {
             lines.push(Line::from(tr(
