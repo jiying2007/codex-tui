@@ -91,6 +91,7 @@ impl SqliteStore {
     pub fn acquire_local_writer(&self) -> Result<LocalWriterGuard> {
         ensure_private_parent(&self.db_path)?;
         let lock_path = self.db_path.with_extension("sqlite3.owner-lock");
+        refuse_unsafe_sqlite_path(&lock_path)?;
         let connection =
             Connection::open(&lock_path).context("open codex-tui local writer lock")?;
         connection.busy_timeout(std::time::Duration::ZERO)?;
@@ -1103,6 +1104,7 @@ impl SqliteStore {
 
     fn open_ready(&self) -> Result<Connection> {
         ensure_private_parent(&self.db_path)?;
+        refuse_unsafe_sqlite_path(&self.db_path)?;
         let mut conn = Connection::open(&self.db_path)
             .with_context(|| format!("open SQLite store {}", self.db_path.display()))?;
         configure_connection(&conn)?;
@@ -1654,6 +1656,27 @@ fn now_unix_ms() -> u64 {
         .as_millis()
         .try_into()
         .unwrap_or(u64::MAX)
+}
+
+// The data directory is private, but even a first deployment must not
+// follow a pre-existing symlink or open a non-regular database/owner-lock.
+// SQLite and the post-open chmod would otherwise operate on its target.
+fn refuse_unsafe_sqlite_path(path: &Path) -> Result<()> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) => {
+            anyhow::ensure!(
+                metadata.file_type().is_file(),
+                "SQLite state path must be a regular file (no symlinks): {}",
+                path.display()
+            );
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(error)
+                .with_context(|| format!("inspect SQLite state path {}", path.display()));
+        }
+    }
+    Ok(())
 }
 
 fn ensure_private_parent(path: &Path) -> Result<()> {
@@ -2385,6 +2408,76 @@ mod tests {
             .save_state(&LocalStateV1::default())
             .expect("save state");
         assert!(store.db_path().exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sqlite_open_rejects_symlinked_database_before_touching_target() {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+
+        let root = tempdir().expect("tempdir");
+        let store = SqliteStore::at(root.path());
+        let target = root.path().join("unrelated-data");
+        fs::write(&target, b"preserve unrelated contents").expect("target");
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o644)).expect("target mode");
+        fs::create_dir_all(store.db_path().parent().expect("state parent"))
+            .expect("create state dir");
+        symlink(&target, store.db_path()).expect("install unsafe link");
+        let err = store
+            .load_state()
+            .expect_err("SQLite must reject file link");
+        assert!(format!("{err:#}").contains("must be a regular file"));
+        assert_eq!(
+            fs::read(&target).expect("target still readable"),
+            b"preserve unrelated contents"
+        );
+        assert_eq!(
+            fs::metadata(&target)
+                .expect("target metadata")
+                .permissions()
+                .mode()
+                & 0o777,
+            0o644
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn sqlite_writer_lock_rejects_symlinked_file_without_touching_target() {
+        use std::os::unix::fs::{PermissionsExt, symlink};
+
+        let root = tempdir().expect("tempdir");
+        let store = SqliteStore::at(root.path());
+        let target = root.path().join("unrelated-owner-target");
+        fs::write(&target, b"preserve owner target").expect("target");
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o644)).expect("target mode");
+        let lock_path = store.db_path().with_extension("sqlite3.owner-lock");
+        fs::create_dir_all(lock_path.parent().expect("owner directory")).expect("state dir");
+        symlink(&target, &lock_path).expect("unsafe owner symlink");
+        let err = store
+            .acquire_local_writer()
+            .err()
+            .expect("reject linked owner");
+        assert!(format!("{err:#}").contains("must be a regular file"));
+        assert_eq!(
+            fs::read(&target).expect("target still readable"),
+            b"preserve owner target"
+        );
+        assert_eq!(
+            fs::metadata(&target)
+                .expect("metadata")
+                .permissions()
+                .mode()
+                & 0o777,
+            0o644
+        );
+    }
+
+    #[test]
+    fn sqlite_path_preflight_rejects_non_regular_file() {
+        let root = tempdir().expect("tempdir");
+        assert!(refuse_unsafe_sqlite_path(root.path()).is_err());
+        assert!(refuse_unsafe_sqlite_path(&root.path().join("new.db")).is_ok());
     }
 
     #[test]
