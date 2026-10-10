@@ -2772,7 +2772,9 @@ mod tests {
         let (event_tx, mut event_rx) = mpsc::channel(4);
         let (command_tx, command_rx) = mpsc::channel(4);
         command_tx
-            .try_send(BackendCommand::LoadConversation(ThreadId::new("waiting-command")))
+            .try_send(BackendCommand::LoadConversation(ThreadId::new(
+                "waiting-command",
+            )))
             .expect("ready competing command");
 
         let actor = tokio::spawn(run_registry_actor(
