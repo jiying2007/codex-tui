@@ -134,11 +134,13 @@ struct GitHubWorkflowRun {
 impl GitHubWorkflowRun {
     fn branch_for_local_projection(&self, target_repo_id: u64) -> Option<String> {
         let reference = self.head_branch.as_ref()?;
-        Some(GitHubPullRef {
-            reference: reference.clone(),
-            repo: self.head_repository.clone(),
-        }
-        .branch_for_local_projection(target_repo_id))
+        Some(
+            GitHubPullRef {
+                reference: reference.clone(),
+                repo: self.head_repository.clone(),
+            }
+            .branch_for_local_projection(target_repo_id),
+        )
     }
 }
 
@@ -558,11 +560,26 @@ mod tests {
         let own = row(serde_json::json!({"id": 10, "full_name": "octo/repo"}));
         let fork = row(serde_json::json!({"id": 20, "full_name": "alice/repo"}));
         let unknown = row(serde_json::Value::Null);
-        assert_eq!(own.branch_for_local_projection(10).as_deref(), Some("feature"));
-        assert_eq!(fork.branch_for_local_projection(10).as_deref(), Some("alice/repo:feature"));
-        assert_eq!(unknown.branch_for_local_projection(10).as_deref(), Some("unverified-source:feature"));
-        assert_ne!(fork.branch_for_local_projection(10).as_deref(), Some("feature"));
-        assert_ne!(unknown.branch_for_local_projection(10).as_deref(), Some("feature"));
+        assert_eq!(
+            own.branch_for_local_projection(10).as_deref(),
+            Some("feature")
+        );
+        assert_eq!(
+            fork.branch_for_local_projection(10).as_deref(),
+            Some("alice/repo:feature")
+        );
+        assert_eq!(
+            unknown.branch_for_local_projection(10).as_deref(),
+            Some("unverified-source:feature")
+        );
+        assert_ne!(
+            fork.branch_for_local_projection(10).as_deref(),
+            Some("feature")
+        );
+        assert_ne!(
+            unknown.branch_for_local_projection(10).as_deref(),
+            Some("feature")
+        );
     }
 
     #[test]
