@@ -138,7 +138,9 @@ impl RuntimeStore {
     }
 
     pub(crate) fn index_conversation_page(&self, page: &ConversationPage) -> Option<String> {
-        if !self.index_transcripts {
+        // An explicit integrity failure makes the entire local store read-only,
+        // including derivative FTS writes, even when indexing is opted in.
+        if !self.index_transcripts || !self.writable {
             return None;
         }
         self.sqlite
@@ -459,6 +461,43 @@ fn now_unix_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn degraded_local_store_does_not_write_opted_in_transcript_index() {
+        use codex_tui::{
+            conversation::{ConversationItem, ConversationItemKind},
+            domain::ThreadId,
+        };
+
+        let root = tempfile::tempdir().expect("tempdir");
+        let mut store = RuntimeStore::at_for_test(root.path());
+        store.writable = false;
+        store.error = Some("integrity scan unavailable".into());
+        let page = ConversationPage {
+            thread_id: ThreadId::new("private-thread"),
+            title: None,
+            turns: vec![],
+            items: vec![ConversationItem {
+                turn_id: "turn-1".into(),
+                item_id: "user-1".into(),
+                kind: ConversationItemKind::User,
+                text: "private-degraded-sentinel".into(),
+                status: None,
+            }],
+            next_turn_cursor: None,
+            next_item_cursor: None,
+        };
+        assert!(store.index_conversation_page(&page).is_none());
+        assert!(
+            store
+                .sqlite
+                .search_transcript("private-degraded-sentinel", 10)
+                .expect("query empty derived store")
+                .hits
+                .is_empty()
+        );
+        assert!(store.error().is_some());
+    }
 
     #[test]
     fn final_operator_state_flush_failure_is_returned_to_the_caller() {

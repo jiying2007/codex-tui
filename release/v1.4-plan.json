@@ -150,13 +150,13 @@
   "moduleRatchet": {
     "src/app.rs": 7166,
     "src/ui.rs": 2946,
-    "src/app_server.rs": 3486,
+    "src/app_server.rs": 3562,
     "src/main.rs": 1854,
     "src/sqlite_store.rs": 2456,
     "src/forge.rs": 1345,
     "src/worktree.rs": 1218,
     "src/release.rs": 1025,
-    "src/runtime_store.rs": 486,
+    "src/runtime_store.rs": 525,
     "src/runtime_input.rs": 267,
     "src/app_server_registry.rs": 169,
     "src/app_server_wire.rs": 7,
@@ -491,6 +491,16 @@
         "src/ui/thread.rs",
         "src/ui/thread/tests.rs"
       ]
+    },
+    {
+      "date": "2026-10-10",
+      "kind": "runtime-order-and-readonly-safety",
+      "scope": "Drain queued App Server interactive requests before competing commands and periodic work; degraded SQLite cannot write opt-in derived transcripts",
+      "modules": [
+        "src/app_server.rs",
+        "src/runtime_store.rs"
+      ],
+      "policy": "Defect-only growth under existing single LOC ledger; external L3 still blocked"
     }
   ]
 }

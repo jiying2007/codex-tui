@@ -856,12 +856,16 @@ async fn run_registry_actor(
     goal_probe.tick().await;
 
     loop {
+        // An awaited RPC can yield on a pending interactive server request.
+        // Drain that semantic backlog *before* serving newly queued commands,
+        // otherwise the actor can immediately enter another 5-second RPC.
+        let semantic_backlog = rpc.has_queued_messages();
         let registry_page_can_advance =
             (hydration.is_some() || reconcile.is_some() || loaded_hydration.is_some())
-                && !rpc.has_queued_messages();
+                && !semantic_backlog;
         tokio::select! {
             biased;
-            command = command_rx.recv() => {
+            command = command_rx.recv(), if !semantic_backlog => {
                 let Some(command) = command else {
                     return;
                 };
@@ -1350,7 +1354,7 @@ async fn run_registry_actor(
                     }
                 }
             }
-            _ = goal_probe.tick() => {
+            _ = goal_probe.tick(), if !semantic_backlog => {
                 if goal_supported != Some(false)
                     && let Some(thread_id) = goal_probe_queue.pop_front()
                 {
@@ -1390,7 +1394,7 @@ async fn run_registry_actor(
                     }
                 }
             }
-            _ = refresh.tick(), if hydration.is_none() && reconcile.is_none() && loaded_hydration.is_none() => {
+            _ = refresh.tick(), if !semantic_backlog && hydration.is_none() && reconcile.is_none() && loaded_hydration.is_none() => {
                 match load_registry_with_page_limit(&mut rpc, true, Some(1)).await {
                     Ok(load) if load.registry_complete => {
                         apply_full_registry_refresh(load.threads, &mut threads, &mut status);
@@ -1422,7 +1426,7 @@ async fn run_registry_actor(
                     }
                 }
             }
-            search_done = search_tasks.join_next(), if !search_tasks.is_empty() => {
+            search_done = search_tasks.join_next(), if !semantic_backlog && !search_tasks.is_empty() => {
                 if let Some(Ok((completed_generation, query, result))) = search_done {
                     if completed_generation != search_generation {
                         continue;
@@ -2721,6 +2725,78 @@ mod tests {
             error.to_string().contains("fixture/request timed out"),
             "timeout must retain method context: {error:#}"
         );
+    }
+
+    #[tokio::test]
+    async fn queued_approval_preempts_a_ready_command_after_rpc_yield() {
+        use crate::app_server_target::ResolvedAppServerEndpoint;
+        use futures_util::StreamExt;
+        use tokio_tungstenite::accept_async;
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind mock");
+        let address = listener.local_addr().expect("mock address");
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.expect("accept");
+            let mut socket = accept_async(stream).await.expect("WebSocket handshake");
+            // A competing thread/read RPC cannot complete: the fixture never
+            // replies to commands. The queued approval must win first.
+            let _ = tokio::time::timeout(Duration::from_secs(3), socket.next()).await;
+        });
+        let target = ResolvedAppServerTarget {
+            name: "queued-approval-priority".into(),
+            endpoint: ResolvedAppServerEndpoint::WebSocket {
+                url: format!("ws://{address}/rpc"),
+                auth_token: None,
+            },
+        };
+        let mut rpc = RpcSession::connect(&target).await.expect("connect");
+        rpc.queued_messages.push_back(json!({
+            "id": "pending-approval",
+            "method": "item/commandExecution/requestApproval",
+            "params": {
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "itemId": "item-1",
+                "command": "echo fixture",
+                "cwd": "/repo"
+            }
+        }));
+        let status = BackendStatus::starting("priority-fixture");
+        let (snapshot_tx, _snapshot_rx) = watch::channel(BackendSnapshot {
+            generation: 0,
+            threads: vec![],
+            status: status.clone(),
+        });
+        let (event_tx, mut event_rx) = mpsc::channel(4);
+        let (command_tx, command_rx) = mpsc::channel(4);
+        command_tx
+            .try_send(BackendCommand::LoadConversation(ThreadId::new(
+                "waiting-command",
+            )))
+            .expect("ready competing command");
+
+        let actor = tokio::spawn(run_registry_actor(
+            rpc,
+            vec![],
+            status,
+            snapshot_tx,
+            event_tx,
+            command_rx,
+            (None, target),
+        ));
+        let event = tokio::time::timeout(Duration::from_secs(2), event_rx.recv())
+            .await
+            .expect("approval must be emitted without RPC timeout")
+            .expect("conversation event");
+        assert!(matches!(
+            event,
+            ConversationEvent::InteractiveRequested(request)
+                if request.request_id == RpcRequestId::String("pending-approval".into())
+        ));
+        actor.abort();
+        server.abort();
     }
 
     #[tokio::test]
