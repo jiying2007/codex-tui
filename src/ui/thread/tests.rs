@@ -75,3 +75,17 @@ fn cold_presentation_formats_only_the_selected_window() {
     assert!(items.len() <= MAX_WINDOW_ITEMS);
     assert_eq!(items[0].item_id, "item-9000");
 }
+
+#[test]
+fn untrusted_conversation_payload_cannot_spoof_terminal_controls() {
+    let original = format!("text{}[2J{}fake row{}tail", '\u{001b}', '\u{202e}', '\n');
+    let mut state = ConversationState::loading(ThreadId::new("cache-thread"));
+    state.replace_page(page(&original));
+    let formatted = formatted_items(&state, 0, 1);
+    assert!(formatted[0].text.contains("fake row"));
+    for character in ['\u{001b}', '\u{202e}', '\n', '\r', '\t'] {
+        assert!(!formatted[0].text.contains(character));
+    }
+    // The originating upstream record remains untouched by presentation.
+    assert!(state.items[0].text.contains('\u{001b}'));
+}

@@ -7,7 +7,17 @@ pub fn sanitize_inline(value: &str) -> String {
         .map(|ch| {
             if matches!(ch, '\n' | '\r' | '\t') {
                 ' '
-            } else if ch.is_control() {
+            } else if ch.is_control()
+                || matches!(
+                    ch,
+                    '\u{061c}'
+                        | '\u{200e}'
+                        | '\u{200f}'
+                        | '\u{2028}'..='\u{202e}'
+                        | '\u{2066}'..='\u{206f}'
+                        | '\u{feff}'
+                )
+            {
                 '\u{fffd}'
             } else {
                 ch
@@ -96,6 +106,22 @@ mod tests {
     fn inline_sanitizer_removes_layout_controls() {
         assert_eq!(sanitize_inline("a\nb\rc\td"), "a b c d");
         assert_eq!(sanitize_inline("a\u{0007}b"), "a\u{fffd}b");
+    }
+
+    #[test]
+    fn bidi_and_line_separators_cannot_spoof_review_or_thread_chrome() {
+        let hostile = format!(
+            "safe{}reversed{}hidden{}next",
+            '\u{202e}', '\u{2066}', '\u{2029}'
+        );
+        let displayed = sanitize_inline(&hostile);
+        assert_eq!(displayed, "safe�reversed�hidden�next");
+        for control in ['\u{202e}', '\u{2066}', '\u{2029}', '\u{061c}', '\u{200f}'] {
+            assert!(!displayed.contains(control));
+        }
+        // Emoji graphemes still require their ZWJ and combining marks.
+        let family = "👨‍👩‍👧‍👦";
+        assert_eq!(sanitize_inline(family), family);
     }
 
     #[test]

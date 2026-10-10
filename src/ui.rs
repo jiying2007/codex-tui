@@ -1616,8 +1616,12 @@ fn render_workspace(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area
     };
 
     let mut lines = vec![
-        Line::from(format!("{}: {}", tr(app, "Thread", "会话"), thread.id)),
-        Line::from(format!("Cwd: {}", thread.metadata.cwd)),
+        Line::from(format!(
+            "{}: {}",
+            tr(app, "Thread", "会话"),
+            sanitize_inline(&thread.id.0)
+        )),
+        Line::from(format!("Cwd: {}", sanitize_inline(&thread.metadata.cwd))),
     ];
 
     match app.git_context(&thread.id) {
@@ -1629,10 +1633,11 @@ fn render_workspace(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area
             lines.push(Line::from(format!(
                 "{} · {}",
                 tr(app, "Git: degraded", "Git: 已降级"),
-                context
-                    .error
-                    .as_deref()
-                    .unwrap_or_else(|| tr(app, "unknown error", "未知错误"))
+                sanitize_inline(context.error.as_deref().unwrap_or_else(|| tr(
+                    app,
+                    "unknown error",
+                    "未知错误"
+                )))
             )));
         }
         Some(context) if !context.is_repository => {
@@ -1647,42 +1652,51 @@ fn render_workspace(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area
                 lines.push(Line::from(format!(
                     "{}: {}",
                     tr(app, "Repo root", "仓库根目录"),
-                    repo.primary_root
+                    sanitize_inline(&repo.primary_root)
                 )));
                 lines.push(Line::from(format!(
                     "Git common dir: {}",
-                    repo.git_common_dir
+                    sanitize_inline(&repo.git_common_dir)
                 )));
             }
             if let Some(worktree) = &context.worktree {
-                lines.push(Line::from(format!("Worktree: {}", worktree.canonical_path)));
+                lines.push(Line::from(format!(
+                    "Worktree: {}",
+                    sanitize_inline(&worktree.canonical_path)
+                )));
             }
             lines.push(Line::from(format!(
                 "{}: {}",
                 tr(app, "Branch", "分支"),
-                context
-                    .branch
-                    .as_deref()
-                    .or(context.head.as_deref())
-                    .unwrap_or_else(|| tr(app, "<unknown>", "<未知>"))
+                sanitize_inline(
+                    context
+                        .branch
+                        .as_deref()
+                        .or(context.head.as_deref())
+                        .unwrap_or_else(|| tr(app, "<unknown>", "<未知>"))
+                )
             )));
             lines.push(Line::from(if app.language.is_simplified_chinese() {
                 format!(
                     "上游: {} · 领先={} 落后={}",
-                    context
-                        .upstream
-                        .as_deref()
-                        .unwrap_or_else(|| tr(app, "<none>", "<无>")),
+                    sanitize_inline(
+                        context
+                            .upstream
+                            .as_deref()
+                            .unwrap_or_else(|| tr(app, "<none>", "<无>"))
+                    ),
                     context.ahead,
                     context.behind
                 )
             } else {
                 format!(
                     "Upstream: {} · ahead={} behind={}",
-                    context
-                        .upstream
-                        .as_deref()
-                        .unwrap_or_else(|| tr(app, "<none>", "<无>")),
+                    sanitize_inline(
+                        context
+                            .upstream
+                            .as_deref()
+                            .unwrap_or_else(|| tr(app, "<none>", "<无>"))
+                    ),
                     context.ahead,
                     context.behind
                 )
