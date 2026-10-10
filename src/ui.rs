@@ -1090,7 +1090,8 @@ fn forge_context_lines(
         if let Some(pipeline) = observation.pipeline_for_branch(branch) {
             lines.push(Line::from(format!(
                 "Pipeline: #{} · {}",
-                pipeline.id, sanitize_inline(&pipeline.status)
+                pipeline.id,
+                sanitize_inline(&pipeline.status)
             )));
         } else {
             lines.push(Line::from(tr(
