@@ -170,13 +170,11 @@ pub(super) fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
             vec![Line::from(format!(
                 "{}: {}",
                 tr(app, "Conversation unavailable", "会话不可用"),
-                crate::text::sanitize_inline(
-                    conversation.error.as_deref().unwrap_or_else(|| tr(
-                        app,
-                        "unknown error",
-                        "未知错误"
-                    ))
-                )
+                crate::text::sanitize_inline(conversation.error.as_deref().unwrap_or_else(|| tr(
+                    app,
+                    "unknown error",
+                    "未知错误"
+                )))
             ))]
         }
         Some(conversation) if conversation.items.is_empty() => vec![Line::from(tr(
