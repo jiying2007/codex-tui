@@ -2,7 +2,7 @@ use super::{forge_freshness_label, tr};
 use crate::app::AppState;
 use crate::git::presentation_diff_lines;
 use crate::syntax_highlight::cached_review_diff;
-use crate::text::truncate_display;
+use crate::text::{sanitize_inline, truncate_display};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -10,6 +10,10 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Paragraph, Wrap},
 };
+
+fn safe_review_file_row(prefix: &str, status: &str, path: &str) -> String {
+    format!("{prefix} {status:2} {}", sanitize_inline(path))
+}
 
 fn review_evidence_lines(app: &AppState, thread_id: &str) -> Vec<Line<'static>> {
     let Some(git_review) = app.git_reviews.get(thread_id) else {
@@ -37,8 +41,8 @@ fn review_evidence_lines(app: &AppState, thread_id: &str) -> Vec<Line<'static>> 
         lines.push(Line::from(format!(
             "Forge: {} · {}/{} · {}",
             identity.provider.label(),
-            identity.host,
-            identity.path_with_namespace,
+            sanitize_inline(&identity.host),
+            sanitize_inline(&identity.path_with_namespace),
             forge_freshness_label(
                 observation.freshness_at(crate::operation::now_unix_ms()),
                 app.language,
@@ -68,25 +72,26 @@ fn review_evidence_lines(app: &AppState, thread_id: &str) -> Vec<Line<'static>> 
                 "CR #{}: {}{} · merge={} · {}",
                 change.iid,
                 if change.draft { "draft · " } else { "" },
-                change.state,
-                merge_status,
+                sanitize_inline(&change.state),
+                sanitize_inline(merge_status),
                 truncate_display(&change.title, 48)
             )));
         } else {
             lines.push(Line::from(format!(
-                "{}: {branch}",
+                "{}: {}",
                 tr(
                     app,
                     "CR: no match in observed recent results",
                     "CR: 最近结果中未找到，不代表不存在",
-                )
+                ),
+                sanitize_inline(branch)
             )));
         }
 
         if let Some(pipeline) = observation.pipeline_for_branch(branch) {
             lines.push(Line::from(format!(
                 "Pipeline #{}: {}",
-                pipeline.id, pipeline.status
+                pipeline.id, sanitize_inline(&pipeline.status)
             )));
         } else {
             lines.push(Line::from(tr(
@@ -147,8 +152,9 @@ pub(super) fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
     } else if let Some(error) = &review.error {
         frame.render_widget(
             Paragraph::new(format!(
-                "{}: {error}",
-                tr(app, "Review unavailable", "评审不可用")
+                "{}: {}",
+                tr(app, "Review unavailable", "评审不可用"),
+                sanitize_inline(error)
             ))
             .block(Block::bordered().title(tr(app, " Review ", " 评审 "))),
             outer[0],
@@ -162,7 +168,7 @@ pub(super) fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
             .map(|(index, change)| {
                 let selected = index == app.review_selected;
                 let prefix = if selected { ">" } else { " " };
-                let text = format!("{prefix} {:2} {}", change.status_label(), change.path);
+                let text = safe_review_file_row(prefix, &change.status_label(), &change.path);
                 let style = if selected {
                     Style::default().add_modifier(Modifier::REVERSED)
                 } else {
@@ -298,5 +304,21 @@ mod tests {
     fn evidence_without_forge_still_reports_git_state() {
         let app = AppState::new(FakeBackend::seeded().snapshot().threads);
         assert!(review_evidence_lines(&app, "missing").is_empty());
+    }
+}
+
+#[cfg(test)]
+mod display_input_safety_tests {
+    use super::safe_review_file_row;
+
+    #[test]
+    fn untrusted_git_filename_cannot_create_new_view_lines_or_terminal_controls() {
+        let displayed = safe_review_file_row(">", "M.", "normal\nnext\r\t\u{001b}[31m");
+        assert!(displayed.starts_with("> M. normal"));
+        assert!(!displayed.contains('\n'));
+        assert!(!displayed.contains('\r'));
+        assert!(!displayed.contains('\t'));
+        assert!(!displayed.contains('\u{001b}'));
+        assert!(displayed.contains('�'));
     }
 }
