@@ -149,7 +149,7 @@
   ],
   "moduleRatchet": {
     "src/app.rs": 7166,
-    "src/ui.rs": 2931,
+    "src/ui.rs": 2932,
     "src/app_server.rs": 3486,
     "src/main.rs": 1854,
     "src/sqlite_store.rs": 2456,
@@ -191,7 +191,7 @@
     "src/app/mutation_editor.rs": 135,
     "src/app/context_menu.rs": 93,
     "src/app/review.rs": 121,
-    "src/ui/review.rs": 324,
+    "src/ui/review.rs": 325,
     "src/runtime_external.rs": 76,
     "src/runtime_external/tests.rs": 82,
     "src/detached_process.rs": 134,
