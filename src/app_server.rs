@@ -856,12 +856,16 @@ async fn run_registry_actor(
     goal_probe.tick().await;
 
     loop {
+        // An awaited RPC can yield on a pending interactive server request.
+        // Drain that semantic backlog *before* serving newly queued commands,
+        // otherwise the actor can immediately enter another 5-second RPC.
+        let semantic_backlog = rpc.has_queued_messages();
         let registry_page_can_advance =
             (hydration.is_some() || reconcile.is_some() || loaded_hydration.is_some())
-                && !rpc.has_queued_messages();
+                && !semantic_backlog;
         tokio::select! {
             biased;
-            command = command_rx.recv() => {
+            command = command_rx.recv(), if !semantic_backlog => {
                 let Some(command) = command else {
                     return;
                 };
@@ -1350,7 +1354,7 @@ async fn run_registry_actor(
                     }
                 }
             }
-            _ = goal_probe.tick() => {
+            _ = goal_probe.tick(), if !semantic_backlog => {
                 if goal_supported != Some(false)
                     && let Some(thread_id) = goal_probe_queue.pop_front()
                 {
@@ -1390,7 +1394,7 @@ async fn run_registry_actor(
                     }
                 }
             }
-            _ = refresh.tick(), if hydration.is_none() && reconcile.is_none() && loaded_hydration.is_none() => {
+            _ = refresh.tick(), if !semantic_backlog && hydration.is_none() && reconcile.is_none() && loaded_hydration.is_none() => {
                 match load_registry_with_page_limit(&mut rpc, true, Some(1)).await {
                     Ok(load) if load.registry_complete => {
                         apply_full_registry_refresh(load.threads, &mut threads, &mut status);
@@ -1422,7 +1426,7 @@ async fn run_registry_actor(
                     }
                 }
             }
-            search_done = search_tasks.join_next(), if !search_tasks.is_empty() => {
+            search_done = search_tasks.join_next(), if !semantic_backlog && !search_tasks.is_empty() => {
                 if let Some(Ok((completed_generation, query, result))) = search_done {
                     if completed_generation != search_generation {
                         continue;
