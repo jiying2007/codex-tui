@@ -303,12 +303,34 @@ struct GitLabMergeRequest {
     state: String,
     source_branch: String,
     target_branch: String,
+    source_project_id: Option<u64>,
+    target_project_id: Option<u64>,
     web_url: String,
     updated_at: Option<String>,
     #[serde(default)]
     draft: bool,
     detailed_merge_status: Option<String>,
     blocking_discussions_resolved: Option<bool>,
+}
+
+impl GitLabMergeRequest {
+    fn branch_for_local_projection(&self, project_id: &str) -> String {
+        let own_source = self
+            .source_project_id
+            .is_some_and(|id| id.to_string() == project_id);
+        let own_target = self
+            .target_project_id
+            .is_some_and(|id| id.to_string() == project_id);
+        if own_source && own_target {
+            self.source_branch.clone()
+        } else if let Some(source) = self.source_project_id {
+            // ':' is invalid in Git ref names, so a fork-qualified source
+            // cannot match the checked-out local branch by short name.
+            format!("project/{source}:{}", self.source_branch)
+        } else {
+            format!("unverified-source:{}", self.source_branch)
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -441,6 +463,7 @@ pub(crate) async fn probe_gitlab_with_remote(
         pipelines_result.is_ok(),
     );
 
+    let project_source_id = project_id.clone();
     let overview_source_page_saturated = issues_result
         .as_ref()
         .is_ok_and(|rows| rows.len() >= DEFAULT_PAGE_SIZE)
@@ -480,10 +503,10 @@ pub(crate) async fn probe_gitlab_with_remote(
             .unwrap_or_default()
             .into_iter()
             .map(|change| ChangeRequestSummary {
+                source_branch: change.branch_for_local_projection(&project_source_id),
                 iid: change.iid,
                 title: change.title,
                 state: change.state,
-                source_branch: change.source_branch,
                 target_branch: change.target_branch,
                 web_url: change.web_url,
                 updated_at: change.updated_at,

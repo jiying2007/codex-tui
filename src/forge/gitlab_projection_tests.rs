@@ -1,6 +1,39 @@
 use super::*;
 
 #[test]
+fn fork_and_unverified_gitlab_mr_sources_never_match_a_local_branch() {
+    let make = |source: serde_json::Value, target: serde_json::Value| {
+        serde_json::from_value::<GitLabMergeRequest>(serde_json::json!({
+            "iid": 7,
+            "title": "Cross-project MR",
+            "state": "opened",
+            "source_branch": "feature",
+            "target_branch": "main",
+            "source_project_id": source,
+            "target_project_id": target,
+            "web_url": "https://gitlab.example.com/team/repo/-/merge_requests/7"
+        }))
+        .expect("GitLab MR fixture")
+    };
+    assert_eq!(
+        make(42.into(), 42.into()).branch_for_local_projection("42"),
+        "feature"
+    );
+    assert_eq!(
+        make(43.into(), 42.into()).branch_for_local_projection("42"),
+        "project/43:feature"
+    );
+    assert_eq!(
+        make(serde_json::Value::Null, 42.into()).branch_for_local_projection("42"),
+        "unverified-source:feature"
+    );
+    assert_eq!(
+        make(42.into(), 100.into()).branch_for_local_projection("42"),
+        "project/42:feature"
+    );
+}
+
+#[test]
 fn a_single_failed_gitlab_endpoint_does_not_discard_healthy_data_capabilities() {
     for (issues, merge_requests, pipelines) in [
         (false, true, true),

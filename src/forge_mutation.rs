@@ -641,6 +641,8 @@ struct GitLabMergeRequest {
     state: String,
     source_branch: String,
     target_branch: String,
+    source_project_id: Option<u64>,
+    target_project_id: Option<u64>,
     web_url: String,
     sha: Option<String>,
     #[serde(default)]
@@ -832,6 +834,20 @@ async fn branch(plan: &ForgeMutationPlan, name: &str) -> Result<GitLabBranch> {
     Ok(branch)
 }
 
+fn is_own_project_mr(mr: &GitLabMergeRequest, plan: &ForgeMutationPlan) -> Result<bool> {
+    let source_id = mr
+        .source_project_id
+        .context("GitLab MR source project identity is unavailable")?;
+    let target_id = mr
+        .target_project_id
+        .context("GitLab MR target project identity is unavailable")?;
+    anyhow::ensure!(
+        target_id.to_string() == plan.project_id,
+        "GitLab MR target project identity does not match the selected project"
+    );
+    Ok(source_id.to_string() == plan.project_id)
+}
+
 async fn validate_exact_open_mr(plan: &ForgeMutationPlan) -> Result<GitLabMergeRequest> {
     let iid = plan
         .change_request_iid
@@ -839,6 +855,11 @@ async fn validate_exact_open_mr(plan: &ForgeMutationPlan) -> Result<GitLabMergeR
     let mr = get_mr(plan, iid).await?;
     anyhow::ensure!(mr.state == "opened", "merge request !{iid} is {}", mr.state);
     if let Some(source) = &plan.source_branch {
+        // Same-named branches in fork projects are not local branch identity.
+        anyhow::ensure!(
+            is_own_project_mr(&mr, plan)?,
+            "GitLab MR source belongs to a fork; local branch mutation refused"
+        );
         anyhow::ensure!(
             mr.source_branch == *source,
             "merge request source branch changed: expected {source}, observed {}",
@@ -946,14 +967,22 @@ async fn matching_merge_requests(
         percent_encode_component(source),
         percent_encode_component(target)
     );
-    crate::forge::bounded_review_pages(|page| {
+    let entries: Vec<GitLabMergeRequest> = crate::forge::bounded_review_pages(|page| {
         let endpoint = format!(
             "{prefix}&per_page={}&page={page}",
             crate::forge::REVIEW_PAGE_SIZE
         );
         async move { glab_api_json(&plan.cwd, &plan.host, &endpoint).await }
     })
-    .await
+    .await?;
+    let mut matches = Vec::new();
+    for mr in entries {
+        if mr.source_branch == source && mr.target_branch == target && is_own_project_mr(&mr, plan)?
+        {
+            matches.push(mr);
+        }
+    }
+    Ok(matches)
 }
 
 fn project_endpoint(plan: &ForgeMutationPlan) -> String {
@@ -1433,6 +1462,42 @@ mod tests {
             .is_err()
         );
     }
+    #[test]
+    fn branch_bound_gitlab_mutation_refuses_fork_or_unknown_source_project() {
+        let plan = ForgeMutationPlan::merge_merge_request(
+            &identity(),
+            "/repo".into(),
+            7,
+            "feature".into(),
+            "main".into(),
+            1,
+        )
+        .expect("plan");
+        let mut mr: GitLabMergeRequest = serde_json::from_value(serde_json::json!({
+            "iid": 7,
+            "title": "Cross project",
+            "state": "opened",
+            "source_branch": "feature",
+            "target_branch": "main",
+            "source_project_id": 42,
+            "target_project_id": 42,
+            "web_url": "https://gitlab.example.com/team/repo/-/merge_requests/7",
+            "sha": "0123456789abcdef"
+        }))
+        .expect("MR fixture");
+        assert!(is_own_project_mr(&mr, &plan).expect("source identity"));
+
+        mr.source_project_id = Some(999);
+        assert!(!is_own_project_mr(&mr, &plan).expect("fork identity"));
+        mr.source_project_id = None;
+        assert!(is_own_project_mr(&mr, &plan).is_err());
+        mr.source_project_id = Some(42);
+        mr.target_project_id = None;
+        assert!(is_own_project_mr(&mr, &plan).is_err());
+        mr.target_project_id = Some(999);
+        assert!(is_own_project_mr(&mr, &plan).is_err());
+    }
+
     #[test]
     fn gitlab_mr_fixture_requires_exact_head_sha() {
         let mr: GitLabMergeRequest = serde_json::from_value(serde_json::json!({
