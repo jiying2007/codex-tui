@@ -96,7 +96,7 @@ struct GitHubPullRef {
     repo: Option<GitHubPullRepository>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 struct GitHubPullRepository {
     id: u64,
     full_name: String,
@@ -136,10 +136,7 @@ impl GitHubWorkflowRun {
         let reference = self.head_branch.as_ref()?;
         Some(GitHubPullRef {
             reference: reference.clone(),
-            repo: self.head_repository.as_ref().map(|repo| GitHubPullRepository {
-                id: repo.id,
-                full_name: repo.full_name.clone(),
-            }),
+            repo: self.head_repository.clone(),
         }
         .branch_for_local_projection(target_repo_id))
     }
