@@ -43,7 +43,7 @@ Set `[ui].language = "en"` or `"zh-CN"`, or leave `"auto"` for locale detection.
 ## Windows SSH Ubuntu and Terminal Drawer
 <!-- docs-section: ssh -->
 
-When using a Windows SSH client to operate an Ubuntu host, the TUI runs on **Ubuntu**; the target tty, filesystem, Codex CLI, config and spawned shell must all be resolved there. `t` opens the embedded Drawer; `F6` or `Ctrl+]` returns focus when supported by the emulator. If keys are intercepted by Windows/SSH, use `?` and `doctor terminal`; validate resize, focus, Ctrl+C, exit and terminal restoration on a **real controlling TTY**. Hosted PTY regression is not that proof.
+When using a Windows SSH client to operate an Ubuntu host, the TUI runs on **Ubuntu**; the target tty, filesystem, Codex CLI, config and spawned shell must all be resolved there. `t` opens the embedded Drawer; `F6` or `Ctrl+]` returns focus when supported by the emulator. If keys are intercepted by Windows/SSH, use `?` and `doctor terminal`; validate resize, focus, Ctrl+C, exit and terminal restoration on a **real controlling TTY**. Hosted PTY regression is not that proof. The UI neutralizes control characters and Unicode direction overrides in untrusted conversation items, Git diff text, repository paths and provider labels. Only the display projection is modified; canonical Codex/Git data remains unchanged. The Terminal Drawer is a separate PTY emulator, not a sanitized preview.
 
 ## Evidence and state safety
 <!-- docs-section: safety -->
