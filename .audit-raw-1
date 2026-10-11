@@ -1,0 +1,219 @@
++RPC 通知最多保留 1024 条且受 16 MiB 载荷记账预算限制。待处理交互请求最多 64 条、每条 256 KiB、累计 4 MiB。分页限制为 1024 页、200,000 个身份、32 MiB 身份存储记账预算及整次扫描 120 秒。这些是载荷或记账限制，不是实测 RSS 保证。过载会明确终止或隔离会话，不随机丢弃审批消息，也不重放写 RPC；正常 5 万条清单仍可在这些预算内处理。
++
+@@ -19,0 +24,2 @@
++GitLab 审批状态 JSON 异常，或缺少 `rules`、`approvals_required`、`approved` 时，证据属于未知，客户端阻断合并。明确有效的空规则数组不同于字段缺失；客户端检查不替代 GitLab 服务端保护。
++
+@@ -29,0 +36,2 @@ Windows→SSH Ubuntu 使用的是 **Ubuntu 侧** Codex Home、当前工作目录
++PTY 子进程从创建、初始化到分离 actor 退出始终由终止与回收守卫持有。取得 reader/writer、发布 Ready 或启动读取线程失败，不能放弃回收责任。故障注入使用本地子进程覆盖各启动阶段，不代替真实 SSH 验收。
++
+diff --git a/docs/zh-CN/release/install-upgrade.md b/docs/zh-CN/release/install-upgrade.md
+index 1bdff7d28360e55c973b676dfbc2d4003ee92f2b..8d4ba50cdeed34b85d9c8072bd11721c88c31090 100644
+--- a/docs/zh-CN/release/install-upgrade.md
++++ b/docs/zh-CN/release/install-upgrade.md
+@@ -75,0 +76,3 @@ Stable 需要精确 SHA CI、Linux 真正 Doctor/TTY/性能证据、不可变 Gi
++
++当前候选产品线为 v1.4.0；历史 v1.0.0 发布只作为审计记录，不代表当前源码已通过资格验收或获准部署。
++
+diff --git a/release/v1.4-plan.json b/release/v1.4-plan.json
+index 19843032bcf44dd273a1921fdcf0c08d2ff82d94..e1e8869d1e1e8207c78f8fc3074a2409c68640a8 100644
+--- a/release/v1.4-plan.json
++++ b/release/v1.4-plan.json
+@@ -153 +153 @@
+-    "src/app_server.rs": 2683,
++    "src/app_server.rs": 2607,
+@@ -176 +176 @@
+-    "src/app_server_transport.rs": 487,
++    "src/app_server_transport.rs": 297,
+@@ -237 +237 @@
+-    "src/app_server/user_response/approval_tests.rs": 267,
++    "src/app_server/user_response/approval_tests.rs": 266,
+@@ -260 +260 @@
+-    "src/pty.rs": 636,
++    "src/pty.rs": 648,
+@@ -273 +273 @@
+-    "src/app_server_transport/tests.rs": 317,
++    "src/app_server_transport/tests.rs": 380,
+@@ -283 +283 @@
+-    "src/app_server/tests.rs": 932,
++    "src/app_server/tests.rs": 967,
+@@ -285 +285 @@
+-    "src/forge_mutation/tests.rs": 305,
++    "src/forge_mutation/tests.rs": 325,
+@@ -289 +289,6 @@
+-    "src/git/tests.rs": 199
++    "src/git/tests.rs": 199,
++    "src/app_server/audit_wire_tests.rs": 108,
++    "src/app_server/history_hit.rs": 46,
++    "src/app_server/pagination.rs": 178,
++    "src/app_server/resource_budget.rs": 78,
++    "src/pty/child_guard.rs": 77
+@@ -834,0 +840,20 @@
++    },
++    {
++      "date": "2026-10-11",
++      "kind": "defect-and-security-fix",
++      "scope": "F1-F5 cancellation-safe framing, final disconnect delivery, bounded pagination, exact history hits and strict approval evidence; R1/R2 PTY ownership and retained payload budgets. New modules separate these responsibilities without new product authority. Includes actual-wire and failure-injection regression tests.",
++      "modules": [
++        "src/app_server.rs",
++        "src/app_server/audit_wire_tests.rs",
++        "src/app_server/history_hit.rs",
++        "src/app_server/pagination.rs",
++        "src/app_server/resource_budget.rs",
++        "src/app_server/tests.rs",
++        "src/app_server/user_response/approval_tests.rs",
++        "src/app_server_transport.rs",
++        "src/app_server_transport/tests.rs",
++        "src/forge_mutation.rs",
++        "src/forge_mutation/tests.rs",
++        "src/pty.rs",
++        "src/pty/child_guard.rs"
++      ]
+diff --git a/release/v1.5-convergence.json b/release/v1.5-convergence.json
+index c67a1ae43910a4d5196b882ebdbf9d985f05e16f..d052ce5640488afe149d2adffcc2e4bf070d13ac 100644
+--- a/release/v1.5-convergence.json
++++ b/release/v1.5-convergence.json
+@@ -96 +96,2 @@
+-        "src/pty.rs"
++        "src/pty.rs",
++        "src/pty/child_guard.rs"
+diff --git a/scripts/testing/app_server_transport_regression.py b/scripts/testing/app_server_transport_regression.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..569333f6213a727780c447b549b95c029668bbcc
+--- /dev/null
++++ b/scripts/testing/app_server_transport_regression.py
+@@ -0,0 +1,204 @@
++#!/usr/bin/env python3
++"""Actual-binary Linux stdio/EOF/pagination regressions; no real account or SSH."""
++import errno
++import fcntl
++import hashlib
++import json
++import os
++from pathlib import Path
++import pty
++import re
++import select
++import signal
++import struct
++import subprocess
++import sys
++import tempfile
++import termios
++import time
++
++
++def require(value, message):
++    if not value:
++        raise RuntimeError(message)
++
++
++MOCK = r'''#!/usr/bin/python3
++import json, os, sys, threading, time
++log = open(os.environ['MOCK_LOG'], 'w', buffering=1)
++log.write('pid ' + str(os.getpid()) + '\n')
++lock = threading.Lock()
++started = False
++mode = os.environ['MOCK_MODE']
++def emit(value):
++    with lock:
++        sys.stdout.write(json.dumps(value, separators=(',', ':')) + '\n')
++        sys.stdout.flush()
++def notify():
++    time.sleep(0.08)
++    if mode == 'eof':
++        time.sleep(0.40)
++        log.write('deliberate-eof\n')
++        os._exit(0)
++    payload = b'{"method":"thread/name/updated","params":{"threadId":"audit-thread","threadName":"ZZZ_READ_OK_ZZZ"}}\n'
++    with lock:
++        if mode == 'split':
++            os.write(1, payload[:31])
++            log.write('partial-written\n')
++            time.sleep(0.60)
++            os.write(1, payload[31:])
++        else:
++            os.write(1, payload)
++    log.write('notification-written\n')
++    time.sleep(0.20)
++    log.write('alive-after-notification\n')
++for line in sys.stdin:
++    request = json.loads(line)
++    method, ident = request.get('method'), request.get('id')
++    if ident is None:
++        continue
++    log.write(method + ' ' + str(request.get('params', {}).get('cursor')) + '\n')
++    if method == 'initialize':
++        result = {'serverInfo': {'name':'isolated-regression', 'version':'0.0.0'}}
++    elif method == 'thread/list':
++        result = {'data':[{'id':'audit-thread', 'name':'AAAAAAAAAAAAAAA', 'cwd':os.environ['HOME'], 'status':{'type':'idle'}}], 'nextCursor':'repeat' if mode == method else None}
++    elif method == 'thread/loaded/list':
++        result = {'data':['audit-thread'], 'nextCursor':'repeat' if mode == method else None}
++    else:
++        emit({'id':ident, 'error':{'code':-32601, 'message':'unsupported in fixture'}})
++        continue
++    emit({'id':ident, 'result':result})
++    if method == 'thread/loaded/list' and mode in ('whole','split','eof') and not started:
++        started = True
++        threading.Thread(target=notify, daemon=True).start()
++'''
++
++
++def environment(home, log, mode):
++    bindir = home / 'bin'
++    bindir.mkdir()
++    script = bindir / 'codex'
++    script.write_text(MOCK, encoding='utf-8')
++    script.chmod(0o755)
++    return {'HOME':str(home), 'USERPROFILE':str(home), 'XDG_CONFIG_HOME':str(home/'config'),
++            'XDG_DATA_HOME':str(home/'data'), 'XDG_CACHE_HOME':str(home/'cache'),
++            'XDG_STATE_HOME':str(home/'state'), 'CODEX_HOME':str(home/'codex'),
++            'PATH':str(bindir)+':/usr/bin:/bin', 'TERM':'xterm-256color', 'LANG':'C.UTF-8',
++            'MOCK_LOG':str(log), 'MOCK_MODE':mode}
++
++
++def stop(process):
++    if process.poll() is None:
++        os.killpg(process.pid, signal.SIGTERM)
++        try:
++            process.wait(timeout=2)
++        except subprocess.TimeoutExpired:
++            os.killpg(process.pid, signal.SIGKILL)
++            process.wait(timeout=2)
++
++
++def normalized(data):
++    return re.sub(rb'\x1b\[[0-?]*[ -/]*[@-~]', b'', data)
++
++
++def terminal_case(binary, output, mode):
++    raw = bytearray()
++    log = output / (mode + '.server.log')
++    log.write_text('', encoding='utf-8')
++    with tempfile.TemporaryDirectory(prefix='ctui-stdio-regression-') as temporary:
++        home = Path(temporary)
++        env = environment(home, log, mode)
++        master, slave = pty.openpty()
++        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack('HHHH', 40, 180, 0, 0))
++        before = termios.tcgetattr(slave)
++        def setup():
++            os.setsid()
++            fcntl.ioctl(slave, termios.TIOCSCTTY, 0)
++        process = subprocess.Popen([str(binary)], stdin=slave, stdout=slave, stderr=slave,
++                                   env=env, cwd=home, preexec_fn=setup, close_fds=True)
++        started = time.monotonic()
++        observed = False
++        sent_quit = False
++        try:
++            while time.monotonic() - started < 10:
++                trace = log.read_text(encoding='utf-8')
++                screen_writes = normalized(raw)
++                if mode == 'eof':
++                    observed = b'closed' in screen_writes and b'stdout' in screen_writes and 'deliberate-eof' in trace
++                else:
++                    observed = b'ZZZ_READ_OK_ZZZ' in screen_writes and 'alive-after-notification' in trace
++                if observed and not sent_quit:
++                    os.write(master, b'q')
++                    sent_quit = True
++                ready, _, _ = select.select([master], [], [], 0.05)
++                if ready:
++                    try:
