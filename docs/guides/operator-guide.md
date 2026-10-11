@@ -54,6 +54,8 @@ Set `[ui].language = "en"` or `"zh-CN"`, or leave `"auto"` for locale detection.
 
 Managed Worktree mutation/recovery prefers complete NUL-delimited Git worktree inventory, preserving newline and trailing-space directory names. Older Git 2.25 (as found in the Linux qualification image) lacks the worktree `-z` flag: a strict, complete plaintext porcelain fallback keeps trailing spaces and rejects malformed/ambiguous paths rather than inferring absence. Newline-bearing paths require NUL-capable Git for safe representation. Invalid encoding or Git stdout over 256 KiB fails closed; large inventories need explicit qualification rather than automatic false-success.
 
+Terminal Drawer output draining is cooperative: at most 16 queued PTY events are parsed per main-loop iteration, leaving burst output in the existing 64-slot FIFO rather than starving keyboard, rendering and reconciliation during a noisy child process. The PTY queue remains bounded; this hosted regression is not a replacement for real controlling-TTY qualification.
+
 ## Windows SSH Ubuntu and Terminal Drawer
 <!-- docs-section: ssh -->
 
