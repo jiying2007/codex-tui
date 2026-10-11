@@ -126,31 +126,65 @@ fn mutation_command_queue_reports_backpressure() {
 }
 
 #[test]
-fn porcelain_parser_tolerates_crlf_and_incidental_whitespace() {
+fn nul_porcelain_parser_preserves_worktree_paths_and_branch_identity() {
     let parsed = parse_worktree_porcelain(
-        "worktree C:/repo\r\nHEAD deadbeef\r\nbranch refs/heads/main\r\n\r\n  worktree C:/repo-feature  \r\nHEAD cafe\r\n  branch refs/heads/feature\r\n\r\n",
-    );
+        "worktree C:/repo\0HEAD deadbeef\0branch refs/heads/main\0\0worktree C:/repo-feature  \0HEAD cafe\0branch refs/heads/feature\0\0",
+    )
+    .expect("complete NUL-delimited Git inventory");
     assert_eq!(parsed.len(), 2);
-    assert_eq!(parsed[1].path, "C:/repo-feature");
+    assert_eq!(parsed[0].path, "C:/repo");
+    assert_eq!(parsed[1].path, "C:/repo-feature  ");
     assert_eq!(parsed[1].branch.as_deref(), Some("feature"));
 }
 
 #[test]
-fn porcelain_parser_preserves_worktree_branch() {
+fn nul_porcelain_parser_preserves_newline_paths_and_detached_bare_state() {
     let parsed = parse_worktree_porcelain(
-        "worktree /repo
-HEAD deadbeef
-branch refs/heads/main
-
-         worktree /repo-feature
-HEAD cafe
-branch refs/heads/feature
-
-",
-    );
+        "worktree /repo\0bare\0\0worktree /repo/with\nnewline\0HEAD cafe\0detached\0\0",
+    )
+    .expect("complete NUL-delimited Git inventory");
     assert_eq!(parsed.len(), 2);
-    assert_eq!(parsed[1].path, "/repo-feature");
-    assert_eq!(parsed[1].branch.as_deref(), Some("feature"));
+    assert_eq!(parsed[0].branch, None);
+    assert_eq!(parsed[1].path, "/repo/with\nnewline");
+    assert_eq!(parsed[1].branch, None);
+}
+
+#[test]
+fn worktree_inventory_refuses_incomplete_or_ambiguous_porcelain() {
+    for value in [
+        "",
+        "worktree /repo\0HEAD cafe\0branch refs/heads/main\0",
+        "worktree /repo\0\0",
+        "HEAD cafe\0\0",
+        "worktree /repo\0worktree /other\0HEAD cafe\0\0",
+        "worktree /repo\0HEAD cafe\0unexpected future field\0\0",
+    ] {
+        assert!(
+            parse_worktree_porcelain(value).is_err(),
+            "incomplete/ambiguous worktree inventory accepted: {value:?}"
+        );
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn real_git_worktree_inventory_preserves_whitespace_in_directory_names() {
+    let temp = tempdir().expect("tempdir");
+    let repo_root = temp.path().join("repo");
+    init_repo(&repo_root);
+    let target = temp.path().join("feature with newline\ntrailing ");
+    let target_text = target.to_str().expect("UTF-8 temporary path");
+    git(&repo_root, &["worktree", "add", "-b", "whitespace", target_text]);
+
+    let inventory = list_worktrees(repo_root.to_str().unwrap())
+        .await
+        .expect("complete worktree inventory");
+    assert!(
+        inventory.iter().any(|entry| {
+            entry.path == target_text && entry.branch.as_deref() == Some("whitespace")
+        }),
+        "Git worktree inventory must preserve exact directory bytes"
+    );
 }
 
 #[tokio::test]
