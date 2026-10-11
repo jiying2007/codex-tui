@@ -341,7 +341,8 @@ fn print_status(snapshot: &StatusSnapshot, format: OutputFormat) -> Result<()> {
             println!("degraded: {}", snapshot.degraded);
             println!(
                 "source: {} connected={}",
-                headless_field(&snapshot.source.source), snapshot.source.connected
+                headless_field(&snapshot.source.source),
+                snapshot.source.connected
             );
             println!("threads: {}", snapshot.thread_count);
             println!("work: {}", snapshot.work_count);
