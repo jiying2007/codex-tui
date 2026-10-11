@@ -630,10 +630,7 @@ fn board_change_request_state_is_display_sanitized() {
     );
 }
 
-fn overlay_snapshot(
-    app: &AppState,
-    paint: fn(&mut ratatui::Frame<'_>, &AppState),
-) -> String {
+fn overlay_snapshot(app: &AppState, paint: fn(&mut ratatui::Frame<'_>, &AppState)) -> String {
     let mut terminal = Terminal::new(TestBackend::new(180, 48)).expect("terminal");
     terminal.draw(|frame| paint(frame, app)).expect("draw");
     let buffer = terminal.backend().buffer();

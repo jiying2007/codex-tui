@@ -267,7 +267,7 @@
     "src/terminal.rs": 131,
     "src/terminal_drawer.rs": 381,
     "src/text.rs": 147,
-    "src/ui/overlays.rs": 882,
+    "src/ui/overlays.rs": 880,
     "src/ui/terminal.rs": 126,
     "src/forge/tests.rs": 356,
     "src/app_server_transport/tests.rs": 317,
@@ -278,7 +278,7 @@
     "src/app/state.rs": 888,
     "src/app/tests.rs": 2669,
     "src/app/thread_queue_reducer_tests.rs": 123,
-    "src/ui/tests.rs": 991,
+    "src/ui/tests.rs": 988,
     "src/sqlite_store/tests.rs": 832,
     "src/app_server/tests.rs": 932,
     "src/planning/tests.rs": 708,
@@ -696,6 +696,16 @@
         "src/ui/tests.rs"
       ],
       "policy": "Security-only presentation correction; operation payloads, launch argv, Codex/Git/Forge authorities, explicit confirmation, persistence, schema and Stable readiness unchanged; require exact-head Rust 1.88 Linux/macOS/Windows CI, Development Qualification and fresh-main gates."
+    },
+    {
+      "date": "2026-10-11",
+      "kind": "confirmation-overlays-rustfmt",
+      "scope": "Apply exactly three cargo-fmt reported whitespace/layout-only hunks for moved guard rendering, launch cwd line and overlay negative-fixture helper.",
+      "modules": [
+        "src/ui/overlays.rs",
+        "src/ui/tests.rs"
+      ],
+      "policy": "Formatter-only, all source semantics/tests and single complete-source v1.4 ratchet retained; requires fresh exact-head CI."
     }
   ]
 }

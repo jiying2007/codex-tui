@@ -650,18 +650,13 @@ pub(super) fn render_forge_mutation_confirmation(frame: &mut Frame<'_>, app: &Ap
         "Preconditions revalidated at execution time:",
         "执行时将重新验证前置条件:",
     )));
-    lines.extend(
-        plan.preconditions
-            .iter()
-            .take(8)
-            .map(|item| {
-                Line::from(format!(
-                    "  {} = {}",
-                    sanitize_inline(&item.key),
-                    sanitize_inline(&item.expected)
-                ))
-            }),
-    );
+    lines.extend(plan.preconditions.iter().take(8).map(|item| {
+        Line::from(format!(
+            "  {} = {}",
+            sanitize_inline(&item.key),
+            sanitize_inline(&item.expected)
+        ))
+    }));
     lines.push(Line::from(""));
     lines.push(Line::from(tr(
         app,
@@ -837,7 +832,10 @@ pub(super) fn render_launch_confirmation(frame: &mut Frame<'_>, app: &AppState) 
             tr(app, "Config", "配置"),
             sanitize_inline(&plan.config_path.to_string_lossy())
         )),
-        Line::from(format!("Cwd: {}", sanitize_inline(&plan.cwd.to_string_lossy()))),
+        Line::from(format!(
+            "Cwd: {}",
+            sanitize_inline(&plan.cwd.to_string_lossy())
+        )),
         Line::from(format!(
             "{}: {}",
             tr(app, "Exact argv", "精确 argv"),
