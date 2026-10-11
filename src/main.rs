@@ -1873,10 +1873,7 @@ mod cli_terminal_presentation_tests {
     #[test]
     fn external_cli_error_and_bundle_path_text_cannot_spoof_terminal() {
         let original = "path\u{001b}[2J\u{202e}\n中文";
-        assert_eq!(
-            cli_terminal_field(original),
-            "path\u{fffd}[2J\u{fffd} 中文"
-        );
+        assert_eq!(cli_terminal_field(original), "path\u{fffd}[2J\u{fffd} 中文");
         assert_eq!(original, "path\u{001b}[2J\u{202e}\n中文");
         assert_eq!(cli_terminal_field("normal 中文"), "normal 中文");
     }
