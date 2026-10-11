@@ -257,7 +257,7 @@
     "src/notification/tests.rs": 262,
     "src/operation.rs": 447,
     "src/planning.rs": 1067,
-    "src/pty.rs": 602,
+    "src/pty.rs": 636,
     "src/release_benchmark.rs": 219,
     "src/replay_backend.rs": 48,
     "src/scale_evidence.rs": 423,
@@ -265,7 +265,7 @@
     "src/store.rs": 343,
     "src/support_bundle.rs": 566,
     "src/terminal.rs": 131,
-    "src/terminal_drawer.rs": 381,
+    "src/terminal_drawer.rs": 394,
     "src/text.rs": 147,
     "src/ui/overlays.rs": 880,
     "src/ui/terminal.rs": 126,
@@ -813,6 +813,16 @@
         "src/worktree/tests.rs"
       ],
       "policy": "Defect/safety-only v1.4 maintenance; no destructive operation may infer absence from incomplete Git inventory. No new dependency, storage schema, protocol authority, compatibility shim or Stable publication. Maintain sole complete-source LOC ratchet, bilingual operator documentation and exact-head multi-platform CI."
+    },
+    {
+      "date": "2026-10-11",
+      "kind": "terminal-drawer-cooperative-pty-output-drain",
+      "scope": "Prevent terminal output floods from starving the main UI loop by polling at most 16 PTY events per TUI iteration. Keep the existing 64-slot bounded FIFO and its backpressure, preserve event order and all downstream vt100/query behavior; add deterministic burst/ordering/zero-budget regressions and guard the terminal callsite.",
+      "modules": [
+        "src/pty.rs",
+        "src/terminal_drawer.rs"
+      ],
+      "policy": "Performance/defect-only maintenance for the upstream-overlap frozen Terminal Drawer, without expanding CLI/task/agent/queue authority, introducing workers or unbounded channels, changing schema/protocol or allowing Stable publish. Bind sole LOC ratchet and EN/zh-CN operator docs; require exact-head CI/PTY/development and fresh-main source-bound qualification."
     }
   ]
 }

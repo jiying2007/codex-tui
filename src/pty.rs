@@ -111,6 +111,12 @@ impl PtyHandle {
     pub fn try_recv(&self) -> Option<PtyEvent> {
         self.event_rx.as_ref()?.try_recv().ok()
     }
+
+    pub fn recv_up_to(&self, max_events: usize) -> impl Iterator<Item = PtyEvent> + '_ {
+        // The child may produce output faster than vt100 can parse it. Never
+        // keep the UI on this actor until the event channel becomes empty.
+        (0..max_events).map_while(|_| self.try_recv())
+    }
 }
 
 impl Drop for PtyHandle {
@@ -588,6 +594,34 @@ mod tests {
         done_rx
             .recv_timeout(Duration::from_secs(1))
             .expect("detached actor should remain independently releasable");
+    }
+
+    #[test]
+    fn pty_event_drain_burst_keeps_fifo_order_and_stops_at_budget() {
+        let (tx, rx) = std::sync::mpsc::sync_channel(64);
+        for index in 0_u8..40 {
+            tx.send(PtyEvent::Output(vec![index]))
+                .expect("enqueue synthetic PTY event");
+        }
+        let handle = PtyHandle {
+            command_tx: None,
+            event_rx: Some(rx),
+            actor: None,
+            runtime: PtyRuntime::new(),
+        };
+
+        assert_eq!(handle.recv_up_to(0).count(), 0);
+        let first = handle.recv_up_to(16).collect::<Vec<_>>();
+        assert_eq!(first.len(), 16);
+        assert!(matches!(&first[0], PtyEvent::Output(bytes) if bytes == &[0]));
+        assert!(matches!(&first[15], PtyEvent::Output(bytes) if bytes == &[15]));
+        let second = handle.recv_up_to(16).collect::<Vec<_>>();
+        assert_eq!(second.len(), 16);
+        assert!(matches!(&second[0], PtyEvent::Output(bytes) if bytes == &[16]));
+        let last = handle.recv_up_to(16).collect::<Vec<_>>();
+        assert_eq!(last.len(), 8);
+        assert!(matches!(&last[7], PtyEvent::Output(bytes) if bytes == &[39]));
+        assert!(handle.try_recv().is_none());
     }
 
     #[test]

@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 pub const DEFAULT_DRAWER_ROWS: u16 = 12;
 pub const DEFAULT_DRAWER_COLS: u16 = 80;
 pub const DEFAULT_SCROLLBACK_LINES: usize = 2_000;
+const MAX_PTY_EVENTS_PER_DRAIN: usize = 16;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TerminalProcessState {
@@ -159,7 +160,10 @@ impl TerminalDrawerRuntime {
     pub fn drain(&mut self) -> Option<TerminalSnapshot> {
         let handle = self.handle.as_ref()?;
         let mut changed = false;
-        while let Some(event) = handle.try_recv() {
+        // Each TUI iteration must return to keyboard, reconciliation and
+        // rendering even if a child continuously fills the 64-slot PTY queue.
+        // The remaining events stay queued in FIFO order for the next tick.
+        for event in handle.recv_up_to(MAX_PTY_EVENTS_PER_DRAIN) {
             changed = true;
             match event {
                 PtyEvent::Ready { cwd, size } => {
@@ -363,6 +367,15 @@ mod tests {
         assert!(enabled);
         enabled = vt_bracketed_paste_mode(&mut tail, b"\x1b[?2004l", enabled);
         assert!(!enabled);
+    }
+
+    #[test]
+    fn terminal_drain_budget_keeps_the_main_ui_loop_cooperative() {
+        assert_eq!(MAX_PTY_EVENTS_PER_DRAIN, 16);
+        assert!(
+            include_str!("terminal_drawer.rs")
+                .contains("handle.recv_up_to(MAX_PTY_EVENTS_PER_DRAIN)")
+        );
     }
 
     #[test]
