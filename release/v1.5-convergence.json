@@ -105,6 +105,7 @@
       ],
       "modules": [
         "src/worktree.rs",
+        "src/worktree/tests.rs",
         "src/worktree_git.rs",
         "src/operation.rs",
         "src/runtime_commands.rs"
