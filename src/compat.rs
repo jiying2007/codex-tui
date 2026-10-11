@@ -359,7 +359,10 @@ pub fn print_text(report: &CompatReport) {
     for component in &report.components {
         compat_println!(
             "{}: {:?} · {:?} · {}",
-            component.id, component.requirement, component.state, component.detail
+            component.id,
+            component.requirement,
+            component.state,
+            component.detail
         );
         if let Some(version) = &component.version {
             compat_println!("  version: {version}");
@@ -383,7 +386,8 @@ pub fn print_text(report: &CompatReport) {
     }
     compat_println!(
         "forge-runtime-doctor: {} · remote-probe-default={}",
-        report.forge_runtime.detailed_command, report.forge_runtime.default_remote_probe
+        report.forge_runtime.detailed_command,
+        report.forge_runtime.default_remote_probe
     );
     for evidence in &report.retained_evidence {
         compat_println!(
