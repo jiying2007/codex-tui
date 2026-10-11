@@ -1,0 +1,208 @@
+@@ -16,0 +24,4 @@ struct PtyRuntime {
++    #[cfg(test)]
++    fail_after: Option<StartupStage>,
++    #[cfg(test)]
++    spawned_pid: Arc<Mutex<Option<u32>>>,
+@@ -23,0 +35,4 @@ impl PtyRuntime {
++            #[cfg(test)]
++            fail_after: None,
++            #[cfg(test)]
++            spawned_pid: Arc::new(Mutex::new(None)),
+@@ -25,0 +41,7 @@ impl PtyRuntime {
++    fn startup_stage(&self, stage: StartupStage) -> Result<()> {
++        #[cfg(test)]
++        anyhow::ensure!(self.fail_after != Some(stage), "injected PTY startup failure: {stage:?}");
++        #[cfg(not(test))]
++        let _ = stage;
++        Ok(())
++    }
+@@ -194,7 +216,8 @@ fn spawn_and_drive_pty(
+-    let mut child = pair
+-        .slave
+-        .spawn_command(command)
+-        .context("spawn PTY child program")?;
+-    let mut killer = child.clone_killer();
+-    if let Ok(mut shared) = runtime.child_killer.lock() {
+-        *shared = Some(killer.clone_killer());
++    let child = pair.slave.spawn_command(command).context("spawn PTY child program")?;
++    let mut child = ReapChild::new(child, runtime.clone());
++    #[cfg(test)]
++    { *runtime.spawned_pid.lock().unwrap() = child.process_id(); }
++    runtime.startup_stage(StartupStage::Spawned)?;
++    {
++        let mut shared = runtime.child_killer.lock().map_err(|_| anyhow::anyhow!("PTY child state poisoned"))?;
++        *shared = Some(child.clone_killer());
+@@ -201,0 +225 @@ fn spawn_and_drive_pty(
++    runtime.startup_stage(StartupStage::Registered)?;
+@@ -204,0 +229 @@ fn spawn_and_drive_pty(
++    runtime.startup_stage(StartupStage::ReaderCloned)?;
+@@ -205,0 +231 @@ fn spawn_and_drive_pty(
++    runtime.startup_stage(StartupStage::WriterTaken)?;
+@@ -219,0 +246 @@ fn spawn_and_drive_pty(
++    runtime.startup_stage(StartupStage::ReadySent)?;
+@@ -250,25 +277,11 @@ fn spawn_and_drive_pty(
+-    let exit_tx = event_tx.clone();
+-    let exit_child_killer = Arc::clone(&runtime.child_killer);
+-    thread::Builder::new()
+-        .name("codex-tui-pty-wait".into())
+-        .spawn(move || {
+-            let result = child.wait();
+-            if let Ok(mut shared) = exit_child_killer.lock() {
+-                shared.take();
+-            }
+-            match result {
+-                Ok(status) => {
+-                    let _ = exit_tx.send(PtyEvent::Exited {
+-                        success: status.success(),
+-                        code: Some(status.exit_code()),
+-                    });
+-                }
+-                Err(error) => {
+-                    let _ =
+-                        exit_tx.send(PtyEvent::Error(format!("PTY child wait failed: {error}")));
+-                }
+-            }
+-        })
+-        .context("spawn PTY waiter")?;
+-
+-    while let Ok(command) = command_rx.recv() {
++    runtime.startup_stage(StartupStage::ReaderStarted)?;
++    loop {
++        if let Some(status) = child.try_wait().context("poll PTY child")? {
++            let _ = event_tx.send(PtyEvent::Exited { success: status.success(), code: Some(status.exit_code()) });
++            break;
++        }
++        let command = match command_rx.recv_timeout(Duration::from_millis(50)) {
++            Ok(command) => command,
++            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
++            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
++        };
+@@ -296,2 +309 @@ fn spawn_and_drive_pty(
+-    signal_foreground_process_group(&runtime.pty_master);
+-    let _ = killer.kill();
++    // ReapChild handles both normal cancellation and every early error on this actor.
+@@ -587 +599 @@ mod tests {
+-                pty_master: Arc::new(Mutex::new(None)),
++                ..PtyRuntime::new()
+diff --git a/src/pty/child_guard.rs b/src/pty/child_guard.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..59002fbc6608c9614b4715e8584c6dd51a479972
+--- /dev/null
++++ b/src/pty/child_guard.rs
+@@ -0,0 +1,77 @@
++//! Single-owner child lifetime. This guard is only held on the detached PTY actor.
++use super::*;
++
++pub(super) struct ReapChild {
++    child: Box<dyn portable_pty::Child + Send + Sync>,
++    runtime: PtyRuntime,
++    reaped: bool,
++}
++impl ReapChild {
++    pub(super) fn new(child: Box<dyn portable_pty::Child + Send + Sync>, runtime: PtyRuntime) -> Self {
++        Self { child, runtime, reaped: false }
++    }
++    pub(super) fn clone_killer(&self) -> Box<dyn ChildKiller + Send + Sync> { self.child.clone_killer() }
++    #[cfg(test)]
++    pub(super) fn process_id(&self) -> Option<u32> { self.child.process_id() }
++    pub(super) fn try_wait(&mut self) -> std::io::Result<Option<portable_pty::ExitStatus>> {
++        let status = self.child.try_wait()?;
++        if status.is_some() { self.reaped = true; self.clear_killer(); }
++        Ok(status)
++    }
++    fn clear_killer(&self) {
++        if let Ok(mut killer) = self.runtime.child_killer.lock() { killer.take(); }
++    }
++}
++impl Drop for ReapChild {
++    fn drop(&mut self) {
++        if !self.reaped {
++            signal_foreground_process_group(&self.runtime.pty_master);
++            let _ = self.child.kill();
++            // No handoff to a possibly failing thread spawn; wait ownership is never lost.
++            // Drawer close drops/detaches the actor, so this cannot block the UI thread.
++            let _ = self.child.wait();
++        }
++        self.clear_killer();
++    }
++}
++
++#[cfg(all(test, unix))]
++mod tests {
++    use super::*;
++    #[test]
++    fn every_startup_stage_failure_reaps_the_actual_child() {
++        for stage in [StartupStage::Spawned, StartupStage::Registered, StartupStage::ReaderCloned,
++            StartupStage::WriterTaken, StartupStage::ReadySent, StartupStage::ReaderStarted] {
++            let home = tempfile::tempdir().unwrap();
++            let size = TerminalSize { rows: 24, cols: 80 };
++            let pair = native_pty_system().openpty(size.portable()).unwrap();
++            let mut command = CommandBuilder::new("/bin/sh");
++            command.args(["-c", "exec sleep 30"]);
++            command.cwd(home.path());
++            let (_commands, rx) = sync_channel(4);
++            let (tx, _events) = sync_channel(16);
++            let runtime = PtyRuntime { fail_after: Some(stage), ..PtyRuntime::new() };
++            let result = spawn_and_drive_pty(pair, command, home.path().to_path_buf(), size, rx, &tx, &runtime);
++            assert!(result.unwrap_err().to_string().contains("injected PTY startup failure"));
++            let pid = runtime.spawned_pid.lock().unwrap().expect("actual child was spawned");
++            let result = nix::sys::wait::waitpid(nix::unistd::Pid::from_raw(pid as i32), Some(nix::sys::wait::WaitPidFlag::WNOHANG));
++            assert_eq!(result.unwrap_err(), nix::errno::Errno::ECHILD, "unreaped child at {stage:?}");
++            assert!(runtime.child_killer.lock().unwrap().is_none());
++        }
++    }
++    #[test]
++    fn close_before_ready_does_not_lose_child_wait_ownership() {
++        let home = tempfile::tempdir().unwrap();
++        let size = TerminalSize { rows: 24, cols: 80 };
++        let pair = native_pty_system().openpty(size.portable()).unwrap();
++        let mut command = CommandBuilder::new("/bin/sh");
++        command.args(["-c", "exec sleep 30"]);
++        let (commands, rx) = sync_channel(1);
++        let (tx, events) = sync_channel(1);
++        drop(events); drop(commands);
++        let runtime = PtyRuntime::new();
++        assert!(spawn_and_drive_pty(pair, command, home.path().to_path_buf(), size, rx, &tx, &runtime).is_err());
++        let pid = runtime.spawned_pid.lock().unwrap().unwrap();
++        assert_eq!(nix::sys::wait::waitpid(nix::unistd::Pid::from_raw(pid as i32), Some(nix::sys::wait::WaitPidFlag::WNOHANG)).unwrap_err(), nix::errno::Errno::ECHILD);
++    }
++}
+diff --git a/tests/app_server_transport_regression.rs b/tests/app_server_transport_regression.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..3741bdb1d113806ffbf0a56be1069332c2b66135
+--- /dev/null
++++ b/tests/app_server_transport_regression.rs
+@@ -0,0 +1,33 @@
++//! Linux actual-binary regressions; isolated mock App Server, never real qualification.
++#![cfg(target_os = "linux")]
++use std::{path::Path, process::{Command, Stdio}, time::{Duration, Instant}};
++#[test]
++fn fragmented_stdio_eof_and_cursor_cycles_are_truthful_and_bounded() {
++    let temporary = tempfile::tempdir().unwrap();
++    let retained = std::env::var_os("CODEX_TUI_PTY_EVIDENCE_DIR");
++    let root = retained.as_deref().map(Path::new).unwrap_or_else(|| temporary.path());
++    std::fs::create_dir_all(root).unwrap();
++    let output = root.join("app-server");
++    let log_path = root.join("app-server-harness.log");
++    let log = std::fs::File::create(&log_path).unwrap();
++    let mut child = Command::new("python3").arg("-O")
++        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/testing/app_server_transport_regression.py"))
++        .arg(env!("CARGO_BIN_EXE_codex-tui")).arg(&output)
++        .stdin(Stdio::null()).stdout(log.try_clone().unwrap()).stderr(log).spawn().unwrap();
++    let deadline = Instant::now() + Duration::from_secs(60);
++    let status = loop {
++        if let Some(status) = child.try_wait().unwrap() { break status; }
++        if Instant::now() >= deadline {
++            let _ = child.kill(); let _ = child.wait();
++            panic!("transport harness timeout: {}", std::fs::read_to_string(&log_path).unwrap_or_default());
++        }
++        std::thread::sleep(Duration::from_millis(20));
++    };
++    assert!(status.success(), "transport regression: {}", std::fs::read_to_string(&log_path).unwrap_or_default());
++    let receipt: serde_json::Value = serde_json::from_slice(&std::fs::read(output.join("receipt.json")).unwrap()).unwrap();
++    assert_eq!(receipt["status"], "passed");
++    assert_eq!(receipt["checks"].as_array().unwrap().len(), 5);
++    assert_eq!(receipt["realCodexQualification"], false);
++    assert_eq!(receipt["realSshQualification"], false);
++    println!("{receipt}");
++}
