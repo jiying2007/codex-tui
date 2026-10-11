@@ -93,7 +93,8 @@
         "src/terminal.rs",
         "src/terminal_drawer.rs",
         "src/ui/terminal.rs",
-        "src/pty.rs"
+        "src/pty.rs",
+        "src/pty/child_guard.rs"
       ]
     },
     "managed-worktree-operations": {

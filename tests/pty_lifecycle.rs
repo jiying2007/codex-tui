@@ -229,3 +229,18 @@ fn dropping_handle_cleans_up_actor_without_hanging() {
         "PtyHandle drop cleanup took too long"
     );
 }
+
+#[test]
+fn natural_shell_exit_reports_completion_without_a_terminate_command() {
+    let root = tempdir().expect("tempdir");
+    let handle =
+        PtyHandle::start(root.path(), TerminalSize { rows: 24, cols: 80 }).expect("start PTY");
+    wait_event(&handle, |event| matches!(event, PtyEvent::Ready { .. }));
+    ensure_shell_ready(&handle);
+    handle
+        .send(PtyCommand::Input(line("exit")))
+        .expect("natural shell exit");
+    let (success, code) = wait_shutdown(&handle);
+    assert!(success);
+    assert_eq!(code, Some(0));
+}

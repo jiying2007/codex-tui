@@ -6,6 +6,7 @@ on:
     paths:
       - 'src/**'
       - 'tests/terminal_restoration.rs'
+      - 'tests/app_server_transport_regression.rs'
       - 'scripts/testing/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
@@ -15,6 +16,7 @@ on:
     paths:
       - 'src/**'
       - 'tests/terminal_restoration.rs'
+      - 'tests/app_server_transport_regression.rs'
       - 'scripts/testing/**'
       - '.github/workflows/terminal-regression.yml'
   workflow_dispatch:
@@ -48,7 +50,7 @@ jobs:
       - name: Exercise the actual program on a controlling PTY
         env:
           CODEX_TUI_PTY_EVIDENCE_DIR: ${{ runner.temp }}/terminal-regression
-        run: cargo test --locked --test terminal_restoration -- --nocapture
+        run: cargo test --locked --test terminal_restoration --test app_server_transport_regression -- --nocapture
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         if: success()
         with:

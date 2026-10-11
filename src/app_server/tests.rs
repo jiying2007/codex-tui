@@ -103,17 +103,22 @@ async fn queued_approval_preempts_a_ready_command_after_rpc_yield() {
         },
     };
     let mut rpc = RpcSession::connect(&target).await.expect("connect");
-    rpc.queued_messages.push_back(json!({
-        "id": "pending-approval",
-        "method": "item/commandExecution/requestApproval",
-        "params": {
-            "threadId": "thread-1",
-            "turnId": "turn-1",
-            "itemId": "item-1",
-            "command": "echo fixture",
-            "cwd": "/repo"
-        }
-    }));
+    enqueue_rpc_message(
+        &mut rpc.queued_messages,
+        &mut rpc.queued_bytes,
+        json!({
+            "id": "pending-approval",
+            "method": "item/commandExecution/requestApproval",
+            "params": {
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+                "itemId": "item-1",
+                "command": "echo fixture",
+                "cwd": "/repo"
+            }
+        }),
+    )
+    .unwrap();
     let status = BackendStatus::starting("priority-fixture");
     let (snapshot_tx, _snapshot_rx) = watch::channel(BackendSnapshot {
         generation: 0,
@@ -401,15 +406,18 @@ fn rpc_wait_queue_keeps_semantic_messages_and_drops_ignored_streaming_delta() {
 #[test]
 fn rpc_wait_queue_is_hard_bounded_without_dropping_existing_semantic_messages() {
     let mut queue = VecDeque::new();
+    let mut bytes = 0;
     for index in 0..RPC_QUEUED_MESSAGE_CAPACITY {
         enqueue_rpc_message(
             &mut queue,
+            &mut bytes,
             json!({"method": "turn/completed", "params": {"threadId": index.to_string()}}),
         )
         .expect("queue semantic message");
     }
     let error = enqueue_rpc_message(
         &mut queue,
+        &mut bytes,
         json!({"method": "thread/status/changed", "params": {"threadId": "overflow"}}),
     )
     .expect_err("bounded queue must fail closed");
@@ -559,7 +567,13 @@ fn bootstrap_registry_completeness_follows_actual_pagination_exhaustion() {
         .next()
         .expect("production source");
     assert!(production.contains("status.registry_complete = load.registry_complete;"));
-    assert!(production.contains("registry_complete: true"));
+    assert!(
+        include_str!("pagination.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap()
+            .contains("registry_complete: true")
+    );
     assert!(production.contains("status.registry_complete = true;"));
 }
 
@@ -600,7 +614,11 @@ fn startup_registry_hydration_is_pagewise_and_command_priority() {
     assert!(actor.contains("hydration_tick.reset();"));
     assert!(!bootstrap.contains("load_all_loaded_ids"));
     assert!(actor.contains("loaded_hydration = Some(LoadedIdHydration::default())"));
-    assert!(actor.contains("load_loaded_ids_page(&mut rpc, state.cursor.clone()).await"));
+    assert!(
+        actor.contains(
+            "guarded_loaded_page(&mut rpc, state.cursor.clone(), &mut state.budget).await"
+        )
+    );
 }
 
 #[test]
@@ -654,6 +672,7 @@ fn hydration_tombstones_follow_archive_and_reappearance_notifications() {
         optimized_query: true,
         tombstones: BTreeSet::new(),
         pages_since_publish: 0,
+        budget: PageBudget::default(),
     };
 
     observe_registry_hydration_message(
@@ -682,6 +701,7 @@ fn loaded_metadata_hydration_overlays_live_status_on_snapshot() {
 
     let hydration = LoadedIdHydration {
         cursor: None,
+        budget: PageBudget::default(),
         ids: BTreeSet::from([first.clone(), second.clone()]),
         live_overrides: BTreeMap::from([(first.clone(), false), (third.clone(), true)]),
     };
@@ -746,6 +766,7 @@ fn reconcile_finalization_preserves_live_overrides_and_removals() {
             optimized_query: true,
             tombstones: BTreeSet::from(["removed".to_string()]),
             pages_since_publish: 0,
+            budget: PageBudget::default(),
         },
         candidate,
         live_overrides: BTreeSet::from(["live".to_string()]),
@@ -929,4 +950,42 @@ fn initialize_metadata_is_capability_oriented_not_version_gated() {
     assert_eq!(status.version.as_deref(), Some("0.157.1"));
     assert_eq!(status.platform.as_deref(), Some("unix/linux"));
     assert!(status.capabilities.is_empty());
+}
+
+#[test]
+fn final_disconnected_snapshot_is_delivered_once_after_sender_drops() {
+    let initial = BackendSnapshot {
+        generation: 0,
+        threads: vec![],
+        status: BackendStatus::starting("fixture"),
+    };
+    let (tx, mut rx) = watch::channel(initial.clone());
+    assert!(try_recv_latest_snapshot(&mut rx).is_none());
+    let mut final_state = initial;
+    final_state.generation = 1;
+    final_state.status.connected = false;
+    final_state.status.error = Some("fixture EOF".into());
+    tx.send(final_state).unwrap();
+    drop(tx);
+    let observed = try_recv_latest_snapshot(&mut rx).expect("unseen terminal generation");
+    assert_eq!(observed.generation, 1);
+    assert!(!observed.status.connected);
+    assert_eq!(observed.status.error.as_deref(), Some("fixture EOF"));
+    for _ in 0..4 {
+        assert!(try_recv_latest_snapshot(&mut rx).is_none());
+    }
+}
+
+#[test]
+fn closing_a_consumed_watch_does_not_replay_the_snapshot() {
+    let initial = BackendSnapshot {
+        generation: 0,
+        threads: vec![],
+        status: BackendStatus::starting("fixture"),
+    };
+    let (tx, mut rx) = watch::channel(initial.clone());
+    tx.send(initial).unwrap();
+    assert!(try_recv_latest_snapshot(&mut rx).is_some());
+    drop(tx);
+    assert!(try_recv_latest_snapshot(&mut rx).is_none());
 }

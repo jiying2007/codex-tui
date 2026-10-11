@@ -17,6 +17,14 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
+- Preserve bounded stdio framing across cancellation and deliver the final closed-channel disconnect snapshot exactly once; retain timeout and fail-closed transport behavior.
+- Bound Registry/loaded-list pagination across bootstrap, hydration and reconciliation with cycle/no-progress, count, identity-byte and total-time budgets; preserve partial inventory without promoting it to complete authority.
+- Reject malformed or missing GitLab approval fields instead of treating unknown evidence as zero required approvals; preserve valid empty-rule and explicit server evidence semantics.
+- Locate exact transcript search hits beyond the first 200 items with a bounded global descending scan and scope-consistent continuation; report missing/deleted targets explicitly.
+- Retain kill-and-reap ownership through all fallible PTY startup phases and poll child completion from the existing detached actor; add stage-specific native failure injection.
+- Apply retained payload byte/count limits to queued RPC and pending user requests; quarantine overloaded sessions rather than dropping approvals or replaying mutations.
+- Add a five-case actual-binary stdio/EOF/cursor regression to the existing hosted PTY workflow, plus bilingual diagnostic and current-release wording updates. No Stable or real-environment qualification is implied.
+
 - Prevent a delayed Terminal Drawer PTY startup Ready event from reverting an already-requested resize: keep the latest UI/VT parser dimensions authoritative while still accepting process readiness and canonical cwd. Add an explicit deterministic startup-vs-resize ordering regression.
 
 

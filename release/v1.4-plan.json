@@ -150,7 +150,7 @@
   "moduleRatchet": {
     "src/app.rs": 1000,
     "src/ui.rs": 2215,
-    "src/app_server.rs": 2683,
+    "src/app_server.rs": 2617,
     "src/main.rs": 1880,
     "src/sqlite_store.rs": 1715,
     "src/forge.rs": 1345,
@@ -173,7 +173,7 @@
     "src/transcript_search.rs": 211,
     "src/thread_queue.rs": 350,
     "src/app_server_target.rs": 308,
-    "src/app_server_transport.rs": 487,
+    "src/app_server_transport.rs": 304,
     "src/forge_github_mutation.rs": 651,
     "src/forge_mutation.rs": 1341,
     "src/forge_github_mutation/tests.rs": 135,
@@ -234,7 +234,7 @@
     "src/runtime_user_response.rs": 45,
     "src/runtime_user_response/tests.rs": 189,
     "src/app/user_response/tests.rs": 54,
-    "src/app_server/user_response/approval_tests.rs": 267,
+    "src/app_server/user_response/approval_tests.rs": 268,
     "src/app_server/user_response/payload.rs": 67,
     "src/conversation/approval.rs": 23,
     "src/conversation/approval_scope.rs": 92,
@@ -257,7 +257,7 @@
     "src/notification/tests.rs": 262,
     "src/operation.rs": 447,
     "src/planning.rs": 1067,
-    "src/pty.rs": 636,
+    "src/pty.rs": 674,
     "src/release_benchmark.rs": 219,
     "src/replay_backend.rs": 48,
     "src/scale_evidence.rs": 423,
@@ -270,7 +270,7 @@
     "src/ui/overlays.rs": 880,
     "src/ui/terminal.rs": 126,
     "src/forge/tests.rs": 356,
-    "src/app_server_transport/tests.rs": 317,
+    "src/app_server_transport/tests.rs": 420,
     "src/forge/gitlab_projection_tests.rs": 164,
     "src/forge/error_redaction_tests.rs": 43,
     "src/forge/remote_identity_tests.rs": 47,
@@ -280,13 +280,18 @@
     "src/app/thread_queue_reducer_tests.rs": 123,
     "src/ui/tests.rs": 1087,
     "src/sqlite_store/tests.rs": 832,
-    "src/app_server/tests.rs": 932,
+    "src/app_server/tests.rs": 991,
     "src/planning/tests.rs": 708,
-    "src/forge_mutation/tests.rs": 305,
+    "src/forge_mutation/tests.rs": 331,
     "src/worktree/tests.rs": 591,
     "src/release/tests.rs": 406,
     "src/forge_github/tests.rs": 197,
-    "src/git/tests.rs": 199
+    "src/git/tests.rs": 199,
+    "src/app_server/audit_wire_tests.rs": 207,
+    "src/app_server/history_hit.rs": 76,
+    "src/app_server/pagination.rs": 298,
+    "src/app_server/resource_budget.rs": 133,
+    "src/pty/child_guard.rs": 153
   },
   "ratchetPolicy": {
     "baseline": "inherit v1.3 Search & Multi-Target ceilings; feature work may only add bounded module-specific ceilings",
@@ -832,6 +837,26 @@
         "src/terminal_drawer.rs"
       ],
       "policy": "Defect-only maintenance for the frozen Terminal Drawer; no new process, queue, protocol, persisted state, compatibility shim, upstream authority or Stable publication. Preserve the single v1.4 complete-source LOC ratchet and EN/zh-CN operator documentation; exact-head CI and fresh-main qualification required."
+    },
+    {
+      "date": "2026-10-11",
+      "kind": "defect-and-security-fix",
+      "scope": "F1-F5 cancellation-safe framing, final disconnect delivery, bounded pagination, exact history hits and strict approval evidence; R1/R2 PTY ownership and retained payload budgets. New modules separate these responsibilities without new product authority. Includes actual-wire and failure-injection regression tests.",
+      "modules": [
+        "src/app_server.rs",
+        "src/app_server/audit_wire_tests.rs",
+        "src/app_server/history_hit.rs",
+        "src/app_server/pagination.rs",
+        "src/app_server/resource_budget.rs",
+        "src/app_server/tests.rs",
+        "src/app_server/user_response/approval_tests.rs",
+        "src/app_server_transport.rs",
+        "src/app_server_transport/tests.rs",
+        "src/forge_mutation.rs",
+        "src/forge_mutation/tests.rs",
+        "src/pty.rs",
+        "src/pty/child_guard.rs"
+      ]
     }
   ]
 }

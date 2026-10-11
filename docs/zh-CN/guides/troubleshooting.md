@@ -12,10 +12,16 @@
 
 执行 `codex-tui doctor codex`（命名目标可附 `--target NAME`），独立检查真实 `codex --version` 和账号登录。远程 WebSocket/Unix 建连及握手受超时限制，超时不代表已发出的请求必定未执行。核对服务进程、TLS 代理、认证及能力错误；可选方法可以降级，但不会自动切换 `--fake`。Issue 不得粘贴 Bearer Token。
 
+stdio 半帧缓冲会跨定时器或命令取消保留；后端 EOF 的最后离线快照只交付一次。重复或循环游标、分页无进展以及总预算耗尽都会明确标为清单不完整，不能作为完整的变更授权证据。搜索跳转在有界全局历史中定位精确条目，并保留相同查询范围的续页游标；目标删除或预算耗尽时报告失败，不静默跳到其他位置。
+
+RPC 通知最多保留 1024 条且受 16 MiB 载荷记账预算限制。待处理交互请求最多 64 条、每条 256 KiB、累计 4 MiB。分页限制为 1024 页、200,000 个身份、32 MiB 身份存储记账预算及整次扫描 120 秒。这些是载荷或记账限制，不是实测 RSS 保证。过载会明确终止或隔离会话，不随机丢弃审批消息，也不重放写 RPC；正常 5 万条清单仍可在这些预算内处理。
+
 ## GitLab/GitHub 不可用或字段不全
 <!-- docs-section: forge -->
 
 进入出现问题的仓库，**私下**检查 `git remote -v`，依次执行 `codex-tui doctor git`、`codex-tui doctor forge`。在工具外登录对应主机的 `glab/gh`。GitLab Issue/MR/Pipeline 独立探测，一项能力失败不应让其他成功内容消失。`doctor compat` Ready 不等于内部 GitLab PASS；内部部署参考 [能力准入](../qualification/provider.md)。
+
+GitLab 审批状态 JSON 异常，或缺少 `rules`、`approvals_required`、`approved` 时，证据属于未知，客户端阻断合并。明确有效的空规则数组不同于字段缺失；客户端检查不替代 GitLab 服务端保护。
 
 ## Windows 路径拼接或仓库会话不匹配
 <!-- docs-section: cwd -->
@@ -26,6 +32,8 @@ Windows→SSH Ubuntu 使用的是 **Ubuntu 侧** Codex Home、当前工作目录
 <!-- docs-section: terminal -->
 
 使用应用内 `?` 查看实际键位：`t` 打开 Drawer，`F6`（或支持时 `Ctrl+]`）返回聚焦。远程终端或 SSH 客户端可能截获快捷键。运行 `codex-tui doctor terminal`，确认 TERM、TTY、窗口调整和子进程退出。Stable 必须拥有真实控制 TTY 的 Focus/Resize/Ctrl+C/Restore 记录，托管 PTY 不代替。
+
+PTY 子进程从创建、初始化到分离 actor 退出始终由终止与回收守卫持有。取得 reader/writer、发布 Ready 或启动读取线程失败，不能放弃回收责任。故障注入使用本地子进程覆盖各启动阶段，不代替真实 SSH 验收。
 
 ## SQLite 损坏或未来 Schema 拒绝
 <!-- docs-section: store -->
