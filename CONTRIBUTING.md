@@ -10,7 +10,7 @@ Thanks for improving a personal-first, Linux Tier 1 terminal workbench. Read [th
 ## Change scope and architecture
 <!-- docs-section: scope -->
 
-Codex owns conversations, agent runtime and queue; Git owns worktrees; GitLab/GitHub own delivery; codex-tui owns the local projections and small operator metadata. Maintain ADR-012 and `release/v1.5-convergence.json`. Do not create another agent orchestrator, remote daemon, task database or general terminal manager. Existing conversation/queue/drawer modules are maintenance-only. `src/app.rs` owns the AppState projection and supporting helpers; `src/app/reducer.rs` is the single, publicly re-exported `app::reduce` Action-to-Effect transition boundary. Keep user-intent ordering and effects unchanged during maintenance-only refactors; all source modules must remain in the single v1.4 LOC ratchet.
+Codex owns conversations, agent runtime and queue; Git owns worktrees; GitLab/GitHub own delivery; codex-tui owns the local projections and small operator metadata. Maintain ADR-012 and `release/v1.5-convergence.json`. Do not create another agent orchestrator, remote daemon, task database or general terminal manager. Existing conversation/queue/drawer modules are maintenance-only. `src/app.rs` declares the AppState projection and shared helpers; `src/app/state.rs` contains its inherent methods; `src/app/reducer.rs` is the sole publicly re-exported `app::reduce` Action-to-Effect transition boundary. Keep user-intent ordering and effects unchanged during maintenance-only refactors; all source modules must remain in the single v1.4 LOC ratchet.
 
 ## Local development
 <!-- docs-section: setup -->
