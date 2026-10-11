@@ -23,6 +23,8 @@ Default target is local `codex app-server --listen stdio://`. Named targets are 
 
 Human-readable `headless` text output escapes *individual* untrusted fields while retaining tab-delimited rows. `--json` remains a machine-readable serialization of the original snapshot, not display-normalized content.
 
+`doctor compat` escapes unsafe control characters in human-readable tool versions and diagnostic facts. `doctor compat --json` preserves the original evidence and schema.
+
 ## Navigate work and attention
 <!-- docs-section: daily -->
 

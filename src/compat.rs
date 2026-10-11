@@ -338,45 +338,59 @@ pub fn build_report(components: Vec<CompatComponent>) -> CompatReport {
     }
 }
 
+fn compat_line(args: std::fmt::Arguments<'_>) -> String {
+    crate::text::sanitize_inline(&args.to_string())
+}
+
+macro_rules! compat_println {
+    ($($arg:tt)*) => {
+        println!("{}", compat_line(format_args!($($arg)*)))
+    };
+}
+
 pub fn print_text(report: &CompatReport) {
-    println!("schema: {}", report.schema);
-    println!("version: {}", report.product_version);
-    println!("source-sha: {}", report.source_sha);
-    println!("rust-msrv: {}", report.rust_msrv);
-    println!("platform: {}/{}", report.os, report.arch);
-    println!("readiness: {:?}", report.readiness);
+    compat_println!("schema: {}", report.schema);
+    compat_println!("version: {}", report.product_version);
+    compat_println!("source-sha: {}", report.source_sha);
+    compat_println!("rust-msrv: {}", report.rust_msrv);
+    compat_println!("platform: {}/{}", report.os, report.arch);
+    compat_println!("readiness: {:?}", report.readiness);
 
     for component in &report.components {
-        println!(
+        compat_println!(
             "{}: {:?} · {:?} · {}",
-            component.id, component.requirement, component.state, component.detail
+            component.id,
+            component.requirement,
+            component.state,
+            component.detail
         );
         if let Some(version) = &component.version {
-            println!("  version: {version}");
+            compat_println!("  version: {version}");
         }
         for (key, value) in &component.facts {
-            println!("  {key}: {value}");
+            compat_println!("  {key}: {value}");
         }
     }
 
     if !report.required_failures.is_empty() {
-        println!("required-failures: {}", report.required_failures.join(","));
+        compat_println!("required-failures: {}", report.required_failures.join(","));
     }
     if !report.required_degraded.is_empty() {
-        println!("required-degraded: {}", report.required_degraded.join(","));
+        compat_println!("required-degraded: {}", report.required_degraded.join(","));
     }
     if !report.optional_unavailable.is_empty() {
-        println!(
+        compat_println!(
             "optional-unavailable: {}",
             report.optional_unavailable.join(",")
         );
     }
-    println!(
+    compat_println!(
         "forge-runtime-doctor: {} · remote-probe-default={}",
-        report.forge_runtime.detailed_command, report.forge_runtime.default_remote_probe
+        report.forge_runtime.detailed_command,
+        report.forge_runtime.default_remote_probe
     );
     for evidence in &report.retained_evidence {
-        println!(
+        compat_println!(
             "retained-evidence.{}: {} · required-for-stable={} · doctor-observable={}",
             evidence.id,
             evidence.status,
@@ -462,6 +476,48 @@ fn now_unix_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compat_human_output_escapes_terminal_controls_without_rewriting_report_data() {
+        let hostile = "codex\u{001b}[2J\n\u{202e}中文";
+        let component = CompatComponent {
+            id: "codex".into(),
+            requirement: Requirement::Required,
+            state: ComponentState::Degraded,
+            version: Some(hostile.into()),
+            detail: hostile.into(),
+            facts: BTreeMap::from([("tool".into(), hostile.into())]),
+        };
+        let line = compat_line(format_args!(
+            "  version: {}",
+            component.version.as_deref().unwrap()
+        ));
+        assert_eq!(line, "  version: codex\u{fffd}[2J \u{fffd}中文");
+        assert_eq!(component.detail, hostile);
+        assert_eq!(component.facts["tool"], hostile);
+        assert_eq!(component.version.as_deref(), Some(hostile));
+        let json = serde_json::to_string(&component).expect("original JSON report");
+        assert!(json.contains(r"\u001b"));
+        assert!(!json.contains("\u{fffd}"));
+    }
+
+    #[test]
+    fn compat_text_renderer_does_not_bypass_its_terminal_output_guard() {
+        let source = include_str!("compat.rs");
+        let print_body = source
+            .split("pub fn print_text(report: &CompatReport) {")
+            .nth(1)
+            .unwrap()
+            .split("async fn probe_binary(")
+            .next()
+            .unwrap();
+        let raw_print_sites = print_body
+            .lines()
+            .filter(|line| line.trim_start().starts_with("println!("))
+            .count();
+        assert_eq!(raw_print_sites, 0);
+        assert!(print_body.matches("compat_println!(").count() >= 12);
+    }
 
     fn component(id: &str, requirement: Requirement, state: ComponentState) -> CompatComponent {
         CompatComponent {

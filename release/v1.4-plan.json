@@ -244,7 +244,7 @@
     "src/batch_local.rs": 208,
     "src/codex_protocol.rs": 374,
     "src/command.rs": 130,
-    "src/compat.rs": 574,
+    "src/compat.rs": 626,
     "src/domain.rs": 342,
     "src/forge_github.rs": 543,
     "src/git.rs": 804,
@@ -755,6 +755,15 @@
         "src/headless/surfaces.rs"
       ],
       "policy": "Security-only boundary maintenance; preserve CLI routes, JSON/TSV output contracts, original Codex/Git/Forge snapshot authority, schema, compatibility and Stable locks. Verify exact-head Linux/macOS/Windows Rust 1.88, qualification and fresh-main release gates."
+    },
+    {
+      "date": "2026-10-11",
+      "kind": "compat-doctor-plaintext-render-safety",
+      "scope": "Sanitize external tool version and diagnostic facts at the doctor compat plaintext terminal presentation boundary only; leave schema-v2 compatibility probe, readiness, original report data and --json evidence unchanged. Add negative ANSI, bidi and newline fixtures plus a raw-print guard.",
+      "modules": [
+        "src/compat.rs"
+      ],
+      "policy": "Security-only v1.4 maintenance; sole complete-source LOC ratchet update, bilingual operator guidance and exact-head cross-platform CI. No added authority, compatibility migration, protocol, schema or Stable publication."
     }
   ]
 }

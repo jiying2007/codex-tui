@@ -23,6 +23,8 @@ codex-tui
 
 `headless` 纯文本输出仅对各个不可信字段进行转义，保留原有制表符分列格式；`--json` 仍序列化原始快照，不做显示层文本替换。
 
+`doctor compat` 会净化纯文本版本号与诊断信息中的危险终端控制字符，`doctor compat --json` 保持原始证据和已有数据结构。
+
 ## 工作和提醒导航
 <!-- docs-section: daily -->
 

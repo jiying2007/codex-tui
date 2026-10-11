@@ -17,6 +17,8 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
+- Neutralize ANSI/bidi/newline spoofing in the human-readable `doctor compat` report, including upstream tool/version details and facts, while leaving the original compatibility evidence and JSON report untouched; add strict render-boundary regression fixtures.
+
 - Escape untrusted per-field values in plain-text `headless` Thread/Work/Board/Attention/Forge/Worktree/Status output, preserving existing literal tab column delimiters and byte-for-byte JSON snapshot paths; hostile Unicode/control fixtures retain original data.
 
 - Sanitize untrusted `doctor` terminal diagnostics (Codex/Git/Forge paths, branches, versions, errors and local configuration) at the final output boundary, preserving source data and normal EN/zh-CN text; guard every doctor print site and add a regression against future raw lines.
