@@ -163,8 +163,8 @@
     "src/sqlite_schema.rs": 220,
     "src/worktree_git.rs": 180,
     "src/forge_types.rs": 451,
-    "src/headless.rs": 561,
-    "src/headless/surfaces.rs": 487,
+    "src/headless.rs": 581,
+    "src/headless/surfaces.rs": 491,
     "src/notification.rs": 263,
     "src/runtime_notifications.rs": 312,
     "src/syntax_highlight.rs": 336,
@@ -745,6 +745,16 @@
         "src/runtime_doctor.rs"
       ],
       "policy": "Security-only maintenance with explicit ceiling adjustment in the sole complete-source v1.4 ratchet; no new product feature, release authority, protocol, schema, migration or external dependency. Multi-platform Rust 1.88 CI and exact-main evidence required."
+    },
+    {
+      "date": "2026-10-11",
+      "kind": "headless-text-presentation-field-safety",
+      "scope": "Escape untrusted per-field values in all seven human-readable Headless projections, preserve literal tab column separators and the unmodified JSON serialization branches, and prevent ANSI/newline/bidi spoofing. Test the display-only field transformation against original strings, tabular rows and JSON escapes.",
+      "modules": [
+        "src/headless.rs",
+        "src/headless/surfaces.rs"
+      ],
+      "policy": "Security-only boundary maintenance; preserve CLI routes, JSON/TSV output contracts, original Codex/Git/Forge snapshot authority, schema, compatibility and Stable locks. Verify exact-head Linux/macOS/Windows Rust 1.88, qualification and fresh-main release gates."
     }
   ]
 }
