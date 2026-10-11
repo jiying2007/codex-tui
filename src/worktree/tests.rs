@@ -178,7 +178,9 @@ fn strict_legacy_git_porcelain_keeps_trailing_space_but_rejects_ambiguous_lines(
     for malformed in [
         "worktree /repo\nHEAD deadbeef\nbranch refs/heads/main\n",
         "worktree /repo\nspoofed-line\nHEAD deadbeef\nbranch refs/heads/main\n\n",
-        "worktree /repo\nlocked\nHEAD deadbeef\nHEAD cafe\nbranch refs/heads/main\n\n",
+        "worktree /repo\nlocked\nHEAD deadbeef\nbranch refs/heads/main\n\n",
+        "worktree /repo\nprunable\nHEAD deadbeef\nbranch refs/heads/main\n\n",
+        "worktree /repo\nHEAD deadbeef\nHEAD cafe\nbranch refs/heads/main\n\n",
         "worktree /repo\nHEAD deadbeef\nbranch refs/heads/main\nbranch refs/heads/other\n\n",
     ] {
         assert!(
