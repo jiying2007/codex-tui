@@ -265,7 +265,7 @@
     "src/store.rs": 343,
     "src/support_bundle.rs": 566,
     "src/terminal.rs": 131,
-    "src/terminal_drawer.rs": 394,
+    "src/terminal_drawer.rs": 419,
     "src/text.rs": 147,
     "src/ui/overlays.rs": 880,
     "src/ui/terminal.rs": 126,
@@ -823,6 +823,15 @@
         "src/terminal_drawer.rs"
       ],
       "policy": "Performance/defect-only maintenance for the upstream-overlap frozen Terminal Drawer, without expanding CLI/task/agent/queue authority, introducing workers or unbounded channels, changing schema/protocol or allowing Stable publish. Bind sole LOC ratchet and EN/zh-CN operator docs; require exact-head CI/PTY/development and fresh-main source-bound qualification."
+    },
+    {
+      "date": "2026-10-11",
+      "kind": "terminal-ready-resize-state-race",
+      "scope": "The initial PTY Ready event may arrive after a resize has been queued and already applied to the host VT parser. Preserve the most recently requested terminal size rather than overwriting it with the stale startup size; still adopt the Ready cwd and running state. Add deterministic late-Ready and normal-Ready assertions.",
+      "modules": [
+        "src/terminal_drawer.rs"
+      ],
+      "policy": "Defect-only maintenance for the frozen Terminal Drawer; no new process, queue, protocol, persisted state, compatibility shim, upstream authority or Stable publication. Preserve the single v1.4 complete-source LOC ratchet and EN/zh-CN operator documentation; exact-head CI and fresh-main qualification required."
     }
   ]
 }
