@@ -148,7 +148,7 @@
     "user-perceived-performance-evidence"
   ],
   "moduleRatchet": {
-    "src/app.rs": 4683,
+    "src/app.rs": 3797,
     "src/ui.rs": 2946,
     "src/app_server.rs": 3619,
     "src/main.rs": 1854,
@@ -274,7 +274,8 @@
     "src/forge/gitlab_projection_tests.rs": 164,
     "src/forge/error_redaction_tests.rs": 43,
     "src/forge/remote_identity_tests.rs": 47,
-    "src/app/reducer.rs": 2483
+    "src/app/reducer.rs": 2483,
+    "src/app/state.rs": 888
   },
   "ratchetPolicy": {
     "baseline": "inherit v1.3 Search & Multi-Target ceilings; feature work may only add bounded module-specific ceilings",
@@ -567,6 +568,16 @@
         "src/app/reducer.rs"
       ],
       "policy": "Behavior-preserving, exhaustive source-coverage ratchet update; canonical Linux/macOS/Windows MSRV, reducer tests, planning diagnostics, dedicated development qualification and fresh-main gates required."
+    },
+    {
+      "date": "2026-10-11",
+      "kind": "app-state-method-boundary",
+      "scope": "Extract AppState inherent implementation from root app module into src/app/state.rs, retaining the public AppState type and method contracts. Exactly twenty formerly app-private inherent methods become pub(super) so app parent/sibling reducer/modules retain their former lexical visibility; no public API broadening or state duplication.",
+      "modules": [
+        "src/app.rs",
+        "src/app/state.rs"
+      ],
+      "policy": "Behavior-preserving Rust module privacy adaptation; complete-source single LOC ratchet; require exact HEAD CI/development qualification/scale/PTY/performance and fresh-main proof."
     }
   ]
 }

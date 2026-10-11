@@ -17,6 +17,9 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
+- Isolate AppState inherent methods in `src/app/state.rs` while keeping its public type and methods unchanged; apply narrowly scoped `pub(super)` visibility to formerly private methods needed by sibling reducer modules, and tighten the single module ratchet.
+
+
 - Extract the single existing `app::reduce` Action/Effect reducer into `src/app/reducer.rs` without changing its public entrypoint or transitions; tighten the `app.rs` module budget, cover the new source in the single ratchet, and redirect the panic-free reducer guard to the real extracted implementation.
 
 
