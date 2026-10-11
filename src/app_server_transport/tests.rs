@@ -330,9 +330,10 @@ async fn cancelled_stdio_reads_preserve_every_byte_at_every_utf8_boundary() {
         let mut reader = BufReader::new(client);
         let mut pending = Vec::new();
         server.write_all(&encoded[..split]).await.unwrap();
-        // Poll consumes the prefix, then Pending cancels this exact read Future.
+        // Exclude cooperative-budget yields so cancellation happens after prefix consumption.
+        // Other tests exercise the production timer/command scheduling paths.
         assert!(
-            read_stdio_json(&mut reader, &mut pending)
+            tokio::task::unconstrained(read_stdio_json(&mut reader, &mut pending))
                 .now_or_never()
                 .is_none()
         );

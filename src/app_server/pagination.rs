@@ -289,8 +289,10 @@ mod tests {
         );
         let mut budget = PageBudget::with_deadline(Duration::ZERO);
         assert!(budget.remaining().is_err());
-        let mut budget = PageBudget::default();
-        budget.pages = MAX_PAGES;
+        let mut budget = PageBudget {
+            pages: MAX_PAGES,
+            ..PageBudget::default()
+        };
         assert!(budget.remaining().is_err());
     }
 }

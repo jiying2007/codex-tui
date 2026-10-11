@@ -16,6 +16,7 @@ import sys
 import tempfile
 import termios
 import time
+import unicodedata
 
 
 def require(value, message):
@@ -97,8 +98,62 @@ def stop(process):
             process.wait(timeout=2)
 
 
-def normalized(data):
-    return re.sub(rb'\x1b\[[0-?]*[ -/]*[@-~]', b'', data)
+def screen_text(data):
+    """Reconstruct this fixed Ratatui fixture, not a general terminal emulator.
+
+    Raw ANSI-stripped output is not screen text: unchanged cells are not repainted.
+    Unexpected cursor controls fail closed; an incomplete trailing CSI waits for bytes.
+    """
+    grid = [[' '] * 180 for _ in range(40)]
+    row = col = offset = 0
+    text = bytes(data).decode('utf-8', errors='replace')
+    while offset < len(text):
+        char = text[offset]
+        if char == '\x1b':
+            match = re.match(r'\x1b\[([0-?]*)([ -/]*)([@-~])', text[offset:])
+            if not match:
+                require(text[offset:] == '\x1b' or text[offset:].startswith('\x1b['), 'unexpected non-CSI control')
+                break
+            arguments, intermediate, operation = match.groups()
+            require(not intermediate, 'unexpected CSI intermediate')
+            if operation in ('H', 'f'):
+                values = (arguments or '1;1').split(';')
+                row = int(values[0] or '1') - 1
+                col = int(values[1] or '1') - 1 if len(values) > 1 else 0
+                require(0 <= row < 40 and 0 <= col < 180, 'cursor outside fixture grid')
+            elif operation == 'J':
+                require(arguments in ('2', '3'), 'unsupported partial erase')
+                grid = [[' '] * 180 for _ in range(40)]
+            elif operation not in ('m', 'h', 'l'):
+                raise RuntimeError('unexpected fixture CSI: ' + repr(match.group()))
+            offset += len(match.group())
+            continue
+        if char == '\r':
+            col = 0
+        elif char == '\n':
+            row = min(row + 1, 39)
+        elif ord(char) >= 32 and not unicodedata.combining(char):
+            if col < 180:
+                grid[row][col] = char
+                width = 2 if unicodedata.east_asian_width(char) in ('W', 'F') else 1
+                if width == 2 and col + 1 < 180:
+                    grid[row][col + 1] = ''
+                col += width
+        offset += 1
+    return '\n'.join(''.join(line) for line in grid)
+
+
+def check_observer():
+    sparse = b'\x1b[1;1HAAA\x1b[1;1HZ\x1b[1;3HZ'
+    require(screen_text(sparse).startswith('ZAZ'), 'observer lost an unchanged cell')
+    require(screen_text(sparse + b'\x1b[2;').startswith('ZAZ'), 'observer lost a fragmented CSI')
+    require(screen_text(sparse + b'\x1b[2;1HB').splitlines()[1].startswith('B'), 'observer cursor reconstruction failed')
+    try:
+        screen_text(b'\x1b[2A')
+    except RuntimeError:
+        pass
+    else:
+        raise RuntimeError('observer accepted an unsupported cursor operation')
 
 
 def terminal_case(binary, output, mode):
@@ -122,11 +177,11 @@ def terminal_case(binary, output, mode):
         try:
             while time.monotonic() - started < 10:
                 trace = log.read_text(encoding='utf-8')
-                screen_writes = normalized(raw)
+                screen_writes = screen_text(raw)
                 if mode == 'eof':
-                    observed = b'closed' in screen_writes and b'stdout' in screen_writes and 'deliberate-eof' in trace
+                    observed = 'closed' in screen_writes and 'stdout' in screen_writes and 'deliberate-eof' in trace
                 else:
-                    observed = b'ZZZ_READ_OK_ZZZ' in screen_writes and 'alive-after-notification' in trace
+                    observed = 'ZZZ_READ_OK_ZZZ' in screen_writes and 'alive-after-notification' in trace
                 if observed and not sent_quit:
                     os.write(master, b'q')
                     sent_quit = True
@@ -151,6 +206,7 @@ def terminal_case(binary, output, mode):
             os.close(master)
             os.close(slave)
             (output / (mode + '.terminal.bin')).write_bytes(raw)
+            (output / (mode + '.screen.txt')).write_text(screen_text(raw), encoding='utf-8')
         require(observed, mode + ': expected UI state never observed; see retained raw terminal and mock log')
         require(process.returncode == 0, mode + ': TUI did not quit normally')
         require(before == after, mode + ': controlling terminal attributes not restored')
@@ -183,6 +239,7 @@ def cursor_case(binary, output, method):
 
 
 def main():
+    check_observer()
     binary, output = Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve()
     output.mkdir(parents=True, exist_ok=False)
     receipt = {'schema':'codex-tui/app-server-transport-regression/v1', 'status':'failed',

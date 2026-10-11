@@ -567,7 +567,13 @@ fn bootstrap_registry_completeness_follows_actual_pagination_exhaustion() {
         .next()
         .expect("production source");
     assert!(production.contains("status.registry_complete = load.registry_complete;"));
-    assert!(production.contains("registry_complete: true"));
+    assert!(
+        include_str!("pagination.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .unwrap()
+            .contains("registry_complete: true")
+    );
     assert!(production.contains("status.registry_complete = true;"));
 }
 
