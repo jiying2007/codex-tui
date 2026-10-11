@@ -192,8 +192,8 @@
     "src/app/context_menu.rs": 93,
     "src/app/review.rs": 121,
     "src/ui/review.rs": 325,
-    "src/runtime_external.rs": 76,
-    "src/runtime_external/tests.rs": 82,
+    "src/runtime_external.rs": 145,
+    "src/runtime_external/tests.rs": 86,
     "src/detached_process.rs": 134,
     "src/detached_process/tests.rs": 174,
     "src/ui/thread.rs": 381,
@@ -274,9 +274,9 @@
     "src/forge/gitlab_projection_tests.rs": 164,
     "src/forge/error_redaction_tests.rs": 43,
     "src/forge/remote_identity_tests.rs": 47,
-    "src/app/reducer.rs": 2483,
+    "src/app/reducer.rs": 2508,
     "src/app/state.rs": 888,
-    "src/app/tests.rs": 2669,
+    "src/app/tests.rs": 2717,
     "src/app/thread_queue_reducer_tests.rs": 123,
     "src/ui/tests.rs": 1087,
     "src/sqlite_store/tests.rs": 832,
@@ -773,6 +773,18 @@
         "src/main.rs"
       ],
       "policy": "Security/defect-only v1.4 maintenance, no new core function, API, persistence, schema, migration, Codex/Git/Forge authority or Stable publication; enforce sole v1.4 complete-source LOC ratchet, bilingual docs and exact-head multi-platform qualification."
+    },
+    {
+      "date": "2026-10-11",
+      "kind": "review-external-editor-worktree-boundary",
+      "scope": "Bind Review external-editor handoff to the matching live Git worktree root rather than nested thread cwd and canonicalize selected paths before process spawn, rejecting absolute/parent paths, stale identity, missing targets and symlink escape. Retain exact Git diff/state and Forge authority; negative filesystem and reducer tests, EN/zh-CN guidance.",
+      "modules": [
+        "src/runtime_external.rs",
+        "src/runtime_external/tests.rs",
+        "src/app/reducer.rs",
+        "src/app/tests.rs"
+      ],
+      "policy": "Defect/security-only v1.4 maintenance; sole complete-source LOC ratchet, no persisted schema/protocol change, compatibility shim, new product feature or Stable publication. Require exact-head PR 8/8, fresh-main qualification and release safeguards."
     }
   ]
 }
