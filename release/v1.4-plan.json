@@ -165,8 +165,8 @@
     "src/forge_types.rs": 451,
     "src/headless.rs": 561,
     "src/headless/surfaces.rs": 487,
-    "src/notification.rs": 257,
-    "src/runtime_notifications.rs": 283,
+    "src/notification.rs": 263,
+    "src/runtime_notifications.rs": 312,
     "src/syntax_highlight.rs": 336,
     "src/bin/syntax-asset-notices.rs": 11,
     "src/presentation.rs": 66,
@@ -254,7 +254,7 @@
     "src/keymap.rs": 372,
     "src/launch.rs": 309,
     "src/lib.rs": 57,
-    "src/notification/tests.rs": 230,
+    "src/notification/tests.rs": 262,
     "src/operation.rs": 447,
     "src/planning.rs": 1067,
     "src/pty.rs": 602,
@@ -725,6 +725,17 @@
         "src/ui/tests.rs"
       ],
       "policy": "Formatting-only; single v1.4 complete-source LOC ratchet, exact-head checks required; no product, protocol, persistence or release change."
+    },
+    {
+      "date": "2026-10-11",
+      "kind": "desktop-notification-display-and-argv-safety",
+      "scope": "Sanitize and bound untrusted Codex/Forge/WorkCard notification subjects only on display, retain exact event identities and original subjects, and terminate Linux notify-send option parsing before dynamic arguments. Negative tests cover bidi/newline, oversized CJK and argument-option spoofing.",
+      "modules": [
+        "src/notification.rs",
+        "src/notification/tests.rs",
+        "src/runtime_notifications.rs"
+      ],
+      "policy": "Security/defect-only growth recorded in the sole complete-source v1.4 LOC ratchet; no new backend authority, protocol, state, schema, compatibility shim or Stable publication. Require exact-head multi-platform CI and fresh-main qualification."
     }
   ]
 }
