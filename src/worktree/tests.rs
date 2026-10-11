@@ -35,8 +35,7 @@ async fn queued_destructive_mutation_requires_fresh_admission_proof() {
         git_common_dir: "/repo/.git".into(),
         primary_root: "/repo".into(),
     };
-    let plan =
-        OperationPlan::remove_worktree(repo, "/repo".into(), "/repo/stale-target".into(), 1);
+    let plan = OperationPlan::remove_worktree(repo, "/repo".into(), "/repo/stale-target".into(), 1);
     let error = check_preconditions(
         &store,
         &plan,

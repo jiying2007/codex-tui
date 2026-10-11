@@ -171,16 +171,17 @@ async fn real_dirty_file_is_projected_from_porcelain_status() {
     .expect("context");
     assert!(context.dirty);
     assert!(
-        context.changes.iter().any(|change| {
-            change.path == "tracked.txt" && change.worktree_status == Some('M')
-        })
+        context
+            .changes
+            .iter()
+            .any(|change| { change.path == "tracked.txt" && change.worktree_status == Some('M') })
     );
 }
 
 #[test]
 fn detached_head_does_not_invent_a_branch() {
-    let parsed = parse_porcelain_v2(b"# branch.oid deadbeef\0# branch.head (detached)\0")
-        .expect("parse");
+    let parsed =
+        parse_porcelain_v2(b"# branch.oid deadbeef\0# branch.head (detached)\0").expect("parse");
     assert_eq!(parsed.head.as_deref(), Some("deadbeef"));
     assert!(parsed.branch.is_none());
 }

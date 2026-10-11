@@ -281,12 +281,12 @@
     "src/ui/tests.rs": 731,
     "src/sqlite_store/tests.rs": 832,
     "src/app_server/tests.rs": 932,
-    "src/planning/tests.rs": 709,
+    "src/planning/tests.rs": 708,
     "src/forge_mutation/tests.rs": 305,
-    "src/worktree/tests.rs": 517,
+    "src/worktree/tests.rs": 516,
     "src/release/tests.rs": 406,
     "src/forge_github/tests.rs": 197,
-    "src/git/tests.rs": 198
+    "src/git/tests.rs": 199
   },
   "ratchetPolicy": {
     "baseline": "inherit v1.3 Search & Multi-Target ceilings; feature work may only add bounded module-specific ceilings",
@@ -637,6 +637,17 @@
         "src/git/tests.rs"
       ],
       "policy": "Mechanical refactor only; no upstream authority, API, protocol, schema, mutation, deployment, backward compatibility or Stable publication change; exact CI/MSRV/Failure Matrix/Release validation required."
+    },
+    {
+      "date": "2026-10-11",
+      "kind": "secondary-core-test-extraction-rustfmt",
+      "scope": "Apply exactly four Rustfmt-required, nonbehavioral formatting hunks to relocated Git, Planning and Worktree tests; keep all 76 test declarations, Rust test identities, sole complete-source LOC ratchet and convergence policy intact.",
+      "modules": [
+        "src/git/tests.rs",
+        "src/planning/tests.rs",
+        "src/worktree/tests.rs"
+      ],
+      "policy": "Formatter-only; exact-head multi-platform CI, development qualification and retained release validation required. No public release or runtime behavior change."
     }
   ]
 }

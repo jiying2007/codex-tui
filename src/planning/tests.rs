@@ -120,8 +120,7 @@ fn saved_view_query_supports_quoted_terms_negation_and_project_alias() {
 #[test]
 fn saved_view_query_uses_observed_branch_forge_and_change_request_state() {
     use crate::forge::{
-        CapabilityState, ChangeRequestSummary, ForgeCapability, ForgeIdentity,
-        ForgeProviderKind,
+        CapabilityState, ChangeRequestSummary, ForgeCapability, ForgeIdentity, ForgeProviderKind,
     };
     use std::collections::BTreeMap;
 
