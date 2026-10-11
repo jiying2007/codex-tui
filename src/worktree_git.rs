@@ -53,7 +53,9 @@ pub(crate) fn parse_worktree_porcelain_lines(value: &str) -> Result<Vec<Worktree
     parse_worktree_records(value.split_terminator('\n'))
 }
 
-fn parse_worktree_records<'a>(records: impl IntoIterator<Item = &'a str>) -> Result<Vec<WorktreeEntry>> {
+fn parse_worktree_records<'a>(
+    records: impl IntoIterator<Item = &'a str>,
+) -> Result<Vec<WorktreeEntry>> {
     let mut entries = Vec::new();
     let mut path: Option<String> = None;
     let mut branch: Option<String> = None;
@@ -86,7 +88,9 @@ fn parse_worktree_records<'a>(records: impl IntoIterator<Item = &'a str>) -> Res
         anyhow::ensure!(path.is_some(), "Git worktree metadata has no worktree path");
         if let Some(head) = record.strip_prefix("HEAD ") {
             anyhow::ensure!(
-                !has_identity && !head.is_empty() && head.bytes().all(|byte| byte.is_ascii_hexdigit()),
+                !has_identity
+                    && !head.is_empty()
+                    && head.bytes().all(|byte| byte.is_ascii_hexdigit()),
                 "Git worktree HEAD identity is duplicate or invalid"
             );
             has_identity = true;
