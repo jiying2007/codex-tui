@@ -154,8 +154,8 @@
     "src/main.rs": 1854,
     "src/sqlite_store.rs": 1715,
     "src/forge.rs": 1345,
-    "src/worktree.rs": 1218,
-    "src/release.rs": 1025,
+    "src/worktree.rs": 700,
+    "src/release.rs": 618,
     "src/runtime_store.rs": 525,
     "src/runtime_input.rs": 267,
     "src/app_server_registry.rs": 271,
@@ -175,7 +175,7 @@
     "src/app_server_target.rs": 308,
     "src/app_server_transport.rs": 487,
     "src/forge_github_mutation.rs": 651,
-    "src/forge_mutation.rs": 1649,
+    "src/forge_mutation.rs": 1341,
     "src/forge_github_mutation/tests.rs": 135,
     "src/forge_github_mutation/api.rs": 61,
     "src/conversation.rs": 892,
@@ -246,8 +246,8 @@
     "src/command.rs": 130,
     "src/compat.rs": 574,
     "src/domain.rs": 342,
-    "src/forge_github.rs": 741,
-    "src/git.rs": 1003,
+    "src/forge_github.rs": 543,
+    "src/git.rs": 804,
     "src/goal.rs": 194,
     "src/hardening.rs": 329,
     "src/i18n.rs": 222,
@@ -256,7 +256,7 @@
     "src/lib.rs": 57,
     "src/notification/tests.rs": 230,
     "src/operation.rs": 447,
-    "src/planning.rs": 1777,
+    "src/planning.rs": 1067,
     "src/pty.rs": 602,
     "src/release_benchmark.rs": 219,
     "src/replay_backend.rs": 48,
@@ -280,7 +280,13 @@
     "src/app/thread_queue_reducer_tests.rs": 123,
     "src/ui/tests.rs": 731,
     "src/sqlite_store/tests.rs": 832,
-    "src/app_server/tests.rs": 932
+    "src/app_server/tests.rs": 932,
+    "src/planning/tests.rs": 709,
+    "src/forge_mutation/tests.rs": 305,
+    "src/worktree/tests.rs": 517,
+    "src/release/tests.rs": 406,
+    "src/forge_github/tests.rs": 197,
+    "src/git/tests.rs": 198
   },
   "ratchetPolicy": {
     "baseline": "inherit v1.3 Search & Multi-Target ceilings; feature work may only add bounded module-specific ceilings",
@@ -611,6 +617,26 @@
         "src/sqlite_store/tests.rs"
       ],
       "policy": "No runtime or release authority changes; isolated format normalization under existing ratchet."
+    },
+    {
+      "date": "2026-10-11",
+      "kind": "secondary-core-test-module-separation",
+      "scope": "Move six existing inline test suites (Planning, Forge mutations, Worktree, Release, GitHub Forge, Git) into sibling tests.rs modules. Preserve 76 test functions and their module paths, production prefixes byte-for-byte, and adjust only moved include_str source paths. Enforce all new modules through the one complete-source v1.4 LOC ratchet.",
+      "modules": [
+        "src/planning.rs",
+        "src/planning/tests.rs",
+        "src/forge_mutation.rs",
+        "src/forge_mutation/tests.rs",
+        "src/worktree.rs",
+        "src/worktree/tests.rs",
+        "src/release.rs",
+        "src/release/tests.rs",
+        "src/forge_github.rs",
+        "src/forge_github/tests.rs",
+        "src/git.rs",
+        "src/git/tests.rs"
+      ],
+      "policy": "Mechanical refactor only; no upstream authority, API, protocol, schema, mutation, deployment, backward compatibility or Stable publication change; exact CI/MSRV/Failure Matrix/Release validation required."
     }
   ]
 }
