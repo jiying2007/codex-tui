@@ -62,11 +62,7 @@ fn validate_external_url(url: &str) -> Result<()> {
     );
     let authority = url
         .split_once("://")
-        .map(|(_, rest)| {
-            rest.split(['/', '?', '#'])
-                .next()
-                .unwrap_or("")
-        })
+        .map(|(_, rest)| rest.split(['/', '?', '#']).next().unwrap_or(""))
         .unwrap_or("");
     anyhow::ensure!(
         !authority.contains('@') && parsed.username().is_empty() && parsed.password().is_none(),
