@@ -17,6 +17,9 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
+- Prevent a delayed Terminal Drawer PTY startup Ready event from reverting an already-requested resize: keep the latest UI/VT parser dimensions authoritative while still accepting process readiness and canonical cwd. Add an explicit deterministic startup-vs-resize ordering regression.
+
+
 - Bound each Terminal Drawer PTY event drain to 16 events per UI iteration rather than waiting for a continuously producing child to empty the 64-slot queue; retain FIFO output, natural queue backpressure, command processing and timely keyboard/render/reconcile turns.
 
 - Make managed Worktree admission, removal and outcome-reconciliation prefer complete NUL-delimited Git porcelain paths, with strict text-porcelain capability fallback for Git 2.25 (which lacks worktree `-z`). Preserve trailing spaces and, where Git supports NUL, embedded newlines; fail closed on ambiguous, invalid UTF-8 or truncated (>256 KiB) output instead of using an incomplete inventory to prove deletion.
