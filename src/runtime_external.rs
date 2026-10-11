@@ -63,7 +63,7 @@ fn validate_external_url(url: &str) -> Result<()> {
     let authority = url
         .split_once("://")
         .map(|(_, rest)| {
-            rest.split(|ch| matches!(ch, '/' | '?' | '#'))
+            rest.split(['/', '?', '#'])
                 .next()
                 .unwrap_or("")
         })
