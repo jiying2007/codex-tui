@@ -384,7 +384,11 @@ mod tests {
     fn doctor_plain_text_lines_all_pass_through_the_output_guard() {
         let source = include_str!("runtime_doctor.rs");
         let production = source.split("#[cfg(test)]").next().unwrap();
-        assert_eq!(production.matches("println!(").count(), 1);
+        let raw_prints = production
+            .lines()
+            .filter(|line| line.trim_start().starts_with("println!("))
+            .count();
+        assert_eq!(raw_prints, 1);
         assert!(production.matches("doctor_println!(").count() >= 40);
     }
 }
