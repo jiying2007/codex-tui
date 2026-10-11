@@ -157,6 +157,19 @@ impl TerminalDrawerRuntime {
         Ok(())
     }
 
+    fn observe_ready(
+        cwd_slot: &mut Option<PathBuf>,
+        state: &mut TerminalProcessState,
+        cwd: PathBuf,
+        _startup_size: TerminalSize,
+    ) {
+        // Ready carries the size passed to the spawning actor. A resize can
+        // already be queued and applied to our VT parser before Ready arrives.
+        // Never regress the latest requested size to this stale snapshot.
+        *cwd_slot = Some(cwd);
+        *state = TerminalProcessState::Running;
+    }
+
     pub fn drain(&mut self) -> Option<TerminalSnapshot> {
         let handle = self.handle.as_ref()?;
         let mut changed = false;
@@ -167,9 +180,7 @@ impl TerminalDrawerRuntime {
             changed = true;
             match event {
                 PtyEvent::Ready { cwd, size } => {
-                    self.cwd = Some(cwd);
-                    self.size = size;
-                    self.state = TerminalProcessState::Running;
+                    Self::observe_ready(&mut self.cwd, &mut self.state, cwd, size);
                 }
                 PtyEvent::Output(bytes) => {
                     self.bracketed_paste =
@@ -367,6 +378,40 @@ mod tests {
         assert!(enabled);
         enabled = vt_bracketed_paste_mode(&mut tail, b"\x1b[?2004l", enabled);
         assert!(!enabled);
+    }
+
+    #[test]
+    fn late_ready_does_not_undo_a_resize_queued_before_pty_startup() {
+        let mut runtime = TerminalDrawerRuntime::default();
+        let startup_size = runtime.size;
+        let requested = TerminalSize { rows: 20, cols: 96 };
+        runtime
+            .parser
+            .screen_mut()
+            .set_size(requested.rows, requested.cols);
+        runtime.size = requested;
+
+        TerminalDrawerRuntime::observe_ready(
+            &mut runtime.cwd,
+            &mut runtime.state,
+            PathBuf::from("/some/worktree"),
+            startup_size,
+        );
+        let snapshot = runtime.snapshot();
+        assert_eq!(snapshot.size, requested);
+        assert_eq!(snapshot.rows.len(), usize::from(requested.rows));
+        assert_eq!(snapshot.cwd, "/some/worktree");
+        assert_eq!(snapshot.state, TerminalProcessState::Running);
+
+        // The usual startup path has the same invariant.
+        let mut fresh = TerminalDrawerRuntime::default();
+        TerminalDrawerRuntime::observe_ready(
+            &mut fresh.cwd,
+            &mut fresh.state,
+            PathBuf::from("/other"),
+            startup_size,
+        );
+        assert_eq!(fresh.snapshot().size, startup_size);
     }
 
     #[test]
