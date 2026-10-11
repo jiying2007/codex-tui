@@ -25,6 +25,8 @@ Human-readable `headless` text output escapes *individual* untrusted fields whil
 
 `doctor compat` escapes unsafe control characters in human-readable tool versions and diagnostic facts. `doctor compat --json` preserves the original evidence and schema.
 
+CLI usage error, support-bundle path and `doctor` startup failure messages also sanitize unsafe terminal-control characters at their final presentation boundary. The normal help text and original file paths remain unchanged.
+
 ## Navigate work and attention
 <!-- docs-section: daily -->
 
