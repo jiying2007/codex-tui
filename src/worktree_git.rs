@@ -16,16 +16,25 @@ pub(crate) struct WorktreeEntry {
 }
 
 pub(crate) async fn list_worktrees(cwd: &str) -> Result<Vec<WorktreeEntry>> {
-    // Only NUL-delimited porcelain preserves worktree paths containing
-    // newlines and trailing spaces. An incomplete inventory is never evidence
-    // that a worktree/branch is absent before a destructive operation.
+    // Git 2.25 (still present in the Linux qualification image) does not
+    // support -z for worktree list. Prefer lossless NUL framing when available.
+    // Both paths require full output and strict record validation before any
+    // destructive precondition or absence reconciliation.
     let output = run_git(cwd, ["worktree", "list", "--porcelain", "-z"]).await?;
+    if output.success {
+        return parse_worktree_porcelain(&output.stdout);
+    }
+
+    // A successful second Git command is the sole authority; never reuse
+    // the failed probe or assume an empty list. Text porcelain can retain
+    // trailing spaces but cannot represent arbitrary newline-bearing paths.
+    let fallback = run_git(cwd, ["worktree", "list", "--porcelain"]).await?;
     anyhow::ensure!(
-        output.success,
-        "git worktree list failed: {}",
-        crate::hardening::safe_external_stderr(&output.stderr, "git child")
+        fallback.success,
+        "git worktree inventory failed: {}",
+        crate::hardening::safe_external_stderr(&fallback.stderr, "git child")
     );
-    parse_worktree_porcelain(&output.stdout)
+    parse_worktree_porcelain_lines(&fallback.stdout)
 }
 
 pub(crate) fn parse_worktree_porcelain(value: &str) -> Result<Vec<WorktreeEntry>> {
@@ -33,12 +42,25 @@ pub(crate) fn parse_worktree_porcelain(value: &str) -> Result<Vec<WorktreeEntry>
         value.ends_with("\0\0"),
         "Git worktree porcelain inventory is incomplete or not NUL-delimited"
     );
+    parse_worktree_records(value.split_terminator('\0'))
+}
+
+pub(crate) fn parse_worktree_porcelain_lines(value: &str) -> Result<Vec<WorktreeEntry>> {
+    anyhow::ensure!(
+        value.ends_with("\n\n") && !value.contains('\0'),
+        "Git newline worktree porcelain inventory is incomplete or ambiguous"
+    );
+    parse_worktree_records(value.split_terminator('\n'))
+}
+
+fn parse_worktree_records<'a>(records: impl IntoIterator<Item = &'a str>) -> Result<Vec<WorktreeEntry>> {
     let mut entries = Vec::new();
     let mut path: Option<String> = None;
     let mut branch: Option<String> = None;
     let mut has_identity = false;
+    let mut has_branch_status = false;
 
-    for record in value.split_terminator('\0') {
+    for record in records {
         if record.is_empty() {
             let path = path
                 .take()
@@ -52,6 +74,7 @@ pub(crate) fn parse_worktree_porcelain(value: &str) -> Result<Vec<WorktreeEntry>
                 branch: branch.take(),
             });
             has_identity = false;
+            has_branch_status = false;
             continue;
         }
         if let Some(value) = record.strip_prefix("worktree ") {
@@ -61,12 +84,28 @@ pub(crate) fn parse_worktree_porcelain(value: &str) -> Result<Vec<WorktreeEntry>
             continue;
         }
         anyhow::ensure!(path.is_some(), "Git worktree metadata has no worktree path");
-        if record.starts_with("HEAD ") || record == "bare" {
+        if let Some(head) = record.strip_prefix("HEAD ") {
+            anyhow::ensure!(
+                !has_identity && !head.is_empty() && head.bytes().all(|byte| byte.is_ascii_hexdigit()),
+                "Git worktree HEAD identity is duplicate or invalid"
+            );
+            has_identity = true;
+        } else if record == "bare" {
+            anyhow::ensure!(!has_identity, "duplicate Git bare identity");
             has_identity = true;
         } else if let Some(value) = record.strip_prefix("branch refs/heads/") {
-            anyhow::ensure!(!value.is_empty(), "Git worktree branch ref is empty");
+            anyhow::ensure!(
+                has_identity && !has_branch_status && !value.is_empty(),
+                "Git worktree branch ref is missing or duplicate"
+            );
             branch = Some(value.to_owned());
+            has_branch_status = true;
         } else if record == "detached" {
+            anyhow::ensure!(
+                has_identity && !has_branch_status,
+                "Git worktree detached marker is missing or duplicate"
+            );
+            has_branch_status = true;
             branch = None;
         } else if !(record == "locked"
             || record.starts_with("locked ")
