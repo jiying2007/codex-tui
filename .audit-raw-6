@@ -1,0 +1,179 @@
++    assert_eq!(observed.status.error.as_deref(), Some("fixture EOF"));
++    for _ in 0..4 { assert!(try_recv_latest_snapshot(&mut rx).is_none()); }
++}
++
++#[test]
++fn closing_a_consumed_watch_does_not_replay_the_snapshot() {
++    let initial = BackendSnapshot { generation: 0, threads: vec![], status: BackendStatus::starting("fixture") };
++    let (tx, mut rx) = watch::channel(initial.clone());
++    tx.send(initial).unwrap();
++    assert!(try_recv_latest_snapshot(&mut rx).is_some());
++    drop(tx);
++    assert!(try_recv_latest_snapshot(&mut rx).is_none());
++}
+diff --git a/src/app_server/user_response/approval_tests.rs b/src/app_server/user_response/approval_tests.rs
+index a23c91ce583c764e0ce3a1b585b27ef3d8ea12b9..82ef366f4be1a6c373df9544431c42e33e50f751 100644
+--- a/src/app_server/user_response/approval_tests.rs
++++ b/src/app_server/user_response/approval_tests.rs
+@@ -225 +225 @@ async fn production_actor_stops_after_actual_websocket_write_failure() {
+-        rpc.queued_messages.extend([request, second]);
++        for message in [request, second] { enqueue_rpc_message(&mut rpc.queued_messages, &mut rpc.queued_bytes, message).unwrap(); }
+diff --git a/src/app_server_transport.rs b/src/app_server_transport.rs
+index 11432e64caa2dbd10c7c5a88c798979e5d971623..b0adecbea9efe0254a0626cca87a23779562c56a 100644
+--- a/src/app_server_transport.rs
++++ b/src/app_server_transport.rs
+@@ -28,0 +29 @@ enum Transport {
++        pending_line: Vec<u8>,
+@@ -102,0 +104 @@ impl AppServerTransport {
++                    pending_line: Vec::new(),
+@@ -162 +164,3 @@ impl AppServerTransport {
+-            Transport::Stdio { reader, .. } => read_stdio_json(reader.as_mut()).await,
++            Transport::Stdio { reader, pending_line, .. } => {
++                read_stdio_json(reader.as_mut(), pending_line).await
++            },
+@@ -188 +192 @@ impl AppServerTransport {
+-async fn read_stdio_json<R>(reader: &mut R) -> Result<Option<Value>>
++async fn read_stdio_json<R>(reader: &mut R, pending: &mut Vec<u8>) -> Result<Option<Value>>
+@@ -193 +197 @@ where
+-        let Some(bytes) = read_bounded_line(reader, APP_SERVER_MAX_MESSAGE_BYTES).await? else {
++        let Some(bytes) = read_bounded_line(reader, APP_SERVER_MAX_MESSAGE_BYTES, pending).await? else {
+@@ -205 +209,2 @@ where
+-async fn read_bounded_line<R>(reader: &mut R, limit: usize) -> Result<Option<Vec<u8>>>
++// fill_buf is cancellation-safe; consume and durable append have no intervening await.
++async fn read_bounded_line<R>(reader: &mut R, limit: usize, bytes: &mut Vec<u8>) -> Result<Option<Vec<u8>>>
+@@ -209 +213,0 @@ where
+-    let mut bytes = Vec::new();
+@@ -217 +221 @@ where
+-            return Ok(Some(bytes));
++            return Ok(Some(std::mem::take(bytes)));
+@@ -232 +236 @@ where
+-            return Ok(Some(bytes));
++            return Ok(Some(std::mem::take(bytes)));
+diff --git a/src/app_server_transport/tests.rs b/src/app_server_transport/tests.rs
+index f93a82b33379d90408c1938619cfde8e7502c4c3..1bc6f06826452529b8aacaeb2a38a4f4ce6239a6 100644
+--- a/src/app_server_transport/tests.rs
++++ b/src/app_server_transport/tests.rs
+@@ -20 +20 @@ async fn stdio_reader_enforces_limit_before_unbounded_line_growth() {
+-    let error = read_bounded_line(&mut reader, 16)
++    let error = read_bounded_line(&mut reader, 16, &mut Vec::new())
+@@ -37 +37 @@ async fn stdio_reader_allows_exact_limit_with_crlf() {
+-        read_bounded_line(&mut reader, 16).await.unwrap(),
++        read_bounded_line(&mut reader, 16, &mut Vec::new()).await.unwrap(),
+@@ -53 +53 @@ async fn stdio_reader_skips_blank_lines_and_decodes_json() {
+-        read_stdio_json(&mut reader).await.unwrap(),
++        read_stdio_json(&mut reader, &mut Vec::new()).await.unwrap(),
+@@ -317,0 +318,63 @@ async fn unix_socket_transport_uses_websocket_framing() {
++
++
++#[tokio::test]
++async fn cancelled_stdio_reads_preserve_every_byte_at_every_utf8_boundary() {
++    use futures_util::FutureExt;
++    use tokio::io::{AsyncWriteExt, BufReader, duplex};
++    let encoded = "{\"method\":\"thread/name/updated\",\"params\":{\"name\":\"你好小窝\"}}\r\n".as_bytes();
++    let expected: Value = serde_json::from_slice(encoded).unwrap();
++    for split in 1..encoded.len() - 1 {
++        let (client, mut server) = duplex(1024);
++        let mut reader = BufReader::new(client);
++        let mut pending = Vec::new();
++        server.write_all(&encoded[..split]).await.unwrap();
++        // Poll consumes the prefix, then Pending cancels this exact read Future.
++        assert!(read_stdio_json(&mut reader, &mut pending).now_or_never().is_none());
++        assert_eq!(pending, encoded[..split]);
++        server.write_all(&encoded[split..]).await.unwrap();
++        assert_eq!(read_stdio_json(&mut reader, &mut pending).await.unwrap(), Some(expected.clone()));
++        assert!(pending.is_empty());
++        drop(server);
++        assert!(read_stdio_json(&mut reader, &mut pending).await.unwrap().is_none());
++    }
++}
++
++#[tokio::test]
++async fn stdio_prefix_survives_timeout_and_competing_command_without_replay() {
++    use tokio::io::{AsyncWriteExt, BufReader, duplex};
++    let (client, mut server) = duplex(128);
++    let mut reader = BufReader::new(client);
++    let mut pending = Vec::new();
++    server.write_all(b"{\"id\":").await.unwrap();
++    assert!(tokio::time::timeout(Duration::from_millis(5), read_stdio_json(&mut reader, &mut pending)).await.is_err());
++    let (tx, mut rx) = tokio::sync::mpsc::channel(1);
++    tx.send(()).await.unwrap();
++    tokio::select! {
++        biased;
++        _ = read_stdio_json(&mut reader, &mut pending) => panic!("partial frame completed"),
++        _ = rx.recv() => {},
++    }
++    server.write_all(b"7}\n{\"id\":8}\n").await.unwrap();
++    assert_eq!(read_stdio_json(&mut reader, &mut pending).await.unwrap(), Some(json!({"id":7})));
++    assert_eq!(read_stdio_json(&mut reader, &mut pending).await.unwrap(), Some(json!({"id":8})));
++}
++
++#[tokio::test]
++async fn cancelled_stdio_read_keeps_size_limit_and_rejects_partial_eof() {
++    use futures_util::FutureExt;
++    use tokio::io::{AsyncWriteExt, BufReader, duplex};
++    let (client, mut server) = duplex(128);
++    let mut reader = BufReader::new(client);
++    let mut pending = Vec::new();
++    server.write_all(b"12345678").await.unwrap();
++    assert!(read_bounded_line(&mut reader, 16, &mut pending).now_or_never().is_none());
++    server.write_all(b"90123456789\n").await.unwrap();
++    assert!(read_bounded_line(&mut reader, 16, &mut pending).await.is_err());
++    let (client, mut server) = duplex(128);
++    let mut reader = BufReader::new(client);
++    let mut pending = Vec::new();
++    server.write_all(b"{\"id\":").await.unwrap();
++    assert!(read_stdio_json(&mut reader, &mut pending).now_or_never().is_none());
++    drop(server);
++    assert!(read_stdio_json(&mut reader, &mut pending).await.is_err());
++}
+diff --git a/src/forge_mutation.rs b/src/forge_mutation.rs
+index b2cefbe66f4f26d4ec91e0728bfec8b21b4793b7..2b28627bec0ebea442308056b2a9aa37d9c83732 100644
+--- a/src/forge_mutation.rs
++++ b/src/forge_mutation.rs
+@@ -695 +694,0 @@ struct GitLabApprovalState {
+-    #[serde(default)]
+@@ -701 +699,0 @@ struct GitLabApprovalRuleState {
+-    #[serde(default)]
+@@ -703 +700,0 @@ struct GitLabApprovalRuleState {
+-    #[serde(default)]
+@@ -941,0 +939,3 @@ async fn require_gitlab_approvals(plan: &ForgeMutationPlan, iid: u64) -> Result<
++        // A successful HTTP response with malformed/missing evidence is not
++        // an unsupported endpoint. Never hide that integrity failure behind fallback.
++        Err(error) if error.downcast_ref::<serde_json::Error>().is_some() => Err(error),
+diff --git a/src/forge_mutation/tests.rs b/src/forge_mutation/tests.rs
+index e9df8505b07802158ddfff98a27cb0bc4f72ddf4..b9690ecdb78275ce2791cfb2769f4c9718a46a3c 100644
+--- a/src/forge_mutation/tests.rs
++++ b/src/forge_mutation/tests.rs
+@@ -305,0 +306,20 @@ fn approve_and_merge_plans_advertise_head_sha_revalidation() {
++
++
++#[test]
++fn gitlab_approval_evidence_requires_explicit_fields_and_types() {
++    for payload in [
++        "{}", "{\"rules\":null}", "{\"rules\":[{\"approved\":false}]}",
++        "{\"rules\":[{\"approvals_required\":1}]}",
++        "{\"rules\":[{\"approvals_required\":null,\"approved\":true}]}",
++        "{\"rules\":[{\"approvals_required\":0,\"approved\":\"true\"}]}",
++        "{\"rules\":[{\"approvals_required\":-1,\"approved\":true}]}",
++    ] {
++        let error = serde_json::from_str::<GitLabApprovalState>(payload).unwrap_err();
++        let wrapped = anyhow::Error::new(error).context("decode glab api response");
++        assert!(wrapped.downcast_ref::<serde_json::Error>().is_some(), "{payload}");
++    }
++    let empty: GitLabApprovalState = serde_json::from_str("{\"rules\":[]}").unwrap();
++    assert_eq!(unsatisfied_required_approval_rules(&empty), 0);
++    let pending: GitLabApprovalState = serde_json::from_str("{\"rules\":[{\"approvals_required\":1,\"approved\":false}]}").unwrap();
++    assert_eq!(unsatisfied_required_approval_rules(&pending), 1);
++}
+diff --git a/src/pty.rs b/src/pty.rs
+index aef6c295a93791681a9a8b45368464cc953a26a4..b6c308d568c793f8d14f199fe36096baa48decd1 100644
+--- a/src/pty.rs
++++ b/src/pty.rs
+@@ -8,0 +9,7 @@ use std::thread::{self, JoinHandle};
++use std::time::Duration;
++mod child_guard;
++use child_guard::ReapChild;
++
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++enum StartupStage { Spawned, Registered, ReaderCloned, WriterTaken, ReadySent, ReaderStarted }
++
