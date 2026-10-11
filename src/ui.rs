@@ -433,14 +433,14 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
             } else if let Some(error) = &app.backend_status.error {
                 Line::from(format!(
                     "{} · {} · {}",
-                    app.backend_status.source,
+                    sanitize_inline(&app.backend_status.source),
                     tr(app, "offline/degraded", "离线/降级"),
                     truncate_display(error, 80)
                 ))
             } else if !app.backend_status.connected {
                 Line::from(format!(
                     "{} · {}",
-                    app.backend_status.source,
+                    sanitize_inline(&app.backend_status.source),
                     tr(app, "offline", "离线")
                 ))
             } else if !app.backend_status.registry_complete {
@@ -828,22 +828,23 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
             .work_card_for_thread(&thread.id)
             .map(|card| workflow_stage_label(card.stage, app.language))
             .unwrap_or_else(|| tr(app, "<unprojected>", "<未投影>"));
+        let thread_label = sanitize_inline(&thread.id.0);
+        let model_label = sanitize_inline(
+            thread
+                .metadata
+                .model
+                .as_deref()
+                .unwrap_or_else(|| tr(app, "unknown", "未知")),
+        );
         let mut lines = if app.language.is_simplified_chinese() {
             vec![
-                Line::from(format!("会话: {}", thread.id)),
+                Line::from(format!("会话: {thread_label}")),
                 Line::from(format!("工作区: {}", sanitize_inline(&thread.workspace))),
                 Line::from(format!(
                     "运行状态: {} · 待处理: {attention}",
                     runtime_status_label(&thread.runtime, app.language)
                 )),
-                Line::from(format!(
-                    "模型: {}",
-                    thread
-                        .metadata
-                        .model
-                        .as_deref()
-                        .unwrap_or_else(|| tr(app, "unknown", "未知"))
-                )),
+                Line::from(format!("模型: {model_label}")),
                 Line::from(format!(
                     "Cwd [{}]: {}",
                     cwd_locality_display_label(
@@ -861,20 +862,13 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
             ]
         } else {
             vec![
-                Line::from(format!("Thread: {}", thread.id)),
+                Line::from(format!("Thread: {thread_label}")),
                 Line::from(format!("Workspace: {}", sanitize_inline(&thread.workspace))),
                 Line::from(format!(
                     "Runtime: {} · attention: {attention}",
                     runtime_status_label(&thread.runtime, app.language)
                 )),
-                Line::from(format!(
-                    "Model: {}",
-                    thread
-                        .metadata
-                        .model
-                        .as_deref()
-                        .unwrap_or_else(|| tr(app, "unknown", "未知"))
-                )),
+                Line::from(format!("Model: {model_label}")),
                 Line::from(format!(
                     "Cwd [{}]: {}",
                     cwd_locality_display_label(
@@ -929,14 +923,15 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
                     lines.push(Line::from(tr(app, "Git: probing…", "Git: 探测中…")));
                 }
                 Some(context) if context.error.is_some() => {
+                    let diagnostic = sanitize_inline(
+                        context
+                            .error
+                            .as_deref()
+                            .unwrap_or_else(|| tr(app, "unknown error", "未知错误")),
+                    );
                     lines.push(Line::from(format!(
-                        "{} · {}",
+                        "{} · {diagnostic}",
                         tr(app, "Git: degraded", "Git: 已降级"),
-                        context.error.as_deref().unwrap_or_else(|| tr(
-                            app,
-                            "unknown error",
-                            "未知错误"
-                        ))
                     )));
                 }
                 Some(context) if !context.is_repository => {
@@ -952,7 +947,7 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
                         .as_deref()
                         .or(context.head.as_deref())
                         .unwrap_or_else(|| tr(app, "unknown", "未知"));
-                    lines.push(Line::from(format!("Git: {branch}")));
+                    lines.push(Line::from(format!("Git: {}", sanitize_inline(branch))));
                     lines.push(Line::from(if app.language.is_simplified_chinese() {
                         format!(
                             "脏状态: {} · 文件={} · +{} -{}",
