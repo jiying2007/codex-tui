@@ -807,12 +807,10 @@ fn requires_authoritative_registry_refresh(message: &Value) -> bool {
     }
     match message.get("method").and_then(Value::as_str) {
         Some("thread/unarchived") => true,
-        Some("thread/project/updated") => {
-            params.get("projectId").is_some_and(Value::is_null)
-        }
-        Some("thread/name/updated") => params
-            .get("threadName")
-            .is_none_or(|name| name.is_null() || name.as_str().is_some_and(|s| s.trim().is_empty())),
+        Some("thread/project/updated") => params.get("projectId").is_some_and(Value::is_null),
+        Some("thread/name/updated") => params.get("threadName").is_none_or(|name| {
+            name.is_null() || name.as_str().is_some_and(|s| s.trim().is_empty())
+        }),
         _ => false,
     }
 }
@@ -3209,17 +3207,23 @@ mod tests {
             json!({"method":"thread/unarchived","params":{"threadId":"a"}}),
             json!({"method":"thread/project/updated","params":{"threadId":"a","projectId":null}}),
             json!({"method":"thread/name/updated","params":{"threadId":"a"}}),
-            json!({"method":"thread/name/updated","params":{"threadId":"a","threadName":""}})
+            json!({"method":"thread/name/updated","params":{"threadId":"a","threadName":""}}),
         ] {
-            assert!(requires_authoritative_registry_refresh(&message), "{message}");
+            assert!(
+                requires_authoritative_registry_refresh(&message),
+                "{message}"
+            );
         }
         for message in [
             json!({"method":"thread/archived","params":{"threadId":"a"}}),
             json!({"method":"thread/project/updated","params":{"threadId":"a","projectId":"B"}}),
             json!({"method":"thread/project/updated","params":{"threadId":"a","projectId":45}}),
-            json!({"method":"thread/unarchived","params":{}})
+            json!({"method":"thread/unarchived","params":{}}),
         ] {
-            assert!(!requires_authoritative_registry_refresh(&message), "{message}");
+            assert!(
+                !requires_authoritative_registry_refresh(&message),
+                "{message}"
+            );
         }
     }
 

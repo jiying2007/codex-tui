@@ -198,7 +198,9 @@ fn normalize_git_origin(origin: &str) -> Option<String> {
         let (authority, path) = origin.split_once(':')?;
         let host = authority.rsplit('@').next()?.trim();
         if host.is_empty()
-            || host.chars().any(|ch| matches!(ch, '/' | '\\' | '?' | '#' | ' '))
+            || host
+                .chars()
+                .any(|ch| matches!(ch, '/' | '\\' | '?' | '#' | ' '))
         {
             return None;
         }
@@ -208,7 +210,9 @@ fn normalize_git_origin(origin: &str) -> Option<String> {
     let path = path.strip_suffix(".git").unwrap_or(path);
     if host.is_empty()
         || path.is_empty()
-        || path.chars().any(|ch| matches!(ch, '\\' | '?' | '#' | '\n' | '\r'))
+        || path
+            .chars()
+            .any(|ch| matches!(ch, '\\' | '?' | '#' | '\n' | '\r'))
     {
         return None;
     }
@@ -325,7 +329,8 @@ mod tests {
     #[test]
     fn git_origins_are_identity_equivalent_and_strip_credential_suffices() {
         let plain = "https://github.com/Team/Repo.git";
-        let credentialed = "https://user:secret@github.com/Team/Repo.git?token=supersecret#fragment";
+        let credentialed =
+            "https://user:secret@github.com/Team/Repo.git?token=supersecret#fragment";
         let scp = "git@github.com:Team/Repo.git";
         let expected = Some("github.com/team/repo".to_string());
         assert_eq!(normalize_git_origin(plain), expected);
@@ -341,7 +346,9 @@ mod tests {
     fn untrusted_remote_never_enters_workspace_or_search_identity() {
         let mut thread = wire(json!({"type": "idle"}));
         thread.git_info = Some(GitInfoWire {
-            origin_url: Some("https://alice:password@example.com/Team/Repo.git?access=topsecret#token".into()),
+            origin_url: Some(
+                "https://alice:password@example.com/Team/Repo.git?access=topsecret#token".into(),
+            ),
         });
         let view = normalize_thread(thread.clone(), None);
         assert_eq!(view.workspace, "repo");

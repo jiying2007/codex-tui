@@ -222,7 +222,10 @@ mod tests {
         )
         .expect("project B");
         assert_eq!(threads["thread-a"].workspace, "project:project-B");
-        assert_eq!(threads["thread-a"].metadata.project_id.as_deref(), Some("project-B"));
+        assert_eq!(
+            threads["thread-a"].metadata.project_id.as_deref(),
+            Some("project-B")
+        );
         assert_eq!(threads["thread-a"].metadata.updated_at, 3);
     }
 

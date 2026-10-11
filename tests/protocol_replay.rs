@@ -83,7 +83,10 @@ fn stable_0_162_1_project_unassignment_replays_without_stale_authority() {
     let unassigned = replay.tick();
     assert_eq!(unassigned.threads[0].workspace, "repo");
     assert_eq!(unassigned.threads[0].metadata.project_id, None);
-    assert_eq!(unassigned.threads[0].metadata.workspace_key, "cwd:/srv/team/repo");
+    assert_eq!(
+        unassigned.threads[0].metadata.workspace_key,
+        "cwd:/srv/team/repo"
+    );
     let assigned = replay.tick();
     assert_eq!(assigned.threads[0].workspace, "project:project-B");
     let named = replay.tick();
