@@ -19,6 +19,8 @@ codex-tui
 
 Default target is local `codex app-server --listen stdio://`. Named targets are configured in local TOML; one invocation can use `codex-tui --target NAME`. Non-loopback plaintext `ws://` targets are rejected even without a configured token; use `wss://` or loopback through an SSH tunnel. Loopback IPv4, IPv6 and `localhost` remain permitted for local development. A dead or incompatible backend is **not** silently replaced by fake data; distinguish `--fake` fixture mode from real sessions. Read [Remote Target design](../implementation/v1.3-remote-app-server-targets.md).
 
+`doctor` prints a single-line, terminal-safe presentation of external paths, branches, host names, diagnostics and error strings; ANSI controls and Unicode bidi overrides become visible replacement characters. Original Codex/Git/Forge data is not rewritten.
+
 ## Navigate work and attention
 <!-- docs-section: daily -->
 
