@@ -192,7 +192,7 @@
     "src/app/context_menu.rs": 93,
     "src/app/review.rs": 121,
     "src/ui/review.rs": 325,
-    "src/runtime_external.rs": 146,
+    "src/runtime_external.rs": 204,
     "src/runtime_external/tests.rs": 86,
     "src/detached_process.rs": 134,
     "src/detached_process/tests.rs": 174,
@@ -785,6 +785,15 @@
         "src/app/tests.rs"
       ],
       "policy": "Defect/security-only v1.4 maintenance; sole complete-source LOC ratchet, no persisted schema/protocol change, compatibility shim, new product feature or Stable publication. Require exact-head PR 8/8, fresh-main qualification and release safeguards."
+    },
+    {
+      "date": "2026-10-11",
+      "kind": "review-external-browser-url-validation",
+      "scope": "Validate Forge-owned Review external browser targets as unambiguous HTTP(S) URLs with a real host and no userinfo, control/bidi, whitespace, invalid port or backslash normalization before launching a child. Preserve valid URL bytes and established external browser argv; native source data and Review action authority unchanged.",
+      "modules": [
+        "src/runtime_external.rs"
+      ],
+      "policy": "Security/defect-only v1.4 maintenance, no new dependency, protocol, persisted schema, product capability, compatibility shim or Stable publication. Sole complete-source LOC ratchet, bilingual operator docs and exact-head multi-platform qualification required."
     }
   ]
 }
