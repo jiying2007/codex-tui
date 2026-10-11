@@ -161,10 +161,9 @@ fn workspace_for(thread: &ThreadWire) -> (String, String, String) {
         .and_then(|git| git.origin_url.as_deref())
         .map(str::trim)
         .filter(|value| !value.is_empty())
+        && let Some(key) = normalize_git_origin(origin)
     {
-        if let Some(key) = normalize_git_origin(origin) {
-            return (repo_label(&key), format!("git:{key}"), "git-origin".into());
-        }
+        return (repo_label(&key), format!("git:{key}"), "git-origin".into());
     }
 
     fallback_workspace_from_cwd(&thread.cwd)

@@ -242,7 +242,7 @@
     "src/app/types.rs": 424,
     "src/backend.rs": 229,
     "src/batch_local.rs": 208,
-    "src/codex_protocol.rs": 375,
+    "src/codex_protocol.rs": 374,
     "src/command.rs": 130,
     "src/compat.rs": 574,
     "src/domain.rs": 342,
@@ -547,6 +547,15 @@
         "src/app_server_target.rs"
       ],
       "policy": "Security-only predeployment hardening; no credentials, second server, configuration migration, or Stable readiness claim."
+    },
+    {
+      "date": "2026-10-11",
+      "kind": "clippy-followup",
+      "scope": "Collapse nested optional origin check per -D clippy::collapsible-if while retaining safe fallback and canonical behavior",
+      "modules": [
+        "src/codex_protocol.rs"
+      ],
+      "policy": "No behavioral extension; preserve single v1.4 LOC ratchet."
     }
   ]
 }
