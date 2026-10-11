@@ -174,7 +174,10 @@ async fn real_git_worktree_inventory_preserves_whitespace_in_directory_names() {
     init_repo(&repo_root);
     let target = temp.path().join("feature with newline\ntrailing ");
     let target_text = target.to_str().expect("UTF-8 temporary path");
-    git(&repo_root, &["worktree", "add", "-b", "whitespace", target_text]);
+    git(
+        &repo_root,
+        &["worktree", "add", "-b", "whitespace", target_text],
+    );
 
     let inventory = list_worktrees(repo_root.to_str().unwrap())
         .await
