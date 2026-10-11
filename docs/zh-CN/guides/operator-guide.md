@@ -25,6 +25,8 @@ codex-tui
 
 `doctor compat` 会净化纯文本版本号与诊断信息中的危险终端控制字符，`doctor compat --json` 保持原始证据和已有数据结构。
 
+CLI 参数错误、支持包路径和 `doctor` 启动失败提示也会在最终终端显示处净化危险控制字符；原始文件路径与帮助内容保持不变。
+
 ## 工作和提醒导航
 <!-- docs-section: daily -->
 
