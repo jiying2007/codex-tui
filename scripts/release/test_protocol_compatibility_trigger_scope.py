@@ -29,6 +29,8 @@ REQUIRED = {
     "tests/protocol_replay.rs",
     "tests/fixtures/protocol/**",
     "scripts/release/test_protocol_compatibility_trigger_scope.py",
+    "scripts/release/upstream_codex_release_watch.py",
+    "scripts/release/test_upstream_codex_release_watch.py",
     ".github/workflows/protocol-compatibility.yml",
 }
 
@@ -81,6 +83,8 @@ class ProtocolCompatibilityTriggerScopeTests(unittest.TestCase):
         self.assertIn("  workflow_dispatch:\n", text)
         self.assertIn("cargo test --locked --test protocol_replay", text)
         self.assertIn("test_protocol_compatibility_trigger_scope.py", text)
+        self.assertIn("Observe official Codex stable release drift", text)
+        self.assertIn("test_upstream_codex_release_watch.py", text)
 
 
 if __name__ == "__main__":
