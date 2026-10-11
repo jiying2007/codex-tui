@@ -52,6 +52,8 @@ For managed Worktree deletion, active Codex threads with unknown repository or c
 
 Set `[ui].language = "en"` or `"zh-CN"`, or leave `"auto"` for locale detection. `presentation = "quiet"` coalesces background redraws; `"screen-reader"` uses longer background intervals while keeping direct input responsive. `[notifications].mode` defaults `"off"`. Desktop notification subjects are escaped and truncated for display only; Linux OS notifications pass dynamic text after the `notify-send --` option terminator. Enabled notifications use a bounded dispatcher plus a 128-event pending retry queue, drained by the normal UI loop; saturation reports the number of events not queued and directs the operator to Needs You rather than claiming lossless delivery. Original work item titles and notification tracking remain unchanged. These are local preferences, not team policy or synchronization.
 
+Managed Worktree mutation/recovery prefers complete NUL-delimited Git worktree inventory, preserving newline and trailing-space directory names. Older Git 2.25 (as found in the Linux qualification image) lacks the worktree `-z` flag: a strict, complete plaintext porcelain fallback keeps trailing spaces and rejects malformed/ambiguous paths rather than inferring absence. Newline-bearing paths require NUL-capable Git for safe representation. Invalid encoding or Git stdout over 256 KiB fails closed; large inventories need explicit qualification rather than automatic false-success.
+
 ## Windows SSH Ubuntu and Terminal Drawer
 <!-- docs-section: ssh -->
 
