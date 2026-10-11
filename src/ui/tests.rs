@@ -547,6 +547,90 @@ fn simplified_chinese_status_helpers_cover_terminal_forge_and_receipts() {
 }
 
 #[test]
+fn managed_worktree_confirmation_neutralizes_untrusted_labels_and_input() {
+    let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+    let thread = app.threads[0].clone();
+    app.view = View::ManagedWorktrees(thread.id.clone());
+    let repo = crate::domain::LocalRepoIdentity {
+        git_common_dir: "/repo/.git".into(),
+        primary_root: "/repo\u{202e}spoof".into(),
+    };
+    let mut context = crate::git::GitContext::pending(thread.id.clone(), thread.metadata.cwd);
+    context.observed_at_unix_ms = 1;
+    context.is_repository = true;
+    context.repo = Some(repo.clone());
+    app.git_contexts.insert(thread.id.0, context);
+
+    let mut plan = crate::operation::OperationPlan::create_worktree(
+        repo,
+        "/work\u{202e}spoof".into(),
+        "/target\u{202e}spoof".into(),
+        "branch\u{202e}spoof".into(),
+        "base\u{202e}spoof".into(),
+        1,
+    );
+    plan.expected_side_effect = "expected\u{202e}spoof".into();
+    plan.preconditions[0].key = "precondition\u{202e}spoof".into();
+    plan.preconditions[0].expected = "condition\u{202e}spoof".into();
+    app.pending_operation = Some(plan);
+    app.input_mode = InputMode::WorktreeDeleteBranch;
+    app.input_buffer = "typed\u{202e}spoof".into();
+
+    let mut terminal = Terminal::new(TestBackend::new(180, 48)).expect("terminal");
+    terminal.draw(|frame| render(frame, &app)).expect("draw");
+    let buffer = terminal.backend().buffer();
+    let mut snapshot = String::new();
+    for y in 0..buffer.area.height {
+        for x in 0..buffer.area.width {
+            snapshot.push_str(buffer[(x, y)].symbol());
+        }
+        snapshot.push('\n');
+    }
+
+    for label in [
+        "Repository: /repo\u{fffd}spoof",
+        "Cwd: /work\u{fffd}spoof",
+        "Target worktree: /target\u{fffd}spoof",
+        "Target branch: branch\u{fffd}spoof",
+        "Expected: expected\u{fffd}spoof",
+        "precondition\u{fffd}spoof = condition\u{fffd}spoof",
+        "typed\u{fffd}spoof",
+    ] {
+        assert!(
+            snapshot.contains(label),
+            "missing safe confirmation label {label:?}"
+        );
+    }
+    assert!(!snapshot.contains('\u{202e}'));
+}
+
+#[test]
+fn board_change_request_state_is_display_sanitized() {
+    let mut threads = FakeBackend::seeded().snapshot().threads;
+    let thread = threads.remove(0);
+    let mut card = crate::planning::reconcile_thread_card(crate::planning::ReconcileInput {
+        thread: &thread,
+        git: None,
+        local: None,
+        collision_count: 0,
+        backend_observed_at_unix_ms: None,
+        backend_error: None,
+        now_unix_ms: 1,
+    });
+    card.change_request_state = Some("opened\u{202e}spoof".into());
+    card.change_request_draft = true;
+    assert_eq!(
+        planning_card_field(&card, "change-request", UiLanguage::English),
+        Some("opened\u{fffd}spoof/draft".into())
+    );
+    assert_eq!(
+        card.change_request_state.as_deref(),
+        Some("opened\u{202e}spoof"),
+        "display must not rewrite canonical Forge state"
+    );
+}
+
+#[test]
 fn terminal_drawer_preserves_semantic_cjk_rows() {
     let backend = TestBackend::new(80, 24);
     let mut terminal = Terminal::new(backend).expect("terminal");
