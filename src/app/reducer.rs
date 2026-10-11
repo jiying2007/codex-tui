@@ -1380,16 +1380,41 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             let View::Review(thread_id) = &state.view else {
                 return vec![];
             };
+            let thread_id = thread_id.clone();
             let Some(review) = state.git_reviews.get(&thread_id.0) else {
                 return vec![];
             };
             let Some(change) = review.changes.get(state.review_selected) else {
                 return vec![];
             };
+            let cwd = review.cwd.clone();
+            let path = change.path.clone();
+            let live_thread = state
+                .thread_by_id(&thread_id)
+                .is_some_and(|thread| thread.metadata.cwd == cwd);
+            let worktree_root = state
+                .git_context(&thread_id)
+                .filter(|context| {
+                    context.is_repository && context.error.is_none() && context.cwd == cwd
+                })
+                .and_then(|context| context.worktree.as_ref())
+                .map(|worktree| worktree.canonical_path.clone());
+            let Some(worktree_root) = worktree_root.filter(|_| live_thread) else {
+                let message = if state.language.is_simplified_chinese() {
+                    "Git 工作树身份不可用或已过期，请刷新 Review 后再打开文件"
+                } else {
+                    "Git worktree identity unavailable or stale; refresh Review before opening a file"
+                };
+                if let Some(review) = state.git_reviews.get_mut(&thread_id.0) {
+                    review.error = Some(message.into());
+                }
+                return vec![];
+            };
+            // Porcelain v2 paths are worktree-relative even when the thread cwd is nested.
             return vec![Effect::OpenExternalEditor {
-                thread_id: thread_id.clone(),
-                cwd: review.cwd.clone(),
-                path: change.path.clone(),
+                thread_id,
+                cwd: worktree_root,
+                path,
             }];
         }
         Action::OpenReviewExternal => {

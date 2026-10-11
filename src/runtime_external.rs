@@ -1,17 +1,38 @@
-use anyhow::Result;
-use std::path::Path;
+use anyhow::{Context, Result};
+use std::path::{Component, Path, PathBuf};
 use std::process::Stdio;
 
-pub(crate) fn open_external_editor(cwd: &str, relative_path: &str) -> Result<()> {
+fn selected_editor_target(worktree_root: &str, relative_path: &str) -> Result<PathBuf> {
+    let selected = Path::new(relative_path);
+    anyhow::ensure!(
+        !relative_path.is_empty()
+            && selected
+                .components()
+                .all(|component| matches!(component, Component::Normal(_))),
+        "selected Git change must be a worktree-relative path"
+    );
+    let root = std::fs::canonicalize(worktree_root)
+        .with_context(|| format!("resolve worktree root {worktree_root:?}"))?;
+    anyhow::ensure!(
+        root.is_dir(),
+        "selected Git worktree root is not a directory"
+    );
+    let target = std::fs::canonicalize(root.join(selected))
+        .with_context(|| format!("resolve changed file {relative_path:?}"))?;
+    anyhow::ensure!(
+        target != root && target.starts_with(&root),
+        "selected Git change escapes worktree root"
+    );
+    Ok(target)
+}
+
+pub(crate) fn open_external_editor(worktree_root: &str, relative_path: &str) -> Result<()> {
     let editor =
         std::env::var_os("CODEX_TUI_EDITOR").unwrap_or_else(|| std::ffi::OsString::from("code"));
     if editor.to_string_lossy().trim().is_empty() {
         anyhow::bail!("CODEX_TUI_EDITOR is empty");
     }
-    let path = Path::new(cwd).join(relative_path);
-    if !path.exists() {
-        anyhow::bail!("selected path does not exist: {}", path.display());
-    }
+    let path = selected_editor_target(worktree_root, relative_path)?;
     let mut command = std::process::Command::new(editor);
     command
         .arg(path)
@@ -63,6 +84,55 @@ pub(crate) fn open_external_url(url: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn selected_editor_path_is_scoped_to_the_real_worktree_root() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let repo = temp.path().join("repo");
+        std::fs::create_dir_all(repo.join("src")).expect("create subdir");
+        let file = repo.join("src").join("changed.rs");
+        std::fs::write(&file, "pub fn changed() {}").expect("write changed file");
+        std::fs::write(temp.path().join("outside.rs"), "secret").expect("outside");
+
+        assert_eq!(
+            selected_editor_target(repo.to_str().unwrap(), "src/changed.rs").unwrap(),
+            file.canonicalize().unwrap()
+        );
+        for invalid in [
+            "../outside.rs",
+            "src/../../outside.rs",
+            "./src/changed.rs",
+            "",
+        ] {
+            assert!(
+                selected_editor_target(repo.to_str().unwrap(), invalid).is_err(),
+                "unexpected editor target: {invalid:?}"
+            );
+        }
+        assert!(selected_editor_target(repo.to_str().unwrap(), file.to_str().unwrap()).is_err());
+        assert!(selected_editor_target(repo.to_str().unwrap(), "absent.rs").is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn selected_editor_path_rejects_symlink_escape_but_accepts_in_tree_links() {
+        use std::os::unix::fs::symlink;
+
+        let temp = tempfile::tempdir().expect("tempdir");
+        let repo = temp.path().join("repo");
+        std::fs::create_dir(&repo).expect("create repo");
+        let inner = repo.join("inner.rs");
+        let outside = temp.path().join("private.rs");
+        std::fs::write(&inner, "inside").unwrap();
+        std::fs::write(&outside, "outside").unwrap();
+        symlink(&outside, repo.join("escape.rs")).unwrap();
+        symlink(&inner, repo.join("inner-link.rs")).unwrap();
+        assert!(selected_editor_target(repo.to_str().unwrap(), "escape.rs").is_err());
+        assert_eq!(
+            selected_editor_target(repo.to_str().unwrap(), "inner-link.rs").unwrap(),
+            inner.canonicalize().unwrap()
+        );
+    }
 
     #[test]
     fn external_url_rejects_non_http_targets_before_spawning() {

@@ -2667,3 +2667,51 @@ fn forge_mutation_receipt_invalidates_projection_and_enters_recent_audit() {
     assert_eq!(observation.observed_at_unix_ms, 1);
     assert!(observation.review.is_none());
 }
+
+#[test]
+fn review_editor_uses_authoritative_worktree_root_not_nested_thread_cwd() {
+    let mut app = app();
+    let thread_id = app.threads[0].id.clone();
+    let cwd = "/work/repo/nested";
+    let root = "/work/repo";
+    app.threads[0].metadata.cwd = cwd.into();
+    let mut review = GitReview::pending(thread_id.clone(), cwd);
+    review.changes.push(crate::git::GitFileChange {
+        path: "src/changed.rs".into(),
+        original_path: None,
+        index_status: None,
+        worktree_status: Some('M'),
+        untracked: false,
+        conflict: false,
+    });
+    app.git_reviews.insert(thread_id.0.clone(), review);
+    app.view = View::Review(thread_id.clone());
+
+    assert!(reduce(&mut app, Action::OpenReviewExternalEditor).is_empty());
+    assert!(app.current_review().unwrap().error.is_some());
+
+    let mut context = GitContext::pending(thread_id.clone(), cwd);
+    context.is_repository = true;
+    context.worktree = Some(crate::domain::WorktreeIdentity {
+        repo: LocalRepoIdentity {
+            git_common_dir: "/work/repo/.git".into(),
+            primary_root: root.into(),
+        },
+        canonical_path: root.into(),
+        branch: None,
+        managed_by_codex_tui: false,
+    });
+    app.git_contexts.insert(thread_id.0.clone(), context);
+    assert_eq!(
+        reduce(&mut app, Action::OpenReviewExternalEditor),
+        vec![Effect::OpenExternalEditor {
+            thread_id: thread_id.clone(),
+            cwd: root.into(),
+            path: "src/changed.rs".into(),
+        }]
+    );
+
+    app.threads[0].metadata.cwd = "/work/other".into();
+    assert!(reduce(&mut app, Action::OpenReviewExternalEditor).is_empty());
+    assert!(app.current_review().unwrap().error.is_some());
+}
