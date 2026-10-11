@@ -75,6 +75,10 @@ impl RuntimeServices {
     }
 }
 
+fn cli_terminal_field(value: &str) -> String {
+    codex_tui::text::sanitize_inline(value)
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
     let mut args = std::env::args().skip(1).collect::<Vec<_>>();
@@ -85,7 +89,10 @@ async fn main() -> Result<()> {
         }
         Ok(None) => {}
         Err(error) => {
-            eprintln!("{error}\nRun `codex-tui --help` for usage.");
+            eprintln!(
+                "{}\nRun `codex-tui --help` for usage.",
+                cli_terminal_field(&error.to_string())
+            );
             std::process::exit(codex_tui::headless::EXIT_USAGE);
         }
     }
@@ -150,7 +157,10 @@ async fn main() -> Result<()> {
             index += 1;
         }
         let path = codex_tui::support_bundle::create(output).await?;
-        println!("support-bundle: {}", path.display());
+        println!(
+            "support-bundle: {}",
+            cli_terminal_field(&path.display().to_string())
+        );
         return Ok(());
     }
 
@@ -176,7 +186,10 @@ async fn main() -> Result<()> {
         let code = match doctor(args.get(1).map(String::as_str), target_override.as_deref()).await {
             Ok(code) => code,
             Err(error) => {
-                eprintln!("doctor: DEGRADED · {error:#}");
+                eprintln!(
+                    "doctor: DEGRADED · {}",
+                    cli_terminal_field(&format!("{error:#}"))
+                );
                 codex_tui::headless::EXIT_DEGRADED
             }
         };
@@ -1850,5 +1863,21 @@ mod accessibility_input_tests {
         assert_eq!(app.input_mode, InputMode::Search);
         assert!(app.input_buffer.ends_with('b'));
         assert_eq!(app.view_kind(), ViewKind::Registry);
+    }
+}
+
+#[cfg(test)]
+mod cli_terminal_presentation_tests {
+    use super::cli_terminal_field;
+
+    #[test]
+    fn external_cli_error_and_bundle_path_text_cannot_spoof_terminal() {
+        let original = "path\u{001b}[2J\u{202e}\n中文";
+        assert_eq!(
+            cli_terminal_field(original),
+            "path\u{fffd}[2J\u{fffd} 中文"
+        );
+        assert_eq!(original, "path\u{001b}[2J\u{202e}\n中文");
+        assert_eq!(cli_terminal_field("normal 中文"), "normal 中文");
     }
 }
