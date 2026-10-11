@@ -111,11 +111,16 @@ fn parse_worktree_records<'a>(
             );
             has_branch_status = true;
             branch = None;
-        } else if !(record == "locked"
+        } else if record == "locked"
             || record.starts_with("locked ")
             || record == "prunable"
-            || record.starts_with("prunable "))
+            || record.starts_with("prunable ")
         {
+            anyhow::ensure!(
+                has_identity,
+                "Git worktree advisory metadata precedes HEAD; inventory is ambiguous"
+            );
+        } else {
             anyhow::bail!("unrecognized Git worktree porcelain field");
         }
     }
