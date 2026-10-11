@@ -596,7 +596,10 @@ fn managed_worktree_confirmation_neutralizes_untrusted_labels_and_input() {
         "precondition\u{fffd}spoof = condition\u{fffd}spoof",
         "typed\u{fffd}spoof",
     ] {
-        assert!(snapshot.contains(label), "missing safe confirmation label {label:?}");
+        assert!(
+            snapshot.contains(label),
+            "missing safe confirmation label {label:?}"
+        );
     }
     assert!(!snapshot.contains('\u{202e}'));
 }
