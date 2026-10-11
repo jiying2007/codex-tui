@@ -36,6 +36,8 @@ Search and Saved Views are local organization; unseen upstream history is not fa
 
 The Review `e` external-editor action now requires a current Git worktree identity matching the selected thread and review. Git status paths resolve from the worktree root (not a nested thread cwd); absolute paths, parent traversal, missing targets and symlinks resolving outside the worktree are rejected before launching an editor. Refresh Review and Git context if the identity is stale. No source path or Git state is modified.
 
+Review external browser links require an unambiguous HTTP(S) host without embedded credentials, control characters, whitespace or backslash normalization. Invalid provider links fail before browser launch; valid GitLab/GitHub URLs are passed through unchanged.
+
 ## Repository and delivery context
 <!-- docs-section: forge -->
 
