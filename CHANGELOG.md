@@ -17,6 +17,8 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
+- Neutralize Git paths, branch names, mutation-plan preview and preconditions in the Managed Worktrees confirm-before-write screen plus Forge change-request status on Board; real terminal cell spoofing regressions preserve source data and approval gates.
+
 - Neutralize control/bidi/invisible formatting in selected Mission Control thread/model/Git error and branch labels plus offline backend source, with real TUI TestBackend regression; source data never rewritten.
 
 - Move 76 existing Planning/Forge Mutation/Worktree/Release/GitHub Forge/Git unit tests into six sibling test modules without altering production prefixes, test identities or release authority; continue complete-source LOC ratchet enforcement.

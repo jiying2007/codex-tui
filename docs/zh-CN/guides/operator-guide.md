@@ -43,7 +43,7 @@ Forge 概览仅获取各能力最近 20 条记录。GitHub Issues API 会混入 
 ## Windows SSH Ubuntu 与 Terminal Drawer
 <!-- docs-section: ssh -->
 
-通过 Windows SSH 客户端控制 Ubuntu 时，codex-tui **在 Ubuntu 运行**；终端设备、文件路径、Codex、配置、Shell 子进程都应以 Ubuntu 为准。`t` 打开 Drawer，`F6` 或 `Ctrl+]` 在终端支持时返回聚焦。若 Windows/SSH 抢占按键，先查 `?` 与 `doctor terminal`；Resize、Focus、Ctrl+C、退出与终端恢复必须在**真实控制 TTY** 验证。托管 PTY 回归不是该证明。界面会对不可信的会话消息、Git diff 正文、仓库路径及平台状态中的控制字符、Unicode 双向覆盖符，以及软连字符、零宽空格和词连接符等视觉不可见格式字符做安全替换；选中会话详情和离线状态栏也会对会话 ID、模型名、Git 分支/错误和 App Server 来源字符串执行同样的仅显示端净化；仅改变显示内容，不改动 Codex/Git 权威原始数据。Terminal Drawer 是独立的 PTY 终端模拟器，不属于安全过滤后的预览。
+通过 Windows SSH 客户端控制 Ubuntu 时，codex-tui **在 Ubuntu 运行**；终端设备、文件路径、Codex、配置、Shell 子进程都应以 Ubuntu 为准。`t` 打开 Drawer，`F6` 或 `Ctrl+]` 在终端支持时返回聚焦。若 Windows/SSH 抢占按键，先查 `?` 与 `doctor terminal`；Resize、Focus、Ctrl+C、退出与终端恢复必须在**真实控制 TTY** 验证。托管 PTY 回归不是该证明。界面会对不可信的会话消息、Git diff 正文、仓库路径及平台状态中的控制字符、Unicode 双向覆盖符，以及软连字符、零宽空格和词连接符等视觉不可见格式字符做安全替换；选中会话详情和离线状态栏也会对会话 ID、模型名、Git 分支/错误和 App Server 来源字符串执行同样的仅显示端净化；受管 Worktree 的计划/确认界面及 Board 的变更请求状态，同样净化来自 Git/Forge 的不可信字符串；仅处理显示文本，不跳过显式操作确认。仅改变显示内容，不改动 Codex/Git 权威原始数据。Terminal Drawer 是独立的 PTY 终端模拟器，不属于安全过滤后的预览。
 
 ## 证据与数据安全
 <!-- docs-section: safety -->

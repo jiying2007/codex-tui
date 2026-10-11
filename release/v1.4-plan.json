@@ -149,7 +149,7 @@
   ],
   "moduleRatchet": {
     "src/app.rs": 1000,
-    "src/ui.rs": 2209,
+    "src/ui.rs": 2214,
     "src/app_server.rs": 2683,
     "src/main.rs": 1854,
     "src/sqlite_store.rs": 1715,
@@ -278,7 +278,7 @@
     "src/app/state.rs": 888,
     "src/app/tests.rs": 2669,
     "src/app/thread_queue_reducer_tests.rs": 123,
-    "src/ui/tests.rs": 787,
+    "src/ui/tests.rs": 868,
     "src/sqlite_store/tests.rs": 832,
     "src/app_server/tests.rs": 932,
     "src/planning/tests.rs": 708,
@@ -667,6 +667,16 @@
         "src/ui/tests.rs"
       ],
       "policy": "Formatting-only under v1.4 sole complete-source LOC ratchet; exact-head CI must rerun."
+    },
+    {
+      "date": "2026-10-11",
+      "kind": "worktree-confirmation-and-board-render-security",
+      "scope": "Neutralize untrusted Git/Forge strings at Managed Worktrees plan-confirmation (repository root, cwd, command preview, expected effect, target path/branch, preconditions and typed footer) and Board change-request state. Negative TUI buffer fixture and Board field fixture preserve canonical Git/Forge/plan data.",
+      "modules": [
+        "src/ui.rs",
+        "src/ui/tests.rs"
+      ],
+      "policy": "Display-only security with existing confirm-before-write semantics; no new operational authority, protocol, schema, compatibility or Stable publication. Exact-head Linux/macOS/Windows Rust 1.88 CI, Development, PTY, scale/perf and fresh-main evidence."
     }
   ]
 }

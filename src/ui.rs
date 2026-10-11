@@ -1500,10 +1500,11 @@ fn planning_card_field(
             card.change_request_state
                 .as_deref()
                 .map(|state| {
+                    let state = sanitize_inline(state);
                     if card.change_request_draft {
                         format!("{state}/draft")
                     } else {
-                        state.to_string()
+                        state
                     }
                 })
                 .unwrap_or_else(|| "-".into()),
@@ -1774,8 +1775,8 @@ fn render_managed_worktrees(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
     lines.push(Line::from(format!(
         "{}: {}",
         tr(app, "Repository", "仓库"),
-        repo.map(|repo| repo.primary_root.as_str())
-            .unwrap_or_else(|| tr(app, "<unavailable>", "<不可用>"))
+        repo.map(|repo| sanitize_inline(&repo.primary_root))
+            .unwrap_or_else(|| tr(app, "<unavailable>", "<不可用>").into())
     )));
     lines.push(Line::from(format!(
         "{}: {}",
@@ -1833,7 +1834,7 @@ fn render_managed_worktrees(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
             tr(app, "Operation", "操作"),
             plan.kind.label()
         )));
-        lines.push(Line::from(format!("Cwd: {}", plan.cwd)));
+        lines.push(Line::from(format!("Cwd: {}", sanitize_inline(&plan.cwd))));
         let command = if plan.argv.is_empty() {
             tr(
                 app,
@@ -1851,31 +1852,35 @@ fn render_managed_worktrees(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
             format!("git -C {:?} {argv}", plan.cwd)
         };
         lines.push(Line::from(format!(
-            "{}: {command}",
-            tr(app, "Exact operation", "精确操作")
+            "{}: {}",
+            tr(app, "Exact operation", "精确操作"),
+            sanitize_inline(&command)
         )));
         lines.push(Line::from(format!(
             "{}: {}",
             tr(app, "Expected", "预期结果"),
-            plan.expected_side_effect
+            sanitize_inline(&plan.expected_side_effect)
         )));
         if let Some(path) = &plan.target_worktree {
             lines.push(Line::from(format!(
-                "{}: {path}",
-                tr(app, "Target worktree", "目标 worktree")
+                "{}: {}",
+                tr(app, "Target worktree", "目标 worktree"),
+                sanitize_inline(path)
             )));
         }
         if let Some(branch) = &plan.target_branch {
             lines.push(Line::from(format!(
-                "{}: {branch}",
-                tr(app, "Target branch", "目标分支")
+                "{}: {}",
+                tr(app, "Target branch", "目标分支"),
+                sanitize_inline(branch)
             )));
         }
         lines.push(Line::from(tr(app, "Preconditions:", "前置条件:")));
         lines.extend(plan.preconditions.iter().map(|precondition| {
             Line::from(format!(
                 "  {} = {}",
-                precondition.key, precondition.expected
+                sanitize_inline(&precondition.key),
+                sanitize_inline(&precondition.expected)
             ))
         }));
         lines.push(Line::from(tr(
@@ -1967,7 +1972,7 @@ fn render_managed_worktrees(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
         )
         .into(),
     };
-    frame.render_widget(Paragraph::new(footer), outer[1]);
+    frame.render_widget(Paragraph::new(sanitize_inline(&footer)), outer[1]);
 }
 
 const HELP_LINES: &[&str] = &[
