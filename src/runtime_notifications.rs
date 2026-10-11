@@ -4,6 +4,7 @@ use codex_tui::{
     notification::{NotificationMode, NotificationObservation, NotificationTracker},
 };
 use std::{
+    collections::VecDeque,
     io::{self, Write},
     process::Stdio,
     time::Duration,
@@ -11,6 +12,7 @@ use std::{
 use tokio::{process::Command, sync::mpsc, task::JoinHandle, time::timeout};
 
 const NOTIFICATION_QUEUE_CAPACITY: usize = 32;
+const NOTIFICATION_PENDING_CAPACITY: usize = 128;
 const NOTIFICATION_NOTICE_CAPACITY: usize = 16;
 const OS_NOTIFICATION_TIMEOUT: Duration = Duration::from_secs(3);
 
@@ -24,6 +26,8 @@ pub(crate) struct RuntimeNotifications {
     mode: NotificationMode,
     tracker: NotificationTracker,
     command_tx: Option<mpsc::Sender<Delivery>>,
+    pending: VecDeque<Delivery>,
+    dispatcher_notice_emitted: bool,
     notice_rx: mpsc::Receiver<String>,
     task: Option<JoinHandle<()>>,
 }
@@ -36,6 +40,8 @@ impl RuntimeNotifications {
                 mode,
                 tracker: NotificationTracker::default(),
                 command_tx: None,
+                pending: VecDeque::new(),
+                dispatcher_notice_emitted: false,
                 notice_rx,
                 task: None,
             };
@@ -47,6 +53,8 @@ impl RuntimeNotifications {
             mode,
             tracker: NotificationTracker::default(),
             command_tx: Some(command_tx),
+            pending: VecDeque::new(),
+            dispatcher_notice_emitted: false,
             notice_rx,
             task: Some(task),
         }
@@ -65,31 +73,71 @@ impl RuntimeNotifications {
         if self.mode == NotificationMode::Off {
             return Ok(0);
         }
+        anyhow::ensure!(
+            self.command_tx.is_some(),
+            "notification dispatcher is unavailable"
+        );
+        let mut dispatched = self.flush_pending()?;
         let observation =
             NotificationObservation::from_projection(&app.threads, &app.work_cards, &app.goals);
         let events = self.tracker.advance(observation);
 
+        let mut overflow = 0usize;
+        let mut attempted_extra_flush = false;
+        for event in events {
+            // Reclaim available actor capacity once before declaring overload.
+            if self.pending.len() == NOTIFICATION_PENDING_CAPACITY && !attempted_extra_flush {
+                dispatched = dispatched.saturating_add(self.flush_pending()?);
+                attempted_extra_flush = true;
+            }
+            if self.pending.len() == NOTIFICATION_PENDING_CAPACITY {
+                overflow = overflow.saturating_add(1);
+                continue;
+            }
+            let (title, body) = event.text(app.language);
+            self.pending.push_back(Delivery { title, body });
+        }
+        dispatched = dispatched.saturating_add(self.flush_pending()?);
+        anyhow::ensure!(
+            overflow == 0,
+            "notification backlog exceeded {NOTIFICATION_PENDING_CAPACITY} pending events; {overflow} additional events were not queued; inspect Mission Control Needs You"
+        );
+        Ok(dispatched)
+    }
+
+    fn flush_pending(&mut self) -> Result<usize> {
+        if self.mode == NotificationMode::Off || self.pending.is_empty() {
+            return Ok(0);
+        }
         let Some(tx) = self.command_tx.as_ref() else {
             return Err(anyhow!("notification dispatcher is unavailable"));
         };
         let mut dispatched = 0usize;
-        for event in events {
-            let (title, body) = event.text(app.language);
-            tx.try_send(Delivery { title, body })
-                .map_err(|error| match error {
-                    mpsc::error::TrySendError::Full(_) => {
-                        anyhow!("notification dispatcher queue is full")
-                    }
-                    mpsc::error::TrySendError::Closed(_) => {
-                        anyhow!("notification dispatcher is unavailable")
-                    }
-                })?;
-            dispatched = dispatched.saturating_add(1);
+        while let Some(delivery) = self.pending.pop_front() {
+            match tx.try_send(delivery) {
+                Ok(()) => dispatched = dispatched.saturating_add(1),
+                Err(mpsc::error::TrySendError::Full(delivery)) => {
+                    self.pending.push_front(delivery);
+                    break;
+                }
+                Err(mpsc::error::TrySendError::Closed(delivery)) => {
+                    self.pending.push_front(delivery);
+                    return Err(anyhow!("notification dispatcher is unavailable"));
+                }
+            }
         }
         Ok(dispatched)
     }
 
     pub(crate) fn try_notice(&mut self) -> Option<String> {
+        // Called by the existing 16ms TUI loop even without a fresh planning
+        // projection, so temporarily full channels cannot strand prior edges.
+        if let Err(error) = self.flush_pending()
+            && !self.dispatcher_notice_emitted
+        {
+            self.dispatcher_notice_emitted = true;
+            return Some(format!("notification dispatcher unavailable: {error:#}"));
+        }
         self.notice_rx.try_recv().ok()
     }
 }
@@ -213,7 +261,11 @@ async fn run_notification_command(command: &mut Command, label: &str) -> Result<
 #[cfg(test)]
 mod tests {
     use super::*;
-    use codex_tui::{backend::CodexBackend, backend::FakeBackend};
+    use codex_tui::{
+        backend::{CodexBackend, FakeBackend},
+        domain::RuntimeStatus,
+    };
+    use std::collections::BTreeSet;
 
     #[tokio::test]
     async fn off_mode_seeds_without_creating_a_dispatcher() {
@@ -252,6 +304,108 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn temporary_queue_pressure_retries_all_completion_edges_once() {
+        let mut runtime = RuntimeNotifications::start(NotificationMode::Terminal);
+        runtime.task.take().unwrap().abort();
+        let (tx, mut rx) = mpsc::channel(1);
+        runtime.command_tx = Some(tx);
+
+        let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+        for thread in &mut app.threads {
+            thread.runtime = RuntimeStatus::Working;
+        }
+        runtime.seed(&app);
+        for thread in &mut app.threads {
+            thread.runtime = RuntimeStatus::Ready;
+        }
+        let count = app.threads.len();
+        assert_eq!(runtime.observe(&app).unwrap(), 1);
+        assert_eq!(runtime.pending.len(), count - 1);
+        assert_eq!(runtime.observe(&app).unwrap(), 0);
+
+        let mut seen = BTreeSet::new();
+        for _ in 0..count {
+            let delivery = rx.try_recv().expect("queued completion");
+            assert!(seen.insert(delivery.body), "duplicate completion delivered");
+            assert!(runtime.try_notice().is_none());
+        }
+        assert_eq!(seen.len(), count);
+        assert!(runtime.pending.is_empty());
+    }
+
+    #[tokio::test]
+    async fn saturated_pending_buffer_is_bounded_and_reports_missing_alerts() {
+        let mut runtime = RuntimeNotifications::start(NotificationMode::Terminal);
+        runtime.task.take().unwrap().abort();
+        let (tx, _rx) = mpsc::channel(1);
+        runtime.command_tx = Some(tx);
+
+        let mut app = AppState::new(FakeBackend::scaled(160).snapshot().threads);
+        for thread in &mut app.threads {
+            thread.runtime = RuntimeStatus::Working;
+        }
+        runtime.seed(&app);
+        for thread in &mut app.threads {
+            thread.runtime = RuntimeStatus::Ready;
+        }
+        let error = runtime.observe(&app).expect_err("must report overflow");
+        assert!(
+            error
+                .to_string()
+                .contains("additional events were not queued")
+        );
+        assert!(runtime.pending.len() <= NOTIFICATION_PENDING_CAPACITY);
+        assert!(!runtime.pending.is_empty());
+    }
+
+    #[tokio::test]
+    async fn pending_boundary_uses_the_actor_slot_before_reporting_overflow() {
+        let mut runtime = RuntimeNotifications::start(NotificationMode::Terminal);
+        runtime.task.take().unwrap().abort();
+        let (tx, mut rx) = mpsc::channel(1);
+        runtime.command_tx = Some(tx);
+        let mut app = AppState::new(
+            FakeBackend::scaled(NOTIFICATION_PENDING_CAPACITY + 1)
+                .snapshot()
+                .threads,
+        );
+        for thread in &mut app.threads {
+            thread.runtime = RuntimeStatus::Working;
+        }
+        runtime.seed(&app);
+        for thread in &mut app.threads {
+            thread.runtime = RuntimeStatus::Ready;
+        }
+        assert_eq!(runtime.observe(&app).unwrap(), 1);
+        assert_eq!(runtime.pending.len(), NOTIFICATION_PENDING_CAPACITY);
+        assert!(rx.try_recv().is_ok());
+    }
+
+    #[tokio::test]
+    async fn closed_channel_keeps_unsent_edge_and_reports_degradation_once() {
+        let mut runtime = RuntimeNotifications::start(NotificationMode::Terminal);
+        runtime.task.take().unwrap().abort();
+        let (tx, rx) = mpsc::channel(1);
+        runtime.command_tx = Some(tx);
+        drop(rx);
+
+        let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+        for thread in &mut app.threads {
+            thread.runtime = RuntimeStatus::Working;
+        }
+        runtime.seed(&app);
+        for thread in &mut app.threads {
+            thread.runtime = RuntimeStatus::Ready;
+        }
+        assert!(runtime.observe(&app).is_err());
+        let pending = runtime.pending.len();
+        assert!(pending > 0);
+        assert!(runtime.try_notice().unwrap().contains("unavailable"));
+        assert!(runtime.try_notice().is_none());
+        assert_eq!(runtime.pending.len(), pending);
+    }
+
     #[test]
     fn notification_channels_are_bounded() {
         let source = include_str!("runtime_notifications.rs");
@@ -260,6 +414,8 @@ mod tests {
             .next()
             .expect("production source");
         assert!(production.contains("mpsc::channel(NOTIFICATION_QUEUE_CAPACITY)"));
+        assert!(production.contains("NOTIFICATION_PENDING_CAPACITY"));
+        assert!(production.contains("self.pending.push_front(delivery)"));
         assert!(production.contains("mpsc::channel(NOTIFICATION_NOTICE_CAPACITY)"));
         assert!(production.contains("try_send"));
         assert!(production.contains("kill_on_drop(true)"));

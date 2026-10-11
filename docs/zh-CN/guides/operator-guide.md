@@ -50,7 +50,7 @@ Forge 概览仅获取各能力最近 20 条记录。GitHub Issues API 会混入 
 ## 本地语言与可访问性
 <!-- docs-section: language -->
 
-配置 `[ui].language = "en"` 或 `"zh-CN"`，或使用 `"auto"` 跟随进程简体语言环境。`presentation = "quiet"` 合并后台刷新；`"screen-reader"` 降低后台刷新频率但保持直接输入即时响应。`[notifications].mode` 默认 `"off"`。桌面通知仅在输出时净化和限制标题的显示宽度；Linux 系统通知在 `notify-send --` 选项终止符之后传递动态文本，原始工作项名称与通知追踪状态保持不变。这些都只是本地偏好，不会创建团队同步权威。
+配置 `[ui].language = "en"` 或 `"zh-CN"`，或使用 `"auto"` 跟随进程简体语言环境。`presentation = "quiet"` 合并后台刷新；`"screen-reader"` 降低后台刷新频率但保持直接输入即时响应。`[notifications].mode` 默认 `"off"`。桌面通知仅在输出时净化和限制标题的显示宽度；Linux 系统通知在 `notify-send --` 选项终止符之后传递动态文本，原始工作项名称与通知追踪状态保持不变。启用通知后使用有界分派队列和 128 条待投递重试队列，由正常 UI 循环非阻塞排空；超过容量会明确提示未入队数量并引导查看 Needs You，而不是声称不会丢提醒。这些都只是本地偏好，不会创建团队同步权威。
 
 ## Windows SSH Ubuntu 与 Terminal Drawer
 <!-- docs-section: ssh -->
