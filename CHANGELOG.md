@@ -17,6 +17,9 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
+- Resolve Review editor targets against the validated current Git worktree root rather than a potentially nested thread cwd, reject missing/stale Git identity and absolute/parent/symlink-escaping paths before spawning an editor; preserve the original Git change and avoid changing Review/Forge authorities.
+
+
 - Protect explicit CLI preflight error, support-bundle destination and `doctor` startup failure terminal output against ANSI/bidi/newline spoofing; preserve the intentional usage hint line, data values and existing CLI behavior.
 
 - Neutralize ANSI/bidi/newline spoofing in the human-readable `doctor compat` report, including upstream tool/version details and facts, while leaving the original compatibility evidence and JSON report untouched; add strict render-boundary regression fixtures.
