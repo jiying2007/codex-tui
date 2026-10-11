@@ -161,7 +161,7 @@
     "src/app_server_registry.rs": 271,
     "src/app_server_wire.rs": 7,
     "src/sqlite_schema.rs": 220,
-    "src/worktree_git.rs": 180,
+    "src/worktree_git.rs": 240,
     "src/forge_types.rs": 451,
     "src/headless.rs": 583,
     "src/headless/surfaces.rs": 492,
@@ -283,7 +283,7 @@
     "src/app_server/tests.rs": 932,
     "src/planning/tests.rs": 708,
     "src/forge_mutation/tests.rs": 305,
-    "src/worktree/tests.rs": 516,
+    "src/worktree/tests.rs": 550,
     "src/release/tests.rs": 406,
     "src/forge_github/tests.rs": 197,
     "src/git/tests.rs": 199
@@ -803,6 +803,16 @@
         "src/runtime_notifications.rs"
       ],
       "policy": "Defect-only v1.4 maintenance; explicit bounded memory, no blocking UI, new actor/service, schema/protocol/authority/compatibility or Stable permission. Single complete-source LOC ratchet, bilingual operator docs and exact-head CI/Development/Release evidence required."
+    },
+    {
+      "date": "2026-10-11",
+      "kind": "managed-worktree-complete-git-inventory",
+      "scope": "Parse worktree list from NUL-delimited porcelain while preserving legal path trailing spaces and embedded newlines. Enforce complete record delimiters and HEAD/bare identity, fail closed on malformed/unknown records, Git stdout truncation above the existing 256 KiB cap and non-UTF-8 stdout, and drain overflow output so children terminate. Add parser, bounded-reader and genuine Unix Git worktree regressions.",
+      "modules": [
+        "src/worktree_git.rs",
+        "src/worktree/tests.rs"
+      ],
+      "policy": "Defect/safety-only v1.4 maintenance; no destructive operation may infer absence from incomplete Git inventory. No new dependency, storage schema, protocol authority, compatibility shim or Stable publication. Maintain sole complete-source LOC ratchet, bilingual operator documentation and exact-head multi-platform CI."
     }
   ]
 }
