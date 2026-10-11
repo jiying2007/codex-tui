@@ -6,6 +6,19 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
+use std::time::Duration;
+mod child_guard;
+use child_guard::ReapChild;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StartupStage {
+    Spawned,
+    Registered,
+    ReaderCloned,
+    WriterTaken,
+    ReadySent,
+    ReaderStarted,
+}
 
 type SharedChildKiller = Arc<Mutex<Option<Box<dyn ChildKiller + Send + Sync>>>>;
 type SharedPtyMaster = Arc<Mutex<Option<Box<dyn portable_pty::MasterPty>>>>;
@@ -14,6 +27,10 @@ type SharedPtyMaster = Arc<Mutex<Option<Box<dyn portable_pty::MasterPty>>>>;
 struct PtyRuntime {
     child_killer: SharedChildKiller,
     pty_master: SharedPtyMaster,
+    #[cfg(test)]
+    fail_after: Option<StartupStage>,
+    #[cfg(test)]
+    spawned_pid: Arc<Mutex<Option<u32>>>,
 }
 
 impl PtyRuntime {
@@ -21,7 +38,21 @@ impl PtyRuntime {
         Self {
             child_killer: Arc::new(Mutex::new(None)),
             pty_master: Arc::new(Mutex::new(None)),
+            #[cfg(test)]
+            fail_after: None,
+            #[cfg(test)]
+            spawned_pid: Arc::new(Mutex::new(None)),
         }
+    }
+    fn startup_stage(&self, stage: StartupStage) -> Result<()> {
+        #[cfg(test)]
+        anyhow::ensure!(
+            self.fail_after != Some(stage),
+            "injected PTY startup failure: {stage:?}"
+        );
+        #[cfg(not(test))]
+        let _ = stage;
+        Ok(())
     }
 }
 
@@ -191,18 +222,30 @@ fn spawn_and_drive_pty(
     event_tx: &SyncSender<PtyEvent>,
     runtime: &PtyRuntime,
 ) -> Result<()> {
-    let mut child = pair
+    let child = pair
         .slave
         .spawn_command(command)
         .context("spawn PTY child program")?;
-    let mut killer = child.clone_killer();
-    if let Ok(mut shared) = runtime.child_killer.lock() {
-        *shared = Some(killer.clone_killer());
+    let mut child = ReapChild::new(child, runtime.clone());
+    #[cfg(test)]
+    {
+        *runtime.spawned_pid.lock().unwrap() = child.process_id();
     }
+    runtime.startup_stage(StartupStage::Spawned)?;
+    {
+        let mut shared = runtime
+            .child_killer
+            .lock()
+            .map_err(|_| anyhow::anyhow!("PTY child state poisoned"))?;
+        *shared = Some(child.clone_killer());
+    }
+    runtime.startup_stage(StartupStage::Registered)?;
     drop(pair.slave);
 
     let mut reader = pair.master.try_clone_reader().context("clone PTY reader")?;
+    runtime.startup_stage(StartupStage::ReaderCloned)?;
     let mut writer = pair.master.take_writer().context("take PTY writer")?;
+    runtime.startup_stage(StartupStage::WriterTaken)?;
     {
         let mut shared_master = runtime
             .pty_master
@@ -217,6 +260,7 @@ fn spawn_and_drive_pty(
             size,
         })
         .context("emit PTY ready")?;
+    runtime.startup_stage(StartupStage::ReadySent)?;
 
     let output_tx = event_tx.clone();
     thread::Builder::new()
@@ -247,31 +291,20 @@ fn spawn_and_drive_pty(
         })
         .context("spawn PTY reader")?;
 
-    let exit_tx = event_tx.clone();
-    let exit_child_killer = Arc::clone(&runtime.child_killer);
-    thread::Builder::new()
-        .name("codex-tui-pty-wait".into())
-        .spawn(move || {
-            let result = child.wait();
-            if let Ok(mut shared) = exit_child_killer.lock() {
-                shared.take();
-            }
-            match result {
-                Ok(status) => {
-                    let _ = exit_tx.send(PtyEvent::Exited {
-                        success: status.success(),
-                        code: Some(status.exit_code()),
-                    });
-                }
-                Err(error) => {
-                    let _ =
-                        exit_tx.send(PtyEvent::Error(format!("PTY child wait failed: {error}")));
-                }
-            }
-        })
-        .context("spawn PTY waiter")?;
-
-    while let Ok(command) = command_rx.recv() {
+    runtime.startup_stage(StartupStage::ReaderStarted)?;
+    loop {
+        if let Some(status) = child.try_wait().context("poll PTY child")? {
+            let _ = event_tx.send(PtyEvent::Exited {
+                success: status.success(),
+                code: Some(status.exit_code()),
+            });
+            break;
+        }
+        let command = match command_rx.recv_timeout(Duration::from_millis(50)) {
+            Ok(command) => command,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+        };
         match command {
             PtyCommand::Input(bytes) => {
                 writer.write_all(&bytes).context("write PTY input")?;
@@ -293,8 +326,7 @@ fn spawn_and_drive_pty(
         }
     }
 
-    signal_foreground_process_group(&runtime.pty_master);
-    let _ = killer.kill();
+    // ReapChild handles both normal cancellation and every early error on this actor.
     Ok(())
 }
 
@@ -584,7 +616,7 @@ mod tests {
             actor: Some(actor),
             runtime: PtyRuntime {
                 child_killer,
-                pty_master: Arc::new(Mutex::new(None)),
+                ..PtyRuntime::new()
             },
         };
 

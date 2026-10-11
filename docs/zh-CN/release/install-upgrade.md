@@ -73,6 +73,9 @@ v1.0–v1.3 没有实际部署历史，因此**不支持从这些版本就地升
 
 Stable 需要精确 SHA CI、Linux 真正 Doctor/TTY/性能证据、不可变 GitHub Releases 和具有 GitHub Actions App 身份绑定的严格主线保护、管理员审阅及明确发布授权。必须先通过同一候选的 Stable `publish=false` 验收，之后才可以由授权者触发正式发布。任何缺少的授权均 fail-closed。
 
+
+当前候选产品线为 v1.4.0；历史 v1.0.0 发布只作为审计记录，不代表当前源码已通过资格验收或获准部署。
+
 ## 开源许可
 <!-- docs-section: license -->
 

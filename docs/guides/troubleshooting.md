@@ -12,10 +12,16 @@ Diagnose the failed authority first; avoid deleting local state, changing upstre
 
 Run `codex-tui doctor codex` (optionally `--target NAME`). Check the real `codex --version` and its login/account independently. Named remote WebSocket/Unix targets have bounded connect/handshake timeouts; a timeout is not proof an action never executed. Verify process/transport, authentication, TLS proxy and App Server capability errors. Older optional methods may degrade; no real-to-fake fallback exists. Avoid pasting bearer tokens into an issue.
 
+Stdio fragments remain buffered across timer/command cancellation; a backend EOF delivers the final disconnected snapshot once. Repeated/cyclic cursors, stalled pagination and total budgets produce explicit incomplete inventory, never complete mutation authority. Search jumps locate the exact item within a bounded global-history scan and retain a continuation cursor of the same scope; deleted targets or exhausted budgets report failure instead of silently jumping elsewhere.
+
+RPC notifications retain at most 1024 messages and 16 MiB of accounted payload. Pending interactive requests are limited to 64, 256 KiB each and 4 MiB in aggregate. Pagination allows up to 1024 pages, 200,000 identities, 32 MiB of accounted identity storage and 120 seconds across the scan. These are payload/accounting limits, not certified process RSS. Overload terminates/quarantines the session visibly; it does not discard arbitrary approval messages or replay write RPCs. An ordinary 50k-row scan remains supported within these limits.
+
 ## GitLab/GitHub unavailable or missing data
 <!-- docs-section: forge -->
 
 In the repository at issue: inspect `git remote -v` **privately**, run `codex-tui doctor git` then `codex-tui doctor forge`. Sign in `glab` or `gh` to the correct host outside the tool. GitLab Issues/MRs/Pipelines probe independently; a single unavailable capability is not entire project failure. `doctor compat` Ready does not prove internal GitLab. Use [provider evidence](../qualification/provider.md) for a required internal rollout.
+
+Malformed GitLab approval-state JSON or missing `rules`, `approvals_required` or `approved` fields are unknown evidence and block client-side merging. An explicit valid empty rules array is distinct from a missing array. These checks do not replace GitLab server protections.
 
 ## Windows paths or repository-backed threads look wrong
 <!-- docs-section: cwd -->
@@ -26,6 +32,8 @@ On Windows→SSH Ubuntu the TUI reads **Ubuntu-side** Codex Home, shell cwd and 
 <!-- docs-section: terminal -->
 
 Try the in-app `?` keymap: `t` opens the Drawer and `F6` (or `Ctrl+]`) returns focus if supported. Remote terminal/SSH clients may intercept key combinations. Run `codex-tui doctor terminal` and check TERM, TTY, resizing and direct child exit. Real controlling-TTY focus/resize/Ctrl+C/restore smoke is required for Stable and is not replaced by hosted PTY tests.
+
+PTY children remain owned by a kill-and-reap guard through initialization and the detached actor lifetime. Failure to obtain the reader/writer, publish Ready or start the reader cannot abandon that ownership. Fault-injection tests exercise each startup stage using local children, not real SSH acceptance.
 
 ## SQLite state damaged or forward schema rejected
 <!-- docs-section: store -->

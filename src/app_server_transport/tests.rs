@@ -17,7 +17,7 @@ async fn stdio_reader_enforces_limit_before_unbounded_line_growth() {
             .unwrap();
     });
     let mut reader = BufReader::new(client);
-    let error = read_bounded_line(&mut reader, 16)
+    let error = read_bounded_line(&mut reader, 16, &mut Vec::new())
         .await
         .expect_err("oversized line must fail");
     assert!(error.to_string().contains("16 byte limit"));
@@ -34,7 +34,9 @@ async fn stdio_reader_allows_exact_limit_with_crlf() {
     });
     let mut reader = BufReader::new(client);
     assert_eq!(
-        read_bounded_line(&mut reader, 16).await.unwrap(),
+        read_bounded_line(&mut reader, 16, &mut Vec::new())
+            .await
+            .unwrap(),
         Some(b"1234567890abcdef".to_vec())
     );
     writer.await.unwrap();
@@ -50,7 +52,7 @@ async fn stdio_reader_skips_blank_lines_and_decodes_json() {
     });
     let mut reader = BufReader::new(client);
     assert_eq!(
-        read_stdio_json(&mut reader).await.unwrap(),
+        read_stdio_json(&mut reader, &mut Vec::new()).await.unwrap(),
         Some(json!({"id":1}))
     );
     writer.await.unwrap();
@@ -314,4 +316,104 @@ async fn unix_socket_transport_uses_websocket_framing() {
         .expect("response");
     assert_eq!(response["result"]["serverInfo"]["version"], "fixture");
     server.await.expect("fixture server");
+}
+
+#[tokio::test]
+async fn cancelled_stdio_reads_preserve_every_byte_at_every_utf8_boundary() {
+    use futures_util::FutureExt;
+    use tokio::io::{AsyncWriteExt, BufReader, duplex};
+    let encoded =
+        "{\"method\":\"thread/name/updated\",\"params\":{\"name\":\"你好小窝\"}}\r\n".as_bytes();
+    let expected: Value = serde_json::from_slice(encoded).unwrap();
+    for split in 1..encoded.len() - 1 {
+        let (client, mut server) = duplex(1024);
+        let mut reader = BufReader::new(client);
+        let mut pending = Vec::new();
+        server.write_all(&encoded[..split]).await.unwrap();
+        // Poll consumes the prefix, then Pending cancels this exact read Future.
+        assert!(
+            read_stdio_json(&mut reader, &mut pending)
+                .now_or_never()
+                .is_none()
+        );
+        assert_eq!(pending, encoded[..split]);
+        server.write_all(&encoded[split..]).await.unwrap();
+        assert_eq!(
+            read_stdio_json(&mut reader, &mut pending).await.unwrap(),
+            Some(expected.clone())
+        );
+        assert!(pending.is_empty());
+        drop(server);
+        assert!(
+            read_stdio_json(&mut reader, &mut pending)
+                .await
+                .unwrap()
+                .is_none()
+        );
+    }
+}
+
+#[tokio::test]
+async fn stdio_prefix_survives_timeout_and_competing_command_without_replay() {
+    use tokio::io::{AsyncWriteExt, BufReader, duplex};
+    let (client, mut server) = duplex(128);
+    let mut reader = BufReader::new(client);
+    let mut pending = Vec::new();
+    server.write_all(b"{\"id\":").await.unwrap();
+    assert!(
+        tokio::time::timeout(
+            Duration::from_millis(5),
+            read_stdio_json(&mut reader, &mut pending)
+        )
+        .await
+        .is_err()
+    );
+    let (tx, mut rx) = tokio::sync::mpsc::channel(1);
+    tx.send(()).await.unwrap();
+    tokio::select! {
+        biased;
+        _ = read_stdio_json(&mut reader, &mut pending) => panic!("partial frame completed"),
+        _ = rx.recv() => {},
+    }
+    server.write_all(b"7}\n{\"id\":8}\n").await.unwrap();
+    assert_eq!(
+        read_stdio_json(&mut reader, &mut pending).await.unwrap(),
+        Some(json!({"id":7}))
+    );
+    assert_eq!(
+        read_stdio_json(&mut reader, &mut pending).await.unwrap(),
+        Some(json!({"id":8}))
+    );
+}
+
+#[tokio::test]
+async fn cancelled_stdio_read_keeps_size_limit_and_rejects_partial_eof() {
+    use futures_util::FutureExt;
+    use tokio::io::{AsyncWriteExt, BufReader, duplex};
+    let (client, mut server) = duplex(128);
+    let mut reader = BufReader::new(client);
+    let mut pending = Vec::new();
+    server.write_all(b"12345678").await.unwrap();
+    assert!(
+        read_bounded_line(&mut reader, 16, &mut pending)
+            .now_or_never()
+            .is_none()
+    );
+    server.write_all(b"90123456789\n").await.unwrap();
+    assert!(
+        read_bounded_line(&mut reader, 16, &mut pending)
+            .await
+            .is_err()
+    );
+    let (client, mut server) = duplex(128);
+    let mut reader = BufReader::new(client);
+    let mut pending = Vec::new();
+    server.write_all(b"{\"id\":").await.unwrap();
+    assert!(
+        read_stdio_json(&mut reader, &mut pending)
+            .now_or_never()
+            .is_none()
+    );
+    drop(server);
+    assert!(read_stdio_json(&mut reader, &mut pending).await.is_err());
 }

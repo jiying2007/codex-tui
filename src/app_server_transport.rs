@@ -26,6 +26,7 @@ enum Transport {
     Stdio {
         _child: Box<Child>,
         reader: Box<BufReader<ChildStdout>>,
+        pending_line: Vec<u8>,
         writer: Box<BufWriter<ChildStdin>>,
     },
     WebSocket {
@@ -100,6 +101,7 @@ impl AppServerTransport {
                 Transport::Stdio {
                     _child: Box::new(child),
                     reader: Box::new(BufReader::new(stdout)),
+                    pending_line: Vec::new(),
                     writer: Box::new(BufWriter::new(stdin)),
                 }
             }
@@ -159,7 +161,11 @@ impl AppServerTransport {
 
     pub async fn read_json(&mut self) -> Result<Option<Value>> {
         match &mut self.inner {
-            Transport::Stdio { reader, .. } => read_stdio_json(reader.as_mut()).await,
+            Transport::Stdio {
+                reader,
+                pending_line,
+                ..
+            } => read_stdio_json(reader.as_mut(), pending_line).await,
             Transport::WebSocket { stream } => read_websocket_json(stream.as_mut()).await,
             #[cfg(unix)]
             Transport::UnixSocket { stream } => read_websocket_json(stream.as_mut()).await,
@@ -185,12 +191,13 @@ impl AppServerTransport {
     }
 }
 
-async fn read_stdio_json<R>(reader: &mut R) -> Result<Option<Value>>
+async fn read_stdio_json<R>(reader: &mut R, pending: &mut Vec<u8>) -> Result<Option<Value>>
 where
     R: AsyncBufRead + Unpin,
 {
     loop {
-        let Some(bytes) = read_bounded_line(reader, APP_SERVER_MAX_MESSAGE_BYTES).await? else {
+        let Some(bytes) = read_bounded_line(reader, APP_SERVER_MAX_MESSAGE_BYTES, pending).await?
+        else {
             return Ok(None);
         };
         if bytes.iter().all(u8::is_ascii_whitespace) {
@@ -202,11 +209,15 @@ where
     }
 }
 
-async fn read_bounded_line<R>(reader: &mut R, limit: usize) -> Result<Option<Vec<u8>>>
+// fill_buf is cancellation-safe; consume and durable append have no intervening await.
+async fn read_bounded_line<R>(
+    reader: &mut R,
+    limit: usize,
+    bytes: &mut Vec<u8>,
+) -> Result<Option<Vec<u8>>>
 where
     R: AsyncBufRead + Unpin,
 {
-    let mut bytes = Vec::new();
     loop {
         let available = reader.fill_buf().await.context("read App Server stdio")?;
         if available.is_empty() {
@@ -214,7 +225,7 @@ where
                 return Ok(None);
             }
             ensure_message_size(bytes.len(), limit, "stdio")?;
-            return Ok(Some(bytes));
+            return Ok(Some(std::mem::take(bytes)));
         }
         let newline = available.iter().position(|byte| *byte == b'\n');
         let take = newline.map_or(available.len(), |index| index + 1);
@@ -229,7 +240,7 @@ where
                 bytes.pop();
             }
             ensure_message_size(bytes.len(), limit, "stdio")?;
-            return Ok(Some(bytes));
+            return Ok(Some(std::mem::take(bytes)));
         }
         anyhow::ensure!(
             bytes.len() <= limit.saturating_add(1),

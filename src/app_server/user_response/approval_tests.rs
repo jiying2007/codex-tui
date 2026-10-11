@@ -222,7 +222,9 @@ async fn production_actor_stops_after_actual_websocket_write_failure() {
         // making SendAfterClosing deterministic rather than relying on TCP timing.
         let mut second = request.clone();
         second["id"] = json!(18);
-        rpc.queued_messages.extend([request, second]);
+        for message in [request, second] {
+            enqueue_rpc_message(&mut rpc.queued_messages, &mut rpc.queued_bytes, message).unwrap();
+        }
         let initial = FakeBackend::seeded().snapshot();
         let (tx, rx) = watch::channel(initial.clone());
         let (events, mut received) = mpsc::channel(1);

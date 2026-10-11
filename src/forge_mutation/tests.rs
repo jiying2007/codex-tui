@@ -303,3 +303,29 @@ fn approve_and_merge_plans_advertise_head_sha_revalidation() {
         }));
     }
 }
+
+#[test]
+fn gitlab_approval_evidence_requires_explicit_fields_and_types() {
+    for payload in [
+        "{}",
+        "{\"rules\":null}",
+        "{\"rules\":[{\"approved\":false}]}",
+        "{\"rules\":[{\"approvals_required\":1}]}",
+        "{\"rules\":[{\"approvals_required\":null,\"approved\":true}]}",
+        "{\"rules\":[{\"approvals_required\":0,\"approved\":\"true\"}]}",
+        "{\"rules\":[{\"approvals_required\":-1,\"approved\":true}]}",
+    ] {
+        let error = serde_json::from_str::<GitLabApprovalState>(payload).unwrap_err();
+        let wrapped = anyhow::Error::new(error).context("decode glab api response");
+        assert!(
+            wrapped.downcast_ref::<serde_json::Error>().is_some(),
+            "{payload}"
+        );
+    }
+    let empty: GitLabApprovalState = serde_json::from_str("{\"rules\":[]}").unwrap();
+    assert_eq!(unsatisfied_required_approval_rules(&empty), 0);
+    let pending: GitLabApprovalState =
+        serde_json::from_str("{\"rules\":[{\"approvals_required\":1,\"approved\":false}]}")
+            .unwrap();
+    assert_eq!(unsatisfied_required_approval_rules(&pending), 1);
+}

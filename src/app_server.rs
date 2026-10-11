@@ -23,6 +23,7 @@ use crate::transcript_search::{
     parse_search_occurrences, parse_thread_search, thread_level_hit,
 };
 use anyhow::{Context, Result, anyhow};
+use futures_util::FutureExt;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::ffi::OsString;
@@ -31,8 +32,17 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::{mpsc, watch};
 use tokio::task::{JoinHandle, JoinSet};
 
+mod history_hit;
 mod lifecycle;
+mod pagination;
+mod resource_budget;
 mod user_response;
+use history_hit::load_transcript_hit;
+use pagination::{
+    PageBudget, guarded_loaded_page, guarded_registry_page, load_all_loaded_ids,
+    load_registry_with_page_limit,
+};
+use resource_budget::{admit_pending_request, enqueue_rpc_message, json_cost};
 
 const PAGE_SIZE: u32 = 200;
 const STARTUP_REGISTRY_PAGE_LIMIT: usize = 1;
@@ -448,15 +458,17 @@ impl Drop for RegistryHandle {
 fn try_recv_latest_snapshot(
     receiver: &mut watch::Receiver<BackendSnapshot>,
 ) -> Option<BackendSnapshot> {
-    match receiver.has_changed() {
-        Ok(true) => Some(receiver.borrow_and_update().clone()),
-        Ok(false) | Err(_) => None,
+    // Nonblocking, cancellation-safe poll; a closed channel may still own one unseen value.
+    match receiver.changed().now_or_never() {
+        Some(Ok(())) => Some(receiver.borrow_and_update().clone()),
+        Some(Err(_)) | None => None,
     }
 }
 
 #[derive(Debug)]
 struct RegistryHydration {
     cursor: String,
+    budget: PageBudget,
     use_state_db_only: bool,
     optimized_query: bool,
     tombstones: BTreeSet<String>,
@@ -473,6 +485,7 @@ struct RegistryReconcile {
 #[derive(Debug)]
 struct RegistryLoad {
     threads: Vec<ThreadSummary>,
+    error: Option<String>,
     registry_complete: bool,
     hydration: Option<RegistryHydration>,
 }
@@ -480,6 +493,7 @@ struct RegistryLoad {
 #[derive(Debug, Default)]
 struct LoadedIdHydration {
     cursor: Option<String>,
+    budget: PageBudget,
     ids: BTreeSet<String>,
     live_overrides: BTreeMap<String, bool>,
 }
@@ -502,6 +516,7 @@ async fn bootstrap_registry(
     status.capabilities.push("thread/status/changed".into());
     status.connected = true;
     status.registry_complete = load.registry_complete;
+    status.error = load.error;
     status.last_refresh_unix_ms = Some(now_unix_ms());
     Ok((load.threads, status, load.hydration))
 }
@@ -562,7 +577,10 @@ pub async fn probe_target(target: ResolvedAppServerTarget) -> Result<BackendSnap
             apply_loaded_ids(threads.iter_mut(), &loaded_ids);
             mark_loaded_supported(&mut status);
         }
-        Err(_) => mark_loaded_unsupported(&mut status),
+        Err(error) => {
+            mark_loaded_unsupported(&mut status);
+            status.error = Some(format!("Loaded inventory incomplete: {error}"));
+        }
     }
 
     Ok(BackendSnapshot {
@@ -1260,11 +1278,12 @@ async fn run_registry_actor(
             }
             _ = hydration_tick.tick(), if registry_page_can_advance => {
                 if let Some(state) = hydration.as_mut() {
-                    match load_registry_page(
+                    match guarded_registry_page(
                         &mut rpc,
                         Some(state.cursor.clone()),
                         state.use_state_db_only,
                         state.optimized_query,
+                        &mut state.budget,
                     )
                     .await
                     {
@@ -1307,6 +1326,7 @@ async fn run_registry_actor(
                             hydration_tick.reset();
                         }
                         Err(error) => {
+                            status.registry_complete = false;
                             status.error = Some(format!("Registry hydration failed: {error}"));
                             hydration = None;
                             hydration_pending_publish = true;
@@ -1314,11 +1334,12 @@ async fn run_registry_actor(
                     }
                 } else if let Some(reconcile_state) = reconcile.as_mut() {
                     let state = &mut reconcile_state.hydration;
-                    match load_registry_page(
+                    match guarded_registry_page(
                         &mut rpc,
                         Some(state.cursor.clone()),
                         state.use_state_db_only,
                         state.optimized_query,
+                        &mut state.budget,
                     )
                     .await
                     {
@@ -1350,6 +1371,7 @@ async fn run_registry_actor(
                             hydration_tick.reset();
                         }
                         Err(error) => {
+                            status.registry_complete = false;
                             status.error = Some(format!("Registry reconcile failed: {error}"));
                             reconcile = None;
                             hydration_pending_publish = true;
@@ -1357,7 +1379,7 @@ async fn run_registry_actor(
                     }
                 } else if loaded_hydration.is_some() {
                     let mut state = loaded_hydration.take().expect("loaded hydration state");
-                    match load_loaded_ids_page(&mut rpc, state.cursor.clone()).await {
+                    match guarded_loaded_page(&mut rpc, state.cursor.clone(), &mut state.budget).await {
                         Ok((ids, next_cursor)) => {
                             state.ids.extend(ids);
                             if let Some(next_cursor) = next_cursor {
@@ -1369,8 +1391,9 @@ async fn run_registry_actor(
                             }
                             hydration_tick.reset();
                         }
-                        Err(_) => {
+                        Err(error) => {
                             mark_loaded_unsupported(&mut status);
+                            status.error = Some(format!("Loaded inventory incomplete: {error}"));
                             hydration_pending_publish = true;
                         }
                     }
@@ -1434,15 +1457,22 @@ async fn run_registry_actor(
                         generation = generation.saturating_add(1);
                         let _ = tx.send(snapshot(generation, &threads, &status));
                     }
-                    Ok(load) => {
+                    Ok(load) if load.hydration.is_some() => {
                         reconcile = Some(RegistryReconcile {
-                            hydration: load.hydration.expect("incomplete Registry load"),
+                            hydration: load.hydration.expect("checked Registry continuation"),
                             candidate: by_id(load.threads),
                             live_overrides: BTreeSet::new(),
                         });
                         hydration_tick.reset();
                     }
+                    Ok(load) => {
+                        status.registry_complete = false;
+                        status.error = load.error;
+                        generation = generation.saturating_add(1);
+                        let _ = tx.send(snapshot(generation, &threads, &status));
+                    }
                     Err(error) => {
+                        status.registry_complete = false;
                         status.error = Some(error.to_string());
                         generation = generation.saturating_add(1);
                         let _ = tx.send(snapshot(generation, &threads, &status));
@@ -1657,78 +1687,6 @@ async fn load_registry_page(
         next_cursor: page.next_cursor,
         optimized_query,
     })
-}
-
-async fn load_registry_with_page_limit(
-    rpc: &mut RpcSession,
-    use_state_db_only: bool,
-    max_pages: Option<usize>,
-) -> Result<RegistryLoad> {
-    let mut cursor: Option<String> = None;
-    let mut threads = Vec::new();
-    let mut optimized_query = true;
-    let mut pages = 0_usize;
-
-    loop {
-        let page = load_registry_page(rpc, cursor, use_state_db_only, optimized_query).await?;
-        optimized_query = page.optimized_query;
-        threads.extend(page.threads);
-        pages = pages.saturating_add(1);
-
-        let Some(next_cursor) = page.next_cursor else {
-            return Ok(RegistryLoad {
-                threads,
-                registry_complete: true,
-                hydration: None,
-            });
-        };
-
-        if max_pages.is_some_and(|limit| pages >= limit) {
-            return Ok(RegistryLoad {
-                threads,
-                registry_complete: false,
-                hydration: Some(RegistryHydration {
-                    cursor: next_cursor,
-                    use_state_db_only,
-                    optimized_query,
-                    tombstones: BTreeSet::new(),
-                    pages_since_publish: 0,
-                }),
-            });
-        }
-        cursor = Some(next_cursor);
-    }
-}
-
-async fn load_loaded_ids_page(
-    rpc: &mut RpcSession,
-    cursor: Option<String>,
-) -> Result<(Vec<String>, Option<String>)> {
-    let result = rpc
-        .request(
-            "thread/loaded/list",
-            json!({
-                "cursor": cursor,
-                "limit": PAGE_SIZE
-            }),
-        )
-        .await?;
-    let page = parse_loaded_list(result)?;
-    Ok((page.data, page.next_cursor))
-}
-
-async fn load_all_loaded_ids(rpc: &mut RpcSession) -> Result<BTreeSet<String>> {
-    let mut cursor: Option<String> = None;
-    let mut loaded = BTreeSet::new();
-    loop {
-        let (ids, next_cursor) = load_loaded_ids_page(rpc, cursor).await?;
-        loaded.extend(ids);
-        cursor = next_cursor;
-        if cursor.is_none() {
-            break;
-        }
-    }
-    Ok(loaded)
 }
 
 async fn load_goal(rpc: &mut RpcSession, thread_id: ThreadId) -> Result<Option<GoalObservation>> {
@@ -2300,49 +2258,6 @@ async fn search_transcript(rpc: &mut RpcSession, query: String) -> Result<Transc
     })
 }
 
-async fn load_transcript_hit(
-    rpc: &mut RpcSession,
-    hit: &crate::transcript_search::TranscriptSearchHit,
-) -> Result<ConversationPage> {
-    let Some(turn_id) = hit.turn_id.as_deref() else {
-        return load_conversation(rpc, hit.thread_id.clone()).await;
-    };
-    let metadata = rpc
-        .request(
-            "thread/read",
-            json!({
-                "threadId": hit.thread_id.0,
-                "includeTurns": false
-            }),
-        )
-        .await
-        .context("read transcript search thread metadata")?;
-    let title = parse_thread_title(&metadata);
-
-    let result = rpc
-        .request(
-            "thread/items/list",
-            json!({
-                "threadId": hit.thread_id.0,
-                "turnId": turn_id,
-                "cursor": null,
-                "limit": 200,
-                "sortDirection": "asc"
-            }),
-        )
-        .await
-        .context("load transcript search turn items")?;
-    let (items, _) = parse_items_page(result)?;
-    Ok(merge_history(
-        hit.thread_id.clone(),
-        title,
-        vec![],
-        items,
-        None,
-        None,
-    ))
-}
-
 async fn load_legacy_conversation(
     rpc: &mut RpcSession,
     thread_id: ThreadId,
@@ -2366,6 +2281,10 @@ struct PendingServerRequest {
     params: Value,
 }
 
+fn self_quarantine(rpc: &mut RpcSession, error: &anyhow::Error) {
+    rpc.fatal_error = Some(error.to_string());
+}
+
 async fn handle_unsolicited(
     rpc: &mut RpcSession,
     message: Value,
@@ -2376,6 +2295,10 @@ async fn handle_unsolicited(
     conversation_tx: &mpsc::Sender<ConversationEvent>,
 ) -> Result<bool> {
     if message.get("id").is_some() && message.get("method").is_some() {
+        if let Err(error) = admit_pending_request(pending_requests, &message) {
+            self_quarantine(rpc, &error);
+            return Err(error);
+        }
         if let Some(request) = parse_interactive_request(&message)? {
             let method = message
                 .get("method")
@@ -2540,15 +2463,6 @@ fn should_queue_rpc_message(message: &Value) -> bool {
     )
 }
 
-fn enqueue_rpc_message(queue: &mut VecDeque<Value>, message: Value) -> Result<()> {
-    anyhow::ensure!(
-        queue.len() < RPC_QUEUED_MESSAGE_CAPACITY,
-        "App Server queued-message capacity exceeded ({RPC_QUEUED_MESSAGE_CAPACITY})"
-    );
-    queue.push_back(message);
-    Ok(())
-}
-
 async fn with_rpc_deadline<T>(
     method: &str,
     deadline: Duration,
@@ -2567,6 +2481,8 @@ struct RpcSession {
     transport: AppServerTransport,
     next_id: u64,
     queued_messages: VecDeque<Value>,
+    queued_bytes: usize,
+    fatal_error: Option<String>,
 }
 
 impl RpcSession {
@@ -2575,6 +2491,8 @@ impl RpcSession {
             transport: AppServerTransport::connect(target).await?,
             next_id: 1,
             queued_messages: VecDeque::new(),
+            queued_bytes: 0,
+            fatal_error: None,
         })
     }
 
@@ -2627,7 +2545,12 @@ impl RpcSession {
                 // actor to the normal request dispatcher immediately instead
                 // of waiting for the RPC deadline while the server waits for us.
                 let server_request = message.get("id").is_some() && message.get("method").is_some();
-                enqueue_rpc_message(&mut self.queued_messages, message)?;
+                if let Err(error) =
+                    enqueue_rpc_message(&mut self.queued_messages, &mut self.queued_bytes, message)
+                {
+                    self.fatal_error = Some(error.to_string());
+                    return Err(error);
+                }
                 if server_request {
                     anyhow::bail!(
                         "{method} interrupted by pending App Server request; RPC outcome unknown"
@@ -2638,7 +2561,7 @@ impl RpcSession {
     }
 
     fn has_queued_messages(&self) -> bool {
-        !self.queued_messages.is_empty()
+        self.fatal_error.is_some() || !self.queued_messages.is_empty()
     }
 
     async fn notify(&mut self, method: &str, params: Option<Value>) -> Result<()> {
@@ -2650,7 +2573,11 @@ impl RpcSession {
     }
 
     async fn read_message(&mut self) -> Result<Option<Value>> {
+        if let Some(error) = &self.fatal_error {
+            anyhow::bail!("App Server admission failed: {error}");
+        }
         if let Some(message) = self.queued_messages.pop_front() {
+            self.queued_bytes = self.queued_bytes.saturating_sub(json_cost(&message));
             return Ok(Some(message));
         }
         self.read_wire_message().await
@@ -2672,6 +2599,10 @@ impl RpcSession {
     }
 
     async fn write_message(&mut self, message: &Value) -> Result<()> {
+        anyhow::ensure!(
+            self.fatal_error.is_none(),
+            "App Server session is quarantined after admission failure"
+        );
         self.transport.write_json(message).await
     }
 }
@@ -2681,3 +2612,6 @@ mod tests;
 
 #[cfg(test)]
 mod queue_wire_tests;
+
+#[cfg(test)]
+mod audit_wire_tests;

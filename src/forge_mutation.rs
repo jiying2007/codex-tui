@@ -692,15 +692,12 @@ struct GitLabApprovals {
 
 #[derive(Debug, Deserialize)]
 struct GitLabApprovalState {
-    #[serde(default)]
     rules: Vec<GitLabApprovalRuleState>,
 }
 
 #[derive(Debug, Deserialize)]
 struct GitLabApprovalRuleState {
-    #[serde(default)]
     approvals_required: u64,
-    #[serde(default)]
     approved: bool,
 }
 
@@ -939,6 +936,9 @@ async fn require_gitlab_approvals(plan: &ForgeMutationPlan, iid: u64) -> Result<
             anyhow::ensure!(pending == 0, "GitLab merge has {pending} unsatisfied rules");
             Ok(())
         }
+        // A successful HTTP response with malformed/missing evidence is not
+        // an unsupported endpoint. Never hide that integrity failure behind fallback.
+        Err(error) if error.downcast_ref::<serde_json::Error>().is_some() => Err(error),
         Err(_) => {
             let fallback = approvals(plan, iid)
                 .await
