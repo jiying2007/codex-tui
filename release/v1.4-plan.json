@@ -149,7 +149,7 @@
   ],
   "moduleRatchet": {
     "src/app.rs": 1000,
-    "src/ui.rs": 2214,
+    "src/ui.rs": 2215,
     "src/app_server.rs": 2683,
     "src/main.rs": 1854,
     "src/sqlite_store.rs": 1715,
@@ -278,7 +278,7 @@
     "src/app/state.rs": 888,
     "src/app/tests.rs": 2669,
     "src/app/thread_queue_reducer_tests.rs": 123,
-    "src/ui/tests.rs": 988,
+    "src/ui/tests.rs": 1077,
     "src/sqlite_store/tests.rs": 832,
     "src/app_server/tests.rs": 932,
     "src/planning/tests.rs": 708,
@@ -706,6 +706,16 @@
         "src/ui/tests.rs"
       ],
       "policy": "Formatter-only, all source semantics/tests and single complete-source v1.4 ratchet retained; requires fresh exact-head CI."
+    },
+    {
+      "date": "2026-10-11",
+      "kind": "mission-control-and-board-untrusted-inline-chrome",
+      "scope": "Escape pasted registry search, alias, snooze and Scratch input in inline footer; Board custom Saved View names, workspace group labels and inline input; ScratchWork ID in detail. Terminal TestBackend negative fixtures verify all display surfaces show visible replacement and canonical operator/upstream values remain intact.",
+      "modules": [
+        "src/ui.rs",
+        "src/ui/tests.rs"
+      ],
+      "policy": "Display-only security maintenance, no state authority, API, schema, compatibility migration, new Codex/Git/Forge mutation or Stable permission; exact-head multi-platform CI and fresh-main Release Gate required."
     }
   ]
 }

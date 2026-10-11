@@ -986,3 +986,92 @@ fn snapshots_cover_40_80_120_160_columns() {
         }
     }
 }
+
+#[test]
+fn registry_footer_renders_pasted_input_safely_in_all_inline_modes() {
+    let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+    app.input_buffer = "typed\u{202e}spoof".into();
+    for mode in [
+        InputMode::Search,
+        InputMode::TranscriptSearch,
+        InputMode::Alias,
+        InputMode::ScratchTitle,
+        InputMode::Snooze,
+    ] {
+        app.input_mode = mode;
+        let snapshot = overlay_snapshot(&app, render);
+        assert!(
+            snapshot.contains("typed\u{fffd}spoof"),
+            "registry inline input was not sanitized for {mode:?}"
+        );
+        assert!(!snapshot.contains('\u{202e}'));
+    }
+    assert_eq!(app.input_buffer, "typed\u{202e}spoof");
+}
+
+#[test]
+fn board_title_group_and_footer_escape_untrusted_values() {
+    let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+    let mut thread = app.threads[0].clone();
+    thread.workspace = "group\u{202e}spoof".into();
+    app.work_cards = vec![crate::planning::reconcile_thread_card(
+        crate::planning::ReconcileInput {
+            thread: &thread,
+            git: None,
+            local: None,
+            collision_count: 0,
+            backend_observed_at_unix_ms: None,
+            backend_error: None,
+            now_unix_ms: 1,
+        },
+    )];
+    app.planning_snapshot.saved_views.push(crate::planning::SavedView {
+        id: "custom:1".into(),
+        name: "view\u{202e}spoof".into(),
+        source_scope: "all".into(),
+        filter: String::new(),
+        group_by: Some("workspace".into()),
+        order_by: None,
+        layout: crate::planning::SavedViewLayout::List,
+        visible_fields: vec![],
+    });
+    app.planning_view_index = crate::planning::builtin_saved_views().len();
+    app.view = View::Board;
+    app.input_mode = InputMode::ScratchTitle;
+    app.input_buffer = "typed\u{202e}spoof".into();
+
+    let snapshot = overlay_snapshot(&app, render);
+    for fragment in [
+        "view\u{fffd}spoof",
+        "group\u{fffd}spoof",
+        "typed\u{fffd}spoof",
+    ] {
+        assert!(
+            snapshot.contains(fragment),
+            "Board missing safe fragment {fragment:?}"
+        );
+    }
+    assert!(!snapshot.contains('\u{202e}'));
+    assert_eq!(app.planning_snapshot.saved_views[0].name, "view\u{202e}spoof");
+    assert_eq!(app.work_cards[0].workspace.as_deref(), Some("group\u{202e}spoof"));
+}
+
+#[test]
+fn scratch_detail_id_is_escaped_without_rewriting_local_state() {
+    let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+    app.view = View::Scratch("scratch\u{202e}spoof".into());
+    app.planning_snapshot.scratch.push(crate::planning::ScratchWork {
+        id: "scratch\u{202e}spoof".into(),
+        title: "Local work".into(),
+        note: None,
+        workspace: None,
+        priority: None,
+        state: crate::planning::ScratchState::Inbox,
+        created_at_unix_ms: 1,
+        updated_at_unix_ms: 1,
+    });
+    let snapshot = overlay_snapshot(&app, render);
+    assert!(snapshot.contains("Scratch: scratch\u{fffd}spoof"));
+    assert!(!snapshot.contains('\u{202e}'));
+    assert_eq!(app.planning_snapshot.scratch[0].id, "scratch\u{202e}spoof");
+}

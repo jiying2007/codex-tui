@@ -322,6 +322,7 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(3), Constraint::Length(2)])
         .split(area);
+    let display_input = sanitize_inline(&app.input_buffer);
 
     match layout_mode(area.width) {
         LayoutMode::Compact | LayoutMode::Standard => {
@@ -340,12 +341,12 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
     let status_line = match app.input_mode {
         InputMode::Search => Line::from(format!(
             "/{}  · {}",
-            app.input_buffer,
+            display_input,
             tr(app, "Enter keep · Esc cancel", "Enter 保留 · Esc 取消")
         )),
         InputMode::TranscriptSearch => Line::from(format!(
             "Ctrl+F> {}  · {}",
-            app.input_buffer,
+            display_input,
             tr(
                 app,
                 "Enter full-history search · Esc cancel",
@@ -360,7 +361,7 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
         )),
         InputMode::Alias => Line::from(format!(
             "alias> {}  · {}",
-            app.input_buffer,
+            display_input,
             tr(app, "Enter save · Esc cancel", "Enter 保存 · Esc 取消")
         )),
         InputMode::Composer => Line::from(tr(
@@ -376,13 +377,13 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
         InputMode::ScratchTitle => Line::from(format!(
             "{}> {}  · {}",
             tr(app, "new scratch", "新建 Scratch"),
-            app.input_buffer,
+            display_input,
             tr(app, "Enter create · Esc cancel", "Enter 创建 · Esc 取消")
         )),
         InputMode::Snooze => Line::from(format!(
             "{}> {}  · 15m / 1h / 1d · {}",
             tr(app, "snooze", "稍后提醒"),
-            app.input_buffer,
+            display_input,
             tr(app, "Enter apply · Esc cancel", "Enter 应用 · Esc 取消")
         )),
         InputMode::Note => Line::from(format!(
@@ -1286,7 +1287,7 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
                 Paragraph::new(lines)
                     .block(Block::bordered().title(format!(
                         " {} · {} · {}/{} ",
-                        saved_view_name(&view, app.language),
+                        sanitize_inline(saved_view_name(&view, app.language)),
                         workflow_stage_label(stage, app.language),
                         app.board_stage_index + 1,
                         WorkflowStage::ALL.len()
@@ -1304,7 +1305,7 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
             for (index, card) in cards.iter().enumerate() {
                 let group = saved_view_group_key(card, view.group_by.as_deref());
                 if !group.is_empty() && group != previous_group {
-                    lines.push(Line::from(format!("── {group} ──")));
+                    lines.push(Line::from(format!("── {} ──", sanitize_inline(&group))));
                     previous_group = group;
                 }
                 if index == app.board_selected {
@@ -1335,7 +1336,7 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
                 Paragraph::new(visible_lines)
                     .block(Block::bordered().title(format!(
                         " {} · {} ",
-                        saved_view_name(&view, app.language),
+                        sanitize_inline(saved_view_name(&view, app.language)),
                         saved_view_layout_label(view.layout, app.language)
                     )))
                     .wrap(Wrap { trim: false }),
@@ -1403,7 +1404,7 @@ fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
             app.planning_views().len()
         )
     };
-    frame.render_widget(Paragraph::new(input), outer[1]);
+    frame.render_widget(Paragraph::new(sanitize_inline(&input)), outer[1]);
 }
 
 fn planning_card_line(
@@ -1534,7 +1535,7 @@ fn render_scratch(frame: &mut Frame<'_>, app: &AppState, scratch_id: &str, area:
         .find(|scratch| scratch.id == scratch_id)
     {
         vec![
-            Line::from(format!("Scratch: {}", scratch.id)),
+            Line::from(format!("Scratch: {}", sanitize_inline(&scratch.id))),
             Line::from(format!(
                 "{}: {}",
                 tr(app, "Title", "标题"),
