@@ -284,8 +284,7 @@ async fn isolated_search_does_not_block_live_app_server_transport() {
         let Message::Text(live_request) = live_request else {
             panic!("live text")
         };
-        let live_request: Value =
-            serde_json::from_str(live_request.as_str()).expect("live json");
+        let live_request: Value = serde_json::from_str(live_request.as_str()).expect("live json");
         assert_eq!(live_request["method"], "fixture/heartbeat");
         live.send(Message::Text(
             json!({"id":live_request["id"],"result":{"healthy":true}})
@@ -356,8 +355,8 @@ fn transcript_complete_requires_all_occurrences_and_budget_headroom() {
 
 #[test]
 fn rpc_eof_is_reported_as_closed_during_request() {
-    let error = rpc_message_or_closed(None, "thread/list")
-        .expect_err("EOF must fail the active request");
+    let error =
+        rpc_message_or_closed(None, "thread/list").expect_err("EOF must fail the active request");
     assert!(
         error
             .to_string()
@@ -714,9 +713,7 @@ fn periodic_registry_reconcile_is_pagewise() {
         .split("#[cfg(test)]")
         .next()
         .expect("production source");
-    assert!(
-        production.contains("load_registry_with_page_limit(&mut rpc, true, Some(1)).await")
-    );
+    assert!(production.contains("load_registry_with_page_limit(&mut rpc, true, Some(1)).await"));
     assert!(production.contains("reconcile: Option<RegistryReconcile>"));
     assert!(production.contains("loaded_hydration.is_none()"));
     assert!(!production.contains("_ = refresh.tick(), if hydration.is_none() =>"));

@@ -276,11 +276,11 @@
     "src/forge/remote_identity_tests.rs": 47,
     "src/app/reducer.rs": 2483,
     "src/app/state.rs": 888,
-    "src/app/tests.rs": 2672,
+    "src/app/tests.rs": 2669,
     "src/app/thread_queue_reducer_tests.rs": 123,
     "src/ui/tests.rs": 731,
-    "src/sqlite_store/tests.rs": 833,
-    "src/app_server/tests.rs": 935
+    "src/sqlite_store/tests.rs": 832,
+    "src/app_server/tests.rs": 932
   },
   "ratchetPolicy": {
     "baseline": "inherit v1.3 Search & Multi-Target ceilings; feature work may only add bounded module-specific ceilings",
@@ -600,6 +600,17 @@
         "src/app_server/tests.rs"
       ],
       "policy": "No runtime changes, new state authority, protocol, schema or release authorization; exact native CI, development qualification and complete-source ratchet remain mandatory."
+    },
+    {
+      "date": "2026-10-11",
+      "kind": "canonical-test-extraction-rustfmt",
+      "scope": "Follow exactly seven formatter-provided no-behavior hunks after extracting test modules; keep canonical source LOC and all test identities unchanged.",
+      "modules": [
+        "src/app/tests.rs",
+        "src/app_server/tests.rs",
+        "src/sqlite_store/tests.rs"
+      ],
+      "policy": "No runtime or release authority changes; isolated format normalization under existing ratchet."
     }
   ]
 }

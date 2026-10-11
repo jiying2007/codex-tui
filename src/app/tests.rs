@@ -1820,8 +1820,7 @@ fn scratch_items_join_the_same_planning_projection_without_becoming_threads() {
         });
     reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 2 });
     assert!(app.work_cards.iter().any(|card| {
-        card.anchor.kind == crate::planning::SourceKind::ScratchWork
-            && card.title == "Investigate"
+        card.anchor.kind == crate::planning::SourceKind::ScratchWork && card.title == "Investigate"
     }));
     assert_eq!(app.threads.len(), 4);
 }
@@ -2362,8 +2361,7 @@ fn pin_alias_and_ack_round_trip_through_local_state() {
 }
 fn seed_gitlab_mutation_target(app: &mut AppState, with_merge_request: bool) -> ThreadId {
     use crate::forge::{
-        ChangeRequestSummary, ForgeFreshness, ForgeIdentity, ForgeObservation,
-        ForgeProviderKind,
+        ChangeRequestSummary, ForgeFreshness, ForgeIdentity, ForgeObservation, ForgeProviderKind,
     };
 
     let thread_id = app.threads[0].id.clone();
@@ -2422,8 +2420,7 @@ fn seed_gitlab_mutation_target(app: &mut AppState, with_merge_request: bool) -> 
 
 fn seed_github_mutation_target(app: &mut AppState, with_pull_request: bool) -> ThreadId {
     use crate::forge::{
-        ChangeRequestSummary, ForgeFreshness, ForgeIdentity, ForgeObservation,
-        ForgeProviderKind,
+        ChangeRequestSummary, ForgeFreshness, ForgeIdentity, ForgeObservation, ForgeProviderKind,
     };
 
     let thread_id = app.threads[0].id.clone();

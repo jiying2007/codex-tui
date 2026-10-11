@@ -705,8 +705,7 @@ fn sqlite_open_rejects_symlinked_database_before_touching_target() {
     let target = root.path().join("unrelated-data");
     fs::write(&target, b"preserve unrelated contents").expect("target");
     fs::set_permissions(&target, fs::Permissions::from_mode(0o644)).expect("target mode");
-    fs::create_dir_all(store.db_path().parent().expect("state parent"))
-        .expect("create state dir");
+    fs::create_dir_all(store.db_path().parent().expect("state parent")).expect("create state dir");
     symlink(&target, store.db_path()).expect("install unsafe link");
     let err = store
         .load_state()
