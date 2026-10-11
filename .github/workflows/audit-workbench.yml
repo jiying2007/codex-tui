@@ -33,9 +33,6 @@ jobs:
           import hashlib, subprocess
           expected = '1656a17daafd586c614d0d82f4fa777b3b7390c214491b3c6bc5d98de032a0a7'
           patch = b''.join(Path('.audit-raw-' + str(i)).read_bytes() for i in range(8))
-          for i in range(8):
-              data = Path('.audit-raw-' + str(i)).read_bytes()
-              print(i, len(data), hashlib.sha256(data).hexdigest())
           actual = hashlib.sha256(patch).hexdigest()
           print('patch SHA256:', actual)
           if actual != expected:
@@ -51,6 +48,36 @@ jobs:
               raise SystemExit('different prior repair payload')
           PY
           if test -f .audit-followup.py; then python3 .audit-followup.py; fi
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('src/pty.rs')
+          source = path.read_text()
+          source = source.replace('    // ReapChild handles both normal cancellation and every early error on this actor.', '''    // Explicit termination still owes one exit event; Drop is the error-only safety net.
+              if let Some(status) = child.terminate_and_wait().context("reap PTY child")? {
+                  let _ = event_tx.send(PtyEvent::Exited {
+                      success: status.success(),
+                      code: Some(status.exit_code()),
+                  });
+              }''')
+          path.write_text(source)
+          path = Path('tests/pty_lifecycle.rs')
+          source = path.read_text()
+          if 'natural_shell_exit_reports_completion_without_a_terminate_command' not in source:
+              source += '''
+          #[test]
+          fn natural_shell_exit_reports_completion_without_a_terminate_command() {
+              let root = tempdir().expect("tempdir");
+              let handle = PtyHandle::start(root.path(), TerminalSize { rows: 24, cols: 80 }).expect("start PTY");
+              wait_event(&handle, |event| matches!(event, PtyEvent::Ready { .. }));
+              ensure_shell_ready(&handle);
+              handle.send(PtyCommand::Input(line("exit"))).expect("natural shell exit");
+              let (success, code) = wait_shutdown(&handle);
+              assert!(success);
+              assert_eq!(code, Some(0));
+          }
+          '''
+          path.write_text(source)
+          PY
           cargo fmt --all
           python3 - <<'PY'
           from pathlib import Path
@@ -73,7 +100,7 @@ jobs:
           git add src tests docs release CHANGELOG.md scripts/testing/app_server_transport_regression.py .audit-applied .audit-followup-applied
           if ! git diff --cached --quiet; then
             git diff --cached --stat
-            git commit -m 'fix(audit): close transport pagination approval and PTY lifetime defects'
+            git commit -m 'fix(terminal): deliver exit receipt after explicit actor termination'
             git push origin HEAD:refs/heads/fix/deep-audit-20261011
           fi
           echo "CODEX_TUI_GIT_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
@@ -91,7 +118,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cargo test --locked --all-targets --all-features -- --nocapture 2>&1 | tee /tmp/audit-evidence/tests.log
+          cargo test --locked --all-targets --all-features 2>&1 | tee /tmp/audit-evidence/tests.log
       - name: Retain exact prepared source and binary when built
         if: always()
         shell: bash

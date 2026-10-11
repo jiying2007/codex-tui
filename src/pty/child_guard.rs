@@ -32,6 +32,17 @@ impl ReapChild {
         }
         Ok(status)
     }
+    pub(super) fn terminate_and_wait(&mut self) -> std::io::Result<Option<portable_pty::ExitStatus>> {
+        if self.reaped {
+            return Ok(None);
+        }
+        signal_foreground_process_group(&self.runtime.pty_master);
+        let _ = self.child.kill();
+        let status = self.child.wait()?;
+        self.reaped = true;
+        self.clear_killer();
+        Ok(Some(status))
+    }
     fn clear_killer(&self) {
         if let Ok(mut killer) = self.runtime.child_killer.lock() {
             killer.take();
@@ -40,13 +51,8 @@ impl ReapChild {
 }
 impl Drop for ReapChild {
     fn drop(&mut self) {
-        if !self.reaped {
-            signal_foreground_process_group(&self.runtime.pty_master);
-            let _ = self.child.kill();
-            // No handoff to a possibly failing thread spawn; wait ownership is never lost.
-            // Drawer close drops/detaches the actor, so this cannot block the UI thread.
-            let _ = self.child.wait();
-        }
+        // Detached actor only: preserve ownership without spawning a fallible waiter.
+        let _ = self.terminate_and_wait();
         self.clear_killer();
     }
 }
