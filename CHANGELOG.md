@@ -17,6 +17,9 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
+- Extract embedded App/Queue, UI, SQLite and App Server test suites into five sibling Rust test files without changing test identities or production code; tighten root module ceilings and govern new tests through the same LOC ratchet.
+
+
 - Isolate AppState inherent methods in `src/app/state.rs` while keeping its public type and methods unchanged; apply narrowly scoped `pub(super)` visibility to formerly private methods needed by sibling reducer modules, and tighten the single module ratchet.
 
 
