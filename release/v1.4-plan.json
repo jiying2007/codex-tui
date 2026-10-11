@@ -202,7 +202,7 @@
     "src/runtime_palette/intent_tests.rs": 222,
     "src/runtime_commands.rs": 103,
     "src/runtime_palette.rs": 89,
-    "src/runtime_doctor.rs": 394,
+    "src/runtime_doctor.rs": 397,
     "src/render_performance.rs": 323,
     "src/runtime_cli.rs": 229,
     "src/runtime_store_worker.rs": 340,
