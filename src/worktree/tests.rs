@@ -166,6 +166,28 @@ fn worktree_inventory_refuses_incomplete_or_ambiguous_porcelain() {
     }
 }
 
+#[test]
+fn strict_legacy_git_porcelain_keeps_trailing_space_but_rejects_ambiguous_lines() {
+    let parsed = crate::worktree_git::parse_worktree_porcelain_lines(
+        "worktree /repo space  \nHEAD deadbeef\nbranch refs/heads/main\n\n",
+    )
+    .expect("legacy Git complete plaintext inventory");
+    assert_eq!(parsed.len(), 1);
+    assert_eq!(parsed[0].path, "/repo space  ");
+
+    for malformed in [
+        "worktree /repo\nHEAD deadbeef\nbranch refs/heads/main\n",
+        "worktree /repo\nspoofed-line\nHEAD deadbeef\nbranch refs/heads/main\n\n",
+        "worktree /repo\nlocked\nHEAD deadbeef\nHEAD cafe\nbranch refs/heads/main\n\n",
+        "worktree /repo\nHEAD deadbeef\nbranch refs/heads/main\nbranch refs/heads/other\n\n",
+    ] {
+        assert!(
+            crate::worktree_git::parse_worktree_porcelain_lines(malformed).is_err(),
+            "ambiguous legacy Git inventory accepted: {malformed:?}"
+        );
+    }
+}
+
 #[cfg(unix)]
 #[tokio::test]
 async fn real_git_worktree_inventory_preserves_whitespace_in_directory_names() {
@@ -179,15 +201,28 @@ async fn real_git_worktree_inventory_preserves_whitespace_in_directory_names() {
         &["worktree", "add", "-b", "whitespace", target_text],
     );
 
-    let inventory = list_worktrees(repo_root.to_str().unwrap())
-        .await
-        .expect("complete worktree inventory");
-    assert!(
-        inventory.iter().any(|entry| {
-            entry.path == target_text && entry.branch.as_deref() == Some("whitespace")
-        }),
-        "Git worktree inventory must preserve exact directory bytes"
-    );
+    let supports_nul = crate::worktree_git::run_git(
+        repo_root.to_str().unwrap(),
+        ["worktree", "list", "--porcelain", "-z"],
+    )
+    .await
+    .expect("probe Git capability")
+    .success;
+    let inventory = list_worktrees(repo_root.to_str().unwrap()).await;
+    if supports_nul {
+        let inventory = inventory.expect("complete NUL-delimited Git inventory");
+        assert!(
+            inventory.iter().any(|entry| {
+                entry.path == target_text && entry.branch.as_deref() == Some("whitespace")
+            }),
+            "NUL Git inventory must preserve exact directory bytes"
+        );
+    } else {
+        assert!(
+            inventory.is_err(),
+            "legacy Git newline output cannot safely validate newline-bearing worktree paths"
+        );
+    }
 }
 
 #[tokio::test]
