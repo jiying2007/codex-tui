@@ -21,6 +21,8 @@ Default target is local `codex app-server --listen stdio://`. Named targets are 
 
 `doctor` prints a single-line, terminal-safe presentation of external paths, branches, host names, diagnostics and error strings; ANSI controls and Unicode bidi overrides become visible replacement characters. Original Codex/Git/Forge data is not rewritten.
 
+Human-readable `headless` text output escapes *individual* untrusted fields while retaining tab-delimited rows. `--json` remains a machine-readable serialization of the original snapshot, not display-normalized content.
+
 ## Navigate work and attention
 <!-- docs-section: daily -->
 
