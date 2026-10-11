@@ -385,7 +385,10 @@ mod tests {
         let mut runtime = TerminalDrawerRuntime::default();
         let startup_size = runtime.size;
         let requested = TerminalSize { rows: 20, cols: 96 };
-        runtime.parser.screen_mut().set_size(requested.rows, requested.cols);
+        runtime
+            .parser
+            .screen_mut()
+            .set_size(requested.rows, requested.cols);
         runtime.size = requested;
 
         TerminalDrawerRuntime::observe_ready(
