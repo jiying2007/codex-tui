@@ -429,7 +429,8 @@ fn print_thread_snapshot(snapshot: &ThreadSnapshot, format: OutputFormat) -> Res
             println!("degraded: {}", snapshot.degraded);
             println!(
                 "source: {} connected={}",
-                headless_field(&snapshot.source.source), snapshot.source.connected
+                headless_field(&snapshot.source.source),
+                snapshot.source.connected
             );
             if let Some(error) = &snapshot.source.error {
                 println!("error: {}", headless_field(error));
@@ -458,7 +459,8 @@ fn print_work_snapshot(snapshot: &WorkSnapshot, format: OutputFormat) -> Result<
             println!("degraded: {}", snapshot.degraded);
             println!(
                 "source: {} connected={}",
-                headless_field(&snapshot.source.source), snapshot.source.connected
+                headless_field(&snapshot.source.source),
+                snapshot.source.connected
             );
             if let Some(error) = &snapshot.source.error {
                 println!("source-error: {}", headless_field(error));
