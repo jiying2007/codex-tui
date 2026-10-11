@@ -161,7 +161,7 @@
     "src/app_server_registry.rs": 271,
     "src/app_server_wire.rs": 7,
     "src/sqlite_schema.rs": 220,
-    "src/worktree_git.rs": 288,
+    "src/worktree_git.rs": 293,
     "src/forge_types.rs": 451,
     "src/headless.rs": 583,
     "src/headless/surfaces.rs": 492,
@@ -283,7 +283,7 @@
     "src/app_server/tests.rs": 932,
     "src/planning/tests.rs": 708,
     "src/forge_mutation/tests.rs": 305,
-    "src/worktree/tests.rs": 588,
+    "src/worktree/tests.rs": 590,
     "src/release/tests.rs": 406,
     "src/forge_github/tests.rs": 197,
     "src/git/tests.rs": 199
