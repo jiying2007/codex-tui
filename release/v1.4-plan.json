@@ -192,7 +192,7 @@
     "src/app/context_menu.rs": 93,
     "src/app/review.rs": 121,
     "src/ui/review.rs": 325,
-    "src/runtime_external.rs": 208,
+    "src/runtime_external.rs": 204,
     "src/runtime_external/tests.rs": 86,
     "src/detached_process.rs": 134,
     "src/detached_process/tests.rs": 174,
