@@ -32,7 +32,9 @@ impl ReapChild {
         }
         Ok(status)
     }
-    pub(super) fn terminate_and_wait(&mut self) -> std::io::Result<Option<portable_pty::ExitStatus>> {
+    pub(super) fn terminate_and_wait(
+        &mut self,
+    ) -> std::io::Result<Option<portable_pty::ExitStatus>> {
         if self.reaped {
             return Ok(None);
         }

@@ -326,7 +326,13 @@ fn spawn_and_drive_pty(
         }
     }
 
-    // ReapChild handles both normal cancellation and every early error on this actor.
+    // Explicit termination still owes one exit event; Drop is the error-only safety net.
+    if let Some(status) = child.terminate_and_wait().context("reap PTY child")? {
+        let _ = event_tx.send(PtyEvent::Exited {
+            success: status.success(),
+            code: Some(status.exit_code()),
+        });
+    }
     Ok(())
 }
 

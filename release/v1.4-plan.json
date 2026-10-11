@@ -257,7 +257,7 @@
     "src/notification/tests.rs": 262,
     "src/operation.rs": 447,
     "src/planning.rs": 1067,
-    "src/pty.rs": 668,
+    "src/pty.rs": 674,
     "src/release_benchmark.rs": 219,
     "src/replay_backend.rs": 48,
     "src/scale_evidence.rs": 423,
@@ -291,7 +291,7 @@
     "src/app_server/history_hit.rs": 76,
     "src/app_server/pagination.rs": 298,
     "src/app_server/resource_budget.rs": 133,
-    "src/pty/child_guard.rs": 145
+    "src/pty/child_guard.rs": 153
   },
   "ratchetPolicy": {
     "baseline": "inherit v1.3 Search & Multi-Target ceilings; feature work may only add bounded module-specific ceilings",
