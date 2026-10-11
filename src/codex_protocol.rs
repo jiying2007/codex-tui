@@ -3,6 +3,7 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::BTreeSet;
+use url::Url;
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -160,22 +161,61 @@ fn workspace_for(thread: &ThreadWire) -> (String, String, String) {
         .and_then(|git| git.origin_url.as_deref())
         .map(str::trim)
         .filter(|value| !value.is_empty())
+        && let Some(key) = normalize_git_origin(origin)
     {
-        let key = normalize_git_origin(origin);
         return (repo_label(&key), format!("git:{key}"), "git-origin".into());
     }
 
-    let cwd = thread.cwd.trim();
+    fallback_workspace_from_cwd(&thread.cwd)
+}
+
+/// A project-unassignment event carries no Git origin. Use the known cwd
+/// until the authoritative thread/list refresh can recover its full metadata.
+pub(crate) fn fallback_workspace_from_cwd(cwd: &str) -> (String, String, String) {
+    let cwd = cwd.trim();
     let label = path_label(cwd).unwrap_or_else(|| cwd.to_string());
     (label, format!("cwd:{cwd}"), "cwd".into())
 }
 
-fn normalize_git_origin(origin: &str) -> String {
-    origin
-        .trim()
-        .trim_end_matches('/')
-        .trim_end_matches(".git")
-        .to_ascii_lowercase()
+/// Normalize a remote as host/repository, never retaining URL userinfo, query
+/// or fragment bytes in a display name, search field or headless workspace key.
+fn normalize_git_origin(origin: &str) -> Option<String> {
+    let origin = origin.trim();
+    let (host, path) = if origin.contains("://") {
+        let url = Url::parse(origin).ok()?;
+        if !matches!(url.scheme(), "https" | "http" | "ssh" | "git") {
+            return None;
+        }
+        let host = url.host_str()?.to_string();
+        let host = match url.port() {
+            Some(port) => format!("{host}:{port}"),
+            None => host,
+        };
+        (host, url.path().to_string())
+    } else {
+        // Git's SCP-style user@host:namespace/repo.git remote syntax.
+        let (authority, path) = origin.split_once(':')?;
+        let host = authority.rsplit('@').next()?.trim();
+        if host.is_empty()
+            || host
+                .chars()
+                .any(|ch| matches!(ch, '/' | '\\' | '?' | '#' | ' '))
+        {
+            return None;
+        }
+        (host.to_string(), path.to_string())
+    };
+    let path = path.trim().trim_start_matches('/').trim_end_matches('/');
+    let path = path.strip_suffix(".git").unwrap_or(path);
+    if host.is_empty()
+        || path.is_empty()
+        || path
+            .chars()
+            .any(|ch| matches!(ch, '\\' | '?' | '#' | '\n' | '\r'))
+    {
+        return None;
+    }
+    Some(format!("{host}/{path}").to_ascii_lowercase())
 }
 
 fn repo_label(origin: &str) -> String {
@@ -283,6 +323,47 @@ mod tests {
         let cwd = normalize_thread(thread, None);
         assert_eq!(cwd.workspace, "audio-pipeline");
         assert_eq!(cwd.metadata.workspace_basis, "cwd");
+    }
+
+    #[test]
+    fn git_origins_are_identity_equivalent_and_strip_credential_suffices() {
+        let plain = "https://github.com/Team/Repo.git";
+        let credentialed =
+            "https://user:secret@github.com/Team/Repo.git?token=supersecret#fragment";
+        let scp = "git@github.com:Team/Repo.git";
+        let expected = Some("github.com/team/repo".to_string());
+        assert_eq!(normalize_git_origin(plain), expected);
+        assert_eq!(normalize_git_origin(credentialed), expected);
+        assert_eq!(normalize_git_origin(scp), expected);
+        assert_eq!(
+            normalize_git_origin("ssh://git@github.com:2222/Team/Repo.git"),
+            Some("github.com:2222/team/repo".into())
+        );
+    }
+
+    #[test]
+    fn untrusted_remote_never_enters_workspace_or_search_identity() {
+        let mut thread = wire(json!({"type": "idle"}));
+        thread.git_info = Some(GitInfoWire {
+            origin_url: Some(
+                "https://alice:password@example.com/Team/Repo.git?access=topsecret#token".into(),
+            ),
+        });
+        let view = normalize_thread(thread.clone(), None);
+        assert_eq!(view.workspace, "repo");
+        assert_eq!(view.metadata.workspace_key, "git:example.com/team/repo");
+        for field in [&view.workspace, &view.metadata.workspace_key] {
+            assert!(!field.contains("password"));
+            assert!(!field.contains("topsecret"));
+            assert!(!field.contains("token"));
+        }
+
+        thread.git_info = Some(GitInfoWire {
+            origin_url: Some("file:///tmp/secret?token=private".into()),
+        });
+        let rejected = normalize_thread(thread, None);
+        assert_eq!(rejected.metadata.workspace_basis, "cwd");
+        assert_eq!(rejected.metadata.workspace_key, "cwd:/work/audio-pipeline");
     }
 
     #[test]

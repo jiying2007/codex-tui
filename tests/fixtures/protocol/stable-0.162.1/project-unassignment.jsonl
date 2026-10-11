@@ -1,0 +1,4 @@
+{"method":"thread/started","emittedAtMs":1000,"params":{"thread":{"id":"stable-thread","preview":"Stable prompt","projectId":"project-A","updatedAt":1,"status":{"type":"idle"},"cwd":"/srv/team/repo","source":"cli","gitInfo":{"originUrl":"https://u:secret@git.example/Team/Repo.git?token=do-not-retain#fragment"}}}}
+{"method":"thread/project/updated","emittedAtMs":2000,"params":{"threadId":"stable-thread","projectId":null}}
+{"method":"thread/project/updated","emittedAtMs":3000,"params":{"threadId":"stable-thread","projectId":"project-B"}}
+{"method":"thread/name/updated","emittedAtMs":4000,"params":{"threadId":"stable-thread","threadName":"New title"}}

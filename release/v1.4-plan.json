@@ -150,7 +150,7 @@
   "moduleRatchet": {
     "src/app.rs": 7166,
     "src/ui.rs": 2946,
-    "src/app_server.rs": 3562,
+    "src/app_server.rs": 3619,
     "src/main.rs": 1854,
     "src/sqlite_store.rs": 2549,
     "src/forge.rs": 1345,
@@ -158,7 +158,7 @@
     "src/release.rs": 1025,
     "src/runtime_store.rs": 525,
     "src/runtime_input.rs": 267,
-    "src/app_server_registry.rs": 169,
+    "src/app_server_registry.rs": 271,
     "src/app_server_wire.rs": 7,
     "src/sqlite_schema.rs": 220,
     "src/worktree_git.rs": 180,
@@ -172,7 +172,7 @@
     "src/presentation.rs": 66,
     "src/transcript_search.rs": 211,
     "src/thread_queue.rs": 350,
-    "src/app_server_target.rs": 282,
+    "src/app_server_target.rs": 308,
     "src/app_server_transport.rs": 487,
     "src/forge_github_mutation.rs": 651,
     "src/forge_mutation.rs": 1649,
@@ -242,7 +242,7 @@
     "src/app/types.rs": 424,
     "src/backend.rs": 229,
     "src/batch_local.rs": 208,
-    "src/codex_protocol.rs": 293,
+    "src/codex_protocol.rs": 374,
     "src/command.rs": 130,
     "src/compat.rs": 574,
     "src/domain.rs": 342,
@@ -527,6 +527,35 @@
         "src/text.rs"
       ],
       "policy": "Security-only display transformation; canonical Git/Codex/Forge strings unchanged, no new product capability or release authority"
+    },
+    {
+      "date": "2026-10-11",
+      "kind": "upstream-registry-provenance-correctness",
+      "scope": "Honor official Codex rust-v0.162.1 nullable project and optional cleared name notifications, queue coalesced authoritative read after unarchive, and strip Git-origin URL credentials/query/fragment before workspace projection. Exact protocol replay and EN/zh-CN operator guidance; no new task/Agent authority.",
+      "modules": [
+        "src/codex_protocol.rs",
+        "src/app_server_registry.rs",
+        "src/app_server.rs"
+      ],
+      "policy": "Defect/security only; no local thread invention or new durable schema; Stable external L3 and GitLab/TTY/admin evidence remain blocked."
+    },
+    {
+      "date": "2026-10-11",
+      "kind": "remote-plaintext-boundary",
+      "scope": "Reject non-loopback ws:// targets even without Bearer authorization to protect session/approval data; preserve WSS plus localhost/IPv4/IPv6 loopback; ensure config resolution and direct URL negative tests with EN/zh-CN documentation.",
+      "modules": [
+        "src/app_server_target.rs"
+      ],
+      "policy": "Security-only predeployment hardening; no credentials, second server, configuration migration, or Stable readiness claim."
+    },
+    {
+      "date": "2026-10-11",
+      "kind": "clippy-followup",
+      "scope": "Collapse nested optional origin check per -D clippy::collapsible-if while retaining safe fallback and canonical behavior",
+      "modules": [
+        "src/codex_protocol.rs"
+      ],
+      "policy": "No behavioral extension; preserve single v1.4 LOC ratchet."
     }
   ]
 }

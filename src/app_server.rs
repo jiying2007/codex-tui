@@ -794,6 +794,27 @@ fn observe_registry_reconcile_message(reconcile: &mut RegistryReconcile, message
     }
 }
 
+fn requires_authoritative_registry_refresh(message: &Value) -> bool {
+    let Some(params) = message.get("params") else {
+        return false;
+    };
+    if !params
+        .get("threadId")
+        .and_then(Value::as_str)
+        .is_some_and(|id| !id.is_empty())
+    {
+        return false;
+    }
+    match message.get("method").and_then(Value::as_str) {
+        Some("thread/unarchived") => true,
+        Some("thread/project/updated") => params.get("projectId").is_some_and(Value::is_null),
+        Some("thread/name/updated") => params.get("threadName").is_none_or(|name| {
+            name.is_null() || name.as_str().is_some_and(|s| s.trim().is_empty())
+        }),
+        _ => false,
+    }
+}
+
 fn finish_registry_reconcile(
     mut reconcile: RegistryReconcile,
     threads: &mut BTreeMap<String, ThreadSummary>,
@@ -844,6 +865,7 @@ async fn run_registry_actor(
     let mut refresh = tokio::time::interval(REFRESH_INTERVAL);
     refresh.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     refresh.tick().await;
+    let mut authoritative_refresh_queued = false;
 
     let mut hydration_tick = tokio::time::interval(REGISTRY_HYDRATION_YIELD_INTERVAL);
     hydration_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -1395,6 +1417,7 @@ async fn run_registry_actor(
                 }
             }
             _ = refresh.tick(), if !semantic_backlog && hydration.is_none() && reconcile.is_none() && loaded_hydration.is_none() => {
+                authoritative_refresh_queued = false;
                 match load_registry_with_page_limit(&mut rpc, true, Some(1)).await {
                     Ok(load) if load.registry_complete => {
                         apply_full_registry_refresh(load.threads, &mut threads, &mut status);
@@ -1465,6 +1488,14 @@ async fn run_registry_actor(
             message = rpc.read_message() => {
                 match message {
                     Ok(Some(message)) => {
+                        // Recover metadata from upstream, not by manufacturing a
+                        // thread on a notification without its Thread object.
+                        let authoritative_refresh_required =
+                            requires_authoritative_registry_refresh(&message);
+                        if authoritative_refresh_required && !authoritative_refresh_queued {
+                            authoritative_refresh_queued = true;
+                            refresh.reset_at(tokio::time::Instant::now());
+                        }
                         if let Some(loaded_hydration) = loaded_hydration.as_mut() {
                             observe_loaded_hydration_message(loaded_hydration, &message);
                         }
@@ -3168,6 +3199,32 @@ mod tests {
             Some(true)
         );
         assert!(!threads.contains_key("thread-new"));
+    }
+
+    #[test]
+    fn unarchive_and_cleared_metadata_schedule_upstream_reconcile() {
+        for message in [
+            json!({"method":"thread/unarchived","params":{"threadId":"a"}}),
+            json!({"method":"thread/project/updated","params":{"threadId":"a","projectId":null}}),
+            json!({"method":"thread/name/updated","params":{"threadId":"a"}}),
+            json!({"method":"thread/name/updated","params":{"threadId":"a","threadName":""}}),
+        ] {
+            assert!(
+                requires_authoritative_registry_refresh(&message),
+                "{message}"
+            );
+        }
+        for message in [
+            json!({"method":"thread/archived","params":{"threadId":"a"}}),
+            json!({"method":"thread/project/updated","params":{"threadId":"a","projectId":"B"}}),
+            json!({"method":"thread/project/updated","params":{"threadId":"a","projectId":45}}),
+            json!({"method":"thread/unarchived","params":{}}),
+        ] {
+            assert!(
+                !requires_authoritative_registry_refresh(&message),
+                "{message}"
+            );
+        }
     }
 
     #[test]

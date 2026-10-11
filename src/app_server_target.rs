@@ -189,6 +189,10 @@ fn validate_websocket_url(raw: &str) -> Result<Url> {
         url.username().is_empty() && url.password().is_none(),
         "App Server WebSocket URL must not embed credentials; use auth_token_env"
     );
+    anyhow::ensure!(
+        websocket_url_supports_auth(&url),
+        "remote plaintext ws:// App Server target is not allowed; use wss:// or a loopback SSH tunnel"
+    );
     Ok(url)
 }
 
@@ -202,7 +206,9 @@ fn websocket_url_supports_auth(url: &Url) -> bool {
     if host.eq_ignore_ascii_case("localhost") {
         return true;
     }
-    host.parse::<IpAddr>()
+    host.trim_start_matches('[')
+        .trim_end_matches(']')
+        .parse::<IpAddr>()
         .is_ok_and(|address| address.is_loopback())
 }
 
@@ -272,11 +278,31 @@ mod tests {
     fn websocket_auth_policy_requires_tls_or_loopback() {
         let loopback = validate_websocket_url("ws://127.0.0.1:4500/rpc").expect("loopback");
         let local = validate_websocket_url("ws://localhost:4500/rpc").expect("localhost");
-        let remote = validate_websocket_url("ws://192.0.2.8:4500/rpc").expect("remote");
+        let ipv6 = validate_websocket_url("ws://[::1]:4500/rpc").expect("IPv6 loopback");
         let tls = validate_websocket_url("wss://example.test/rpc").expect("tls");
         assert!(websocket_url_supports_auth(&loopback));
         assert!(websocket_url_supports_auth(&local));
-        assert!(!websocket_url_supports_auth(&remote));
+        assert!(websocket_url_supports_auth(&ipv6));
         assert!(websocket_url_supports_auth(&tls));
+        for plaintext in [
+            "ws://192.0.2.8:4500/rpc",
+            "ws://internal.example:4500/rpc",
+            "ws://localhost.evil.example:4500/rpc",
+        ] {
+            assert!(validate_websocket_url(plaintext).is_err(), "{plaintext}");
+        }
+    }
+
+    #[test]
+    fn remote_plaintext_is_rejected_even_without_configured_bearer() {
+        let mut config = AppServerConfig::default();
+        config.targets.insert(
+            "insecure".into(),
+            AppServerTargetConfig::Websocket {
+                url: "ws://192.0.2.8:4500/rpc".into(),
+                auth_token_env: None,
+            },
+        );
+        assert!(ResolvedAppServerTarget::resolve(&config, Some("insecure")).is_err());
     }
 }

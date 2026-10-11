@@ -70,3 +70,26 @@ fn malformed_wire_fixture_fails_with_bounded_decode_context() {
     assert!(message.contains("bytes"));
     assert!(!message.contains("THIS_IS_NOT_VALID_JSON_PAYLOAD"));
 }
+
+#[test]
+fn stable_0_162_1_project_unassignment_replays_without_stale_authority() {
+    let mut replay = ReplayBackend::from_jsonl(include_str!(
+        "fixtures/protocol/stable-0.162.1/project-unassignment.jsonl"
+    ))
+    .expect("pinned upstream null-project fixture");
+    assert_eq!(replay.frame_count(), 5);
+    let start = replay.tick();
+    assert_eq!(start.threads[0].workspace, "project:project-A");
+    let unassigned = replay.tick();
+    assert_eq!(unassigned.threads[0].workspace, "repo");
+    assert_eq!(unassigned.threads[0].metadata.project_id, None);
+    assert_eq!(
+        unassigned.threads[0].metadata.workspace_key,
+        "cwd:/srv/team/repo"
+    );
+    let assigned = replay.tick();
+    assert_eq!(assigned.threads[0].workspace, "project:project-B");
+    let named = replay.tick();
+    assert_eq!(named.threads[0].title, "New title");
+    assert!(!format!("{named:?}").contains("do-not-retain"));
+}

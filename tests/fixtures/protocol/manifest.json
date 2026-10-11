@@ -21,6 +21,17 @@
       "id": "malformed-registry",
       "path": "tests/fixtures/protocol/malformed/registry.jsonl",
       "expectation": "fail-closed"
+    },
+    {
+      "id": "stable-0.162.1-project-unassignment",
+      "path": "tests/fixtures/protocol/stable-0.162.1/project-unassignment.jsonl",
+      "expectation": "pass"
     }
-  ]
+  ],
+  "upstreamBaseline": {
+    "repository": "openai/codex",
+    "releaseTag": "rust-v0.162.1",
+    "releaseDate": "2026-10-09",
+    "authority": "pinned public generated App Server protocol plus authoritative project-clear integration fixture; no real server L3 qualification"
+  }
 }
