@@ -135,15 +135,20 @@ fn ring_terminal() -> Result<()> {
 }
 
 #[cfg(target_os = "linux")]
+fn linux_notification_command(delivery: &Delivery) -> Command {
+    let mut command = Command::new("notify-send");
+    command
+        .arg("--app-name=codex-tui")
+        .arg("--")
+        .arg(&delivery.title)
+        .arg(&delivery.body);
+    command
+}
+
+#[cfg(target_os = "linux")]
 async fn deliver_os(delivery: &Delivery) -> Result<()> {
-    run_notification_command(
-        Command::new("notify-send")
-            .arg("--app-name=codex-tui")
-            .arg(&delivery.title)
-            .arg(&delivery.body),
-        "notify-send",
-    )
-    .await
+    let mut command = linux_notification_command(delivery);
+    run_notification_command(&mut command, "notify-send").await
 }
 
 #[cfg(target_os = "macos")]
@@ -221,6 +226,30 @@ mod tests {
         app.work_cards.clear();
         assert_eq!(runtime.observe(&app).expect("observe"), 0);
         assert!(runtime.try_notice().is_none());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn notify_send_treats_option_looking_body_as_data() {
+        let delivery = Delivery {
+            title: "codex-tui test".into(),
+            body: "--icon=spoofed".into(),
+        };
+        let command = linux_notification_command(&delivery);
+        let args = command
+            .as_std()
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            args,
+            vec![
+                "--app-name=codex-tui",
+                "--",
+                "codex-tui test",
+                "--icon=spoofed",
+            ]
+        );
     }
 
     #[test]

@@ -17,6 +17,8 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
+- Bound and sanitize desktop notification subjects at the presentation boundary while retaining original event data; Linux `notify-send` now ends option parsing before dynamic title/body, with negative fixtures for bidi controls, oversized CJK text and option-looking subjects.
+
 - Sanitize pasted registry/Board inline input, Saved View names, workspace group headings and Scratch detail IDs at terminal rendering; preserve exact source text and state semantics with negative terminal fixtures.
 
 - Escape untrusted Forge mutation and Launch Preset confirmation details, local batch identifiers, Command Palette query and local edit overlays at terminal presentation boundaries; retain exact original plans, argv and confirm-before-write policy.
