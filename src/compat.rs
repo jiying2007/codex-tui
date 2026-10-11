@@ -484,7 +484,10 @@ mod tests {
             detail: hostile.into(),
             facts: BTreeMap::from([("tool".into(), hostile.into())]),
         };
-        let line = compat_line(format_args!("  version: {}", component.version.as_deref().unwrap()));
+        let line = compat_line(format_args!(
+            "  version: {}",
+            component.version.as_deref().unwrap()
+        ));
         assert_eq!(line, "  version: codex\u{fffd}[2J \u{fffd}中文");
         assert_eq!(component.detail, hostile);
         assert_eq!(component.facts["tool"], hostile);
@@ -504,7 +507,11 @@ mod tests {
             .split("async fn probe_binary(")
             .next()
             .unwrap();
-        assert!(!print_body.contains("println!("));
+        let raw_print_sites = print_body
+            .lines()
+            .filter(|line| line.trim_start().starts_with("println!("))
+            .count();
+        assert_eq!(raw_print_sites, 0);
         assert!(print_body.matches("compat_println!(").count() >= 12);
     }
 
