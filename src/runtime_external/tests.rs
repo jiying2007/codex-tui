@@ -15,7 +15,11 @@ fn child_fixture() {
     let root = Path::new(&root);
     let expected = if std::env::var("CODEX_TUI_EXTERNAL_TEST_ROLE").unwrap() == "editor" {
         open_external_editor(root.to_str().unwrap(), "a file.rs").unwrap();
-        root.join("a file.rs").to_string_lossy().into_owned()
+        root.join("a file.rs")
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned()
     } else {
         let url = "https://example.invalid/review?q=a%20b&x=1";
         open_external_url(url).unwrap();
