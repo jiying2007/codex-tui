@@ -17,6 +17,8 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
+- Protect explicit CLI preflight error, support-bundle destination and `doctor` startup failure terminal output against ANSI/bidi/newline spoofing; preserve the intentional usage hint line, data values and existing CLI behavior.
+
 - Neutralize ANSI/bidi/newline spoofing in the human-readable `doctor compat` report, including upstream tool/version details and facts, while leaving the original compatibility evidence and JSON report untouched; add strict render-boundary regression fixtures.
 
 - Escape untrusted per-field values in plain-text `headless` Thread/Work/Board/Attention/Forge/Worktree/Status output, preserving existing literal tab column delimiters and byte-for-byte JSON snapshot paths; hostile Unicode/control fixtures retain original data.
