@@ -377,7 +377,10 @@ mod tests {
         let line = doctor_line(format_args!("cwd: {hostile}"));
         assert_eq!(line, "cwd: repo\u{fffd}[2J\u{fffd} 中文");
         assert_eq!(hostile, "repo\u{001b}[2J\u{202e}\n中文");
-        assert_eq!(doctor_line(format_args!("name: {}", "正常中文")), "name: 正常中文");
+        assert_eq!(
+            doctor_line(format_args!("name: {}", "正常中文")),
+            "name: 正常中文"
+        );
     }
 
     #[test]
