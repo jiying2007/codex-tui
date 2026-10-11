@@ -17,6 +17,9 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
+- Extract the single existing `app::reduce` Action/Effect reducer into `src/app/reducer.rs` without changing its public entrypoint or transitions; tighten the `app.rs` module budget, cover the new source in the single ratchet, and redirect the panic-free reducer guard to the real extracted implementation.
+
+
 - Record upstream Codex stable-release drift in the existing weekly protocol workflow; negative Python 3.8 fixtures and advisory receipts never claim real L3 compatibility.
 
 

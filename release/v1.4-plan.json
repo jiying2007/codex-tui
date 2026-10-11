@@ -148,7 +148,7 @@
     "user-perceived-performance-evidence"
   ],
   "moduleRatchet": {
-    "src/app.rs": 7166,
+    "src/app.rs": 4683,
     "src/ui.rs": 2946,
     "src/app_server.rs": 3619,
     "src/main.rs": 1854,
@@ -273,7 +273,8 @@
     "src/app_server_transport/tests.rs": 317,
     "src/forge/gitlab_projection_tests.rs": 164,
     "src/forge/error_redaction_tests.rs": 43,
-    "src/forge/remote_identity_tests.rs": 47
+    "src/forge/remote_identity_tests.rs": 47,
+    "src/app/reducer.rs": 2483
   },
   "ratchetPolicy": {
     "baseline": "inherit v1.3 Search & Multi-Target ceilings; feature work may only add bounded module-specific ceilings",
@@ -556,6 +557,16 @@
         "src/codex_protocol.rs"
       ],
       "policy": "No behavioral extension; preserve single v1.4 LOC ratchet."
+    },
+    {
+      "date": "2026-10-11",
+      "kind": "reducer-module-extraction",
+      "scope": "Move the entire existing AppState Action->Effect reducer into one dedicated src/app/reducer.rs module, preserve public app::reduce and all variant handling, tighten app.rs ceiling and guard panic-free routing in the extracted production source. No new second source of truth, protocol, persistence or UI behavior.",
+      "modules": [
+        "src/app.rs",
+        "src/app/reducer.rs"
+      ],
+      "policy": "Behavior-preserving, exhaustive source-coverage ratchet update; canonical Linux/macOS/Windows MSRV, reducer tests, planning diagnostics, dedicated development qualification and fresh-main gates required."
     }
   ]
 }

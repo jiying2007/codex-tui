@@ -10,7 +10,7 @@
 ## 架构与功能范围
 <!-- docs-section: scope -->
 
-Codex 拥有对话、Agent/Queue；Git 拥有工作树；GitLab/GitHub 拥有交付；codex-tui 只管理本地投影和个人元数据。遵守 [ADR-012 中译](docs/zh-CN/adr/012-upstream-convergence.md) 和 `release/v1.5-convergence.json`；不得添加第二套 Agent、远程服务、任务数据库或终端管理平台。旧会话/Queue/Drawer 模块以维护为主。
+Codex 拥有对话、Agent/Queue；Git 拥有工作树；GitLab/GitHub 拥有交付；codex-tui 只管理本地投影和个人元数据。遵守 [ADR-012 中译](docs/zh-CN/adr/012-upstream-convergence.md) 和 `release/v1.5-convergence.json`；不得添加第二套 Agent、远程服务、任务数据库或终端管理平台。旧会话/Queue/Drawer 模块以维护为主。`src/app.rs` 负责 AppState 投影和辅助逻辑，`src/app/reducer.rs` 是唯一的 `app::reduce` Action→Effect 状态转换入口（原公开路径保持不变）。重构必须保留用户意图顺序、所有副作用回执和单一 v1.4 LOC Ratchet，不得建立第二套状态权威。
 
 ## 本地开发与测试
 <!-- docs-section: setup -->
