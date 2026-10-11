@@ -213,11 +213,12 @@ async fn real_git_worktree_inventory_preserves_whitespace_in_directory_names() {
     let inventory = list_worktrees(repo_root.to_str().unwrap()).await;
     if supports_nul {
         let inventory = inventory.expect("complete NUL-delimited Git inventory");
+        let canonical_target = canonical_path(target_text);
         assert!(
             inventory.iter().any(|entry| {
-                entry.path == target_text && entry.branch.as_deref() == Some("whitespace")
+                entry.path == canonical_target && entry.branch.as_deref() == Some("whitespace")
             }),
-            "NUL Git inventory must preserve exact directory bytes"
+            "NUL Git inventory must preserve canonical directory bytes"
         );
     } else {
         assert!(
