@@ -151,7 +151,7 @@
     "src/app.rs": 1000,
     "src/ui.rs": 2215,
     "src/app_server.rs": 2683,
-    "src/main.rs": 1854,
+    "src/main.rs": 1883,
     "src/sqlite_store.rs": 1715,
     "src/forge.rs": 1345,
     "src/worktree.rs": 700,
@@ -764,6 +764,15 @@
         "src/compat.rs"
       ],
       "policy": "Security-only v1.4 maintenance; sole complete-source LOC ratchet update, bilingual operator guidance and exact-head cross-platform CI. No added authority, compatibility migration, protocol, schema or Stable publication."
+    },
+    {
+      "date": "2026-10-11",
+      "kind": "cli-entrypoint-terminal-display-safety",
+      "scope": "Escape explicit human-readable preflight failure, support bundle output destination and doctor-startup degraded errors at the CLI terminal boundary only. Retain original argv, exit status, underlying file path, help text and machine-readable outputs; add malicious ANSI/bidi/newline and Chinese negative fixtures.",
+      "modules": [
+        "src/main.rs"
+      ],
+      "policy": "Security/defect-only v1.4 maintenance, no new core function, API, persistence, schema, migration, Codex/Git/Forge authority or Stable publication; enforce sole v1.4 complete-source LOC ratchet, bilingual docs and exact-head multi-platform qualification."
     }
   ]
 }
