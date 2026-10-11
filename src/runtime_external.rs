@@ -13,7 +13,10 @@ fn selected_editor_target(worktree_root: &str, relative_path: &str) -> Result<Pa
     );
     let root = std::fs::canonicalize(worktree_root)
         .with_context(|| format!("resolve worktree root {worktree_root:?}"))?;
-    anyhow::ensure!(root.is_dir(), "selected Git worktree root is not a directory");
+    anyhow::ensure!(
+        root.is_dir(),
+        "selected Git worktree root is not a directory"
+    );
     let target = std::fs::canonicalize(root.join(selected))
         .with_context(|| format!("resolve changed file {relative_path:?}"))?;
     anyhow::ensure!(
@@ -106,9 +109,7 @@ mod tests {
                 "unexpected editor target: {invalid:?}"
             );
         }
-        assert!(
-            selected_editor_target(repo.to_str().unwrap(), file.to_str().unwrap()).is_err()
-        );
+        assert!(selected_editor_target(repo.to_str().unwrap(), file.to_str().unwrap()).is_err());
         assert!(selected_editor_target(repo.to_str().unwrap(), "absent.rs").is_err());
     }
 
