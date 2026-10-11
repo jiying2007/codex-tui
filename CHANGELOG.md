@@ -17,6 +17,8 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
+- Escape untrusted Forge mutation and Launch Preset confirmation details, local batch identifiers, Command Palette query and local edit overlays at terminal presentation boundaries; retain exact original plans, argv and confirm-before-write policy.
+
 - Neutralize Git paths, branch names, mutation-plan preview and preconditions in the Managed Worktrees confirm-before-write screen plus Forge change-request status on Board; real terminal cell spoofing regressions preserve source data and approval gates.
 
 - Neutralize control/bidi/invisible formatting in selected Mission Control thread/model/Git error and branch labels plus offline backend source, with real TUI TestBackend regression; source data never rewritten.
