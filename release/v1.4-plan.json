@@ -161,7 +161,7 @@
     "src/app_server_registry.rs": 271,
     "src/app_server_wire.rs": 7,
     "src/sqlite_schema.rs": 220,
-    "src/worktree_git.rs": 245,
+    "src/worktree_git.rs": 284,
     "src/forge_types.rs": 451,
     "src/headless.rs": 583,
     "src/headless/surfaces.rs": 492,
@@ -283,7 +283,7 @@
     "src/app_server/tests.rs": 932,
     "src/planning/tests.rs": 708,
     "src/forge_mutation/tests.rs": 305,
-    "src/worktree/tests.rs": 553,
+    "src/worktree/tests.rs": 588,
     "src/release/tests.rs": 406,
     "src/forge_github/tests.rs": 197,
     "src/git/tests.rs": 199
@@ -807,7 +807,7 @@
     {
       "date": "2026-10-11",
       "kind": "managed-worktree-complete-git-inventory",
-      "scope": "Parse worktree list from NUL-delimited porcelain while preserving legal path trailing spaces and embedded newlines. Enforce complete record delimiters and HEAD/bare identity, fail closed on malformed/unknown records, Git stdout truncation above the existing 256 KiB cap and non-UTF-8 stdout, and drain overflow output so children terminate. Add parser, bounded-reader and genuine Unix Git worktree regressions.",
+      "scope": "Prefer NUL-delimited worktree porcelain for lossless paths, and fall back to strictly validated plaintext porcelain for Git 2.25 without -z support. Preserve trailing spaces; require NUL for embedded newlines; reject malformed/ambiguous/unknown records, duplicate HEAD/branch markers, Git stdout truncation above 256 KiB and non-UTF-8 stdout. Drain overflow output to reap child, with parser/bounded-reader/real Git version-capability regressions.",
       "modules": [
         "src/worktree_git.rs",
         "src/worktree/tests.rs"
