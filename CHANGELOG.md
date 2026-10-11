@@ -17,7 +17,7 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
-- Make managed Worktree admission, removal and outcome-reconciliation use complete NUL-delimited Git porcelain paths. Preserve newline/trailing-space directory names and fail closed on malformed, invalid UTF-8 or truncated (>256 KiB) Git stdout instead of using an incomplete inventory to prove deletion.
+- Make managed Worktree admission, removal and outcome-reconciliation prefer complete NUL-delimited Git porcelain paths, with strict text-porcelain capability fallback for Git 2.25 (which lacks worktree `-z`). Preserve trailing spaces and, where Git supports NUL, embedded newlines; fail closed on ambiguous, invalid UTF-8 or truncated (>256 KiB) output instead of using an incomplete inventory to prove deletion.
 
 - Retry temporarily blocked notification deliveries through a bounded 128-entry pending queue, drained non-blockingly by the existing TUI loop without requiring a new planning projection; report overload/closed dispatchers instead of silently losing edge-triggered attention alerts.
 
