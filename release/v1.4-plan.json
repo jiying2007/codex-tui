@@ -278,7 +278,7 @@
     "src/app/state.rs": 888,
     "src/app/tests.rs": 2669,
     "src/app/thread_queue_reducer_tests.rs": 123,
-    "src/ui/tests.rs": 1077,
+    "src/ui/tests.rs": 1087,
     "src/sqlite_store/tests.rs": 832,
     "src/app_server/tests.rs": 932,
     "src/planning/tests.rs": 708,
@@ -716,6 +716,15 @@
         "src/ui/tests.rs"
       ],
       "policy": "Display-only security maintenance, no state authority, API, schema, compatibility migration, new Codex/Git/Forge mutation or Stable permission; exact-head multi-platform CI and fresh-main Release Gate required."
+    },
+    {
+      "date": "2026-10-11",
+      "kind": "registry-board-scratch-rustfmt",
+      "scope": "Apply exactly three formatter-recommended test-line wrapping hunks for Saved View and Scratch negative render fixtures. Preserve test semantics and canonical source data.",
+      "modules": [
+        "src/ui/tests.rs"
+      ],
+      "policy": "Formatting-only; single v1.4 complete-source LOC ratchet, exact-head checks required; no product, protocol, persistence or release change."
     }
   ]
 }
