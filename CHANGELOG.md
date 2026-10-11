@@ -17,6 +17,10 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
+- Honor upstream nullable project assignments and optional thread-name clear events; coalesce authoritative Registry refreshes for detach/unarchive rather than inventing threads.
+- Strip untrusted App Server Git-origin credentials, URL queries and fragments before deriving any workspace identity; pin a Codex 0.162.1 protocol-negative replay for project clear.
+
+
 - Enforce same-change EN/zh-CN document-pair updates in canonical CI, and bind Release push path filters to every active bundled guide through manifest-derived regression tests.
 
 - Verify that v1.4+ release packages contain navigable EN/zh-CN documentation; keep current pages offline and rewrite unbundled historical links to immutable exact-source GitHub URLs, with negative archive-link tests.

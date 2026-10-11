@@ -1,7 +1,7 @@
 use crate::{
     app_server_wire::decode_wire_line,
     backend::{BackendSnapshot, BackendStatus},
-    codex_protocol::{ThreadWire, apply_status, normalize_thread},
+    codex_protocol::{ThreadWire, apply_status, fallback_workspace_from_cwd, normalize_thread},
     domain::ThreadSummary,
 };
 use anyhow::{Context, Result};
@@ -126,44 +126,143 @@ pub(crate) fn apply_registry_notification(
         "thread/archived" | "thread/deleted" => Ok(Some(threads.remove(thread_id).is_some())),
         "thread/unarchived" => Ok(Some(false)),
         "thread/name/updated" => {
+            let name = match params.get("threadName") {
+                None | Some(Value::Null) => None,
+                Some(Value::String(value)) => Some(value.trim()).filter(|name| !name.is_empty()),
+                _ => return Ok(Some(false)),
+            };
             let Some(thread) = threads.get_mut(thread_id) else {
                 return Ok(Some(false));
             };
-            let Some(name) = params
-                .get("threadName")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|name| !name.is_empty())
-            else {
-                return Ok(Some(false));
-            };
-            thread.title = name.to_string();
+            // A cleared name has no preview in this notification. Show the
+            // stable ID until an authoritative thread/list read restores it.
+            thread.title = name.unwrap_or(thread_id).to_string();
             if let Some(updated_at) = emitted_at_seconds {
                 thread.metadata.updated_at = thread.metadata.updated_at.max(updated_at);
             }
             Ok(Some(true))
         }
         "thread/project/updated" => {
+            let project_id = match params.get("projectId") {
+                Some(Value::Null) => None,
+                Some(Value::String(value)) => Some(value.trim()).filter(|value| !value.is_empty()),
+                _ => return Ok(Some(false)),
+            };
             let Some(thread) = threads.get_mut(thread_id) else {
                 return Ok(Some(false));
             };
-            let Some(project_id) = params
-                .get("projectId")
-                .and_then(Value::as_str)
-                .map(str::trim)
-                .filter(|project_id| !project_id.is_empty())
-            else {
-                return Ok(Some(false));
+            thread.metadata.project_id = project_id.map(str::to_string);
+            let (workspace, key, basis) = if let Some(project_id) = project_id {
+                (
+                    format!("project:{project_id}"),
+                    format!("project:{project_id}"),
+                    "codex-project".into(),
+                )
+            } else {
+                fallback_workspace_from_cwd(&thread.metadata.cwd)
             };
-            thread.metadata.project_id = Some(project_id.to_string());
-            thread.workspace = format!("project:{project_id}");
-            thread.metadata.workspace_key = format!("project:{project_id}");
-            thread.metadata.workspace_basis = "codex-project".into();
+            thread.workspace = workspace;
+            thread.metadata.workspace_key = key;
+            thread.metadata.workspace_basis = basis;
             if let Some(updated_at) = emitted_at_seconds {
                 thread.metadata.updated_at = thread.metadata.updated_at.max(updated_at);
             }
             Ok(Some(true))
         }
         _ => Ok(None),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn start(threads: &mut BTreeMap<String, ThreadSummary>) {
+        apply_registry_notification(
+            "thread/started",
+            &json!({"thread": {
+                "id": "thread-a", "preview": "First prompt", "projectId": "project-A",
+                "updatedAt": 1, "cwd": "/work/robot",
+                "status": {"type": "idle"}, "source": "cli"
+            }}),
+            Some(1),
+            threads,
+        )
+        .expect("thread started");
+    }
+
+    #[test]
+    fn upstream_project_unassignment_clears_old_project_without_inventing_git_origin() {
+        let mut threads = BTreeMap::new();
+        start(&mut threads);
+        assert_eq!(threads["thread-a"].workspace, "project:project-A");
+        assert_eq!(
+            apply_registry_notification(
+                "thread/project/updated",
+                &json!({"threadId": "thread-a", "projectId": null}),
+                Some(2),
+                &mut threads
+            )
+            .expect("null project notification"),
+            Some(true)
+        );
+        let detached = &threads["thread-a"];
+        assert_eq!(detached.metadata.project_id, None);
+        assert_eq!(detached.workspace, "robot");
+        assert_eq!(detached.metadata.workspace_key, "cwd:/work/robot");
+        assert_eq!(detached.metadata.workspace_basis, "cwd");
+        assert_eq!(detached.metadata.updated_at, 2);
+
+        apply_registry_notification(
+            "thread/project/updated",
+            &json!({"threadId": "thread-a", "projectId": "project-B"}),
+            Some(3),
+            &mut threads,
+        )
+        .expect("project B");
+        assert_eq!(threads["thread-a"].workspace, "project:project-B");
+        assert_eq!(threads["thread-a"].metadata.project_id.as_deref(), Some("project-B"));
+        assert_eq!(threads["thread-a"].metadata.updated_at, 3);
+    }
+
+    #[test]
+    fn cleared_thread_name_uses_safe_id_until_authoritative_refresh() {
+        let mut threads = BTreeMap::new();
+        start(&mut threads);
+        apply_registry_notification(
+            "thread/name/updated",
+            &json!({"threadId": "thread-a", "threadName": "Custom"}),
+            Some(2),
+            &mut threads,
+        )
+        .expect("set name");
+        assert_eq!(threads["thread-a"].title, "Custom");
+        apply_registry_notification(
+            "thread/name/updated",
+            &json!({"threadId": "thread-a"}),
+            Some(3),
+            &mut threads,
+        )
+        .expect("clear name");
+        assert_eq!(threads["thread-a"].title, "thread-a");
+        assert_eq!(threads["thread-a"].metadata.updated_at, 3);
+    }
+
+    #[test]
+    fn malformed_project_event_does_not_clear_live_identity() {
+        let mut threads = BTreeMap::new();
+        start(&mut threads);
+        assert_eq!(
+            apply_registry_notification(
+                "thread/project/updated",
+                &json!({"threadId": "thread-a", "projectId": 42}),
+                None,
+                &mut threads,
+            )
+            .expect("invalid event is ignored"),
+            Some(false)
+        );
+        assert_eq!(threads["thread-a"].workspace, "project:project-A");
     }
 }
