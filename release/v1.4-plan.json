@@ -148,11 +148,11 @@
     "user-perceived-performance-evidence"
   ],
   "moduleRatchet": {
-    "src/app.rs": 3797,
-    "src/ui.rs": 2946,
-    "src/app_server.rs": 3619,
+    "src/app.rs": 1000,
+    "src/ui.rs": 2214,
+    "src/app_server.rs": 2683,
     "src/main.rs": 1854,
-    "src/sqlite_store.rs": 2549,
+    "src/sqlite_store.rs": 1715,
     "src/forge.rs": 1345,
     "src/worktree.rs": 1218,
     "src/release.rs": 1025,
@@ -275,7 +275,12 @@
     "src/forge/error_redaction_tests.rs": 43,
     "src/forge/remote_identity_tests.rs": 47,
     "src/app/reducer.rs": 2483,
-    "src/app/state.rs": 888
+    "src/app/state.rs": 888,
+    "src/app/tests.rs": 2672,
+    "src/app/thread_queue_reducer_tests.rs": 123,
+    "src/ui/tests.rs": 731,
+    "src/sqlite_store/tests.rs": 833,
+    "src/app_server/tests.rs": 935
   },
   "ratchetPolicy": {
     "baseline": "inherit v1.3 Search & Multi-Target ceilings; feature work may only add bounded module-specific ceilings",
@@ -578,6 +583,23 @@
         "src/app/state.rs"
       ],
       "policy": "Behavior-preserving Rust module privacy adaptation; complete-source single LOC ratchet; require exact HEAD CI/development qualification/scale/PTY/performance and fresh-main proof."
+    },
+    {
+      "date": "2026-10-11",
+      "kind": "core-test-module-separation",
+      "scope": "Move all existing inline Rust cfg(test) suites from App, UI, SQLite and App Server into sibling test modules, preserving test module identity, every #[test] case, Failure Matrix references and source-guard relative paths. Preserve product code exactly.",
+      "modules": [
+        "src/app.rs",
+        "src/ui.rs",
+        "src/sqlite_store.rs",
+        "src/app_server.rs",
+        "src/app/tests.rs",
+        "src/app/thread_queue_reducer_tests.rs",
+        "src/ui/tests.rs",
+        "src/sqlite_store/tests.rs",
+        "src/app_server/tests.rs"
+      ],
+      "policy": "No runtime changes, new state authority, protocol, schema or release authorization; exact native CI, development qualification and complete-source ratchet remain mandatory."
     }
   ]
 }
