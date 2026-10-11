@@ -278,7 +278,7 @@
     "src/app/state.rs": 888,
     "src/app/tests.rs": 2669,
     "src/app/thread_queue_reducer_tests.rs": 123,
-    "src/ui/tests.rs": 784,
+    "src/ui/tests.rs": 787,
     "src/sqlite_store/tests.rs": 832,
     "src/app_server/tests.rs": 932,
     "src/planning/tests.rs": 708,
@@ -658,6 +658,15 @@
         "src/ui/tests.rs"
       ],
       "policy": "Security-only; single complete-source v1.4 LOC ratchet, no new protocol/API/state authority/schema/compatibility or Stable publication."
+    },
+    {
+      "date": "2026-10-11",
+      "kind": "mission-control-selected-detail-rustfmt",
+      "scope": "Apply exactly the one CI-provided formatter-only hunk to the new negative display-security assertion; no behavior, test identity, protected ratchet, or authority changes.",
+      "modules": [
+        "src/ui/tests.rs"
+      ],
+      "policy": "Formatting-only under v1.4 sole complete-source LOC ratchet; exact-head CI must rerun."
     }
   ]
 }

@@ -424,7 +424,10 @@ fn registry_selected_detail_and_offline_footer_neutralize_untrusted_labels() {
         "Git: feature\u{fffd}spoof",
         "backend\u{fffd}spoof",
     ] {
-        assert!(live.contains(visible), "selected detail missing {visible:?}");
+        assert!(
+            live.contains(visible),
+            "selected detail missing {visible:?}"
+        );
     }
     assert!(!live.contains('\u{202e}'));
 
