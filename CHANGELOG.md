@@ -17,6 +17,8 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
+- Validate Review external browser URLs as unambiguous HTTP(S) targets with a real host, rejecting embedded credentials, controls, whitespace and backslash normalization before process spawning; preserve original valid Forge URLs and native browser arguments.
+
 - Resolve Review editor targets against the validated current Git worktree root rather than a potentially nested thread cwd, reject missing/stale Git identity and absolute/parent/symlink-escaping paths before spawning an editor; preserve the original Git change and avoid changing Review/Forge authorities.
 
 
