@@ -630,6 +630,126 @@ fn board_change_request_state_is_display_sanitized() {
     );
 }
 
+fn overlay_snapshot(
+    app: &AppState,
+    paint: fn(&mut ratatui::Frame<'_>, &AppState),
+) -> String {
+    let mut terminal = Terminal::new(TestBackend::new(180, 48)).expect("terminal");
+    terminal.draw(|frame| paint(frame, app)).expect("draw");
+    let buffer = terminal.backend().buffer();
+    let mut snapshot = String::new();
+    for y in 0..buffer.area.height {
+        for x in 0..buffer.area.width {
+            snapshot.push_str(buffer[(x, y)].symbol());
+        }
+        snapshot.push('\n');
+    }
+    snapshot
+}
+
+#[test]
+fn forge_confirm_overlay_escapes_untrusted_identity_branches_and_guards() {
+    let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+    app.pending_forge_operation = Some(crate::forge_mutation::ForgeMutationPlan {
+        operation_id: "id".into(),
+        kind: crate::forge_mutation::ForgeMutationKind::CreateMergeRequest,
+        provider: crate::forge::ForgeProviderKind::GitLab,
+        cwd: "/repo".into(),
+        host: "host\u{202e}spoof".into(),
+        project_id: "42".into(),
+        project_path: "team\u{202e}spoof".into(),
+        change_request_iid: None,
+        source_branch: Some("source\u{202e}spoof".into()),
+        target_branch: Some("target\u{202e}spoof".into()),
+        title: Some("title\u{202e}spoof".into()),
+        payload_bytes: None,
+        expected_side_effect: "effect\u{202e}spoof".into(),
+        preconditions: vec![crate::forge_mutation::ForgeMutationPrecondition {
+            key: "guard\u{202e}spoof".into(),
+            expected: "expected\u{202e}spoof".into(),
+        }],
+        planned_at_unix_ms: 1,
+    });
+    let snapshot = overlay_snapshot(&app, render_forge_mutation_confirmation);
+    for fragment in [
+        "host\u{fffd}spoof/team\u{fffd}spoof",
+        "source\u{fffd}spoof -> target\u{fffd}spoof",
+        "title\u{fffd}spoof",
+        "effect\u{fffd}spoof",
+        "guard\u{fffd}spoof = expected\u{fffd}spoof",
+    ] {
+        assert!(
+            snapshot.contains(fragment),
+            "Forge confirmation missing safe fragment {fragment:?}"
+        );
+    }
+    assert!(!snapshot.contains('\u{202e}'));
+    assert_eq!(
+        app.pending_forge_operation.as_ref().expect("plan").host,
+        "host\u{202e}spoof"
+    );
+}
+
+#[test]
+fn launch_confirmation_overlay_escapes_paths_without_mutating_exact_argv() {
+    let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+    app.pending_launch_plan = Some(crate::launch::LaunchPlan {
+        name: "preset\u{202e}spoof".into(),
+        argv: vec!["printf".into(), "arg\u{202e}spoof".into()],
+        cwd: "/cwd\u{202e}spoof".into(),
+        config_path: "/config\u{202e}spoof".into(),
+    });
+    let snapshot = overlay_snapshot(&app, render_launch_confirmation);
+    for fragment in [
+        "Preset: preset\u{fffd}spoof",
+        "Config: /config\u{fffd}spoof",
+        "Cwd: /cwd\u{fffd}spoof",
+        "Exact argv:",
+    ] {
+        assert!(
+            snapshot.contains(fragment),
+            "Launch confirmation missing safe fragment {fragment:?}"
+        );
+    }
+    assert!(!snapshot.contains('\u{202e}'));
+    assert_eq!(
+        app.pending_launch_plan.as_ref().expect("plan").argv[1],
+        "arg\u{202e}spoof"
+    );
+}
+
+#[test]
+fn local_batch_confirmation_and_input_overlays_escape_untrusted_text() {
+    let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+    app.pending_local_batch = Some(crate::batch_local::LocalBatchPlan {
+        action: crate::batch_local::LocalBatchAction::AddTag("tag\u{202e}spoof".into()),
+        targets: vec![crate::batch_local::LocalBatchTarget {
+            local_id: "item\u{202e}spoof".into(),
+            anchor: crate::planning::SourceRef {
+                kind: crate::planning::SourceKind::ScratchWork,
+                value: "scratch:1".into(),
+            },
+            title: "title\u{202e}spoof".into(),
+        }],
+        planned_at_unix_ms: 1,
+    });
+    let batch = overlay_snapshot(&app, render_local_batch_confirmation);
+    assert!(batch.contains("item\u{fffd}spoof"));
+    assert!(batch.contains("title\u{fffd}spoof"));
+    assert!(!batch.contains('\u{202e}'));
+
+    app.input_mode = InputMode::Note;
+    app.input_buffer = "typed\u{202e}spoof".into();
+    let input = overlay_snapshot(&app, render_local_input_overlay);
+    assert!(input.contains("typed\u{fffd}spoof"));
+    assert!(!input.contains('\u{202e}'));
+
+    app.command_palette_query = "query\u{202e}spoof".into();
+    let palette = overlay_snapshot(&app, render_command_palette);
+    assert!(palette.contains("query\u{fffd}spoof"));
+    assert!(!palette.contains('\u{202e}'));
+}
+
 #[test]
 fn terminal_drawer_preserves_semantic_cjk_rows() {
     let backend = TestBackend::new(80, 24);

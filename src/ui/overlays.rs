@@ -21,7 +21,7 @@ pub(super) fn render_command_palette(frame: &mut Frame<'_>, app: &AppState) {
         Span::raw(if app.command_palette_query.is_empty() {
             tr(app, "<type to show all commands>", "<输入以搜索全部命令>").to_string()
         } else {
-            app.command_palette_query.clone()
+            sanitize_inline(&app.command_palette_query)
         }),
     ])];
 
@@ -52,7 +52,7 @@ pub(super) fn render_command_palette(frame: &mut Frame<'_>, app: &AppState) {
                 } else {
                     base
                 };
-                spans.push(Span::styled(character.to_string(), style));
+                spans.push(Span::styled(sanitize_inline(&character.to_string()), style));
             }
             lines.push(Line::from(spans));
         }
@@ -241,7 +241,7 @@ pub(super) fn render_local_input_overlay(frame: &mut Frame<'_>, app: &AppState) 
     frame.render_widget(Clear, area);
     frame.render_widget(
         Paragraph::new(vec![
-            Line::from(app.input_buffer.clone()),
+            Line::from(sanitize_inline(&app.input_buffer)),
             Line::from(""),
             Line::from(hint),
         ])
@@ -599,8 +599,8 @@ pub(super) fn render_forge_mutation_confirmation(frame: &mut Frame<'_>, app: &Ap
         Line::from(format!(
             "{}: {}/{}",
             tr(app, "Project", "项目"),
-            plan.host,
-            plan.project_path
+            sanitize_inline(&plan.host),
+            sanitize_inline(&plan.project_path)
         )),
     ];
     if let Some(iid) = plan.change_request_iid {
@@ -613,12 +613,16 @@ pub(super) fn render_forge_mutation_confirmation(frame: &mut Frame<'_>, app: &Ap
         lines.push(Line::from(format!(
             "{}: {} -> {}",
             tr(app, "Branches", "分支"),
-            plan.source_branch
-                .as_deref()
-                .unwrap_or_else(|| tr(app, "<none>", "<无>")),
-            plan.target_branch
-                .as_deref()
-                .unwrap_or_else(|| tr(app, "<none>", "<无>"))
+            sanitize_inline(
+                plan.source_branch
+                    .as_deref()
+                    .unwrap_or_else(|| tr(app, "<none>", "<无>")),
+            ),
+            sanitize_inline(
+                plan.target_branch
+                    .as_deref()
+                    .unwrap_or_else(|| tr(app, "<none>", "<无>")),
+            )
         )));
     }
     if let Some(title) = &plan.title {
@@ -650,7 +654,13 @@ pub(super) fn render_forge_mutation_confirmation(frame: &mut Frame<'_>, app: &Ap
         plan.preconditions
             .iter()
             .take(8)
-            .map(|item| Line::from(format!("  {} = {}", item.key, item.expected))),
+            .map(|item| {
+                Line::from(format!(
+                    "  {} = {}",
+                    sanitize_inline(&item.key),
+                    sanitize_inline(&item.expected)
+                ))
+            }),
     );
     lines.push(Line::from(""));
     lines.push(Line::from(tr(
@@ -686,7 +696,7 @@ pub(super) fn render_local_batch_confirmation(frame: &mut Frame<'_>, app: &AppSt
         Line::from(format!(
             "{}: {}",
             tr(app, "Operation", "操作"),
-            plan.action.label()
+            sanitize_inline(&plan.action.label())
         )),
         Line::from(format!(
             "{}: {}",
@@ -704,7 +714,7 @@ pub(super) fn render_local_batch_confirmation(frame: &mut Frame<'_>, app: &AppSt
     for target in plan.targets.iter().take(8) {
         lines.push(Line::from(format!(
             "  {} · {}",
-            target.local_id,
+            sanitize_inline(&target.local_id),
             truncate_display(&target.title, 48)
         )));
     }
@@ -825,13 +835,13 @@ pub(super) fn render_launch_confirmation(frame: &mut Frame<'_>, app: &AppState) 
         Line::from(format!(
             "{}: {}",
             tr(app, "Config", "配置"),
-            plan.config_path.display()
+            sanitize_inline(&plan.config_path.to_string_lossy())
         )),
-        Line::from(format!("Cwd: {}", plan.cwd.display())),
+        Line::from(format!("Cwd: {}", sanitize_inline(&plan.cwd.to_string_lossy()))),
         Line::from(format!(
             "{}: {}",
             tr(app, "Exact argv", "精确 argv"),
-            plan.command_preview()
+            sanitize_inline(&plan.command_preview())
         )),
         Line::from(""),
         Line::from(tr(
