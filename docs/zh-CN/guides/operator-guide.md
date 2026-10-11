@@ -17,7 +17,7 @@ codex-tui doctor codex
 codex-tui
 ~~~
 
-默认连接本机的 `codex app-server --listen stdio://`。命名目标由本地 TOML 配置，单次可使用 `codex-tui --target NAME`。真实后端失败不会悄悄切到假数据，`--fake` 只用于测试。命名 App Server 的细节见 [英文设计](../../implementation/v1.3-remote-app-server-targets.md)。
+默认连接本机的 `codex app-server --listen stdio://`。命名目标由本地 TOML 配置，单次可使用 `codex-tui --target NAME`。非回环地址的明文 `ws://` 即使未配置令牌也拒绝连接；远程使用 `wss://` 或 SSH 隧道映射到回环地址。`localhost`、IPv4/IPv6 回环仍可用于本地开发。真实后端失败不会悄悄切到假数据，`--fake` 只用于测试。命名 App Server 的细节见 [英文设计](../../implementation/v1.3-remote-app-server-targets.md)。
 
 ## 工作和提醒导航
 <!-- docs-section: daily -->

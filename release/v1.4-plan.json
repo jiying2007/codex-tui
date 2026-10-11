@@ -172,7 +172,7 @@
     "src/presentation.rs": 66,
     "src/transcript_search.rs": 211,
     "src/thread_queue.rs": 350,
-    "src/app_server_target.rs": 282,
+    "src/app_server_target.rs": 308,
     "src/app_server_transport.rs": 487,
     "src/forge_github_mutation.rs": 651,
     "src/forge_mutation.rs": 1649,
@@ -538,6 +538,15 @@
         "src/app_server.rs"
       ],
       "policy": "Defect/security only; no local thread invention or new durable schema; Stable external L3 and GitLab/TTY/admin evidence remain blocked."
+    },
+    {
+      "date": "2026-10-11",
+      "kind": "remote-plaintext-boundary",
+      "scope": "Reject non-loopback ws:// targets even without Bearer authorization to protect session/approval data; preserve WSS plus localhost/IPv4/IPv6 loopback; ensure config resolution and direct URL negative tests with EN/zh-CN documentation.",
+      "modules": [
+        "src/app_server_target.rs"
+      ],
+      "policy": "Security-only predeployment hardening; no credentials, second server, configuration migration, or Stable readiness claim."
     }
   ]
 }

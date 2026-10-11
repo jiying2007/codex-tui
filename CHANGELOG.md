@@ -17,6 +17,9 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
+- Refuse non-loopback plaintext WebSocket App Server targets even without Bearer tokens; preserve WSS and IPv4/IPv6 loopback and synchronize operator instructions.
+
+
 - Honor upstream nullable project assignments and optional thread-name clear events; coalesce authoritative Registry refreshes for detach/unarchive rather than inventing threads.
 - Strip untrusted App Server Git-origin credentials, URL queries and fragments before deriving any workspace identity; pin a Codex 0.162.1 protocol-negative replay for project clear.
 
