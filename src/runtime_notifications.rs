@@ -83,7 +83,13 @@ impl RuntimeNotifications {
         let events = self.tracker.advance(observation);
 
         let mut overflow = 0usize;
+        let mut attempted_extra_flush = false;
         for event in events {
+            // Reclaim available actor capacity once before declaring overload.
+            if self.pending.len() == NOTIFICATION_PENDING_CAPACITY && !attempted_extra_flush {
+                dispatched = dispatched.saturating_add(self.flush_pending()?);
+                attempted_extra_flush = true;
+            }
             if self.pending.len() == NOTIFICATION_PENDING_CAPACITY {
                 overflow = overflow.saturating_add(1);
                 continue;
@@ -344,9 +350,36 @@ mod tests {
             thread.runtime = RuntimeStatus::Ready;
         }
         let error = runtime.observe(&app).expect_err("must report overflow");
-        assert!(error.to_string().contains("additional events were not queued"));
+        assert!(
+            error
+                .to_string()
+                .contains("additional events were not queued")
+        );
         assert!(runtime.pending.len() <= NOTIFICATION_PENDING_CAPACITY);
         assert!(!runtime.pending.is_empty());
+    }
+
+    #[tokio::test]
+    async fn pending_boundary_uses_the_actor_slot_before_reporting_overflow() {
+        let mut runtime = RuntimeNotifications::start(NotificationMode::Terminal);
+        runtime.task.take().unwrap().abort();
+        let (tx, mut rx) = mpsc::channel(1);
+        runtime.command_tx = Some(tx);
+        let mut app = AppState::new(
+            FakeBackend::scaled(NOTIFICATION_PENDING_CAPACITY + 1)
+                .snapshot()
+                .threads,
+        );
+        for thread in &mut app.threads {
+            thread.runtime = RuntimeStatus::Working;
+        }
+        runtime.seed(&app);
+        for thread in &mut app.threads {
+            thread.runtime = RuntimeStatus::Ready;
+        }
+        assert_eq!(runtime.observe(&app).unwrap(), 1);
+        assert_eq!(runtime.pending.len(), NOTIFICATION_PENDING_CAPACITY);
+        assert!(rx.try_recv().is_ok());
     }
 
     #[tokio::test]
