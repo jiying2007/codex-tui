@@ -40,8 +40,13 @@ pub(crate) fn parse_worktree_porcelain(value: &str) -> Result<Vec<WorktreeEntry>
 
     for record in value.split_terminator('\0') {
         if record.is_empty() {
-            let path = path.take().context("Git worktree record is missing its path")?;
-            anyhow::ensure!(has_identity, "Git worktree record is missing HEAD/bare identity");
+            let path = path
+                .take()
+                .context("Git worktree record is missing its path")?;
+            anyhow::ensure!(
+                has_identity,
+                "Git worktree record is missing HEAD/bare identity"
+            );
             entries.push(WorktreeEntry {
                 path,
                 branch: branch.take(),
