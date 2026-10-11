@@ -16,6 +16,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 mod surfaces;
 
+fn headless_field(value: &str) -> String {
+    crate::text::sanitize_inline(value)
+}
+
 pub const EXIT_OK: i32 = 0;
 pub const EXIT_USAGE: i32 = 2;
 pub const EXIT_DEGRADED: i32 = 3;
@@ -146,7 +150,7 @@ pub async fn run(args: &[String]) -> Result<i32> {
         "forge" => surfaces::run_forge(fake, format).await,
         "worktrees" => surfaces::run_worktrees(fake, format),
         _ => {
-            eprintln!("unknown headless command: {command}");
+            eprintln!("unknown headless command: {}", headless_field(command));
             print_usage();
             Ok(EXIT_USAGE)
         }
@@ -425,20 +429,21 @@ fn print_thread_snapshot(snapshot: &ThreadSnapshot, format: OutputFormat) -> Res
             println!("degraded: {}", snapshot.degraded);
             println!(
                 "source: {} connected={}",
-                snapshot.source.source, snapshot.source.connected
+                headless_field(&snapshot.source.source),
+                snapshot.source.connected
             );
             if let Some(error) = &snapshot.source.error {
-                println!("error: {error}");
+                println!("error: {}", headless_field(error));
             }
             println!("threads: {}", snapshot.threads.len());
             for thread in &snapshot.threads {
                 println!(
                     "{}\t{}\t{}\t{}\t{}",
-                    thread.id,
-                    thread.runtime,
-                    thread.attention.join(","),
-                    thread.workspace,
-                    thread.title
+                    headless_field(&thread.id),
+                    headless_field(&thread.runtime),
+                    headless_field(&thread.attention.join(",")),
+                    headless_field(&thread.workspace),
+                    headless_field(&thread.title)
                 );
             }
         }
@@ -454,23 +459,24 @@ fn print_work_snapshot(snapshot: &WorkSnapshot, format: OutputFormat) -> Result<
             println!("degraded: {}", snapshot.degraded);
             println!(
                 "source: {} connected={}",
-                snapshot.source.source, snapshot.source.connected
+                headless_field(&snapshot.source.source),
+                snapshot.source.connected
             );
             if let Some(error) = &snapshot.source.error {
-                println!("source-error: {error}");
+                println!("source-error: {}", headless_field(error));
             }
             if let Some(error) = &snapshot.local_store_error {
-                println!("store-error: {error}");
+                println!("store-error: {}", headless_field(error));
             }
             println!("work: {}", snapshot.work.len());
             for card in &snapshot.work {
                 println!(
                     "{}\t{}\t{}\t{}\t{}",
-                    card.local_id,
-                    card.stage,
-                    card.attention.join(","),
-                    card.workspace.as_deref().unwrap_or(""),
-                    card.title
+                    headless_field(&card.local_id),
+                    headless_field(&card.stage),
+                    headless_field(&card.attention.join(",")),
+                    headless_field(card.workspace.as_deref().unwrap_or("")),
+                    headless_field(&card.title)
                 );
             }
         }
@@ -512,6 +518,22 @@ fn now_unix_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn terminal_text_fields_escape_spoofing_and_preserve_column_tabs_and_json() {
+        let original = "Title\tpart\n\u{202e}\u{001b}[2J";
+        let displayed = headless_field(original);
+        assert_eq!(displayed, "Title part \u{fffd}\u{fffd}[2J");
+        assert_eq!(
+            format!("{}\t{}", headless_field(original), headless_field("中文")),
+            format!("{displayed}\t中文")
+        );
+        assert_eq!(original, "Title\tpart\n\u{202e}\u{001b}[2J");
+        let json = serde_json::to_string(original).expect("serialize original");
+        assert!(json.contains(r"\t"));
+        assert!(json.contains(r"\n"));
+        assert!(!json.contains("\u{fffd}"));
+    }
 
     #[test]
     fn terminal_state_top_level_aliases_are_read_only_headless_routes() {

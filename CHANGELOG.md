@@ -17,6 +17,8 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
+- Escape untrusted per-field values in plain-text `headless` Thread/Work/Board/Attention/Forge/Worktree/Status output, preserving existing literal tab column delimiters and byte-for-byte JSON snapshot paths; hostile Unicode/control fixtures retain original data.
+
 - Sanitize untrusted `doctor` terminal diagnostics (Codex/Git/Forge paths, branches, versions, errors and local configuration) at the final output boundary, preserving source data and normal EN/zh-CN text; guard every doctor print site and add a regression against future raw lines.
 
 - Bound and sanitize desktop notification subjects at the presentation boundary while retaining original event data; Linux `notify-send` now ends option parsing before dynamic title/body, with negative fixtures for bidi controls, oversized CJK text and option-looking subjects.

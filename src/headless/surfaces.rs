@@ -1,4 +1,4 @@
-use super::{EXIT_DEGRADED, EXIT_OK, OutputFormat, SourceStatus, WorkRow};
+use super::{EXIT_DEGRADED, EXIT_OK, OutputFormat, SourceStatus, WorkRow, headless_field};
 use crate::{
     forge::{self, ForgeFreshness},
     sqlite_store::SqliteStore,
@@ -341,16 +341,17 @@ fn print_status(snapshot: &StatusSnapshot, format: OutputFormat) -> Result<()> {
             println!("degraded: {}", snapshot.degraded);
             println!(
                 "source: {} connected={}",
-                snapshot.source.source, snapshot.source.connected
+                headless_field(&snapshot.source.source),
+                snapshot.source.connected
             );
             println!("threads: {}", snapshot.thread_count);
             println!("work: {}", snapshot.work_count);
             println!("needs-you: {}", snapshot.needs_you_count);
             for (stage, count) in &snapshot.stages {
-                println!("stage-{stage}: {count}");
+                println!("stage-{}: {count}", headless_field(stage));
             }
             if let Some(error) = &snapshot.local_store_error {
-                println!("store-error: {error}");
+                println!("store-error: {}", headless_field(error));
             }
         }
     }
@@ -367,10 +368,10 @@ fn print_attention(snapshot: &AttentionSnapshot, format: OutputFormat) -> Result
             for item in &snapshot.items {
                 println!(
                     "{}\t{}\t{}\t{}",
-                    item.local_id,
-                    item.stage,
-                    item.attention.join(","),
-                    item.title
+                    headless_field(&item.local_id),
+                    headless_field(&item.stage),
+                    headless_field(&item.attention.join(",")),
+                    headless_field(&item.title)
                 );
             }
         }
@@ -385,13 +386,13 @@ fn print_board(snapshot: &BoardSnapshot, format: OutputFormat) -> Result<()> {
             println!("schema: {}", snapshot.schema);
             println!("degraded: {}", snapshot.degraded);
             for column in &snapshot.columns {
-                println!("[{}] {}", column.stage, column.items.len());
+                println!("[{}] {}", headless_field(&column.stage), column.items.len());
                 for item in &column.items {
                     println!(
                         "{}\t{}\t{}",
-                        item.local_id,
-                        item.attention.join(","),
-                        item.title
+                        headless_field(&item.local_id),
+                        headless_field(&item.attention.join(",")),
+                        headless_field(&item.title)
                     );
                 }
             }
@@ -406,10 +407,10 @@ fn print_forge(snapshot: &ForgeStatusSnapshot, format: OutputFormat) -> Result<(
         OutputFormat::Text => {
             println!("schema: {}", snapshot.schema);
             println!("degraded: {}", snapshot.degraded);
-            println!("cwd: {}", snapshot.cwd);
+            println!("cwd: {}", headless_field(&snapshot.cwd));
             println!(
                 "provider: {}",
-                snapshot.provider.as_deref().unwrap_or("unknown")
+                headless_field(snapshot.provider.as_deref().unwrap_or("unknown"))
             );
             println!(
                 "authenticated: {}",
@@ -417,12 +418,16 @@ fn print_forge(snapshot: &ForgeStatusSnapshot, format: OutputFormat) -> Result<(
                     .authenticated
                     .map_or("unknown".into(), |value| value.to_string())
             );
-            println!("freshness: {}", snapshot.freshness);
+            println!("freshness: {}", headless_field(&snapshot.freshness));
             for capability in &snapshot.capabilities {
-                println!("capability-{}: {}", capability.name, capability.state);
+                println!(
+                    "capability-{}: {}",
+                    headless_field(&capability.name),
+                    headless_field(&capability.state)
+                );
             }
             if let Some(error) = &snapshot.error {
-                println!("error: {error}");
+                println!("error: {}", headless_field(error));
             }
         }
     }
@@ -439,17 +444,17 @@ fn print_worktrees(snapshot: &WorktreeSnapshot, format: OutputFormat) -> Result<
             for worktree in &snapshot.worktrees {
                 println!(
                     "{}\t{}\t{}",
-                    worktree.branch.as_deref().unwrap_or("<detached>"),
+                    headless_field(worktree.branch.as_deref().unwrap_or("<detached>")),
                     if worktree.adopted {
                         "adopted"
                     } else {
                         "created"
                     },
-                    worktree.canonical_path
+                    headless_field(&worktree.canonical_path)
                 );
             }
             if let Some(error) = &snapshot.local_store_error {
-                println!("store-error: {error}");
+                println!("store-error: {}", headless_field(error));
             }
         }
     }
