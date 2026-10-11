@@ -17,6 +17,8 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
+- Neutralize control/bidi/invisible formatting in selected Mission Control thread/model/Git error and branch labels plus offline backend source, with real TUI TestBackend regression; source data never rewritten.
+
 - Move 76 existing Planning/Forge Mutation/Worktree/Release/GitHub Forge/Git unit tests into six sibling test modules without altering production prefixes, test identities or release authority; continue complete-source LOC ratchet enforcement.
 
 - Extract embedded App/Queue, UI, SQLite and App Server test suites into five sibling Rust test files without changing test identities or production code; tighten root module ceilings and govern new tests through the same LOC ratchet.

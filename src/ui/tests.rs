@@ -385,6 +385,62 @@ fn daily_selected_hides_unavailable_forge_internals_but_workspace_keeps_doctor_h
 }
 
 #[test]
+fn registry_selected_detail_and_offline_footer_neutralize_untrusted_labels() {
+    let mut threads = FakeBackend::seeded().snapshot().threads;
+    threads[0].id = crate::domain::ThreadId::new("thread\u{202e}spoof");
+    threads[0].metadata.model = Some("model\u{202e}spoof".into());
+    threads[0].metadata.cwd = std::env::current_dir()
+        .expect("current dir")
+        .to_string_lossy()
+        .into_owned();
+    let mut app = AppState::new(threads);
+    app.backend_status.source = "backend\u{202e}spoof".into();
+    let selected = app.threads[0].clone();
+    let mut git_context =
+        crate::git::GitContext::pending(selected.id.clone(), selected.metadata.cwd.clone());
+    git_context.observed_at_unix_ms = 1;
+    git_context.is_repository = true;
+    git_context.branch = Some("feature\u{202e}spoof".into());
+    app.git_contexts.insert(selected.id.0.clone(), git_context);
+
+    let render_detail = |app: &AppState| {
+        let mut terminal = Terminal::new(TestBackend::new(180, 24)).expect("terminal");
+        terminal.draw(|frame| render(frame, app)).expect("draw");
+        let buffer = terminal.backend().buffer();
+        let mut out = String::new();
+        for y in 0..buffer.area.height {
+            for x in 0..buffer.area.width {
+                out.push_str(buffer[(x, y)].symbol());
+            }
+            out.push('\n');
+        }
+        out
+    };
+
+    let live = render_detail(&app);
+    for visible in [
+        "Thread: thread\u{fffd}spoof",
+        "Model: model\u{fffd}spoof",
+        "Git: feature\u{fffd}spoof",
+        "backend\u{fffd}spoof",
+    ] {
+        assert!(
+            live.contains(visible),
+            "selected detail missing {visible:?}"
+        );
+    }
+    assert!(!live.contains('\u{202e}'));
+
+    app.git_contexts
+        .get_mut(&selected.id.0)
+        .expect("git context")
+        .error = Some("fatal\u{202e}spoof".into());
+    let degraded = render_detail(&app);
+    assert!(degraded.contains("fatal\u{fffd}spoof"));
+    assert!(!degraded.contains('\u{202e}'));
+}
+
+#[test]
 fn registry_scope_status_distinguishes_repository_backing() {
     let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
     app.threads[0].metadata.cwd = std::env::current_dir()

@@ -149,7 +149,7 @@
   ],
   "moduleRatchet": {
     "src/app.rs": 1000,
-    "src/ui.rs": 2214,
+    "src/ui.rs": 2209,
     "src/app_server.rs": 2683,
     "src/main.rs": 1854,
     "src/sqlite_store.rs": 1715,
@@ -278,7 +278,7 @@
     "src/app/state.rs": 888,
     "src/app/tests.rs": 2669,
     "src/app/thread_queue_reducer_tests.rs": 123,
-    "src/ui/tests.rs": 731,
+    "src/ui/tests.rs": 787,
     "src/sqlite_store/tests.rs": 832,
     "src/app_server/tests.rs": 932,
     "src/planning/tests.rs": 708,
@@ -648,6 +648,25 @@
         "src/worktree/tests.rs"
       ],
       "policy": "Formatter-only; exact-head multi-platform CI, development qualification and retained release validation required. No public release or runtime behavior change."
+    },
+    {
+      "date": "2026-10-11",
+      "kind": "mission-control-selected-detail-security",
+      "scope": "Sanitize upstream backend source in offline footer, upstream thread identifiers/model labels and Git branch/diagnostic labels in selected Mission Control detail before Ratatui rendering. TestBackend negative tests assert visible U+FFFD for U+202E inputs and no raw bidi. Only display projection changes, canonical Codex/Git data untouched.",
+      "modules": [
+        "src/ui.rs",
+        "src/ui/tests.rs"
+      ],
+      "policy": "Security-only; single complete-source v1.4 LOC ratchet, no new protocol/API/state authority/schema/compatibility or Stable publication."
+    },
+    {
+      "date": "2026-10-11",
+      "kind": "mission-control-selected-detail-rustfmt",
+      "scope": "Apply exactly the one CI-provided formatter-only hunk to the new negative display-security assertion; no behavior, test identity, protected ratchet, or authority changes.",
+      "modules": [
+        "src/ui/tests.rs"
+      ],
+      "policy": "Formatting-only under v1.4 sole complete-source LOC ratchet; exact-head CI must rerun."
     }
   ]
 }
