@@ -228,3 +228,35 @@ fn working_to_ready_emits_completion_once() {
             .is_empty()
     );
 }
+
+#[test]
+fn notification_subjects_are_display_sanitized_without_changing_source_events() {
+    let original = "Review\u{202e}\n--icon=spoofed".to_string();
+    let event = NotificationEvent {
+        key: "approval-required:test".into(),
+        item_id: "test".into(),
+        kind: NotificationKind::ApprovalRequired,
+        subject: original.clone(),
+    };
+
+    let (title, body) = event.text(UiLanguage::English);
+    assert_eq!(title, "codex-tui · Approval required");
+    assert_eq!(body, "Review\u{fffd} --icon=spoofed");
+    assert_eq!(event.subject, original);
+}
+
+#[test]
+fn desktop_notification_subjects_are_bounded_by_visible_columns() {
+    let original = "中文".repeat(200);
+    let event = NotificationEvent {
+        key: "completion:test".into(),
+        item_id: "test".into(),
+        kind: NotificationKind::Completion,
+        subject: original.clone(),
+    };
+
+    let (_, body) = event.text(UiLanguage::SimplifiedChinese);
+    assert!(body.ends_with('…'));
+    assert!(crate::text::display_width(&body) <= MAX_NOTIFICATION_SUBJECT_COLUMNS);
+    assert_eq!(event.subject, original);
+}
