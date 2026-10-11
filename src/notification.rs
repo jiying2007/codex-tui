@@ -3,7 +3,10 @@ use crate::{
     goal::{GoalObservation, GoalStatus},
     i18n::UiLanguage,
     planning::{PlanningAttention, WorkCardProjection},
+    text::truncate_display,
 };
+
+const MAX_NOTIFICATION_SUBJECT_COLUMNS: usize = 160;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -74,7 +77,10 @@ impl NotificationEvent {
             (NotificationKind::ReviewRequested, false) => "Review needs attention",
             (NotificationKind::ReviewRequested, true) => "评审需要处理",
         };
-        (format!("codex-tui · {label}"), self.subject.clone())
+        (
+            format!("codex-tui · {label}"),
+            truncate_display(&self.subject, MAX_NOTIFICATION_SUBJECT_COLUMNS),
+        )
     }
 }
 
