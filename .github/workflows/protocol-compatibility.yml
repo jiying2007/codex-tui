@@ -23,6 +23,8 @@ on:
       - "tests/protocol_replay.rs"
       - "tests/fixtures/protocol/**"
       - "scripts/release/test_protocol_compatibility_trigger_scope.py"
+      - "scripts/release/upstream_codex_release_watch.py"
+      - "scripts/release/test_upstream_codex_release_watch.py"
       - ".github/workflows/protocol-compatibility.yml"
   pull_request:
     paths:
@@ -45,6 +47,8 @@ on:
       - "tests/protocol_replay.rs"
       - "tests/fixtures/protocol/**"
       - "scripts/release/test_protocol_compatibility_trigger_scope.py"
+      - "scripts/release/upstream_codex_release_watch.py"
+      - "scripts/release/test_upstream_codex_release_watch.py"
       - ".github/workflows/protocol-compatibility.yml"
   schedule:
     - cron: "41 2 * * 3"
@@ -66,6 +70,10 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
       - name: Verify protocol event-adapter trigger coverage
         run: python3 -m unittest discover -s scripts/release -p 'test_protocol_compatibility_trigger_scope.py'
+      - name: Guard pinned upstream observation (offline Python 3.8)
+        run: |
+          python3 -m unittest discover -s scripts/release -p 'test_upstream_codex_release_watch.py'
+          python3 -O -m unittest discover -s scripts/release -p 'test_upstream_codex_release_watch.py'
       - name: Validate retained protocol fixture manifest
         shell: bash
         run: |
@@ -90,3 +98,29 @@ jobs:
           set -euo pipefail
           cargo test --locked --lib app_server_transport::tests::
           cargo test --locked --lib app_server::tests::
+
+      - name: Observe official Codex stable release drift (advisory only)
+        if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p upstream-release-watch
+          if gh api 'repos/openai/codex/releases?per_page=100' > upstream-release-watch/releases.json; then
+            python3 scripts/release/upstream_codex_release_watch.py \
+              --manifest tests/fixtures/protocol/manifest.json \
+              --releases upstream-release-watch/releases.json \
+              --output upstream-release-watch/receipt.json
+          else
+            printf '%s\n' '{"schema":"codex-tui/upstream-codex-stable-watch/v1","status":"unverified-api-error","stableQualified":false,"l3Qualified":false,"authority":"public-release-metadata-only"}' > upstream-release-watch/receipt.json
+            echo "::warning::Cannot observe official Codex stable releases; no L3 conclusion."
+          fi
+          rm -f upstream-release-watch/releases.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: always() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+        with:
+          name: upstream-codex-stable-watch
+          path: upstream-release-watch/receipt.json
+          if-no-files-found: warn
+          retention-days: 30

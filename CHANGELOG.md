@@ -17,6 +17,9 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
+- Record upstream Codex stable-release drift in the existing weekly protocol workflow; negative Python 3.8 fixtures and advisory receipts never claim real L3 compatibility.
+
+
 - Refuse non-loopback plaintext WebSocket App Server targets even without Bearer tokens; preserve WSS and IPv4/IPv6 loopback and synchronize operator instructions.
 
 
