@@ -54,6 +54,8 @@ Forge 概览仅获取各能力最近 20 条记录。GitHub Issues API 会混入 
 
 受管 Worktree 变更与异常协调优先使用完整 NUL 分隔 Git 清单，以准确保留换行和尾随空格。Linux 资格镜像中的旧 Git 2.25 不支持 Worktree `-z`：此时使用严格完整的纯文本 porcelain 解析，保留尾随空格；遇到格式歧义时拒绝，不得据此推断工作树不存在。包含换行的工作树路径需要支持 NUL 的新版 Git。非法编码及标准输出超过 256 KiB 时保守拒绝；超大清单另做资格验证。
 
+Terminal Drawer 的 PTY 输出改为协作式排空：每次主循环最多处理 16 个事件，其余内容仍留在原有的 64 槽 FIFO 中，避免子进程持续刷屏时饿死键盘、渲染和状态协调。队列持续有界；该托管测试不能代替真实控制 TTY 验收。
+
 ## Windows SSH Ubuntu 与 Terminal Drawer
 <!-- docs-section: ssh -->
 
