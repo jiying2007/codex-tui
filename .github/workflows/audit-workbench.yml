@@ -50,6 +50,7 @@ jobs:
           elif marker.read_text().strip() != expected:
               raise SystemExit('different prior repair payload')
           PY
+          if test -f .audit-followup.py; then python3 .audit-followup.py; fi
           cargo fmt --all
           python3 - <<'PY'
           from pathlib import Path
@@ -69,7 +70,7 @@ jobs:
           python3 scripts/architecture/check_first_deployment.py
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add src tests docs release CHANGELOG.md scripts/testing/app_server_transport_regression.py .audit-applied
+          git add src tests docs release CHANGELOG.md scripts/testing/app_server_transport_regression.py .audit-applied .audit-followup-applied
           if ! git diff --cached --quiet; then
             git diff --cached --stat
             git commit -m 'fix(audit): close transport pagination approval and PTY lifetime defects'
