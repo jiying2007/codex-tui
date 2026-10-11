@@ -1,0 +1,209 @@
+-        let (ids, next_cursor) = load_loaded_ids_page(rpc, cursor).await?;
+-        loaded.extend(ids);
+-        cursor = next_cursor;
+-        if cursor.is_none() {
+-            break;
+-        }
+-    }
+-    Ok(loaded)
+-}
+-
+@@ -2303,43 +2257,0 @@ async fn search_transcript(rpc: &mut RpcSession, query: String) -> Result<Transc
+-async fn load_transcript_hit(
+-    rpc: &mut RpcSession,
+-    hit: &crate::transcript_search::TranscriptSearchHit,
+-) -> Result<ConversationPage> {
+-    let Some(turn_id) = hit.turn_id.as_deref() else {
+-        return load_conversation(rpc, hit.thread_id.clone()).await;
+-    };
+-    let metadata = rpc
+-        .request(
+-            "thread/read",
+-            json!({
+-                "threadId": hit.thread_id.0,
+-                "includeTurns": false
+-            }),
+-        )
+-        .await
+-        .context("read transcript search thread metadata")?;
+-    let title = parse_thread_title(&metadata);
+-
+-    let result = rpc
+-        .request(
+-            "thread/items/list",
+-            json!({
+-                "threadId": hit.thread_id.0,
+-                "turnId": turn_id,
+-                "cursor": null,
+-                "limit": 200,
+-                "sortDirection": "asc"
+-            }),
+-        )
+-        .await
+-        .context("load transcript search turn items")?;
+-    let (items, _) = parse_items_page(result)?;
+-    Ok(merge_history(
+-        hit.thread_id.clone(),
+-        title,
+-        vec![],
+-        items,
+-        None,
+-        None,
+-    ))
+-}
+-
+@@ -2368,0 +2281,4 @@ struct PendingServerRequest {
++fn self_quarantine(rpc: &mut RpcSession, error: &anyhow::Error) {
++    rpc.fatal_error = Some(error.to_string());
++}
++
+@@ -2378,0 +2295,4 @@ async fn handle_unsolicited(
++        if let Err(error) = admit_pending_request(pending_requests, &message) {
++            self_quarantine(rpc, &error);
++            return Err(error);
++        }
+@@ -2543,9 +2462,0 @@ fn should_queue_rpc_message(message: &Value) -> bool {
+-fn enqueue_rpc_message(queue: &mut VecDeque<Value>, message: Value) -> Result<()> {
+-    anyhow::ensure!(
+-        queue.len() < RPC_QUEUED_MESSAGE_CAPACITY,
+-        "App Server queued-message capacity exceeded ({RPC_QUEUED_MESSAGE_CAPACITY})"
+-    );
+-    queue.push_back(message);
+-    Ok(())
+-}
+-
+@@ -2569,0 +2481,2 @@ struct RpcSession {
++    queued_bytes: usize,
++    fatal_error: Option<String>,
+@@ -2577,0 +2491,2 @@ impl RpcSession {
++            queued_bytes: 0,
++            fatal_error: None,
+@@ -2630 +2545,4 @@ impl RpcSession {
+-                enqueue_rpc_message(&mut self.queued_messages, message)?;
++                if let Err(error) = enqueue_rpc_message(&mut self.queued_messages, &mut self.queued_bytes, message) {
++                    self.fatal_error = Some(error.to_string());
++                    return Err(error);
++                }
+@@ -2641 +2559 @@ impl RpcSession {
+-        !self.queued_messages.is_empty()
++        self.fatal_error.is_some() || !self.queued_messages.is_empty()
+@@ -2652,0 +2571 @@ impl RpcSession {
++        if let Some(error) = &self.fatal_error { anyhow::bail!("App Server admission failed: {error}"); }
+@@ -2653,0 +2573 @@ impl RpcSession {
++            self.queued_bytes = self.queued_bytes.saturating_sub(json_cost(&message));
+@@ -2674,0 +2595 @@ impl RpcSession {
++        anyhow::ensure!(self.fatal_error.is_none(), "App Server session is quarantined after admission failure");
+@@ -2683,0 +2605,3 @@ mod queue_wire_tests;
++
++#[cfg(test)]
++mod audit_wire_tests;
+diff --git a/src/app_server/audit_wire_tests.rs b/src/app_server/audit_wire_tests.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..d969acc7e130861e3f98cdfde4af146e5718c112
+--- /dev/null
++++ b/src/app_server/audit_wire_tests.rs
+@@ -0,0 +1,108 @@
++//! Actual RpcSession + local WebSocket peer, no live account or remote side effect.
++use super::*;
++use crate::app_server_target::ResolvedAppServerEndpoint;
++use crate::transcript_search::TranscriptSearchHit;
++use futures_util::{SinkExt, StreamExt};
++use tokio_tungstenite::{accept_async, tungstenite::Message};
++
++async fn peer(replies: Vec<(&'static str, Value)>) -> (RpcSession, JoinHandle<Vec<Value>>) {
++    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
++    let address = listener.local_addr().unwrap();
++    let server = tokio::spawn(async move {
++        let (stream, _) = listener.accept().await.unwrap();
++        let mut socket = accept_async(stream).await.unwrap();
++        let mut requests = vec![];
++        for (method, result) in replies {
++            let frame = tokio::time::timeout(Duration::from_secs(5), socket.next()).await.expect("bounded fixture read");
++            let Some(Ok(frame)) = frame else { break; };
++            if frame.is_close() { break; }
++            let request: Value = serde_json::from_str(frame.to_text().unwrap()).unwrap();
++            assert_eq!(request["method"], method);
++            socket.send(Message::Text(json!({"id": request["id"], "result": result}).to_string().into())).await.unwrap();
++            requests.push(request);
++        }
++        requests
++    });
++    let rpc = RpcSession::connect(&ResolvedAppServerTarget {
++        name: "audit-wire".into(), endpoint: ResolvedAppServerEndpoint::WebSocket { url: format!("ws://{address}"), auth_token: None },
++    }).await.unwrap();
++    (rpc, server)
++}
++
++#[tokio::test]
++async fn repeating_registry_cursor_preserves_partial_rows_without_authority() {
++    let (mut rpc, server) = peer(vec![
++        ("thread/list", json!({"data":[{"id":"one"}],"nextCursor":"repeat"})),
++        ("thread/list", json!({"data":[{"id":"one"}],"nextCursor":"repeat"})),
++        ("thread/list", json!({"data":[],"nextCursor":null})),
++    ]).await;
++    let load = load_registry_with_page_limit(&mut rpc, false, None).await.unwrap();
++    assert_eq!(load.threads.len(), 1);
++    assert!(!load.registry_complete);
++    assert!(load.hydration.is_none());
++    assert!(load.error.unwrap().contains("repeated cursor"));
++    drop(rpc);
++    assert_eq!(server.await.unwrap().len(), 2);
++}
++
++#[tokio::test]
++async fn hydration_carries_bootstrap_cursor_history_and_loaded_scan_also_stops() {
++    let (mut rpc, server) = peer(vec![
++        ("thread/list", json!({"data":[{"id":"one"}],"nextCursor":"repeat"})),
++        ("thread/list", json!({"data":[{"id":"two"}],"nextCursor":"repeat"})),
++    ]).await;
++    let mut load = load_registry_with_page_limit(&mut rpc, false, Some(1)).await.unwrap();
++    let mut hydration = load.hydration.take().unwrap();
++    assert!(guarded_registry_page(&mut rpc, Some(hydration.cursor), false, true, &mut hydration.budget).await.is_err());
++    drop(rpc); assert_eq!(server.await.unwrap().len(), 2);
++    let (mut rpc, server) = peer(vec![
++        ("thread/loaded/list", json!({"data":["one"],"nextCursor":"repeat"})),
++        ("thread/loaded/list", json!({"data":["one"],"nextCursor":"repeat"})),
++    ]).await;
++    assert!(load_all_loaded_ids(&mut rpc).await.unwrap_err().to_string().contains("repeated cursor"));
++    drop(rpc); assert_eq!(server.await.unwrap().len(), 2);
++}
++
++fn hit(id: &str) -> TranscriptSearchHit {
++    TranscriptSearchHit { thread_id: ThreadId::new("thread"), turn_id: Some("turn".into()),
++        item_id: Some(id.into()), snippet: "fixture".into(), turn_cursor: None, match_start_utf16: None, match_end_utf16: None }
++}
++fn items(start: usize, end: usize, cursor: Option<&str>) -> Value {
++    json!({"data": (start..end).map(|i| json!({"turnId":"turn", "item":{"id":format!("item-{i}"), "type":"agentMessage", "text":format!("item {i}")}})).collect::<Vec<_>>(), "nextCursor":cursor})
++}
++
++#[tokio::test]
++async fn exact_hit_at_items_200_and_201_is_found_with_global_descending_continuation() {
++    for target in [199, 200] {
++        let (mut rpc, server) = peer(vec![
++            ("thread/read", json!({"thread":{"id":"thread","name":"fixture"}})),
++            ("thread/items/list", items(0, 200, Some("global-older-1"))),
++            ("thread/items/list", items(200, 202, Some("global-older-2"))),
++        ]).await;
++        let page = load_transcript_hit(&mut rpc, &hit(&format!("item-{target}"))).await.unwrap();
++        assert!(page.items.iter().any(|item| item.item_id == format!("item-{target}")));
++        assert!(page.items.len() <= 200);
++        assert_eq!(page.next_item_cursor.as_deref(), Some(if target == 199 {"global-older-1"} else {"global-older-2"}));
++        drop(rpc);
++        let requests = server.await.unwrap();
++        assert_eq!(requests.len(), if target == 199 {2} else {3});
++        for request in requests.iter().skip(1) {
++            assert_eq!(request["params"]["sortDirection"], "desc");
++            assert!(request["params"].get("turnId").is_none());
++        }
++        if target == 200 { assert_eq!(requests[2]["params"]["cursor"], "global-older-1"); }
++    }
++}
++
++#[tokio::test]
++async fn deleted_or_cyclic_search_hit_never_reports_a_successful_jump() {
++    for cycle in [false, true] {
++        let mut replies = vec![("thread/read", json!({"thread":{"id":"thread"}})),
++            ("thread/items/list", items(0, 1, cycle.then_some("repeat")))];
++        if cycle { replies.push(("thread/items/list", items(1, 2, Some("repeat")))); }
++        let (mut rpc, server) = peer(replies).await;
++        let error = load_transcript_hit(&mut rpc, &hit("deleted-item")).await.unwrap_err();
