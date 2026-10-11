@@ -202,7 +202,7 @@
     "src/runtime_palette/intent_tests.rs": 222,
     "src/runtime_commands.rs": 103,
     "src/runtime_palette.rs": 89,
-    "src/runtime_doctor.rs": 362,
+    "src/runtime_doctor.rs": 397,
     "src/render_performance.rs": 323,
     "src/runtime_cli.rs": 229,
     "src/runtime_store_worker.rs": 340,
@@ -736,6 +736,15 @@
         "src/runtime_notifications.rs"
       ],
       "policy": "Security/defect-only growth recorded in the sole complete-source v1.4 LOC ratchet; no new backend authority, protocol, state, schema, compatibility shim or Stable publication. Require exact-head multi-platform CI and fresh-main qualification."
+    },
+    {
+      "date": "2026-10-11",
+      "kind": "doctor-cli-terminal-output-safety",
+      "scope": "Apply the existing inline sanitizer to every human-readable doctor diagnostic line at the final terminal boundary, including Codex/Git/Forge/error/configuration fields. Keep upstream values, diagnostic collection and exit codes unchanged; regression fixture rejects terminal control/bidi spoofing and future raw println calls.",
+      "modules": [
+        "src/runtime_doctor.rs"
+      ],
+      "policy": "Security-only maintenance with explicit ceiling adjustment in the sole complete-source v1.4 ratchet; no new product feature, release authority, protocol, schema, migration or external dependency. Multi-platform Rust 1.88 CI and exact-main evidence required."
     }
   ]
 }

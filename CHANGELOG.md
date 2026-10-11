@@ -17,6 +17,8 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
+- Sanitize untrusted `doctor` terminal diagnostics (Codex/Git/Forge paths, branches, versions, errors and local configuration) at the final output boundary, preserving source data and normal EN/zh-CN text; guard every doctor print site and add a regression against future raw lines.
+
 - Bound and sanitize desktop notification subjects at the presentation boundary while retaining original event data; Linux `notify-send` now ends option parsing before dynamic title/body, with negative fixtures for bidi controls, oversized CJK text and option-looking subjects.
 
 - Sanitize pasted registry/Board inline input, Saved View names, workspace group headings and Scratch detail IDs at terminal rendering; preserve exact source text and state semantics with negative terminal fixtures.

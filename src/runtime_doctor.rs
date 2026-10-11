@@ -9,67 +9,77 @@ use codex_tui::{
     store::LocalStore,
 };
 
+fn doctor_line(args: std::fmt::Arguments<'_>) -> String {
+    codex_tui::text::sanitize_inline(&args.to_string())
+}
+
+macro_rules! doctor_println {
+    ($($arg:tt)*) => {
+        println!("{}", doctor_line(format_args!($($arg)*)))
+    };
+}
+
 pub(crate) async fn doctor(scope: Option<&str>, target_override: Option<&str>) -> Result<i32> {
     let mut degraded = false;
     let store = SqliteStore::discover()?;
     let config = store.load_config()?;
     let target = ResolvedAppServerTarget::resolve(&config.app_server, target_override)?;
 
-    println!("codex-tui {}", env!("CARGO_PKG_VERSION"));
-    println!("config: {}", store.config_path().display());
-    println!("state: {}", store.db_path().display());
-    println!("mouse: {}", config.ui.mouse);
-    println!(
+    doctor_println!("codex-tui {}", env!("CARGO_PKG_VERSION"));
+    doctor_println!("config: {}", store.config_path().display());
+    doctor_println!("state: {}", store.db_path().display());
+    doctor_println!("mouse: {}", config.ui.mouse);
+    doctor_println!(
         "language: {} -> {}",
         config.ui.language.as_str(),
         config.ui.language.resolve().as_str()
     );
-    println!("notifications: {}", config.notifications.mode.label());
-    println!("app-server-target: {}", target.name);
-    println!("app-server-endpoint: {}", target.diagnostic_endpoint());
-    println!(
+    doctor_println!("notifications: {}", config.notifications.mode.label());
+    doctor_println!("app-server-target: {}", target.name);
+    doctor_println!("app-server-endpoint: {}", target.diagnostic_endpoint());
+    doctor_println!(
         "presentation: {} · background-redraw-min={}ms",
         config.ui.presentation.label(),
         config.ui.presentation.background_redraw_interval_ms()
     );
 
     match store.load_state() {
-        Ok(state) => println!("operator-schemaVersion: {}", state.schema_version),
+        Ok(state) => doctor_println!("operator-schemaVersion: {}", state.schema_version),
         Err(error) => {
             degraded = true;
-            println!("operator-state: DEGRADED · {error:#}");
+            doctor_println!("operator-state: DEGRADED · {error:#}");
         }
     }
 
     if scope == Some("store") {
         match store.health() {
             Ok(health) => {
-                println!("store-backend: sqlite");
-                println!("store-schema: {}", health.schema_version);
-                println!("integrity: {}", health.integrity);
+                doctor_println!("store-backend: sqlite");
+                doctor_println!("store-schema: {}", health.schema_version);
+                doctor_println!("integrity: {}", health.integrity);
                 match store.load_planning_snapshot() {
                     Ok(snapshot) => {
-                        println!("work-cards: {}", snapshot.cards.len());
-                        println!("scratch: {}", snapshot.scratch.len());
-                        println!("saved-views: {}", snapshot.saved_views.len());
+                        doctor_println!("work-cards: {}", snapshot.cards.len());
+                        doctor_println!("scratch: {}", snapshot.scratch.len());
+                        doctor_println!("saved-views: {}", snapshot.saved_views.len());
                     }
                     Err(error) => {
                         degraded = true;
-                        println!("planning: DEGRADED · {error:#}");
+                        doctor_println!("planning: DEGRADED · {error:#}");
                     }
                 }
                 match store.load_managed_worktrees() {
-                    Ok(worktrees) => println!("managed-worktrees: {}", worktrees.len()),
+                    Ok(worktrees) => doctor_println!("managed-worktrees: {}", worktrees.len()),
                     Err(error) => {
                         degraded = true;
-                        println!("managed-worktrees: DEGRADED · {error:#}");
+                        doctor_println!("managed-worktrees: DEGRADED · {error:#}");
                     }
                 }
                 match store.load_recent_operation_receipts(10) {
                     Ok(receipts) => {
-                        println!("recent-operation-receipts: {}", receipts.len());
+                        doctor_println!("recent-operation-receipts: {}", receipts.len());
                         for receipt in receipts {
-                            println!(
+                            doctor_println!(
                                 "receipt: {} · {} · {:?}",
                                 receipt.operation_id,
                                 receipt.plan.kind.label(),
@@ -79,14 +89,14 @@ pub(crate) async fn doctor(scope: Option<&str>, target_override: Option<&str>) -
                     }
                     Err(error) => {
                         degraded = true;
-                        println!("operation-receipts: DEGRADED · {error:#}");
+                        doctor_println!("operation-receipts: DEGRADED · {error:#}");
                     }
                 }
                 match store.load_recent_forge_mutation_receipts(10) {
                     Ok(receipts) => {
-                        println!("recent-forge-mutation-receipts: {}", receipts.len());
+                        doctor_println!("recent-forge-mutation-receipts: {}", receipts.len());
                         for receipt in receipts {
-                            println!(
+                            doctor_println!(
                                 "forge-receipt: {} · {} · {:?} · {}/{} · mr={}",
                                 receipt.operation_id,
                                 receipt.plan.kind.label(),
@@ -102,15 +112,15 @@ pub(crate) async fn doctor(scope: Option<&str>, target_override: Option<&str>) -
                     }
                     Err(error) => {
                         degraded = true;
-                        println!("forge-mutation-receipts: DEGRADED · {error:#}");
+                        doctor_println!("forge-mutation-receipts: DEGRADED · {error:#}");
                     }
                 }
             }
             Err(error) => {
                 degraded = true;
-                println!("store-backend: sqlite");
-                println!("integrity: DEGRADED");
-                println!("error: {error:#}");
+                doctor_println!("store-backend: sqlite");
+                doctor_println!("integrity: DEGRADED");
+                doctor_println!("error: {error:#}");
             }
         }
     } else if scope == Some("git") {
@@ -121,39 +131,39 @@ pub(crate) async fn doctor(scope: Option<&str>, target_override: Option<&str>) -
         )
         .await?;
         degraded |= !context.is_repository || context.error.is_some();
-        println!("git-repository: {}", context.is_repository);
-        println!("cwd: {}", context.cwd);
+        doctor_println!("git-repository: {}", context.is_repository);
+        doctor_println!("cwd: {}", context.cwd);
         if let Some(repo) = context.repo {
-            println!("git-common-dir: {}", repo.git_common_dir);
-            println!("repo-root: {}", repo.primary_root);
+            doctor_println!("git-common-dir: {}", repo.git_common_dir);
+            doctor_println!("repo-root: {}", repo.primary_root);
         }
         if let Some(worktree) = context.worktree {
-            println!("worktree: {}", worktree.canonical_path);
+            doctor_println!("worktree: {}", worktree.canonical_path);
         }
-        println!(
+        doctor_println!(
             "branch: {}",
             context.branch.as_deref().unwrap_or("<detached/none>")
         );
-        println!("dirty: {}", context.dirty);
-        println!("changed-files: {}", context.changes.len());
+        doctor_println!("dirty: {}", context.dirty);
+        doctor_println!("changed-files: {}", context.changes.len());
         if let Some(error) = context.error {
-            println!("error: {error}");
+            doctor_println!("error: {error}");
         }
     } else if scope == Some("forge") {
         let cwd = std::env::current_dir()?;
         let snapshot = forge::doctor(cwd.to_string_lossy().into_owned()).await;
-        println!(
+        doctor_println!(
             "forge-client: {}",
             snapshot.client_name.as_deref().unwrap_or("<unresolved>")
         );
-        println!(
+        doctor_println!(
             "forge-client-version: {}",
             snapshot
                 .client_version
                 .as_deref()
                 .unwrap_or("<unavailable>")
         );
-        println!(
+        doctor_println!(
             "forge-authenticated: {}",
             snapshot
                 .authenticated
@@ -161,15 +171,15 @@ pub(crate) async fn doctor(scope: Option<&str>, target_override: Option<&str>) -
                 .as_deref()
                 .unwrap_or("<unknown>")
         );
-        println!(
+        doctor_println!(
             "forge-server-version: {}",
             snapshot.server_version.as_deref().unwrap_or("<unknown>")
         );
-        println!(
+        doctor_println!(
             "forge-server-edition: {}",
             snapshot.server_edition.as_deref().unwrap_or("<unknown>")
         );
-        println!(
+        doctor_println!(
             "forge-server-tier: {}",
             snapshot
                 .server_tier
@@ -177,44 +187,44 @@ pub(crate) async fn doctor(scope: Option<&str>, target_override: Option<&str>) -
                 .unwrap_or("<unknown/not-discoverable>")
         );
         if let Some(remote) = &snapshot.remote {
-            println!("forge-remote: {}", remote.remote_name);
-            println!("forge-host: {}", remote.host);
-            println!("forge-path: {}", remote.path_with_namespace);
+            doctor_println!("forge-remote: {}", remote.remote_name);
+            doctor_println!("forge-host: {}", remote.host);
+            doctor_println!("forge-path: {}", remote.path_with_namespace);
         } else {
-            println!("forge-remote: <unresolved>");
+            doctor_println!("forge-remote: <unresolved>");
         }
         let observation = &snapshot.observation;
         degraded |= snapshot.authenticated == Some(false)
             || observation.identity.is_none()
             || observation.error.is_some();
         if let Some(identity) = &observation.identity {
-            println!("provider: {}", identity.provider.label());
-            println!("project-id: {}", identity.project_id);
-            println!("project-path: {}", identity.path_with_namespace);
-            println!("project-url: {}", identity.web_url);
+            doctor_println!("provider: {}", identity.provider.label());
+            doctor_println!("project-id: {}", identity.project_id);
+            doctor_println!("project-path: {}", identity.path_with_namespace);
+            doctor_println!("project-url: {}", identity.web_url);
         } else {
-            println!("provider: unavailable");
+            doctor_println!("provider: unavailable");
         }
-        println!("freshness: {}", observation.freshness.label());
+        doctor_println!("freshness: {}", observation.freshness.label());
         for (capability, state) in &observation.capabilities {
-            println!("capability.{}: {}", capability.label(), state.label());
+            doctor_println!("capability.{}: {}", capability.label(), state.label());
         }
-        println!("recent-issues: {}", observation.issues.len());
-        println!("open-merge-requests: {}", observation.change_requests.len());
-        println!("recent-pipelines: {}", observation.pipelines.len());
-        println!("issue-boards: {}", snapshot.boards.len());
+        doctor_println!("recent-issues: {}", observation.issues.len());
+        doctor_println!("open-merge-requests: {}", observation.change_requests.len());
+        doctor_println!("recent-pipelines: {}", observation.pipelines.len());
+        doctor_println!("issue-boards: {}", snapshot.boards.len());
         if let Some(error) = &observation.error {
-            println!("error: {error}");
+            doctor_println!("error: {error}");
         }
     } else if scope == Some("terminal") {
         let capabilities = codex_tui::pty::capabilities();
-        println!("terminal-backend: {}", capabilities.backend);
-        println!("terminal-platform: {}", capabilities.platform);
-        println!("default-program: {}", capabilities.default_program);
-        println!("resize: {}", capabilities.resize);
-        println!("input: {}", capabilities.input);
-        println!("event-queue-capacity: {}", capabilities.bounded_event_queue);
-        println!(
+        doctor_println!("terminal-backend: {}", capabilities.backend);
+        doctor_println!("terminal-platform: {}", capabilities.platform);
+        doctor_println!("default-program: {}", capabilities.default_program);
+        doctor_println!("resize: {}", capabilities.resize);
+        doctor_println!("input: {}", capabilities.input);
+        doctor_println!("event-queue-capacity: {}", capabilities.bounded_event_queue);
+        doctor_println!(
             "default-scrollback-bytes: {}",
             capabilities.default_scrollback_bytes
         );
@@ -226,19 +236,19 @@ pub(crate) async fn doctor(scope: Option<&str>, target_override: Option<&str>) -
         )
         .await?;
         let Some(repo) = context.repo else {
-            println!("launch-config: unavailable");
-            println!("error: current directory is not inside a Git repository");
+            doctor_println!("launch-config: unavailable");
+            doctor_println!("error: current directory is not inside a Git repository");
             return Ok(codex_tui::headless::EXIT_DEGRADED);
         };
         let repo_root = std::path::Path::new(&repo.primary_root);
         let config_path = repo_root.join(codex_tui::launch::REPO_CONFIG_FILE);
-        println!("launch-config: {}", config_path.display());
+        doctor_println!("launch-config: {}", config_path.display());
         match codex_tui::launch::RepoLaunchConfig::load(repo_root) {
             Ok(config) => {
-                println!("launch-config-version: {}", config.version);
-                println!("launch-presets: {}", config.launches.len());
+                doctor_println!("launch-config-version: {}", config.version);
+                doctor_println!("launch-presets: {}", config.launches.len());
                 for preset in config.launches {
-                    println!(
+                    doctor_println!(
                         "preset: {} · cwd={:?} · argv={}",
                         preset.name,
                         preset.cwd,
@@ -253,7 +263,7 @@ pub(crate) async fn doctor(scope: Option<&str>, target_override: Option<&str>) -
             }
             Err(error) => {
                 degraded = true;
-                println!("launch-config: DEGRADED · {error:#}");
+                doctor_println!("launch-config: DEGRADED · {error:#}");
             }
         }
     } else if scope == Some("codex") {
@@ -261,11 +271,11 @@ pub(crate) async fn doctor(scope: Option<&str>, target_override: Option<&str>) -
             Ok(snapshot) => {
                 degraded |= !snapshot.status.connected || snapshot.status.error.is_some();
                 print_backend_status(&snapshot.status);
-                println!(
+                doctor_println!(
                     "codex-home: {}",
                     snapshot.status.codex_home.as_deref().unwrap_or("<unknown>")
                 );
-                println!("threads: {}", snapshot.threads.len());
+                doctor_println!("threads: {}", snapshot.threads.len());
 
                 let mut local = 0usize;
                 let mut foreign_windows = 0usize;
@@ -302,28 +312,28 @@ pub(crate) async fn doctor(scope: Option<&str>, target_override: Option<&str>) -
                     }
                 }
 
-                println!("threads-local: {local}");
-                println!("threads-foreign-windows: {foreign_windows}");
-                println!("threads-foreign-unix: {foreign_unix}");
-                println!("threads-stale: {stale}");
-                println!("threads-relative: {relative}");
-                println!("threads-empty-cwd: {empty}");
+                doctor_println!("threads-local: {local}");
+                doctor_println!("threads-foreign-windows: {foreign_windows}");
+                doctor_println!("threads-foreign-unix: {foreign_unix}");
+                doctor_println!("threads-stale: {stale}");
+                doctor_println!("threads-relative: {relative}");
+                doctor_println!("threads-empty-cwd: {empty}");
                 for cwd in local_samples {
-                    println!("local-cwd: {cwd}");
+                    doctor_println!("local-cwd: {cwd}");
                 }
                 for cwd in foreign_samples {
-                    println!("foreign-cwd: {cwd}");
+                    doctor_println!("foreign-cwd: {cwd}");
                 }
             }
             Err(error) => {
                 degraded = true;
-                println!("backend: codex-app-server");
-                println!("connected: false");
-                println!("error: {error:#}");
+                doctor_println!("backend: codex-app-server");
+                doctor_println!("connected: false");
+                doctor_println!("error: {error:#}");
             }
         }
     } else {
-        println!(
+        doctor_println!(
             "hint: run `codex-tui doctor codex`, `doctor git`, `doctor forge`, `doctor store`, `doctor presets`, or `doctor terminal`"
         );
     }
@@ -335,24 +345,53 @@ pub(crate) async fn doctor(scope: Option<&str>, target_override: Option<&str>) -
 }
 
 fn print_backend_status(status: &BackendStatus) {
-    println!("backend: {}", status.source);
-    println!("connected: {}", status.connected);
-    println!(
+    doctor_println!("backend: {}", status.source);
+    doctor_println!("connected: {}", status.connected);
+    doctor_println!(
         "version: {}",
         status.version.as_deref().unwrap_or("unknown")
     );
-    println!(
+    doctor_println!(
         "platform: {}",
         status.platform.as_deref().unwrap_or("unknown")
     );
-    println!("capabilities: {}", status.capabilities.join(", "));
+    doctor_println!("capabilities: {}", status.capabilities.join(", "));
     if !status.optional_capabilities_missing.is_empty() {
-        println!(
+        doctor_println!(
             "optional-missing: {}",
             status.optional_capabilities_missing.join(", ")
         );
     }
     if let Some(error) = &status.error {
-        println!("error: {error}");
+        doctor_println!("error: {error}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn doctor_output_escapes_untrusted_terminal_controls_without_changing_source() {
+        let hostile = "repo\u{001b}[2J\u{202e}\n中文";
+        let line = doctor_line(format_args!("cwd: {hostile}"));
+        assert_eq!(line, "cwd: repo\u{fffd}[2J\u{fffd} 中文");
+        assert_eq!(hostile, "repo\u{001b}[2J\u{202e}\n中文");
+        assert_eq!(
+            doctor_line(format_args!("name: {}", "正常中文")),
+            "name: 正常中文"
+        );
+    }
+
+    #[test]
+    fn doctor_plain_text_lines_all_pass_through_the_output_guard() {
+        let source = include_str!("runtime_doctor.rs");
+        let production = source.split("#[cfg(test)]").next().unwrap();
+        let raw_prints = production
+            .lines()
+            .filter(|line| line.trim_start().starts_with("println!("))
+            .count();
+        assert_eq!(raw_prints, 1);
+        assert!(production.matches("doctor_println!(").count() >= 40);
     }
 }
