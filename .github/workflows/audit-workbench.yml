@@ -1,0 +1,27 @@
+name: audit-workbench
+on:
+  push:
+    branches: [fix/deep-audit-20261011]
+permissions:
+  contents: read
+jobs:
+  source:
+    if: github.repository == 'jiying2007/codex-tui'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - name: Export tracked source only
+        run: |
+          mkdir -p /tmp/audit-source
+          git archive --format=tar HEAD | tar -xf - -C /tmp/audit-source
+          git rev-parse HEAD > /tmp/audit-source/WORKBENCH-SOURCE-SHA.txt
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: audit-source
+          path: /tmp/audit-source/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 3
