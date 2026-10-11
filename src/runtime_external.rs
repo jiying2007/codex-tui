@@ -44,11 +44,35 @@ pub(crate) fn open_external_editor(worktree_root: &str, relative_path: &str) -> 
         .map_err(Into::into)
 }
 
-pub(crate) fn open_external_url(url: &str) -> Result<()> {
+fn validate_external_url(url: &str) -> Result<()> {
     anyhow::ensure!(
         url.starts_with("https://") || url.starts_with("http://"),
         "external target must be an HTTP(S) URL"
     );
+    anyhow::ensure!(
+        !url.chars().any(char::is_whitespace)
+            && !url.contains('\\')
+            && codex_tui::text::sanitize_inline(url) == url,
+        "external URL contains ambiguous or unsafe characters"
+    );
+    let parsed = url::Url::parse(url).context("parse external HTTP(S) URL")?;
+    anyhow::ensure!(
+        matches!(parsed.scheme(), "http" | "https") && parsed.host_str().is_some(),
+        "external HTTP(S) URL must have a valid host"
+    );
+    let authority = url
+        .split_once("://")
+        .map(|(_, rest)| rest.split(['/', '?', '#']).next().unwrap_or(""))
+        .unwrap_or("");
+    anyhow::ensure!(
+        !authority.contains('@') && parsed.username().is_empty() && parsed.password().is_none(),
+        "external URL must not embed user credentials"
+    );
+    Ok(())
+}
+
+pub(crate) fn open_external_url(url: &str) -> Result<()> {
+    validate_external_url(url)?;
 
     let mut command = if let Some(browser) = std::env::var_os("CODEX_TUI_BROWSER") {
         anyhow::ensure!(
@@ -138,6 +162,40 @@ mod tests {
     fn external_url_rejects_non_http_targets_before_spawning() {
         assert!(open_external_url("file:///tmp/secret").is_err());
         assert!(open_external_url("javascript:alert(1)").is_err());
+    }
+
+    #[test]
+    fn external_url_rejects_credentials_missing_host_and_ambiguous_characters() {
+        for target in [
+            "https://",
+            "http://",
+            "https://@github.com/o/r",
+            "https://user:secret@github.com/o/r",
+            "https://host.invalid\\@github.com/o/r",
+            "https://host.invalid/pull/1\n--danger",
+            "https://host.invalid/pull/1\u{202e}",
+            " https://host.invalid/pull/1",
+            "https://host.invalid/pull/1\t",
+            "https://host.invalid:badport/pull/1",
+        ] {
+            assert!(
+                validate_external_url(target).is_err(),
+                "unsafe external URL unexpectedly accepted: {target:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn external_url_accepts_normal_forge_links_without_rewriting_them() {
+        for target in [
+            "https://github.com/octo/repo/pull/7",
+            "https://gitlab.internal.example:8443/group/repo/-/merge_requests/3?view=diffs#note",
+            "http://127.0.0.1:8080/group/repo",
+            "https://[::1]:8443/group/repo",
+            "https://gitlab.internal.example/group/repo?title=a%20b",
+        ] {
+            validate_external_url(target).expect(target);
+        }
     }
 }
 

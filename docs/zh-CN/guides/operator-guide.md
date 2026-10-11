@@ -36,6 +36,8 @@ Mission Control 按仓库/项目聚合会话，显示 Needs You / Working / Read
 
 Review 页面使用 `e` 在外部编辑器打开变更文件时，必须具备与当前会话及 Review 匹配的 Git 工作树身份。Git 变更路径以工作树根目录为基准，而非会话子目录；绝对路径、`..` 越界路径、不存在的目标和指向工作树外的符号链接都会在启动编辑器前被拒绝。身份过期时需刷新 Review/Git；不会改写原始路径或 Git 状态。
 
+Review 外部浏览器链接必须是主机明确的 HTTP(S) URL，不允许嵌入用户凭证、控制字符、空白符或反斜杠导致的歧义解析。无效平台链接会在启动浏览器前拒绝；合法的 GitLab/GitHub URL 原样传递。
+
 ## 仓库和交付状态
 <!-- docs-section: forge -->
 
