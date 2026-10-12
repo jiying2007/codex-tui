@@ -132,6 +132,7 @@ fn version_is_side_effect_free_without_entering_the_interactive_runtime() {
         let home = TempDir::new().unwrap();
         let output = invoke(&args, &home);
         assert!(output.status.success(), "{args:?}: {output:?}");
+        assert!(output.stderr.is_empty(), "{args:?}: {output:?}");
         assert_eq!(
             String::from_utf8_lossy(&output.stdout).trim(),
             concat!("codex-tui ", env!("CARGO_PKG_VERSION"))
