@@ -43,6 +43,8 @@ PTY children remain owned by a kill-and-reap guard through initialization and th
 
 Catchable Unix process signals (SIGTERM, SIGHUP and SIGINT) enter the ordinary interactive shutdown path. Raw terminal mode, alternate screen and cursor are restored before the final bounded state save; a save failure remains an error. Raw Ctrl+C input and OS SIGINT are separate cases. SIGKILL and a disconnected physical terminal cannot be made restorable by an application. These handlers are not installed for headless subcommands.
 
+The interactive future is heap-owned at the CLI boundary so native Windows debug builds do not carry it in the entry stack frame. Help, version and invalid usage still run without a TTY, backend or state writes; no larger thread stack is required.
+
 ## Board updates under a busy Registry
 <!-- docs-section: board -->
 

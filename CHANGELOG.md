@@ -17,6 +17,8 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
+- Heap-own the interactive future at the CLI boundary to prevent native Windows debug startup stack overflow, without increasing thread stacks or weakening CLI exit/state checks. Retain help, invalid-usage, missing-backend, benchmark and version process controls.
+
 - Route interactive SIGTERM/SIGHUP/SIGINT through terminal restoration and the existing bounded final save; retain distinct raw-Ctrl+C and Drawer cases. Enable Tokio's existing signal feature without changing dependency versions or the lockfile.
 - Bind Forge stdout/stderr readers to command cancellation/deadlines instead of detached tasks; cover repeated descendant-held pipe timeouts, caller cancellation and large healthy output.
 - Rebase small Registry deltas from current inputs before installing a planning result, including membership and shared-worktree collisions; preserve operator/authority fences and a 64-card delta budget. Keep continuous 5k Board fixtures and cross-view controls in the existing PTY workflow.

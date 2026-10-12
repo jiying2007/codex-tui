@@ -125,3 +125,17 @@ fn archive_identity_sampling_respects_real_cli_exit_contract_without_state() {
         assert_eq!(std::fs::read_dir(home.path()).unwrap().count(), 0);
     }
 }
+
+#[test]
+fn version_is_side_effect_free_without_entering_the_interactive_runtime() {
+    for args in [vec!["--version"], vec!["version"]] {
+        let home = TempDir::new().unwrap();
+        let output = invoke(&args, &home);
+        assert!(output.status.success(), "{args:?}: {output:?}");
+        assert_eq!(
+            String::from_utf8_lossy(&output.stdout).trim(),
+            concat!("codex-tui ", env!("CARGO_PKG_VERSION"))
+        );
+        assert_eq!(std::fs::read_dir(home.path()).unwrap().count(), 0);
+    }
+}

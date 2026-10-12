@@ -200,7 +200,9 @@ async fn main() -> Result<()> {
     }
 
     let fake_mode = args.iter().any(|arg| arg == "--fake");
-    run_app(fake_mode, target_override.as_deref()).await
+    // Keep the interactive state machine out of the entry future's stack frame,
+    // including --help and invalid usage on native Windows debug builds.
+    Box::pin(run_app(fake_mode, target_override.as_deref())).await
 }
 
 fn take_value_flag(args: &mut Vec<String>, flag: &str) -> Result<Option<String>> {

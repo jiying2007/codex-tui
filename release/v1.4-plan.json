@@ -151,7 +151,7 @@
     "src/app.rs": 1005,
     "src/ui.rs": 2215,
     "src/app_server.rs": 2634,
-    "src/main.rs": 1885,
+    "src/main.rs": 1887,
     "src/sqlite_store.rs": 1715,
     "src/forge.rs": 1145,
     "src/worktree.rs": 700,
