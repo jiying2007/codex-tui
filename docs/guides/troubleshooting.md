@@ -43,7 +43,7 @@ PTY children remain owned by a kill-and-reap guard through initialization and th
 
 Catchable Unix process signals (SIGTERM, SIGHUP and SIGINT) enter the ordinary interactive shutdown path. Raw terminal mode, alternate screen and cursor are restored before the final bounded state save; a save failure remains an error. Raw Ctrl+C input and OS SIGINT are separate cases. SIGKILL and a disconnected physical terminal cannot be made restorable by an application. These handlers are not installed for headless subcommands.
 
-The interactive future is heap-owned at the CLI boundary so native Windows debug builds do not carry it in the entry stack frame. Help, version and invalid usage still run without a TTY, backend or state writes; no larger thread stack is required.
+Scoped Forge readers keep their bounded 8KiB buffers on the heap rather than multiplying inline buffers through nested async state. Compact-future checks and actual native Windows debug CLI tests cover startup stack overflow; boxing only the interactive entry future was not sufficient. Help, version and invalid usage remain free of TTY, backend and state writes, without larger thread stacks.
 
 ## Board updates under a busy Registry
 <!-- docs-section: board -->

@@ -1098,7 +1098,9 @@ where
     R: AsyncRead + Unpin,
 {
     let mut output = Vec::with_capacity(cap.min(16 * 1024));
-    let mut buffer = [0_u8; 8192];
+    // Inline read buffers multiply through nested Forge/Doctor async states.
+    // Keep the same bounded I/O chunk on the heap, owned by this cancellable reader.
+    let mut buffer = vec![0_u8; 8192];
     loop {
         let count = reader.read(&mut buffer).await?;
         if count == 0 {

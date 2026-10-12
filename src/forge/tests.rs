@@ -351,3 +351,16 @@ fn freshness_ages_and_unavailable_observations_never_look_fresh() {
     observation.error = Some("offline".into());
     assert_eq!(observation.freshness_at(101), ForgeFreshness::Unavailable);
 }
+
+#[test]
+fn command_io_futures_do_not_embed_read_buffers() {
+    // Construct only: no subprocess, runtime or credentialed I/O is started.
+    let reader = read_capped(tokio::io::empty(), MAX_STDOUT_BYTES);
+    let command = run_command("unused-future-size-probe", &[], None);
+    for (name, bytes) in [
+        ("reader", std::mem::size_of_val(&reader)),
+        ("command", std::mem::size_of_val(&command)),
+    ] {
+        assert!(bytes <= 4096, "{name} future embeds {bytes} bytes");
+    }
+}
