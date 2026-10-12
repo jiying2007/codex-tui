@@ -1,0 +1,133 @@
+diff --git a/src/app.rs b/src/app.rs
+index 276aaf3..18758a6 100644
+--- a/src/app.rs
++++ b/src/app.rs
+@@ -568,3 +568,16 @@ fn refresh_active_git_projections(state: &mut AppState) -> Vec<Effect> {
+ 
+-fn propagate_git_context(state: &mut AppState, context: GitContext) {
++fn propagate_git_context(state: &mut AppState, mut context: GitContext) {
++    // Separate cwd probes may observe the same worktree (e.g. nested sessions).
++    // Share equal immutable payloads, never timestamps or source authority.
++    if let Some(worktree) = context.worktree.as_ref()
++        && let Some(previous) = state.git_contexts.values().find(|previous| {
++            previous.error.is_none()
++                && previous.worktree.as_ref().is_some_and(|old| {
++                    old.repo == worktree.repo && old.canonical_path == worktree.canonical_path
++                })
++                && previous.changes == context.changes
++        })
++    {
++        context.changes = previous.changes.clone();
++    }
+     let target_ids = state.thread_ids_for_cwd(&context.cwd);
+diff --git a/src/app_server_transport.rs b/src/app_server_transport.rs
+index 6d8ea6d..7927184 100644
+--- a/src/app_server_transport.rs
++++ b/src/app_server_transport.rs
+@@ -27,2 +27,3 @@ enum Transport {
+         _child: Box<Child>,
++        _stderr_tasks: tokio::task::JoinSet<()>,
+         reader: Box<BufReader<ChildStdout>>,
+@@ -100,4 +101,7 @@ impl AppServerTransport {
+                     .context("Codex App Server stdout unavailable")?;
++                // Drop aborts only this connection's drain, even when a descendant
++                // keeps stderr open. No task may outlive its transport owner.
++                let mut stderr_tasks = tokio::task::JoinSet::new();
+                 if let Some(mut stderr) = child.stderr.take() {
+-                    tokio::spawn(async move {
++                    stderr_tasks.spawn(async move {
+                         let _ = tokio::io::copy(&mut stderr, &mut tokio::io::sink()).await;
+@@ -107,2 +111,3 @@ impl AppServerTransport {
+                     _child: Box::new(child),
++                    _stderr_tasks: stderr_tasks,
+                     reader: Box::new(BufReader::new(stdout)),
+diff --git a/src/main.rs b/src/main.rs
+index 85abdc9..3964448 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -1340,3 +1340,6 @@ fn apply_effects(
+             } => {
+-                if let Err(error) = open_external_editor(&cwd, &path) {
++                let result = app.thread_by_id(&thread_id)
++                    .context("review thread no longer exists")
++                    .and_then(|thread| open_external_editor(&cwd, &thread.metadata.cwd, &path));
++                if let Err(error) = result {
+                     reduce(
+diff --git a/src/runtime_doctor.rs b/src/runtime_doctor.rs
+index a23eafe..3bc3eff 100644
+--- a/src/runtime_doctor.rs
++++ b/src/runtime_doctor.rs
+@@ -129,3 +129,3 @@ pub(crate) async fn doctor(scope: Option<&str>, target_override: Option<&str>) -
+             codex_tui::domain::ThreadId::new("doctor"),
+-            cwd.to_string_lossy().into_owned(),
++            cwd.into_os_string().into_string().map_err(|_| anyhow::anyhow!("Git cwd is not UTF-8"))?,
+         )
+@@ -234,3 +234,3 @@ pub(crate) async fn doctor(scope: Option<&str>, target_override: Option<&str>) -
+             codex_tui::domain::ThreadId::new("doctor"),
+-            cwd.to_string_lossy().into_owned(),
++            cwd.into_os_string().into_string().map_err(|_| anyhow::anyhow!("Git cwd is not UTF-8"))?,
+         )
+diff --git a/src/runtime_external.rs b/src/runtime_external.rs
+index 3be770b..6ced576 100644
+--- a/src/runtime_external.rs
++++ b/src/runtime_external.rs
+@@ -4,3 +4,3 @@ use std::process::Stdio;
+ 
+-fn selected_editor_target(worktree_root: &str, relative_path: &str) -> Result<PathBuf> {
++fn selected_editor_target(worktree_root: &str, thread_cwd: &str, relative_path: &str) -> Result<PathBuf> {
+     let selected = Path::new(relative_path);
+@@ -19,2 +19,4 @@ fn selected_editor_target(worktree_root: &str, relative_path: &str) -> Result<Pa
+     );
++    let cwd = std::fs::canonicalize(thread_cwd).context("resolve live thread cwd")?;
++    anyhow::ensure!(cwd.is_dir() && cwd.starts_with(&root), "live thread cwd is outside selected worktree");
+     let target = std::fs::canonicalize(root.join(selected))
+@@ -28,3 +30,3 @@ fn selected_editor_target(worktree_root: &str, relative_path: &str) -> Result<Pa
+ 
+-pub(crate) fn open_external_editor(worktree_root: &str, relative_path: &str) -> Result<()> {
++pub(crate) fn open_external_editor(worktree_root: &str, thread_cwd: &str, relative_path: &str) -> Result<()> {
+     let editor =
+@@ -34,3 +36,3 @@ pub(crate) fn open_external_editor(worktree_root: &str, relative_path: &str) ->
+     }
+-    let path = selected_editor_target(worktree_root, relative_path)?;
++    let path = selected_editor_target(worktree_root, thread_cwd, relative_path)?;
+     let mut command = std::process::Command::new(editor);
+@@ -111,2 +113,14 @@ mod tests {
+ 
++    #[test]
++    fn editor_refuses_a_sibling_root_even_when_the_selected_file_exists() {
++        let temp = tempfile::tempdir().unwrap();
++        let root = temp.path().join("repo");
++        let other = temp.path().join("repo-other");
++        std::fs::create_dir_all(root.join("nested")).unwrap();
++        std::fs::create_dir(&other).unwrap();
++        std::fs::write(root.join("changed.rs"), "wrong sibling").unwrap();
++        assert!(selected_editor_target(root.to_str().unwrap(), other.to_str().unwrap(), "changed.rs").is_err());
++        assert!(selected_editor_target(root.to_str().unwrap(), root.join("nested").to_str().unwrap(), "changed.rs").is_ok());
++    }
++
+     #[test]
+@@ -121,3 +135,3 @@ mod tests {
+         assert_eq!(
+-            selected_editor_target(repo.to_str().unwrap(), "src/changed.rs").unwrap(),
++            selected_editor_target(repo.to_str().unwrap(), repo.to_str().unwrap(), "src/changed.rs").unwrap(),
+             file.canonicalize().unwrap()
+@@ -131,3 +145,3 @@ mod tests {
+             assert!(
+-                selected_editor_target(repo.to_str().unwrap(), invalid).is_err(),
++                selected_editor_target(repo.to_str().unwrap(), repo.to_str().unwrap(), invalid).is_err(),
+                 "unexpected editor target: {invalid:?}"
+@@ -135,4 +149,4 @@ mod tests {
+         }
+-        assert!(selected_editor_target(repo.to_str().unwrap(), file.to_str().unwrap()).is_err());
+-        assert!(selected_editor_target(repo.to_str().unwrap(), "absent.rs").is_err());
++        assert!(selected_editor_target(repo.to_str().unwrap(), repo.to_str().unwrap(), file.to_str().unwrap()).is_err());
++        assert!(selected_editor_target(repo.to_str().unwrap(), repo.to_str().unwrap(), "absent.rs").is_err());
+     }
+@@ -153,5 +167,5 @@ mod tests {
+         symlink(&inner, repo.join("inner-link.rs")).unwrap();
+-        assert!(selected_editor_target(repo.to_str().unwrap(), "escape.rs").is_err());
++        assert!(selected_editor_target(repo.to_str().unwrap(), repo.to_str().unwrap(), "escape.rs").is_err());
+         assert_eq!(
+-            selected_editor_target(repo.to_str().unwrap(), "inner-link.rs").unwrap(),
++            selected_editor_target(repo.to_str().unwrap(), repo.to_str().unwrap(), "inner-link.rs").unwrap(),
+             inner.canonicalize().unwrap()
