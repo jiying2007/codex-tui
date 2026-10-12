@@ -1,7 +1,13 @@
 diff --git a/src/main.rs b/src/main.rs
-index 3964448..242c4e8 100644
+index 3964448..67e7e2e 100644
 --- a/src/main.rs
 +++ b/src/main.rs
+@@ -1,4 +1,4 @@
+-use anyhow::Result;
++use anyhow::{Context, Result};
+ use codex_tui::{
+     app::{Action, AppState, Effect, reduce},
+     app_server::{self, ConversationEvent, RegistryHandle},
 @@ -1338,7 +1338,7 @@ fn apply_effects(
                  cwd,
                  path,
