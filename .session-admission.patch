@@ -1,0 +1,215 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 0775a2f..9320919 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -17,6 +17,8 @@ All notable codex-tui changes are recorded here.
+ 
+ ### Audit hardening
+ 
++- Unify RPC admission and wire quarantine for truthful bootstrap/headless connectivity, skip optional probes on unusable sessions, and preserve the first Registry diagnostic. Add actual-binary count/byte overload and Registry-fault cases plus a healthy optional-method rejection control.
++
+ - Quarantine cancelled/failed outbound frames and broken read/decode/EOF transports; bound every write, preserve healthy RPC rejections/response-wait cancellation, and report disconnected headless probes truthfully. Add deterministic partial-write/flush regressions, local wire fault tests and two packaged-binary probe cases.
+ 
+ - Preserve bounded stdio framing across cancellation and deliver the final closed-channel disconnect snapshot exactly once; retain timeout and fail-closed transport behavior.
+diff --git a/docs/guides/troubleshooting.md b/docs/guides/troubleshooting.md
+index d6cc0e9..6835b13 100644
+--- a/docs/guides/troubleshooting.md
++++ b/docs/guides/troubleshooting.md
+@@ -18,6 +18,8 @@ RPC notifications retain at most 1024 messages and 16 MiB of accounted payload.
+ 
+ A cancelled or failed outbound write quarantines the connection: partial delivery is unknown, so later requests cannot append to an unfinished frame and writes are never automatically replayed. Every outbound write also has a five-second deadline, including notifications. Wire read/decode failure or EOF during an RPC cannot be misreported as a healthy connection. A valid optional-method RPC rejection and cancellation while merely waiting for a response do not poison an otherwise intact wire.
+ 
++Connection status covers the entire RPC session, not just its wire: either a retained-message admission failure or a transport failure makes it unusable and disconnected. A quarantined Registry bootstrap skips optional loaded-list probes and preserves the original fault. A valid optional-method rejection still reports a connected but degraded session.
++
+ ## GitLab/GitHub unavailable or missing data
+ <!-- docs-section: forge -->
+ 
+diff --git a/docs/zh-CN/guides/troubleshooting.md b/docs/zh-CN/guides/troubleshooting.md
+index 6b70b7e..c8cb946 100644
+--- a/docs/zh-CN/guides/troubleshooting.md
++++ b/docs/zh-CN/guides/troubleshooting.md
+@@ -18,6 +18,8 @@ RPC 通知最多保留 1024 条且受 16 MiB 载荷记账预算限制。待处
+ 
+ 发送被取消或失败后，连接进入隔离状态：部分交付结果未知，后续请求不能接到未完成帧上，也不会自动重放写操作。包括通知在内的每次发送都受五秒截止时间限制。RPC 期间的底层读取、JSON 解码失败或 EOF 不能再被报告为连接正常。合法的可选方法拒绝，以及仅等待响应时被取消，不会隔离本来完整的连接。
+ 
++连接状态覆盖整个 RPC 会话，而不只是底层通信：消息条数或字节准入失败与传输失败，都会使会话不可用并标为离线。Registry 启动加载已隔离时，不再发起可选 loaded-list 探测，也不覆盖首个故障原因。合法的可选方法拒绝仍表示连接正常但能力降级。
++
+ ## GitLab/GitHub 不可用或字段不全
+ <!-- docs-section: forge -->
+ 
+diff --git a/scripts/testing/app_server_transport_regression.py b/scripts/testing/app_server_transport_regression.py
+index cf21c97..cbe56d2 100644
+--- a/scripts/testing/app_server_transport_regression.py
++++ b/scripts/testing/app_server_transport_regression.py
+@@ -35,6 +35,16 @@ def emit(value):
+     with lock:
+         sys.stdout.write(json.dumps(value, separators=(',', ':')) + '\n')
+         sys.stdout.flush()
++def inventory_fault():
++    if mode.endswith('-eof'):
++        os._exit(0)
++    if mode.endswith('-malformed'):
++        os.write(1, b'{invalid-json}\n')
++        return
++    count = 1025 if mode.endswith('-count') else 70
++    text = 'x' if mode.endswith('-count') else 'x' * (256 * 1024)
++    for _ in range(count):
++        emit({'method':'thread/name/updated', 'params':{'threadId':'audit-thread', 'threadName':text}})
+ def notify():
+     time.sleep(0.08)
+     if mode == 'eof':
+@@ -62,13 +72,16 @@ for line in sys.stdin:
+     if method == 'initialize':
+         result = {'serverInfo': {'name':'isolated-regression', 'version':'0.0.0'}}
+     elif method == 'thread/list':
+-        result = {'data':[{'id':'audit-thread', 'name':'AAAAAAAAAAAAAAA', 'cwd':os.environ['HOME'], 'status':{'type':'idle'}}], 'nextCursor':'repeat' if mode == method else None}
++        if mode.startswith('registry-') and request.get('params', {}).get('cursor') is not None:
++            inventory_fault()
++            continue
++        result = {'data':[{'id':'audit-thread', 'name':'AAAAAAAAAAAAAAA', 'cwd':os.environ['HOME'], 'status':{'type':'idle'}}], 'nextCursor':'repeat' if mode == method else ('registry-next' if mode.startswith('registry-') else None)}
+     elif method == 'thread/loaded/list':
+-        if mode == 'loaded-eof':
+-            os._exit(0)
+-        if mode == 'loaded-malformed':
+-            os.write(1, b'{invalid-json}\n')
+-            time.sleep(1)
++        if mode == 'loaded-unsupported':
++            emit({'id':ident, 'error':{'code':-32601, 'message':'optional method unavailable'}})
++            continue
++        if mode.startswith('loaded-'):
++            inventory_fault()
+             continue
+         result = {'data':['audit-thread'], 'nextCursor':'repeat' if mode == method else None}
+     else:
+@@ -236,6 +249,7 @@ def cursor_case(binary, output, method):
+         require(process.returncode == 3, method + ': incomplete inventory must exit degraded')
+         result = json.loads(stdout)
+         require(result.get('degraded') is True, method + ': partial scan reported healthy')
++        require(result.get('source', {}).get('connected') is True, method + ': pagination warning poisoned an intact session')
+         require('repeated cursor' in result.get('source', {}).get('error', ''), method + ': missing cursor diagnostic')
+         require(len(result.get('threads', [])) == 1, method + ': valid partial row was discarded')
+         count = sum(line.startswith(method + ' ') for line in log.read_text(encoding='utf-8').splitlines())
+@@ -258,11 +272,25 @@ def probe_fault_case(binary, output, mode):
+         (output / (mode + '.json')).write_bytes(stdout)
+         result = json.loads(stdout)
+         require(process.returncode == 3 and result.get('degraded') is True, mode + ': fault not degraded')
+-        require(result.get('source', {}).get('connected') is False, mode + ': broken wire reported connected')
++        connected = mode == 'loaded-unsupported'
++        require(result.get('source', {}).get('connected') is connected, mode + ': wrong usable-connection state')
+         require(bool(result.get('source', {}).get('error')), mode + ': missing fault diagnostic')
+         require(len(result.get('threads', [])) == 1, mode + ': valid partial inventory was discarded')
++        error = result['source']['error']
++        if mode.startswith('registry-'):
++            require(error.startswith('Registry inventory incomplete:'), mode + ': original Registry fault was overwritten')
++        if mode.endswith('-count'):
++            require('queued-message capacity exceeded' in error, mode + ': wrong count-limit diagnosis')
++        if mode.endswith('-bytes'):
++            require('queued-message retained-byte budget exceeded' in error, mode + ': wrong byte-limit diagnosis')
++        if mode == 'loaded-unsupported':
++            require('optional method unavailable' in error, mode + ': wrong optional-method diagnosis')
++        methods = [line.split(' ', 1)[0] for line in log.read_text(encoding='utf-8').splitlines() if not line.startswith('pid ')]
++        expected = ['initialize', 'thread/list', 'thread/list' if mode.startswith('registry-') else 'thread/loaded/list']
++        require(methods == expected, mode + ': unexpected later request or mutation')
+         require(not stderr, mode + ': unexpected process error')
+-    return {'mode':mode, 'passed':True, 'connected':False, 'partialRows':1}
++    return {'mode':mode, 'passed':True, 'connected':connected, 'partialRows':1}
++
+ 
+ 
+ def main():
+@@ -278,7 +306,9 @@ def main():
+             receipt['checks'].append(terminal_case(binary, output, mode))
+         for method in ('thread/list', 'thread/loaded/list'):
+             receipt['checks'].append(cursor_case(binary, output, method))
+-        for mode in ('loaded-eof', 'loaded-malformed'):
++        for mode in ('loaded-eof', 'loaded-malformed', 'loaded-count', 'loaded-bytes',
++                     'registry-count', 'registry-bytes', 'registry-eof', 'registry-malformed',
++                     'loaded-unsupported'):
+             receipt['checks'].append(probe_fault_case(binary, output, mode))
+         receipt['status'] = 'passed'
+     finally:
+diff --git a/src/app_server.rs b/src/app_server.rs
+index 43a8e81..bfadb79 100644
+--- a/src/app_server.rs
++++ b/src/app_server.rs
+@@ -514,7 +514,7 @@ async fn bootstrap_registry(
+     let load = load_registry_with_page_limit(rpc, false, max_pages).await?;
+     status.capabilities.push("thread/list".into());
+     status.capabilities.push("thread/status/changed".into());
+-    status.connected = true;
++    status.connected = !rpc.is_quarantined();
+     status.registry_complete = load.registry_complete;
+     status.error = load.error;
+     status.last_refresh_unix_ms = Some(now_unix_ms());
+@@ -572,17 +572,21 @@ pub async fn probe_target(target: ResolvedAppServerTarget) -> Result<BackendSnap
+     status.source = source;
+     debug_assert!(hydration.is_none());
+ 
+-    match load_all_loaded_ids(&mut rpc).await {
+-        Ok(loaded_ids) => {
+-            apply_loaded_ids(threads.iter_mut(), &loaded_ids);
+-            mark_loaded_supported(&mut status);
+-        }
+-        Err(error) => {
+-            mark_loaded_unsupported(&mut status);
+-            status.error = Some(format!("Loaded inventory incomplete: {error}"));
+-            status.connected = !rpc.transport.is_quarantined();
++    // A partial Registry load can already have quarantined the session.
++    // Do not probe optional state or overwrite the first diagnostic afterward.
++    if !rpc.is_quarantined() {
++        match load_all_loaded_ids(&mut rpc).await {
++            Ok(loaded_ids) => {
++                apply_loaded_ids(threads.iter_mut(), &loaded_ids);
++                mark_loaded_supported(&mut status);
++            }
++            Err(error) => {
++                mark_loaded_unsupported(&mut status);
++                status.error.get_or_insert_with(|| format!("Loaded inventory incomplete: {error}"));
++            }
+         }
+     }
++    status.connected = !rpc.is_quarantined();
+ 
+     Ok(BackendSnapshot {
+         generation: 0,
+@@ -2561,10 +2565,12 @@ impl RpcSession {
+         }
+     }
+ 
++    fn is_quarantined(&self) -> bool {
++        self.fatal_error.is_some() || self.transport.is_quarantined()
++    }
++
+     fn has_queued_messages(&self) -> bool {
+-        self.fatal_error.is_some()
+-            || self.transport.is_quarantined()
+-            || !self.queued_messages.is_empty()
++        self.is_quarantined() || !self.queued_messages.is_empty()
+     }
+ 
+     async fn notify(&mut self, method: &str, params: Option<Value>) -> Result<()> {
+diff --git a/tests/app_server_transport_regression.rs b/tests/app_server_transport_regression.rs
+index 13ac8f4..1f6fe7a 100644
+--- a/tests/app_server_transport_regression.rs
++++ b/tests/app_server_transport_regression.rs
+@@ -53,7 +53,19 @@ fn fragmented_stdio_eof_and_cursor_cycles_are_truthful_and_bounded() {
+     let receipt: serde_json::Value =
+         serde_json::from_slice(&std::fs::read(output.join("receipt.json")).unwrap()).unwrap();
+     assert_eq!(receipt["status"], "passed");
+-    assert_eq!(receipt["checks"].as_array().unwrap().len(), 7);
++    let checks = receipt["checks"].as_array().unwrap();
++    let expected = [
++        "whole", "split", "eof", "thread/list", "thread/loaded/list",
++        "loaded-eof", "loaded-malformed", "loaded-count", "loaded-bytes",
++        "registry-count", "registry-bytes", "registry-eof", "registry-malformed",
++        "loaded-unsupported",
++    ];
++    assert_eq!(checks.len(), expected.len());
++    for (check, expected) in checks.iter().zip(expected) {
++        assert_eq!(check["passed"], true);
++        let actual = check.get("mode").or_else(|| check.get("method")).unwrap();
++        assert_eq!(actual, expected);
++    }
+     assert_eq!(receipt["realCodexQualification"], false);
+     assert_eq!(receipt["realSshQualification"], false);
+     println!("{receipt}");
