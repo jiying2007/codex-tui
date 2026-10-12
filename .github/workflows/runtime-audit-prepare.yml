@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     env:
-      EVIDENCE: ${{ runner.temp }}/runtime-audit-evidence
+      EVIDENCE: /tmp/runtime-audit-evidence
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -94,8 +94,6 @@ jobs:
           set -euo pipefail
           test "$(git ls-remote origin refs/heads/fix/runtime-audit-f1-f3 | cut -f1)" = "$GITHUB_SHA"
           if ! git push origin HEAD:refs/heads/fix/runtime-audit-f1-f3; then
-            # Some GITHUB_TOKEN installations cannot delete a workflow. Preserve
-            # only the original hook for connector-side deletion, not main.
             mkdir -p .github/workflows
             cp "$RUNNER_TEMP/preparation-hook.yml" .github/workflows/runtime-audit-prepare.yml
             git add .github/workflows/runtime-audit-prepare.yml
@@ -107,6 +105,6 @@ jobs:
         if: always()
         with:
           name: runtime-audit-preparation-${{ github.run_id }}
-          path: ${{ runner.temp }}/runtime-audit-evidence/
+          path: /tmp/runtime-audit-evidence/
           if-no-files-found: warn
           retention-days: 30
