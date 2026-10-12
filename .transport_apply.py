@@ -72,3 +72,28 @@ notes={
 for name,note in notes.items():
     p=root/name;s=p.read_text();at=s.index('## GitLab/GitHub');p.write_text(s[:at]+note+'\n\n'+s[at:])
 p=root/'CHANGELOG.md';s=p.read_text();at=s.index('### Audit hardening\n')+len('### Audit hardening\n');p.write_text(s[:at]+'\n- Quarantine cancelled/failed outbound frames and broken read/decode/EOF transports; bound every write, preserve healthy RPC rejections/response-wait cancellation, and report disconnected headless probes truthfully. Add deterministic partial-write/flush regressions, local wire fault tests and two packaged-binary probe cases.\n'+s[at:])
+# Preserve the existing actor Unknown/no-retry assertions, but isolate a real
+# sink failure rather than pre-quarantining the wire by observing inbound EOF.
+p=root/'src/app_server_transport/tests.rs'
+p.write_text(p.read_text()+'''\n// Test-only real-sink fault injection; never compiled into a production binary.
+impl AppServerTransport {
+    pub(crate) async fn close_websocket_writer_for_test(&mut self) -> Result<()> {
+        match &mut self.inner {
+            Transport::WebSocket { stream } => stream.close(None).await.context("close fixture writer"),
+            _ => anyhow::bail!("fixture requires WebSocket"),
+        }
+    }
+}
+''')
+name='src/app_server/user_response/approval_tests.rs'
+edit(name,'    use futures_util::SinkExt;','    use futures_util::{SinkExt, StreamExt};')
+edit(name,'            ws.close(None).await.unwrap();','            let close = ws.next().await.unwrap().unwrap();\n            assert!(close.is_close());')
+edit(name,'        assert!(rpc.read_wire_message().await.unwrap().is_none());','        rpc.transport.close_websocket_writer_for_test().await.unwrap();')
+edit(name,'        // The real transport has consumed Close. Keep the observed request queued,\n        // making SendAfterClosing deterministic rather than relying on TCP timing.','        // Only the real sink is closed by a test-only helper. No inbound EOF has\n        // been observed: that is now quarantined earlier and covered separately.\n        // SendAfterClosing still exercises the production Unknown/no-retry path.')
+subprocess.run(['cargo','fmt','--all'],check=True)
+import json
+p=root/'release/v1.4-plan.json'; plan=json.loads(p.read_text())
+modules=['src/app_server_transport/tests.rs',name]
+for module in modules: plan['moduleRatchet'][module]=len((root/module).read_text().splitlines())
+plan['ratchetReviews'].append({'date':'2026-10-12','kind':'defect-and-security-fix','scope':'Retain existing actor write-failure Unknown/disconnect/no-retry assertions with a deterministic test-only real WebSocket sink-close fixture; inbound read quarantine is covered independently. No assertion removal or production fault injection.','modules':modules})
+p.write_text(json.dumps(plan,indent=2)+'\n')
