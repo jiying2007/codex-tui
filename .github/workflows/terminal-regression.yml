@@ -18,6 +18,9 @@ on:
       - 'tests/terminal_restoration.rs'
       - 'tests/app_server_transport_regression.rs'
       - 'scripts/testing/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
       - '.github/workflows/terminal-regression.yml'
   workflow_dispatch:
 
