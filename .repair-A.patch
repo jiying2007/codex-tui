@@ -1,0 +1,219 @@
+diff --git a/src/git.rs b/src/git.rs
+index 37fa59a..6f489af 100644
+--- a/src/git.rs
++++ b/src/git.rs
+@@ -7,2 +7,3 @@ use std::path::Path;
+ use std::process::Stdio;
++use std::sync::Arc;
+ use std::time::{Duration, SystemTime, UNIX_EPOCH};
+@@ -18,2 +19,4 @@ const GIT_MAX_CONCURRENCY: usize = 8;
+ const MAX_REVIEW_DIFF_BYTES: usize = 2 * 1024 * 1024;
++const MAX_GIT_PROBE_BYTES: usize = 2 * 1024 * 1024;
++const MAX_GIT_STATUS_ENTRIES: usize = 10_000;
+ const MAX_GIT_STDERR_BYTES: usize = 64 * 1024;
+@@ -59,3 +62,3 @@ pub struct GitContext {
+     pub dirty: bool,
+-    pub changes: Vec<GitFileChange>,
++    pub changes: Arc<[GitFileChange]>,
+     pub observed_at_unix_ms: u64,
+@@ -68,3 +71,3 @@ pub struct GitReview {
+     pub cwd: String,
+-    pub changes: Vec<GitFileChange>,
++    pub changes: Arc<[GitFileChange]>,
+     pub staged_diff: String,
+@@ -81,3 +84,3 @@ impl GitReview {
+             cwd: cwd.into(),
+-            changes: vec![],
++            changes: Arc::from([]),
+             staged_diff: String::new(),
+@@ -134,3 +137,3 @@ impl GitContext {
+             dirty: false,
+-            changes: vec![],
++            changes: Arc::from([]),
+             observed_at_unix_ms: 0,
+@@ -289,22 +292,11 @@ pub async fn probe_context(thread_id: ThreadId, cwd: String) -> Result<GitContex
+ 
+-    let worktree_root = canonical_identity_path_from(
+-        &cwd,
+-        worktree_probe
+-            .stdout
+-            .lines()
+-            .map(str::trim)
+-            .find(|line| !line.is_empty())
+-            .context("git rev-parse response missing worktree root")?,
+-    );
+-    let common_dir = canonical_identity_path_from(
+-        &cwd,
+-        common_dir_probe
+-            .stdout
+-            .lines()
+-            .map(str::trim)
+-            .find(|line| !line.is_empty())
+-            .context("git rev-parse response missing common directory")?,
+-    );
++    let worktree_root = canonical_identity_path_from(&cwd, rev_parse_path(&worktree_probe.stdout)?)?;
++    let common_dir = canonical_identity_path_from(&cwd, rev_parse_path(&common_dir_probe.stdout)?)?;
+     let primary_root =
+-        canonical_identity_path(primary_root_from_common_dir(&common_dir, &worktree_root));
++        canonical_identity_path(primary_root_from_common_dir(&common_dir, &worktree_root))?;
++    let canonical_cwd = std::fs::canonicalize(&cwd).context("resolve Git probe cwd")?;
++    anyhow::ensure!(
++        Path::new(&worktree_root).is_dir() && canonical_cwd.starts_with(&worktree_root),
++        "Git worktree root does not contain the probed cwd"
++    );
+ 
+@@ -355,3 +347,3 @@ pub async fn probe_context(thread_id: ThreadId, cwd: String) -> Result<GitContex
+         dirty: !parsed.changes.is_empty(),
+-        changes: parsed.changes,
++        changes: parsed.changes.into(),
+         observed_at_unix_ms: now_unix_ms(),
+@@ -471,3 +463,3 @@ where
+     let mut stored = Vec::with_capacity(limit.min(8192));
+-    let mut buffer = [0_u8; 8192];
++    let mut buffer = vec![0_u8; 8192];
+     let mut truncated = false;
+@@ -567,3 +559,3 @@ where
+         success: output.success,
+-        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
++        stdout: String::from_utf8(output.stdout).context("Git identity is not UTF-8")?,
+         stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+@@ -606,17 +598,32 @@ where
+ 
+-    let output = tokio::time::timeout(GIT_PROBE_TIMEOUT, command.output())
++    let mut child = command.spawn().context("spawn git")?;
++    let stdout = child.stdout.take().context("git stdout unavailable")?;
++    let stderr = child.stderr.take().context("git stderr unavailable")?;
++    let capture = async {
++        // Readers belong to this command future: timeout, overflow and cancellation
++        // drop both pipes, and kill_on_drop retains direct-child ownership.
++        let (stdout, stderr, status) = tokio::try_join!(
++            read_probe_limited(stdout, MAX_GIT_PROBE_BYTES),
++            read_probe_limited(stderr, MAX_GIT_STDERR_BYTES),
++            child.wait(),
++        )?;
++        std::io::Result::Ok(RawGitOutput { success: status.success(), stdout, stderr })
++    };
++    tokio::time::timeout(GIT_PROBE_TIMEOUT, capture)
+         .await
+-        .with_context(|| {
+-            format!(
+-                "git command timed out after {}s",
+-                GIT_PROBE_TIMEOUT.as_secs()
+-            )
+-        })?
+-        .context("spawn git")?;
++        .context("Git probe timed out after 3s")?
++        .context("Git probe capture failed")
++}
+ 
+-    Ok(RawGitOutput {
+-        success: output.status.success(),
+-        stdout: output.stdout,
+-        stderr: output.stderr,
+-    })
++async fn read_probe_limited<R: AsyncRead + Unpin>(mut reader: R, limit: usize) -> std::io::Result<Vec<u8>> {
++    let mut output = Vec::new();
++    let mut chunk = vec![0; 8192];
++    loop {
++        let count = reader.read(&mut chunk).await?;
++        if count == 0 { return Ok(output); }
++        if count > limit.saturating_sub(output.len()) {
++            return Err(std::io::Error::other("Git probe output exceeded byte budget"));
++        }
++        output.extend_from_slice(&chunk[..count]);
++    }
+ }
+@@ -634,9 +641,8 @@ struct ParsedStatus {
+ fn parse_porcelain_v2(bytes: &[u8]) -> Result<ParsedStatus> {
+-    let records = bytes.split(|byte| *byte == 0).collect::<Vec<_>>();
++    anyhow::ensure!(bytes.len() <= MAX_GIT_PROBE_BYTES, "Git status exceeded byte budget");
++    anyhow::ensure!(bytes.is_empty() || bytes.last() == Some(&0), "Git status has an incomplete record");
++    let mut records = bytes.split(|byte| *byte == 0);
+     let mut parsed = ParsedStatus::default();
+-    let mut index = 0;
+ 
+-    while index < records.len() {
+-        let record = records[index];
+-        index += 1;
++    while let Some(record) = records.next() {
+         if record.is_empty() {
+@@ -644,3 +650,3 @@ fn parse_porcelain_v2(bytes: &[u8]) -> Result<ParsedStatus> {
+         }
+-        let text = String::from_utf8_lossy(record);
++        let text = std::str::from_utf8(record).context("Git status identity is not UTF-8")?;
+ 
+@@ -673,2 +679,6 @@ fn parse_porcelain_v2(bytes: &[u8]) -> Result<ParsedStatus> {
+ 
++        // Unknown headers remain forward-compatible; unknown file records must
++        // never silently turn a partial inventory into evidence of a clean tree.
++        if text.starts_with("# ") || text.starts_with("! ") { continue; }
++        anyhow::ensure!(parsed.changes.len() < MAX_GIT_STATUS_ENTRIES, "Git status exceeded entry budget");
+         if text.starts_with("1 ") {
+@@ -676,3 +686,3 @@ fn parse_porcelain_v2(bytes: &[u8]) -> Result<ParsedStatus> {
+             if fields.len() != 9 {
+-                return Err(anyhow!("invalid porcelain v2 ordinary entry: {text}"));
++                return Err(anyhow!("invalid porcelain v2 ordinary entry"));
+             }
+@@ -691,8 +701,8 @@ fn parse_porcelain_v2(bytes: &[u8]) -> Result<ParsedStatus> {
+             if fields.len() != 10 {
+-                return Err(anyhow!("invalid porcelain v2 rename entry: {text}"));
++                return Err(anyhow!("invalid porcelain v2 rename entry"));
+             }
+             let original = records
+-                .get(index)
++                .next()
++                .filter(|path| !path.is_empty())
+                 .context("porcelain v2 rename entry missing original path")?;
+-            index += 1;
+             parsed.changes.push(change_from_xy(
+@@ -700,3 +710,3 @@ fn parse_porcelain_v2(bytes: &[u8]) -> Result<ParsedStatus> {
+                 fields[9].to_string(),
+-                Some(String::from_utf8_lossy(original).into_owned()),
++                Some(std::str::from_utf8(original).context("Git rename identity is not UTF-8")?.to_owned()),
+                 false,
+@@ -710,3 +720,3 @@ fn parse_porcelain_v2(bytes: &[u8]) -> Result<ParsedStatus> {
+             if fields.len() != 11 {
+-                return Err(anyhow!("invalid porcelain v2 unmerged entry: {text}"));
++                return Err(anyhow!("invalid porcelain v2 unmerged entry"));
+             }
+@@ -723,2 +733,3 @@ fn parse_porcelain_v2(bytes: &[u8]) -> Result<ParsedStatus> {
+         if let Some(path) = text.strip_prefix("? ") {
++            anyhow::ensure!(!path.is_empty(), "Git status has an empty path");
+             parsed.changes.push(GitFileChange {
+@@ -733,2 +744,3 @@ fn parse_porcelain_v2(bytes: &[u8]) -> Result<ParsedStatus> {
+         }
++        return Err(anyhow!("unsupported Git status file record"));
+     }
+@@ -745,2 +757,3 @@ fn change_from_xy(
+ ) -> Result<GitFileChange> {
++    anyhow::ensure!(!path.is_empty() && xy.len() == 2, "invalid Git change identity/status");
+     let mut chars = xy.chars();
+@@ -758,11 +771,16 @@ fn change_from_xy(
+ 
+-fn canonical_identity_path(value: impl AsRef<Path>) -> String {
+-    let value = value.as_ref();
+-    std::fs::canonicalize(value)
+-        .unwrap_or_else(|_| value.to_path_buf())
+-        .to_string_lossy()
+-        .into_owned()
++fn rev_parse_path(stdout: &str) -> Result<&str> {
++    // One requested path, one protocol LF. Embedded LF/CR and trailing spaces
++    // belong to the identity, not to presentation. Git for Windows emits LF too.
++    let path = stdout.strip_suffix('\n').context("Git path missing record terminator")?;
++    anyhow::ensure!(!path.is_empty() && !path.contains('\0'), "invalid Git path record");
++    Ok(path)
+ }
+ 
+-fn canonical_identity_path_from(cwd: &str, value: &str) -> String {
++fn canonical_identity_path(value: impl AsRef<Path>) -> Result<String> {
++    let canonical = std::fs::canonicalize(value).context("resolve Git identity")?;
++    canonical.into_os_string().into_string().map_err(|_| anyhow!("Git identity is not UTF-8"))
++}
++
++fn canonical_identity_path_from(cwd: &str, value: &str) -> Result<String> {
+     let path = Path::new(value);
+@@ -804 +822,4 @@ mod tests;
+ mod read_order_tests;
++
++#[cfg(test)]
++mod probe_tests;
