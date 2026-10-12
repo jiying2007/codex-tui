@@ -118,6 +118,7 @@ fn build_thread_indexes(
 #[derive(Clone, Debug)]
 pub struct AppState {
     planning_generation: u64,
+    planning_intent_generation: u64,
     local_edit_revision: u64,
     pending_local_edit: Option<local_edit::PendingLocalEdit>,
     planning_reconcile_count: usize,
@@ -863,21 +864,7 @@ fn rebuild_planning_inner<const PROFILE: bool>(
         planning_phase_elapsed::<PROFILE>(supplemental_projection_started);
     let sort_started = planning_phase_start::<PROFILE>();
 
-    projections.sort_by(|left, right| {
-        right
-            .overlay
-            .pinned
-            .cmp(&left.overlay.pinned)
-            .then_with(|| left.stage.cmp(&right.stage))
-            .then_with(|| {
-                left.overlay
-                    .priority
-                    .unwrap_or(i32::MAX)
-                    .cmp(&right.overlay.priority.unwrap_or(i32::MAX))
-            })
-            .then_with(|| left.title.cmp(&right.title))
-            .then_with(|| left.local_id.cmp(&right.local_id))
-    });
+    sort_planning_cards(&mut projections);
 
     let sort_ms = planning_phase_elapsed::<PROFILE>(sort_started);
     let index_commit_started = planning_phase_start::<PROFILE>();
@@ -991,6 +978,24 @@ fn ensure_selection_visible(state: &mut AppState) {
     } else if !visible.contains(&state.selected) {
         state.selected = visible[0];
     }
+}
+
+fn sort_planning_cards(cards: &mut [WorkCardProjection]) {
+    cards.sort_by(|left, right| {
+        right
+            .overlay
+            .pinned
+            .cmp(&left.overlay.pinned)
+            .then_with(|| left.stage.cmp(&right.stage))
+            .then_with(|| {
+                left.overlay
+                    .priority
+                    .unwrap_or(i32::MAX)
+                    .cmp(&right.overlay.priority.unwrap_or(i32::MAX))
+            })
+            .then_with(|| left.title.cmp(&right.title))
+            .then_with(|| left.local_id.cmp(&right.local_id))
+    });
 }
 
 #[cfg(test)]

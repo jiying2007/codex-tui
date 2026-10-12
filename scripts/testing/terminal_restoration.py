@@ -78,7 +78,7 @@ def palette_observed(data):
     return re.search(rb"Command\s*Palette", frame) is not None and b"Query" in frame
 
 
-def probe(binary, output, failed_save):
+def probe(binary, output, failed_save, quit_signal=None, ctrl_c=False):
     output.mkdir(parents=True, exist_ok=False)  # Never reuse an old passing receipt.
     stream, events = bytearray(), []
     proc = None
@@ -192,7 +192,11 @@ def probe(binary, output, failed_save):
                 finally:
                     conn.close()
                 receipt["isolatedInjectedDatabase"] = str(db.relative_to(home))
-            send(b"q", "quit from Registry")
+            if quit_signal is not None:
+                os.kill(proc.pid, quit_signal)
+                events.append({"action": "process signal", "signal": quit_signal})
+            else:
+                send(b"\x03" if ctrl_c else b"q", "raw Ctrl+C" if ctrl_c else "quit from Registry")
             wait_for(lambda: proc.poll() is not None, "application did not exit", seconds=12)
             drain(.2)
             checks = validate_terminal(bytes(stream), before, termios.tcgetattr(slave),
@@ -226,7 +230,12 @@ def main():
     require(binary.is_file() and os.access(str(binary), os.X_OK), "binary is not executable")
     for failed_save, name in ((False, "normal"), (True, "failed-save")):
         probe(binary, args.output / name, failed_save)
-    print("Verified two automated PTY scenarios; no manual or SSH qualification")
+    for name in ("SIGTERM", "SIGHUP", "SIGINT"):
+        for failed in (False, True):
+            suffix = "-failed-save" if failed else ""
+            probe(binary, args.output / (name + suffix), failed, getattr(signal, name))
+    probe(binary, args.output / "raw-ctrl-c", False, ctrl_c=True)
+    print("Verified nine automated PTY scenarios; no manual or SSH qualification")
 
 
 if __name__ == "__main__":

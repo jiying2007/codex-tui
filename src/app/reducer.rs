@@ -20,6 +20,16 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
     ) {
         state.planning_generation = state.planning_generation.wrapping_add(1);
     }
+    if matches!(
+        &action,
+        Action::PlanningSnapshotLoaded(_)
+            | Action::TogglePin
+            | Action::MarkUnread
+            | Action::AcknowledgeAttention
+            | Action::CommitInput
+    ) {
+        state.planning_intent_generation = state.planning_intent_generation.wrapping_add(1);
+    }
     match action {
         Action::ReplaceThreads(mut threads) => {
             state.worktree_collision_counts.clear();

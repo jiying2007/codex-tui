@@ -1075,11 +1075,13 @@ pub(crate) async fn run_command(
     let stderr = child.stderr.take().context("capture stderr")?;
 
     let result = with_command_deadline(program, COMMAND_TIMEOUT, async move {
-        let stdout_task = tokio::spawn(read_capped(stdout, MAX_STDOUT_BYTES));
-        let stderr_task = tokio::spawn(read_capped(stderr, MAX_STDERR_BYTES));
-        let status = child.wait().await.context("wait for subprocess")?;
-        let stdout = stdout_task.await.context("join stdout reader")??;
-        let stderr = stderr_task.await.context("join stderr reader")??;
+        // Keep both readers in this future: timeout or caller cancellation drops
+        // their pipes immediately, even if a descendant still owns the writers.
+        let (stdout, stderr, status) = tokio::try_join!(
+            read_capped(stdout, MAX_STDOUT_BYTES),
+            read_capped(stderr, MAX_STDERR_BYTES),
+            async { child.wait().await.context("wait for subprocess") },
+        )?;
         Ok::<_, anyhow::Error>((status.success(), stdout, stderr))
     })
     .await?;
@@ -1138,3 +1140,6 @@ mod gitlab_projection_tests;
 mod read_order_tests;
 #[cfg(test)]
 mod remote_identity_tests;
+
+#[cfg(all(test, target_os = "linux"))]
+mod process_lifecycle_tests;

@@ -296,6 +296,7 @@ async fn run_app(fake_mode: bool, target_override: Option<&str>) -> Result<()> {
     )?;
     services.notifications.seed(&app);
 
+    let mut exit_signal = runtime_shutdown::ExitSignal::install()?;
     let mut terminal = TerminalSession::enter(config.ui.mouse)?;
     let mut last_fake_tick = Instant::now();
     let mut last_git_reconcile = Instant::now();
@@ -512,7 +513,11 @@ async fn run_app(fake_mode: bool, target_override: Option<&str>) -> Result<()> {
                 last_render = Instant::now();
             }
 
-            tokio::time::sleep(Duration::from_millis(16)).await;
+            tokio::select! {
+                biased;
+                _ = exit_signal.recv() => break,
+                _ = tokio::time::sleep(Duration::from_millis(16)) => {},
+            }
         }
 
         Ok(())
