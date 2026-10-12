@@ -35,6 +35,16 @@ def emit(value):
     with lock:
         sys.stdout.write(json.dumps(value, separators=(',', ':')) + '\n')
         sys.stdout.flush()
+def inventory_fault():
+    if mode.endswith('-eof'):
+        os._exit(0)
+    if mode.endswith('-malformed'):
+        os.write(1, b'{invalid-json}\n')
+        return
+    count = 1025 if mode.endswith('-count') else 70
+    text = 'x' if mode.endswith('-count') else 'x' * (256 * 1024)
+    for _ in range(count):
+        emit({'method':'thread/name/updated', 'params':{'threadId':'audit-thread', 'threadName':text}})
 def notify():
     time.sleep(0.08)
     if mode == 'eof':
@@ -62,13 +72,16 @@ for line in sys.stdin:
     if method == 'initialize':
         result = {'serverInfo': {'name':'isolated-regression', 'version':'0.0.0'}}
     elif method == 'thread/list':
-        result = {'data':[{'id':'audit-thread', 'name':'AAAAAAAAAAAAAAA', 'cwd':os.environ['HOME'], 'status':{'type':'idle'}}], 'nextCursor':'repeat' if mode == method else None}
+        if mode.startswith('registry-') and request.get('params', {}).get('cursor') is not None:
+            inventory_fault()
+            continue
+        result = {'data':[{'id':'audit-thread', 'name':'AAAAAAAAAAAAAAA', 'cwd':os.environ['HOME'], 'status':{'type':'idle'}}], 'nextCursor':'repeat' if mode == method else ('registry-next' if mode.startswith('registry-') else None)}
     elif method == 'thread/loaded/list':
-        if mode == 'loaded-eof':
-            os._exit(0)
-        if mode == 'loaded-malformed':
-            os.write(1, b'{invalid-json}\n')
-            time.sleep(1)
+        if mode == 'loaded-unsupported':
+            emit({'id':ident, 'error':{'code':-32601, 'message':'optional method unavailable'}})
+            continue
+        if mode.startswith('loaded-'):
+            inventory_fault()
             continue
         result = {'data':['audit-thread'], 'nextCursor':'repeat' if mode == method else None}
     else:
@@ -236,6 +249,7 @@ def cursor_case(binary, output, method):
         require(process.returncode == 3, method + ': incomplete inventory must exit degraded')
         result = json.loads(stdout)
         require(result.get('degraded') is True, method + ': partial scan reported healthy')
+        require(result.get('source', {}).get('connected') is True, method + ': pagination warning poisoned an intact session')
         require('repeated cursor' in result.get('source', {}).get('error', ''), method + ': missing cursor diagnostic')
         require(len(result.get('threads', [])) == 1, method + ': valid partial row was discarded')
         count = sum(line.startswith(method + ' ') for line in log.read_text(encoding='utf-8').splitlines())
@@ -258,11 +272,25 @@ def probe_fault_case(binary, output, mode):
         (output / (mode + '.json')).write_bytes(stdout)
         result = json.loads(stdout)
         require(process.returncode == 3 and result.get('degraded') is True, mode + ': fault not degraded')
-        require(result.get('source', {}).get('connected') is False, mode + ': broken wire reported connected')
+        connected = mode == 'loaded-unsupported'
+        require(result.get('source', {}).get('connected') is connected, mode + ': wrong usable-connection state')
         require(bool(result.get('source', {}).get('error')), mode + ': missing fault diagnostic')
         require(len(result.get('threads', [])) == 1, mode + ': valid partial inventory was discarded')
+        error = result['source']['error']
+        if mode.startswith('registry-'):
+            require(error.startswith('Registry inventory incomplete:'), mode + ': original Registry fault was overwritten')
+        if mode.endswith('-count'):
+            require('queued-message capacity exceeded' in error, mode + ': wrong count-limit diagnosis')
+        if mode.endswith('-bytes'):
+            require('queued-message retained-byte budget exceeded' in error, mode + ': wrong byte-limit diagnosis')
+        if mode == 'loaded-unsupported':
+            require('optional method unavailable' in error, mode + ': wrong optional-method diagnosis')
+        methods = [line.split(' ', 1)[0] for line in log.read_text(encoding='utf-8').splitlines() if not line.startswith('pid ')]
+        expected = ['initialize', 'thread/list', 'thread/list' if mode.startswith('registry-') else 'thread/loaded/list']
+        require(methods == expected, mode + ': unexpected later request or mutation')
         require(not stderr, mode + ': unexpected process error')
-    return {'mode':mode, 'passed':True, 'connected':False, 'partialRows':1}
+    return {'mode':mode, 'passed':True, 'connected':connected, 'partialRows':1}
+
 
 
 def main():
@@ -278,7 +306,9 @@ def main():
             receipt['checks'].append(terminal_case(binary, output, mode))
         for method in ('thread/list', 'thread/loaded/list'):
             receipt['checks'].append(cursor_case(binary, output, method))
-        for mode in ('loaded-eof', 'loaded-malformed'):
+        for mode in ('loaded-eof', 'loaded-malformed', 'loaded-count', 'loaded-bytes',
+                     'registry-count', 'registry-bytes', 'registry-eof', 'registry-malformed',
+                     'loaded-unsupported'):
             receipt['checks'].append(probe_fault_case(binary, output, mode))
         receipt['status'] = 'passed'
     finally:

@@ -53,7 +53,29 @@ fn fragmented_stdio_eof_and_cursor_cycles_are_truthful_and_bounded() {
     let receipt: serde_json::Value =
         serde_json::from_slice(&std::fs::read(output.join("receipt.json")).unwrap()).unwrap();
     assert_eq!(receipt["status"], "passed");
-    assert_eq!(receipt["checks"].as_array().unwrap().len(), 7);
+    let checks = receipt["checks"].as_array().unwrap();
+    let expected = [
+        "whole",
+        "split",
+        "eof",
+        "thread/list",
+        "thread/loaded/list",
+        "loaded-eof",
+        "loaded-malformed",
+        "loaded-count",
+        "loaded-bytes",
+        "registry-count",
+        "registry-bytes",
+        "registry-eof",
+        "registry-malformed",
+        "loaded-unsupported",
+    ];
+    assert_eq!(checks.len(), expected.len());
+    for (check, expected) in checks.iter().zip(expected) {
+        assert_eq!(check["passed"], true);
+        let actual = check.get("mode").or_else(|| check.get("method")).unwrap();
+        assert_eq!(actual, expected);
+    }
     assert_eq!(receipt["realCodexQualification"], false);
     assert_eq!(receipt["realSshQualification"], false);
     println!("{receipt}");
