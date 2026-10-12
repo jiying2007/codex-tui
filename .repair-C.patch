@@ -1,0 +1,144 @@
+diff --git a/src/app/planning_worker/rebase_tests.rs b/src/app/planning_worker/rebase_tests.rs
+index cf76735..a3a2203 100644
+--- a/src/app/planning_worker/rebase_tests.rs
++++ b/src/app/planning_worker/rebase_tests.rs
+@@ -129 +129,18 @@ fn shared_worktree_peer_is_reprojected_when_only_one_runtime_changes() {
+ }
++
++#[test]
++fn planning_capture_shares_the_immutable_git_payload() {
++    let mut live = app(1);
++    let id = live.threads[0].id.clone();
++    let mut context = GitContext::pending(id.clone(), live.threads[0].metadata.cwd.clone());
++    context.changes = vec![crate::git::GitFileChange {
++        path: "tracked.rs".into(), original_path: None, index_status: None,
++        worktree_status: Some('M'), untracked: false, conflict: false,
++    }].into();
++    let payload = context.changes.clone();
++    live.git_contexts.insert(id.0.clone(), context);
++    let input = Input::capture(&live, 100);
++    assert!(std::sync::Arc::ptr_eq(&payload, &input.git[&id.0].changes));
++    let output = input.compute();
++    assert!(std::sync::Arc::ptr_eq(&payload, &output.source.git[&id.0].changes));
++}
+diff --git a/src/app/tests.rs b/src/app/tests.rs
+index 7868a05..5460615 100644
+--- a/src/app/tests.rs
++++ b/src/app/tests.rs
+@@ -599,3 +599,3 @@ fn launch_preset_requires_load_select_plan_and_confirmation() {
+             dirty: false,
+-            changes: vec![],
++            changes: vec![].into(),
+             observed_at_unix_ms: 1,
+@@ -685,3 +685,3 @@ fn managed_worktree_plan_requires_explicit_confirmation_before_execution() {
+             dirty: false,
+-            changes: vec![],
++            changes: vec![].into(),
+             observed_at_unix_ms: 1,
+@@ -1226,3 +1226,3 @@ fn review_returns_to_originating_view_and_selects_changed_files() {
+                 },
+-            ],
++            ].into(),
+             staged_diff: String::new(),
+@@ -2678,3 +2678,3 @@ fn review_editor_uses_authoritative_worktree_root_not_nested_thread_cwd() {
+     let mut review = GitReview::pending(thread_id.clone(), cwd);
+-    review.changes.push(crate::git::GitFileChange {
++    review.changes = vec![crate::git::GitFileChange {
+         path: "src/changed.rs".into(),
+@@ -2685,3 +2685,3 @@ fn review_editor_uses_authoritative_worktree_root_not_nested_thread_cwd() {
+         conflict: false,
+-    });
++    }].into();
+     app.git_reviews.insert(thread_id.0.clone(), review);
+diff --git a/src/git/tests.rs b/src/git/tests.rs
+index d9146ad..9fbad63 100644
+--- a/src/git/tests.rs
++++ b/src/git/tests.rs
+@@ -30,3 +30,3 @@ fn presentation_word_diff_only_changes_display_layer() {
+         cwd: "/repo".into(),
+-        changes: vec![],
++        changes: vec![].into(),
+         staged_diff: String::new(),
+@@ -81,3 +81,3 @@ async fn capped_reader_bounds_memory_even_at_utf8_boundary() {
+ 
+-fn git(cwd: &Path, args: &[&str]) {
++pub(super) fn git(cwd: &Path, args: &[&str]) {
+     let status = std::process::Command::new("git")
+@@ -100,8 +100,8 @@ fn relative_identity_paths_resolve_from_the_probed_cwd() {
+     assert_eq!(
+-        canonical_identity_path_from(&cwd, ".git"),
+-        canonical_identity_path(&git_dir)
++        canonical_identity_path_from(&cwd, ".git").unwrap(),
++        canonical_identity_path(&git_dir).unwrap()
+     );
+     assert_eq!(
+-        canonical_identity_path_from(&cwd, git_dir.to_string_lossy().as_ref()),
+-        canonical_identity_path(&git_dir)
++        canonical_identity_path_from(&cwd, git_dir.to_string_lossy().as_ref()).unwrap(),
++        canonical_identity_path(&git_dir).unwrap()
+     );
+diff --git a/src/runtime_external/tests.rs b/src/runtime_external/tests.rs
+index 6e13623..d8b2018 100644
+--- a/src/runtime_external/tests.rs
++++ b/src/runtime_external/tests.rs
+@@ -16,3 +16,3 @@ fn child_fixture() {
+     let expected = if std::env::var("CODEX_TUI_EXTERNAL_TEST_ROLE").unwrap() == "editor" {
+-        open_external_editor(root.to_str().unwrap(), "a file.rs").unwrap();
++        open_external_editor(root.to_str().unwrap(), root.to_str().unwrap(), "a file.rs").unwrap();
+         root.join("a file.rs")
+diff --git a/src/soak.rs b/src/soak.rs
+index 3409604..0a127e0 100644
+--- a/src/soak.rs
++++ b/src/soak.rs
+@@ -125,3 +125,3 @@ fn run_for(rows: usize, minimum_cycles: usize, duration: Duration) -> Result<Soa
+                 cwd: thread.metadata.cwd.clone(),
+-                changes: vec![],
++                changes: vec![].into(),
+                 staged_diff: String::new(),
+diff --git a/tests/terminal_restoration.rs b/tests/terminal_restoration.rs
+index 3b10015..8fca16f 100644
+--- a/tests/terminal_restoration.rs
++++ b/tests/terminal_restoration.rs
+@@ -145 +145,42 @@ fn drawer_signals_forge_reader_ownership_and_board_churn() {
+ }
++
++#[test]
++fn git_targets_capture_budgets_and_app_server_reader_lifetimes() {
++    let temporary = tempfile::tempdir().unwrap();
++    let retained = std::env::var_os("CODEX_TUI_PTY_EVIDENCE_DIR");
++    let root = retained.as_deref().map(Path::new).unwrap_or_else(|| temporary.path());
++    std::fs::create_dir_all(root).unwrap();
++    let output = root.join("git-resources");
++    let log_path = root.join("git-resources.log");
++    let log = std::fs::File::create(&log_path).unwrap();
++    let mut child = Command::new("python3")
++        .arg("-O")
++        .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/testing/git_resource_regression.py"))
++        .arg(env!("CARGO_BIN_EXE_codex-tui"))
++        .arg(&output)
++        .stdin(Stdio::null())
++        .stdout(log.try_clone().unwrap()).stderr(log).spawn().unwrap();
++    let deadline = Instant::now() + Duration::from_secs(150);
++    let status = loop {
++        if let Some(status) = child.try_wait().unwrap() { break status; }
++        if Instant::now() >= deadline {
++            let _ = child.kill(); let _ = child.wait();
++            panic!("Git resource harness timeout: {}", std::fs::read_to_string(&log_path).unwrap_or_default());
++        }
++        std::thread::sleep(Duration::from_millis(20));
++    };
++    assert!(status.success(), "Git resource regression: {}", std::fs::read_to_string(&log_path).unwrap_or_default());
++    let receipt: serde_json::Value = serde_json::from_slice(&std::fs::read(output.join("receipt.json")).unwrap()).unwrap();
++    assert_eq!(receipt["status"], "passed");
++    let cases = receipt["cases"].as_array().unwrap();
++    let expected = ["editor-normal", "editor-spaces", "editor-newline", "editor-linked",
++        "stderr-exact", "stderr-over", "stdout-exact", "stdout-over", "entries-exact",
++        "entries-over", "partial-record", "invalid-utf8", "init-eof", "init-held",
++        "search-eof", "search-held", "search-replaced"];
++    assert_eq!(cases.len(), expected.len());
++    for (case, name) in cases.iter().zip(expected) {
++        assert_eq!(case["name"], name); assert_eq!(case["passed"], true);
++    }
++    assert_eq!(receipt["manualQualification"], false);
++    assert_eq!(receipt["realAccountQualification"], false);
++}
