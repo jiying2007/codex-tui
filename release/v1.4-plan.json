@@ -150,7 +150,7 @@
   "moduleRatchet": {
     "src/app.rs": 1000,
     "src/ui.rs": 2215,
-    "src/app_server.rs": 2626,
+    "src/app_server.rs": 2634,
     "src/main.rs": 1880,
     "src/sqlite_store.rs": 1715,
     "src/forge.rs": 1345,
@@ -880,6 +880,14 @@
         "src/app_server_transport/health.rs",
         "src/app_server_transport/cancelled_write_test.rs",
         "src/app_server/transport_fault_tests.rs"
+      ]
+    },
+    {
+      "date": "2026-10-12",
+      "kind": "defect-and-security-fix",
+      "scope": "Unify RPC admission and transport quarantine for truthful bootstrap/headless connectivity; skip optional probes after terminal failure and preserve the original Registry diagnostic. Retain bounded count/byte overload and intact-session negative controls through the actual binary; no new authority or budget relaxation.",
+      "modules": [
+        "src/app_server.rs"
       ]
     }
   ]

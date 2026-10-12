@@ -18,6 +18,8 @@ RPC notifications retain at most 1024 messages and 16 MiB of accounted payload. 
 
 A cancelled or failed outbound write quarantines the connection: partial delivery is unknown, so later requests cannot append to an unfinished frame and writes are never automatically replayed. Every outbound write also has a five-second deadline, including notifications. Wire read/decode failure or EOF during an RPC cannot be misreported as a healthy connection. A valid optional-method RPC rejection and cancellation while merely waiting for a response do not poison an otherwise intact wire.
 
+Connection status covers the entire RPC session, not just its wire: either a retained-message admission failure or a transport failure makes it unusable and disconnected. A quarantined Registry bootstrap skips optional loaded-list probes and preserves the original fault. A valid optional-method rejection still reports a connected but degraded session.
+
 ## GitLab/GitHub unavailable or missing data
 <!-- docs-section: forge -->
 

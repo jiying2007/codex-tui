@@ -514,7 +514,7 @@ async fn bootstrap_registry(
     let load = load_registry_with_page_limit(rpc, false, max_pages).await?;
     status.capabilities.push("thread/list".into());
     status.capabilities.push("thread/status/changed".into());
-    status.connected = true;
+    status.connected = !rpc.is_quarantined();
     status.registry_complete = load.registry_complete;
     status.error = load.error;
     status.last_refresh_unix_ms = Some(now_unix_ms());
@@ -572,17 +572,23 @@ pub async fn probe_target(target: ResolvedAppServerTarget) -> Result<BackendSnap
     status.source = source;
     debug_assert!(hydration.is_none());
 
-    match load_all_loaded_ids(&mut rpc).await {
-        Ok(loaded_ids) => {
-            apply_loaded_ids(threads.iter_mut(), &loaded_ids);
-            mark_loaded_supported(&mut status);
-        }
-        Err(error) => {
-            mark_loaded_unsupported(&mut status);
-            status.error = Some(format!("Loaded inventory incomplete: {error}"));
-            status.connected = !rpc.transport.is_quarantined();
+    // A partial Registry load can already have quarantined the session.
+    // Do not probe optional state or overwrite the first diagnostic afterward.
+    if !rpc.is_quarantined() {
+        match load_all_loaded_ids(&mut rpc).await {
+            Ok(loaded_ids) => {
+                apply_loaded_ids(threads.iter_mut(), &loaded_ids);
+                mark_loaded_supported(&mut status);
+            }
+            Err(error) => {
+                mark_loaded_unsupported(&mut status);
+                status
+                    .error
+                    .get_or_insert_with(|| format!("Loaded inventory incomplete: {error}"));
+            }
         }
     }
+    status.connected = !rpc.is_quarantined();
 
     Ok(BackendSnapshot {
         generation: 0,
@@ -2561,10 +2567,12 @@ impl RpcSession {
         }
     }
 
+    fn is_quarantined(&self) -> bool {
+        self.fatal_error.is_some() || self.transport.is_quarantined()
+    }
+
     fn has_queued_messages(&self) -> bool {
-        self.fatal_error.is_some()
-            || self.transport.is_quarantined()
-            || !self.queued_messages.is_empty()
+        self.is_quarantined() || !self.queued_messages.is_empty()
     }
 
     async fn notify(&mut self, method: &str, params: Option<Value>) -> Result<()> {

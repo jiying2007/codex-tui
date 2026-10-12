@@ -17,6 +17,8 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
+- Unify RPC admission and wire quarantine for truthful bootstrap/headless connectivity, skip optional probes on unusable sessions, and preserve the first Registry diagnostic. Add actual-binary count/byte overload and Registry-fault cases plus a healthy optional-method rejection control.
+
 - Quarantine cancelled/failed outbound frames and broken read/decode/EOF transports; bound every write, preserve healthy RPC rejections/response-wait cancellation, and report disconnected headless probes truthfully. Add deterministic partial-write/flush regressions, local wire fault tests and two packaged-binary probe cases.
 
 - Preserve bounded stdio framing across cancellation and deliver the final closed-channel disconnect snapshot exactly once; retain timeout and fail-closed transport behavior.
