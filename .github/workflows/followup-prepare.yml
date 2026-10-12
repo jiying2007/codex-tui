@@ -37,6 +37,7 @@ jobs:
             'B':'f1872940eb1b39d43801a72e3087b9f68175e4d811c8de8d52eb94ffa79af9ca',
             'C':'ad62254769aa2b92c12299341af969f5ef58d60f62d07ddf1da7082b5f74e844',
             'D':'99c7918424df7d57270fd7d96c381de31d4e93a1472c58083e6dfac5c63fb639',
+            'E':'5628d9cc10cbddc3aad5c7bb7dfc103180d665b80ca705760ddcd90f8186599b',
           }
           new={
             'scripts/testing/git_resource_regression.py':'58c10dc677207490a6d69214930180b718600886a14a7641dd466bec56178085',
@@ -62,7 +63,7 @@ jobs:
           for name in staging | {hook}: Path(name).unlink()
           subprocess.run(['git','add','-A'],check=True)
           tree=subprocess.check_output(['git','write-tree'],text=True).strip()
-          if tree!='a9074e40bf4b0b6589a7288c60e184f10e1d3f20':
+          if tree!='0b805e2156448eca14635f91e4dd30f5fe8a94ee':
               raise SystemExit('reviewed unformatted tree mismatch: '+tree)
           PY
           cp "$RUNNER_TEMP/followup-hook.yml" .github/workflows/followup-prepare.yml
