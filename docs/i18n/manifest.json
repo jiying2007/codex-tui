@@ -190,6 +190,7 @@
         "forge",
         "cwd",
         "terminal",
+        "board",
         "store",
         "artifacts"
       ]

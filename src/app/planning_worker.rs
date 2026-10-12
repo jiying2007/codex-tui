@@ -1,12 +1,14 @@
-//! Latest-generation planning projection. Only metadata is copied; transcripts,
+//! Current-input planning projection with a bounded source-delta catch-up. Only metadata is copied; transcripts,
 //! PTY state, drafts and mutation confirmations never enter this worker.
 use super::*;
 mod clock;
+mod rebase;
 use clock::ProjectionClock;
 use std::sync::mpsc::{self, Receiver, SyncSender, TryRecvError};
 
 struct Input {
     generation: u64,
+    intent_generation: u64,
     threads: Vec<ThreadSummary>,
     git: BTreeMap<String, GitContext>,
     forge: BTreeMap<String, ForgeObservation>,
@@ -19,6 +21,7 @@ impl Input {
     fn capture(state: &AppState, now: u64) -> Self {
         Self {
             generation: state.planning_generation,
+            intent_generation: state.planning_intent_generation,
             threads: state.threads.clone(),
             git: state.git_contexts.clone(),
             forge: state.forge_observations.clone(),
@@ -42,20 +45,45 @@ impl Input {
             cards: state.work_cards,
             by_thread: state.work_card_by_thread,
             collisions: state.worktree_collision_counts,
+            source: rebase::Source {
+                threads: state
+                    .threads
+                    .into_iter()
+                    .map(|thread| (thread.id.0.clone(), thread))
+                    .collect(),
+                git: state.git_contexts,
+                forge: state.forge_observations,
+                goals: state.goals,
+                local: state.planning_snapshot,
+                backend: state.backend_status,
+                intent_generation: self.intent_generation,
+                now: self.now,
+            },
         }
     }
 }
 struct Output {
     clock: ProjectionClock,
+    source: rebase::Source,
     generation: u64,
     cards: Vec<WorkCardProjection>,
     by_thread: BTreeMap<String, usize>,
     collisions: BTreeMap<String, usize>,
 }
 impl Output {
+    #[cfg(test)]
     fn apply(self, state: &mut AppState) -> bool {
-        if self.generation != state.planning_generation {
-            return false;
+        let now = self.source.now;
+        self.apply_at(state, now).is_some()
+    }
+    fn apply_at(mut self, state: &mut AppState, now: u64) -> Option<ProjectionClock> {
+        if self.generation != state.planning_generation && !self.rebase(state) {
+            return None;
+        }
+        // Include deadlines introduced by a rebased card before installation.
+        let clock = self.clock;
+        if clock.expired(now) {
+            return None;
         }
         let selection = planning_selection::PlanningSelection::capture(state);
         state.planning_reconcile_count = state.planning_reconcile_count.saturating_add(1);
@@ -64,7 +92,7 @@ impl Output {
         state.worktree_collision_counts = self.collisions;
         selection.restore(state);
         ensure_selection_visible(state);
-        true
+        Some(clock)
     }
 }
 
@@ -97,7 +125,8 @@ impl PlanningWorker {
         })
     }
     /// One job in flight. Changes coalesce without queuing or cloning more snapshots.
-    /// A result from an older generation is never installed into current state.
+    /// Source drift is patched from current inputs only within a fixed delta budget.
+    /// Operator edits and other authority changes still reject the entire result.
     pub fn advance(&mut self, state: &mut AppState, dirty: bool, now: u64) -> Result<bool, String> {
         if dirty {
             state.planning_generation = state.planning_generation.wrapping_add(1);
@@ -106,15 +135,9 @@ impl PlanningWorker {
         match self.receive.try_recv() {
             Ok(output) => {
                 self.in_flight = false;
-                let generation = output.generation;
-                let clock = output.clock;
-                // A delayed result may already be obsolete by time even when its
-                // data generation still matches. Do not flash an expired projection.
-                if !clock.expired(now) {
-                    applied = output.apply(state);
-                }
-                if applied {
-                    self.completed = Some(generation);
+                if let Some(clock) = output.apply_at(state, now) {
+                    applied = true;
+                    self.completed = Some(state.planning_generation);
                     self.clock = Some(clock);
                 }
             }
@@ -146,7 +169,7 @@ pub(crate) fn measure_once(state: &mut AppState, now: u64) -> [f64; 3] {
     let output = input.compute();
     let compute = started.elapsed().as_secs_f64() * 1000.0;
     let started = Instant::now();
-    assert!(output.apply(state));
+    assert!(output.apply_at(state, now).is_some());
     [capture, compute, started.elapsed().as_secs_f64() * 1000.0]
 }
 
@@ -187,3 +210,7 @@ mod tests {
 #[cfg(test)]
 #[path = "planning_worker/live_tests.rs"]
 mod live_tests;
+
+#[cfg(test)]
+#[path = "planning_worker/rebase_tests.rs"]
+mod rebase_tests;

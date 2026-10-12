@@ -27,6 +27,8 @@ In the repository at issue: inspect `git remote -v` **privately**, run `codex-tu
 
 Malformed GitLab approval-state JSON or missing `rules`, `approvals_required` or `approved` fields are unknown evidence and block client-side merging. An explicit valid empty rules array is distinct from a missing array. These checks do not replace GitLab server protections.
 
+Forge stdout/stderr readers share the command future and its existing five-second deadline. Timeout or caller cancellation drops both local pipe readers, including when an unrelated descendant retains its write ends; no detached reader tasks survive that scope. This does not authorize killing unrelated process groups or retrying writes with unknown outcomes.
+
 ## Windows paths or repository-backed threads look wrong
 <!-- docs-section: cwd -->
 
@@ -38,6 +40,15 @@ On Windows→SSH Ubuntu the TUI reads **Ubuntu-side** Codex Home, shell cwd and 
 Try the in-app `?` keymap: `t` opens the Drawer and `F6` (or `Ctrl+]`) returns focus if supported. Remote terminal/SSH clients may intercept key combinations. Run `codex-tui doctor terminal` and check TERM, TTY, resizing and direct child exit. Real controlling-TTY focus/resize/Ctrl+C/restore smoke is required for Stable and is not replaced by hosted PTY tests.
 
 PTY children remain owned by a kill-and-reap guard through initialization and the detached actor lifetime. Failure to obtain the reader/writer, publish Ready or start the reader cannot abandon that ownership. Fault-injection tests exercise each startup stage using local children, not real SSH acceptance.
+
+Catchable Unix process signals (SIGTERM, SIGHUP and SIGINT) enter the ordinary interactive shutdown path. Raw terminal mode, alternate screen and cursor are restored before the final bounded state save; a save failure remains an error. Raw Ctrl+C input and OS SIGINT are separate cases. SIGKILL and a disconnected physical terminal cannot be made restorable by an application. These handlers are not installed for headless subcommands.
+
+Scoped Forge readers keep their bounded 8KiB buffers on the heap rather than multiplying inline buffers through nested async state. Compact-future checks and actual native Windows debug CLI tests cover startup stack overflow; boxing only the interactive entry future was not sufficient. Help, version and invalid usage remain free of TTY, backend and state writes, without larger thread stacks.
+
+## Board updates under a busy Registry
+<!-- docs-section: board -->
+
+The planning worker keeps one metadata snapshot in flight. If only a small thread-source delta arrived during computation, it reprojects at most 64 affected cards (including membership and shared-worktree collision effects) from **current** inputs before installing the result. It never simply accepts an old generation. Operator edits, changed local/Forge/Git/goal/backend authority or a larger delta still require a fresh full snapshot. This prevents one noisy thread from indefinitely discarding an otherwise usable result; it is not an absolute latency guarantee under arbitrary global churn. Retained 5k continuous-event fixtures and performance diagnostics are synthetic evidence, not human productivity or multi-hour real-use certification.
 
 ## SQLite state damaged or forward schema rejected
 <!-- docs-section: store -->

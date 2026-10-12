@@ -19,6 +19,62 @@ pub(crate) fn combine(outcome: Result<()>, saved: Result<()>) -> Result<()> {
     }
 }
 
+/// Installed before raw mode. Signal callbacks only wake the runtime; terminal
+/// restoration and the existing bounded final save stay in ordinary Rust code.
+/// Headless subcommands never install these interactive-only handlers.
+pub(crate) struct ExitSignal {
+    #[cfg(unix)]
+    signals: [tokio::signal::unix::Signal; 3],
+    #[cfg(windows)]
+    interrupt: tokio::signal::windows::CtrlC,
+}
+
+impl ExitSignal {
+    pub(crate) fn install() -> std::io::Result<Self> {
+        #[cfg(unix)]
+        {
+            use tokio::signal::unix::{SignalKind, signal};
+            Ok(Self {
+                signals: [
+                    signal(SignalKind::terminate())?,
+                    signal(SignalKind::hangup())?,
+                    signal(SignalKind::interrupt())?,
+                ],
+            })
+        }
+        #[cfg(windows)]
+        {
+            Ok(Self {
+                interrupt: tokio::signal::windows::ctrl_c()?,
+            })
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            Ok(Self {})
+        }
+    }
+
+    pub(crate) async fn recv(&mut self) {
+        #[cfg(unix)]
+        {
+            let [terminate, hangup, interrupt] = &mut self.signals;
+            tokio::select! {
+                _ = terminate.recv() => {},
+                _ = hangup.recv() => {},
+                _ = interrupt.recv() => {},
+            }
+        }
+        #[cfg(windows)]
+        {
+            self.interrupt.recv().await;
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            std::future::pending::<()>().await;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

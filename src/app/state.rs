@@ -24,6 +24,7 @@ impl AppState {
             .collect();
         Self {
             planning_generation: 0,
+            planning_intent_generation: 0,
             local_edit_revision: 0,
             pending_local_edit: None,
             planning_reconcile_count: 0,

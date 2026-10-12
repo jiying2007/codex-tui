@@ -17,6 +17,12 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
+- Keep scoped Forge reader buffers heap-owned so nested async state does not overflow the native Windows debug entry stack; retain compact-future and help/usage/backend/benchmark/version process checks. Keep the interactive entry future boxed without increasing thread stacks.
+
+- Route interactive SIGTERM/SIGHUP/SIGINT through terminal restoration and the existing bounded final save; retain distinct raw-Ctrl+C and Drawer cases. Enable Tokio's existing signal feature without changing dependency versions or the lockfile.
+- Bind Forge stdout/stderr readers to command cancellation/deadlines instead of detached tasks; cover repeated descendant-held pipe timeouts, caller cancellation and large healthy output.
+- Rebase small Registry deltas from current inputs before installing a planning result, including membership and shared-worktree collisions; preserve operator/authority fences and a 64-card delta budget. Keep continuous 5k Board fixtures and cross-view controls in the existing PTY workflow.
+
 - Unify RPC admission and wire quarantine for truthful bootstrap/headless connectivity, skip optional probes on unusable sessions, and preserve the first Registry diagnostic. Add actual-binary count/byte overload and Registry-fault cases plus a healthy optional-method rejection control.
 
 - Quarantine cancelled/failed outbound frames and broken read/decode/EOF transports; bound every write, preserve healthy RPC rejections/response-wait cancellation, and report disconnected headless probes truthfully. Add deterministic partial-write/flush regressions, local wire fault tests and two packaged-binary probe cases.

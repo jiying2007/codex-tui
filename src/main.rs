@@ -200,7 +200,9 @@ async fn main() -> Result<()> {
     }
 
     let fake_mode = args.iter().any(|arg| arg == "--fake");
-    run_app(fake_mode, target_override.as_deref()).await
+    // Keep the interactive state machine out of the entry future's stack frame,
+    // including --help and invalid usage on native Windows debug builds.
+    Box::pin(run_app(fake_mode, target_override.as_deref())).await
 }
 
 fn take_value_flag(args: &mut Vec<String>, flag: &str) -> Result<Option<String>> {
@@ -296,6 +298,7 @@ async fn run_app(fake_mode: bool, target_override: Option<&str>) -> Result<()> {
     )?;
     services.notifications.seed(&app);
 
+    let mut exit_signal = runtime_shutdown::ExitSignal::install()?;
     let mut terminal = TerminalSession::enter(config.ui.mouse)?;
     let mut last_fake_tick = Instant::now();
     let mut last_git_reconcile = Instant::now();
@@ -512,7 +515,11 @@ async fn run_app(fake_mode: bool, target_override: Option<&str>) -> Result<()> {
                 last_render = Instant::now();
             }
 
-            tokio::time::sleep(Duration::from_millis(16)).await;
+            tokio::select! {
+                biased;
+                _ = exit_signal.recv() => break,
+                _ = tokio::time::sleep(Duration::from_millis(16)) => {},
+            }
         }
 
         Ok(())

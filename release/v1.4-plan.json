@@ -148,12 +148,12 @@
     "user-perceived-performance-evidence"
   ],
   "moduleRatchet": {
-    "src/app.rs": 1000,
+    "src/app.rs": 1005,
     "src/ui.rs": 2215,
     "src/app_server.rs": 2634,
-    "src/main.rs": 1880,
+    "src/main.rs": 1887,
     "src/sqlite_store.rs": 1715,
-    "src/forge.rs": 1345,
+    "src/forge.rs": 1147,
     "src/worktree.rs": 700,
     "src/release.rs": 618,
     "src/runtime_store.rs": 525,
@@ -206,12 +206,12 @@
     "src/render_performance.rs": 323,
     "src/runtime_cli.rs": 229,
     "src/runtime_store_worker.rs": 340,
-    "src/app/planning_worker.rs": 189,
+    "src/app/planning_worker.rs": 216,
     "src/sqlite_backup.rs": 81,
     "src/interaction_performance.rs": 185,
     "src/ui/thread/tests.rs": 91,
     "src/sqlite_store/recovery.rs": 243,
-    "src/runtime_shutdown.rs": 62,
+    "src/runtime_shutdown.rs": 118,
     "src/runtime_connection.rs": 26,
     "src/app/planning_selection.rs": 41,
     "src/app/planning_worker/clock.rs": 50,
@@ -269,13 +269,13 @@
     "src/text.rs": 147,
     "src/ui/overlays.rs": 880,
     "src/ui/terminal.rs": 126,
-    "src/forge/tests.rs": 356,
+    "src/forge/tests.rs": 366,
     "src/app_server_transport/tests.rs": 432,
     "src/forge/gitlab_projection_tests.rs": 164,
     "src/forge/error_redaction_tests.rs": 43,
     "src/forge/remote_identity_tests.rs": 47,
-    "src/app/reducer.rs": 2508,
-    "src/app/state.rs": 888,
+    "src/app/reducer.rs": 2518,
+    "src/app/state.rs": 889,
     "src/app/tests.rs": 2717,
     "src/app/thread_queue_reducer_tests.rs": 123,
     "src/ui/tests.rs": 1087,
@@ -294,7 +294,10 @@
     "src/pty/child_guard.rs": 153,
     "src/app_server_transport/health.rs": 153,
     "src/app_server_transport/cancelled_write_test.rs": 62,
-    "src/app_server/transport_fault_tests.rs": 193
+    "src/app_server/transport_fault_tests.rs": 193,
+    "src/app/planning_worker/rebase.rs": 108,
+    "src/app/planning_worker/rebase_tests.rs": 129,
+    "src/forge/process_lifecycle_tests.rs": 98
   },
   "ratchetPolicy": {
     "baseline": "inherit v1.3 Search & Multi-Target ceilings; feature work may only add bounded module-specific ceilings",
@@ -888,6 +891,23 @@
       "scope": "Unify RPC admission and transport quarantine for truthful bootstrap/headless connectivity; skip optional probes after terminal failure and preserve the original Registry diagnostic. Retain bounded count/byte overload and intact-session negative controls through the actual binary; no new authority or budget relaxation.",
       "modules": [
         "src/app_server.rs"
+      ]
+    },
+    {
+      "date": "2026-10-12",
+      "kind": "defect-and-security-fix",
+      "scope": "F1-F3 interactive catchable-signal restoration, scoped Forge reader cancellation and bounded current-source Board delta reconciliation. Preserve operator/authority fences, existing timeout and queue budgets; retained actual-binary, deterministic and process-ownership regressions. No new persistent authority, schema, dependency version, permanent workflow or publication.",
+      "modules": [
+        "src/app.rs",
+        "src/app/planning_worker.rs",
+        "src/app/planning_worker/rebase.rs",
+        "src/app/planning_worker/rebase_tests.rs",
+        "src/app/reducer.rs",
+        "src/app/state.rs",
+        "src/forge.rs",
+        "src/forge/process_lifecycle_tests.rs",
+        "src/main.rs",
+        "src/runtime_shutdown.rs"
       ]
     }
   ]
