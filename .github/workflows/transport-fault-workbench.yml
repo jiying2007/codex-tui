@@ -1,0 +1,99 @@
+name: transport-fault-workbench
+on:
+  push:
+    branches: [fix/transport-quarantine-20261012]
+permissions:
+  contents: write
+concurrency:
+  group: transport-fault-workbench
+  cancel-in-progress: false
+jobs:
+  verify:
+    if: github.repository == 'jiying2007/codex-tui' && github.ref == 'refs/heads/fix/transport-quarantine-20261012'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+      - name: Apply exact-base reviewed changes and run old-source negative control
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/transport-evidence"
+          EVIDENCE="$RUNNER_TEMP/transport-evidence"
+          python3 .transport_apply.py
+          cargo fmt --all
+          cp src/app_server.rs "$RUNNER_TEMP/repaired-app-server.rs"
+          cp src/app_server_transport.rs "$RUNNER_TEMP/repaired-transport.rs"
+          git show ac57a93c8a0eaf09fb263669569efff69af87a83:src/app_server.rs > src/app_server.rs
+          git show ac57a93c8a0eaf09fb263669569efff69af87a83:src/app_server_transport.rs > src/app_server_transport.rs
+          printf '\n#[cfg(all(test, target_os = "linux"))]\nmod cancelled_write_test;\n' >> src/app_server_transport.rs
+          set +e
+          CODEX_TUI_GIT_SHA=ac57a93c8a0eaf09fb263669569efff69af87a83 cargo test --locked --lib cancelled_partial_transport_write_cannot_accept_later_message -- --nocapture > "$EVIDENCE/old-source-negative.log" 2>&1
+          RESULT=$?
+          set -e
+          cp "$RUNNER_TEMP/repaired-app-server.rs" src/app_server.rs
+          cp "$RUNNER_TEMP/repaired-transport.rs" src/app_server_transport.rs
+          test "$RESULT" -eq 101
+          grep -F 'post-cancellation write unexpectedly accepted' "$EVIDENCE/old-source-negative.log"
+          grep -F 'test result: FAILED. 0 passed; 1 failed' "$EVIDENCE/old-source-negative.log"
+          echo 'old production transport plus the retained native test: expected assertion failure, not compilation failure' > "$EVIDENCE/negative-control.txt"
+      - name: Record bounded maintenance review and clean candidate source
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          modules=['src/app_server.rs','src/app_server_transport.rs','src/app_server_transport/health.rs','src/app_server_transport/cancelled_write_test.rs','src/app_server/transport_fault_tests.rs']
+          p=Path('release/v1.4-plan.json');plan=json.loads(p.read_text())
+          for name in modules:
+              plan['moduleRatchet'][name]=len(Path(name).read_text().splitlines())
+          plan['ratchetReviews'].append({'date':'2026-10-12','kind':'defect-and-security-fix','scope':'Quarantine incomplete outbound writes and read/decode/EOF faults without poisoning valid RPC rejection or response-wait cancellation. Bound all sends and publish truthful disconnected probes. Shared old/new native pipe negative control plus deterministic and local-wire regressions; no new product authority.','modules':modules})
+          p.write_text(json.dumps(plan,indent=2)+'\n')
+          PY
+          rm .transport_apply.py .github/workflows/transport-fault-workbench.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix(transport): quarantine incomplete writes and failed RPC wire reads'
+          SHA=$(git rev-parse HEAD)
+          echo "CODEX_TUI_GIT_SHA=$SHA" >> "$GITHUB_ENV"
+          echo "CODEX_TUI_PTY_SOURCE_SHA=$SHA" >> "$GITHUB_ENV"
+          echo "CODEX_TUI_PTY_EVIDENCE_DIR=$RUNNER_TEMP/transport-evidence/terminal" >> "$GITHUB_ENV"
+          git rev-parse HEAD > "$RUNNER_TEMP/transport-evidence/source-sha.txt"
+          git rev-parse HEAD^{tree} > "$RUNNER_TEMP/transport-evidence/source-tree.txt"
+          git diff ac57a93c8a0eaf09fb263669569efff69af87a83 HEAD > "$RUNNER_TEMP/transport-evidence/reviewed.patch"
+          git archive --format=tar.gz HEAD > "$RUNNER_TEMP/transport-evidence/clean-source.tar.gz"
+      - name: Strict source and full regression qualification
+        shell: bash
+        run: |
+          set -euo pipefail
+          EVIDENCE="$RUNNER_TEMP/transport-evidence"
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets --all-features -- -D warnings 2>&1 | tee "$EVIDENCE/clippy.log"
+          cargo test --locked --all-targets --all-features 2>&1 | tee "$EVIDENCE/tests.log"
+          python3 scripts/docs/check_docs.py
+          python3 scripts/architecture/check_module_ratchet.py release/v1.4-plan.json
+          python3 scripts/architecture/check_first_deployment.py
+          python3 scripts/architecture/check_upstream_convergence.py
+          test -z "$(git status --porcelain)"
+      - name: Publish only the verified feature-branch commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/fix/transport-quarantine-20261012'
+          test "$(git ls-remote origin "$GITHUB_REF" | cut -f1)" = "$GITHUB_SHA"
+          git push origin HEAD:"$GITHUB_REF"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: transport-fault-preparation-${{ github.run_id }}
+          path: ${{ runner.temp }}/transport-evidence/
+          if-no-files-found: error
+          retention-days: 30
