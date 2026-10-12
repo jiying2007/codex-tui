@@ -1,0 +1,125 @@
+name: followup-prepare
+on:
+  push:
+    branches: [fix/git-identity-resource-lifetimes]
+    paths: [.github/workflows/followup-prepare.yml]
+permissions:
+  contents: write
+concurrency:
+  group: followup-repair-preparation
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      EVIDENCE: /tmp/followup-evidence
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+      - name: Apply exact reviewed source and discard staging
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE"
+          cp .github/workflows/followup-prepare.yml "$RUNNER_TEMP/followup-hook.yml"
+          python3 - <<'PY'
+          import hashlib, os, subprocess
+          from pathlib import Path
+          base='48a80ff1b2b3006b30c82ed3a99285db6e23f951'
+          patches={
+            'A':'0540e4a1df3dd3409cc4c85398964753662736ceb001d6f3589c9b95487bf682',
+            'B':'f1872940eb1b39d43801a72e3087b9f68175e4d811c8de8d52eb94ffa79af9ca',
+            'C':'ad62254769aa2b92c12299341af969f5ef58d60f62d07ddf1da7082b5f74e844',
+            'D':'99c7918424df7d57270fd7d96c381de31d4e93a1472c58083e6dfac5c63fb639',
+          }
+          new={
+            'scripts/testing/git_resource_regression.py':'58c10dc677207490a6d69214930180b718600886a14a7641dd466bec56178085',
+            'src/git/probe_tests.rs':'dfd0611ea11c209f0392f37d5d8561c4459f1e141360ecd856959656c9b06910',
+            'tests/git_projection_sharing.rs':'b246b722d0627863bb1ff7ec0dadc2e3ed3c61e92309805a0a7d0d83d32bd973',
+          }
+          staging={'.repair-'+c+'.patch' for c in patches} | {'.followup-A'}
+          hook='.github/workflows/followup-prepare.yml'
+          allowed=staging | set(new) | {hook}
+          changed=set(subprocess.check_output(['git','diff','--name-only',base,'HEAD'],text=True).splitlines())
+          if changed != allowed: raise SystemExit('unexpected staging diff: '+repr(changed))
+          for name, expected in new.items():
+              if hashlib.sha256(Path(name).read_bytes()).hexdigest()!=expected:
+                  raise SystemExit('new source checksum mismatch: '+name)
+          for part, expected in patches.items():
+              path=Path('.repair-'+part+'.patch'); patch=path.read_bytes()
+              if hashlib.sha256(patch).hexdigest()!=expected:
+                  raise SystemExit('reviewed patch checksum mismatch: '+part)
+              (Path(os.environ['EVIDENCE'])/('reviewed-'+part+'.patch')).write_bytes(patch)
+              subprocess.run(['git','apply','--check',str(path)],check=True)
+              subprocess.run(['git','apply',str(path)],check=True)
+          # The abandoned encoded staging text is never decoded or executed.
+          for name in staging | {hook}: Path(name).unlink()
+          subprocess.run(['git','add','-A'],check=True)
+          tree=subprocess.check_output(['git','write-tree'],text=True).strip()
+          if tree!='a9074e40bf4b0b6589a7288c60e184f10e1d3f20':
+              raise SystemExit('reviewed unformatted tree mismatch: '+tree)
+          PY
+          cp "$RUNNER_TEMP/followup-hook.yml" .github/workflows/followup-prepare.yml
+          cargo fmt --all
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          p=Path('release/v1.4-plan.json'); data=json.loads(p.read_text())
+          modules=['src/app.rs','src/app/planning_worker/rebase_tests.rs','src/app/tests.rs','src/app_server_transport.rs','src/git.rs','src/git/probe_tests.rs','src/git/tests.rs','src/main.rs','src/runtime_doctor.rs','src/runtime_external.rs','src/runtime_external/tests.rs','src/soak.rs']
+          for name in modules: data['moduleRatchet'][name]=len(Path(name).read_text().splitlines())
+          p.write_text(json.dumps(data,ensure_ascii=False,indent=2)+'\n')
+          PY
+          git diff --check
+          git config user.name github-actions\[bot\]
+          git config user.email 41898282+github-actions\[bot\]@users.noreply.github.com
+          git add -A
+          git commit -m 'fix(runtime): preserve Git targets, bound shared snapshots and own stderr drains'
+          git rev-parse HEAD > "$EVIDENCE/source-sha.txt"
+          git rev-parse HEAD^{tree} > "$EVIDENCE/source-tree.txt"
+          git archive --format=tar.gz HEAD > "$EVIDENCE/source-with-cleanup-hook.tar.gz"
+          git diff 48a80ff1b2b3006b30c82ed3a99285db6e23f951 HEAD > "$EVIDENCE/formatted.patch"
+          echo "CODEX_TUI_GIT_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "CODEX_TUI_PTY_SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "CODEX_TUI_PTY_EVIDENCE_DIR=$EVIDENCE/debug-pty" >> "$GITHUB_ENV"
+      - name: Strict source and full regression qualification
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo clippy --locked --all-targets --all-features -- -D warnings 2>&1 | tee "$EVIDENCE/clippy.log"
+          cargo test --locked --all-targets --all-features 2>&1 | tee "$EVIDENCE/tests.log"
+          python3 -O -m unittest discover -s scripts/release -p 'test_*.py' 2>&1 | tee "$EVIDENCE/release-python.log"
+          python3 -O -m unittest discover -s scripts/testing -p 'test_terminal_*.py' 2>&1 | tee "$EVIDENCE/terminal-python.log"
+          python3 scripts/docs/check_docs.py
+          python3 scripts/architecture/check_module_ratchet.py release/v1.4-plan.json
+          python3 scripts/architecture/check_first_deployment.py
+          python3 scripts/architecture/check_upstream_convergence.py
+      - name: Optimized candidate program qualification
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --release --locked 2>&1 | tee "$EVIDENCE/build-release.log"
+          cp target/release/codex-tui "$EVIDENCE/codex-tui"
+          sha256sum "$EVIDENCE/codex-tui" > "$EVIDENCE/binary-sha256.txt"
+          python3 -O scripts/testing/terminal_restoration.py target/release/codex-tui "$EVIDENCE/optimized-terminal" 2>&1 | tee "$EVIDENCE/optimized-terminal.log"
+          python3 -O scripts/testing/app_server_transport_regression.py target/release/codex-tui "$EVIDENCE/optimized-app-server" 2>&1 | tee "$EVIDENCE/optimized-app-server.log"
+          python3 -O scripts/testing/runtime_fault_regression.py target/release/codex-tui "$EVIDENCE/optimized-runtime" 2>&1 | tee "$EVIDENCE/optimized-runtime.log"
+          python3 -O scripts/testing/git_resource_regression.py target/release/codex-tui "$EVIDENCE/optimized-git-resources" 2>&1 | tee "$EVIDENCE/optimized-git-resources.log"
+      - name: Push qualified repair for maintainer cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote origin refs/heads/fix/git-identity-resource-lifetimes | cut -f1)" = "$GITHUB_SHA"
+          git push origin HEAD:refs/heads/fix/git-identity-resource-lifetimes
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: followup-preparation-${{ github.run_id }}
+          path: /tmp/followup-evidence/
+          if-no-files-found: warn
+          retention-days: 30
