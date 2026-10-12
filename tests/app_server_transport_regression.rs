@@ -53,7 +53,7 @@ fn fragmented_stdio_eof_and_cursor_cycles_are_truthful_and_bounded() {
     let receipt: serde_json::Value =
         serde_json::from_slice(&std::fs::read(output.join("receipt.json")).unwrap()).unwrap();
     assert_eq!(receipt["status"], "passed");
-    assert_eq!(receipt["checks"].as_array().unwrap().len(), 5);
+    assert_eq!(receipt["checks"].as_array().unwrap().len(), 7);
     assert_eq!(receipt["realCodexQualification"], false);
     assert_eq!(receipt["realSshQualification"], false);
     println!("{receipt}");

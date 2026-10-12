@@ -64,6 +64,12 @@ for line in sys.stdin:
     elif method == 'thread/list':
         result = {'data':[{'id':'audit-thread', 'name':'AAAAAAAAAAAAAAA', 'cwd':os.environ['HOME'], 'status':{'type':'idle'}}], 'nextCursor':'repeat' if mode == method else None}
     elif method == 'thread/loaded/list':
+        if mode == 'loaded-eof':
+            os._exit(0)
+        if mode == 'loaded-malformed':
+            os.write(1, b'{invalid-json}\n')
+            time.sleep(1)
+            continue
         result = {'data':['audit-thread'], 'nextCursor':'repeat' if mode == method else None}
     else:
         emit({'id':ident, 'error':{'code':-32601, 'message':'unsupported in fixture'}})
@@ -238,6 +244,27 @@ def cursor_case(binary, output, method):
     return {'method':method, 'passed':True, 'requests':count, 'degraded':True, 'partialRows':1}
 
 
+def probe_fault_case(binary, output, mode):
+    log = output / (mode + '.server.log')
+    with tempfile.TemporaryDirectory(prefix='ctui-probe-fault-') as temporary:
+        home = Path(temporary)
+        process = subprocess.Popen([str(binary), 'headless', 'threads', '--json'],
+                                   stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   env=environment(home, log, mode), cwd=home, start_new_session=True)
+        try:
+            stdout, stderr = process.communicate(timeout=8)
+        finally:
+            stop(process)
+        (output / (mode + '.json')).write_bytes(stdout)
+        result = json.loads(stdout)
+        require(process.returncode == 3 and result.get('degraded') is True, mode + ': fault not degraded')
+        require(result.get('source', {}).get('connected') is False, mode + ': broken wire reported connected')
+        require(bool(result.get('source', {}).get('error')), mode + ': missing fault diagnostic')
+        require(len(result.get('threads', [])) == 1, mode + ': valid partial inventory was discarded')
+        require(not stderr, mode + ': unexpected process error')
+    return {'mode':mode, 'passed':True, 'connected':False, 'partialRows':1}
+
+
 def main():
     check_observer()
     binary, output = Path(sys.argv[1]).resolve(), Path(sys.argv[2]).resolve()
@@ -251,6 +278,8 @@ def main():
             receipt['checks'].append(terminal_case(binary, output, mode))
         for method in ('thread/list', 'thread/loaded/list'):
             receipt['checks'].append(cursor_case(binary, output, method))
+        for mode in ('loaded-eof', 'loaded-malformed'):
+            receipt['checks'].append(probe_fault_case(binary, output, mode))
         receipt['status'] = 'passed'
     finally:
         (output/'receipt.json').write_text(json.dumps(receipt, indent=2) + '\n', encoding='utf-8')

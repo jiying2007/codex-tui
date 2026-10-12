@@ -38,13 +38,18 @@ enum Transport {
     },
 }
 
+mod health;
+use health::TransportHealth;
+
 pub struct AppServerTransport {
     inner: Transport,
+    health: TransportHealth,
 }
 
 const APP_SERVER_MAX_MESSAGE_BYTES: usize = 64 * 1024 * 1024;
 const APP_SERVER_MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
 const APP_SERVER_CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+const APP_SERVER_WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 
 fn websocket_config() -> WebSocketConfig {
     WebSocketConfig::default()
@@ -156,11 +161,19 @@ impl AppServerTransport {
             }
         };
 
-        Ok(Self { inner })
+        Ok(Self {
+            inner,
+            health: TransportHealth::default(),
+        })
+    }
+
+    pub(crate) fn is_quarantined(&self) -> bool {
+        self.health.is_quarantined()
     }
 
     pub async fn read_json(&mut self) -> Result<Option<Value>> {
-        match &mut self.inner {
+        self.health.check()?;
+        let result = match &mut self.inner {
             Transport::Stdio {
                 reader,
                 pending_line,
@@ -169,26 +182,42 @@ impl AppServerTransport {
             Transport::WebSocket { stream } => read_websocket_json(stream.as_mut()).await,
             #[cfg(unix)]
             Transport::UnixSocket { stream } => read_websocket_json(stream.as_mut()).await,
-        }
+        };
+        self.health.observe_read(&result);
+        result
     }
 
     pub async fn write_json(&mut self, value: &Value) -> Result<()> {
-        match &mut self.inner {
-            Transport::Stdio { writer, .. } => {
-                let mut encoded =
-                    serde_json::to_vec(value).context("encode App Server stdio JSON")?;
-                encoded.push(b'\n');
-                writer
-                    .write_all(&encoded)
-                    .await
-                    .context("write App Server stdio")?;
-                writer.flush().await.context("flush App Server stdio")
-            }
-            Transport::WebSocket { stream } => write_websocket_json(stream.as_mut(), value).await,
-            #[cfg(unix)]
-            Transport::UnixSocket { stream } => write_websocket_json(stream.as_mut(), value).await,
-        }
+        self.health
+            .write(APP_SERVER_WRITE_TIMEOUT, async {
+                match &mut self.inner {
+                    Transport::Stdio { writer, .. } => {
+                        write_stdio_json(writer.as_mut(), value).await
+                    }
+                    Transport::WebSocket { stream } => {
+                        write_websocket_json(stream.as_mut(), value).await
+                    }
+                    #[cfg(unix)]
+                    Transport::UnixSocket { stream } => {
+                        write_websocket_json(stream.as_mut(), value).await
+                    }
+                }
+            })
+            .await
     }
+}
+
+async fn write_stdio_json<W: tokio::io::AsyncWrite + Unpin>(
+    writer: &mut W,
+    value: &Value,
+) -> Result<()> {
+    let mut encoded = serde_json::to_vec(value).context("encode App Server stdio JSON")?;
+    encoded.push(b'\n');
+    writer
+        .write_all(&encoded)
+        .await
+        .context("write App Server stdio")?;
+    writer.flush().await.context("flush App Server stdio")
 }
 
 async fn read_stdio_json<R>(reader: &mut R, pending: &mut Vec<u8>) -> Result<Option<Value>>
@@ -302,3 +331,6 @@ where
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(all(test, target_os = "linux"))]
+mod cancelled_write_test;
