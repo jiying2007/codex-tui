@@ -1,0 +1,87 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index 021039e..8d285c9 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -19,2 +19,6 @@ All notable codex-tui changes are recorded here.
+ 
++- Preserve exact Git identity paths (including whitespace), reject unrepresentable or incomplete status identities, and validate live cwd containment before editor handoff.
++- Bound ordinary Git probes to 2MiB stdout, 64KiB stderr and 10,000 complete status entries; refuse overflow instead of claiming a clean tree. Share immutable change lists across same-worktree/cwd fanout, Review clones and planning snapshots.
++- Own App Server stderr drains with the transport, including failed initialization and successful/replaced auxiliary searches; retain exact-pipe, writer-alive controls in the existing PTY regression suite.
++
+ - Keep scoped Forge reader buffers heap-owned so nested async state does not overflow the native Windows debug entry stack; retain compact-future and help/usage/backend/benchmark/version process checks. Keep the interactive entry future boxed without increasing thread stacks.
+diff --git a/docs/guides/troubleshooting.md b/docs/guides/troubleshooting.md
+index 2d4f4f5..f3d87bb 100644
+--- a/docs/guides/troubleshooting.md
++++ b/docs/guides/troubleshooting.md
+@@ -22,2 +22,4 @@ Connection status covers the entire RPC session, not just its wire: either a ret
+ 
++Local App Server transports own their stderr drain task. Failed initialization, auxiliary search completion, replacement cancellation and connection release abort the owned drain, even if a descendant keeps the write end open. No unrelated descendant is terminated to satisfy the reader check. Local mock/PTY evidence does not certify a real account or SSH session.
++
+ ## GitLab/GitHub unavailable or missing data
+@@ -36,2 +38,6 @@ On Windows→SSH Ubuntu the TUI reads **Ubuntu-side** Codex Home, shell cwd and
+ 
++Git root/common-directory values preserve identity whitespace; only the final protocol LF is removed. Canonicalization or UTF-8 failures refuse the observation instead of substituting another path. The external editor also checks that the live thread cwd belongs to the selected canonical worktree. Presentation escaping does not alter the editor argv.
++
++Ordinary Git probes retain at most 2MiB stdout and 64KiB stderr under the unchanged three-second deadline; status accepts at most 10,000 complete NUL-terminated entries. Overflow, invalid UTF-8, incomplete/unknown file records return an error, never a partial clean-tree observation. Review diffs keep their separate display-truncation policy. Immutable detailed change lists are shared on fanout and planning/Review clones; equal observations of the same worktree can share storage without merging timestamps or authority. This is a per-probe budget, not a global process-memory SLA.
++
+ ## Drawer focus, Ctrl+C, resize and rendering
+@@ -52,2 +58,3 @@ The planning worker keeps one metadata snapshot in flight. If only a small threa
+ 
++
+ ## SQLite state damaged or forward schema rejected
+diff --git a/docs/zh-CN/guides/troubleshooting.md b/docs/zh-CN/guides/troubleshooting.md
+index 5b477a2..a68b9d4 100644
+--- a/docs/zh-CN/guides/troubleshooting.md
++++ b/docs/zh-CN/guides/troubleshooting.md
+@@ -22,2 +22,4 @@ RPC 通知最多保留 1024 条且受 16 MiB 载荷记账预算限制。待处
+ 
++本地 App Server Transport 持有 stderr 排空任务。初始化失败、辅助搜索完成、替换取消及连接释放时，取消该连接自己的读取器，即使后代仍持有写端也不继续残留。不以终止无关后代来满足读取器回收检查；本地模拟与 PTY 证据不代表真实账号或 SSH 验收。
++
+ ## GitLab/GitHub 不可用或字段不全
+@@ -36,2 +38,6 @@ Windows→SSH Ubuntu 使用的是 **Ubuntu 侧** Codex Home、当前工作目录
+ 
++Git 根目录与公共目录保留身份路径中的空白，仅移除协议最后一个 LF。规范化或 UTF-8 转换失败时拒绝该观测，不替换成另一个路径。外部编辑器还校验当前会话 cwd 属于所选规范化工作树；显示转义不会改变交给编辑器的 argv。
++
++普通 Git 探测在原三秒期限内，最多保留 2MiB stdout 和 64KiB stderr；status 最多接收 10,000 条完整 NUL 结尾记录。超限、非法 UTF-8、不完整或未知文件记录返回错误，不能将部分结果当成干净工作树。Review diff 保留独立的显示截断策略。详细变更清单使用不可变共享数据，分发和 planning/Review 克隆不逐会话复制；同一工作树的相同观测可共享清单，但不合并时间戳和权威来源。这是单次探测预算，不是整个进程的内存 SLA。
++
+ ## Drawer 聚焦、Ctrl+C、窗口重绘异常
+@@ -52,2 +58,3 @@ Forge 读取器把有界 8KiB 缓冲区放在堆上，避免缓冲区内嵌到
+ 
++
+ ## SQLite 损坏或未来 Schema 拒绝
+diff --git a/release/v1.4-plan.json b/release/v1.4-plan.json
+index 93c9b76..04cd3c9 100644
+--- a/release/v1.4-plan.json
++++ b/release/v1.4-plan.json
+@@ -150,6 +150,6 @@
+   "moduleRatchet": {
+-    "src/app.rs": 1005,
++    "src/app.rs": 1018,
+     "src/ui.rs": 2215,
+     "src/app_server.rs": 2634,
+-    "src/main.rs": 1887,
++    "src/main.rs": 1890,
+     "src/sqlite_store.rs": 1715,
+@@ -175,3 +175,3 @@
+     "src/app_server_target.rs": 308,
+-    "src/app_server_transport.rs": 336,
++    "src/app_server_transport.rs": 341,
+     "src/forge_github_mutation.rs": 651,
+@@ -194,3 +194,3 @@
+     "src/ui/review.rs": 325,
+-    "src/runtime_external.rs": 204,
++    "src/runtime_external.rs": 218,
+     "src/runtime_external/tests.rs": 86,
+@@ -249,3 +249,3 @@
+     "src/forge_github.rs": 543,
+-    "src/git.rs": 804,
++    "src/git.rs": 825,
+     "src/goal.rs": 194,
+@@ -298,4 +298,5 @@
+     "src/app/planning_worker/rebase.rs": 108,
+-    "src/app/planning_worker/rebase_tests.rs": 129,
+-    "src/forge/process_lifecycle_tests.rs": 98
++    "src/app/planning_worker/rebase_tests.rs": 146,
++    "src/forge/process_lifecycle_tests.rs": 98,
++    "src/git/probe_tests.rs": 74
+   },
