@@ -150,7 +150,7 @@
   "moduleRatchet": {
     "src/app.rs": 1000,
     "src/ui.rs": 2215,
-    "src/app_server.rs": 2617,
+    "src/app_server.rs": 2626,
     "src/main.rs": 1880,
     "src/sqlite_store.rs": 1715,
     "src/forge.rs": 1345,
@@ -173,7 +173,7 @@
     "src/transcript_search.rs": 211,
     "src/thread_queue.rs": 350,
     "src/app_server_target.rs": 308,
-    "src/app_server_transport.rs": 304,
+    "src/app_server_transport.rs": 336,
     "src/forge_github_mutation.rs": 651,
     "src/forge_mutation.rs": 1341,
     "src/forge_github_mutation/tests.rs": 135,
@@ -234,7 +234,7 @@
     "src/runtime_user_response.rs": 45,
     "src/runtime_user_response/tests.rs": 189,
     "src/app/user_response/tests.rs": 54,
-    "src/app_server/user_response/approval_tests.rs": 268,
+    "src/app_server/user_response/approval_tests.rs": 273,
     "src/app_server/user_response/payload.rs": 67,
     "src/conversation/approval.rs": 23,
     "src/conversation/approval_scope.rs": 92,
@@ -270,7 +270,7 @@
     "src/ui/overlays.rs": 880,
     "src/ui/terminal.rs": 126,
     "src/forge/tests.rs": 356,
-    "src/app_server_transport/tests.rs": 420,
+    "src/app_server_transport/tests.rs": 432,
     "src/forge/gitlab_projection_tests.rs": 164,
     "src/forge/error_redaction_tests.rs": 43,
     "src/forge/remote_identity_tests.rs": 47,
@@ -291,7 +291,10 @@
     "src/app_server/history_hit.rs": 76,
     "src/app_server/pagination.rs": 298,
     "src/app_server/resource_budget.rs": 133,
-    "src/pty/child_guard.rs": 153
+    "src/pty/child_guard.rs": 153,
+    "src/app_server_transport/health.rs": 153,
+    "src/app_server_transport/cancelled_write_test.rs": 62,
+    "src/app_server/transport_fault_tests.rs": 193
   },
   "ratchetPolicy": {
     "baseline": "inherit v1.3 Search & Multi-Target ceilings; feature work may only add bounded module-specific ceilings",
@@ -856,6 +859,27 @@
         "src/forge_mutation/tests.rs",
         "src/pty.rs",
         "src/pty/child_guard.rs"
+      ]
+    },
+    {
+      "date": "2026-10-12",
+      "kind": "defect-and-security-fix",
+      "scope": "Retain existing actor write-failure Unknown/disconnect/no-retry assertions with a deterministic test-only real WebSocket sink-close fixture; inbound read quarantine is covered independently. No assertion removal or production fault injection.",
+      "modules": [
+        "src/app_server_transport/tests.rs",
+        "src/app_server/user_response/approval_tests.rs"
+      ]
+    },
+    {
+      "date": "2026-10-12",
+      "kind": "defect-and-security-fix",
+      "scope": "Quarantine incomplete outbound writes and read/decode/EOF faults without poisoning valid RPC rejection or response-wait cancellation. Bound all sends and publish truthful disconnected probes. Shared old/new native pipe negative control plus deterministic and local-wire regressions; no new product authority.",
+      "modules": [
+        "src/app_server.rs",
+        "src/app_server_transport.rs",
+        "src/app_server_transport/health.rs",
+        "src/app_server_transport/cancelled_write_test.rs",
+        "src/app_server/transport_fault_tests.rs"
       ]
     }
   ]

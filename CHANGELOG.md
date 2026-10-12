@@ -17,6 +17,8 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
+- Quarantine cancelled/failed outbound frames and broken read/decode/EOF transports; bound every write, preserve healthy RPC rejections/response-wait cancellation, and report disconnected headless probes truthfully. Add deterministic partial-write/flush regressions, local wire fault tests and two packaged-binary probe cases.
+
 - Preserve bounded stdio framing across cancellation and deliver the final closed-channel disconnect snapshot exactly once; retain timeout and fail-closed transport behavior.
 - Bound Registry/loaded-list pagination across bootstrap, hydration and reconciliation with cycle/no-progress, count, identity-byte and total-time budgets; preserve partial inventory without promoting it to complete authority.
 - Reject malformed or missing GitLab approval fields instead of treating unknown evidence as zero required approvals; preserve valid empty-rule and explicit server evidence semantics.

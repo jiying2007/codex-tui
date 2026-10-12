@@ -580,6 +580,7 @@ pub async fn probe_target(target: ResolvedAppServerTarget) -> Result<BackendSnap
         Err(error) => {
             mark_loaded_unsupported(&mut status);
             status.error = Some(format!("Loaded inventory incomplete: {error}"));
+            status.connected = !rpc.transport.is_quarantined();
         }
     }
 
@@ -2561,7 +2562,9 @@ impl RpcSession {
     }
 
     fn has_queued_messages(&self) -> bool {
-        self.fatal_error.is_some() || !self.queued_messages.is_empty()
+        self.fatal_error.is_some()
+            || self.transport.is_quarantined()
+            || !self.queued_messages.is_empty()
     }
 
     async fn notify(&mut self, method: &str, params: Option<Value>) -> Result<()> {
@@ -2575,6 +2578,9 @@ impl RpcSession {
     async fn read_message(&mut self) -> Result<Option<Value>> {
         if let Some(error) = &self.fatal_error {
             anyhow::bail!("App Server admission failed: {error}");
+        }
+        if self.transport.is_quarantined() {
+            return self.read_wire_message().await;
         }
         if let Some(message) = self.queued_messages.pop_front() {
             self.queued_bytes = self.queued_bytes.saturating_sub(json_cost(&message));
@@ -2615,3 +2621,6 @@ mod queue_wire_tests;
 
 #[cfg(test)]
 mod audit_wire_tests;
+
+#[cfg(test)]
+mod transport_fault_tests;

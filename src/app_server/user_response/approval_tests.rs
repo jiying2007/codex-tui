@@ -191,7 +191,7 @@ fn approval_context_debug_never_exposes_wire_extensions() {
 #[tokio::test]
 async fn production_actor_stops_after_actual_websocket_write_failure() {
     use crate::app_server_target::{ResolvedAppServerEndpoint, ResolvedAppServerTarget};
-    use futures_util::SinkExt;
+    use futures_util::{SinkExt, StreamExt};
     use tokio_tungstenite::{accept_async, tungstenite::Message};
     tokio::time::timeout(Duration::from_secs(5), async {
         let (pending, threads, s) = fixture(METHODS[0], InteractiveResolution::Accept);
@@ -205,7 +205,8 @@ async fn production_actor_stops_after_actual_websocket_write_failure() {
             ws.send(Message::Text(wire.to_string().into()))
                 .await
                 .unwrap();
-            ws.close(None).await.unwrap();
+            let close = ws.next().await.unwrap().unwrap();
+            assert!(close.is_close());
         });
         let target = ResolvedAppServerTarget {
             name: "approval-fixture".into(),
@@ -216,10 +217,14 @@ async fn production_actor_stops_after_actual_websocket_write_failure() {
         };
         let mut rpc = RpcSession::connect(&target).await.unwrap();
         let request = rpc.read_wire_message().await.unwrap().unwrap();
-        assert!(rpc.read_wire_message().await.unwrap().is_none());
+        rpc.transport
+            .close_websocket_writer_for_test()
+            .await
+            .unwrap();
         peer.await.unwrap();
-        // The real transport has consumed Close. Keep the observed request queued,
-        // making SendAfterClosing deterministic rather than relying on TCP timing.
+        // Only the real sink is closed by a test-only helper. No inbound EOF has
+        // been observed: that is now quarantined earlier and covered separately.
+        // SendAfterClosing still exercises the production Unknown/no-retry path.
         let mut second = request.clone();
         second["id"] = json!(18);
         for message in [request, second] {

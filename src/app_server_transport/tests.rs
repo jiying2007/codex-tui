@@ -418,3 +418,15 @@ async fn cancelled_stdio_read_keeps_size_limit_and_rejects_partial_eof() {
     drop(server);
     assert!(read_stdio_json(&mut reader, &mut pending).await.is_err());
 }
+
+// Test-only real-sink fault injection; never compiled into a production binary.
+impl AppServerTransport {
+    pub(crate) async fn close_websocket_writer_for_test(&mut self) -> Result<()> {
+        match &mut self.inner {
+            Transport::WebSocket { stream } => {
+                stream.close(None).await.context("close fixture writer")
+            }
+            _ => anyhow::bail!("fixture requires WebSocket"),
+        }
+    }
+}

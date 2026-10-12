@@ -16,6 +16,8 @@ Stdio fragments remain buffered across timer/command cancellation; a backend EOF
 
 RPC notifications retain at most 1024 messages and 16 MiB of accounted payload. Pending interactive requests are limited to 64, 256 KiB each and 4 MiB in aggregate. Pagination allows up to 1024 pages, 200,000 identities, 32 MiB of accounted identity storage and 120 seconds across the scan. These are payload/accounting limits, not certified process RSS. Overload terminates/quarantines the session visibly; it does not discard arbitrary approval messages or replay write RPCs. An ordinary 50k-row scan remains supported within these limits.
 
+A cancelled or failed outbound write quarantines the connection: partial delivery is unknown, so later requests cannot append to an unfinished frame and writes are never automatically replayed. Every outbound write also has a five-second deadline, including notifications. Wire read/decode failure or EOF during an RPC cannot be misreported as a healthy connection. A valid optional-method RPC rejection and cancellation while merely waiting for a response do not poison an otherwise intact wire.
+
 ## GitLab/GitHub unavailable or missing data
 <!-- docs-section: forge -->
 
