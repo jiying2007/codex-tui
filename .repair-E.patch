@@ -1,0 +1,13 @@
+diff --git a/src/main.rs b/src/main.rs
+index 3964448..242c4e8 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -1338,7 +1338,7 @@ fn apply_effects(
+                 cwd,
+                 path,
+             } => {
+-                let result = app.thread_by_id(&thread_id)
++                let result = app.threads.iter().find(|thread| thread.id == thread_id)
+                     .context("review thread no longer exists")
+                     .and_then(|thread| open_external_editor(&cwd, &thread.metadata.cwd, &path));
+                 if let Err(error) = result {
