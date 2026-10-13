@@ -17,7 +17,14 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             | Action::PromptFailed { .. }
             | Action::Quit
     );
-    let effects = reduce_inner(state, action);
+    let mut effects = reduce_inner(state, action);
+    // Return routes may outlive their bounded presentation cache entry.
+    if old_view != state.view
+        && !state.should_quit
+        && let Some(effect) = state.rehydrate_evicted_thread()
+    {
+        effects.push(effect);
+    }
     let watch_command = effects.iter().any(|effect| {
         matches!(
             effect,

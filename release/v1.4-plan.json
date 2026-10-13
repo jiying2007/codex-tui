@@ -148,7 +148,7 @@
     "user-perceived-performance-evidence"
   ],
   "moduleRatchet": {
-    "src/app.rs": 1009,
+    "src/app.rs": 1010,
     "src/ui.rs": 2215,
     "src/app_server.rs": 2676,
     "src/main.rs": 1859,
@@ -274,7 +274,7 @@
     "src/forge/gitlab_projection_tests.rs": 164,
     "src/forge/error_redaction_tests.rs": 43,
     "src/forge/remote_identity_tests.rs": 47,
-    "src/app/reducer.rs": 2573,
+    "src/app/reducer.rs": 2580,
     "src/app/state.rs": 894,
     "src/app/tests.rs": 2955,
     "src/app/thread_queue_reducer_tests.rs": 123,
@@ -304,7 +304,8 @@
     "src/app/watch/tests.rs": 234,
     "src/app_server/watch_set.rs": 129,
     "src/app_server/watch_lifecycle.rs": 50,
-    "src/app_server/watch_lifecycle/tests.rs": 161
+    "src/app_server/watch_lifecycle/tests.rs": 161,
+    "src/app/history_cache.rs": 156
   },
   "ratchetPolicy": {
     "baseline": "inherit v1.3 Search & Multi-Target ceilings; feature work may only add bounded module-specific ceilings",

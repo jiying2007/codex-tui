@@ -44,6 +44,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::time::Instant;
 
 mod context_menu;
+mod history_cache;
 mod lifecycle;
 mod local_edit;
 mod mutation_editor;
