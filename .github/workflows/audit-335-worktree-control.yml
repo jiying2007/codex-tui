@@ -1,8 +1,8 @@
 name: audit-335-worktree-control
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
+  push:
+    branches: [fix/worktree-prewrite-identity-20261013]
     paths: [.github/workflows/audit-335-worktree-control.yml]
 
 permissions:
@@ -12,9 +12,8 @@ jobs:
   integrate:
     if: >-
       github.repository == 'jiying2007/codex-tui' &&
-      github.event.pull_request.number == 338 &&
-      github.event.pull_request.head.repo.full_name == github.repository &&
-      github.head_ref == 'fix/worktree-prewrite-identity-20261013'
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/fix/worktree-prewrite-identity-20261013'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -22,7 +21,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
+          ref: ${{ github.sha }}
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
         with:
@@ -30,7 +29,7 @@ jobs:
           components: rustfmt
       - name: Merge the reviewed main, preserve both audit entries, and format the integration fixture
         env:
-          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          EXPECTED_HEAD: ${{ github.sha }}
         shell: bash
         run: |
           set -euo pipefail
@@ -46,7 +45,7 @@ jobs:
               return subprocess.check_output(['git', *args], text=True)
 
           main = '326f082be766c77b0b8117ccf99c74f2749415fd'
-          prior = 'aefeaf42bdab89d55146608cc6026ba0331d77fb'
+          prior = 'db010c9efe73036e2f93ec9b51e0ae44d0b3cb86'
           base = 'fb32c097beb77778c6b7a6d64f7d6f0e783395b9'
           workflow = '.github/workflows/audit-335-worktree-control.yml'
           fixture = 'tests/worktree_prewrite_identity.rs'
