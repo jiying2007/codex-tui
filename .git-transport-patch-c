@@ -1,0 +1,204 @@
+diff --git a/src/git/tests.rs b/src/git/tests.rs
+index d9146ad..c0e6d70 100644
+--- a/src/git/tests.rs
++++ b/src/git/tests.rs
+@@ -31 +31 @@ fn presentation_word_diff_only_changes_display_layer() {
+-        changes: vec![],
++        changes: vec![].into(),
+@@ -75 +75 @@ async fn capped_reader_bounds_memory_even_at_utf8_boundary() {
+-    let (captured, truncated) = read_capped(reader, 1025).await.expect("read capped");
++    let (captured, truncated) = read_capped(reader, 1025, true).await.expect("read capped");
+@@ -101,2 +101,2 @@ fn relative_identity_paths_resolve_from_the_probed_cwd() {
+-        canonical_identity_path_from(&cwd, ".git"),
+-        canonical_identity_path(&git_dir)
++        canonical_identity_path_from(&cwd, ".git").unwrap(),
++        canonical_identity_path(&git_dir).unwrap()
+@@ -105,2 +105,2 @@ fn relative_identity_paths_resolve_from_the_probed_cwd() {
+-        canonical_identity_path_from(&cwd, git_dir.to_string_lossy().as_ref()),
+-        canonical_identity_path(&git_dir)
++        canonical_identity_path_from(&cwd, git_dir.to_string_lossy().as_ref()).unwrap(),
++        canonical_identity_path(&git_dir).unwrap()
+@@ -199,0 +200,74 @@ fn linked_worktrees_share_primary_repository_identity() {
++
++#[test]
++fn path_protocol_removes_only_one_final_lf_without_identity_loss() {
++    for path in ["/repo  ", "/new\nline", "/repo\r", "/repo\n", " leading"] {
++        assert_eq!(identity_response(&format!("{path}\n")).unwrap(), path);
++    }
++    for invalid in ["", "\n", "no terminator", "nul\0path\n"] {
++        assert!(identity_response(invalid).is_err());
++    }
++}
++
++#[test]
++fn status_limits_and_lossless_paths_fail_closed() {
++    let mut exact = b"? file\0".repeat(MAX_GIT_STATUS_ENTRIES);
++    assert_eq!(parse_porcelain_v2(&exact).unwrap().changes.len(), MAX_GIT_STATUS_ENTRIES);
++    exact.extend_from_slice(b"? extra\0");
++    assert!(parse_porcelain_v2(&exact).unwrap_err().to_string().contains("entry budget"));
++    assert!(parse_porcelain_v2(&vec![0; MAX_GIT_PROBE_BYTES + 1]).is_err());
++    for invalid in [b"? incomplete".as_slice(), b"? bad\xff\0", b"? ../escape\0",
++                    b"? \0", b"unknown entry\0", b"2 R. N... 100644 100644 100644 a b R100 name\0\0"] {
++        assert!(parse_porcelain_v2(invalid).is_err(), "{invalid:?}");
++    }
++    let parsed = parse_porcelain_v2(b"? line\nfile  \0").unwrap();
++    assert_eq!(parsed.changes[0].path, "line\nfile  ");
++}
++
++#[tokio::test]
++async fn probe_readers_enforce_exact_boundary_and_stay_compact() {
++    for size in [0, 63, 64, 65, 65_536] {
++        let bytes = vec![b'x'; size];
++        let result = read_capped(bytes.as_slice(), 64, false).await;
++        if size <= 64 {
++            let (captured, truncated) = result.unwrap();
++            assert_eq!(captured, bytes);
++            assert!(!truncated);
++        } else {
++            assert!(result.unwrap_err().to_string().contains("budget exceeded"));
++        }
++    }
++    let reader = read_capped(tokio::io::empty(), MAX_GIT_PROBE_BYTES, false);
++    assert!(std::mem::size_of_val(&reader) <= 4096);
++    let args = ["status"];
++    let command = run_git_raw(".", &args);
++    assert!(std::mem::size_of_val(&command) <= 4096);
++}
++
++#[cfg(unix)]
++#[tokio::test]
++async fn real_git_whitespace_paths_keep_exact_roots_and_common_dirs() {
++    let temp = tempfile::tempdir().unwrap();
++    for suffix in ["", "  ", "\nline", "\r", "\n"] {
++        let root = temp.path().join(format!("repo{suffix}"));
++        std::fs::create_dir_all(root.join("nested")).unwrap();
++        git(&root, &["init", "-q"]);
++        std::fs::write(root.join("changed.txt"), "untracked").unwrap();
++        let context = probe_context(ThreadId::new("test"), root.join("nested").to_str().unwrap().into()).await.unwrap();
++        assert_eq!(context.worktree.unwrap().canonical_path, root.canonicalize().unwrap().to_str().unwrap());
++        assert_eq!(context.repo.unwrap().git_common_dir, root.join(".git").canonicalize().unwrap().to_str().unwrap());
++        assert!(context.dirty);
++        assert_eq!(context.changes[0].path, "changed.txt");
++    }
++}
++
++#[test]
++fn missing_root_or_sibling_cwd_is_not_valid_identity() {
++    let temp = tempfile::tempdir().unwrap();
++    let root = temp.path().join("repo");
++    let sibling = temp.path().join("repo-other");
++    std::fs::create_dir_all(root.join("nested")).unwrap();
++    std::fs::create_dir(&sibling).unwrap();
++    assert!(validate_worktree_cwd(root.to_str().unwrap(), root.join("nested").to_str().unwrap()).is_ok());
++    assert!(validate_worktree_cwd(root.to_str().unwrap(), sibling.to_str().unwrap()).is_err());
++    assert!(canonical_identity_path(temp.path().join("absent")).is_err());
++}
+diff --git a/src/main.rs b/src/main.rs
+index 85abdc9..25539c8 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -1337,0 +1338 @@ fn apply_effects(
++                source_cwd,
+@@ -1341 +1342,7 @@ fn apply_effects(
+-                if let Err(error) = open_external_editor(&cwd, &path) {
++                let result = (|| {
++                    anyhow::ensure!(app.thread_by_id(&thread_id).is_some_and(|thread|
++                        thread.metadata.cwd == source_cwd), "Git editor source is stale");
++                    codex_tui::git::validate_worktree_cwd(&cwd, &source_cwd)?;
++                    open_external_editor(&cwd, &path)
++                })();
++                if let Err(error) = result {
+diff --git a/src/soak.rs b/src/soak.rs
+index 3409604..0a127e0 100644
+--- a/src/soak.rs
++++ b/src/soak.rs
+@@ -126 +126 @@ fn run_for(rows: usize, minimum_cycles: usize, duration: Duration) -> Result<Soa
+-                changes: vec![],
++                changes: vec![].into(),
+diff --git a/tests/terminal_restoration.rs b/tests/terminal_restoration.rs
+index 3b10015..ad3f959 100644
+--- a/tests/terminal_restoration.rs
++++ b/tests/terminal_restoration.rs
+@@ -145,0 +146,82 @@ fn drawer_signals_forge_reader_ownership_and_board_churn() {
++
++#[test]
++fn git_identity_budget_and_connection_reader_ownership() {
++    let temporary = tempfile::tempdir().unwrap();
++    let retained = std::env::var_os("CODEX_TUI_PTY_EVIDENCE_DIR");
++    let root = retained
++        .as_deref()
++        .map(Path::new)
++        .unwrap_or_else(|| temporary.path());
++    std::fs::create_dir_all(root).unwrap();
++    let output = root.join("git-transports");
++    let log_path = root.join("git-transports.log");
++    let log = std::fs::File::create(&log_path).unwrap();
++    let mut child = Command::new("python3")
++        .arg("-O")
++        .arg(
++            Path::new(env!("CARGO_MANIFEST_DIR"))
++                .join("scripts/testing/git_transport_regression.py"),
++        )
++        .arg(env!("CARGO_BIN_EXE_codex-tui"))
++        .arg(&output)
++        .stdin(Stdio::null())
++        .stdout(log.try_clone().unwrap())
++        .stderr(log)
++        .spawn()
++        .unwrap();
++    let deadline = Instant::now() + Duration::from_secs(180);
++    let status = loop {
++        if let Some(status) = child.try_wait().unwrap() {
++            break status;
++        }
++        if Instant::now() >= deadline {
++            let _ = child.kill();
++            let _ = child.wait();
++            panic!(
++                "runtime harness timeout: {}",
++                std::fs::read_to_string(&log_path).unwrap_or_default()
++            );
++        }
++        std::thread::sleep(Duration::from_millis(20));
++    };
++    assert!(
++        status.success(),
++        "runtime regression: {}",
++        std::fs::read_to_string(&log_path).unwrap_or_default()
++    );
++    let receipt: serde_json::Value =
++        serde_json::from_slice(&std::fs::read(output.join("receipt.json")).unwrap()).unwrap();
++    assert_eq!(receipt["status"], "passed");
++    let cases = receipt["checks"].as_array().unwrap();
++    let expected = [
++        "editor-plain",
++        "editor-trailing",
++        "editor-newline",
++        "editor-cr",
++        "editor-nested",
++        "git-root-mismatch",
++        "git-identity-nonutf8",
++        "git-stderr-exact",
++        "git-stderr-over",
++        "git-stdout-exact",
++        "git-stdout-over",
++        "git-entries-exact",
++        "git-entries-over",
++        "git-status-no-nul",
++        "git-status-nonutf8",
++        "transport-startup-eof",
++        "transport-startup-held",
++        "transport-search-eof",
++        "transport-search-held",
++        "transport-search-replaced",
++        "git-fanout",
++    ];
++    assert_eq!(cases.len(), expected.len());
++    for (case, name) in cases.iter().zip(expected) {
++        assert_eq!(case["mode"], name);
++        assert_eq!(case["passed"], true);
++    }
++    assert_eq!(receipt["manualQualification"], false);
++    assert_eq!(receipt["realSshQualification"], false);
++    println!("{receipt}");
++}
