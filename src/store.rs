@@ -141,7 +141,7 @@ impl FileStore {
         }
         let default =
             toml::to_string_pretty(&AppConfig::default()).context("serialize default config")?;
-        atomic_write(&path, default.as_bytes())
+        atomic_write_new(&path, default.as_bytes())
     }
 }
 
@@ -152,6 +152,19 @@ impl FileStore {
         let text =
             fs::read_to_string(&path).with_context(|| format!("read config {}", path.display()))?;
         toml::from_str(&text).with_context(|| format!("parse config {}", path.display()))
+    }
+}
+
+fn atomic_write_new(path: &Path, bytes: &[u8]) -> Result<()> {
+    let parent = path.parent().with_context(|| format!("path has no parent: {}", path.display()))?;
+    fs::create_dir_all(parent).with_context(|| format!("create directory {}", parent.display()))?;
+    let mut temp = NamedTempFile::new_in(parent).context("create default config temp file")?;
+    temp.write_all(bytes).context("write default config")?;
+    temp.as_file().sync_all().context("sync default config")?;
+    match temp.persist_noclobber(path) {
+        Ok(_) => Ok(()),
+        Err(error) if error.error.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
+        Err(error) => Err(error.error).with_context(|| format!("install default config {}", path.display())),
     }
 }
 
