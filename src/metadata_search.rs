@@ -296,6 +296,7 @@ mod tests {
                 state: "open".into(),
                 source_branch: "feature/search".into(),
                 target_branch: "main".into(),
+                head_sha: None,
                 web_url: String::new(),
                 updated_at: None,
                 draft: false,
