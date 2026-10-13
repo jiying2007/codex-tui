@@ -17,6 +17,8 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
+- Preserve a still-live provisional transcript-search target when cancelling Registry search; do not revive retired targets or grant repository-tool validity to unregistered threads. Retain actual-program live/retired controls.
+
 - Retire actor-side history and queue watches on explicit archive/delete even for provisional search targets; invalidate provisional UI ownership without tombstones. Extend the maintained actual-program watch regression with removal and healthy controls.
 
 - Release history and Thread Queue subscriptions independently of actor-command capacity; keep admitted membership shared with the actor and skip released queued reads. Add actual-program backpressure, reopen and disconnected controls without changing write replay semantics.

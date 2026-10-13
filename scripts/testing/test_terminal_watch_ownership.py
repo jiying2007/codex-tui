@@ -5,8 +5,8 @@ from watch_ownership_regression import CASES, check_identity, check_reads
 
 class WatchAssertions(unittest.TestCase):
     def test_suite_has_exact_unique_cases(self):
-        self.assertEqual(len(CASES), 17)
-        self.assertEqual(len(set(CASES)), 17)
+        self.assertEqual(len(CASES), 21)
+        self.assertEqual(len(set(CASES)), 21)
 
     def test_missing_live_read_and_retained_idle_read_are_both_rejected(self):
         for actual, expected in [(0, 1), (1, 0), (2, 1)]:

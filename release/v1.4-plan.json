@@ -275,7 +275,7 @@
     "src/forge/error_redaction_tests.rs": 43,
     "src/forge/remote_identity_tests.rs": 47,
     "src/app/reducer.rs": 2573,
-    "src/app/state.rs": 891,
+    "src/app/state.rs": 894,
     "src/app/tests.rs": 2955,
     "src/app/thread_queue_reducer_tests.rs": 123,
     "src/ui/tests.rs": 1164,
@@ -301,7 +301,7 @@
     "src/app_server_transport/reader_lifecycle_tests.rs": 139,
     "src/git/audit_tests.rs": 198,
     "src/app/watch.rs": 132,
-    "src/app/watch/tests.rs": 191,
+    "src/app/watch/tests.rs": 234,
     "src/app_server/watch_set.rs": 129,
     "src/app_server/watch_lifecycle.rs": 50,
     "src/app_server/watch_lifecycle/tests.rs": 161

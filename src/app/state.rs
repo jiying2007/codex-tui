@@ -224,8 +224,11 @@ impl AppState {
 
     pub(super) fn search_return_view_is_valid(&self, view: &View) -> bool {
         match view {
-            View::Thread(thread_id)
-            | View::Review(thread_id)
+            View::Thread(thread_id) => {
+                self.thread_by_id(thread_id).is_some()
+                    || self.unregistered_watches.contains(&thread_id.0)
+            }
+            View::Review(thread_id)
             | View::Workspace(thread_id)
             | View::ManagedWorktrees(thread_id) => self.thread_by_id(thread_id).is_some(),
             View::Registry | View::Board | View::Scratch(_) => true,
