@@ -46,8 +46,14 @@ fn latest_review_state_uses_last_review_from_authenticated_login() {
         {"id": 3, "state": "APPROVED", "user": {"login": "bob"}}
     ]))
     .expect("reviews");
-    assert_eq!(latest_review_state(&reviews, "alice"), Some("DISMISSED"));
-    assert_eq!(latest_review_state(&reviews, "BOB"), Some("APPROVED"));
+    assert_eq!(
+        latest_review(&reviews, "alice").map(|review| review.state.as_str()),
+        Some("DISMISSED")
+    );
+    assert_eq!(
+        latest_review(&reviews, "BOB").map(|review| review.state.as_str()),
+        Some("APPROVED")
+    );
 }
 
 #[test]
@@ -132,4 +138,28 @@ fn same_name_fork_head_cannot_pass_local_branch_mutation_preflight() {
         fork.head.repo.as_ref().unwrap(),
         &mutation_plan
     ));
+}
+
+#[test]
+fn approval_requires_latest_authenticated_review_at_the_exact_confirmed_revision() {
+    let a = "a".repeat(40);
+    let b = "b".repeat(40);
+    let mut values = vec![serde_json::json!({
+        "id": 1, "state": "APPROVED", "user": {"login": "alice"}, "commit_id": a
+    })];
+    let decode = |values: &[serde_json::Value]| -> Vec<GitHubReview> {
+        serde_json::from_value(serde_json::json!(values)).unwrap()
+    };
+    assert!(approved_at(&decode(&values), "ALICE", &a));
+    assert!(!approved_at(&decode(&values), "bob", &a));
+    assert!(!approved_at(&decode(&values), "alice", &b));
+    for replacement in [
+        serde_json::json!({"id": 2, "state": "APPROVED", "user": {"login": "alice"}, "commit_id": b}),
+        serde_json::json!({"id": 2, "state": "APPROVED", "user": {"login": "alice"}}),
+        serde_json::json!({"id": 2, "state": "DISMISSED", "user": {"login": "alice"}, "commit_id": a}),
+    ] {
+        values.truncate(1);
+        values.push(replacement);
+        assert!(!approved_at(&decode(&values), "alice", &a));
+    }
 }

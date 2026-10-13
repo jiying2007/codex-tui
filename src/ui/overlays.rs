@@ -591,6 +591,11 @@ pub(super) fn render_forge_mutation_confirmation(frame: &mut Frame<'_>, app: &Ap
             "CONFIRM REQUIRED — no forge mutation has executed yet.",
             "需要确认 — 尚未执行任何 Forge 变更。",
         )),
+        Line::from(tr(
+            app,
+            "y CONFIRM execute · c/Esc cancel",
+            "y 确认执行 · c/Esc 取消",
+        )),
         Line::from(format!(
             "{}: {}",
             tr(app, "Operation", "操作"),
@@ -603,6 +608,20 @@ pub(super) fn render_forge_mutation_confirmation(frame: &mut Frame<'_>, app: &Ap
             sanitize_inline(&plan.project_path)
         )),
     ];
+    if let Some(revision) = plan
+        .preconditions
+        .iter()
+        .find(|item| item.key == "confirmed-head-sha")
+    {
+        lines.insert(
+            3,
+            Line::from(format!(
+                "{}: {}",
+                tr(app, "Confirmed HEAD", "已确认提交"),
+                sanitize_inline(&revision.expected)
+            )),
+        );
+    }
     if let Some(iid) = plan.change_request_iid {
         lines.push(Line::from(format!(
             "{}: !{iid}",
@@ -650,19 +669,19 @@ pub(super) fn render_forge_mutation_confirmation(frame: &mut Frame<'_>, app: &Ap
         "Preconditions revalidated at execution time:",
         "执行时将重新验证前置条件:",
     )));
-    lines.extend(plan.preconditions.iter().take(8).map(|item| {
-        Line::from(format!(
-            "  {} = {}",
-            sanitize_inline(&item.key),
-            sanitize_inline(&item.expected)
-        ))
-    }));
-    lines.push(Line::from(""));
-    lines.push(Line::from(tr(
-        app,
-        "y CONFIRM execute · c/Esc cancel",
-        "y 确认执行 · c/Esc 取消",
-    )));
+    lines.extend(
+        plan.preconditions
+            .iter()
+            .filter(|item| item.key != "confirmed-head-sha")
+            .take(8)
+            .map(|item| {
+                Line::from(format!(
+                    "  {} = {}",
+                    sanitize_inline(&item.key),
+                    sanitize_inline(&item.expected)
+                ))
+            }),
+    );
 
     let height = u16::try_from(lines.len().saturating_add(2))
         .unwrap_or(18)
