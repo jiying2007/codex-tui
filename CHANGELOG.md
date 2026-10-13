@@ -17,6 +17,10 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
+- Preserve Git path identity without trimming, reject lossy or unverifiable paths, and recheck the selected cwd at the editor boundary. Add real-Git whitespace/newline and wrong-sibling controls.
+- Bound ordinary Git identity/status/stdout/stderr capture and status record parsing; reject incomplete metadata instead of reporting clean success. Share immutable same-cwd change inventories across threads and planning snapshots.
+- Own each App Server stderr drain with its connection so initialization failure, completed isolated search and cancellation cannot leave detached readers. Keep exact-pipe and healthy EOF controls in the existing terminal regression workflow.
+
 - Keep scoped Forge reader buffers heap-owned so nested async state does not overflow the native Windows debug entry stack; retain compact-future and help/usage/backend/benchmark/version process checks. Keep the interactive entry future boxed without increasing thread stacks.
 
 - Route interactive SIGTERM/SIGHUP/SIGINT through terminal restoration and the existing bounded final save; retain distinct raw-Ctrl+C and Drawer cases. Enable Tokio's existing signal feature without changing dependency versions or the lockfile.

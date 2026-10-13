@@ -98,12 +98,12 @@ fn relative_identity_paths_resolve_from_the_probed_cwd() {
 
     let cwd = root.to_string_lossy().into_owned();
     assert_eq!(
-        canonical_identity_path_from(&cwd, ".git"),
-        canonical_identity_path(&git_dir)
+        canonical_identity_path_from(&cwd, ".git").unwrap(),
+        canonical_identity_path(&git_dir).unwrap()
     );
     assert_eq!(
-        canonical_identity_path_from(&cwd, git_dir.to_string_lossy().as_ref()),
-        canonical_identity_path(&git_dir)
+        canonical_identity_path_from(&cwd, git_dir.to_string_lossy().as_ref()).unwrap(),
+        canonical_identity_path(&git_dir).unwrap()
     );
 }
 

@@ -14,7 +14,7 @@ fn child_fixture() {
     };
     let root = Path::new(&root);
     let expected = if std::env::var("CODEX_TUI_EXTERNAL_TEST_ROLE").unwrap() == "editor" {
-        open_external_editor(root.to_str().unwrap(), "a file.rs").unwrap();
+        open_external_editor(root.to_str().unwrap(), root.to_str().unwrap(), "a file.rs").unwrap();
         root.join("a file.rs")
             .canonicalize()
             .unwrap()

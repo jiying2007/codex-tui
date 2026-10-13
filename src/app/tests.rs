@@ -597,7 +597,7 @@ fn launch_preset_requires_load_select_plan_and_confirmation() {
             ahead: 0,
             behind: 0,
             dirty: false,
-            changes: vec![],
+            changes: Vec::new().into(),
             observed_at_unix_ms: 1,
             error: None,
         },
@@ -683,7 +683,7 @@ fn managed_worktree_plan_requires_explicit_confirmation_before_execution() {
             ahead: 0,
             behind: 0,
             dirty: false,
-            changes: vec![],
+            changes: Vec::new().into(),
             observed_at_unix_ms: 1,
             error: None,
         },
@@ -2706,7 +2706,8 @@ fn review_editor_uses_authoritative_worktree_root_not_nested_thread_cwd() {
         reduce(&mut app, Action::OpenReviewExternalEditor),
         vec![Effect::OpenExternalEditor {
             thread_id: thread_id.clone(),
-            cwd: root.into(),
+            cwd: cwd.into(),
+            worktree_root: root.into(),
             path: "src/changed.rs".into(),
         }]
     );
@@ -2714,4 +2715,36 @@ fn review_editor_uses_authoritative_worktree_root_not_nested_thread_cwd() {
     app.threads[0].metadata.cwd = "/work/other".into();
     assert!(reduce(&mut app, Action::OpenReviewExternalEditor).is_empty());
     assert!(app.current_review().unwrap().error.is_some());
+}
+
+#[test]
+fn same_cwd_git_fanout_shares_inventory_without_sharing_thread_identity() {
+    let mut state = app();
+    let mut threads = vec![state.threads[0].clone(); 32];
+    for (index, thread) in threads.iter_mut().enumerate() {
+        thread.id = ThreadId::new(format!("fanout-{index}"));
+        thread.metadata.cwd = "/shared-repo".into();
+    }
+    reduce(&mut state, Action::ReplaceThreads(threads));
+    let mut context = GitContext::pending(ThreadId::new("fanout-0"), "/shared-repo");
+    context.changes = vec![
+        crate::git::GitFileChange {
+            path: "changed.txt".into(),
+            original_path: None,
+            index_status: None,
+            worktree_status: Some('M'),
+            untracked: false,
+            conflict: false,
+        };
+        2000
+    ]
+    .into();
+    let inventory = context.changes.clone();
+    propagate_git_context(&mut state, context);
+    for thread in &state.threads {
+        let projected = state.git_contexts.get(&thread.id.0).unwrap();
+        assert_eq!(projected.thread_id, thread.id);
+        assert_eq!(projected.changes.len(), 2000);
+        assert!(std::sync::Arc::ptr_eq(&inventory, &projected.changes));
+    }
 }

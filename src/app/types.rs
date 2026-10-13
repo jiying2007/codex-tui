@@ -385,6 +385,7 @@ pub enum Effect {
     OpenExternalEditor {
         thread_id: ThreadId,
         cwd: String,
+        worktree_root: String,
         path: String,
     },
     OpenExternalUrl {

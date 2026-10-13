@@ -1336,9 +1336,10 @@ fn apply_effects(
             Effect::OpenExternalEditor {
                 thread_id,
                 cwd,
+                worktree_root,
                 path,
             } => {
-                if let Err(error) = open_external_editor(&cwd, &path) {
+                if let Err(error) = open_external_editor(&cwd, &worktree_root, &path) {
                     reduce(
                         app,
                         Action::ReviewError {
