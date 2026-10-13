@@ -19,6 +19,10 @@ pub(super) struct PendingSubmissions {
 }
 
 impl PendingSubmissions {
+    pub(super) fn pending_thread_ids(&self) -> impl Iterator<Item = &String> + '_ {
+        self.by_thread.keys()
+    }
+
     pub(super) fn edited(&mut self, thread_id: &ThreadId) {
         if let Some(pending) = self.by_thread.get_mut(&thread_id.0) {
             pending.edited = true;
