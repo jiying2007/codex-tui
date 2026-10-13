@@ -183,6 +183,7 @@ pub(crate) async fn validate_preconditions(plan: &ForgeMutationPlan) -> Result<G
         ForgeMutationKind::ApproveMergeRequest => {
             let pull = validate_exact_open_pull(plan).await?;
             let sha = required_head_sha(&pull)?;
+            crate::forge_mutation::require_confirmed_head(plan, &sha)?;
             let user: GitHubUser = gh_api_json(&plan.cwd, &plan.host, "/user").await?;
             let reviews = reviews(plan, pull.number).await?;
             if latest_review_state(&reviews, &user.login)
@@ -209,6 +210,7 @@ pub(crate) async fn validate_preconditions(plan: &ForgeMutationPlan) -> Result<G
         ForgeMutationKind::MergeMergeRequest => {
             let pull = validate_exact_open_pull(plan).await?;
             let sha = required_head_sha(&pull)?;
+            crate::forge_mutation::require_confirmed_head(plan, &sha)?;
             anyhow::ensure!(!pull.draft, "GitHub pull request is still a draft");
             require_github_mergeable(pull.mergeable)?;
             Ok(GitHubPreflight {
@@ -439,6 +441,14 @@ pub(crate) async fn reconcile_outcome(plan: &ForgeMutationPlan) -> Result<GitHub
             let number = plan
                 .change_request_iid
                 .context("approve plan missing pull request number")?;
+            let pull = get_pull(plan, number).await?;
+            if let Err(error) = required_head_sha(&pull)
+                .and_then(|sha| crate::forge_mutation::require_confirmed_head(plan, &sha))
+            {
+                return Ok(GitHubReconciledOutcome::Unknown(format!(
+                    "cannot attribute approval to the confirmed revision: {error:#}"
+                )));
+            }
             let user: GitHubUser = gh_api_json(&plan.cwd, &plan.host, "/user").await?;
             let reviews = reviews(plan, number).await?;
             if latest_review_state(&reviews, &user.login)
@@ -463,6 +473,13 @@ pub(crate) async fn reconcile_outcome(plan: &ForgeMutationPlan) -> Result<GitHub
                 .change_request_iid
                 .context("merge plan missing pull request number")?;
             let pull = get_pull(plan, number).await?;
+            if let Err(error) = required_head_sha(&pull)
+                .and_then(|sha| crate::forge_mutation::require_confirmed_head(plan, &sha))
+            {
+                return Ok(GitHubReconciledOutcome::Unknown(format!(
+                    "cannot attribute merge to the confirmed revision: {error:#}"
+                )));
+            }
             if pull.merged {
                 Ok(GitHubReconciledOutcome::Succeeded {
                     result_ref: change_ref(plan, number),
