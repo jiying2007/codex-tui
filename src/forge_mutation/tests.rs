@@ -1,5 +1,35 @@
 use super::*;
 
+#[test]
+fn confirmed_revision_is_frozen_for_both_providers_and_fails_closed() {
+    const EXPECTED: &str = "0123456789abcdef0123456789abcdef01234567";
+    const MOVED: &str = "fedcba9876543210fedcba9876543210fedcba98";
+    for identity in [identity(), github_identity()] {
+        let plan = ForgeMutationPlan::approve_merge_request(
+            &identity,
+            "/repo".into(),
+            7,
+            "feature".into(),
+            "main".into(),
+            1,
+        )
+        .unwrap();
+        assert!(confirmed_head_sha(&plan).is_err());
+        assert!(plan.clone().bind_confirmed_head("deadbeef").is_err());
+        let frozen = plan.bind_confirmed_head(EXPECTED).unwrap();
+        assert_eq!(confirmed_head_sha(&frozen).unwrap(), EXPECTED);
+        assert!(require_confirmed_head(&frozen, EXPECTED).is_ok());
+        assert!(require_confirmed_head(&frozen, MOVED).is_err());
+        assert!(frozen.clone().bind_confirmed_head(MOVED).is_err());
+        let mut duplicate = frozen.clone();
+        duplicate.preconditions.push(precondition("confirmed-head-sha", MOVED));
+        assert!(confirmed_head_sha(&duplicate).is_err());
+        let encoded = serde_json::to_string(&frozen).unwrap();
+        let restored: ForgeMutationPlan = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(confirmed_head_sha(&restored).unwrap(), EXPECTED);
+    }
+}
+
 fn identity() -> ForgeIdentity {
     ForgeIdentity {
         provider: ForgeProviderKind::GitLab,
