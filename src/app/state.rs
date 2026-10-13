@@ -565,7 +565,7 @@ impl AppState {
                 )
                 .to_string()
             })?;
-        let cwd = thread.metadata.cwd.trim();
+        let cwd = thread.metadata.cwd.as_str();
         match classify_cwd(cwd) {
             CwdLocality::LocalDirectory => Ok(cwd.to_string()),
             CwdLocality::ForeignWindows => Err(
