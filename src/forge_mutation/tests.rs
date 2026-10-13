@@ -22,7 +22,9 @@ fn confirmed_revision_is_frozen_for_both_providers_and_fails_closed() {
         assert!(require_confirmed_head(&frozen, MOVED).is_err());
         assert!(frozen.clone().bind_confirmed_head(MOVED).is_err());
         let mut duplicate = frozen.clone();
-        duplicate.preconditions.push(precondition("confirmed-head-sha", MOVED));
+        duplicate
+            .preconditions
+            .push(precondition("confirmed-head-sha", MOVED));
         assert!(confirmed_head_sha(&duplicate).is_err());
         let encoded = serde_json::to_string(&frozen).unwrap();
         let restored: ForgeMutationPlan = serde_json::from_str(&encoded).unwrap();
