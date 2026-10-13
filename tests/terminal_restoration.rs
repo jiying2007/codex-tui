@@ -216,3 +216,81 @@ fn exact_git_editor_targets_and_connection_readers_regressions() {
     }
     println!("{receipt}");
 }
+
+#[test]
+fn cross_view_watch_effects_reach_the_actual_backend() {
+    let temporary = tempfile::tempdir().unwrap();
+    let retained = std::env::var_os("CODEX_TUI_PTY_EVIDENCE_DIR");
+    let root = retained
+        .as_deref()
+        .map(Path::new)
+        .unwrap_or_else(|| temporary.path());
+    std::fs::create_dir_all(root).unwrap();
+    let output = root.join("watch-ownership");
+    let log_path = root.join("watch-ownership.log");
+    let log = std::fs::File::create(&log_path).unwrap();
+    let source = option_env!("CODEX_TUI_GIT_SHA")
+        .or(option_env!("GITHUB_SHA"))
+        .unwrap_or("unknown");
+    let mut child = Command::new("python3")
+        .arg("-O")
+        .arg(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("scripts/testing/watch_ownership_regression.py"),
+        )
+        .arg(env!("CARGO_BIN_EXE_codex-tui"))
+        .arg(&output)
+        .env("CODEX_TUI_PTY_SOURCE_SHA", source)
+        .stdin(Stdio::null())
+        .stdout(log.try_clone().unwrap())
+        .stderr(log)
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(180);
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break status;
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!(
+                "watch harness timeout: {}",
+                std::fs::read_to_string(&log_path).unwrap_or_default()
+            );
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    assert!(
+        status.success(),
+        "watch regression: {}",
+        std::fs::read_to_string(&log_path).unwrap_or_default()
+    );
+    let receipt: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(output.join("receipt.json")).unwrap()).unwrap();
+    assert_eq!(receipt["status"], "passed");
+    assert_eq!(receipt["sourceSha"], source);
+    assert_eq!(receipt["sourceIdentityVerified"], source != "unknown");
+    let expected = [
+        "idle-back",
+        "search-cancel",
+        "search-commit",
+        "history-complete",
+        "registry-complete",
+        "deleted",
+        "board-cancel",
+        "board-commit",
+        "prompt-success",
+        "prompt-failure",
+        "prompt-history-failure",
+    ];
+    let checks = receipt["checks"].as_array().unwrap();
+    assert_eq!(checks.len(), expected.len());
+    for (check, name) in checks.iter().zip(expected) {
+        assert_eq!(check["mode"], name);
+        assert_eq!(check["passed"], true);
+    }
+    assert_eq!(receipt["realCodexQualification"], false);
+    assert_eq!(receipt["realSshQualification"], false);
+    println!("{receipt}");
+}

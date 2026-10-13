@@ -2,7 +2,7 @@
 //! One accepted send per thread; no automatic retries or persisted prompt copies.
 use super::{Action, AppState, Effect, InputMode, local_text, reduce};
 use crate::domain::ThreadId;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 const MAX_PENDING: usize = 32;
 
@@ -16,11 +16,16 @@ struct Pending {
 pub(super) struct PendingSubmissions {
     next_id: u64,
     by_thread: BTreeMap<String, Pending>,
+    awaiting_history: BTreeSet<String>,
 }
 
 impl PendingSubmissions {
     pub(super) fn pending_thread_ids(&self) -> impl Iterator<Item = &String> + '_ {
-        self.by_thread.keys()
+        self.by_thread.keys().chain(self.awaiting_history.iter())
+    }
+
+    pub(super) fn history_resolved(&mut self, thread_id: &ThreadId) {
+        self.awaiting_history.remove(&thread_id.0);
     }
 
     pub(super) fn edited(&mut self, thread_id: &ThreadId) {
@@ -30,7 +35,10 @@ impl PendingSubmissions {
     }
 
     fn begin(&mut self, thread_id: &ThreadId) -> Option<u64> {
-        if self.by_thread.contains_key(&thread_id.0) || self.by_thread.len() >= MAX_PENDING {
+        if self.by_thread.contains_key(&thread_id.0)
+            || self.awaiting_history.contains(&thread_id.0)
+            || self.by_thread.len() + self.awaiting_history.len() >= MAX_PENDING
+        {
             return None;
         }
         self.next_id = self.next_id.checked_add(1)?;
@@ -99,6 +107,12 @@ pub(super) fn acknowledge(
     let Some(pending) = state.prompt_submissions.finish(&thread_id, request_id) else {
         return vec![];
     };
+    // Ack is not completion: retain ownership until the actor's subsequent
+    // authoritative history (or failure) arrives, even after navigation.
+    state
+        .prompt_submissions
+        .awaiting_history
+        .insert(thread_id.0.clone());
     // The server actor loads authoritative history after this acknowledgement.
     // Until it arrives, the old idle/active-turn snapshot cannot authorize a send.
     if let Some(conversation) = state.conversations.get_mut(&thread_id.0) {

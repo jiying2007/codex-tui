@@ -60,6 +60,7 @@ mod state;
 mod types;
 mod user_input;
 mod user_response;
+mod watch;
 
 pub use queue_confirmation::QueueConfirmation;
 pub use reducer::reduce;
