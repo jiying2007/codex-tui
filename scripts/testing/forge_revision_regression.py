@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Linux real TUI confirmation/write/readback probes; isolated Forge shims only."""
 import argparse
+from contextlib import closing
 import hashlib
 import json
 import os
@@ -9,6 +10,7 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import time
 
 from app_server_transport_regression import require
 from runtime_fault_regression import Session, environment
@@ -96,16 +98,43 @@ with open(home/'forge.lock', 'a') as lock:
 '''
 
 
-def receipt_rows(home):
+def sqlite_busy(error):
+    # sqlite_errorcode is not available on our Python 3.8 baseline. Match only
+    # SQLite's busy/locked messages there; corrupt/missing-schema errors fail.
+    code = getattr(error, 'sqlite_errorcode', None)
+    if code is not None:
+        return isinstance(code, int) and code & 0xff in (5, 6)
+    message = str(error).lower()
+    return message in ('database is locked', 'database table is locked',
+                       'database schema is locked') or message.startswith(
+                           ('database table is locked: ', 'database schema is locked: '))
+
+
+def receipt_rows(home, timeout_seconds=1.0):
+    require(0 < timeout_seconds <= 1.0, 'invalid receipt observation deadline')
     files = list(home.rglob('state-v2.sqlite3'))
     if not files:
         return []
     require(len(files) == 1, 'ambiguous fixture database')
-    with sqlite3.connect(files[0].as_uri() + '?mode=ro', uri=True, timeout=.1) as db:
-        db.row_factory = sqlite3.Row
-        rows = db.execute('SELECT operation_id,plan_json,state,verification,failure,updated_at_unix_ms '
-                          'FROM forge_mutation_receipts').fetchall()
-    return [dict(row) for row in rows]
+    deadline = time.monotonic() + timeout_seconds
+    while True:
+        try:
+            # Connection.__exit__ manages transactions; closing() additionally
+            # releases the reader on success AND on a busy/error observation.
+            with closing(sqlite3.connect(files[0].as_uri() + '?mode=ro',
+                                         uri=True, timeout=0.0)) as db:
+                db.row_factory = sqlite3.Row
+                rows = db.execute('SELECT operation_id,plan_json,state,verification,failure,updated_at_unix_ms '
+                                  'FROM forge_mutation_receipts').fetchall()
+            return [dict(row) for row in rows]
+        except sqlite3.OperationalError as error:
+            if not sqlite_busy(error):
+                raise
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError('SQLite receipt observation remained busy within {:.3f}s'.format(
+                    timeout_seconds)) from error
+            time.sleep(min(.025, remaining))
 
 
 def validate_outcome(rows, trace, mode):
@@ -178,8 +207,10 @@ def case(binary, output, home, scenario):
         require(not any(r['method']!='GET' for r in trace()), 'write occurred before confirmation')
         (home/'confirmed').touch()
         app.send(b'y')
-        app.wait(lambda: bool(receipt_rows(home)) and receipt_rows(home)[0]['state'] in ('succeeded','failed','outcome-unknown'),
-                 'terminal durable receipt not observed', 15)
+        def terminal_receipt_observed():
+            rows = receipt_rows(home)
+            return bool(rows) and rows[0]['state'] in ('succeeded','failed','outcome-unknown')
+        app.wait(terminal_receipt_observed, 'terminal durable receipt not observed', 15)
         app.drain(.25)
         rows = receipt_rows(home)
         (output/'operation.json').write_text(json.dumps(rows, indent=2)+'\n')
@@ -201,10 +232,13 @@ def case(binary, output, home, scenario):
         result['restartTerminal'] = app.finish()
         return result
     finally:
-        (output/'forge.jsonl').write_text(''.join(json.dumps(r)+'\n' for r in trace()))
-        rows = receipt_rows(home)
-        (output/'operation.json').write_text(json.dumps(rows, indent=2)+'\n')
-        if app is not None: app.close()
+        try:
+            (output/'forge.jsonl').write_text(''.join(json.dumps(r)+'\n' for r in trace()))
+            rows = receipt_rows(home)
+            (output/'operation.json').write_text(json.dumps(rows, indent=2)+'\n')
+        finally:
+            # Failed evidence collection must not leave a live fixture session.
+            if app is not None: app.close()
 
 
 def main():
