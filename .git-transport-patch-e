@@ -1,0 +1,13 @@
+diff --git a/scripts/testing/git_transport_regression.py b/scripts/testing/git_transport_regression.py
+--- a/scripts/testing/git_transport_regression.py
++++ b/scripts/testing/git_transport_regression.py
+@@ -131,7 +131,8 @@
+     (output/'stdout.txt').write_bytes(result.stdout)
+     (output/'stderr.txt').write_bytes(result.stderr)
+     healthy = mode.endswith('-exact')
+-    require(result.returncode == (0 if healthy else 1), 'Git budget/identity exit contract: '+str(result.returncode))
++    # Doctor's existing EXIT_DEGRADED contract is 3, not generic runtime failure 1.
++    require(result.returncode == (0 if healthy else 3), 'Git budget/identity exit contract: '+str(result.returncode))
+     if healthy:
+         count = 10000 if mode == 'entries-exact' else 1
+         require(('changed-files: %d'%count).encode() in result.stdout, 'Healthy boundary did not preserve complete inventory')
