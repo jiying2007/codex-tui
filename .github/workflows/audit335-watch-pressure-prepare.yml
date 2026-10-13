@@ -1,0 +1,113 @@
+name: audit335-watch-pressure-prepare
+
+on:
+  push:
+    branches: [fix/subscription-release-pressure-20261013]
+    paths: [.github/workflows/audit335-watch-pressure-prepare.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  prepare:
+    if: github.repository == 'jiying2007/codex-tui' && github.ref == 'refs/heads/fix/subscription-release-pressure-20261013'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - name: Apply the reviewed SHA-bound patch and remove this one-off workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_HEAD: ${{ github.sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/watch-pressure"
+          python3 - <<'PY'
+          import base64, hashlib, json, lzma, os, subprocess, urllib.request
+          from pathlib import Path
+          def git(*args):
+              return subprocess.check_output(['git', *args], text=True).strip()
+          base = 'd8b91d47d1283c03f2c300f76652069a26c36982'
+          workflow = '.github/workflows/audit335-watch-pressure-prepare.yml'
+          paths = {
+              'CHANGELOG.md', 'docs/guides/troubleshooting.md',
+              'docs/zh-CN/guides/troubleshooting.md', 'release/v1.4-plan.json',
+              'scripts/testing/watch_pressure_regression.py',
+              'scripts/testing/test_terminal_watch_pressure.py',
+              'src/app_server.rs', 'src/app_server/tests.rs',
+              'src/app_server/watch_set.rs', 'tests/terminal_restoration.rs',
+          }
+          assert git('rev-parse', 'HEAD') == os.environ['EXPECTED_HEAD']
+          assert git('rev-parse', 'HEAD^') == base
+          assert git('diff', '--name-only', base, 'HEAD') == workflow
+          assert git('ls-remote', 'origin', 'refs/heads/main').split()[0] == base
+          request = urllib.request.Request(
+              'https://api.github.com/repos/jiying2007/codex-tui/git/blobs/57bae3349789b78eeabe9e4a92eb2f402a5408ce',
+              headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
+                       'Accept': 'application/vnd.github+json'},
+          )
+          with urllib.request.urlopen(request, timeout=30) as response:
+              blob = json.load(response)
+          assert blob['sha'] == '57bae3349789b78eeabe9e4a92eb2f402a5408ce'
+          patch = lzma.decompress(base64.b64decode(blob['content']))
+          assert len(patch) == 24619
+          assert hashlib.sha256(patch).hexdigest() == '3c7a0ac9756c933cccaaf8fc792b1de0674473a3f945e140d5df0a28cab3b16f'
+          subprocess.run(['git', 'apply', '--check', '--unidiff-zero'], input=patch, check=True)
+          subprocess.run(['git', 'apply', '--unidiff-zero'], input=patch, check=True)
+          Path(workflow).unlink()
+          subprocess.run(['cargo', 'fmt', '--all'], check=True)
+          ledger_path = Path('release/v1.4-plan.json')
+          ledger = json.loads(ledger_path.read_text(encoding='utf-8'))
+          for path in ('src/app_server.rs', 'src/app_server/tests.rs', 'src/app_server/watch_set.rs'):
+              ledger['moduleRatchet'][path] = len(Path(path).read_text(encoding='utf-8').splitlines())
+          ledger_path.write_text(json.dumps(ledger, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+          changed = set(git('diff', '--name-only', base).splitlines())
+          changed.update(git('ls-files', '--others', '--exclude-standard').splitlines())
+          assert changed == paths, sorted(changed)
+          subprocess.run(['git', 'diff', '--check'], check=True)
+          subprocess.run(['git', 'add', '--', *sorted(paths), workflow], check=True)
+          PY
+          python3 scripts/docs/check_docs.py
+          python3 scripts/architecture/check_module_ratchet.py release/v1.4-plan.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          test "$(git ls-remote origin refs/heads/fix/subscription-release-pressure-20261013 | cut -f1)" = "$EXPECTED_HEAD"
+          git commit -m 'fix(app-server): release subscriptions independently of bounded command admission'
+          git push origin HEAD:refs/heads/fix/subscription-release-pressure-20261013
+          echo "CODEX_TUI_GIT_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "CODEX_TUI_PTY_SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "CODEX_TUI_PTY_EVIDENCE_DIR=$RUNNER_TEMP/watch-pressure/pty" >> "$GITHUB_ENV"
+          git update-ref refs/heads/audit-watch-source HEAD
+          git bundle create "$RUNNER_TEMP/watch-pressure/source.bundle" refs/heads/audit-watch-source
+          git show --stat --oneline HEAD > "$RUNNER_TEMP/watch-pressure/commit.txt"
+      - name: Verify unchanged gates and optimized actual-program behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/watch-pressure"
+          python3 -O -m unittest discover -s scripts/testing -p 'test_terminal*.py' > "$OUT/observer-tests.log" 2>&1
+          cargo clippy --locked --all-targets --all-features -- -D warnings > "$OUT/clippy.log" 2>&1
+          cargo test --locked --all-targets --all-features > "$OUT/tests.log" 2>&1
+          cargo build --release --locked > "$OUT/build.log" 2>&1
+          cp target/release/codex-tui "$OUT/codex-tui"
+          python3 -O scripts/testing/watch_pressure_regression.py target/release/codex-tui "$OUT/optimized-pressure" > "$OUT/optimized-pressure.log" 2>&1
+          python3 -O scripts/testing/watch_ownership_regression.py target/release/codex-tui "$OUT/optimized-ownership" > "$OUT/optimized-ownership.log" 2>&1
+          sha256sum "$OUT/codex-tui" "$OUT/source.bundle" > "$OUT/SHA256SUMS"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: watch-pressure-prepared-${{ github.run_id }}
+          path: ${{ runner.temp }}/watch-pressure
+          retention-days: 14
+          if-no-files-found: error
