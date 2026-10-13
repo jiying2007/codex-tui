@@ -1,0 +1,31 @@
+name: audit-watch-retirement-prepare
+on:
+  push:
+    branches: [fix/provisional-watch-retirement-20261013]
+    paths: [.github/workflows/audit-watch-retirement-prepare.yml]
+permissions:
+  contents: read
+jobs:
+  source:
+    if: github.repository == 'jiying2007/codex-tui'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: 33dadcf77d1791e12eb48676d9735c59aace6168
+          persist-credentials: false
+      - name: Export reviewed source without credentials or Git internals
+        run: |
+          set -eu
+          test "$(git rev-parse HEAD)" = 33dadcf77d1791e12eb48676d9735c59aace6168
+          test "$(git rev-parse HEAD^{tree})" = fffed53481486ad0605b320adf8ccce51d954df4
+          mkdir -p "$RUNNER_TEMP/watch-source"
+          git archive HEAD > "$RUNNER_TEMP/watch-source/source.tar"
+          sha256sum "$RUNNER_TEMP/watch-source/source.tar"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: watch-source-${{ github.run_id }}
+          path: ${{ runner.temp }}/watch-source
+          retention-days: 3
+          if-no-files-found: error
