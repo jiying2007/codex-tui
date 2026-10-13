@@ -35,6 +35,7 @@ jobs:
             '.git-transport-patch-a':'f272d21b9b367d8604d5e0cbeb8fc0ff2ca20864a1f52e208c8ac70b2bc63026',
             '.git-transport-patch-b':'ea580edb70334b4b7cd67c175fb8574a57abe14c54ebbe503d63b414b95caa7e',
             '.git-transport-patch-c':'3d48beafe0d5673b0d49edf78646bb0bb4b734de32d04e517e614727899ed7ab',
+            '.git-transport-patch-d':'6834b607c673ba406f8573f2eab1d90a19ac5080dec8ae2974922818f0ef2afa',
             'scripts/testing/git_transport_regression.py':'1fddbfe436da0d31c153e25695746265266c5b047f6d871993f87511c7aaa7c6',
             'tests/git_shared_snapshot.rs':'0108f27993b834146f8d1baffb427514e5c697ae8d5629920c90a04feae46681',
           }
@@ -53,7 +54,7 @@ jobs:
           hook_data=hook.read_bytes(); hook.unlink()
           subprocess.run(['git','add','-A'],check=True)
           tree=subprocess.check_output(['git','write-tree'],text=True).strip()
-          if tree!='2940e1055d57d6a43a0d3ab340fa0e6724af59fe': raise SystemExit('reviewed complete source tree mismatch: '+tree)
+          if tree!='563c4f3d3627c307e56921a51a95616e0eb84bf8': raise SystemExit('reviewed complete source tree mismatch: '+tree)
           hook.write_bytes(hook_data)
           subprocess.run(['cargo','fmt','--all'],check=True)
           path=Path('release/v1.4-plan.json'); plan=json.loads(path.read_text())
