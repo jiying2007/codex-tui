@@ -37,7 +37,6 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           python3 - <<'PY'
           import os
-          import re
           import subprocess
           from pathlib import Path
 
@@ -45,7 +44,7 @@ jobs:
               return subprocess.check_output(['git', *args], text=True)
 
           main = '326f082be766c77b0b8117ccf99c74f2749415fd'
-          prior = 'db010c9efe73036e2f93ec9b51e0ae44d0b3cb86'
+          prior = '717128213e98fc990159a7ba9a36035703089932'
           base = 'fb32c097beb77778c6b7a6d64f7d6f0e783395b9'
           workflow = '.github/workflows/audit-335-worktree-control.yml'
           fixture = 'tests/worktree_prewrite_identity.rs'
@@ -75,11 +74,22 @@ jobs:
           assert Path('CHANGELOG.md').read_text(encoding='utf-8') == merged_changelog
           assert git('rev-parse', 'MERGE_HEAD').strip() == main
 
-          before = Path(fixture).read_text(encoding='utf-8')
+          expected_fixture = Path(fixture).read_text(encoding='utf-8')
+          replacements = [
+              ('        git(&real_git, &repo, &["symbolic-ref", "HEAD", "refs/heads/main"]);',
+               '        git(\n            &real_git,\n            &repo,\n            &["symbolic-ref", "HEAD", "refs/heads/main"],\n        );'),
+              ('    assert!(root.join("admitted").is_file(), "admission was not exercised");',
+               '    assert!(\n        root.join("admitted").is_file(),\n        "admission was not exercised"\n    );'),
+              ('    assert!(has_victim(&real_git, &foreign), "foreign branch was modified");',
+               '    assert!(\n        has_victim(&real_git, &foreign),\n        "foreign branch was modified"\n    );'),
+              ('    assert_eq!(store.operation_receipt(&operation_id).unwrap(), Some(receipt));',
+               '    assert_eq!(\n        store.operation_receipt(&operation_id).unwrap(),\n        Some(receipt)\n    );'),
+          ]
+          for old, new in replacements:
+              assert expected_fixture.count(old) == 1, old
+              expected_fixture = expected_fixture.replace(old, new, 1)
           subprocess.run(['rustfmt', '--edition', '2024', fixture], check=True)
-          after = Path(fixture).read_text(encoding='utf-8')
-          assert before != after
-          assert re.sub(r'\s+', '', before) == re.sub(r'\s+', '', after)
+          assert Path(fixture).read_text(encoding='utf-8') == expected_fixture, 'unexpected formatter changes'
           assert git('diff', '--name-only').strip() == fixture
           expected = {
               workflow, fixture, 'CHANGELOG.md', 'docs/guides/troubleshooting.md',
