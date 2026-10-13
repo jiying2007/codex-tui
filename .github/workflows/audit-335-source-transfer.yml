@@ -1,0 +1,38 @@
+name: audit-335-source-transfer
+
+on:
+  push:
+    branches: [test/audit-335-program-qualification]
+    paths: [.github/workflows/audit-335-source-transfer.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    if: github.repository == 'jiying2007/codex-tui'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: 5ba11cc1a15f18e9eabb8a8dd301cb5a296abf79
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Export only committed repository objects
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = 5ba11cc1a15f18e9eabb8a8dd301cb5a296abf79
+          test "$(git rev-parse HEAD^{tree})" = 3476bb9d9194b99de28dbc6da25b6c79a7ca8932
+          mkdir -p "$RUNNER_TEMP/audit-335-source"
+          git update-ref refs/heads/audit-source HEAD
+          git bundle create "$RUNNER_TEMP/audit-335-source/source.bundle" refs/heads/audit-source
+          git bundle verify "$RUNNER_TEMP/audit-335-source/source.bundle"
+          sha256sum "$RUNNER_TEMP/audit-335-source/source.bundle"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: audit-335-source-${{ github.run_id }}
+          path: ${{ runner.temp }}/audit-335-source
+          retention-days: 3
+          if-no-files-found: error
