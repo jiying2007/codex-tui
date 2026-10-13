@@ -1,6 +1,66 @@
 use super::*;
 
 pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
+    let effects = reduce_inner(state, action);
+    release_unowned_conversation_watches(state, effects)
+}
+
+/// Centralized watch ownership applies even to reducer routes that return early.
+/// History-cache eviction does not imply an active backend subscription.
+fn release_unowned_conversation_watches(state: &mut AppState, mut effects: Vec<Effect>) -> Vec<Effect> {
+    for effect in &effects {
+        match effect {
+            Effect::LoadConversation(id)
+            | Effect::LoadOlderConversation { thread_id: id, .. }
+            | Effect::SubmitPrompt { thread_id: id, .. } => {
+                state.watched_conversations.insert(id.0.clone());
+            }
+            Effect::JumpToTranscriptHit(hit) => {
+                state.watched_conversations.insert(hit.thread_id.0.clone());
+            }
+            Effect::StopWatchingConversation(id) => {
+                state.watched_conversations.remove(&id.0);
+            }
+            _ => {}
+        }
+    }
+
+    let mut owners = BTreeSet::new();
+    if !state.should_quit {
+        if let Some(current) = state.current_thread_id() {
+            owners.insert(current.0.clone());
+            if let Some(previous) = &state.previous_target {
+                owners.insert(previous.0.clone());
+            }
+        }
+        owners.extend(state.prompt_submissions.pending_thread_ids().cloned());
+        for thread in &state.threads {
+            if matches!(
+                &thread.runtime,
+                RuntimeStatus::Working | RuntimeStatus::WaitingHuman
+            ) {
+                owners.insert(thread.id.0.clone());
+            }
+        }
+        for (id, conversation) in &state.conversations {
+            if conversation.active_turn_id().is_some() {
+                owners.insert(id.clone());
+            }
+        }
+    }
+    let stale = state
+        .watched_conversations
+        .difference(&owners)
+        .cloned()
+        .collect::<Vec<_>>();
+    for id in stale {
+        state.watched_conversations.remove(&id);
+        effects.push(Effect::StopWatchingConversation(ThreadId::new(id)));
+    }
+    effects
+}
+
+fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
     state.observe_user_response_edit(&action);
     state.observe_local_edit_action(&action);
     if matches!(
