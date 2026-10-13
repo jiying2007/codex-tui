@@ -39,17 +39,19 @@ pub(super) fn reconcile(state: &mut AppState, mut effects: Vec<Effect>) -> Vec<E
         );
         for id in &state.watched_conversations {
             // Only inspect already watched threads; no global 50k-thread scan.
-            if let Some(&index) = state.thread_index_by_id.get(id) {
-                let active_runtime = state.threads.get(index).is_some_and(|thread| {
-                    matches!(
-                        &thread.runtime,
-                        RuntimeStatus::Working | RuntimeStatus::WaitingHuman
-                    )
-                });
-                let active_turn = state
-                    .conversations
+            if state.thread_index_by_id.contains_key(id) || state.unregistered_watches.contains(id)
+            {
+                let active_runtime = state
+                    .thread_index_by_id
                     .get(id)
-                    .is_some_and(|conversation| conversation.active_turn_id().is_some());
+                    .and_then(|index| state.threads.get(*index))
+                    .is_some_and(|thread| {
+                        matches!(
+                            &thread.runtime,
+                            RuntimeStatus::Working | RuntimeStatus::WaitingHuman
+                        )
+                    });
+                let active_turn = state.active_history_watches.contains(id);
                 if active_runtime || active_turn {
                     owners.insert(id.clone());
                 }
@@ -78,6 +80,9 @@ pub(super) fn reconcile(state: &mut AppState, mut effects: Vec<Effect>) -> Vec<E
     }
     state
         .unregistered_watches
+        .retain(|id| state.watched_conversations.contains(id));
+    state
+        .active_history_watches
         .retain(|id| state.watched_conversations.contains(id));
     effects
 }
