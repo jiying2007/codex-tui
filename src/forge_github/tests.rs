@@ -195,3 +195,20 @@ fn bounded_review_threads_fail_closed_when_pagination_is_needed() {
         1
     );
 }
+
+#[test]
+fn projected_github_pull_head_sha_is_optional_but_exact_when_present() {
+    let pull: GitHubPullRequest = serde_json::from_value(serde_json::json!({
+        "number": 7,
+        "title": "ship",
+        "state": "open",
+        "html_url": "https://github.com/octo/repo/pull/7",
+        "head": {"ref": "feature", "sha": "0123456789abcdef0123456789abcdef01234567", "repo": {"id": 123, "full_name": "octo/repo"}},
+        "base": {"ref": "main"}
+    }))
+    .unwrap();
+    assert_eq!(pull.head.sha.as_deref(), Some("0123456789abcdef0123456789abcdef01234567"));
+    let unknown: GitHubPullRef =
+        serde_json::from_value(serde_json::json!({"ref": "feature"})).unwrap();
+    assert_eq!(unknown.sha, None);
+}
