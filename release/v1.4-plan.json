@@ -283,7 +283,7 @@
     "src/app_server/tests.rs": 991,
     "src/planning/tests.rs": 708,
     "src/forge_mutation/tests.rs": 331,
-    "src/worktree/tests.rs": 672,
+    "src/worktree/tests.rs": 680,
     "src/release/tests.rs": 406,
     "src/forge_github/tests.rs": 197,
     "src/git/tests.rs": 199,
