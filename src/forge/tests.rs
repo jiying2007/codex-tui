@@ -295,6 +295,7 @@ fn change_request_and_pipeline_match_exact_branch_only() {
             source_branch: "feature/a".into(),
             target_branch: "main".into(),
             web_url: "https://example/mr/7".into(),
+            head_sha: None,
             updated_at: None,
             draft: false,
             detailed_merge_status: None,

@@ -2395,6 +2395,57 @@ fn pin_alias_and_ack_round_trip_through_local_state() {
     assert!(!restored.repo_backed_only);
     assert_eq!(restored.visible_indices(), vec![0]);
 }
+#[test]
+fn forge_approval_and_merge_pin_the_projected_revision_at_confirmation() {
+    for github in [false, true] {
+        for choice in [ContextChoice::ForgeApprove, ContextChoice::ForgeMerge] {
+            let mut app = app();
+            if github {
+                seed_github_mutation_target(&mut app, true);
+            } else {
+                seed_gitlab_mutation_target(&mut app, true);
+            }
+            let choices = app.context_choices();
+            app.context_selected = choices.iter().position(|item| *item == choice).unwrap();
+            assert!(reduce(&mut app, Action::ExecuteContext).is_empty());
+            let plan = app.pending_forge_operation.as_ref().expect("reviewed plan");
+            assert_eq!(
+                crate::forge_mutation::confirmed_head_sha(plan).unwrap(),
+                "0123456789abcdef0123456789abcdef01234567"
+            );
+            assert!(plan.expected_side_effect.contains("reviewed commit"));
+            let effects = reduce(&mut app, Action::ConfirmPendingOperation);
+            assert!(matches!(
+                effects.as_slice(),
+                [Effect::ExecuteForgeOperation(_)]
+            ));
+        }
+    }
+}
+
+#[test]
+fn missing_forge_revision_cannot_create_approval_or_merge_plan() {
+    for choice in [ContextChoice::ForgeApprove, ContextChoice::ForgeMerge] {
+        let mut app = app();
+        let id = seed_github_mutation_target(&mut app, true);
+        app.forge_observations
+            .get_mut(&id.0)
+            .unwrap()
+            .change_requests[0]
+            .head_sha = None;
+        let choices = app.context_choices();
+        app.context_selected = choices.iter().position(|item| *item == choice).unwrap();
+        assert!(reduce(&mut app, Action::ExecuteContext).is_empty());
+        assert!(app.pending_forge_operation.is_none());
+        assert!(
+            app.mutation_notice
+                .as_deref()
+                .unwrap_or_default()
+                .contains("confirmed")
+        );
+    }
+}
+
 fn seed_gitlab_mutation_target(app: &mut AppState, with_merge_request: bool) -> ThreadId {
     use crate::forge::{
         ChangeRequestSummary, ForgeFreshness, ForgeIdentity, ForgeObservation, ForgeProviderKind,
@@ -2416,6 +2467,7 @@ fn seed_gitlab_mutation_target(app: &mut AppState, with_merge_request: bool) -> 
             source_branch: "feature/m6b".into(),
             target_branch: "main".into(),
             web_url: "https://gitlab.example.com/team/repo/-/merge_requests/7".into(),
+            head_sha: Some("0123456789abcdef0123456789abcdef01234567".into()),
             updated_at: None,
             draft: false,
             detailed_merge_status: Some("mergeable".into()),
@@ -2475,6 +2527,7 @@ fn seed_github_mutation_target(app: &mut AppState, with_pull_request: bool) -> T
             source_branch: "feature/github".into(),
             target_branch: "main".into(),
             web_url: "https://github.com/octo/repo/pull/9".into(),
+            head_sha: Some("0123456789abcdef0123456789abcdef01234567".into()),
             updated_at: None,
             draft: false,
             detailed_merge_status: None,
@@ -2689,7 +2742,9 @@ fn forge_mutation_receipt_invalidates_projection_and_enters_recent_audit() {
         change.target_branch,
         10,
     )
-    .expect("plan");
+    .expect("plan")
+    .bind_confirmed_head(change.head_sha.as_deref().expect("projected revision"))
+    .expect("confirmed SHA");
     let mut receipt = ForgeMutationReceipt::planned(plan);
     receipt.start(11);
     receipt.succeed(12, "mr:7".into(), "verified".into());
