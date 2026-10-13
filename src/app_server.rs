@@ -36,6 +36,8 @@ mod history_hit;
 mod lifecycle;
 mod pagination;
 mod resource_budget;
+mod watch_set;
+use watch_set::{WatchSet, WatchSetGuard};
 mod user_response;
 use history_hit::load_transcript_hit;
 use pagination::{
@@ -228,7 +230,6 @@ pub struct StartedRegistry {
 pub enum BackendCommand {
     SubmitUserResponse(crate::user_response::UserResponseSubmission),
     LoadConversation(ThreadId),
-    StopWatchingConversation(ThreadId),
     LoadOlderConversation {
         thread_id: ThreadId,
         turn_cursor: Option<String>,
@@ -254,7 +255,6 @@ pub enum BackendCommand {
     SearchTranscript(String),
     JumpToTranscriptHit(crate::transcript_search::TranscriptSearchHit),
     RefreshThreadQueue(ThreadId),
-    StopWatchingThreadQueue(ThreadId),
     MutateThreadQueue(ThreadQueueMutation),
     StartThread {
         cwd: String,
@@ -320,6 +320,8 @@ pub struct RegistryHandle {
     rx: watch::Receiver<BackendSnapshot>,
     conversation_rx: mpsc::Receiver<ConversationEvent>,
     command_tx: mpsc::Sender<BackendCommand>,
+    history_watches: WatchSet,
+    queue_watches: WatchSet,
     task: JoinHandle<()>,
 }
 
@@ -346,7 +348,8 @@ impl RegistryHandle {
     }
 
     pub fn stop_watching_conversation(&self, thread_id: ThreadId) -> Result<()> {
-        self.send_command(BackendCommand::StopWatchingConversation(thread_id))
+        self.history_watches.remove(&thread_id.0);
+        Ok(())
     }
 
     pub fn load_older_conversation(
@@ -418,7 +421,8 @@ impl RegistryHandle {
     }
 
     pub fn stop_watching_thread_queue(&self, thread_id: ThreadId) -> Result<()> {
-        self.send_command(BackendCommand::StopWatchingThreadQueue(thread_id))
+        self.queue_watches.remove(&thread_id.0);
+        Ok(())
     }
 
     pub fn mutate_thread_queue(&self, mutation: ThreadQueueMutation) -> Result<()> {
@@ -434,7 +438,29 @@ impl RegistryHandle {
     }
 
     fn send_command(&self, command: BackendCommand) -> Result<()> {
-        queue_backend_command(&self.command_tx, command)
+        // Publish membership only for accepted commands. Release never competes
+        // for queue capacity, and queued reads cannot resurrect a released watch.
+        let watch = match &command {
+            BackendCommand::LoadConversation(id)
+            | BackendCommand::LoadOlderConversation { thread_id: id, .. }
+            | BackendCommand::SubmitPrompt { thread_id: id, .. } => {
+                Some((&self.history_watches, id.0.clone()))
+            }
+            BackendCommand::JumpToTranscriptHit(hit) => {
+                Some((&self.history_watches, hit.thread_id.0.clone()))
+            }
+            BackendCommand::RefreshThreadQueue(id) => Some((&self.queue_watches, id.0.clone())),
+            BackendCommand::MutateThreadQueue(mutation) => Some((
+                &self.queue_watches,
+                thread_queue_mutation_thread_id(mutation).0.clone(),
+            )),
+            _ => None,
+        };
+        if let Some((watches, id)) = watch {
+            watches.admit(&id, || queue_backend_command(&self.command_tx, command))
+        } else {
+            queue_backend_command(&self.command_tx, command)
+        }
     }
 }
 
@@ -540,6 +566,8 @@ pub async fn start_target(target: ResolvedAppServerTarget) -> Result<StartedRegi
     let (tx, rx) = watch::channel(initial.clone());
     let (conversation_tx, conversation_rx) = mpsc::channel(APP_SERVER_CONVERSATION_QUEUE_CAPACITY);
     let (command_tx, command_rx) = mpsc::channel(APP_SERVER_COMMAND_QUEUE_CAPACITY);
+    let history_watches = WatchSet::default();
+    let queue_watches = WatchSet::default();
     let task = tokio::spawn(run_registry_actor(
         rpc,
         threads,
@@ -547,7 +575,12 @@ pub async fn start_target(target: ResolvedAppServerTarget) -> Result<StartedRegi
         tx,
         conversation_tx,
         command_rx,
-        (hydration, target),
+        (
+            hydration,
+            target,
+            history_watches.clone(),
+            queue_watches.clone(),
+        ),
     ));
 
     Ok(StartedRegistry {
@@ -556,6 +589,8 @@ pub async fn start_target(target: ResolvedAppServerTarget) -> Result<StartedRegi
             rx,
             conversation_rx,
             command_tx,
+            history_watches,
+            queue_watches,
             task,
         },
     })
@@ -865,14 +900,18 @@ async fn run_registry_actor(
     tx: watch::Sender<BackendSnapshot>,
     conversation_tx: mpsc::Sender<ConversationEvent>,
     mut command_rx: mpsc::Receiver<BackendCommand>,
-    setup: (Option<RegistryHydration>, ResolvedAppServerTarget),
+    setup: (
+        Option<RegistryHydration>,
+        ResolvedAppServerTarget,
+        WatchSet,
+        WatchSet,
+    ),
 ) {
-    let (mut hydration, target) = setup;
+    let (mut hydration, target, watched_threads, watched_queue_threads) = setup;
+    let _watch_guard = WatchSetGuard::new(watched_threads.clone(), watched_queue_threads.clone());
     let mut generation = 0_u64;
     let mut threads = by_id(initial_threads);
     let mut pending_requests: BTreeMap<RpcRequestId, PendingServerRequest> = BTreeMap::new();
-    let mut watched_threads = BTreeSet::new();
-    let mut watched_queue_threads = BTreeSet::new();
     let mut goal_supported: Option<bool> = None;
     let mut search_generation = 0_u64;
     let mut search_tasks = JoinSet::new();
@@ -931,18 +970,15 @@ async fn run_registry_actor(
                         }
                     }
                     BackendCommand::LoadConversation(thread_id) => {
-                        watched_threads.insert(thread_id.0.clone());
+                        if !watched_threads.contains(&thread_id.0) { continue; }
                         emit_conversation_load(&mut rpc, thread_id, &conversation_tx).await;
-                    }
-                    BackendCommand::StopWatchingConversation(thread_id) => {
-                        watched_threads.remove(&thread_id.0);
                     }
                     BackendCommand::LoadOlderConversation {
                         thread_id,
                         turn_cursor,
                         item_cursor,
                     } => {
-                        watched_threads.insert(thread_id.0.clone());
+                        if !watched_threads.contains(&thread_id.0) { continue; }
                         match load_older_conversation(
                             &mut rpc,
                             thread_id.clone(),
@@ -976,7 +1012,6 @@ async fn run_registry_actor(
                         text,
                         active_turn_id,
                     } => {
-                        watched_threads.insert(thread_id.0.clone());
                         match submit_prompt(
                             &mut rpc,
                             &mut threads,
@@ -1152,7 +1187,7 @@ async fn run_registry_actor(
                     }
                     BackendCommand::JumpToTranscriptHit(hit) => {
                         let thread_id = hit.thread_id.clone();
-                        watched_threads.insert(thread_id.0.clone());
+                        if !watched_threads.contains(&thread_id.0) { continue; }
                         match load_transcript_hit(&mut rpc, &hit).await {
                             Ok(page) => {
                                 let item_id = hit.item_id.clone().unwrap_or_default();
@@ -1178,7 +1213,7 @@ async fn run_registry_actor(
                         }
                     }
                     BackendCommand::RefreshThreadQueue(thread_id) => {
-                        watched_queue_threads.insert(thread_id.0.clone());
+                        if !watched_queue_threads.contains(&thread_id.0) { continue; }
                         match load_thread_queue(&mut rpc, thread_id.clone()).await {
                             Ok(snapshot) => {
                                 mark_optional_capability(&mut status, "thread/queue/list", true);
@@ -1207,13 +1242,10 @@ async fn run_registry_actor(
                             }
                         }
                     }
-                    BackendCommand::StopWatchingThreadQueue(thread_id) => {
-                        watched_queue_threads.remove(&thread_id.0);
-                    }
                     BackendCommand::MutateThreadQueue(mutation) => {
                         let capability = thread_queue_mutation_capability(&mutation);
                         let thread_id = thread_queue_mutation_thread_id(&mutation).clone();
-                        watched_queue_threads.insert(thread_id.0.clone());
+
                         match execute_thread_queue_mutation(&mut rpc, &mutation).await {
                             Ok(()) => {
                                 mark_optional_capability(&mut status, capability, true);
@@ -2297,8 +2329,8 @@ async fn handle_unsolicited(
     message: Value,
     threads: &mut BTreeMap<String, ThreadSummary>,
     pending_requests: &mut BTreeMap<RpcRequestId, PendingServerRequest>,
-    watched_threads: &BTreeSet<String>,
-    watched_queue_threads: &BTreeSet<String>,
+    watched_threads: &WatchSet,
+    watched_queue_threads: &WatchSet,
     conversation_tx: &mpsc::Sender<ConversationEvent>,
 ) -> Result<bool> {
     if message.get("id").is_some() && message.get("method").is_some() {

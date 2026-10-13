@@ -150,7 +150,7 @@
   "moduleRatchet": {
     "src/app.rs": 1009,
     "src/ui.rs": 2215,
-    "src/app_server.rs": 2634,
+    "src/app_server.rs": 2666,
     "src/main.rs": 1859,
     "src/sqlite_store.rs": 1715,
     "src/forge.rs": 1149,
@@ -280,7 +280,7 @@
     "src/app/thread_queue_reducer_tests.rs": 123,
     "src/ui/tests.rs": 1164,
     "src/sqlite_store/tests.rs": 832,
-    "src/app_server/tests.rs": 991,
+    "src/app_server/tests.rs": 993,
     "src/planning/tests.rs": 710,
     "src/forge_mutation/tests.rs": 363,
     "src/worktree/tests.rs": 680,
@@ -301,7 +301,8 @@
     "src/app_server_transport/reader_lifecycle_tests.rs": 139,
     "src/git/audit_tests.rs": 198,
     "src/app/watch.rs": 132,
-    "src/app/watch/tests.rs": 191
+    "src/app/watch/tests.rs": 191,
+    "src/app_server/watch_set.rs": 129
   },
   "ratchetPolicy": {
     "baseline": "inherit v1.3 Search & Multi-Target ceilings; feature work may only add bounded module-specific ceilings",
