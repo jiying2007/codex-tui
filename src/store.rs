@@ -156,7 +156,9 @@ impl FileStore {
 }
 
 fn atomic_write_new(path: &Path, bytes: &[u8]) -> Result<()> {
-    let parent = path.parent().with_context(|| format!("path has no parent: {}", path.display()))?;
+    let parent = path
+        .parent()
+        .with_context(|| format!("path has no parent: {}", path.display()))?;
     fs::create_dir_all(parent).with_context(|| format!("create directory {}", parent.display()))?;
     let mut temp = NamedTempFile::new_in(parent).context("create default config temp file")?;
     temp.write_all(bytes).context("write default config")?;
@@ -164,7 +166,9 @@ fn atomic_write_new(path: &Path, bytes: &[u8]) -> Result<()> {
     match temp.persist_noclobber(path) {
         Ok(_) => Ok(()),
         Err(error) if error.error.kind() == std::io::ErrorKind::AlreadyExists => Ok(()),
-        Err(error) => Err(error.error).with_context(|| format!("install default config {}", path.display())),
+        Err(error) => {
+            Err(error.error).with_context(|| format!("install default config {}", path.display()))
+        }
     }
 }
 
