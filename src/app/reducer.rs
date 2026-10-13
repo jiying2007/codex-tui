@@ -1847,16 +1847,26 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             };
             let thread_id = hit.thread_id.clone();
             state.transcript_search_open = false;
-            state.previous_target = state.current_thread_id().cloned();
+            let previous = state.current_thread_id().cloned();
+            let stale_previous = state
+                .previous_target
+                .take()
+                .filter(|old| Some(old) != previous.as_ref() && old != &thread_id);
+            state.previous_target = previous;
             state.thread_ui.entry(thread_id.0.clone()).or_default();
             state.prepare_conversation(&thread_id);
             state.view = View::Thread(thread_id.clone());
             state.transcript_search_active_hit = Some(hit.clone());
-            return if hit.turn_id.is_some() && hit.item_id.is_some() {
-                vec![Effect::JumpToTranscriptHit(hit)]
+            let mut effects = Vec::new();
+            if let Some(stale) = stale_previous {
+                effects.push(Effect::StopWatchingConversation(stale));
+            }
+            if hit.turn_id.is_some() && hit.item_id.is_some() {
+                effects.push(Effect::JumpToTranscriptHit(hit));
             } else {
-                vec![Effect::LoadConversation(thread_id)]
-            };
+                effects.push(Effect::LoadConversation(thread_id));
+            }
+            return effects;
         }
         Action::BeginAlias => {
             if let Some((target, alias)) = state
