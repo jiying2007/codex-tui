@@ -9,96 +9,92 @@ permissions:
   contents: read
 
 jobs:
-  compare:
+  integrate:
     if: >-
       github.repository == 'jiying2007/codex-tui' &&
       github.event.pull_request.number == 338 &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       github.head_ref == 'fix/worktree-prewrite-identity-20261013'
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    env:
-      CARGO_TERM_COLOR: never
-      CANDIDATE: 4e0ecf0b37c67425543c0d687ec4ff2399a22412
-      BASELINE: fb32c097beb77778c6b7a6d64f7d6f0e783395b9
+    timeout-minutes: 10
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
-          ref: 4e0ecf0b37c67425543c0d687ec4ff2399a22412
+          ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
-          persist-credentials: false
       - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
         with:
           toolchain: stable
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-      - name: Run the same coordinator fixture against fixed and old runtime sources
+          components: rustfmt
+      - name: Merge the reviewed main, preserve both audit entries, and format the integration fixture
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$CANDIDATE"
-          test "$(git rev-parse HEAD:tests/worktree_prewrite_identity.rs)" = e1db0ebaf8dc8bfdae2e219a8d5c0ea11a438593
-          git diff --exit-code
-          OUT="$RUNNER_TEMP/audit-335-worktree"
-          NEGATIVE="$RUNNER_TEMP/audit-335-old-source"
-          mkdir -p "$OUT"
-          CODEX_TUI_GIT_SHA="$CANDIDATE" cargo test --locked --all-features \
-            --test worktree_prewrite_identity -- --test-threads=1 \
-            > "$OUT/positive.log" 2>&1
-          git worktree add --detach "$NEGATIVE" "$BASELINE"
-          mkdir -p "$NEGATIVE/tests"
-          cp tests/worktree_prewrite_identity.rs "$NEGATIVE/tests/"
-          git -C "$NEGATIVE" diff --exit-code
-          test "$(git -C "$NEGATIVE" ls-files --others --exclude-standard)" = tests/worktree_prewrite_identity.rs
-          set +e
-          CODEX_TUI_GIT_SHA="$BASELINE" cargo test --locked --all-features \
-            --manifest-path "$NEGATIVE/Cargo.toml" --target-dir "$GITHUB_WORKSPACE/target" \
-            --test worktree_prewrite_identity -- --test-threads=1 \
-            > "$OUT/negative.log" 2>&1
-          negative_exit=$?
-          set -e
-          test "$negative_exit" -eq 101
-          grep -F 'foreign branch was modified' "$OUT/negative.log"
-          grep -F 'test coordinator_unchanged_identity_positive_control_performs_exactly_one_write ... ok' "$OUT/positive.log"
-          grep -F 'test coordinator_unchanged_identity_positive_control_performs_exactly_one_write ... ok' "$OUT/negative.log"
-          grep -F 'test coordinator_refuses_retarget_after_successful_admission_before_any_write ... ok' "$OUT/positive.log"
-          grep -F '2 passed; 1 failed;' "$OUT/negative.log"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           python3 - <<'PY'
-          import hashlib
-          import json
           import os
+          import re
+          import subprocess
           from pathlib import Path
 
-          out = Path(os.environ['RUNNER_TEMP']) / 'audit-335-worktree'
-          receipt = {
-              'schema': 'codex-tui/audit-negative-control/v1',
-              'issue': 335,
-              'pullRequest': 338,
-              'candidateSourceSha': os.environ['CANDIDATE'],
-              'baselineSourceSha': os.environ['BASELINE'],
-              'fixtureBlobSha': 'e1db0ebaf8dc8bfdae2e219a8d5c0ea11a438593',
-              'runId': os.environ['GITHUB_RUN_ID'],
-              'positiveExitCode': 0,
-              'negativeExitCode': 101,
-              'negativeFailure': 'foreign branch was modified',
-              'unchangedIdentityControlPassesOnBoth': True,
-              'authority': 'real-git-production-coordinator-integration-regression-only',
-              'atomicFilesystemSafetyClaimed': False,
-              'stableReady': False,
-              'publicationAllowed': False,
-              'logs': {
-                  name: hashlib.sha256((out / name).read_bytes()).hexdigest()
-                  for name in ('positive.log', 'negative.log')
-              },
+          def git(*args):
+              return subprocess.check_output(['git', *args], text=True)
+
+          main = '326f082be766c77b0b8117ccf99c74f2749415fd'
+          prior = 'aefeaf42bdab89d55146608cc6026ba0331d77fb'
+          base = 'fb32c097beb77778c6b7a6d64f7d6f0e783395b9'
+          workflow = '.github/workflows/audit-335-worktree-control.yml'
+          fixture = 'tests/worktree_prewrite_identity.rs'
+          assert git('rev-parse', 'HEAD').strip() == os.environ['EXPECTED_HEAD']
+          assert git('rev-parse', 'HEAD^').strip() == prior
+          assert git('diff', '--name-only', prior, 'HEAD').strip() == workflow
+          assert git('merge-base', main, 'HEAD').strip() == base
+          assert git('rev-parse', 'HEAD:' + fixture).strip() == 'e1db0ebaf8dc8bfdae2e219a8d5c0ea11a438593'
+          assert git('ls-remote', 'origin', 'refs/heads/main').split()[0] == main
+
+          marker = '### Audit hardening\n\n'
+          addition = ('- Revalidate Worktree Git common-dir after asynchronous admission checks and immediately before issuing a mutation; add a real-Git post-admission retarget negative control without claiming atomic same-user race immunity.\n\n\n')
+          original = git('show', base + ':CHANGELOG.md')
+          feature = git('show', 'HEAD:CHANGELOG.md')
+          current = git('show', main + ':CHANGELOG.md')
+          assert original.count(marker) == current.count(marker) == 1
+          assert feature == original.replace(marker, marker + addition, 1)
+          merged_changelog = current.replace(marker, marker + addition, 1)
+
+          result = subprocess.run(['git', 'merge', '--no-commit', '--no-ff', main])
+          assert result.returncode in (0, 1)
+          conflicts = git('diff', '--name-only', '--diff-filter=U').splitlines()
+          assert conflicts in ([], ['CHANGELOG.md']), conflicts
+          if conflicts:
+              Path('CHANGELOG.md').write_text(merged_changelog, encoding='utf-8')
+              subprocess.run(['git', 'add', '--', 'CHANGELOG.md'], check=True)
+          assert Path('CHANGELOG.md').read_text(encoding='utf-8') == merged_changelog
+          assert git('rev-parse', 'MERGE_HEAD').strip() == main
+
+          before = Path(fixture).read_text(encoding='utf-8')
+          subprocess.run(['rustfmt', '--edition', '2024', fixture], check=True)
+          after = Path(fixture).read_text(encoding='utf-8')
+          assert before != after
+          assert re.sub(r'\s+', '', before) == re.sub(r'\s+', '', after)
+          assert git('diff', '--name-only').strip() == fixture
+          expected = {
+              workflow, fixture, 'CHANGELOG.md', 'docs/guides/troubleshooting.md',
+              'docs/zh-CN/guides/troubleshooting.md', 'release/v1.4-plan.json',
+              'src/worktree.rs', 'src/worktree/tests.rs',
           }
-          (out / 'receipt.json').write_text(
-              json.dumps(receipt, indent=2, sort_keys=True) + '\n', encoding='utf-8'
-          )
-          print(json.dumps(receipt, indent=2, sort_keys=True))
+          assert set(git('diff', '--name-only', main).splitlines()) == expected
           PY
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        if: always()
-        with:
-          name: audit-335-worktree-negative-control-${{ github.run_id }}
-          path: ${{ runner.temp }}/audit-335-worktree
-          if-no-files-found: error
-          retention-days: 14
+          cargo fmt --all -- --check
+          python3 scripts/architecture/check_module_ratchet.py release/v1.4-plan.json
+          python3 scripts/docs/check_docs.py
+          git diff --check
+          git diff --cached --check
+          test "$(git ls-remote origin refs/heads/fix/worktree-prewrite-identity-20261013 | cut -f1)" = "$EXPECTED_HEAD"
+          git add -- tests/worktree_prewrite_identity.rs
+          git commit -m 'fix(worktree): integrate validated watch ownership and format coordinator regressions'
+          git push origin HEAD:refs/heads/fix/worktree-prewrite-identity-20261013
