@@ -1,0 +1,14 @@
+diff --git a/src/main.rs b/src/main.rs
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -1340,8 +1340,8 @@
+                 path,
+             } => {
+                 let result = (|| {
+-                    anyhow::ensure!(app.thread_by_id(&thread_id).is_some_and(|thread|
+-                        thread.metadata.cwd == source_cwd), "Git editor source is stale");
++                    anyhow::ensure!(app.threads.iter().any(|thread|
++                        thread.id == thread_id && thread.metadata.cwd == source_cwd), "Git editor source is stale");
+                     codex_tui::git::validate_worktree_cwd(&cwd, &source_cwd)?;
+                     open_external_editor(&cwd, &path)
+                 })();
