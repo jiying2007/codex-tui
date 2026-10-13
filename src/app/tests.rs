@@ -895,6 +895,8 @@ fn opening_and_backing_out_preserves_registry_selection() {
     let mut app = app();
     reduce(&mut app, Action::MoveSelection(1));
     let selected = app.selected;
+    // An idle navigation watch has no independent active-work owner.
+    app.threads[selected].runtime = RuntimeStatus::Ready;
     let effects = reduce(&mut app, Action::OpenSelected);
     assert_eq!(
         effects,
@@ -916,6 +918,9 @@ fn opening_and_backing_out_preserves_registry_selection() {
 #[test]
 fn idle_interrupt_exits_thread_and_releases_watch() {
     let mut app = app();
+    // Make the idle premise explicit instead of inheriting a working fixture.
+    let selected = app.selected;
+    app.threads[selected].runtime = RuntimeStatus::Ready;
     reduce(&mut app, Action::OpenSelected);
     let thread_id = app.current_thread_id().expect("thread").clone();
     let effects = reduce(&mut app, Action::InterruptCurrent);

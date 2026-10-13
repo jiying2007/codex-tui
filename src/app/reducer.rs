@@ -88,9 +88,9 @@ fn release_unowned_conversation_watches(
     }
     // Legacy navigation stops are advisory: never cancel watches owned by
     // ongoing turns or pending prompts. Remove only real stopped subscriptions.
-    effects.retain(|effect| {
-        !matches!(effect, Effect::StopWatchingConversation(id) if owners.contains(&id.0))
-    });
+    effects.retain(
+        |effect| !matches!(effect, Effect::StopWatchingConversation(id) if owners.contains(&id.0)),
+    );
     for effect in &effects {
         if let Effect::StopWatchingConversation(id) = effect {
             state.watched_conversations.remove(&id.0);

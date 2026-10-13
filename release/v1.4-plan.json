@@ -276,7 +276,7 @@
     "src/forge/remote_identity_tests.rs": 47,
     "src/app/reducer.rs": 2639,
     "src/app/state.rs": 890,
-    "src/app/tests.rs": 2950,
+    "src/app/tests.rs": 2955,
     "src/app/thread_queue_reducer_tests.rs": 123,
     "src/ui/tests.rs": 1087,
     "src/sqlite_store/tests.rs": 832,
