@@ -25,72 +25,80 @@ jobs:
           toolchain: stable
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-      - name: Apply exact reviewed patch and commit only its allowlisted paths
+      - name: Preserve nested failure effects with exact source guards
         env:
-          GH_TOKEN: ${{ github.token }}
           EXPECTED_HEAD: ${{ github.sha }}
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/audit-335-prepared"
           python3 - <<'PY'
-          import base64
-          import hashlib
           import json
-          import lzma
           import os
           import subprocess
-          import urllib.request
           from pathlib import Path
 
           def git(*args):
               return subprocess.check_output(['git', *args], text=True).strip()
+          def replace(path, old, new):
+              p = Path(path)
+              text = p.read_text(encoding='utf-8')
+              assert text.count(old) == 1, (path, old)
+              p.write_text(text.replace(old, new, 1), encoding='utf-8')
 
-          base = '5ba11cc1a15f18e9eabb8a8dd301cb5a296abf79'
-          prior = '9334ecec05635901f07fcaeb9af5eb9d1072e310'
+          prior = '0b92f16cb19b642e39b0d8cf6ba885b4521e7d37'
           workflow = '.github/workflows/audit-335-source-transfer.yml'
-          paths = [
-              'CHANGELOG.md', 'docs/guides/troubleshooting.md',
-              'docs/zh-CN/guides/troubleshooting.md', 'release/v1.4-plan.json',
-              'scripts/testing/test_terminal_watch_ownership.py',
-              'scripts/testing/watch_ownership_regression.py', 'src/app.rs',
-              'src/app/prompt.rs', 'src/app/reducer.rs', 'src/app/watch.rs',
-              'src/app/watch/tests.rs', 'src/main.rs', 'tests/terminal_restoration.rs',
-          ]
+          paths = ['src/app/prompt.rs', 'src/app/reducer.rs', 'src/app/watch/tests.rs', 'release/v1.4-plan.json']
           assert git('rev-parse', 'HEAD') == os.environ['EXPECTED_HEAD']
           assert git('rev-parse', 'HEAD^') == prior
-          assert git('diff', '--name-only', base, 'HEAD') == workflow
-          assert git('ls-remote', 'origin', 'refs/heads/main').split()[0] == base
-          request = urllib.request.Request(
-              'https://api.github.com/repos/jiying2007/codex-tui/git/blobs/0a765c8e80d8a8e33fcd48c4a5374c338e755d4c',
-              headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'],
-                       'Accept': 'application/vnd.github+json'},
-          )
-          with urllib.request.urlopen(request, timeout=30) as response:
-              blob = json.load(response)
-          assert blob['sha'] == '0a765c8e80d8a8e33fcd48c4a5374c338e755d4c'
-          patch = lzma.decompress(base64.b64decode(blob['content']))
-          assert len(patch) == 41529
-          assert hashlib.sha256(patch).hexdigest() == '8407686ef12dd670df04b15793e52a37eb03fe258092a16a605ab816586fd5a2'
-          subprocess.run(['git', 'apply', '--check', '--unidiff-zero'], input=patch, check=True)
-          subprocess.run(['git', 'apply', '--unidiff-zero'], input=patch, check=True)
+          assert git('diff', '--name-only', prior, 'HEAD') == workflow
+          assert git('rev-parse', 'HEAD:src/app/prompt.rs') == 'fe6d1272e1a8633d9e16327249f14a0fff73d027'
+          replace('src/app/prompt.rs',
+              'pub(super) fn fail(state: &mut AppState, thread_id: ThreadId, request_id: u64, error: String) {',
+              'pub(super) fn fail(state: &mut AppState, thread_id: ThreadId, request_id: u64, error: String) -> Vec<Effect> {')
+          replace('src/app/prompt.rs',
+              '        reduce(state, Action::ConversationFailed { thread_id, error });\n    }\n}',
+              '        return reduce(state, Action::ConversationFailed { thread_id, error });\n    }\n    vec![]\n}')
+          replace('src/app/reducer.rs',
+              '            prompt::fail(state, thread_id, request_id, error);',
+              '            return prompt::fail(state, thread_id, request_id, error);')
+          test = '''
+          #[test]
+          fn failed_prompt_propagates_nested_watch_cleanup_without_replaying_the_send() {
+              let mut state = idle_app();
+              let id = state.current_thread_id().unwrap().clone();
+              reduce(&mut state, Action::ConversationLoaded(empty_page(id.clone())));
+              reduce(&mut state, Action::QuickPrompt);
+              reduce(&mut state, Action::SetDraft("retain failed draft".into()));
+              let effects = reduce(&mut state, Action::CommitInput);
+              let [Effect::SubmitPrompt { request_id, .. }] = effects.as_slice() else {
+                  panic!("submission expected");
+              };
+              reduce(&mut state, Action::Back);
+              let effects = reduce(&mut state, Action::PromptFailed {
+                  thread_id: id.clone(), request_id: *request_id, error: "fixture".into(),
+              });
+              assert_eq!(effects, vec![Effect::StopWatchingConversation(id.clone())]);
+              assert!(state.watched_conversations.is_empty());
+              assert_eq!(state.thread_ui[&id.0].draft, "retain failed draft");
+          }
+          '''
+          with Path('src/app/watch/tests.rs').open('a', encoding='utf-8') as f:
+              f.write(test)
           subprocess.run(['cargo', 'fmt', '--all'], check=True)
           ledger_path = Path('release/v1.4-plan.json')
           ledger = json.loads(ledger_path.read_text(encoding='utf-8'))
-          for path in ['src/app.rs', 'src/app/prompt.rs', 'src/app/reducer.rs', 'src/main.rs', 'src/app/watch.rs', 'src/app/watch/tests.rs']:
+          for path in paths[:3]:
               ledger['moduleRatchet'][path] = len(Path(path).read_text(encoding='utf-8').splitlines())
           ledger_path.write_text(json.dumps(ledger, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
-          changed = set(git('diff', '--name-only').splitlines())
-          changed.update(git('ls-files', '--others', '--exclude-standard').splitlines())
-          assert changed == set(paths), sorted(changed)
+          assert set(git('diff', '--name-only').splitlines()) == set(paths)
           subprocess.run(['git', 'diff', '--check'], check=True)
           subprocess.run(['git', 'add', '--', *paths], check=True)
-          assert set(git('diff', '--cached', '--name-only').splitlines()) == set(paths)
           PY
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           test "$(git ls-remote origin refs/heads/test/audit-335-program-qualification | cut -f1)" = "$EXPECTED_HEAD"
-          git commit -m 'fix(app): deliver watch cleanup effects and retain reachable return targets'
+          git commit -m 'fix(app): propagate nested prompt failure cleanup effects'
           git push origin HEAD:refs/heads/test/audit-335-program-qualification
           echo "CODEX_TUI_GIT_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
           echo "CODEX_TUI_PTY_SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
@@ -110,7 +118,7 @@ jobs:
           cargo test --locked --all-targets --all-features > "$OUT/cargo-test.log" 2>&1
           cargo build --locked --release > "$OUT/build-release.log" 2>&1
           python3 -O scripts/testing/watch_ownership_regression.py \
-            --binary target/release/codex-tui --output "$OUT/optimized-watch" \
+            target/release/codex-tui "$OUT/optimized-watch" \
             > "$OUT/optimized-watch.log" 2>&1
           cp target/release/codex-tui "$OUT/codex-tui"
           sha256sum "$OUT/codex-tui" "$OUT/source.bundle" > "$OUT/SHA256SUMS"
