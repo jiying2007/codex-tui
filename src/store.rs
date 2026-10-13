@@ -168,29 +168,21 @@ fn atomic_write_new(path: &Path, bytes: &[u8]) -> Result<()> {
     }
 }
 
-fn atomic_write(path: &Path, bytes: &[u8]) -> Result<()> {
-    let parent = path
-        .parent()
-        .with_context(|| format!("path has no parent: {}", path.display()))?;
-    fs::create_dir_all(parent).with_context(|| format!("create directory {}", parent.display()))?;
-
-    let mut temp = NamedTempFile::new_in(parent).context("create temporary state file")?;
-    temp.write_all(bytes)
-        .context("write temporary state file")?;
-    temp.flush().context("flush temporary state file")?;
-    temp.as_file()
-        .sync_all()
-        .context("sync temporary state file")?;
-    temp.persist(path)
-        .map_err(|error| error.error)
-        .with_context(|| format!("atomically replace {}", path.display()))?;
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use tempfile::tempdir;
+
+    #[test]
+    fn default_config_install_does_not_replace_existing_file() {
+        let root = tempdir().unwrap();
+        let store = FileStore::at(root.path());
+        let path = store.config_path();
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(&path, "[ui]\nmouse = false\n").unwrap();
+        atomic_write_new(&path, b"wrong default").unwrap();
+        assert_eq!(fs::read_to_string(path).unwrap(), "[ui]\nmouse = false\n");
+    }
 
     #[test]
     fn transcript_persistence_is_opt_in_only() {
