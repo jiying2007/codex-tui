@@ -71,6 +71,10 @@ def case(binary, output, home, mode):
             # A live provisional owner has no Registry row at all. Its history
             # must survive navigation and the same 32-page presentation churn.
             fleet.open_target(True)
+            # Keep the provisional return owner while exposing Registry rows,
+            # since a never-registered Thread has no visible Registry fence.
+            fleet.app.send(b'/')
+            fleet.app.send(b'\x7f'*len(fleet.filter))
             # Exact search loads item pages, not current turns. First observe a
             # real full-history refresh while navigation still owns this target.
             phase = fleet.boundary([{'method':'item/completed','params':{'threadId':'ghost'}}])
@@ -79,7 +83,8 @@ def case(binary, output, home, mode):
             validate_counts(rows, phase, ['ghost'], 1, 'thread/turns/list')
             validate_counts(rows, phase, ['ghost'], 1, 'thread/items/list')
             fleet.app.drain(.1)
-            fleet.app.send(b'\x1b')
+            fleet.app.send(b'\x1b')  # Return to the still-owned Thread.
+            fleet.app.send(b'\x1b')  # Leave only after current turns were observed.
             # Read the exact old hit again: its missing turns must not erase the
             # just-observed active owner when the user leaves that surface.
             fleet.open_target(True)
