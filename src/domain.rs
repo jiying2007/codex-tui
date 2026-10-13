@@ -35,7 +35,7 @@ impl CwdLocality {
 }
 
 pub fn classify_cwd_without_io(cwd: &str) -> Option<CwdLocality> {
-    let cwd = cwd.trim();
+    let cwd = cwd;
     if cwd.is_empty() {
         return Some(CwdLocality::Empty);
     }
@@ -66,7 +66,7 @@ pub fn classify_cwd_without_io(cwd: &str) -> Option<CwdLocality> {
 }
 
 pub fn classify_cwd(cwd: &str) -> CwdLocality {
-    let cwd = cwd.trim();
+    let cwd = cwd;
     if let Some(locality) = classify_cwd_without_io(cwd) {
         return locality;
     }
@@ -79,7 +79,7 @@ pub fn classify_cwd(cwd: &str) -> CwdLocality {
 }
 
 pub fn display_cwd(cwd: &str) -> &str {
-    let cwd = cwd.trim();
+    let cwd = cwd;
     if !cfg!(windows)
         && let Some(foreign) = embedded_windows_absolute(cwd)
     {
