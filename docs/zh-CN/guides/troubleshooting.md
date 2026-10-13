@@ -25,6 +25,9 @@ RPC 通知最多保留 1024 条且受 16 MiB 载荷记账预算限制。待处�
 ## GitLab/GitHub 不可用或字段不全
 <!-- docs-section: forge -->
 
+**审批/合并的修订版本确认：** 待确认的 Forge 操作计划记录当前 GitHub PR／GitLab MR 观测到的完整 HEAD SHA。若 SHA 缺失、格式错误，或从预览到执行期间发生变化，操作拒绝执行；请刷新 Forge 数据并重新审核确认。已有审批与结果不确定后的恢复核验不得拿其他修订版本冒充成功。保留 GitHub/GitLab 原有携带 SHA 的写请求保护；这不意味着能原子阻止上游管理员并发改动。
+
+
 进入出现问题的仓库，**私下**检查 `git remote -v`，依次执行 `codex-tui doctor git`、`codex-tui doctor forge`。在工具外登录对应主机的 `glab/gh`。GitLab Issue/MR/Pipeline 独立探测，一项能力失败不应让其他成功内容消失。`doctor compat` Ready 不等于内部 GitLab PASS；内部部署参考 [能力准入](../qualification/provider.md)。
 
 GitLab 审批状态 JSON 异常，或缺少 `rules`、`approvals_required`、`approved` 时，证据属于未知，客户端阻断合并。明确有效的空规则数组不同于字段缺失；客户端检查不替代 GitLab 服务端保护。
