@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use std::path::{Component, Path, PathBuf};
 use std::process::Stdio;
 
-fn selected_editor_target(worktree_root: &str, relative_path: &str) -> Result<PathBuf> {
+fn selected_editor_target(cwd: &str, worktree_root: &str, relative_path: &str) -> Result<PathBuf> {
     let selected = Path::new(relative_path);
     anyhow::ensure!(
         !relative_path.is_empty()
@@ -17,6 +17,11 @@ fn selected_editor_target(worktree_root: &str, relative_path: &str) -> Result<Pa
         root.is_dir(),
         "selected Git worktree root is not a directory"
     );
+    let canonical_cwd = std::fs::canonicalize(cwd).context("resolve selected Git cwd")?;
+    anyhow::ensure!(
+        canonical_cwd.is_dir() && canonical_cwd.starts_with(&root),
+        "selected Git cwd no longer belongs to the observed worktree root"
+    );
     let target = std::fs::canonicalize(root.join(selected))
         .with_context(|| format!("resolve changed file {relative_path:?}"))?;
     anyhow::ensure!(
@@ -26,13 +31,17 @@ fn selected_editor_target(worktree_root: &str, relative_path: &str) -> Result<Pa
     Ok(target)
 }
 
-pub(crate) fn open_external_editor(worktree_root: &str, relative_path: &str) -> Result<()> {
+pub(crate) fn open_external_editor(
+    cwd: &str,
+    worktree_root: &str,
+    relative_path: &str,
+) -> Result<()> {
     let editor =
         std::env::var_os("CODEX_TUI_EDITOR").unwrap_or_else(|| std::ffi::OsString::from("code"));
     if editor.to_string_lossy().trim().is_empty() {
         anyhow::bail!("CODEX_TUI_EDITOR is empty");
     }
-    let path = selected_editor_target(worktree_root, relative_path)?;
+    let path = selected_editor_target(cwd, worktree_root, relative_path)?;
     let mut command = std::process::Command::new(editor);
     command
         .arg(path)
@@ -119,7 +128,12 @@ mod tests {
         std::fs::write(temp.path().join("outside.rs"), "secret").expect("outside");
 
         assert_eq!(
-            selected_editor_target(repo.to_str().unwrap(), "src/changed.rs").unwrap(),
+            selected_editor_target(
+                repo.to_str().unwrap(),
+                repo.to_str().unwrap(),
+                "src/changed.rs"
+            )
+            .unwrap(),
             file.canonicalize().unwrap()
         );
         for invalid in [
@@ -129,12 +143,23 @@ mod tests {
             "",
         ] {
             assert!(
-                selected_editor_target(repo.to_str().unwrap(), invalid).is_err(),
+                selected_editor_target(repo.to_str().unwrap(), repo.to_str().unwrap(), invalid)
+                    .is_err(),
                 "unexpected editor target: {invalid:?}"
             );
         }
-        assert!(selected_editor_target(repo.to_str().unwrap(), file.to_str().unwrap()).is_err());
-        assert!(selected_editor_target(repo.to_str().unwrap(), "absent.rs").is_err());
+        assert!(
+            selected_editor_target(
+                repo.to_str().unwrap(),
+                repo.to_str().unwrap(),
+                file.to_str().unwrap()
+            )
+            .is_err()
+        );
+        assert!(
+            selected_editor_target(repo.to_str().unwrap(), repo.to_str().unwrap(), "absent.rs")
+                .is_err()
+        );
     }
 
     #[cfg(unix)]
@@ -151,11 +176,47 @@ mod tests {
         std::fs::write(&outside, "outside").unwrap();
         symlink(&outside, repo.join("escape.rs")).unwrap();
         symlink(&inner, repo.join("inner-link.rs")).unwrap();
-        assert!(selected_editor_target(repo.to_str().unwrap(), "escape.rs").is_err());
+        assert!(
+            selected_editor_target(repo.to_str().unwrap(), repo.to_str().unwrap(), "escape.rs")
+                .is_err()
+        );
         assert_eq!(
-            selected_editor_target(repo.to_str().unwrap(), "inner-link.rs").unwrap(),
+            selected_editor_target(
+                repo.to_str().unwrap(),
+                repo.to_str().unwrap(),
+                "inner-link.rs"
+            )
+            .unwrap(),
             inner.canonicalize().unwrap()
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn editor_rechecks_cwd_and_never_opens_a_trimmed_sibling() {
+        let temp = tempfile::tempdir().unwrap();
+        let ordinary = temp.path().join("repo");
+        std::fs::create_dir(&ordinary).unwrap();
+        std::fs::write(ordinary.join("changed.rs"), "WRONG").unwrap();
+        for suffix in ["  ", "\n", "\t", "\nline"] {
+            let root = temp.path().join(format!("repo{suffix}"));
+            std::fs::create_dir_all(root.join("nested")).unwrap();
+            std::fs::write(root.join("changed.rs"), "CORRECT").unwrap();
+            let cwd = root.join("nested");
+            assert!(
+                selected_editor_target(
+                    cwd.to_str().unwrap(),
+                    ordinary.to_str().unwrap(),
+                    "changed.rs"
+                )
+                .is_err()
+            );
+            let target =
+                selected_editor_target(cwd.to_str().unwrap(), root.to_str().unwrap(), "changed.rs")
+                    .unwrap();
+            assert_eq!(target, root.join("changed.rs").canonicalize().unwrap());
+            assert_eq!(std::fs::read_to_string(target).unwrap(), "CORRECT");
+        }
     }
 
     #[test]

@@ -1423,7 +1423,8 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             // Porcelain v2 paths are worktree-relative even when the thread cwd is nested.
             return vec![Effect::OpenExternalEditor {
                 thread_id,
-                cwd: worktree_root,
+                cwd,
+                worktree_root,
                 path,
             }];
         }

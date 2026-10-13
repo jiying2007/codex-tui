@@ -9,6 +9,7 @@ use tokio::net::TcpStream;
 #[cfg(unix)]
 use tokio::net::UnixStream;
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
+use tokio::task::JoinSet;
 use tokio::time::timeout;
 #[cfg(unix)]
 use tokio_tungstenite::client_async_with_config;
@@ -25,6 +26,9 @@ use tokio_tungstenite::{
 enum Transport {
     Stdio {
         _child: Box<Child>,
+        // At most one drain. Dropping a connection aborts it even if a descendant
+        // retains the stderr writer; no detached task can outlive this owner.
+        _stderr_tasks: JoinSet<()>,
         reader: Box<BufReader<ChildStdout>>,
         pending_line: Vec<u8>,
         writer: Box<BufWriter<ChildStdin>>,
@@ -98,13 +102,15 @@ impl AppServerTransport {
                     .stdout
                     .take()
                     .context("Codex App Server stdout unavailable")?;
+                let mut stderr_tasks = JoinSet::new();
                 if let Some(mut stderr) = child.stderr.take() {
-                    tokio::spawn(async move {
+                    stderr_tasks.spawn(async move {
                         let _ = tokio::io::copy(&mut stderr, &mut tokio::io::sink()).await;
                     });
                 }
                 Transport::Stdio {
                     _child: Box::new(child),
+                    _stderr_tasks: stderr_tasks,
                     reader: Box::new(BufReader::new(stdout)),
                     pending_line: Vec::new(),
                     writer: Box::new(BufWriter::new(stdin)),
@@ -334,3 +340,6 @@ mod tests;
 
 #[cfg(all(test, target_os = "linux"))]
 mod cancelled_write_test;
+
+#[cfg(all(test, target_os = "linux"))]
+mod reader_lifecycle_tests;

@@ -20,6 +20,8 @@ A cancelled or failed outbound write quarantines the connection: partial deliver
 
 Connection status covers the entire RPC session, not just its wire: either a retained-message admission failure or a transport failure makes it unusable and disconnected. A quarantined Registry bootstrap skips optional loaded-list probes and preserves the original fault. A valid optional-method rejection still reports a connected but degraded session.
 
+Each stdio connection owns its stderr drain in a task set containing at most one task. Dropping the connection cancels the drain after failed initialization, completed isolated search, or cancellation; a descendant retaining the write end cannot keep an unowned reader alive. Cancellation completes when Tokio next schedules the task, rather than synchronously in the destructor. This does not terminate unrelated descendants or retain their stderr content.
+
 ## GitLab/GitHub unavailable or missing data
 <!-- docs-section: forge -->
 
@@ -33,6 +35,12 @@ Forge stdout/stderr readers share the command future and its existing five-secon
 <!-- docs-section: cwd -->
 
 On Windows→SSH Ubuntu the TUI reads **Ubuntu-side** Codex Home, shell cwd and Git repository identity. A Windows cwd embedded in a stored Codex thread is foreign provenance, not an Ubuntu checkout. Confirm `doctor codex` reported paths and `doctor git` in the actual checkout. Do not concatenate a Windows absolute path onto an Ubuntu project path or silently invent a local thread.
+
+Git path identity preserves trailing spaces, tabs and embedded newlines: only the single response terminator is removed. Paths and status identities that are not valid UTF-8, cannot be resolved, or no longer match the probed cwd are rejected rather than rewritten. The editor checks the real cwd against the observed worktree root again before resolving the selected relative file. This is not an atomic defense against concurrent same-user filesystem replacement.
+
+Git identity stdout is limited to 64 KiB, status stdout to 2 MiB, and stderr to 64 KiB per command, under the existing three-second deadline. Status parsing permits at most 8192 nonempty records including headers and rename-source records. Over-limit or incomplete metadata/status produces an error and cannot be treated as a clean repository or a complete review. Diff presentation retains its existing bounded, explicitly marked prefix behavior. These are per-operation budgets, not a certified process-RSS ceiling.
+
+Same-cwd thread projections and planning snapshots share an immutable file-change inventory. They do not deep-copy every file entry for each thread. An explicitly loaded Review owns its presentation copy; independent probes and distinct worktrees are not globally interned. The 2 MiB/8192 limits intentionally degrade very large dirty inventories and require qualification on representative workloads.
 
 ## Drawer focus, Ctrl+C, resize and rendering
 <!-- docs-section: terminal -->

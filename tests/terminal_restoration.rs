@@ -143,3 +143,76 @@ fn drawer_signals_forge_reader_ownership_and_board_churn() {
     assert_eq!(receipt["realSshQualification"], false);
     println!("{receipt}");
 }
+
+#[test]
+fn exact_git_editor_targets_and_connection_readers_regressions() {
+    let temporary = tempfile::tempdir().unwrap();
+    let retained = std::env::var_os("CODEX_TUI_PTY_EVIDENCE_DIR");
+    let root = retained
+        .as_deref()
+        .map(Path::new)
+        .unwrap_or_else(|| temporary.path());
+    std::fs::create_dir_all(root).unwrap();
+    let output = root.join("git-lifecycle");
+    let log_path = root.join("git-lifecycle.log");
+    let log = std::fs::File::create(&log_path).unwrap();
+    let mut child = Command::new("python3")
+        .arg("-O")
+        .arg(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("scripts/testing/git_lifecycle_regression.py"),
+        )
+        .arg(env!("CARGO_BIN_EXE_codex-tui"))
+        .arg(&output)
+        .stdin(Stdio::null())
+        .stdout(log.try_clone().unwrap())
+        .stderr(log)
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(180);
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break status;
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!(
+                "Git lifecycle timeout: {}",
+                std::fs::read_to_string(&log_path).unwrap_or_default()
+            );
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    assert!(
+        status.success(),
+        "Git lifecycle regression: {}",
+        std::fs::read_to_string(&log_path).unwrap_or_default()
+    );
+    let receipt: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(output.join("receipt.json")).unwrap()).unwrap();
+    assert_eq!(receipt["schema"], "codex-tui/git-lifecycle-regression/v1");
+    assert_eq!(receipt["status"], "passed");
+    assert_eq!(receipt["manualQualification"], false);
+    assert_eq!(receipt["realSshQualification"], false);
+    let expected = [
+        "editor-control",
+        "editor-spaces",
+        "editor-newline",
+        "stderr-control",
+        "stderr-overflow",
+        "status-control",
+        "status-bytes",
+        "status-records",
+        "startup-held",
+        "search-held",
+        "search-eof-control",
+    ];
+    let cases = receipt["checks"].as_array().unwrap();
+    assert_eq!(cases.len(), expected.len());
+    for (case, name) in cases.iter().zip(expected) {
+        assert_eq!(case["mode"], name);
+        assert_eq!(case["passed"], true);
+    }
+    println!("{receipt}");
+}
