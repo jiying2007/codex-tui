@@ -17,6 +17,9 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
+- Reconcile history watch ownership centrally across view navigation, transcript jumps and state transitions, preserving pending/active work while releasing superseded idle subscriptions without scanning all threads per keypress.
+
+
 - Preserve Git path identity without trimming, reject lossy or unverifiable paths, and recheck the selected cwd at the editor boundary. Add real-Git whitespace/newline and wrong-sibling controls.
 - Bound ordinary Git identity/status/stdout/stderr capture and status record parsing; reject incomplete metadata instead of reporting clean success. Share immutable same-cwd change inventories across threads and planning snapshots.
 - Own each App Server stderr drain with its connection so initialization failure, completed isolated search and cancellation cannot leave detached readers. Keep exact-pipe and healthy EOF controls in the existing terminal regression workflow.
