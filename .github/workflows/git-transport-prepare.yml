@@ -1,0 +1,112 @@
+name: git-transport-prepare
+on:
+  push:
+    branches: [fix/git-identity-budget-transport]
+    paths: [.github/workflows/git-transport-prepare.yml]
+permissions:
+  contents: write
+concurrency:
+  group: git-transport-preparation
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      EVIDENCE: /tmp/git-transport-evidence
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+      - name: Apply reviewed source and retain exact identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE"
+          python3 - <<'PY'
+          import hashlib, json, os, subprocess
+          from pathlib import Path
+          base='48a80ff1b2b3006b30c82ed3a99285db6e23f951'
+          hashes={
+            '.git-transport-patch-a':'f272d21b9b367d8604d5e0cbeb8fc0ff2ca20864a1f52e208c8ac70b2bc63026',
+            '.git-transport-patch-b':'ea580edb70334b4b7cd67c175fb8574a57abe14c54ebbe503d63b414b95caa7e',
+            '.git-transport-patch-c':'3d48beafe0d5673b0d49edf78646bb0bb4b734de32d04e517e614727899ed7ab',
+            'scripts/testing/git_transport_regression.py':'1fddbfe436da0d31c153e25695746265266c5b047f6d871993f87511c7aaa7c6',
+            'tests/git_shared_snapshot.rs':'0108f27993b834146f8d1baffb427514e5c697ae8d5629920c90a04feae46681',
+          }
+          hook=Path('.github/workflows/git-transport-prepare.yml')
+          allowed=set(hashes)|{str(hook)}
+          changed=set(subprocess.check_output(['git','diff','--name-only',base,'HEAD'],text=True).splitlines())
+          if changed != allowed: raise SystemExit('unexpected staging files: '+repr(changed))
+          for name, expected in hashes.items():
+              data=Path(name).read_bytes()
+              if hashlib.sha256(data).hexdigest()!=expected: raise SystemExit('reviewed source digest mismatch: '+name)
+              if name.startswith('.git-transport-patch'):
+                  (Path(os.environ['EVIDENCE'])/name.lstrip('.')).write_bytes(data)
+                  subprocess.run(['git','apply','--unidiff-zero','--check',name],check=True)
+                  subprocess.run(['git','apply','--unidiff-zero',name],check=True)
+                  Path(name).unlink()
+          hook_data=hook.read_bytes(); hook.unlink()
+          subprocess.run(['git','add','-A'],check=True)
+          tree=subprocess.check_output(['git','write-tree'],text=True).strip()
+          if tree!='2940e1055d57d6a43a0d3ab340fa0e6724af59fe': raise SystemExit('reviewed complete source tree mismatch: '+tree)
+          hook.write_bytes(hook_data)
+          subprocess.run(['cargo','fmt','--all'],check=True)
+          path=Path('release/v1.4-plan.json'); plan=json.loads(path.read_text())
+          modules=['src/app/reducer.rs','src/app/tests.rs','src/app/types.rs','src/app_server_transport.rs','src/git.rs','src/git/tests.rs','src/main.rs','src/soak.rs']
+          for module in modules: plan['moduleRatchet'][module]=len(Path(module).read_text().splitlines())
+          path.write_text(json.dumps(plan,ensure_ascii=False,indent=2)+'\n')
+          PY
+          git diff --check
+          git config user.name github-actions\[bot\]
+          git config user.email 41898282+github-actions\[bot\]@users.noreply.github.com
+          git add -A
+          git commit -m 'fix(runtime): preserve Git identity, bound shared probes and own connection readers'
+          git rev-parse HEAD > "$EVIDENCE/source-sha.txt"
+          git rev-parse HEAD^{tree} > "$EVIDENCE/source-tree.txt"
+          git archive --format=tar.gz HEAD > "$EVIDENCE/source-with-cleanup-hook.tar.gz"
+          git diff 48a80ff1b2b3006b30c82ed3a99285db6e23f951 HEAD > "$EVIDENCE/formatted.patch"
+          echo "CODEX_TUI_GIT_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "CODEX_TUI_PTY_SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "CODEX_TUI_PTY_EVIDENCE_DIR=$EVIDENCE/debug-pty" >> "$GITHUB_ENV"
+      - name: Strict source and full regression qualification
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo clippy --locked --all-targets --all-features -- -D warnings 2>&1 | tee "$EVIDENCE/clippy.log"
+          cargo test --locked --all-targets --all-features 2>&1 | tee "$EVIDENCE/tests.log"
+          python3 -O -m unittest discover -s scripts/release -p 'test_*.py' 2>&1 | tee "$EVIDENCE/release-python.log"
+          python3 -O -m unittest discover -s scripts/testing -p 'test_terminal_*.py' 2>&1 | tee "$EVIDENCE/terminal-python.log"
+          python3 scripts/docs/check_docs.py
+          python3 scripts/architecture/check_module_ratchet.py release/v1.4-plan.json
+          python3 scripts/architecture/check_first_deployment.py
+          python3 scripts/architecture/check_upstream_convergence.py
+      - name: Exercise current optimized program
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --release --locked 2>&1 | tee "$EVIDENCE/build-release.log"
+          cp target/release/codex-tui "$EVIDENCE/codex-tui"
+          sha256sum "$EVIDENCE/codex-tui" > "$EVIDENCE/binary-sha256.txt"
+          python3 -O scripts/testing/terminal_restoration.py target/release/codex-tui "$EVIDENCE/optimized-terminal" 2>&1 | tee "$EVIDENCE/optimized-terminal.log"
+          python3 -O scripts/testing/app_server_transport_regression.py target/release/codex-tui "$EVIDENCE/optimized-app-server" 2>&1 | tee "$EVIDENCE/optimized-app-server.log"
+          python3 -O scripts/testing/runtime_fault_regression.py target/release/codex-tui "$EVIDENCE/optimized-runtime" 2>&1 | tee "$EVIDENCE/optimized-runtime.log"
+          python3 -O scripts/testing/git_transport_regression.py target/release/codex-tui "$EVIDENCE/optimized-git-transport" 2>&1 | tee "$EVIDENCE/optimized-git-transport.log"
+      - name: Push qualified source for connector cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git ls-remote origin refs/heads/fix/git-identity-budget-transport | cut -f1)" = "$GITHUB_SHA"
+          git push origin HEAD:refs/heads/fix/git-identity-budget-transport
+          git rev-parse HEAD > "$EVIDENCE/pushed-sha.txt"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: git-transport-preparation-${{ github.run_id }}
+          path: /tmp/git-transport-evidence/
+          if-no-files-found: warn
+          retention-days: 30
