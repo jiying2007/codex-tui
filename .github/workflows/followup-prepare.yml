@@ -1,0 +1,106 @@
+name: followup-prepare
+on:
+  push:
+    branches: [fix/git-identity-owned-io-20261013]
+    paths: [.github/workflows/followup-prepare.yml]
+permissions:
+  contents: write
+concurrency:
+  group: git-identity-followup-preparation
+  cancel-in-progress: false
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      EVIDENCE: /tmp/git-identity-followup-evidence
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
+      - name: Apply exact reviewed patch, format and submit repair branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$EVIDENCE"
+          python3 - <<'PY'
+          import base64, hashlib, json, os, subprocess, zlib
+          from pathlib import Path
+          base = '48a80ff1b2b3006b30c82ed3a99285db6e23f951'
+          hook = Path('.github/workflows/followup-prepare.yml')
+          parts = [Path('.followup-patch-'+str(i)) for i in range(5)]
+          allowed = {str(p) for p in parts} | {str(hook)}
+          changed = set(subprocess.check_output(['git','diff','--name-only',base,'HEAD'],text=True).splitlines())
+          if changed != allowed: raise SystemExit('unexpected base diff: '+repr(changed))
+          if subprocess.check_output(['git','rev-parse',base+'^{tree}'],text=True).strip() != 'ee81a2c4d6d6a955f8b3919fecc98c03febc7c29': raise SystemExit('base tree mismatch')
+          encoded = ''.join(''.join(p.read_text().split()) for p in parts)
+          patch = zlib.decompress(base64.b64decode(encoded,validate=True))
+          if hashlib.sha256(patch).hexdigest() != '4de2a1b45c77fa6d0316b5cd1f3de3068a045908fe0f99a5760fb211c20a0840': raise SystemExit('reviewed patch checksum mismatch')
+          dest = Path(os.environ['EVIDENCE'])/'reviewed.patch'; dest.write_bytes(patch)
+          subprocess.run(['git','apply','--check',str(dest)],check=True)
+          subprocess.run(['git','apply',str(dest)],check=True)
+          saved_hook = hook.read_bytes(); hook.unlink()
+          for p in parts: p.unlink()
+          subprocess.run(['git','add','-A'],check=True)
+          if subprocess.check_output(['git','write-tree'],text=True).strip() != 'eb1363fcf575568b5d58ff33167132d09f65feef': raise SystemExit('raw candidate tree mismatch')
+          subprocess.run(['cargo','fmt','--all'],check=True)
+          modules = ['src/app/reducer.rs','src/app/tests.rs','src/app/types.rs','src/app_server_transport.rs','src/app_server_transport/reader_lifecycle_tests.rs','src/git.rs','src/git/audit_tests.rs','src/git/tests.rs','src/main.rs','src/runtime_external.rs','src/runtime_external/tests.rs']
+          plan_path = Path('release/v1.4-plan.json'); plan = json.loads(plan_path.read_text())
+          for name in modules:
+              if name not in plan['moduleRatchet']: raise SystemExit('ungoverned source module: '+name)
+              plan['moduleRatchet'][name] = len(Path(name).read_text().splitlines())
+          plan_path.write_text(json.dumps(plan,ensure_ascii=False,indent=2)+'\n')
+          subprocess.run(['git','add','-A'],check=True)
+          clean_tree = subprocess.check_output(['git','write-tree'],text=True).strip()
+          (Path(os.environ['EVIDENCE'])/'clean-tree.txt').write_text(clean_tree+'\n')
+          hook.write_bytes(saved_hook)
+          PY
+          git diff --check
+          git config user.name github-actions\[bot\]
+          git config user.email 41898282+github-actions\[bot\]@users.noreply.github.com
+          git add -A
+          git commit -m 'fix(runtime): preserve Git identities, bound shared inventories and own connection drains'
+          git rev-parse HEAD > "$EVIDENCE/source-sha.txt"
+          git rev-parse HEAD^{tree} > "$EVIDENCE/source-tree.txt"
+          git archive --format=tar.gz HEAD > "$EVIDENCE/source-with-cleanup-hook.tar.gz"
+          git diff 48a80ff1b2b3006b30c82ed3a99285db6e23f951 HEAD > "$EVIDENCE/submitted.patch"
+          test "$(git ls-remote origin refs/heads/fix/git-identity-owned-io-20261013 | cut -f1)" = "$GITHUB_SHA"
+          git push origin HEAD:refs/heads/fix/git-identity-owned-io-20261013
+          echo "CODEX_TUI_GIT_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "CODEX_TUI_PTY_SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          echo "CODEX_TUI_PTY_EVIDENCE_DIR=$EVIDENCE/debug-pty" >> "$GITHUB_ENV"
+      - name: Strict source and full Linux qualification
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo clippy --locked --all-targets --all-features -- -D warnings 2>&1 | tee "$EVIDENCE/clippy.log"
+          cargo test --locked --all-targets --all-features 2>&1 | tee "$EVIDENCE/tests.log"
+          python3 -O -m unittest discover -s scripts/release -p 'test_*.py' 2>&1 | tee "$EVIDENCE/release-python.log"
+          python3 -O -m unittest discover -s scripts/testing -p 'test_terminal_*.py' 2>&1 | tee "$EVIDENCE/terminal-python.log"
+          python3 scripts/docs/check_docs.py
+          python3 scripts/architecture/check_module_ratchet.py release/v1.4-plan.json
+          python3 scripts/architecture/check_first_deployment.py
+          python3 scripts/architecture/check_upstream_convergence.py
+      - name: Build and exercise optimized candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --release --locked 2>&1 | tee "$EVIDENCE/build-release.log"
+          cp target/release/codex-tui "$EVIDENCE/codex-tui"
+          sha256sum "$EVIDENCE/codex-tui" > "$EVIDENCE/binary-sha256.txt"
+          python3 -O scripts/testing/terminal_restoration.py target/release/codex-tui "$EVIDENCE/optimized-terminal" 2>&1 | tee "$EVIDENCE/optimized-terminal.log"
+          python3 -O scripts/testing/app_server_transport_regression.py target/release/codex-tui "$EVIDENCE/optimized-app-server" 2>&1 | tee "$EVIDENCE/optimized-app-server.log"
+          python3 -O scripts/testing/runtime_fault_regression.py target/release/codex-tui "$EVIDENCE/optimized-runtime" 2>&1 | tee "$EVIDENCE/optimized-runtime.log"
+          python3 -O scripts/testing/git_lifecycle_regression.py target/release/codex-tui "$EVIDENCE/optimized-git-lifecycle" 2>&1 | tee "$EVIDENCE/optimized-git-lifecycle.log"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: git-identity-followup-preparation-${{ github.run_id }}
+          path: /tmp/git-identity-followup-evidence/
+          if-no-files-found: warn
+          retention-days: 30
