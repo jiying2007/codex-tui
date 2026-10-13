@@ -83,6 +83,37 @@ fn futures_lite_probe(root: &Path) -> LocalRepoIdentity {
     }
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn changed_cwd_repository_is_rejected_before_branch_mutation_or_recovery() {
+    use std::os::unix::fs::symlink;
+    let temp = tempdir().unwrap();
+    let source = temp.path().join("source");
+    let foreign = temp.path().join("foreign");
+    let selected = temp.path().join("selected");
+    let planned_repo = init_repo(&source);
+    init_repo(&foreign);
+    git(&foreign, &["branch", "victim"]);
+    symlink(&source, &selected).unwrap();
+    let plan = OperationPlan::delete_branch(
+        planned_repo, selected.to_str().unwrap().into(), "victim".into(), 1,
+    );
+    ensure_plan_repository_identity(&plan).await.unwrap();
+    std::fs::remove_file(&selected).unwrap();
+    symlink(&foreign, &selected).unwrap();
+    let error = ensure_plan_repository_identity(&plan).await.unwrap_err();
+    assert!(error.to_string().contains("planned repository identity"));
+    let store = SqliteStore::at(temp.path().join("store"));
+    let result = execute_request(&store, MutationRequest {
+        plan: plan.clone(),
+        active_scopes: vec![],
+        admitted_at: Instant::now(),
+    }).await.unwrap();
+    assert_eq!(result.state, OperationState::Failed);
+    assert!(branch_exists(&foreign.to_string_lossy(), "victim").await.unwrap());
+    assert!(reconcile_outcome(&store, &plan).await.is_err());
+}
+
 #[tokio::test]
 async fn same_repo_reuses_one_mutation_lock_while_other_repo_does_not() {
     let locks: RepoLocks = Arc::new(Mutex::new(BTreeMap::new()));
