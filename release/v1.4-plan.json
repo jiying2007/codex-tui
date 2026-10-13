@@ -216,7 +216,7 @@
     "src/app/planning_selection.rs": 41,
     "src/app/planning_worker/clock.rs": 50,
     "src/app/planning_worker/live_tests.rs": 179,
-    "src/app/prompt.rs": 163,
+    "src/app/prompt.rs": 169,
     "src/runtime_prompt.rs": 93,
     "src/latest_read.rs": 171,
     "src/forge/read_order_tests.rs": 84,
@@ -301,7 +301,7 @@
     "src/app_server_transport/reader_lifecycle_tests.rs": 139,
     "src/git/audit_tests.rs": 198,
     "src/app/watch.rs": 113,
-    "src/app/watch/tests.rs": 115
+    "src/app/watch/tests.rs": 143
   },
   "ratchetPolicy": {
     "baseline": "inherit v1.3 Search & Multi-Target ceilings; feature work may only add bounded module-specific ceilings",

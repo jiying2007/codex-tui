@@ -113,3 +113,31 @@ fn acknowledged_prompt_keeps_watch_until_authoritative_history_or_failure() {
         assert_eq!(state.prompt_submissions.pending_thread_ids().count(), 0);
     }
 }
+
+#[test]
+fn failed_prompt_propagates_nested_watch_cleanup_without_replaying_the_send() {
+    let mut state = idle_app();
+    let id = state.current_thread_id().unwrap().clone();
+    reduce(
+        &mut state,
+        Action::ConversationLoaded(empty_page(id.clone())),
+    );
+    reduce(&mut state, Action::QuickPrompt);
+    reduce(&mut state, Action::SetDraft("retain failed draft".into()));
+    let effects = reduce(&mut state, Action::CommitInput);
+    let [Effect::SubmitPrompt { request_id, .. }] = effects.as_slice() else {
+        panic!("submission expected");
+    };
+    reduce(&mut state, Action::Back);
+    let effects = reduce(
+        &mut state,
+        Action::PromptFailed {
+            thread_id: id.clone(),
+            request_id: *request_id,
+            error: "fixture".into(),
+        },
+    );
+    assert_eq!(effects, vec![Effect::StopWatchingConversation(id.clone())]);
+    assert!(state.watched_conversations.is_empty());
+    assert_eq!(state.thread_ui[&id.0].draft, "retain failed draft");
+}

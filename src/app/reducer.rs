@@ -1533,7 +1533,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             request_id,
             error,
         } => {
-            prompt::fail(state, thread_id, request_id, error);
+            return prompt::fail(state, thread_id, request_id, error);
         }
         Action::InteractiveRequested(request) => {
             state.acknowledged_attention.remove(&request.thread_id.0);

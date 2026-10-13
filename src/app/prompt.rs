@@ -128,7 +128,12 @@ pub(super) fn acknowledge(
     vec![]
 }
 
-pub(super) fn fail(state: &mut AppState, thread_id: ThreadId, request_id: u64, error: String) {
+pub(super) fn fail(
+    state: &mut AppState,
+    thread_id: ThreadId,
+    request_id: u64,
+    error: String,
+) -> Vec<Effect> {
     if state
         .prompt_submissions
         .finish(&thread_id, request_id)
@@ -136,8 +141,9 @@ pub(super) fn fail(state: &mut AppState, thread_id: ThreadId, request_id: u64, e
     {
         // Never retry a possibly accepted turn. Preserve the draft and require an
         // explicit history refresh before the user can submit another prompt.
-        reduce(state, Action::ConversationFailed { thread_id, error });
+        return reduce(state, Action::ConversationFailed { thread_id, error });
     }
+    vec![]
 }
 
 #[cfg(test)]
