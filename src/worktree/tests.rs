@@ -72,15 +72,60 @@ fn futures_lite_probe(root: &Path) -> LocalRepoIdentity {
     let common = std::process::Command::new("git")
         .arg("-C")
         .arg(root)
-        .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
+        .args(["rev-parse", "--git-common-dir"])
         .output()
         .expect("git rev-parse");
     assert!(common.status.success());
-    let common = String::from_utf8_lossy(&common.stdout).trim().to_string();
+    let output = String::from_utf8(common.stdout).expect("UTF-8 test repo path");
+    let path = output.strip_suffix('\n').expect("git output newline");
+    let common = std::fs::canonicalize(root.join(path)).expect("canonical Git common dir");
     LocalRepoIdentity {
-        git_common_dir: canonical_path(&common),
+        git_common_dir: common.to_string_lossy().into_owned(),
         primary_root: canonical_path(root.to_string_lossy().as_ref()),
     }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn changed_cwd_repository_is_rejected_before_branch_mutation_or_recovery() {
+    use std::os::unix::fs::symlink;
+    let temp = tempdir().unwrap();
+    let source = temp.path().join("source");
+    let foreign = temp.path().join("foreign");
+    let selected = temp.path().join("selected");
+    let planned_repo = init_repo(&source);
+    init_repo(&foreign);
+    git(&foreign, &["branch", "victim"]);
+    symlink(&source, &selected).unwrap();
+    let plan = OperationPlan::delete_branch(
+        planned_repo,
+        selected.to_str().unwrap().into(),
+        "victim".into(),
+        1,
+    );
+    ensure_plan_repository_identity(&plan).await.unwrap();
+    std::fs::remove_file(&selected).unwrap();
+    symlink(&foreign, &selected).unwrap();
+    let error = ensure_plan_repository_identity(&plan).await.unwrap_err();
+    assert!(error.to_string().contains("planned repository identity"));
+    let store = SqliteStore::at(temp.path().join("store"));
+    let result = execute_request(
+        &store,
+        MutationRequest {
+            plan: plan.clone(),
+            active_scopes: vec![],
+            admitted_at: Instant::now(),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.state, OperationState::Failed);
+    assert!(
+        branch_exists(&foreign.to_string_lossy(), "victim")
+            .await
+            .unwrap()
+    );
+    assert!(reconcile_outcome(&store, &plan).await.is_err());
 }
 
 #[tokio::test]

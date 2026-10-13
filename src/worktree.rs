@@ -205,6 +205,28 @@ async fn execute_with_repo_lock(
     execute_request(store, request).await
 }
 
+async fn ensure_plan_repository_identity(plan: &OperationPlan) -> Result<()> {
+    // Check the live git-common-dir, rather than trusting a stored cwd string.
+    // This guard also applies to verification and recovery, where an accidental
+    // same-name branch in another repository must not count as success.
+    let output = crate::worktree_git::run_git(&plan.cwd, ["rev-parse", "--git-common-dir"]).await?;
+    anyhow::ensure!(output.success, "cannot verify live Git repository identity");
+    let common = output
+        .stdout
+        .strip_suffix('\n')
+        .context("git common-dir has no terminal newline")?;
+    anyhow::ensure!(!common.is_empty(), "Git common-dir is empty");
+    let observed = std::fs::canonicalize(Path::new(&plan.cwd).join(common))
+        .context("canonicalize current Git common-dir")?;
+    let expected = std::fs::canonicalize(&plan.repo.git_common_dir)
+        .context("canonicalize planned Git common-dir")?;
+    anyhow::ensure!(
+        observed == expected,
+        "planned repository identity no longer matches the live cwd"
+    );
+    Ok(())
+}
+
 async fn execute_request(
     store: &SqliteStore,
     request: MutationRequest,
@@ -236,6 +258,15 @@ async fn execute_request(
             receipt
         }
     };
+
+    if let Err(error) = ensure_plan_repository_identity(&receipt.plan).await {
+        receipt.fail(
+            now_unix_ms(),
+            format!("repository identity changed: {error:#}"),
+        );
+        store.save_operation_receipt(&receipt)?;
+        return Ok(receipt);
+    }
 
     if let Err(error) = check_preconditions(
         store,
@@ -427,6 +458,7 @@ async fn check_preconditions(
 }
 
 async fn verify_success(store: &SqliteStore, plan: &OperationPlan) -> Result<(String, String)> {
+    ensure_plan_repository_identity(plan).await?;
     match plan.kind {
         OperationKind::CreateWorktree => {
             let target = plan
@@ -570,6 +602,7 @@ fn worktree_path_absent(target: &str) -> Result<bool> {
 }
 
 async fn reconcile_outcome(store: &SqliteStore, plan: &OperationPlan) -> Result<ReconciledOutcome> {
+    ensure_plan_repository_identity(plan).await?;
     match plan.kind {
         OperationKind::CreateWorktree => {
             let target = plan
