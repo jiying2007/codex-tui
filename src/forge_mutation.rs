@@ -222,11 +222,16 @@ impl ForgeMutationPlan {
         );
         validate_confirmed_sha(sha)?;
         anyhow::ensure!(
-            !self.preconditions.iter().any(|item| item.key == "confirmed-head-sha"),
+            !self
+                .preconditions
+                .iter()
+                .any(|item| item.key == "confirmed-head-sha"),
             "forge plan already has a confirmed revision"
         );
-        self.preconditions.push(precondition("confirmed-head-sha", sha));
-        self.expected_side_effect.push_str(&format!(" at reviewed commit {sha}"));
+        self.preconditions
+            .push(precondition("confirmed-head-sha", sha));
+        self.expected_side_effect
+            .push_str(&format!(" at reviewed commit {sha}"));
         Ok(self)
     }
 
@@ -289,7 +294,10 @@ fn validate_confirmed_sha(sha: &str) -> Result<()> {
 }
 
 pub(crate) fn confirmed_head_sha(plan: &ForgeMutationPlan) -> Result<&str> {
-    let mut matches = plan.preconditions.iter().filter(|p| p.key == "confirmed-head-sha");
+    let mut matches = plan
+        .preconditions
+        .iter()
+        .filter(|p| p.key == "confirmed-head-sha");
     let confirmed = matches
         .next()
         .context("approval/merge has no confirmed HEAD; refresh Forge and confirm again")?;
@@ -1322,8 +1330,8 @@ async fn reconcile_outcome(plan: &ForgeMutationPlan) -> Result<ReconciledOutcome
                 .change_request_iid
                 .context("approve plan missing iid")?;
             let live = get_mr(plan, iid).await?;
-            if let Err(error) = required_mr_sha(&live)
-                .and_then(|sha| require_confirmed_head(plan, &sha))
+            if let Err(error) =
+                required_mr_sha(&live).and_then(|sha| require_confirmed_head(plan, &sha))
             {
                 return Ok(ReconciledOutcome::Unknown(format!(
                     "cannot attribute approval to the confirmed revision: {error:#}"
@@ -1351,8 +1359,8 @@ async fn reconcile_outcome(plan: &ForgeMutationPlan) -> Result<ReconciledOutcome
         ForgeMutationKind::MergeMergeRequest => {
             let iid = plan.change_request_iid.context("merge plan missing iid")?;
             let mr = get_mr(plan, iid).await?;
-            if let Err(error) = required_mr_sha(&mr)
-                .and_then(|sha| require_confirmed_head(plan, &sha))
+            if let Err(error) =
+                required_mr_sha(&mr).and_then(|sha| require_confirmed_head(plan, &sha))
             {
                 return Ok(ReconciledOutcome::Unknown(format!(
                     "cannot attribute merge to the confirmed revision: {error:#}"
