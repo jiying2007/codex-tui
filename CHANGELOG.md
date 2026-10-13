@@ -17,6 +17,9 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
+- Revalidate Worktree Git common-dir after asynchronous admission checks and immediately before issuing a mutation; add a real-Git post-admission retarget negative control without claiming atomic same-user race immunity.
+
+
 - Reconcile history watch ownership centrally across view navigation, transcript jumps and state transitions, preserving pending/active work while releasing superseded idle subscriptions without scanning all threads per keypress.
 
 

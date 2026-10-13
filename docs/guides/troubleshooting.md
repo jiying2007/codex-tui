@@ -39,6 +39,8 @@ Forge stdout/stderr readers share the command future and its existing five-secon
 ## Windows paths or repository-backed threads look wrong
 <!-- docs-section: cwd -->
 
+**Worktree mutation identity:** The planned Git common directory is checked before admission, after asynchronous precondition probes and immediately before issuing a Git write, and again during verification and recovery. A post-admission symlink retarget is rejected without mutating a foreign repository. This is defense in depth, **not** an atomic filesystem identity lease against adversarial same-user directory replacement; no absolute race immunity is claimed.
+
 On Windows→SSH Ubuntu the TUI reads **Ubuntu-side** Codex Home, shell cwd and Git repository identity. A Windows cwd embedded in a stored Codex thread is foreign provenance, not an Ubuntu checkout. Confirm `doctor codex` reported paths and `doctor git` in the actual checkout. Do not concatenate a Windows absolute path onto an Ubuntu project path or silently invent a local thread.
 
 Git path identity preserves trailing spaces, tabs and embedded newlines: only the single response terminator is removed. Paths and status identities that are not valid UTF-8, cannot be resolved, or no longer match the probed cwd are rejected rather than rewritten. The editor checks the real cwd against the observed worktree root again before resolving the selected relative file. This is not an atomic defense against concurrent same-user filesystem replacement.

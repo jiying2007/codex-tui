@@ -300,6 +300,18 @@ async fn execute_request(
         return Ok(receipt);
     }
 
+    // Admission can take multiple asynchronous Git probes. Rebind immediately
+    // before the first write, rather than trusting only the earlier snapshot.
+    // This is not an atomic defense against a same-user filesystem race.
+    if let Err(error) = ensure_plan_repository_identity(&receipt.plan).await {
+        receipt.fail(
+            now_unix_ms(),
+            format!("repository identity changed after admission: {error:#}"),
+        );
+        store.save_operation_receipt(&receipt)?;
+        return Ok(receipt);
+    }
+
     let command = run_git_mutation(&receipt.plan.cwd, &receipt.plan.argv).await;
     match command {
         Ok(output) if output.success => match verify_success(store, &receipt.plan).await {
