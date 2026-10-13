@@ -12,6 +12,7 @@ import tempfile
 
 from runtime_fault_regression import Session, environment
 from app_server_transport_regression import require
+from watch_removal_regression import CASES as REMOVAL_CASES, case as removal_case
 
 MOCK = r'''#!/usr/bin/python3
 import json, os, sys, threading, time
@@ -87,7 +88,7 @@ for line in sys.stdin:
 
 CASES = ['idle-back', 'search-cancel', 'search-commit', 'history-complete',
          'registry-complete', 'deleted', 'board-cancel', 'board-commit',
-         'prompt-success', 'prompt-failure', 'prompt-history-failure']
+         'prompt-success', 'prompt-failure', 'prompt-history-failure'] + REMOVAL_CASES
 
 
 def check_reads(actual, expected, label):
@@ -102,12 +103,14 @@ def resources(pid):
             values[key] = int(value.split()[0])
     values['fdCount'] = len(list(Path('/proc/{}/fd'.format(pid)).iterdir()))
     require(values.get('VmHWM', 0) > 0, 'missing live process RSS observation')
-    require(values['VmHWM'] < 128*1024, 'two-thread fixture exceeded 128 MiB diagnostic budget')
-    require(values['fdCount'] < 64, 'two-thread fixture exceeded 64 descriptors')
+    require(values['VmHWM'] < 128*1024, 'bounded watch fixture exceeded 128 MiB diagnostic budget')
+    require(values['fdCount'] < 64, 'bounded watch fixture exceeded 64 descriptors')
     return values
 
 
 def case(binary, output, home, mode):
+    if mode in REMOVAL_CASES:
+        return removal_case(binary, output, home, mode, MOCK, resources)
     log = home/'server.jsonl'
     env = environment(home, log, mode)
     (home/'bin/codex').write_text(MOCK, encoding='utf-8')
@@ -232,7 +235,8 @@ def main():
                'realSshQualification':False, 'checks':[]}
     receipt['sourceSha'] = identity(binary, args.output)
     receipt['sourceIdentityVerified'] = receipt['sourceSha'] != 'unknown'
-    receipt['resourceBudgetScope'] = 'two-thread isolated fixture only, not a global RSS limit'
+    receipt['resourceBudgetScope'] = ('two registered rows plus one provisional history target in removal cases; '
+                                      'not a global RSS limit')
     for mode in [args.scenario] if args.scenario else CASES:
         try:
             with tempfile.TemporaryDirectory(prefix='codex-tui-watch-') as directory:

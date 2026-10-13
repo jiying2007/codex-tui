@@ -36,6 +36,7 @@ mod history_hit;
 mod lifecycle;
 mod pagination;
 mod resource_budget;
+mod watch_lifecycle;
 mod watch_set;
 use watch_set::{WatchSet, WatchSetGuard};
 mod user_response;
@@ -2442,6 +2443,15 @@ async fn handle_unsolicited(
         }
         return Ok(false);
     }
+
+    watch_lifecycle::retire_removed_watches(
+        method,
+        params,
+        watched_threads,
+        watched_queue_threads,
+        conversation_tx,
+    )
+    .await;
 
     if let Some(changed) = apply_registry_notification(method, params, emitted_at_seconds, threads)?
     {
