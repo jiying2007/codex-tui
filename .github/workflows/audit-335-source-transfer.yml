@@ -25,7 +25,7 @@ jobs:
           toolchain: stable
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
-      - name: Preserve nested failure effects with exact source guards
+      - name: Preserve provisional history ownership without resurrecting deleted subscriptions
         env:
           EXPECTED_HEAD: ${{ github.sha }}
         shell: bash
@@ -40,47 +40,79 @@ jobs:
 
           def git(*args):
               return subprocess.check_output(['git', *args], text=True).strip()
-          def replace(path, old, new):
+          def replace(path, old, new, count=1):
               p = Path(path)
               text = p.read_text(encoding='utf-8')
-              assert text.count(old) == 1, (path, old)
-              p.write_text(text.replace(old, new, 1), encoding='utf-8')
+              assert text.count(old) == count, (path, old, text.count(old))
+              p.write_text(text.replace(old, new), encoding='utf-8')
 
-          prior = '0b92f16cb19b642e39b0d8cf6ba885b4521e7d37'
+          prior = 'f71ba6d09564517e7bd5c625bbf503bd41c8f1bb'
           workflow = '.github/workflows/audit-335-source-transfer.yml'
-          paths = ['src/app/prompt.rs', 'src/app/reducer.rs', 'src/app/watch/tests.rs', 'release/v1.4-plan.json']
+          paths = ['src/app.rs', 'src/app/state.rs', 'src/app/reducer.rs', 'src/app/watch.rs', 'src/app/watch/tests.rs', 'release/v1.4-plan.json']
           assert git('rev-parse', 'HEAD') == os.environ['EXPECTED_HEAD']
           assert git('rev-parse', 'HEAD^') == prior
           assert git('diff', '--name-only', prior, 'HEAD') == workflow
-          assert git('rev-parse', 'HEAD:src/app/prompt.rs') == 'fe6d1272e1a8633d9e16327249f14a0fff73d027'
-          replace('src/app/prompt.rs',
-              'pub(super) fn fail(state: &mut AppState, thread_id: ThreadId, request_id: u64, error: String) {',
-              'pub(super) fn fail(state: &mut AppState, thread_id: ThreadId, request_id: u64, error: String) -> Vec<Effect> {')
-          replace('src/app/prompt.rs',
-              '        reduce(state, Action::ConversationFailed { thread_id, error });\n    }\n}',
-              '        return reduce(state, Action::ConversationFailed { thread_id, error });\n    }\n    vec![]\n}')
+          replace('src/app.rs',
+              '    watched_conversations: BTreeSet<String>,',
+              '    watched_conversations: BTreeSet<String>,\n    unregistered_watches: BTreeSet<String>,')
+          replace('src/app/state.rs',
+              '            watched_conversations: BTreeSet::new(),',
+              '            watched_conversations: BTreeSet::new(),\n            unregistered_watches: BTreeSet::new(),')
           replace('src/app/reducer.rs',
-              '            prompt::fail(state, thread_id, request_id, error);',
-              '            return prompt::fail(state, thread_id, request_id, error);')
+              '        Action::ConversationFailed { thread_id, error } => {\n            state.prompt_submissions.history_resolved(&thread_id);',
+              '        Action::ConversationFailed { thread_id, error } => {\n            state.unregistered_watches.remove(&thread_id.0);\n            state.prompt_submissions.history_resolved(&thread_id);')
+          replace('src/app/watch.rs',
+              '    for effect in &effects {\n        match effect {',
+              '    // Provisional owners are only unresolved watches, never tombstones.\n    state.unregistered_watches.retain(|id| {\n        state.watched_conversations.contains(id) && !state.thread_index_by_id.contains_key(id)\n    });\n    for effect in &effects {\n        match effect {')
+          replace('src/app/watch.rs',
+              '                state.watched_conversations.insert(id.0.clone());',
+              '                track_watch(state, id);')
+          replace('src/app/watch.rs',
+              '                state.watched_conversations.insert(hit.thread_id.0.clone());',
+              '                track_watch(state, &hit.thread_id);')
+          replace('src/app/watch.rs',
+              '.filter(|id| state.thread_index_by_id.contains_key(*id))',
+              '.filter(|id| state.thread_index_by_id.contains_key(*id) || state.unregistered_watches.contains(*id))')
+          replace('src/app/watch.rs',
+              '        && state.thread_index_by_id.contains_key(&id.0)',
+              '        && (state.thread_index_by_id.contains_key(&id.0) || state.unregistered_watches.contains(&id.0))')
+          replace('src/app/watch.rs',
+              '        && state.thread_index_by_id.contains_key(&previous.0)',
+              '        && (state.thread_index_by_id.contains_key(&previous.0) || state.unregistered_watches.contains(&previous.0))')
+          replace('src/app/watch.rs',
+              '    effects\n}\n\n// Follow only return routes',
+              '    state.unregistered_watches.retain(|id| state.watched_conversations.contains(id));\n    effects\n}\n\nfn track_watch(state: &mut AppState, id: &ThreadId) {\n    state.watched_conversations.insert(id.0.clone());\n    if !state.thread_index_by_id.contains_key(&id.0) {\n        state.unregistered_watches.insert(id.0.clone());\n    }\n}\n\n// Follow only return routes')
+          replace('src/app/watch/tests.rs',
+              '    reduce(&mut state, Action::QuickPrompt);',
+              '    reduce(&mut state, Action::QuickPrompt);\n    reduce(&mut state, Action::ConversationLoaded(empty_page(id.clone())));', count=2)
           test = '''
           #[test]
-          fn failed_prompt_propagates_nested_watch_cleanup_without_replaying_the_send() {
-              let mut state = idle_app();
-              let id = state.current_thread_id().unwrap().clone();
-              reduce(&mut state, Action::ConversationLoaded(empty_page(id.clone())));
-              reduce(&mut state, Action::QuickPrompt);
-              reduce(&mut state, Action::SetDraft("retain failed draft".into()));
-              let effects = reduce(&mut state, Action::CommitInput);
-              let [Effect::SubmitPrompt { request_id, .. }] = effects.as_slice() else {
-                  panic!("submission expected");
-              };
-              reduce(&mut state, Action::Back);
-              let effects = reduce(&mut state, Action::PromptFailed {
-                  thread_id: id.clone(), request_id: *request_id, error: "fixture".into(),
-              });
-              assert_eq!(effects, vec![Effect::StopWatchingConversation(id.clone())]);
-              assert!(state.watched_conversations.is_empty());
-              assert_eq!(state.thread_ui[&id.0].draft, "retain failed draft");
+          fn unregistered_history_can_resolve_but_deleted_or_failed_watches_are_released() {
+              for resolves in [false, true] {
+                  let mut state = idle_app();
+                  reduce(&mut state, Action::Back);
+                  let id = ThreadId::new("not-yet-in-registry");
+                  state.view = View::Thread(id.clone());
+                  let effects = reconcile(&mut state, vec![Effect::LoadConversation(id.clone())]);
+                  assert_eq!(effects, vec![Effect::LoadConversation(id.clone())]);
+                  let rows = state.threads.clone();
+                  assert!(reduce(&mut state, Action::ReplaceThreads(rows)).is_empty());
+                  let effects = if resolves {
+                      let mut rows = state.threads.clone();
+                      let mut registered = rows[0].clone();
+                      registered.id = id.clone();
+                      rows.push(registered);
+                      assert!(reduce(&mut state, Action::ReplaceThreads(rows)).is_empty());
+                      assert!(state.unregistered_watches.is_empty());
+                      let rows = state.threads.iter().filter(|row| row.id != id).cloned().collect();
+                      reduce(&mut state, Action::ReplaceThreads(rows))
+                  } else {
+                      reduce(&mut state, Action::ConversationFailed { thread_id: id.clone(), error: "missing".into() })
+                  };
+                  assert_eq!(effects, vec![Effect::StopWatchingConversation(id)]);
+                  assert!(state.watched_conversations.is_empty());
+                  assert!(state.unregistered_watches.is_empty());
+              }
           }
           '''
           with Path('src/app/watch/tests.rs').open('a', encoding='utf-8') as f:
@@ -88,7 +120,7 @@ jobs:
           subprocess.run(['cargo', 'fmt', '--all'], check=True)
           ledger_path = Path('release/v1.4-plan.json')
           ledger = json.loads(ledger_path.read_text(encoding='utf-8'))
-          for path in paths[:3]:
+          for path in paths[:-1]:
               ledger['moduleRatchet'][path] = len(Path(path).read_text(encoding='utf-8').splitlines())
           ledger_path.write_text(json.dumps(ledger, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
           assert set(git('diff', '--name-only').splitlines()) == set(paths)
@@ -98,7 +130,7 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           test "$(git ls-remote origin refs/heads/test/audit-335-program-qualification | cut -f1)" = "$EXPECTED_HEAD"
-          git commit -m 'fix(app): propagate nested prompt failure cleanup effects'
+          git commit -m 'fix(app): distinguish provisional history targets from deleted watches'
           git push origin HEAD:refs/heads/test/audit-335-program-qualification
           echo "CODEX_TUI_GIT_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
           echo "CODEX_TUI_PTY_SOURCE_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
