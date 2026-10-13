@@ -211,6 +211,25 @@ impl ForgeMutationPlan {
         Ok(plan)
     }
 
+    /// Freeze the revision shown to the operator without changing SQLite schemas.
+    pub fn bind_confirmed_head(mut self, sha: &str) -> Result<Self> {
+        anyhow::ensure!(
+            matches!(
+                self.kind,
+                ForgeMutationKind::ApproveMergeRequest | ForgeMutationKind::MergeMergeRequest
+            ),
+            "confirmed head is only valid for approval and merge"
+        );
+        validate_confirmed_sha(sha)?;
+        anyhow::ensure!(
+            !self.preconditions.iter().any(|item| item.key == "confirmed-head-sha"),
+            "forge plan already has a confirmed revision"
+        );
+        self.preconditions.push(precondition("confirmed-head-sha", sha));
+        self.expected_side_effect.push_str(&format!(" at reviewed commit {sha}"));
+        Ok(self)
+    }
+
     pub fn project_lock_key(&self) -> String {
         format!(
             "{}:{}:{}",
@@ -259,6 +278,36 @@ fn mr_plan(identity: &ForgeIdentity, cwd: String, spec: MrPlanSpec) -> Result<Fo
         ],
         planned_at_unix_ms: spec.planned_at_unix_ms,
     })
+}
+
+fn validate_confirmed_sha(sha: &str) -> Result<()> {
+    anyhow::ensure!(
+        matches!(sha.len(), 40 | 64) && sha.bytes().all(|byte| byte.is_ascii_hexdigit()),
+        "confirmed forge HEAD SHA must be a complete 40- or 64-character hexadecimal digest"
+    );
+    Ok(())
+}
+
+pub(crate) fn confirmed_head_sha(plan: &ForgeMutationPlan) -> Result<&str> {
+    let mut matches = plan.preconditions.iter().filter(|p| p.key == "confirmed-head-sha");
+    let confirmed = matches
+        .next()
+        .context("approval/merge has no confirmed HEAD; refresh Forge and confirm again")?;
+    anyhow::ensure!(
+        matches.next().is_none(),
+        "multiple confirmed forge HEAD preconditions are ambiguous"
+    );
+    validate_confirmed_sha(&confirmed.expected)?;
+    Ok(&confirmed.expected)
+}
+
+pub(crate) fn require_confirmed_head(plan: &ForgeMutationPlan, observed: &str) -> Result<()> {
+    let confirmed = confirmed_head_sha(plan)?;
+    anyhow::ensure!(
+        confirmed.eq_ignore_ascii_case(observed),
+        "forge HEAD changed since confirmation; refresh the review and confirm again"
+    );
+    Ok(())
 }
 
 fn ensure_identity(identity: &ForgeIdentity) -> Result<()> {
@@ -702,6 +751,12 @@ struct GitLabApprovalRuleState {
 }
 
 async fn validate_preconditions(plan: &ForgeMutationPlan) -> Result<Preflight> {
+    if matches!(
+        plan.kind,
+        ForgeMutationKind::ApproveMergeRequest | ForgeMutationKind::MergeMergeRequest
+    ) {
+        confirmed_head_sha(plan)?;
+    }
     if plan.provider == ForgeProviderKind::GitHub {
         let github = crate::forge_github_mutation::validate_preconditions(plan).await?;
         return Ok(Preflight {
@@ -766,6 +821,7 @@ async fn validate_preconditions(plan: &ForgeMutationPlan) -> Result<Preflight> {
         ForgeMutationKind::ApproveMergeRequest => {
             let mr = validate_exact_open_mr(plan).await?;
             let sha = required_mr_sha(&mr)?;
+            require_confirmed_head(plan, &sha)?;
             let user: GitLabUser = glab_api_json(&plan.cwd, &plan.host, "/user").await?;
             let approvals = approvals(plan, mr.iid).await?;
             if approvals
@@ -793,6 +849,7 @@ async fn validate_preconditions(plan: &ForgeMutationPlan) -> Result<Preflight> {
         ForgeMutationKind::MergeMergeRequest => {
             let mr = validate_exact_open_mr(plan).await?;
             let sha = required_mr_sha(&mr)?;
+            require_confirmed_head(plan, &sha)?;
             anyhow::ensure!(!mr.draft, "merge request is still a draft");
             anyhow::ensure!(
                 mr.blocking_discussions_resolved == Some(true),
@@ -1264,6 +1321,14 @@ async fn reconcile_outcome(plan: &ForgeMutationPlan) -> Result<ReconciledOutcome
             let iid = plan
                 .change_request_iid
                 .context("approve plan missing iid")?;
+            let live = get_mr(plan, iid).await?;
+            if let Err(error) = required_mr_sha(&live)
+                .and_then(|sha| require_confirmed_head(plan, &sha))
+            {
+                return Ok(ReconciledOutcome::Unknown(format!(
+                    "cannot attribute approval to the confirmed revision: {error:#}"
+                )));
+            }
             let user: GitLabUser = glab_api_json(&plan.cwd, &plan.host, "/user").await?;
             let approvals = approvals(plan, iid).await?;
             if approvals
@@ -1286,6 +1351,13 @@ async fn reconcile_outcome(plan: &ForgeMutationPlan) -> Result<ReconciledOutcome
         ForgeMutationKind::MergeMergeRequest => {
             let iid = plan.change_request_iid.context("merge plan missing iid")?;
             let mr = get_mr(plan, iid).await?;
+            if let Err(error) = required_mr_sha(&mr)
+                .and_then(|sha| require_confirmed_head(plan, &sha))
+            {
+                return Ok(ReconciledOutcome::Unknown(format!(
+                    "cannot attribute merge to the confirmed revision: {error:#}"
+                )));
+            }
             match mr.state.as_str() {
                 "merged" => Ok(ReconciledOutcome::Succeeded {
                     result_ref: mr_ref(plan, iid),
