@@ -133,6 +133,8 @@ pub struct AppState {
     /// Local ownership of backend history watches, never persisted or inferred from cache.
     watched_conversations: BTreeSet<String>,
     unregistered_watches: BTreeSet<String>,
+    // Last observed turn activity, bounded by owned watches rather than the presentation LRU.
+    active_history_watches: BTreeSet<String>,
     pub thread_ui: BTreeMap<String, ThreadUiState>,
     prompt_submissions: prompt::PendingSubmissions,
     local_pins: BTreeSet<String>,

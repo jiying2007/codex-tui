@@ -529,6 +529,9 @@ fn evicted_returns_and_multi_session_workloads_preserve_ownership() {
         "provisional-search-retired",
         "provisional-search-read-error",
         "multi-session-workload",
+        "completed-history-control",
+        "active-history-completion",
+        "active-history-failure",
     ];
     let checks = receipt["checks"].as_array().unwrap();
     assert_eq!(checks.len(), expected.len());

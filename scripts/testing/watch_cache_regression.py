@@ -28,7 +28,7 @@ RSS_BUDGET_KIB = 256 * 1024
 FD_BUDGET = 96
 TRACE_BUDGET = 12 * 1024 * 1024
 
-MOCK = "#!/usr/bin/python3 -S\nimport json, os, sys, threading, time\nfrom pathlib import Path\nhome=Path(os.environ['HOME']); lock=threading.RLock(); seq=0; started=False\nlog=open(os.environ['MOCK_LOG']+'.'+str(os.getpid()),'a',buffering=1)\nrows={name:{'id':name,'name':name,'cwd':str(home),'updatedAt':2000000000-i,'status':{'type':'active' if name.startswith('fleet-') else 'idle'}} for i,name in enumerate(['anchor']+['fleet-%03d'%i for i in range(32)])}\ndef emit(x):\n with lock:print(json.dumps(x,separators=(',',':')),flush=True)\ndef control():\n global seq\n while True:\n  path=home/'control.json'\n  if path.exists():\n   v=json.loads(path.read_text())\n   if v['seq']>seq:\n    with lock:\n     seq=v['seq']\n     for event in v.get('events',[]):\n      ident=event['params'].get('threadId')\n      if event['method'] in ('thread/deleted','thread/archived'):rows.pop(ident,None)\n      if event['method']=='thread/status/changed' and ident in rows:rows[ident]['status']=event['params']['status']\n      emit(event)\n     for ident,row in rows.items():\n      row['name']='FENCE_%d_%s'%(seq,ident)\n      emit({'method':'thread/name/updated','params':{'threadId':ident,'threadName':row['name']}})\n  time.sleep(.005)\nfor line in sys.stdin:\n r=json.loads(line)\n if 'id' not in r:continue\n m=r.get('method');p=r.get('params',{});ident=p.get('threadId')\n with lock:\n  log.write(json.dumps({'seq':seq,'method':m,'params':p})+'\\n')\n  if m=='initialize':out={'serverInfo':{'name':'cache-fixture','version':'0.0.0'}}\n  elif m=='thread/list':out={'data':list(rows.values()),'nextCursor':None}\n  elif m=='thread/loaded/list':out={'data':list(rows),'nextCursor':None}\n  elif m=='thread/read' and ident in ('ghost','anchor') and (home/'read-error').exists():\n   emit({'id':r['id'],'error':{'code':-32000,'message':'cache fixture read rejected'}});continue\n  elif m=='thread/read' and (home/'disconnect').exists():sys.exit(0)\n  elif m=='thread/read':out={'thread':dict(rows.get(ident,{'id':ident}),name='History '+str(seq))}\n  elif m=='thread/turns/list':out={'data':[{'id':'turn-1','status':'completed'}],'nextCursor':None}\n  elif m=='thread/items/list' and ident=='ghost' and p.get('cursor') is None:out={'data':[{'turnId':'turn-new','item':{'id':'item-new','type':'agentMessage','text':'LATEST_IS_NOT_SEARCH_HIT'}}],'nextCursor':'hitpage'}\n  elif m=='thread/items/list':out={'data':[{'turnId':'turn-1','item':{'id':'item-1','type':'agentMessage','text':'CACHE_BODY_%d_%s'%(seq,ident)}}],'nextCursor':None}\n  elif m=='thread/queue/list':out={'data':[],'nextCursor':None}\n  elif m=='thread/search':out={'data':[{'thread':{'id':'ghost'},'snippet':'GHOST_HIT'}],'nextCursor':None}\n  elif m=='thread/searchOccurrences':out={'data':[{'turnId':'turn-1','itemId':'item-1','snippet':'GHOST_HIT'}],'nextCursor':None}\n  else:\n   emit({'id':r['id'],'error':{'code':-32601,'message':'unsupported fixture'}});continue\n  emit({'id':r['id'],'result':out})\n  if m=='thread/list' and not started:started=True;threading.Thread(target=control,daemon=True).start()\n"
+MOCK = "#!/usr/bin/python3 -S\nimport json, os, sys, threading, time\nfrom pathlib import Path\nhome=Path(os.environ['HOME']); lock=threading.RLock(); seq=0; started=False\nlog=open(os.environ['MOCK_LOG']+'.'+str(os.getpid()),'a',buffering=1)\nrows={name:{'id':name,'name':name,'cwd':str(home),'updatedAt':2000000000-i,'status':{'type':'active' if name.startswith('fleet-') else 'idle'}} for i,name in enumerate(['anchor']+['fleet-%03d'%i for i in range(32)])}\ndef emit(x):\n with lock:print(json.dumps(x,separators=(',',':')),flush=True)\ndef control():\n global seq\n while True:\n  path=home/'control.json'\n  if path.exists():\n   v=json.loads(path.read_text())\n   if v['seq']>seq:\n    with lock:\n     seq=v['seq']\n     for event in v.get('events',[]):\n      ident=event['params'].get('threadId')\n      if event['method'] in ('thread/deleted','thread/archived'):rows.pop(ident,None)\n      if event['method']=='thread/status/changed' and ident in rows:rows[ident]['status']=event['params']['status']\n      emit(event)\n     for ident,row in rows.items():\n      row['name']='FENCE_%d_%s'%(seq,ident)\n      emit({'method':'thread/name/updated','params':{'threadId':ident,'threadName':row['name']}})\n  time.sleep(.005)\nfor line in sys.stdin:\n r=json.loads(line)\n if 'id' not in r:continue\n m=r.get('method');p=r.get('params',{});ident=p.get('threadId')\n with lock:\n  log.write(json.dumps({'seq':seq,'method':m,'params':p})+'\\n')\n  if m=='initialize':out={'serverInfo':{'name':'cache-fixture','version':'0.0.0'}}\n  elif m=='thread/list':out={'data':list(rows.values()),'nextCursor':None}\n  elif m=='thread/loaded/list':out={'data':list(rows),'nextCursor':None}\n  elif m=='thread/read' and ident in ('ghost','anchor') and (home/'read-error').exists():\n   log.write(json.dumps({'seq':seq,'method':'fixture/read-rejected','params':p})+'\\n')\n   emit({'id':r['id'],'error':{'code':-32000,'message':'cache fixture read rejected'}});continue\n  elif m=='thread/read' and (home/'disconnect').exists():sys.exit(0)\n  elif m=='thread/read':out={'thread':dict(rows.get(ident,{'id':ident}),name='History '+str(seq))}\n  elif m=='thread/turns/list':out={'data':[{'id':'turn-1','status':'completed'}],'nextCursor':None}\n  elif m=='thread/items/list' and ident=='ghost' and p.get('cursor') is None:out={'data':[{'turnId':'turn-new','item':{'id':'item-new','type':'agentMessage','text':'LATEST_IS_NOT_SEARCH_HIT'}}],'nextCursor':'hitpage'}\n  elif m=='thread/items/list':out={'data':[{'turnId':'turn-1','item':{'id':'item-1','type':'agentMessage','text':'CACHE_BODY_%d_%s'%(seq,ident)}}],'nextCursor':None}\n  elif m=='thread/queue/list':out={'data':[],'nextCursor':None}\n  elif m=='thread/search':out={'data':[{'thread':{'id':'ghost'},'snippet':'GHOST_HIT'}],'nextCursor':None}\n  elif m=='thread/searchOccurrences':out={'data':[{'turnId':'turn-1','itemId':'item-1','snippet':'GHOST_HIT'}],'nextCursor':None}\n  else:\n   emit({'id':r['id'],'error':{'code':-32601,'message':'unsupported fixture'}});continue\n  emit({'id':r['id'],'result':out})\n  if m=='thread/list' and not started:started=True;threading.Thread(target=control,daemon=True).start()\n"
 
 
 def validate_counts(records, seq, ids, expected, method='thread/read'):
@@ -71,12 +71,12 @@ class CachedScreenSession(Session):
 
 
 class Fleet:
-    def __init__(self, binary, output, home):
+    def __init__(self, binary, output, home, mock=MOCK):
         self.home, self.output = home, output
         self.seq, self.filter = 0, ''
         self.observations = []
         env = environment(home, home/'rpc', 'cache-workload')
-        (home/'bin/codex').write_text(MOCK, encoding='utf-8')
+        (home/'bin/codex').write_text(mock, encoding='utf-8')
         self.app = CachedScreenSession(binary, output/'session', home, env)
 
     def records(self):
@@ -163,10 +163,12 @@ class Fleet:
         if kind not in ('resident', 'retired', 'read-error'):
             self.app.wait(lambda: self.body(target, phase), 'evicted return did not reload body', 3)
         elif kind == 'read-error':
-            self.app.wait(lambda: 'cache fixture read rejected' in self.app.screen(),
+            self.app.wait(lambda: 'Conversation unavailable:' in self.app.screen(),
                           'rejected read was not visible', 3)
         self.app.drain(.1)
         rows = self.records()
+        if kind == 'read-error':
+            validate_counts(rows, phase, [target], 1, 'fixture/read-rejected')
         reads = sum(r['seq'] == phase and r['method']=='thread/read' and
                     r['params'].get('threadId')==target for r in rows)
         body = self.body(target, initial_seq if kind=='resident' else phase)
@@ -250,7 +252,9 @@ def main():
                 receipt['terminal'] = fleet.app.finish()
             finally:
                 fleet.close()
-        if all(x['passed'] for x in receipt['checks']) and len(receipt['checks']) == len(CASES)+1:
+        from watch_active_history_regression import CASES as ACTIVE_CASES, run_cases
+        receipt['checks'].extend(run_cases(binary, args.output/'active-history'))
+        if all(x['passed'] for x in receipt['checks']) and len(receipt['checks']) == len(CASES)+1+len(ACTIVE_CASES):
             receipt['status']='passed'
     except Exception as error:
         receipt['error']=str(error)

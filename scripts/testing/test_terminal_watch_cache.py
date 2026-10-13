@@ -10,6 +10,7 @@ class CacheObserver(unittest.TestCase):
         self.assertEqual(len(CASES), 9)
         self.assertEqual(len(set(CASES)), 9)
         self.assertIn('LATEST_IS_NOT_SEARCH_HIT', MOCK)
+        self.assertIn('fixture/read-rejected', MOCK)
 
     def test_actual_completions_and_exact_phase_are_required(self):
         row = {'seq':1,'method':'thread/items/list','params':{'threadId':'worker'}}

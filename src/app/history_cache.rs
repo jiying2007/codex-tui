@@ -2,6 +2,19 @@
 use super::*;
 
 impl AppState {
+    pub(super) fn observe_history_activity(&mut self, id: &ThreadId) {
+        let active = self.watched_conversations.contains(&id.0)
+            && self
+                .conversations
+                .get(&id.0)
+                .is_some_and(|conversation| conversation.active_turn_id().is_some());
+        if active {
+            self.active_history_watches.insert(id.0.clone());
+        } else {
+            self.active_history_watches.remove(&id.0);
+        }
+    }
+
     pub(super) fn rehydrate_evicted_thread(&mut self) -> Option<Effect> {
         let View::Thread(thread_id) = &self.view else {
             return None;
@@ -152,5 +165,93 @@ mod tests {
             };
             assert_eq!(reduce(&mut state, Action::CancelInput), vec![expected]);
         }
+    }
+    fn active_page(id: ThreadId) -> ConversationPage {
+        let mut page = page(id);
+        page.turns.push(crate::conversation::ConversationTurn {
+            id: "working".into(),
+            status: "inProgress".into(),
+            started_at: None,
+            completed_at: None,
+            error: None,
+        });
+        page
+    }
+
+    #[test]
+    fn history_activity_survives_eviction_but_completion_failure_and_quit_release_it() {
+        for provisional in [false, true] {
+            for completion in [true, false] {
+                let (mut state, id) = state(provisional);
+                reduce(
+                    &mut state,
+                    Action::ConversationLoaded(active_page(id.clone())),
+                );
+                reduce(&mut state, Action::Back);
+                assert!(state.watched_conversations.contains(&id.0));
+                evict(&mut state, &id);
+                assert!(state.active_history_watches.contains(&id.0));
+                assert!(state.watched_conversations.contains(&id.0));
+                let action = if completion {
+                    Action::ConversationLoaded(page(id.clone()))
+                } else {
+                    Action::ConversationFailed {
+                        thread_id: id.clone(),
+                        error: "failed read".into(),
+                    }
+                };
+                assert_eq!(
+                    reduce(&mut state, action),
+                    vec![Effect::StopWatchingConversation(id.clone())]
+                );
+                assert!(state.active_history_watches.is_empty());
+                // A late unowned history completion is presentation data, not a new watch.
+                reduce(
+                    &mut state,
+                    Action::ConversationLoaded(active_page(id.clone())),
+                );
+                assert!(state.active_history_watches.is_empty());
+                assert!(state.watched_conversations.is_empty());
+            }
+            let (mut state, id) = state(provisional);
+            reduce(
+                &mut state,
+                Action::ConversationLoaded(active_page(id.clone())),
+            );
+            state.should_quit = true;
+            watch::reconcile(&mut state, vec![]);
+            assert!(state.active_history_watches.is_empty());
+            assert!(state.watched_conversations.is_empty());
+        }
+    }
+
+    #[test]
+    fn oldest_registered_activity_remains_owned_when_more_than_the_cache_limit_are_active() {
+        let template = FakeBackend::seeded().snapshot().threads[0].clone();
+        let mut rows = Vec::new();
+        for i in 0..32 {
+            let mut row = template.clone();
+            row.id = ThreadId::new(format!("active-{i}"));
+            row.runtime = RuntimeStatus::Ready;
+            rows.push(row);
+        }
+        let mut state = AppState::new(rows);
+        for i in 0..32 {
+            let id = ThreadId::new(format!("active-{i}"));
+            state.view = View::Thread(id.clone());
+            state.prepare_conversation(&id);
+            watch::reconcile(&mut state, vec![Effect::LoadConversation(id.clone())]);
+            reduce(&mut state, Action::ConversationLoaded(active_page(id)));
+            reduce(&mut state, Action::Back);
+        }
+        assert_eq!(state.active_history_watches.len(), 32);
+        assert_eq!(state.watched_conversations.len(), 32);
+        assert_eq!(state.conversations.len(), CONVERSATION_CACHE_LIMIT);
+        for i in 0..32 {
+            let id = ThreadId::new(format!("active-{i}"));
+            reduce(&mut state, Action::ConversationLoaded(page(id)));
+        }
+        assert!(state.active_history_watches.is_empty());
+        assert!(state.watched_conversations.is_empty());
     }
 }
