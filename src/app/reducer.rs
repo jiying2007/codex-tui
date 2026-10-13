@@ -1848,9 +1848,10 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             let thread_id = hit.thread_id.clone();
             state.transcript_search_open = false;
             let previous = state.current_thread_id().cloned();
-            let stale_previous = state.previous_target.take().filter(|old| {
-                Some(old) != previous.as_ref() && old != &thread_id
-            });
+            let stale_previous = state
+                .previous_target
+                .take()
+                .filter(|old| Some(old) != previous.as_ref() && old != &thread_id);
             state.previous_target = previous;
             state.thread_ui.entry(thread_id.0.clone()).or_default();
             state.prepare_conversation(&thread_id);
