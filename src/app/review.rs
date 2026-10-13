@@ -98,6 +98,7 @@ mod tests {
             state: "open".into(),
             source_branch: "feature/review".into(),
             target_branch: "main".into(),
+            head_sha: None,
             web_url: "https://github.com/octo/repo/pull/7".into(),
             updated_at: None,
             draft: false,

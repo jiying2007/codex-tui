@@ -93,6 +93,7 @@ struct GitHubPullRequest {
 struct GitHubPullRef {
     #[serde(rename = "ref")]
     reference: String,
+    sha: Option<String>,
     repo: Option<GitHubPullRepository>,
 }
 
@@ -137,6 +138,7 @@ impl GitHubWorkflowRun {
         Some(
             GitHubPullRef {
                 reference: reference.clone(),
+                sha: None,
                 repo: self.head_repository.clone(),
             }
             .branch_for_local_projection(target_repo_id),
@@ -287,6 +289,7 @@ pub(crate) async fn probe_github_with_remote(
                 state: pull.state,
                 source_branch: pull.head.branch_for_local_projection(project_repo_id),
                 target_branch: pull.base.reference,
+                head_sha: pull.head.sha,
                 web_url: pull.html_url,
                 updated_at: pull.updated_at,
                 draft: pull.draft,

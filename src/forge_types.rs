@@ -136,6 +136,7 @@ pub struct ChangeRequestSummary {
     pub state: String,
     pub source_branch: String,
     pub target_branch: String,
+    pub head_sha: Option<String>,
     pub web_url: String,
     pub updated_at: Option<String>,
     pub draft: bool,

@@ -25,6 +25,9 @@ Each stdio connection owns its stderr drain in a task set containing at most one
 ## GitLab/GitHub unavailable or missing data
 <!-- docs-section: forge -->
 
+**Approval/merge revision confirmation:** The pending Forge plan now contains the full HEAD SHA observed in the current GitHub pull request or GitLab merge request projection. When a revision is absent, malformed or changes between review and execution, the action fails closed: refresh Forge and review/confirm again. Neither an existing approval nor an uncertain-result reconciliation can attest success for a different revision. GitHub's commit-specific approval/merge parameters and GitLab's SHA-scoped requests remain in place. This does not provide atomic protection against all upstream administrator actions.
+
+
 In the repository at issue: inspect `git remote -v` **privately**, run `codex-tui doctor git` then `codex-tui doctor forge`. Sign in `glab` or `gh` to the correct host outside the tool. GitLab Issues/MRs/Pipelines probe independently; a single unavailable capability is not entire project failure. `doctor compat` Ready does not prove internal GitLab. Use [provider evidence](../qualification/provider.md) for a required internal rollout.
 
 Malformed GitLab approval-state JSON or missing `rules`, `approvals_required` or `approved` fields are unknown evidence and block client-side merging. An explicit valid empty rules array is distinct from a missing array. These checks do not replace GitLab server protections.
