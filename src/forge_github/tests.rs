@@ -207,7 +207,10 @@ fn projected_github_pull_head_sha_is_optional_but_exact_when_present() {
         "base": {"ref": "main"}
     }))
     .unwrap();
-    assert_eq!(pull.head.sha.as_deref(), Some("0123456789abcdef0123456789abcdef01234567"));
+    assert_eq!(
+        pull.head.sha.as_deref(),
+        Some("0123456789abcdef0123456789abcdef01234567")
+    );
     let unknown: GitHubPullRef =
         serde_json::from_value(serde_json::json!({"ref": "feature"})).unwrap();
     assert_eq!(unknown.sha, None);
