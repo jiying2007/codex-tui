@@ -133,6 +133,7 @@ async fn websocket_transport_round_trips_json_rpc_frames() {
         .await
         .expect("bind websocket fixture");
     let address = listener.local_addr().expect("fixture address");
+    let (read_tx, read_rx) = tokio::sync::oneshot::channel::<()>();
     let server = tokio::spawn(async move {
         let (stream, _) = listener.accept().await.expect("accept websocket");
         let mut websocket = accept_async(stream).await.expect("server handshake");
@@ -157,6 +158,12 @@ async fn websocket_transport_round_trips_json_rpc_frames() {
             ))
             .await
             .expect("send response");
+        // This is a framing test, not an abrupt-peer-close test. Keep the
+        // stream alive until the client has consumed and asserted the response.
+        tokio::time::timeout(Duration::from_secs(5), read_rx)
+            .await
+            .expect("client response-consumed deadline")
+            .expect("client must acknowledge the response before peer shutdown");
     });
 
     let target = ResolvedAppServerTarget {
@@ -177,13 +184,14 @@ async fn websocket_transport_round_trips_json_rpc_frames() {
         }))
         .await
         .expect("write request");
-    let response = transport
-        .read_json()
+    let response = tokio::time::timeout(Duration::from_secs(5), transport.read_json())
         .await
+        .expect("response deadline")
         .expect("read response")
         .expect("response");
     assert_eq!(response["id"], 1);
     assert_eq!(response["result"]["data"], json!([]));
+    read_tx.send(()).expect("fixture peer must remain alive");
     server.await.expect("fixture server");
 }
 
@@ -266,6 +274,7 @@ async fn unix_socket_transport_uses_websocket_framing() {
     let dir = tempfile::tempdir().expect("tempdir");
     let path = dir.path().join("app-server.sock");
     let listener = tokio::net::UnixListener::bind(&path).expect("bind unix fixture");
+    let (read_tx, read_rx) = tokio::sync::oneshot::channel::<()>();
     let server = tokio::spawn(async move {
         let (stream, _) = listener.accept().await.expect("accept unix socket");
         let mut websocket = accept_async(stream)
@@ -292,6 +301,12 @@ async fn unix_socket_transport_uses_websocket_framing() {
             ))
             .await
             .expect("send response");
+        // This is a framing test, not an abrupt-peer-close test. Keep the
+        // stream alive until the client has consumed and asserted the response.
+        tokio::time::timeout(Duration::from_secs(5), read_rx)
+            .await
+            .expect("client response-consumed deadline")
+            .expect("client must acknowledge the response before peer shutdown");
     });
 
     let target = ResolvedAppServerTarget {
@@ -309,12 +324,13 @@ async fn unix_socket_transport_uses_websocket_framing() {
         }))
         .await
         .expect("write initialize");
-    let response = transport
-        .read_json()
+    let response = tokio::time::timeout(Duration::from_secs(5), transport.read_json())
         .await
+        .expect("response deadline")
         .expect("read response")
         .expect("response");
     assert_eq!(response["result"]["serverInfo"]["version"], "fixture");
+    read_tx.send(()).expect("fixture peer must remain alive");
     server.await.expect("fixture server");
 }
 
