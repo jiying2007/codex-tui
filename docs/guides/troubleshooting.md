@@ -12,6 +12,8 @@ Diagnose the failed authority first; avoid deleting local state, changing upstre
 ## App Server will not connect or load threads
 <!-- docs-section: codex -->
 
+**Subscription release under load:** History and Thread Queue release no longer require a free actor-command slot. Desired membership is published only with successful command admission; late queued reads cannot reinstate a released watch, and actor shutdown clears both sets. An already-running load may finish, while accepted write commands keep their existing execution and no-replay contract. Reopening explicitly admits a new watch. The actual-program pressure regression fills the production queue and checks closed, retained, reopened and disconnected cases; it is not a global memory or real-account qualification.
+
 **History watch ownership:** The reducer now reconciles backend history subscriptions after navigation, search jumps, prompt acknowledgements and registry updates. Only the current/returnable thread and watched threads with active work or pending sends retain history re-reads; superseded inactive targets issue explicit StopWatchingConversation. Retained cached history is not proof of a live watch. This reduces unnecessary RPC re-reads without dropping active work and does not imply a measured global RSS bound.
 
 Run `codex-tui doctor codex` (optionally `--target NAME`). Check the real `codex --version` and its login/account independently. Named remote WebSocket/Unix targets have bounded connect/handshake timeouts; a timeout is not proof an action never executed. Verify process/transport, authentication, TLS proxy and App Server capability errors. Older optional methods may degrade; no real-to-fake fallback exists. Avoid pasting bearer tokens into an issue.

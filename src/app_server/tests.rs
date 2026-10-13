@@ -19,12 +19,12 @@ fn app_server_command_queue_reports_backpressure() {
     let (tx, _rx) = mpsc::channel(1);
     queue_backend_command(
         &tx,
-        BackendCommand::StopWatchingConversation(ThreadId::new("first")),
+        BackendCommand::LoadConversation(ThreadId::new("first")),
     )
     .expect("first command");
     let error = queue_backend_command(
         &tx,
-        BackendCommand::StopWatchingConversation(ThreadId::new("second")),
+        BackendCommand::LoadConversation(ThreadId::new("second")),
     )
     .expect_err("second command must hit bounded queue");
     assert!(error.to_string().contains("queue is full"));
@@ -133,6 +133,8 @@ async fn queued_approval_preempts_a_ready_command_after_rpc_yield() {
         )))
         .expect("ready competing command");
 
+    let history_watches = WatchSet::default();
+    history_watches.admit("waiting-command", || Ok(())).unwrap();
     let actor = tokio::spawn(run_registry_actor(
         rpc,
         vec![],
@@ -140,7 +142,7 @@ async fn queued_approval_preempts_a_ready_command_after_rpc_yield() {
         snapshot_tx,
         event_tx,
         command_rx,
-        (None, target),
+        (None, target, history_watches, WatchSet::default()),
     ));
     let event = tokio::time::timeout(Duration::from_secs(2), event_rx.recv())
         .await
