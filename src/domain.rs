@@ -35,7 +35,6 @@ impl CwdLocality {
 }
 
 pub fn classify_cwd_without_io(cwd: &str) -> Option<CwdLocality> {
-    let cwd = cwd;
     if cwd.is_empty() {
         return Some(CwdLocality::Empty);
     }
@@ -66,7 +65,6 @@ pub fn classify_cwd_without_io(cwd: &str) -> Option<CwdLocality> {
 }
 
 pub fn classify_cwd(cwd: &str) -> CwdLocality {
-    let cwd = cwd;
     if let Some(locality) = classify_cwd_without_io(cwd) {
         return locality;
     }
@@ -79,7 +77,6 @@ pub fn classify_cwd(cwd: &str) -> CwdLocality {
 }
 
 pub fn display_cwd(cwd: &str) -> &str {
-    let cwd = cwd;
     if !cfg!(windows)
         && let Some(foreign) = embedded_windows_absolute(cwd)
     {
@@ -315,6 +312,20 @@ mod identity_tests {
             );
             assert_eq!(classify_cwd_without_io("/tmp/repo"), None);
         }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn exact_cwd_identity_preserves_trailing_whitespace() {
+        let root = tempfile::tempdir().unwrap();
+        let plain = root.path().join("repo");
+        let spaced = root.path().join("repo ");
+        std::fs::create_dir(&plain).unwrap();
+        std::fs::create_dir(&spaced).unwrap();
+        let selected = spaced.to_str().unwrap();
+        assert_eq!(classify_cwd(selected), CwdLocality::LocalDirectory);
+        assert_eq!(display_cwd(selected), selected);
+        assert_ne!(std::fs::canonicalize(selected).unwrap(), std::fs::canonicalize(plain).unwrap());
     }
 
     #[test]
