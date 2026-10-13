@@ -294,3 +294,92 @@ fn cross_view_watch_effects_reach_the_actual_backend() {
     assert_eq!(receipt["realSshQualification"], false);
     println!("{receipt}");
 }
+
+#[test]
+fn forge_confirmation_and_readback_remain_bound_to_the_reviewed_revision() {
+    let temporary = tempfile::tempdir().unwrap();
+    let retained = std::env::var_os("CODEX_TUI_PTY_EVIDENCE_DIR");
+    let root = retained
+        .as_deref()
+        .map(Path::new)
+        .unwrap_or_else(|| temporary.path());
+    std::fs::create_dir_all(root).unwrap();
+    let output = root.join("forge-revision");
+    let log_path = root.join("forge-revision.log");
+    let log = std::fs::File::create(&log_path).unwrap();
+    let source = option_env!("CODEX_TUI_GIT_SHA")
+        .or(option_env!("GITHUB_SHA"))
+        .unwrap_or("unknown");
+    let mut child = Command::new("python3")
+        .arg("-O")
+        .arg(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("scripts/testing/forge_revision_regression.py"),
+        )
+        .arg(env!("CARGO_BIN_EXE_codex-tui"))
+        .arg(&output)
+        .env("CODEX_TUI_PTY_SOURCE_SHA", source)
+        .stdin(Stdio::null())
+        .stdout(log.try_clone().unwrap())
+        .stderr(log)
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(240);
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break status;
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!(
+                "forge revision harness timeout: {}",
+                std::fs::read_to_string(&log_path).unwrap_or_default()
+            );
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    assert!(
+        status.success(),
+        "forge revision regression: {}",
+        std::fs::read_to_string(&log_path).unwrap_or_default()
+    );
+    let receipt: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(output.join("receipt.json")).unwrap()).unwrap();
+    assert_eq!(receipt["status"], "passed");
+    assert_eq!(receipt["sourceSha"], source);
+    let expected = [
+        "github-approve-control",
+        "github-approve-missing",
+        "github-approve-before",
+        "github-approve-after",
+        "github-approve-uncertain",
+        "github-merge-control",
+        "github-merge-missing",
+        "github-merge-before",
+        "github-merge-after",
+        "github-merge-uncertain",
+        "gitlab-approve-control",
+        "gitlab-approve-missing",
+        "gitlab-approve-before",
+        "gitlab-approve-after",
+        "gitlab-approve-uncertain",
+        "gitlab-merge-control",
+        "gitlab-merge-missing",
+        "gitlab-merge-before",
+        "gitlab-merge-after",
+        "gitlab-merge-uncertain",
+        "github-approve-wrong-review",
+        "github-approve-stale-existing",
+    ];
+    let checks = receipt["checks"].as_array().unwrap();
+    assert_eq!(checks.len(), expected.len());
+    for (check, name) in checks.iter().zip(expected) {
+        assert_eq!(check["mode"], name);
+        assert_eq!(check["passed"], true);
+    }
+    assert_eq!(receipt["realForgeQualification"], false);
+    assert_eq!(receipt["realCodexQualification"], false);
+    assert_eq!(receipt["realSshQualification"], false);
+    println!("{receipt}");
+}

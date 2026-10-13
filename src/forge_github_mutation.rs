@@ -77,6 +77,7 @@ struct GitHubReview {
     id: u64,
     state: String,
     user: Option<GitHubReviewUser>,
+    commit_id: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -186,9 +187,8 @@ pub(crate) async fn validate_preconditions(plan: &ForgeMutationPlan) -> Result<G
             crate::forge_mutation::require_confirmed_head(plan, &sha)?;
             let user: GitHubUser = gh_api_json(&plan.cwd, &plan.host, "/user").await?;
             let reviews = reviews(plan, pull.number).await?;
-            if latest_review_state(&reviews, &user.login)
-                .is_some_and(|state| state.eq_ignore_ascii_case("APPROVED"))
-            {
+            if approved_at(&reviews, &user.login, &sha) {
+                revalidate_head(plan, pull.number, &sha).await?;
                 return Ok(GitHubPreflight {
                     user_login: Some(user.login.clone()),
                     head_sha: Some(sha),
@@ -379,12 +379,17 @@ pub(crate) async fn verify_success(
             let number = plan
                 .change_request_iid
                 .context("approve plan missing pull request number")?;
+            let pull = get_pull(plan, number).await?;
+            let sha = required_head_sha(&pull)?;
+            crate::forge_mutation::require_confirmed_head(plan, &sha)?;
             let reviews = reviews(plan, number).await?;
             anyhow::ensure!(
-                latest_review_state(&reviews, &login)
-                    .is_some_and(|state| state.eq_ignore_ascii_case("APPROVED")),
-                "authenticated GitHub user's latest review is not APPROVED"
+                approved_at(&reviews, &login, &sha),
+                "authenticated GitHub user's latest review does not approve the confirmed revision"
             );
+            // Reviews and PR metadata are independent reads, not an atomic lease.
+            let after = get_pull(plan, number).await?;
+            crate::forge_mutation::require_confirmed_head(plan, &required_head_sha(&after)?)?;
             Ok((
                 change_ref(plan, number),
                 format!("GitHub review readback confirms {login:?} is APPROVED"),
@@ -392,6 +397,7 @@ pub(crate) async fn verify_success(
         }
         GitHubAppliedResult::Merge(number) => {
             let pull = get_pull(plan, number).await?;
+            crate::forge_mutation::require_confirmed_head(plan, &required_head_sha(&pull)?)?;
             anyhow::ensure!(
                 pull.merged,
                 "GitHub pull request #{number} is not merged after merge response"
@@ -451,9 +457,9 @@ pub(crate) async fn reconcile_outcome(plan: &ForgeMutationPlan) -> Result<GitHub
             }
             let user: GitHubUser = gh_api_json(&plan.cwd, &plan.host, "/user").await?;
             let reviews = reviews(plan, number).await?;
-            if latest_review_state(&reviews, &user.login)
-                .is_some_and(|state| state.eq_ignore_ascii_case("APPROVED"))
-            {
+            let after = get_pull(plan, number).await?;
+            crate::forge_mutation::require_confirmed_head(plan, &required_head_sha(&after)?)?;
+            if approved_at(&reviews, &user.login, crate::forge_mutation::confirmed_head_sha(plan)?) {
                 Ok(GitHubReconciledOutcome::Succeeded {
                     result_ref: change_ref(plan, number),
                     verification: format!(
@@ -595,7 +601,7 @@ async fn reviews(plan: &ForgeMutationPlan, number: u64) -> Result<Vec<GitHubRevi
     .await
 }
 
-fn latest_review_state<'a>(reviews: &'a [GitHubReview], login: &str) -> Option<&'a str> {
+fn latest_review<'a>(reviews: &'a [GitHubReview], login: &str) -> Option<&'a GitHubReview> {
     reviews
         .iter()
         .filter(|review| {
@@ -605,7 +611,18 @@ fn latest_review_state<'a>(reviews: &'a [GitHubReview], login: &str) -> Option<&
                 .is_some_and(|user| user.login.eq_ignore_ascii_case(login))
         })
         .max_by_key(|review| review.id)
-        .map(|review| review.state.as_str())
+}
+
+fn approved_at(reviews: &[GitHubReview], login: &str, sha: &str) -> bool {
+    // Do not filter by SHA before selecting the latest review: that could revive
+    // an older approval after the same user dismissed or replaced it.
+    latest_review(reviews, login).is_some_and(|review| {
+        review.state.eq_ignore_ascii_case("APPROVED")
+            && review
+                .commit_id
+                .as_deref()
+                .is_some_and(|commit| commit.eq_ignore_ascii_case(sha))
+    })
 }
 
 async fn matching_pull_requests(

@@ -17,6 +17,8 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
+- Keep full confirmed Forge revisions and confirm/cancel keys visible; bind successful approval/merge readback and recovery to the reviewed revision, including GitHub review commit IDs. Add actual-program provider and restart regressions without granting real-account qualification.
+
 - Dispatch background registry/history/prompt reducer effects, preserve reachable search/Board return watches, and retain acknowledged prompts until history resolves. Add source-bound actual-program RPC/resource regressions.
 
 - Revalidate Worktree Git common-dir after asynchronous admission checks and immediately before issuing a mutation; add a real-Git post-admission retarget negative control without claiming atomic same-user race immunity.

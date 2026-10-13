@@ -41,6 +41,9 @@ Forge stdout/stderr readers share the command future and its existing five-secon
 ## Windows paths or repository-backed threads look wrong
 <!-- docs-section: cwd -->
 
+**Forge confirmation and readback:** Approval/merge confirmation displays the complete reviewed HEAD separately from the bounded precondition list, with confirm/cancel keys above variable-length details. GitHub approval evidence must be the authenticated user's latest review with `APPROVED` state and the exact confirmed `commit_id`; older or unversioned approval evidence is not sufficient. Successful writes and uncertain-outcome recovery both recheck the confirmed HEAD. Approval reads are bracketed by HEAD observations, including already-satisfied shortcuts. GitLab uses the observed MR HEAD around approval readback because `approved_by` alone is not revision-bound. A changed revision leaves the result unknown; startup reconciles without replaying a write. These separate API reads are not an atomic lease or proof against an ABA change. Isolated PTY/mock-provider tests do not qualify real accounts or internal GitLab.
+
+
 **Worktree mutation identity:** The planned Git common directory is checked before admission, after asynchronous precondition probes and immediately before issuing a Git write, and again during verification and recovery. A post-admission symlink retarget is rejected without mutating a foreign repository. This is defense in depth, **not** an atomic filesystem identity lease against adversarial same-user directory replacement; no absolute race immunity is claimed.
 
 On Windows→SSH Ubuntu the TUI reads **Ubuntu-side** Codex Home, shell cwd and Git repository identity. A Windows cwd embedded in a stored Codex thread is foreign provenance, not an Ubuntu checkout. Confirm `doctor codex` reported paths and `doctor git` in the actual checkout. Do not concatenate a Windows absolute path onto an Ubuntu project path or silently invent a local thread.

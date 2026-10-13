@@ -837,6 +837,8 @@ async fn validate_preconditions(plan: &ForgeMutationPlan) -> Result<Preflight> {
                 .iter()
                 .any(|approval| approval.user.id == user.id)
             {
+                let after = get_mr(plan, mr.iid).await?;
+                require_confirmed_head(plan, &required_mr_sha(&after)?)?;
                 return Ok(Preflight {
                     authenticated_user_id: Some(user.id),
                     merge_request_sha: Some(sha),
@@ -1219,7 +1221,11 @@ async fn verify_success(
             let iid = plan
                 .change_request_iid
                 .context("approve plan missing merge request iid")?;
+            let before = get_mr(plan, iid).await?;
+            require_confirmed_head(plan, &required_mr_sha(&before)?)?;
             let approval = approvals(plan, iid).await?;
+            let after = get_mr(plan, iid).await?;
+            require_confirmed_head(plan, &required_mr_sha(&after)?)?;
             anyhow::ensure!(
                 approval
                     .approved_by
@@ -1234,6 +1240,7 @@ async fn verify_success(
         }
         AppliedResult::Merge(iid) => {
             let mr = get_mr(plan, iid).await?;
+            require_confirmed_head(plan, &required_mr_sha(&mr)?)?;
             anyhow::ensure!(mr.state == "merged", "merge request state is {}", mr.state);
             Ok((
                 mr_ref(plan, iid),
@@ -1339,6 +1346,8 @@ async fn reconcile_outcome(plan: &ForgeMutationPlan) -> Result<ReconciledOutcome
             }
             let user: GitLabUser = glab_api_json(&plan.cwd, &plan.host, "/user").await?;
             let approvals = approvals(plan, iid).await?;
+            let after = get_mr(plan, iid).await?;
+            require_confirmed_head(plan, &required_mr_sha(&after)?)?;
             if approvals
                 .approved_by
                 .iter()

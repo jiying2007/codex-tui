@@ -1085,3 +1085,80 @@ fn scratch_detail_id_is_escaped_without_rewriting_local_state() {
     assert!(!snapshot.contains('\u{202e}'));
     assert_eq!(app.planning_snapshot.scratch[0].id, "scratch\u{202e}spoof");
 }
+
+#[test]
+fn forge_merge_confirmation_keeps_full_revision_and_controls_above_guard_truncation() {
+    use crate::forge::{ForgeIdentity, ForgeProviderKind};
+    use crate::forge_mutation::ForgeMutationPlan;
+    let sha = "a".repeat(40);
+    for provider in [ForgeProviderKind::GitHub, ForgeProviderKind::GitLab] {
+        let identity = ForgeIdentity {
+            provider,
+            host: "fixture.example".into(),
+            project_id: "123".into(),
+            path_with_namespace: "fixture/repo".into(),
+            web_url: "https://fixture.example/fixture/repo".into(),
+            default_branch: Some("main".into()),
+        };
+        let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+        app.pending_forge_operation = Some(
+            ForgeMutationPlan::merge_merge_request(
+                &identity,
+                "/repo".into(),
+                7,
+                "feature".into(),
+                "main".into(),
+                1,
+            )
+            .unwrap()
+            .bind_confirmed_head(&sha)
+            .unwrap(),
+        );
+        assert!(
+            app.pending_forge_operation
+                .as_ref()
+                .unwrap()
+                .preconditions
+                .len()
+                > 8
+        );
+        for width in [40, 80, 120, 180] {
+            let mut terminal = Terminal::new(TestBackend::new(width, 40)).unwrap();
+            terminal
+                .draw(|frame| render_forge_mutation_confirmation(frame, &app))
+                .unwrap();
+            let buffer = terminal.backend().buffer();
+            let text = (0..40)
+                .flat_map(|y| (0..width).map(move |x| buffer[(x, y)].symbol()))
+                .collect::<String>();
+            assert!(
+                text.contains("Confirmed HEAD"),
+                "missing revision label at {width}"
+            );
+            assert!(
+                text.contains("CONFIRM execute"),
+                "missing confirmation control at {width}"
+            );
+            assert!(
+                text.contains("c/Esc cancel"),
+                "missing cancellation control at {width}"
+            );
+            // At forty columns the SHA wraps, but every digit must still be painted.
+            let revision = text
+                .split_once("Confirmed HEAD:")
+                .unwrap()
+                .1
+                .split("Project:")
+                .next()
+                .unwrap();
+            assert_eq!(
+                revision.chars().filter(|c| *c == 'a').count(),
+                40,
+                "truncated revision at {width}"
+            );
+            if width >= 80 {
+                assert!(text.contains(&sha));
+            }
+        }
+    }
+}
