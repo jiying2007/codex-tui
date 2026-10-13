@@ -12,7 +12,7 @@ Diagnose the failed authority first; avoid deleting local state, changing upstre
 ## App Server will not connect or load threads
 <!-- docs-section: codex -->
 
-**Active history versus cached body:** In-progress history retains an ID-only owner even if its body is evicted or Registry metadata is idle. Authoritative completion or read failure releases that owner; quitting and retirement clear it with the watch. The owner set is bounded by subscribed IDs, not the presentation cache, and does not retain extra transcript pages.
+**Active history versus cached body:** In-progress history retains an ID-only owner even if its body is evicted or Registry metadata is idle. Only a full current-history observation updates activity: older pages and exact search hits cannot establish or clear it. Authoritative completion or read failure releases that owner; quitting and retirement clear it with the watch. The owner set is bounded by subscribed IDs, not the presentation cache, and does not retain extra transcript pages.
 
 **Returning after cache eviction:** Search and Board return routes may outlive the 16-entry history presentation cache. A valid Thread return now schedules one bounded read only when its entry is missing; retained loading/error entries do not trigger automatic retries. A paused transcript-search target keeps its exact turn/item anchor rather than silently jumping to newest history. Removed provisional targets and repository-tool views do not acquire new reads. The controlling-PTY cache workload verifies 32 completed background histories, cache-hit/miss/retirement/error controls, eventual release and fixture-scoped RSS/descriptor samples; this is not real-account qualification or a product-wide memory ceiling.
 

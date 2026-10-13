@@ -226,6 +226,48 @@ mod tests {
     }
 
     #[test]
+    fn partial_history_cannot_establish_or_clear_current_activity() {
+        for provisional in [false, true] {
+            for active in [false, true] {
+                for older in [false, true] {
+                    let (mut state, id) = state(provisional);
+                    if active {
+                        reduce(
+                            &mut state,
+                            Action::ConversationLoaded(active_page(id.clone())),
+                        );
+                    }
+                    // Neither an old in-progress turn nor a search hit without
+                    // turns is evidence about the current history's activity.
+                    let partial = if active {
+                        page(id.clone())
+                    } else {
+                        active_page(id.clone())
+                    };
+                    let action = if older {
+                        Action::OlderConversationLoaded(partial)
+                    } else {
+                        Action::TranscriptSearchLoadedPage {
+                            page: partial,
+                            item_id: "old-hit".into(),
+                        }
+                    };
+                    reduce(&mut state, action);
+                    assert_eq!(state.active_history_watches.contains(&id.0), active);
+                    reduce(&mut state, Action::Back);
+                    assert_eq!(state.watched_conversations.contains(&id.0), active);
+                    if active {
+                        assert_eq!(
+                            reduce(&mut state, Action::ConversationLoaded(page(id.clone()))),
+                            vec![Effect::StopWatchingConversation(id)]
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
     fn oldest_registered_activity_remains_owned_when_more_than_the_cache_limit_are_active() {
         let template = FakeBackend::seeded().snapshot().threads[0].clone();
         let mut rows = Vec::new();

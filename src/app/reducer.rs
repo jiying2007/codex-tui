@@ -1499,7 +1499,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 .entry(key)
                 .or_insert_with(|| ConversationState::loading(thread_id.clone()))
                 .prepend_page(page);
-            state.observe_history_activity(&thread_id);
+            // Older pages are not authoritative current-turn observations.
             state.touch_conversation_cache(&thread_id);
         }
         Action::TranscriptSearchLoadedPage { page, item_id } => {
@@ -1518,7 +1518,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             let ui = state.thread_ui.entry(thread_id.0.clone()).or_default();
             ui.follow = false;
             ui.scroll = u16::try_from(target_index.saturating_sub(2)).unwrap_or(u16::MAX);
-            state.observe_history_activity(&thread_id);
+            // An exact hit contains no current-turn status; retain known activity.
             state.touch_conversation_cache(&thread_id);
         }
         Action::ConversationFailed { thread_id, error } => {

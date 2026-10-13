@@ -305,7 +305,7 @@
     "src/app_server/watch_set.rs": 129,
     "src/app_server/watch_lifecycle.rs": 50,
     "src/app_server/watch_lifecycle/tests.rs": 161,
-    "src/app/history_cache.rs": 257
+    "src/app/history_cache.rs": 299
   },
   "ratchetPolicy": {
     "baseline": "inherit v1.3 Search & Multi-Target ceilings; feature work may only add bounded module-specific ceilings",
