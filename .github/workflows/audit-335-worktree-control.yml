@@ -1,0 +1,104 @@
+name: audit-335-worktree-control
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths: [.github/workflows/audit-335-worktree-control.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  compare:
+    if: >-
+      github.repository == 'jiying2007/codex-tui' &&
+      github.event.pull_request.number == 338 &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.head_ref == 'fix/worktree-prewrite-identity-20261013'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      CARGO_TERM_COLOR: never
+      CANDIDATE: 4e0ecf0b37c67425543c0d687ec4ff2399a22412
+      BASELINE: fb32c097beb77778c6b7a6d64f7d6f0e783395b9
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: 4e0ecf0b37c67425543c0d687ec4ff2399a22412
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
+      - name: Run the same coordinator fixture against fixed and old runtime sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$CANDIDATE"
+          test "$(git rev-parse HEAD:tests/worktree_prewrite_identity.rs)" = e1db0ebaf8dc8bfdae2e219a8d5c0ea11a438593
+          git diff --exit-code
+          OUT="$RUNNER_TEMP/audit-335-worktree"
+          NEGATIVE="$RUNNER_TEMP/audit-335-old-source"
+          mkdir -p "$OUT"
+          CODEX_TUI_GIT_SHA="$CANDIDATE" cargo test --locked --all-features \
+            --test worktree_prewrite_identity -- --test-threads=1 \
+            > "$OUT/positive.log" 2>&1
+          git worktree add --detach "$NEGATIVE" "$BASELINE"
+          mkdir -p "$NEGATIVE/tests"
+          cp tests/worktree_prewrite_identity.rs "$NEGATIVE/tests/"
+          git -C "$NEGATIVE" diff --exit-code
+          test "$(git -C "$NEGATIVE" ls-files --others --exclude-standard)" = tests/worktree_prewrite_identity.rs
+          set +e
+          CODEX_TUI_GIT_SHA="$BASELINE" cargo test --locked --all-features \
+            --manifest-path "$NEGATIVE/Cargo.toml" --target-dir "$GITHUB_WORKSPACE/target" \
+            --test worktree_prewrite_identity -- --test-threads=1 \
+            > "$OUT/negative.log" 2>&1
+          negative_exit=$?
+          set -e
+          test "$negative_exit" -eq 101
+          grep -F 'foreign branch was modified' "$OUT/negative.log"
+          grep -F 'test coordinator_unchanged_identity_positive_control_performs_exactly_one_write ... ok' "$OUT/positive.log"
+          grep -F 'test coordinator_unchanged_identity_positive_control_performs_exactly_one_write ... ok' "$OUT/negative.log"
+          grep -F 'test coordinator_refuses_retarget_after_successful_admission_before_any_write ... ok' "$OUT/positive.log"
+          grep -F '2 passed; 1 failed;' "$OUT/negative.log"
+          python3 - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          out = Path(os.environ['RUNNER_TEMP']) / 'audit-335-worktree'
+          receipt = {
+              'schema': 'codex-tui/audit-negative-control/v1',
+              'issue': 335,
+              'pullRequest': 338,
+              'candidateSourceSha': os.environ['CANDIDATE'],
+              'baselineSourceSha': os.environ['BASELINE'],
+              'fixtureBlobSha': 'e1db0ebaf8dc8bfdae2e219a8d5c0ea11a438593',
+              'runId': os.environ['GITHUB_RUN_ID'],
+              'positiveExitCode': 0,
+              'negativeExitCode': 101,
+              'negativeFailure': 'foreign branch was modified',
+              'unchangedIdentityControlPassesOnBoth': True,
+              'authority': 'real-git-production-coordinator-integration-regression-only',
+              'atomicFilesystemSafetyClaimed': False,
+              'stableReady': False,
+              'publicationAllowed': False,
+              'logs': {
+                  name: hashlib.sha256((out / name).read_bytes()).hexdigest()
+                  for name in ('positive.log', 'negative.log')
+              },
+          }
+          (out / 'receipt.json').write_text(
+              json.dumps(receipt, indent=2, sort_keys=True) + '\n', encoding='utf-8'
+          )
+          print(json.dumps(receipt, indent=2, sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: audit-335-worktree-negative-control-${{ github.run_id }}
+          path: ${{ runner.temp }}/audit-335-worktree
+          if-no-files-found: error
+          retention-days: 14
