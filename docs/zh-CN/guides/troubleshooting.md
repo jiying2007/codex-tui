@@ -12,7 +12,6 @@
 
 **历史订阅所有权：** reducer 在视图切换、搜索跳转、Prompt 回执及会话清单更新后统一核对后端历史监听。只保留当前／可返回会话以及正在工作或发送未完成的已监听会话；被替代且非活跃的目标会显式发送 StopWatchingConversation。正文缓存仍存在不代表后端仍在监听。此举减少无用的 RPC 历史重读，但不等同于已获得全局 RSS 实测上限。
 
-
 执行 `codex-tui doctor codex`（命名目标可附 `--target NAME`），独立检查真实 `codex --version` 和账号登录。远程 WebSocket/Unix 建连及握手受超时限制，超时不代表已发出的请求必定未执行。核对服务进程、TLS 代理、认证及能力错误；可选方法可以降级，但不会自动切换 `--fake`。Issue 不得粘贴 Bearer Token。
 
 stdio 半帧缓冲会跨定时器或命令取消保留；后端 EOF 的最后离线快照只交付一次。重复或循环游标、分页无进展以及总预算耗尽都会明确标为清单不完整，不能作为完整的变更授权证据。搜索跳转在有界全局历史中定位精确条目，并保留相同查询范围的续页游标；目标删除或预算耗尽时报告失败，不静默跳到其他位置。
@@ -27,6 +26,9 @@ RPC 通知最多保留 1024 条且受 16 MiB 载荷记账预算限制。待处�
 
 ## GitLab/GitHub 不可用或字段不全
 <!-- docs-section: forge -->
+
+**审批/合并的修订版本确认：** 待确认的 Forge 操作计划记录当前 GitHub PR／GitLab MR 观测到的完整 HEAD SHA。若 SHA 缺失、格式错误，或从预览到执行期间发生变化，操作拒绝执行；请刷新 Forge 数据并重新审核确认。已有审批与结果不确定后的恢复核验不得拿其他修订版本冒充成功。保留 GitHub/GitLab 原有携带 SHA 的写请求保护；这不意味着能原子阻止上游管理员并发改动。
+
 
 进入出现问题的仓库，**私下**检查 `git remote -v`，依次执行 `codex-tui doctor git`、`codex-tui doctor forge`。在工具外登录对应主机的 `glab/gh`。GitLab Issue/MR/Pipeline 独立探测，一项能力失败不应让其他成功内容消失。`doctor compat` Ready 不等于内部 GitLab PASS；内部部署参考 [能力准入](../qualification/provider.md)。
 

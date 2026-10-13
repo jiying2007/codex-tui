@@ -12,7 +12,6 @@ Diagnose the failed authority first; avoid deleting local state, changing upstre
 
 **History watch ownership:** The reducer now reconciles backend history subscriptions after navigation, search jumps, prompt acknowledgements and registry updates. Only the current/returnable thread and watched threads with active work or pending sends retain history re-reads; superseded inactive targets issue explicit StopWatchingConversation. Retained cached history is not proof of a live watch. This reduces unnecessary RPC re-reads without dropping active work and does not imply a measured global RSS bound.
 
-
 Run `codex-tui doctor codex` (optionally `--target NAME`). Check the real `codex --version` and its login/account independently. Named remote WebSocket/Unix targets have bounded connect/handshake timeouts; a timeout is not proof an action never executed. Verify process/transport, authentication, TLS proxy and App Server capability errors. Older optional methods may degrade; no real-to-fake fallback exists. Avoid pasting bearer tokens into an issue.
 
 Stdio fragments remain buffered across timer/command cancellation; a backend EOF delivers the final disconnected snapshot once. Repeated/cyclic cursors, stalled pagination and total budgets produce explicit incomplete inventory, never complete mutation authority. Search jumps locate the exact item within a bounded global-history scan and retain a continuation cursor of the same scope; deleted targets or exhausted budgets report failure instead of silently jumping elsewhere.
@@ -27,6 +26,9 @@ Each stdio connection owns its stderr drain in a task set containing at most one
 
 ## GitLab/GitHub unavailable or missing data
 <!-- docs-section: forge -->
+
+**Approval/merge revision confirmation:** The pending Forge plan now contains the full HEAD SHA observed in the current GitHub pull request or GitLab merge request projection. When a revision is absent, malformed or changes between review and execution, the action fails closed: refresh Forge and review/confirm again. Neither an existing approval nor an uncertain-result reconciliation can attest success for a different revision. GitHub's commit-specific approval/merge parameters and GitLab's SHA-scoped requests remain in place. This does not provide atomic protection against all upstream administrator actions.
+
 
 In the repository at issue: inspect `git remote -v` **privately**, run `codex-tui doctor git` then `codex-tui doctor forge`. Sign in `glab` or `gh` to the correct host outside the tool. GitLab Issues/MRs/Pipelines probe independently; a single unavailable capability is not entire project failure. `doctor compat` Ready does not prove internal GitLab. Use [provider evidence](../qualification/provider.md) for a required internal rollout.
 

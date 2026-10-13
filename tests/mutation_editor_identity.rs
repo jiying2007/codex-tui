@@ -41,6 +41,7 @@ fn fixture(with_change: bool) -> AppState {
                 state: "opened".into(),
                 source_branch: "feature".into(),
                 target_branch: "main".into(),
+                head_sha: None,
                 web_url: "https://gitlab.example.com/team/repo/-/merge_requests/7".into(),
                 updated_at: None,
                 draft: false,

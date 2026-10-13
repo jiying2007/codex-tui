@@ -42,6 +42,7 @@ fn observation(state: &AppState) -> ForgeObservation {
         source_branch: "feature".into(),
         target_branch: "main".into(),
         web_url: "https://gitlab.example.com/team/repo/-/merge_requests/7".into(),
+        head_sha: None,
         updated_at: None,
         draft: false,
         detailed_merge_status: None,

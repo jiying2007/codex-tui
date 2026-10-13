@@ -1037,6 +1037,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                             );
                             return vec![];
                         };
+                        let confirmed_sha = change.head_sha.clone().unwrap_or_default();
                         let planned_at = now_unix_ms();
                         let plan = match choice {
                             ContextChoice::ForgeApprove => {
@@ -1069,7 +1070,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                                 return vec![];
                             }
                         };
-                        match plan {
+                        match plan.and_then(|plan| plan.bind_confirmed_head(&confirmed_sha)) {
                             Ok(plan) => {
                                 state.pending_forge_operation = Some(plan);
                                 state.pending_forge_payload = None;
