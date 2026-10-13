@@ -37,7 +37,6 @@ fn transcript_jump_releases_superseded_previous_watch() {
     );
 }
 
-
 #[test]
 fn production_reducer_routes_do_not_panic_on_declared_unreachable_states() {
     let production = include_str!("reducer.rs");
