@@ -2,6 +2,43 @@ use super::*;
 use crate::forge::ForgeProviderKind;
 
 #[test]
+fn transcript_jump_releases_superseded_previous_watch() {
+    use crate::transcript_search::{
+        TranscriptSearchHit, TranscriptSearchResults, TranscriptSearchSource,
+    };
+    let mut app = app();
+    let old = ThreadId::new("old-previous");
+    let current = ThreadId::new("current");
+    let destination = ThreadId::new("destination");
+    app.view = View::Thread(current.clone());
+    app.previous_target = Some(old.clone());
+    app.transcript_search_results = Some(TranscriptSearchResults {
+        query: "needle".into(),
+        source: TranscriptSearchSource::LocalFts,
+        complete: true,
+        hits: vec![TranscriptSearchHit {
+            thread_id: destination.clone(),
+            turn_id: None,
+            item_id: None,
+            snippet: "needle".into(),
+            turn_cursor: None,
+            match_start_utf16: None,
+            match_end_utf16: None,
+        }],
+    });
+    let effects = reduce(&mut app, Action::OpenTranscriptSearchSelected);
+    assert_eq!(app.previous_target, Some(current));
+    assert_eq!(
+        effects,
+        vec![
+            Effect::StopWatchingConversation(old),
+            Effect::LoadConversation(destination),
+        ]
+    );
+}
+
+
+#[test]
 fn production_reducer_routes_do_not_panic_on_declared_unreachable_states() {
     let production = include_str!("reducer.rs");
     assert!(production.contains("pub fn reduce(state: &mut AppState, action: Action)"));
