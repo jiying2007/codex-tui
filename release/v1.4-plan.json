@@ -245,7 +245,7 @@
     "src/codex_protocol.rs": 374,
     "src/command.rs": 130,
     "src/compat.rs": 626,
-    "src/domain.rs": 353,
+    "src/domain.rs": 356,
     "src/forge_github.rs": 543,
     "src/git.rs": 831,
     "src/goal.rs": 194,
