@@ -72,13 +72,15 @@ fn futures_lite_probe(root: &Path) -> LocalRepoIdentity {
     let common = std::process::Command::new("git")
         .arg("-C")
         .arg(root)
-        .args(["rev-parse", "--path-format=absolute", "--git-common-dir"])
+        .args(["rev-parse", "--git-common-dir"])
         .output()
         .expect("git rev-parse");
     assert!(common.status.success());
-    let common = String::from_utf8_lossy(&common.stdout).trim().to_string();
+    let output = String::from_utf8(common.stdout).expect("UTF-8 test repo path");
+    let path = output.strip_suffix('\n').expect("git output newline");
+    let common = std::fs::canonicalize(root.join(path)).expect("canonical Git common dir");
     LocalRepoIdentity {
-        git_common_dir: canonical_path(&common),
+        git_common_dir: common.to_string_lossy().into_owned(),
         primary_root: canonical_path(root.to_string_lossy().as_ref()),
     }
 }
