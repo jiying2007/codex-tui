@@ -394,7 +394,14 @@ async fn run_app(fake_mode: bool, target_override: Option<&str>) -> Result<()> {
                 needs_render = true;
             }
 
-            let registry_changes = drain_registry(&mut app, registry.as_mut(), &mut services.store);
+            let mut registry_effects = Vec::new();
+            let registry_changes = drain_registry(
+                &mut app,
+                registry.as_mut(),
+                &mut services.store,
+                &mut registry_effects,
+            );
+            apply_effects(&mut app, registry.as_ref(), &mut services, registry_effects)?;
             needs_render |= registry_changes.any;
             if registry_changes.registry_projection {
                 let effects = reduce(&mut app, Action::RefreshGitProjections);
@@ -601,6 +608,7 @@ fn drain_registry(
     app: &mut AppState,
     registry: Option<&mut RegistryHandle>,
     store: &mut RuntimeStore,
+    effects: &mut Vec<Effect>,
 ) -> RegistryDrainChanges {
     let Some(registry) = registry else {
         return RegistryDrainChanges::default();
@@ -610,8 +618,8 @@ fn drain_registry(
         let Some(snapshot) = registry.try_recv() else {
             break;
         };
-        reduce(app, Action::ReplaceThreads(snapshot.threads));
-        reduce(app, Action::BackendStatus(snapshot.status));
+        effects.extend(reduce(app, Action::ReplaceThreads(snapshot.threads)));
+        effects.extend(reduce(app, Action::BackendStatus(snapshot.status)));
         changes.any = true;
         changes.registry_projection = true;
         changes.planning = true;
@@ -624,119 +632,82 @@ fn drain_registry(
             break;
         };
         changes.planning |= conversation_event_changes_planning(&event);
-        match event {
+        changes.any = true;
+        let action = match event {
             ConversationEvent::ThreadCreated {
                 thread_id,
                 operation,
-            } => {
-                let effects = reduce(
-                    app,
-                    Action::ThreadCreated {
-                        thread_id,
-                        operation,
-                    },
-                );
-                for effect in effects {
-                    if let Effect::LoadConversation(thread_id) = effect
-                        && let Err(error) = registry.load_conversation(thread_id.clone())
-                    {
-                        reduce(
-                            app,
-                            Action::ConversationFailed {
-                                thread_id,
-                                error: error.to_string(),
-                            },
-                        );
-                    }
-                }
-            }
+            } => Action::ThreadCreated {
+                thread_id,
+                operation,
+            },
             ConversationEvent::ThreadLifecycleFailed { operation, error } => {
-                reduce(app, Action::ThreadLifecycleFailed { operation, error });
+                Action::ThreadLifecycleFailed { operation, error }
             }
             ConversationEvent::Loaded(page) => {
                 if let Some(error) = store.index_conversation_page(&page) {
-                    reduce(app, Action::MutationNotice(error));
+                    effects.extend(reduce(app, Action::MutationNotice(error)));
                 }
-                reduce(app, Action::ConversationLoaded(page));
+                Action::ConversationLoaded(page)
             }
             ConversationEvent::OlderLoaded(page) => {
                 if let Some(error) = store.index_conversation_page(&page) {
-                    reduce(app, Action::MutationNotice(error));
+                    effects.extend(reduce(app, Action::MutationNotice(error)));
                 }
-                reduce(app, Action::OlderConversationLoaded(page));
+                Action::OlderConversationLoaded(page)
             }
             ConversationEvent::TranscriptSearchLoaded(results) => {
-                reduce(app, Action::TranscriptSearchLoaded(results));
+                Action::TranscriptSearchLoaded(results)
             }
             ConversationEvent::TranscriptSearchJumpLoaded { page, item_id } => {
                 if let Some(error) = store.index_conversation_page(&page) {
-                    reduce(app, Action::MutationNotice(error));
+                    effects.extend(reduce(app, Action::MutationNotice(error)));
                 }
-                reduce(app, Action::TranscriptSearchLoadedPage { page, item_id });
+                Action::TranscriptSearchLoadedPage { page, item_id }
             }
             ConversationEvent::TranscriptSearchFailed { query, error } => {
-                reduce(app, Action::TranscriptSearchServerFailed { query, error });
+                Action::TranscriptSearchServerFailed { query, error }
             }
-            ConversationEvent::ThreadQueueLoaded(snapshot) => {
-                reduce(app, Action::ThreadQueueLoaded(snapshot));
-            }
+            ConversationEvent::ThreadQueueLoaded(snapshot) => Action::ThreadQueueLoaded(snapshot),
             ConversationEvent::ThreadQueueFailed { thread_id, error } => {
-                reduce(app, Action::ThreadQueueFailed { thread_id, error });
+                Action::ThreadQueueFailed { thread_id, error }
             }
             ConversationEvent::InteractiveRequested(request) => {
-                reduce(app, Action::InteractiveRequested(request));
+                Action::InteractiveRequested(request)
             }
             ConversationEvent::UserResponse { ticket, outcome } => {
                 app.finish_user_response(ticket, outcome);
+                continue;
             }
             ConversationEvent::InteractiveResolved { request_id } => {
-                reduce(app, Action::InteractiveResolved { request_id });
+                Action::InteractiveResolved { request_id }
             }
-            ConversationEvent::GoalObserved(goal) => {
-                reduce(app, Action::GoalObserved(goal));
-            }
-            ConversationEvent::GoalCleared(thread_id) => {
-                reduce(app, Action::GoalCleared(thread_id));
-            }
+            ConversationEvent::GoalObserved(goal) => Action::GoalObserved(goal),
+            ConversationEvent::GoalCleared(thread_id) => Action::GoalCleared(thread_id),
             ConversationEvent::PromptSubmitted {
                 thread_id,
                 request_id,
                 ..
-            } => {
-                let effects = reduce(
-                    app,
-                    Action::PromptSubmitted {
-                        thread_id,
-                        request_id,
-                    },
-                );
-                for effect in effects {
-                    if effect == Effect::PersistOperatorState
-                        && let Some(error) = store.persist_operator_state(&app.to_local_state())
-                    {
-                        reduce(app, Action::PlanningStoreDegraded(Some(error)));
-                    }
-                }
-            }
+            } => Action::PromptSubmitted {
+                thread_id,
+                request_id,
+            },
             ConversationEvent::PromptFailed {
                 thread_id,
                 request_id,
                 error,
-            } => {
-                reduce(
-                    app,
-                    Action::PromptFailed {
-                        thread_id,
-                        request_id,
-                        error,
-                    },
-                );
-            }
+            } => Action::PromptFailed {
+                thread_id,
+                request_id,
+                error,
+            },
             ConversationEvent::Failed { thread_id, error } => {
-                reduce(app, Action::ConversationFailed { thread_id, error });
+                Action::ConversationFailed { thread_id, error }
             }
-        }
-        changes.any = true;
+        };
+        // Event-driven reducers produce real effects too. Preserve their order
+        // and route ALL of them through the same dispatcher as keyboard input.
+        effects.extend(reduce(app, action));
     }
     changes
 }

@@ -7,6 +7,8 @@
 
 Diagnose the failed authority first; avoid deleting local state, changing upstream credentials or inventing successful recovery. Keep the exact source SHA, target type and relevant sanitized error category. For disclosure-sensitive cases see [SECURITY](../../SECURITY.md).
 
+**Conversation watch lifecycle:** Cancelling metadata search or returning through Board must retain the reachable thread watch. Backend snapshots, completed history and prompt failures must dispatch their reducer effects just like keyboard actions; otherwise the UI can forget a subscription while the actor still rereads history. A prompt acknowledgement retains ownership until its authoritative history or failure arrives. The Linux actual-program regression checks both missing live updates and unwanted idle/deleted-thread RPCs using ordered notification fences, plus source/binary-bound two-thread RSS and descriptor observations. These isolated fixtures do not qualify real Codex, SSH, or a global memory limit.
+
 ## App Server will not connect or load threads
 <!-- docs-section: codex -->
 

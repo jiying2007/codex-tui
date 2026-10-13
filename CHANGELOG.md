@@ -17,6 +17,8 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
+- Dispatch background registry/history/prompt reducer effects, preserve reachable search/Board return watches, and retain acknowledged prompts until history resolves. Add source-bound actual-program RPC/resource regressions.
+
 - Revalidate Worktree Git common-dir after asynchronous admission checks and immediately before issuing a mutation; add a real-Git post-admission retarget negative control without claiming atomic same-user race immunity.
 
 

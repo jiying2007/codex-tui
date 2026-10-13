@@ -35,6 +35,7 @@ impl AppState {
             view: View::Registry,
             previous_target: None,
             watched_conversations: BTreeSet::new(),
+            unregistered_watches: BTreeSet::new(),
             thread_ui: BTreeMap::new(),
             prompt_submissions: Default::default(),
             local_pins,
