@@ -75,7 +75,11 @@ fn run_case(mode: &str) {
         let repo = root.join(name);
         fs::create_dir(&repo).unwrap();
         git(&real_git, &repo, &["init"]);
-        git(&real_git, &repo, &["symbolic-ref", "HEAD", "refs/heads/main"]);
+        git(
+            &real_git,
+            &repo,
+            &["symbolic-ref", "HEAD", "refs/heads/main"],
+        );
         git(
             &real_git,
             &repo,
@@ -189,8 +193,14 @@ async fn coordinator_identity_child() {
     })
     .await
     .expect("coordinator must produce a bounded terminal receipt");
-    assert!(root.join("admitted").is_file(), "admission was not exercised");
-    assert!(has_victim(&real_git, &foreign), "foreign branch was modified");
+    assert!(
+        root.join("admitted").is_file(),
+        "admission was not exercised"
+    );
+    assert!(
+        has_victim(&real_git, &foreign),
+        "foreign branch was modified"
+    );
     if std::env::var("CODEX_TUI_AUDIT_MODE").unwrap() == "retarget" {
         assert!(has_victim(&real_git, &original));
         assert!(!root.join("writes").exists(), "Git mutation was invoked");
@@ -207,5 +217,8 @@ async fn coordinator_identity_child() {
         assert_eq!(fs::read_to_string(root.join("writes")).unwrap(), "delete\n");
         assert_eq!(receipt.state, OperationState::Succeeded);
     }
-    assert_eq!(store.operation_receipt(&operation_id).unwrap(), Some(receipt));
+    assert_eq!(
+        store.operation_receipt(&operation_id).unwrap(),
+        Some(receipt)
+    );
 }

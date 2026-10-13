@@ -10,6 +10,8 @@ Diagnose the failed authority first; avoid deleting local state, changing upstre
 ## App Server will not connect or load threads
 <!-- docs-section: codex -->
 
+**History watch ownership:** The reducer now reconciles backend history subscriptions after navigation, search jumps, prompt acknowledgements and registry updates. Only the current/returnable thread and watched threads with active work or pending sends retain history re-reads; superseded inactive targets issue explicit StopWatchingConversation. Retained cached history is not proof of a live watch. This reduces unnecessary RPC re-reads without dropping active work and does not imply a measured global RSS bound.
+
 Run `codex-tui doctor codex` (optionally `--target NAME`). Check the real `codex --version` and its login/account independently. Named remote WebSocket/Unix targets have bounded connect/handshake timeouts; a timeout is not proof an action never executed. Verify process/transport, authentication, TLS proxy and App Server capability errors. Older optional methods may degrade; no real-to-fake fallback exists. Avoid pasting bearer tokens into an issue.
 
 Stdio fragments remain buffered across timer/command cancellation; a backend EOF delivers the final disconnected snapshot once. Repeated/cyclic cursors, stalled pagination and total budgets produce explicit incomplete inventory, never complete mutation authority. Search jumps locate the exact item within a bounded global-history scan and retain a continuation cursor of the same scope; deleted targets or exhausted budgets report failure instead of silently jumping elsewhere.

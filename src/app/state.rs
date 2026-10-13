@@ -34,6 +34,7 @@ impl AppState {
             selected: 0,
             view: View::Registry,
             previous_target: None,
+            watched_conversations: BTreeSet::new(),
             thread_ui: BTreeMap::new(),
             prompt_submissions: Default::default(),
             local_pins,

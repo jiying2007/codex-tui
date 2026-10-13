@@ -1,6 +1,115 @@
 use super::*;
 
 pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
+    let old_view = state.view.clone();
+    let old_previous = state.previous_target.clone();
+    let status_may_change = matches!(
+        &action,
+        Action::ReplaceThreads(_)
+            | Action::ConversationLoaded(_)
+            | Action::OlderConversationLoaded(_)
+            | Action::PromptSubmitted { .. }
+            | Action::PromptFailed { .. }
+            | Action::Quit
+    );
+    let effects = reduce_inner(state, action);
+    let watch_command = effects.iter().any(|effect| {
+        matches!(
+            effect,
+            Effect::LoadConversation(_)
+                | Effect::LoadOlderConversation { .. }
+                | Effect::JumpToTranscriptHit(_)
+                | Effect::SubmitPrompt { .. }
+                | Effect::StopWatchingConversation(_)
+        )
+    });
+    // Avoid a 50k-thread scan on every keystroke, cursor movement or redraw.
+    if status_may_change
+        || old_view != state.view
+        || old_previous != state.previous_target
+        || watch_command
+    {
+        release_unowned_conversation_watches(state, effects)
+    } else {
+        effects
+    }
+}
+
+/// Centralized watch ownership applies even to reducer routes that return early.
+/// History-cache eviction does not imply an active backend subscription.
+fn release_unowned_conversation_watches(
+    state: &mut AppState,
+    mut effects: Vec<Effect>,
+) -> Vec<Effect> {
+    for effect in &effects {
+        match effect {
+            Effect::LoadConversation(id)
+            | Effect::LoadOlderConversation { thread_id: id, .. }
+            | Effect::SubmitPrompt { thread_id: id, .. } => {
+                state.watched_conversations.insert(id.0.clone());
+            }
+            Effect::JumpToTranscriptHit(hit) => {
+                state.watched_conversations.insert(hit.thread_id.0.clone());
+            }
+            // A navigation route can request Stop while an active background
+            // turn still owns the same history watch. Resolve owners first.
+            Effect::StopWatchingConversation(_) => {}
+            _ => {}
+        }
+    }
+
+    let mut owners = BTreeSet::new();
+    if !state.should_quit {
+        if let Some(current) = state.current_thread_id() {
+            owners.insert(current.0.clone());
+            if let Some(previous) = &state.previous_target {
+                owners.insert(previous.0.clone());
+            }
+        }
+        owners.extend(state.prompt_submissions.pending_thread_ids().cloned());
+        for id in &state.watched_conversations {
+            // Only inspect already watched threads; no global 50k-thread scan.
+            if let Some(&index) = state.thread_index_by_id.get(id) {
+                let active_runtime = state.threads.get(index).is_some_and(|thread| {
+                    matches!(
+                        &thread.runtime,
+                        RuntimeStatus::Working | RuntimeStatus::WaitingHuman
+                    )
+                });
+                let active_turn = state
+                    .conversations
+                    .get(id)
+                    .is_some_and(|conversation| conversation.active_turn_id().is_some());
+                if active_runtime || active_turn {
+                    owners.insert(id.clone());
+                }
+            }
+        }
+    }
+    // Legacy navigation stops are advisory: never cancel watches owned by
+    // ongoing turns or pending prompts. Remove only real stopped subscriptions.
+    effects.retain(
+        |effect| !matches!(effect, Effect::StopWatchingConversation(id) if owners.contains(&id.0)),
+    );
+    for effect in &effects {
+        if let Effect::StopWatchingConversation(id) = effect {
+            state.watched_conversations.remove(&id.0);
+        }
+    }
+
+    let stale = state
+        .watched_conversations
+        .difference(&owners)
+        .cloned()
+        .collect::<Vec<_>>();
+    for id in stale {
+        state.watched_conversations.remove(&id);
+        effects.push(Effect::StopWatchingConversation(ThreadId::new(id)));
+    }
+    effects
+}
+
+fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
     state.observe_user_response_edit(&action);
     state.observe_local_edit_action(&action);
     if matches!(
