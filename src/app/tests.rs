@@ -10,7 +10,10 @@ fn transcript_navigation_does_not_accumulate_history_watches() {
     for thread in &mut threads {
         thread.runtime = RuntimeStatus::Inactive;
     }
-    let ids = threads.iter().map(|thread| thread.id.clone()).collect::<Vec<_>>();
+    let ids = threads
+        .iter()
+        .map(|thread| thread.id.clone())
+        .collect::<Vec<_>>();
     let mut app = AppState::new(threads);
     app.view = View::Thread(ids[0].clone());
     let mut released = 0;
@@ -38,9 +41,16 @@ fn transcript_navigation_does_not_accumulate_history_watches() {
         assert!(app.watched_conversations.len() <= 2);
         assert!(app.watched_conversations.contains(&next.0));
     }
-    assert!(released >= 125, "superseded history subscriptions must be released");
+    assert!(
+        released >= 125,
+        "superseded history subscriptions must be released"
+    );
     let effects = reduce(&mut app, Action::Back);
-    assert!(effects.iter().any(|item| matches!(item, Effect::StopWatchingConversation(_))));
+    assert!(
+        effects
+            .iter()
+            .any(|item| matches!(item, Effect::StopWatchingConversation(_)))
+    );
     assert!(app.watched_conversations.is_empty());
 }
 
@@ -53,7 +63,10 @@ fn active_work_owns_its_watch_until_upstream_reports_ready() {
     for thread in &mut threads {
         thread.runtime = RuntimeStatus::Inactive;
     }
-    let ids = threads.iter().map(|thread| thread.id.clone()).collect::<Vec<_>>();
+    let ids = threads
+        .iter()
+        .map(|thread| thread.id.clone())
+        .collect::<Vec<_>>();
     let mut app = AppState::new(threads);
     app.view = View::Thread(ids[0].clone());
     let jump = |app: &mut AppState, next: &ThreadId| {
@@ -1865,10 +1878,22 @@ fn conversation_cache_is_lru_bounded_without_evicting_thread_ui() {
     for index in 0..CONVERSATION_CACHE_LIMIT {
         app.view = View::Registry;
         app.selected = index;
-        assert!(matches!(
-            reduce(&mut app, Action::OpenSelected).as_slice(),
-            [Effect::LoadConversation(_)]
-        ));
+        let effects = reduce(&mut app, Action::OpenSelected);
+        assert!(
+            effects
+                .iter()
+                .any(|effect| matches!(effect, Effect::LoadConversation(_))),
+            "opening the selected thread must still load its conversation"
+        );
+        assert!(
+            effects.iter().all(|effect| {
+                matches!(
+                    effect,
+                    Effect::LoadConversation(_) | Effect::StopWatchingConversation(_)
+                )
+            }),
+            "extra effects may only release superseded history watches"
+        );
     }
     assert_eq!(app.conversations.len(), CONVERSATION_CACHE_LIMIT);
 
