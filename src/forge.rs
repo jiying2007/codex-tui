@@ -306,6 +306,7 @@ struct GitLabMergeRequest {
     source_project_id: Option<u64>,
     target_project_id: Option<u64>,
     web_url: String,
+    sha: Option<String>,
     updated_at: Option<String>,
     #[serde(default)]
     draft: bool,
@@ -508,6 +509,7 @@ pub(crate) async fn probe_gitlab_with_remote(
                 title: change.title,
                 state: change.state,
                 target_branch: change.target_branch,
+                head_sha: change.sha,
                 web_url: change.web_url,
                 updated_at: change.updated_at,
                 draft: change.draft,
