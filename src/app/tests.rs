@@ -2,6 +2,103 @@ use super::*;
 use crate::forge::ForgeProviderKind;
 
 #[test]
+fn transcript_navigation_does_not_accumulate_history_watches() {
+    use crate::transcript_search::{
+        TranscriptSearchHit, TranscriptSearchResults, TranscriptSearchSource,
+    };
+    let mut threads = FakeBackend::scaled(128).snapshot().threads;
+    for thread in &mut threads {
+        thread.runtime = RuntimeStatus::Inactive;
+    }
+    let ids = threads
+        .iter()
+        .map(|thread| thread.id.clone())
+        .collect::<Vec<_>>();
+    let mut app = AppState::new(threads);
+    app.view = View::Thread(ids[0].clone());
+    let mut released = 0;
+    for next in ids.iter().skip(1) {
+        app.transcript_search_results = Some(TranscriptSearchResults {
+            query: "needle".into(),
+            source: TranscriptSearchSource::LocalFts,
+            complete: true,
+            hits: vec![TranscriptSearchHit {
+                thread_id: next.clone(),
+                turn_id: None,
+                item_id: None,
+                snippet: "needle".into(),
+                turn_cursor: None,
+                match_start_utf16: None,
+                match_end_utf16: None,
+            }],
+        });
+        let effects = reduce(&mut app, Action::OpenTranscriptSearchSelected);
+        released += effects
+            .iter()
+            .filter(|item| matches!(item, Effect::StopWatchingConversation(_)))
+            .count();
+        assert!(effects.contains(&Effect::LoadConversation(next.clone())));
+        assert!(app.watched_conversations.len() <= 2);
+        assert!(app.watched_conversations.contains(&next.0));
+    }
+    assert!(
+        released >= 125,
+        "superseded history subscriptions must be released"
+    );
+    let effects = reduce(&mut app, Action::Back);
+    assert!(
+        effects
+            .iter()
+            .any(|item| matches!(item, Effect::StopWatchingConversation(_)))
+    );
+    assert!(app.watched_conversations.is_empty());
+}
+
+#[test]
+fn active_work_owns_its_watch_until_upstream_reports_ready() {
+    use crate::transcript_search::{
+        TranscriptSearchHit, TranscriptSearchResults, TranscriptSearchSource,
+    };
+    let mut threads = FakeBackend::scaled(4).snapshot().threads;
+    for thread in &mut threads {
+        thread.runtime = RuntimeStatus::Inactive;
+    }
+    let ids = threads
+        .iter()
+        .map(|thread| thread.id.clone())
+        .collect::<Vec<_>>();
+    let mut app = AppState::new(threads);
+    app.view = View::Thread(ids[0].clone());
+    let jump = |app: &mut AppState, next: &ThreadId| {
+        app.transcript_search_results = Some(TranscriptSearchResults {
+            query: "needle".into(),
+            source: TranscriptSearchSource::LocalFts,
+            complete: true,
+            hits: vec![TranscriptSearchHit {
+                thread_id: next.clone(),
+                turn_id: None,
+                item_id: None,
+                snippet: String::new(),
+                turn_cursor: None,
+                match_start_utf16: None,
+                match_end_utf16: None,
+            }],
+        });
+        reduce(app, Action::OpenTranscriptSearchSelected)
+    };
+    jump(&mut app, &ids[0]);
+    app.threads[0].runtime = RuntimeStatus::Working;
+    jump(&mut app, &ids[1]);
+    jump(&mut app, &ids[2]);
+    assert!(app.watched_conversations.contains(&ids[0].0));
+    let mut settled = app.threads.clone();
+    settled[0].runtime = RuntimeStatus::Ready;
+    let effects = reduce(&mut app, Action::ReplaceThreads(settled));
+    assert!(effects.contains(&Effect::StopWatchingConversation(ids[0].clone())));
+    assert!(!app.watched_conversations.contains(&ids[0].0));
+}
+
+#[test]
 fn transcript_jump_releases_superseded_previous_watch() {
     use crate::transcript_search::{
         TranscriptSearchHit, TranscriptSearchResults, TranscriptSearchSource,
@@ -798,6 +895,8 @@ fn opening_and_backing_out_preserves_registry_selection() {
     let mut app = app();
     reduce(&mut app, Action::MoveSelection(1));
     let selected = app.selected;
+    // An idle navigation watch has no independent active-work owner.
+    app.threads[selected].runtime = RuntimeStatus::Ready;
     let effects = reduce(&mut app, Action::OpenSelected);
     assert_eq!(
         effects,
@@ -819,6 +918,9 @@ fn opening_and_backing_out_preserves_registry_selection() {
 #[test]
 fn idle_interrupt_exits_thread_and_releases_watch() {
     let mut app = app();
+    // Make the idle premise explicit instead of inheriting a working fixture.
+    let selected = app.selected;
+    app.threads[selected].runtime = RuntimeStatus::Ready;
     reduce(&mut app, Action::OpenSelected);
     let thread_id = app.current_thread_id().expect("thread").clone();
     let effects = reduce(&mut app, Action::InterruptCurrent);
@@ -1781,10 +1883,22 @@ fn conversation_cache_is_lru_bounded_without_evicting_thread_ui() {
     for index in 0..CONVERSATION_CACHE_LIMIT {
         app.view = View::Registry;
         app.selected = index;
-        assert!(matches!(
-            reduce(&mut app, Action::OpenSelected).as_slice(),
-            [Effect::LoadConversation(_)]
-        ));
+        let effects = reduce(&mut app, Action::OpenSelected);
+        assert!(
+            effects
+                .iter()
+                .any(|effect| matches!(effect, Effect::LoadConversation(_))),
+            "opening the selected thread must still load its conversation"
+        );
+        assert!(
+            effects.iter().all(|effect| {
+                matches!(
+                    effect,
+                    Effect::LoadConversation(_) | Effect::StopWatchingConversation(_)
+                )
+            }),
+            "extra effects may only release superseded history watches"
+        );
     }
     assert_eq!(app.conversations.len(), CONVERSATION_CACHE_LIMIT);
 
