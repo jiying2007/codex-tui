@@ -160,8 +160,16 @@ async fn git_cwd_retarget_after_preconditions_is_rejected_before_write() {
         ensure_plan_repository_identity(&plan).await.is_err(),
         "a post-admission retarget must fail the final pre-write guard"
     );
-    assert!(branch_exists(foreign.to_str().unwrap(), "victim").await.unwrap());
-    assert!(branch_exists(original.to_str().unwrap(), "victim").await.unwrap());
+    assert!(
+        branch_exists(foreign.to_str().unwrap(), "victim")
+            .await
+            .unwrap()
+    );
+    assert!(
+        branch_exists(original.to_str().unwrap(), "victim")
+            .await
+            .unwrap()
+    );
 }
 
 #[tokio::test]
