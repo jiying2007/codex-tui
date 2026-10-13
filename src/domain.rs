@@ -325,7 +325,10 @@ mod identity_tests {
         let selected = spaced.to_str().unwrap();
         assert_eq!(classify_cwd(selected), CwdLocality::LocalDirectory);
         assert_eq!(display_cwd(selected), selected);
-        assert_ne!(std::fs::canonicalize(selected).unwrap(), std::fs::canonicalize(plain).unwrap());
+        assert_ne!(
+            std::fs::canonicalize(selected).unwrap(),
+            std::fs::canonicalize(plain).unwrap()
+        );
     }
 
     #[test]
