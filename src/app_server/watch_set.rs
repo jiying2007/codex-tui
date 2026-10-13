@@ -40,8 +40,8 @@ impl WatchSet {
         self.current.borrow().ids.contains(id)
     }
 
-    pub(super) fn remove(&self, id: &str) {
-        self.current.send_if_modified(|state| state.ids.remove(id));
+    pub(super) fn remove(&self, id: &str) -> bool {
+        self.current.send_if_modified(|state| state.ids.remove(id))
     }
 
     fn close(&self) {

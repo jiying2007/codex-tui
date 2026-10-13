@@ -17,6 +17,8 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
+- Retire actor-side history and queue watches on explicit archive/delete even for provisional search targets; invalidate provisional UI ownership without tombstones. Extend the maintained actual-program watch regression with removal and healthy controls.
+
 - Release history and Thread Queue subscriptions independently of actor-command capacity; keep admitted membership shared with the actor and skip released queued reads. Add actual-program backpressure, reopen and disconnected controls without changing write replay semantics.
 
 - Keep full confirmed Forge revisions and confirm/cancel keys visible; bind successful approval/merge readback and recovery to the reviewed revision, including GitHub review commit IDs. Add actual-program provider and restart regressions without granting real-account qualification.

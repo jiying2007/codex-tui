@@ -283,6 +283,12 @@ fn cross_view_watch_effects_reach_the_actual_backend() {
         "prompt-success",
         "prompt-failure",
         "prompt-history-failure",
+        "removal-provisional-keep",
+        "removal-provisional-delete",
+        "removal-provisional-archive",
+        "removal-registered-keep",
+        "removal-registered-delete",
+        "removal-registered-archive",
     ];
     let checks = receipt["checks"].as_array().unwrap();
     assert_eq!(checks.len(), expected.len());
