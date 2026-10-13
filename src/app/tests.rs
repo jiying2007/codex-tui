@@ -2415,7 +2415,10 @@ fn forge_approval_and_merge_pin_the_projected_revision_at_confirmation() {
             );
             assert!(plan.expected_side_effect.contains("reviewed commit"));
             let effects = reduce(&mut app, Action::ConfirmPendingOperation);
-            assert!(matches!(effects.as_slice(), [Effect::ExecuteForgeOperation(_)]));
+            assert!(matches!(
+                effects.as_slice(),
+                [Effect::ExecuteForgeOperation(_)]
+            ));
         }
     }
 }
@@ -2434,7 +2437,12 @@ fn missing_forge_revision_cannot_create_approval_or_merge_plan() {
         app.context_selected = choices.iter().position(|item| *item == choice).unwrap();
         assert!(reduce(&mut app, Action::ExecuteContext).is_empty());
         assert!(app.pending_forge_operation.is_none());
-        assert!(app.mutation_notice.as_deref().unwrap_or_default().contains("confirmed"));
+        assert!(
+            app.mutation_notice
+                .as_deref()
+                .unwrap_or_default()
+                .contains("confirmed")
+        );
     }
 }
 
