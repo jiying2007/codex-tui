@@ -96,7 +96,10 @@ async fn changed_cwd_repository_is_rejected_before_branch_mutation_or_recovery()
     git(&foreign, &["branch", "victim"]);
     symlink(&source, &selected).unwrap();
     let plan = OperationPlan::delete_branch(
-        planned_repo, selected.to_str().unwrap().into(), "victim".into(), 1,
+        planned_repo,
+        selected.to_str().unwrap().into(),
+        "victim".into(),
+        1,
     );
     ensure_plan_repository_identity(&plan).await.unwrap();
     std::fs::remove_file(&selected).unwrap();
@@ -104,13 +107,22 @@ async fn changed_cwd_repository_is_rejected_before_branch_mutation_or_recovery()
     let error = ensure_plan_repository_identity(&plan).await.unwrap_err();
     assert!(error.to_string().contains("planned repository identity"));
     let store = SqliteStore::at(temp.path().join("store"));
-    let result = execute_request(&store, MutationRequest {
-        plan: plan.clone(),
-        active_scopes: vec![],
-        admitted_at: Instant::now(),
-    }).await.unwrap();
+    let result = execute_request(
+        &store,
+        MutationRequest {
+            plan: plan.clone(),
+            active_scopes: vec![],
+            admitted_at: Instant::now(),
+        },
+    )
+    .await
+    .unwrap();
     assert_eq!(result.state, OperationState::Failed);
-    assert!(branch_exists(&foreign.to_string_lossy(), "victim").await.unwrap());
+    assert!(
+        branch_exists(&foreign.to_string_lossy(), "victim")
+            .await
+            .unwrap()
+    );
     assert!(reconcile_outcome(&store, &plan).await.is_err());
 }
 
