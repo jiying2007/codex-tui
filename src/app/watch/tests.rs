@@ -84,6 +84,10 @@ fn acknowledged_prompt_keeps_watch_until_authoritative_history_or_failure() {
             Action::ConversationLoaded(empty_page(id.clone())),
         );
         reduce(&mut state, Action::QuickPrompt);
+        reduce(
+            &mut state,
+            Action::ConversationLoaded(empty_page(id.clone())),
+        );
         reduce(&mut state, Action::SetDraft("pending prompt".into()));
         let effects = reduce(&mut state, Action::CommitInput);
         let [Effect::SubmitPrompt { request_id, .. }] = effects.as_slice() else {
@@ -123,6 +127,10 @@ fn failed_prompt_propagates_nested_watch_cleanup_without_replaying_the_send() {
         Action::ConversationLoaded(empty_page(id.clone())),
     );
     reduce(&mut state, Action::QuickPrompt);
+    reduce(
+        &mut state,
+        Action::ConversationLoaded(empty_page(id.clone())),
+    );
     reduce(&mut state, Action::SetDraft("retain failed draft".into()));
     let effects = reduce(&mut state, Action::CommitInput);
     let [Effect::SubmitPrompt { request_id, .. }] = effects.as_slice() else {
@@ -140,4 +148,44 @@ fn failed_prompt_propagates_nested_watch_cleanup_without_replaying_the_send() {
     assert_eq!(effects, vec![Effect::StopWatchingConversation(id.clone())]);
     assert!(state.watched_conversations.is_empty());
     assert_eq!(state.thread_ui[&id.0].draft, "retain failed draft");
+}
+
+#[test]
+fn unregistered_history_can_resolve_but_deleted_or_failed_watches_are_released() {
+    for resolves in [false, true] {
+        let mut state = idle_app();
+        reduce(&mut state, Action::Back);
+        let id = ThreadId::new("not-yet-in-registry");
+        state.view = View::Thread(id.clone());
+        let effects = reconcile(&mut state, vec![Effect::LoadConversation(id.clone())]);
+        assert_eq!(effects, vec![Effect::LoadConversation(id.clone())]);
+        let rows = state.threads.clone();
+        assert!(reduce(&mut state, Action::ReplaceThreads(rows)).is_empty());
+        let effects = if resolves {
+            let mut rows = state.threads.clone();
+            let mut registered = rows[0].clone();
+            registered.id = id.clone();
+            rows.push(registered);
+            assert!(reduce(&mut state, Action::ReplaceThreads(rows)).is_empty());
+            assert!(state.unregistered_watches.is_empty());
+            let rows = state
+                .threads
+                .iter()
+                .filter(|row| row.id != id)
+                .cloned()
+                .collect();
+            reduce(&mut state, Action::ReplaceThreads(rows))
+        } else {
+            reduce(
+                &mut state,
+                Action::ConversationFailed {
+                    thread_id: id.clone(),
+                    error: "missing".into(),
+                },
+            )
+        };
+        assert_eq!(effects, vec![Effect::StopWatchingConversation(id)]);
+        assert!(state.watched_conversations.is_empty());
+        assert!(state.unregistered_watches.is_empty());
+    }
 }

@@ -3,15 +3,19 @@ use super::*;
 /// Centralized watch ownership applies even to reducer routes that return early.
 /// History-cache eviction does not imply an active backend subscription.
 pub(super) fn reconcile(state: &mut AppState, mut effects: Vec<Effect>) -> Vec<Effect> {
+    // Provisional owners are only unresolved watches, never tombstones.
+    state.unregistered_watches.retain(|id| {
+        state.watched_conversations.contains(id) && !state.thread_index_by_id.contains_key(id)
+    });
     for effect in &effects {
         match effect {
             Effect::LoadConversation(id)
             | Effect::LoadOlderConversation { thread_id: id, .. }
             | Effect::SubmitPrompt { thread_id: id, .. } => {
-                state.watched_conversations.insert(id.0.clone());
+                track_watch(state, id);
             }
             Effect::JumpToTranscriptHit(hit) => {
-                state.watched_conversations.insert(hit.thread_id.0.clone());
+                track_watch(state, &hit.thread_id);
             }
             // A navigation route can request Stop while an active background
             // turn still owns the same history watch. Resolve owners first.
@@ -27,7 +31,10 @@ pub(super) fn reconcile(state: &mut AppState, mut effects: Vec<Effect>) -> Vec<E
             state
                 .prompt_submissions
                 .pending_thread_ids()
-                .filter(|id| state.thread_index_by_id.contains_key(*id))
+                .filter(|id| {
+                    state.thread_index_by_id.contains_key(*id)
+                        || state.unregistered_watches.contains(*id)
+                })
                 .cloned(),
         );
         for id in &state.watched_conversations {
@@ -69,7 +76,17 @@ pub(super) fn reconcile(state: &mut AppState, mut effects: Vec<Effect>) -> Vec<E
         state.watched_conversations.remove(&id);
         effects.push(Effect::StopWatchingConversation(ThreadId::new(id)));
     }
+    state
+        .unregistered_watches
+        .retain(|id| state.watched_conversations.contains(id));
     effects
+}
+
+fn track_watch(state: &mut AppState, id: &ThreadId) {
+    state.watched_conversations.insert(id.0.clone());
+    if !state.thread_index_by_id.contains_key(&id.0) {
+        state.unregistered_watches.insert(id.0.clone());
+    }
 }
 
 // Follow only return routes reachable from the current surface. Stale saved
@@ -88,7 +105,8 @@ fn reachable_threads(state: &AppState) -> BTreeSet<String> {
         }
         seen.push(view);
         if let Some(id) = AppState::thread_id_for_view(view)
-            && state.thread_index_by_id.contains_key(&id.0)
+            && (state.thread_index_by_id.contains_key(&id.0)
+                || state.unregistered_watches.contains(&id.0))
         {
             owners.insert(id.0);
         }
@@ -102,7 +120,8 @@ fn reachable_threads(state: &AppState) -> BTreeSet<String> {
     }
     if !owners.is_empty()
         && let Some(previous) = &state.previous_target
-        && state.thread_index_by_id.contains_key(&previous.0)
+        && (state.thread_index_by_id.contains_key(&previous.0)
+            || state.unregistered_watches.contains(&previous.0))
     {
         owners.insert(previous.0.clone());
     }

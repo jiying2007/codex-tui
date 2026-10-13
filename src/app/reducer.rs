@@ -1512,6 +1512,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.touch_conversation_cache(&thread_id);
         }
         Action::ConversationFailed { thread_id, error } => {
+            state.unregistered_watches.remove(&thread_id.0);
             state.prompt_submissions.history_resolved(&thread_id);
             let conversation = state
                 .conversations
