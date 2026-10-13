@@ -24,7 +24,11 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         )
     });
     // Avoid a 50k-thread scan on every keystroke, cursor movement or redraw.
-    if status_may_change || old_view != state.view || old_previous != state.previous_target || watch_command {
+    if status_may_change
+        || old_view != state.view
+        || old_previous != state.previous_target
+        || watch_command
+    {
         release_unowned_conversation_watches(state, effects)
     } else {
         effects
@@ -33,7 +37,10 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
 
 /// Centralized watch ownership applies even to reducer routes that return early.
 /// History-cache eviction does not imply an active backend subscription.
-fn release_unowned_conversation_watches(state: &mut AppState, mut effects: Vec<Effect>) -> Vec<Effect> {
+fn release_unowned_conversation_watches(
+    state: &mut AppState,
+    mut effects: Vec<Effect>,
+) -> Vec<Effect> {
     for effect in &effects {
         match effect {
             Effect::LoadConversation(id)
@@ -44,9 +51,9 @@ fn release_unowned_conversation_watches(state: &mut AppState, mut effects: Vec<E
             Effect::JumpToTranscriptHit(hit) => {
                 state.watched_conversations.insert(hit.thread_id.0.clone());
             }
-            Effect::StopWatchingConversation(id) => {
-                state.watched_conversations.remove(&id.0);
-            }
+            // A navigation route can request Stop while an active background
+            // turn still owns the same history watch. Resolve owners first.
+            Effect::StopWatchingConversation(_) => {}
             _ => {}
         }
     }
@@ -79,6 +86,17 @@ fn release_unowned_conversation_watches(state: &mut AppState, mut effects: Vec<E
             }
         }
     }
+    // Legacy navigation stops are advisory: never cancel watches owned by
+    // ongoing turns or pending prompts. Remove only real stopped subscriptions.
+    effects.retain(|effect| {
+        !matches!(effect, Effect::StopWatchingConversation(id) if owners.contains(&id.0))
+    });
+    for effect in &effects {
+        if let Effect::StopWatchingConversation(id) = effect {
+            state.watched_conversations.remove(&id.0);
+        }
+    }
+
     let stale = state
         .watched_conversations
         .difference(&owners)
