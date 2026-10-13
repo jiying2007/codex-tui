@@ -128,6 +128,42 @@ async fn changed_cwd_repository_is_rejected_before_branch_mutation_or_recovery()
     assert!(reconcile_outcome(&store, &plan).await.is_err());
 }
 
+#[cfg(unix)]
+#[tokio::test]
+async fn git_cwd_retarget_after_preconditions_is_rejected_before_write() {
+    use std::os::unix::fs::symlink;
+
+    let temp = tempdir().unwrap();
+    let original = temp.path().join("original");
+    let foreign = temp.path().join("foreign");
+    let selected = temp.path().join("selected");
+    let identity = init_repo(&original);
+    init_repo(&foreign);
+    git(&original, &["branch", "victim"]);
+    git(&foreign, &["branch", "victim"]);
+    symlink(&original, &selected).unwrap();
+
+    let plan = OperationPlan::delete_branch(
+        identity,
+        selected.to_str().unwrap().into(),
+        "victim".into(),
+        1,
+    );
+    let store = SqliteStore::at(temp.path().join("state"));
+    check_preconditions(&store, &plan, &[], Instant::now())
+        .await
+        .expect("before retargeting, admission accepts the original repository");
+    std::fs::remove_file(&selected).unwrap();
+    symlink(&foreign, &selected).unwrap();
+
+    assert!(
+        ensure_plan_repository_identity(&plan).await.is_err(),
+        "a post-admission retarget must fail the final pre-write guard"
+    );
+    assert!(branch_exists(foreign.to_str().unwrap(), "victim").await.unwrap());
+    assert!(branch_exists(original.to_str().unwrap(), "victim").await.unwrap());
+}
+
 #[tokio::test]
 async fn same_repo_reuses_one_mutation_lock_while_other_repo_does_not() {
     let locks: RepoLocks = Arc::new(Mutex::new(BTreeMap::new()));
