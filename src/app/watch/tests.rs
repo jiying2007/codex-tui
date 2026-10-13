@@ -189,3 +189,46 @@ fn unregistered_history_can_resolve_but_deleted_or_failed_watches_are_released()
         assert!(state.unregistered_watches.is_empty());
     }
 }
+
+#[test]
+fn cancelling_search_returns_only_to_a_still_owned_provisional_thread() {
+    for retired in [false, true] {
+        let mut state = idle_app();
+        reduce(&mut state, Action::Back);
+        let id = ThreadId::new("historical-only");
+        state.view = View::Thread(id.clone());
+        reconcile(&mut state, vec![Effect::LoadConversation(id.clone())]);
+        reduce(
+            &mut state,
+            Action::ConversationLoaded(empty_page(id.clone())),
+        );
+        assert!(reduce(&mut state, Action::BeginSearch).is_empty());
+        assert!(state.unregistered_watches.contains(&id.0));
+        if retired {
+            reduce(
+                &mut state,
+                Action::ConversationFailed {
+                    thread_id: id.clone(),
+                    error: "deleted".into(),
+                },
+            );
+        }
+        let effects = reduce(&mut state, Action::CancelInput);
+        if retired {
+            assert_eq!(state.view, View::Registry);
+            assert!(!state.watched_conversations.contains(&id.0));
+            assert!(!state.unregistered_watches.contains(&id.0));
+            assert!(!effects.iter().any(|effect| matches!(
+                effect,
+                Effect::LoadConversation(_) | Effect::JumpToTranscriptHit(_)
+            )));
+        } else {
+            assert_eq!(state.view, View::Thread(id.clone()));
+            assert!(state.watched_conversations.contains(&id.0));
+            assert!(effects.is_empty());
+            assert!(!state.search_return_view_is_valid(&View::Review(id.clone())));
+            assert!(!state.search_return_view_is_valid(&View::Workspace(id.clone())));
+            assert!(!state.search_return_view_is_valid(&View::ManagedWorktrees(id.clone())));
+        }
+    }
+}

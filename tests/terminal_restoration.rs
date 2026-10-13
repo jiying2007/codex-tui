@@ -289,6 +289,10 @@ fn cross_view_watch_effects_reach_the_actual_backend() {
         "removal-registered-keep",
         "removal-registered-delete",
         "removal-registered-archive",
+        "return-provisional-live",
+        "return-provisional-retired",
+        "return-registered-live",
+        "return-registered-retired",
     ];
     let checks = receipt["checks"].as_array().unwrap();
     assert_eq!(checks.len(), expected.len());

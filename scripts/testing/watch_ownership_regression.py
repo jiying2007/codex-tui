@@ -13,6 +13,7 @@ import tempfile
 from runtime_fault_regression import Session, environment
 from app_server_transport_regression import require
 from watch_removal_regression import CASES as REMOVAL_CASES, case as removal_case
+from watch_return_regression import CASES as RETURN_CASES, case as return_case
 
 MOCK = r'''#!/usr/bin/python3
 import json, os, sys, threading, time
@@ -88,7 +89,7 @@ for line in sys.stdin:
 
 CASES = ['idle-back', 'search-cancel', 'search-commit', 'history-complete',
          'registry-complete', 'deleted', 'board-cancel', 'board-commit',
-         'prompt-success', 'prompt-failure', 'prompt-history-failure'] + REMOVAL_CASES
+         'prompt-success', 'prompt-failure', 'prompt-history-failure'] + REMOVAL_CASES + list(RETURN_CASES)
 
 
 def check_reads(actual, expected, label):
@@ -109,6 +110,8 @@ def resources(pid):
 
 
 def case(binary, output, home, mode):
+    if mode in RETURN_CASES:
+        return return_case(binary, output, home, mode, MOCK, resources)
     if mode in REMOVAL_CASES:
         return removal_case(binary, output, home, mode, MOCK, resources)
     log = home/'server.jsonl'
