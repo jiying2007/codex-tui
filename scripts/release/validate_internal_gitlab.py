@@ -12,7 +12,7 @@ import pathlib
 import re
 import time
 
-from _compat import write_text_lf
+from _compat import require_python38
 
 SCHEMA = "codex-tui/internal-gitlab-admission/v1"
 INPUT_SCHEMA = "codex-tui/forge-capability-fixture/v1"
@@ -74,6 +74,7 @@ def validate(fixture: object, source_sha: str, now_ms: int) -> list[str]:
 
 
 def main() -> int:
+    require_python38()
     parser = argparse.ArgumentParser(description="Gate first internal GitLab deployment.")
     parser.add_argument("--fixture", required=True)
     parser.add_argument("--source-sha", required=True)
@@ -84,27 +85,40 @@ def main() -> int:
         raise SystemExit("--source-sha must be a 40-character hexadecimal SHA")
     path = pathlib.Path(args.fixture)
     output = pathlib.Path(args.output)
-    if output.exists():
+    if output.exists() or output.is_symlink():
         raise SystemExit("refusing to overwrite a retained admission receipt")
-    raw = path.read_bytes()
-    fixture = json.loads(raw)
+    try:
+        raw = path.read_bytes()
+        fixture = json.loads(raw.decode("utf-8"))
+    except (OSError, ValueError, UnicodeError, RecursionError):
+        raise SystemExit("cannot read valid GitLab fixture (details redacted)") from None
     now = int(time.time() * 1000)
     failures = validate(fixture, source_sha, now)
+    observed = fixture.get("observedAtUnixMs") if isinstance(fixture, dict) else None
+    if type(observed) is not int or observed <= 0:
+        observed = None
     receipt = {
         "schema": SCHEMA,
         "sourceSha": source_sha,
         "qualified": not failures,
         "blockers": failures,
         "fixtureSha256": hashlib.sha256(raw).hexdigest(),
-        "observedAtUnixMs": fixture.get("observedAtUnixMs") if isinstance(fixture, dict) else None,
+        "observedAtUnixMs": observed,
         "checkedAtUnixMs": now,
         "requiredCapabilities": list(CAPABILITIES),
         "stablePublicationAuthority": False,
         "scope": "actual-representative-internal-gitlab-repository",
     }
-    output.parent.mkdir(parents=True, exist_ok=True)
-    write_text_lf(output, json.dumps(receipt, sort_keys=True, indent=2) + "\n")
-    print(json.dumps(receipt, sort_keys=True, indent=2))
+    encoded = json.dumps(receipt, sort_keys=True, indent=2) + "\n"
+    try:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with output.open("xb") as handle:
+            handle.write(encoded.encode("utf-8"))
+    except FileExistsError:
+        raise SystemExit("refusing to overwrite a retained admission receipt") from None
+    except OSError:
+        raise SystemExit("cannot retain GitLab admission receipt (details redacted)") from None
+    print(encoded, end="")
     return 0 if not failures else 3
 
 
