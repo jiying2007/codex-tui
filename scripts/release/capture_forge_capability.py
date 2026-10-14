@@ -9,25 +9,75 @@ import subprocess
 import tempfile
 from typing import Optional
 
-from _compat import write_text_lf
+from _compat import require_python38
 
 HEX40 = re.compile(r"^[0-9a-fA-F]{40}$")
 SCHEMA = "codex-tui/forge-capability-fixture/v1"
+CAPABILITY_NAME = re.compile(r"^[a-z][a-z0-9-]{0,63}$")
+CAPABILITY_STATES = ("available", "unavailable", "unknown")
+FRESHNESS_STATES = ("fresh", "aging", "stale", "unavailable")
 
 
 def normalize_provider(value: object) -> Optional[str]:
     if value is None:
         return None
-    text = str(value).strip().lower()
-    return {
-        "git-lab": "gitlab",
-        "gitlab": "gitlab",
-        "git-hub": "github",
-        "github": "github",
-    }.get(text, text or None)
+    if not isinstance(value, str):
+        raise SystemExit("invalid Forge provider (value redacted)")
+    provider = {
+        "git-lab": "gitlab", "gitlab": "gitlab",
+        "git-hub": "github", "github": "github",
+    }.get(value.strip().lower())
+    if provider is None:
+        raise SystemExit("invalid Forge provider (value redacted)")
+    return provider
+
+
+def validate_snapshot(snapshot: object) -> None:
+    # Check types before projecting or printing any child-supplied values.
+    if not isinstance(snapshot, dict):
+        raise SystemExit("support snapshot must be a JSON object")
+    if snapshot.get("schema") != "codex-tui/support-bundle/v1":
+        raise SystemExit("unexpected support bundle schema")
+    build, forge = snapshot.get("build"), snapshot.get("forge")
+    if not isinstance(build, dict) or not isinstance(forge, dict):
+        raise SystemExit("support snapshot is missing build/forge sections")
+    for field in ("productVersion", "sourceSha", "os", "arch"):
+        value = build.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise SystemExit("invalid support build identity (value redacted)")
+    source = build["sourceSha"].strip().lower()
+    if source != "unknown" and not HEX40.fullmatch(source):
+        raise SystemExit("invalid support source identity (value redacted)")
+    observed = snapshot.get("generatedAtUnixMs")
+    if type(observed) is not int or observed <= 0:
+        raise SystemExit("support observation time must be a positive integer")
+    normalize_provider(forge.get("provider"))
+    if forge.get("authenticated") is not None and type(forge["authenticated"]) is not bool:
+        raise SystemExit("invalid Forge authentication state (value redacted)")
+    if forge.get("freshness") not in FRESHNESS_STATES:
+        raise SystemExit("invalid Forge freshness state (value redacted)")
+    capabilities = forge.get("capabilities")
+    if not isinstance(capabilities, dict) or any(
+        not isinstance(name, str) or not CAPABILITY_NAME.fullmatch(name)
+        or state not in CAPABILITY_STATES
+        for name, state in capabilities.items()
+    ):
+        raise SystemExit("invalid Forge capabilities (values redacted)")
+    for field in ("clientName", "clientVersion", "serverVersion", "serverEdition", "serverTier"):
+        value = forge.get(field)
+        if value is not None and (not isinstance(value, str) or not value.strip()):
+            raise SystemExit("invalid Forge metadata (value redacted)")
+    for field in ("recentIssues", "openChangeRequests", "recentPipelines", "issueBoards"):
+        value = forge.get(field)
+        if value is not None and (type(value) is not int or value < 0):
+            raise SystemExit("invalid Forge count (value redacted)")
+    error = forge.get("errorCode")
+    if error is not None and (not isinstance(error, str) or not CAPABILITY_NAME.fullmatch(error)):
+        raise SystemExit("invalid Forge error code (value redacted)")
 
 
 def main() -> int:
+    require_python38()
     parser = argparse.ArgumentParser(
         description="Capture a secret-safe, observed Forge capability fixture from doctor bundle."
     )
@@ -46,11 +96,11 @@ def main() -> int:
     args = parser.parse_args()
 
     binary = pathlib.Path(args.binary).resolve()
-    output = pathlib.Path(args.output).resolve()
+    output = pathlib.Path(args.output)
     if not binary.is_file():
-        raise SystemExit(f"binary does not exist: {binary}")
-    if output.exists():
-        raise SystemExit(f"refusing to overwrite retained fixture: {output}")
+        raise SystemExit("binary does not exist or is not a regular file")
+    if output.exists() or output.is_symlink():
+        raise SystemExit("refusing to overwrite retained fixture")
 
     expected_sha = args.expected_source_sha.strip().lower()
     if expected_sha and not HEX40.fullmatch(expected_sha):
@@ -61,8 +111,10 @@ def main() -> int:
         name, sep, state = raw.partition("=")
         name = name.strip()
         state = state.strip()
-        if not sep or not name or not state:
-            raise SystemExit("--required-capability must be NAME=STATE")
+        if not sep or not CAPABILITY_NAME.fullmatch(name) or state not in CAPABILITY_STATES:
+            raise SystemExit("--required-capability must be NAME=available|unavailable|unknown")
+        if name in required_capabilities and required_capabilities[name] != state:
+            raise SystemExit("conflicting duplicate capability requirements")
         required_capabilities[name] = state
 
     with tempfile.TemporaryDirectory() as temp:
@@ -71,6 +123,7 @@ def main() -> int:
             proc = subprocess.run(
                 [str(binary), "doctor", "bundle", "--output", str(bundle)],
                 text=True,
+                encoding="utf-8",
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 timeout=45,
@@ -78,38 +131,35 @@ def main() -> int:
         except subprocess.TimeoutExpired:
             # Child stdout/stderr can contain server URLs or auth diagnostics.
             # Never echo arbitrary failure output into user or CI logs.
-            raise SystemExit("doctor bundle timed out after 45s (output redacted)")
+            raise SystemExit("doctor bundle timed out after 45s (output redacted)") from None
+        except (OSError, UnicodeError):
+            raise SystemExit("doctor bundle could not run or decode output (details redacted)") from None
         if proc.returncode != 0:
             raise SystemExit(
                 f"doctor bundle failed with exit code {proc.returncode} (output redacted)"
             )
 
         snapshot_path = bundle / "snapshot.json"
-        snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+        try:
+            snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, UnicodeError, RecursionError):
+            raise SystemExit("cannot read valid support snapshot (details redacted)") from None
 
-    if snapshot.get("schema") != "codex-tui/support-bundle/v1":
-        raise SystemExit("unexpected support bundle schema")
-
-    build = snapshot.get("build")
-    forge = snapshot.get("forge")
-    if not isinstance(build, dict) or not isinstance(forge, dict):
-        raise SystemExit("support snapshot is missing build/forge sections")
-
+    validate_snapshot(snapshot)
+    build, forge = snapshot["build"], snapshot["forge"]
     provider = normalize_provider(forge.get("provider"))
     authenticated = forge.get("authenticated")
-    capabilities = forge.get("capabilities")
-    if not isinstance(capabilities, dict):
-        capabilities = {}
+    capabilities = forge["capabilities"]
 
     blockers = []
     if args.expected_provider and provider != args.expected_provider:
         blockers.append(
-            f"provider mismatch: expected {args.expected_provider}, observed {provider or 'unavailable'}"
+            "provider mismatch (observed value redacted)"
         )
     source_sha = str(build.get("sourceSha", "")).strip().lower()
     if expected_sha and source_sha != expected_sha:
         blockers.append(
-            f"source SHA mismatch: expected {expected_sha}, observed {source_sha or 'unknown'}"
+            "source SHA mismatch (observed value redacted)"
         )
     if args.require_authenticated and authenticated is not True:
         blockers.append("forge authentication is not confirmed")
@@ -117,7 +167,7 @@ def main() -> int:
         observed = capabilities.get(name)
         if observed != state:
             blockers.append(
-                f"capability {name} mismatch: expected {state}, observed {observed!r}"
+                f"capability {name} mismatch (observed value redacted)"
             )
 
     fixture = {
@@ -163,9 +213,16 @@ def main() -> int:
         ],
     }
 
-    output.parent.mkdir(parents=True, exist_ok=True)
-    write_text_lf(output, json.dumps(fixture, indent=2, sort_keys=True) + "\n")
-    print(json.dumps(fixture, indent=2, sort_keys=True))
+    encoded = json.dumps(fixture, indent=2, sort_keys=True) + "\n"
+    try:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        with output.open("xb") as handle:
+            handle.write(encoded.encode("utf-8"))
+    except FileExistsError:
+        raise SystemExit("refusing to overwrite retained fixture") from None
+    except OSError:
+        raise SystemExit("cannot retain Forge fixture (details redacted)") from None
+    print(encoded, end="")
     return 0 if fixture["qualified"] else 3
 
 
