@@ -51,8 +51,32 @@ def run(
     return proc
 
 
-def load_json(path: pathlib.Path) -> dict:
-    return json.loads(path.read_text(encoding="utf-8"))
+def read_terminal_receipt(path: pathlib.Path, source_sha: str) -> tuple[dict, bytes]:
+    """Validate and retain one byte snapshot, never hash a second path read."""
+    try:
+        raw = path.read_bytes()
+    except OSError as error:
+        raise SystemExit(f"cannot read terminal receipt: {error}") from error
+    try:
+        terminal = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise SystemExit(f"cannot decode terminal receipt: {error}") from error
+    if not isinstance(terminal, dict):
+        raise SystemExit("terminal receipt must be a JSON object")
+    if terminal.get("schema") != TERMINAL_SCHEMA:
+        raise SystemExit("terminal receipt schema mismatch")
+    if terminal.get("platform") != "linux":
+        raise SystemExit("terminal receipt must be for linux")
+    if terminal.get("status") != "pass":
+        raise SystemExit("terminal receipt must have status=pass")
+    observed_source = terminal.get("sourceSha")
+    if not isinstance(observed_source, str) or observed_source.lower() != source_sha.lower():
+        raise SystemExit("terminal receipt source SHA mismatch")
+    for field in ("terminal", "observedAt"):
+        value = terminal.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise SystemExit(f"terminal receipt {field} must be a nonempty string")
+    return terminal, raw
 
 
 def stable_version_allowed(version: str) -> bool:
@@ -126,7 +150,6 @@ def main() -> int:
 
     root = pathlib.Path.cwd().resolve()
     output_dir = (root / args.output_dir).resolve()
-    output_dir.mkdir(parents=True, exist_ok=True)
 
     dirty = run(["git", "status", "--porcelain"], cwd=root).stdout.strip()
     if dirty:
@@ -153,6 +176,21 @@ def main() -> int:
         raise SystemExit("Cargo package license must be Apache-2.0")
     if not (root / "LICENSE").is_file():
         raise SystemExit("root LICENSE is missing")
+
+    # Reject absent, malformed or wrong-source real evidence before network,
+    # compilation or benchmarks. Capture the accepted bytes for all later hashes.
+    terminal_input = pathlib.Path(args.terminal_receipt).resolve()
+    terminal, terminal_raw = read_terminal_receipt(terminal_input, commit_sha)
+    terminal_sha256 = hashlib.sha256(terminal_raw).hexdigest()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    terminal_path = output_dir / "terminal-restoration.json"
+    try:
+        with terminal_path.open("xb") as snapshot:
+            snapshot.write(terminal_raw)
+    except FileExistsError as error:
+        raise SystemExit(
+            "retained terminal receipt already exists; use a fresh --output-dir"
+        ) from error
 
     github_repo = args.github_repo.strip() or github_repo_from_cargo(root)
     ci_json = output_dir / "canonical-ci.json"
@@ -382,22 +420,6 @@ def main() -> int:
             "Linux performance diagnostic sample is invalid or too small: "
             f"iterations={performance.get('iterations')}"
         )
-
-    terminal_path = pathlib.Path(args.terminal_receipt).resolve()
-    terminal = load_json(terminal_path)
-    if terminal.get("schema") != TERMINAL_SCHEMA:
-        raise SystemExit("terminal receipt schema mismatch")
-    if terminal.get("platform") != "linux":
-        raise SystemExit("terminal receipt must be for linux")
-    if terminal.get("status") != "pass":
-        raise SystemExit("terminal receipt must have status=pass")
-    if str(terminal.get("sourceSha", "")).lower() != commit_sha.lower():
-        raise SystemExit("terminal receipt source SHA mismatch")
-    if not str(terminal.get("terminal", "")).strip():
-        raise SystemExit("terminal receipt terminal name is empty")
-    if not str(terminal.get("observedAt", "")).strip():
-        raise SystemExit("terminal receipt observedAt is empty")
-    terminal_sha256 = hashlib.sha256(terminal_path.read_bytes()).hexdigest()
 
     evidence_path = output_dir / "release-evidence-linux.json"
     run(
