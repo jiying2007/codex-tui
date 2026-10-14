@@ -220,6 +220,35 @@
         "ci",
         "archive"
       ]
+    },
+    {
+      "id": "device-validation",
+      "en": "docs/guides/device-validation.md",
+      "zh-CN": "docs/zh-CN/guides/device-validation.md",
+      "sections": [
+        "overview",
+        "identity",
+        "workspace",
+        "build",
+        "controlled",
+        "services",
+        "terminal",
+        "forge",
+        "state",
+        "observation",
+        "qualification",
+        "closure"
+      ]
+    },
+    {
+      "id": "device-matrix",
+      "en": "docs/guides/device-matrix.md",
+      "zh-CN": "docs/zh-CN/guides/device-matrix.md",
+      "sections": [
+        "overview",
+        "matrix",
+        "conclusion"
+      ]
     }
   ]
 }
