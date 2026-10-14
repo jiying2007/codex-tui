@@ -19,6 +19,8 @@ Protocol qualification is intentionally tiered: **L1** replays retained registry
 ## Real environment requirements
 <!-- docs-section: external -->
 
+`capture_compat.py` gives the compatibility doctor a 45-second execution timeout and never echoes failed child output or invalid report values. It requires a ready, exact-source report with typed build identity and a positive observation timestamp. Existing output files (including symbolic links) are refused before probing; exclusive creation also protects a report created by another collector during the probe. Failures emit no success summary. Choose a new output path for each capture; this protects retained evidence from accidental replacement, not from later filesystem modification.
+
 `linux_qualify.py` validates the supplied Linux terminal receipt before any network query, compilation or benchmark. Missing, malformed, non-PASS or wrong-source input stops immediately. The accepted UTF-8 bytes are retained verbatim as `terminal-restoration.json` in a fresh `--output-dir`; parsing and SHA-256 use that same snapshot, not a later read of the input path. An existing retained snapshot is never overwritten. This verifies the operator-supplied receipt, not the truth of a real-TTY attestation; it does not synthesize PASS or authorize publication.
 
 Separate, current-source receipts are required for (1) actual authenticated Codex App Server/provider capabilities, (2) internal GitLab `glab` and required Issues/MRs/Pipelines where the internal deployment profile is used, (3) Linux and Windows→SSH Ubuntu **controlling terminal** focus/resize/Ctrl+C/exit/restore, and (4) operator review of target machine performance, resource and error recovery. Repository CI cannot synthesize these as PASS.

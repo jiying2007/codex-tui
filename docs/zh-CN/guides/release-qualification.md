@@ -19,6 +19,8 @@ Development Qualification 额外保留 `failure-case-execution.json`，逐项记
 ## 真实环境必须单独验收
 <!-- docs-section: external -->
 
+`capture_compat.py` 对兼容性 doctor 设置 45 秒执行超时，失败时不回显子进程输出或非法报告字段。只有 ready、源码匹配、构建身份字段类型正确且观测时间为正整数的报告才能被保留。已有输出文件（包括符号链接）会在探测前被拒绝；独占创建还防止覆盖探测期间由另一采集进程写入的报告。失败不输出成功摘要。每次采集应选择新的输出路径；这能避免意外替换已保留的证据，但不代表文件系统不可变。
+
 `linux_qualify.py` 会在网络查询、编译和基准测试之前校验传入的 Linux 终端收据；缺失、格式错误、非 PASS 或源码不匹配时立即停止。通过校验的 UTF-8 原始字节保留到新 `--output-dir` 下的 `terminal-restoration.json`，解析和 SHA-256 均使用这一份快照，不再重新读取原输入路径；已有快照不会被覆盖。这只是验证操作者提供的收据，不替代真实终端见证，不生成虚构 PASS，也不授权发布。
 
 必须独立采集并绑定当前源码：①真实登录 Codex App Server/Provider 能力；②内部使用档真实 `glab` 及 Issue/MR/Pipeline 可用；③Linux 和 Windows→SSH Ubuntu 的**控制终端** Focus/Resize/Ctrl+C/退出/恢复；④实际机器的性能、资源和异常恢复。托管 CI 不得伪造为真实 PASS。
