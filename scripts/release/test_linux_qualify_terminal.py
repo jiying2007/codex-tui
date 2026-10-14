@@ -26,7 +26,8 @@ class LinuxTerminalPreflight(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
-        self.root = Path(self.temporary.name)
+        # Match the qualifier after macOS symlinks or Windows short-name expansion.
+        self.root = Path(self.temporary.name).resolve()
         self.receipt = self.root / "real-terminal.json"
         self.output = self.root / "out"
         (self.root / "LICENSE").write_text("fixture", encoding="utf-8")
