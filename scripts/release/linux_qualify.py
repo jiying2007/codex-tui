@@ -165,6 +165,12 @@ def main() -> int:
     if branch != "main":
         raise SystemExit(f"qualification must run from main; got {branch!r}")
 
+    # Reject absent, malformed or wrong-source real evidence before network,
+    # compilation or benchmarks. Capture the accepted bytes for all later hashes.
+    terminal_input = pathlib.Path(args.terminal_receipt).resolve()
+    terminal, terminal_raw = read_terminal_receipt(terminal_input, commit_sha)
+    terminal_sha256 = hashlib.sha256(terminal_raw).hexdigest()
+
     package = cargo_package(root)
     version = package["version"]
     if not stable_version_allowed(version):
@@ -177,11 +183,6 @@ def main() -> int:
     if not (root / "LICENSE").is_file():
         raise SystemExit("root LICENSE is missing")
 
-    # Reject absent, malformed or wrong-source real evidence before network,
-    # compilation or benchmarks. Capture the accepted bytes for all later hashes.
-    terminal_input = pathlib.Path(args.terminal_receipt).resolve()
-    terminal, terminal_raw = read_terminal_receipt(terminal_input, commit_sha)
-    terminal_sha256 = hashlib.sha256(terminal_raw).hexdigest()
     output_dir.mkdir(parents=True, exist_ok=True)
     terminal_path = output_dir / "terminal-restoration.json"
     try:

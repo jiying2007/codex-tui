@@ -32,6 +32,8 @@ class LinuxTerminalPreflight(unittest.TestCase):
         (self.root / "LICENSE").write_text("fixture", encoding="utf-8")
         self.commands = []
         self.forbid_work = False
+        self.forbid_metadata = False
+        self.metadata_calls = 0
         self.drift = False
 
     def run_command(self, command, **kwargs):
@@ -75,6 +77,12 @@ class LinuxTerminalPreflight(unittest.TestCase):
                 result = "{}"
         return subprocess.CompletedProcess(command, 0, result, "")
 
+    def package_metadata(self, root):
+        self.metadata_calls += 1
+        if self.forbid_metadata:
+            raise AssertionError("cargo metadata ran before terminal rejection")
+        return {"version": "1.4.0", "license": "Apache-2.0"}
+
     def invoke(self, dispatch=False):
         argv = ["linux_qualify.py", "--canonical-ci-run", "7",
                 "--github-repo", "owner/repo", "--terminal-receipt", str(self.receipt),
@@ -84,13 +92,14 @@ class LinuxTerminalPreflight(unittest.TestCase):
         with mock.patch.object(sys, "argv", argv), \
              mock.patch.object(sys, "platform", "linux"), \
              mock.patch.object(Path, "cwd", return_value=self.root), \
-             mock.patch.object(q, "cargo_package", return_value={"version": "1.4.0", "license": "Apache-2.0"}), \
+             mock.patch.object(q, "cargo_package", side_effect=self.package_metadata), \
              mock.patch.object(q, "run", side_effect=self.run_command), \
              contextlib.redirect_stdout(io.StringIO()):
             return q.main()
 
     def test_bad_receipts_stop_before_network_build_or_output_creation(self):
         self.forbid_work = True
+        self.forbid_metadata = True
         cases = [None, b"not json", b"\xff", b"[]", b"null"]
         for field, values in (("schema", ["other"]), ("platform", ["windows"]),
                               ("status", ["fail"]), ("sourceSha", ["f" * 40]),
@@ -111,6 +120,7 @@ class LinuxTerminalPreflight(unittest.TestCase):
                     self.invoke()
                 self.assertTrue(all(command[0] == "git" for command in self.commands))
                 self.assertFalse(self.output.exists())
+                self.assertEqual(self.metadata_calls, 0)
 
     def test_valid_snapshot_is_byte_exact_and_default_does_not_dispatch(self):
         raw = (json.dumps(valid_terminal(), indent=3) + "\r\n").encode()
