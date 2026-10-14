@@ -543,3 +543,75 @@ fn evicted_returns_and_multi_session_workloads_preserve_ownership() {
     assert_eq!(receipt["realSshQualification"], false);
     println!("{receipt}");
 }
+
+#[test]
+fn evicted_return_cancellation_and_closed_admission_preserve_release() {
+    let temporary = tempfile::tempdir().unwrap();
+    let retained = std::env::var_os("CODEX_TUI_PTY_EVIDENCE_DIR");
+    let root = retained
+        .as_deref()
+        .map(Path::new)
+        .unwrap_or_else(|| temporary.path());
+    std::fs::create_dir_all(root).unwrap();
+    let output = root.join("cache-interruption");
+    let log_path = root.join("cache-interruption.log");
+    let log = std::fs::File::create(&log_path).unwrap();
+    let source = option_env!("CODEX_TUI_GIT_SHA")
+        .or(option_env!("GITHUB_SHA"))
+        .unwrap_or("unknown");
+    let mut child = Command::new("python3")
+        .arg("-O")
+        .arg(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("scripts/testing/watch_cache_interruption_regression.py"),
+        )
+        .arg(env!("CARGO_BIN_EXE_codex-tui"))
+        .arg(&output)
+        .env("CODEX_TUI_PTY_SOURCE_SHA", source)
+        .stdin(Stdio::null())
+        .stdout(log.try_clone().unwrap())
+        .stderr(log)
+        .spawn()
+        .unwrap();
+    let deadline = Instant::now() + Duration::from_secs(240);
+    let status = loop {
+        if let Some(status) = child.try_wait().unwrap() {
+            break status;
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!(
+                "watch harness timeout: {}",
+                std::fs::read_to_string(&log_path).unwrap_or_default()
+            );
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    };
+    assert!(
+        status.success(),
+        "watch regression: {}",
+        std::fs::read_to_string(&log_path).unwrap_or_default()
+    );
+    let receipt: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(output.join("receipt.json")).unwrap()).unwrap();
+    assert_eq!(receipt["status"], "passed");
+    assert_eq!(receipt["sourceSha"], source);
+    let expected = [
+        "registered-search-cancel",
+        "provisional-board-cancel",
+        "registered-board-disconnect",
+        "provisional-search-disconnect",
+        "registered-board-refused",
+        "provisional-board-refused",
+    ];
+    let checks = receipt["checks"].as_array().unwrap();
+    assert_eq!(checks.len(), expected.len());
+    for (check, name) in checks.iter().zip(expected) {
+        assert_eq!(check["mode"], name);
+        assert_eq!(check["passed"], true);
+    }
+    assert_eq!(receipt["realCodexQualification"], false);
+    assert_eq!(receipt["realSshQualification"], false);
+    println!("{receipt}");
+}
