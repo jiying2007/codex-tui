@@ -1,0 +1,41 @@
+name: lean-source-export
+on:
+  push:
+    branches: [audit/lean-source-export-20261021]
+permissions:
+  contents: read
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: d74020ecd69b19ed83d2342b3d99497b800e68d0
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d
+        with:
+          toolchain: 1.88.0
+          components: rustfmt, clippy
+      - name: Export exact public source and offline build inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = d74020ecd69b19ed83d2342b3d99497b800e68d0
+          mkdir -p "$RUNNER_TEMP/lean-inputs"
+          git branch lean-baseline HEAD
+          git bundle create "$RUNNER_TEMP/lean-inputs/source.bundle" lean-baseline
+          cargo vendor --locked "$RUNNER_TEMP/lean-vendor" > "$RUNNER_TEMP/lean-inputs/vendor-config.toml"
+          tar -C "$RUNNER_TEMP" -czf "$RUNNER_TEMP/lean-inputs/vendor.tar.gz" lean-vendor
+          SYSROOT="$(rustc --print sysroot)"
+          tar -C "$SYSROOT" -czf "$RUNNER_TEMP/lean-inputs/rust-1.88.0.tar.gz" bin lib
+          git rev-parse HEAD HEAD^{tree} > "$RUNNER_TEMP/lean-inputs/source-identity.txt"
+          rustc -Vv > "$RUNNER_TEMP/lean-inputs/rustc-version.txt"
+          (cd "$RUNNER_TEMP/lean-inputs" && sha256sum source.bundle vendor.tar.gz rust-1.88.0.tar.gz > SHA256SUMS)
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: lean-offline-build-inputs-d74020e
+          path: ${{ runner.temp }}/lean-inputs/
+          if-no-files-found: error
+          retention-days: 3
