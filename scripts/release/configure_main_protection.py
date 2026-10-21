@@ -15,6 +15,7 @@ REQUIRED_CHECKS = (
     "ubuntu-24.04",
     "macos-latest",
     "windows-latest",
+    "security-gate",
 )
 GITHUB_ACTIONS_SLUG = "github-actions"
 API_VERSION = "2026-03-10"
@@ -90,6 +91,18 @@ def validate_ci_contract(ci_text: str) -> None:
         raise SystemExit(
             "canonical CI platform matrix changed; review branch-protection required checks"
         )
+
+
+def validate_security_contract(security_text: str) -> None:
+    if re.search(r"^\s+(?:paths|paths-ignore):", security_text, re.MULTILINE):
+        raise SystemExit("required security workflow must not skip paths")
+    expected = (
+        "  push:\n    branches: [main]\n  pull_request:",
+        "  security-gate:\n    name: security-gate\n    if: ${{ always() }}",
+        "    needs: [cargo-deny, rustsec]",
+    )
+    if any(value not in security_text for value in expected):
+        raise SystemExit("required security-gate must always summarize both security jobs")
 
 
 def validate_check_runs(payload: dict, commit_sha: str) -> int:
@@ -266,6 +279,8 @@ def main() -> int:
 
     ci_text = (root / ".github/workflows/ci.yml").read_text(encoding="utf-8")
     validate_ci_contract(ci_text)
+    security_text = (root / ".github/workflows/security.yml").read_text(encoding="utf-8")
+    validate_security_contract(security_text)
 
     checks_proc = run(
         [

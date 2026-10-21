@@ -10,6 +10,7 @@ pub mod codex_protocol;
 pub mod command;
 pub mod compat;
 pub mod conversation;
+mod conversation_viewport;
 pub mod detached_process;
 pub mod domain;
 pub mod forge;

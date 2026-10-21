@@ -55,9 +55,12 @@ pub mod planning_worker;
 mod prompt;
 mod queue_confirmation;
 mod queue_editor;
+mod reading_snapshot;
 mod reducer;
+pub(crate) mod request_details;
 mod review;
 mod state;
+mod thread_navigation;
 mod types;
 mod user_input;
 mod user_response;
@@ -136,6 +139,9 @@ pub struct AppState {
     // Last observed turn activity, bounded by owned watches rather than the presentation LRU.
     active_history_watches: BTreeSet<String>,
     pub thread_ui: BTreeMap<String, ThreadUiState>,
+    /// Last painted body size; derived layout data, never persisted.
+    pub(crate) thread_viewport_size: crate::conversation_viewport::Size,
+    pub(crate) reading_snapshot: Option<reading_snapshot::ReadingSnapshot>,
     prompt_submissions: prompt::PendingSubmissions,
     local_pins: BTreeSet<String>,
     local_aliases: BTreeMap<String, String>,
@@ -207,6 +213,7 @@ pub struct AppState {
     pub review_scroll: u16,
     pub review_word_diff: bool,
     pub pending_requests: Vec<InteractiveRequest>,
+    pub(crate) request_details: Option<request_details::RequestDetails>,
     pending_request_threads: BTreeSet<String>,
     user_input_editor: Option<user_input::UserInputEditor>,
     user_responses: user_response::UserResponses,

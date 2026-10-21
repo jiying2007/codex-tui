@@ -96,6 +96,21 @@ class MainProtectionConfiguration(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     cfg.protection_payload(app_id)
 
+    def test_security_gate_cannot_be_missing_from_checks_or_protection(self):
+        checks = valid_check_runs()
+        checks["check_runs"] = [
+            check for check in checks["check_runs"] if check["name"] != "security-gate"
+        ]
+        with self.assertRaisesRegex(SystemExit, "security-gate"):
+            cfg.validate_check_runs(checks, SOURCE_SHA)
+        policy = valid_protection()
+        policy["required_status_checks"]["checks"] = [
+            check for check in policy["required_status_checks"]["checks"]
+            if check["context"] != "security-gate"
+        ]
+        with self.assertRaisesRegex(SystemExit, "security-gate"):
+            cfg.validate_applied_protection(policy, ACTIONS_APP_ID)
+
 
 class MainProtectionReceipt(unittest.TestCase):
     def test_valid_policy_retains_exact_snapshots_and_digests(self):

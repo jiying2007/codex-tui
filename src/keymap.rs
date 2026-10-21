@@ -43,9 +43,14 @@ pub const HELP_BINDINGS: &[HelpBinding] = &[
     HelpBinding { surface: "Thread", scope: HelpScope::View(ViewKind::Thread), token: "y/n/c", code: KeyCode::Char('n'), modifiers: KeyModifiers::NONE, command: Command::DeclinePending },
     HelpBinding { surface: "Thread", scope: HelpScope::View(ViewKind::Thread), token: "y/n/c", code: KeyCode::Char('c'), modifiers: KeyModifiers::NONE, command: Command::CancelPending },
     HelpBinding { surface: "Thread", scope: HelpScope::View(ViewKind::Thread), token: "i", code: KeyCode::Char('i'), modifiers: KeyModifiers::NONE, command: Command::AnswerPending },
+    HelpBinding { surface: "Thread", scope: HelpScope::View(ViewKind::Thread), token: "d", code: KeyCode::Char('d'), modifiers: KeyModifiers::NONE, command: Command::RequestDetails },
     HelpBinding { surface: "Thread", scope: HelpScope::View(ViewKind::Thread), token: "Ctrl+C", code: KeyCode::Char('c'), modifiers: KeyModifiers::CONTROL, command: Command::QuitOrInterrupt },
     HelpBinding { surface: "Thread", scope: HelpScope::View(ViewKind::Thread), token: "r", code: KeyCode::Char('r'), modifiers: KeyModifiers::NONE, command: Command::Review },
     HelpBinding { surface: "Thread", scope: HelpScope::View(ViewKind::Thread), token: "q", code: KeyCode::Char('q'), modifiers: KeyModifiers::NONE, command: Command::ThreadQueue },
+    HelpBinding { surface: "Thread", scope: HelpScope::View(ViewKind::Thread), token: "PageUp/PageDown", code: KeyCode::PageUp, modifiers: KeyModifiers::NONE, command: Command::PageUp },
+    HelpBinding { surface: "Thread", scope: HelpScope::View(ViewKind::Thread), token: "PageUp/PageDown", code: KeyCode::PageDown, modifiers: KeyModifiers::NONE, command: Command::PageDown },
+    HelpBinding { surface: "Thread", scope: HelpScope::View(ViewKind::Thread), token: "Home", code: KeyCode::Home, modifiers: KeyModifiers::NONE, command: Command::ConversationStart },
+    HelpBinding { surface: "Thread", scope: HelpScope::View(ViewKind::Thread), token: "End", code: KeyCode::End, modifiers: KeyModifiers::NONE, command: Command::FollowNewest },
     HelpBinding { surface: "Review", scope: HelpScope::View(ViewKind::Review), token: "j/k", code: KeyCode::Char('j'), modifiers: KeyModifiers::NONE, command: Command::Next },
     HelpBinding { surface: "Review", scope: HelpScope::View(ViewKind::Review), token: "j/k", code: KeyCode::Char('k'), modifiers: KeyModifiers::NONE, command: Command::Previous },
     HelpBinding { surface: "Review", scope: HelpScope::View(ViewKind::Review), token: "w", code: KeyCode::Char('w'), modifiers: KeyModifiers::NONE, command: Command::ToggleWordDiff },
@@ -147,6 +152,9 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
         (ViewKind::Thread, KeyCode::Char('n')) => Some(Command::DeclinePending),
         (ViewKind::Thread, KeyCode::Char('c')) => Some(Command::CancelPending),
         (ViewKind::Thread, KeyCode::Char('i')) => Some(Command::AnswerPending),
+        (ViewKind::Thread, KeyCode::Char('d')) if key.modifiers == KeyModifiers::NONE => {
+            Some(Command::RequestDetails)
+        }
         (ViewKind::Thread, KeyCode::Char('r')) => Some(Command::Review),
         (ViewKind::Thread, KeyCode::Char('w')) => Some(Command::Workspace),
         (ViewKind::Thread, KeyCode::Char('m')) => Some(Command::ManagedWorktrees),
@@ -154,6 +162,8 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
         (ViewKind::Thread, KeyCode::Char('q')) => Some(Command::ThreadQueue),
         (ViewKind::Thread, KeyCode::PageUp) => Some(Command::PageUp),
         (ViewKind::Thread, KeyCode::PageDown) => Some(Command::PageDown),
+        (ViewKind::Thread, KeyCode::End) => Some(Command::FollowNewest),
+        (ViewKind::Thread, KeyCode::Home) => Some(Command::ConversationStart),
         (ViewKind::Review, KeyCode::Char('j') | KeyCode::Down) => Some(Command::Next),
         (ViewKind::Review, KeyCode::Char('k') | KeyCode::Up) => Some(Command::Previous),
         (ViewKind::Review, KeyCode::PageUp) => Some(Command::PageUp),

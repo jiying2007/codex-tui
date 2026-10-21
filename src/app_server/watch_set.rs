@@ -12,6 +12,14 @@ pub(super) struct WatchSet {
     current: watch::Sender<Membership>,
 }
 
+pub(super) struct WatchChanges(watch::Receiver<Membership>);
+
+impl WatchChanges {
+    pub(super) async fn changed(&mut self) -> Result<(), watch::error::RecvError> {
+        self.0.changed().await
+    }
+}
+
 impl Default for WatchSet {
     fn default() -> Self {
         Self {
@@ -38,6 +46,14 @@ impl WatchSet {
 
     pub(super) fn contains(&self, id: &str) -> bool {
         self.current.borrow().ids.contains(id)
+    }
+
+    pub(super) fn snapshot(&self) -> BTreeSet<String> {
+        self.current.borrow().ids.clone()
+    }
+
+    pub(super) fn changes(&self) -> WatchChanges {
+        WatchChanges(self.current.subscribe())
     }
 
     pub(super) fn remove(&self, id: &str) -> bool {

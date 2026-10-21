@@ -1,0 +1,105 @@
+{
+  "schema": "codex-tui/subscription-contract/v1",
+  "reviewedTags": [
+    "rust-v0.162.1",
+    "rust-v0.163.0"
+  ],
+  "scope": "Public generated protocol and request-processor source review, with isolated per-connection WebSocket and stdio peers. No authenticated App Server or model inference qualification.",
+  "realAccountQualified": false,
+  "automaticReconnectAdded": false,
+  "contracts": {
+    "serverLoadedInventoryIsConnectionSubscription": false,
+    "historyReadsSubscribe": false,
+    "turnStartSubscribes": false,
+    "explicitAcquisition": {
+      "method": "thread/resume",
+      "params": {
+        "threadId": "requested-thread",
+        "excludeTurns": true
+      }
+    },
+    "implicitAcquisition": [
+      "thread/start",
+      "thread/fork"
+    ],
+    "release": {
+      "method": "thread/unsubscribe",
+      "successStatuses": [
+        "notLoaded",
+        "notSubscribed",
+        "unsubscribed"
+      ]
+    },
+    "scopedDelivery": [
+      "item/completed",
+      "turn/started",
+      "turn/completed",
+      "thread/queue/changed",
+      "interactive server requests"
+    ],
+    "warmResumeReplayOrder": "Resume response is enqueued before replaying pending server requests to the rejoining connection.",
+    "resumeErrorAfterAttach": "A running-thread resume can add its connection before reading backwards cursors fails. A definitive application error therefore still requires release cleanup.",
+    "authoritativeRemovalInvalidatesPendingRequests": "Archive/delete invalidate outstanding thread requests; they are not retained as owners that could reacquire the removed thread."
+  },
+  "sources": [
+    {
+      "path": "codex-rs/app-server-protocol/schema/typescript/v2/ThreadResumeParams.ts",
+      "gitBlobAtBothTags": "4da03970e9f2f0d7b5e796c4dd0ea96fda69a95e",
+      "urls": [
+        "https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/app-server-protocol/schema/typescript/v2/ThreadResumeParams.ts",
+        "https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs/app-server-protocol/schema/typescript/v2/ThreadResumeParams.ts"
+      ]
+    },
+    {
+      "path": "codex-rs/app-server-protocol/schema/typescript/v2/ThreadUnsubscribeStatus.ts",
+      "gitBlobAtBothTags": "2970598dc1b48cfad5222febfd9336b86bf1d265",
+      "urls": [
+        "https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/app-server-protocol/schema/typescript/v2/ThreadUnsubscribeStatus.ts",
+        "https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs/app-server-protocol/schema/typescript/v2/ThreadUnsubscribeStatus.ts"
+      ]
+    },
+    {
+      "path": "codex-rs/app-server/src/request_processors/thread_lifecycle.rs",
+      "gitBlobs": {
+        "rust-v0.162.1": "34fff277d45ebdf61fa11014e6d9b5a30a52e653",
+        "rust-v0.163.0": "a7754975b5a47ff2b46b818145a5e66d6eccf528"
+      },
+      "symbols": [
+        "ensure_listener_task_running",
+        "handle_pending_thread_resume_request",
+        "subscribed_connection_ids",
+        "try_add_connection_to_thread"
+      ],
+      "urls": [
+        "https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/app-server/src/request_processors/thread_lifecycle.rs",
+        "https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs/app-server/src/request_processors/thread_lifecycle.rs"
+      ]
+    },
+    {
+      "path": "codex-rs/app-server/src/request_processors/thread_processor.rs",
+      "gitBlobs": {
+        "rust-v0.162.1": "8bdf6bbed3ee667905a9b1428fb4b0ffcac08f02",
+        "rust-v0.163.0": "9563a250cc43bf5691537ed009199112265a5548"
+      },
+      "symbols": [
+        "thread_unsubscribe_response_inner",
+        "resume_running_thread",
+        "finalize_thread_teardown"
+      ],
+      "urls": [
+        "https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/app-server/src/request_processors/thread_processor.rs",
+        "https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs/app-server/src/request_processors/thread_processor.rs"
+      ]
+    },
+    {
+      "url": "https://developers.openai.com/codex/app-server",
+      "purpose": "Current official user-facing method and subscription lifecycle documentation; tagged source above fixes the reviewed contracts."
+    }
+  ],
+  "testEntryPoints": [
+    "src/app_server/subscriptions/wire_tests.rs",
+    "src/app_server/subscriptions/fault_tests.rs",
+    "scripts/testing/watch_ownership_regression.py",
+    "scripts/testing/watch_cache_regression.py"
+  ]
+}

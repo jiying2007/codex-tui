@@ -38,7 +38,10 @@ impl RuntimeStore {
     }
 
     pub(crate) fn discover() -> Result<(Self, StoreBootstrap)> {
-        let sqlite = SqliteStore::discover()?;
+        Self::bootstrap(SqliteStore::discover()?)
+    }
+
+    fn bootstrap(sqlite: SqliteStore) -> Result<(Self, StoreBootstrap)> {
         let config = sqlite.load_config()?;
         let guard = sqlite.acquire_local_writer()?;
         let index_transcripts = config.search.persist_local_transcripts;
@@ -86,6 +89,12 @@ impl RuntimeStore {
             }
         }
         let writable = error.is_none();
+        if let Some(issue) = error.as_deref() {
+            // SQLite integrity can pass while application JSON or enum data is
+            // invalid. Workers must share any actual startup qualification
+            // failure, including local/planning reads and index maintenance.
+            sqlite.reject_startup_admission(issue)?;
+        }
 
         Ok((
             Self {
@@ -303,10 +312,7 @@ impl RuntimeStore {
         let result = (|| -> Result<PlanningSnapshot> {
             let mut scratch = self
                 .sqlite
-                .load_planning_snapshot()?
-                .scratch
-                .into_iter()
-                .find(|scratch| scratch.id == scratch_id)
+                .scratch_work(&scratch_id)?
                 .ok_or_else(|| anyhow::anyhow!("ScratchWork does not exist: {scratch_id}"))?;
             operation(&mut scratch);
             scratch.updated_at_unix_ms = now_unix_ms();
@@ -461,6 +467,135 @@ fn now_unix_ms() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn startup_health_failure_skips_maintenance_and_refuses_local_mutations() {
+        for (corruption, expected) in [
+            (
+                "CREATE TABLE health_sentinel(value TEXT);
+                 INSERT INTO health_sentinel VALUES(NULL);
+                 PRAGMA writable_schema=ON;
+                 UPDATE sqlite_schema SET sql='CREATE TABLE health_sentinel(value TEXT NOT NULL)'
+                     WHERE name='health_sentinel';
+                 PRAGMA writable_schema=OFF;",
+                "NULL value in health_sentinel.value",
+            ),
+            (
+                "PRAGMA ignore_check_constraints=ON;
+                 INSERT INTO hot_slots VALUES(10, 'codex-thread', 'health-sentinel', 1);
+                 PRAGMA ignore_check_constraints=OFF;",
+                "hot slot must be between 1 and 9",
+            ),
+        ] {
+            for persist in [false, true] {
+                let root = tempfile::tempdir().unwrap();
+                let sqlite = SqliteStore::at(root.path());
+                sqlite.load_config().unwrap();
+                std::fs::write(
+                    sqlite.config_path(),
+                    format!("[search]\npersist_local_transcripts = {persist}\n"),
+                )
+                .unwrap();
+                sqlite.health().unwrap();
+                let conn = rusqlite::Connection::open(sqlite.db_path()).unwrap();
+                // Exercise both native non-ok quick_check and the application's
+                // CHECK validation, which read-only SQLite cannot provide itself.
+                conn.execute_batch(
+                "PRAGMA journal_mode=DELETE;
+                 DROP TABLE transcript_fts;
+                 INSERT INTO transcript_documents VALUES('retained', 'turn', 'item', 'user', NULL, 'retained body', 1);",
+            ).unwrap();
+                conn.execute_batch(corruption).unwrap();
+                drop(conn);
+                let original = std::fs::read(sqlite.db_path()).unwrap();
+                let (mut runtime, _) =
+                    RuntimeStore::bootstrap(SqliteStore::at(root.path())).unwrap();
+                assert!(!runtime.writable);
+                assert!(runtime.error().unwrap().contains(expected));
+                runtime.persist_operator_state(&LocalStateV1::default());
+                assert!(
+                    runtime
+                        .flush_operator_state_on_exit(&LocalStateV1::default())
+                        .is_err()
+                );
+                assert!(runtime.create_scratch("refused".into(), None).is_err());
+                assert!(
+                    runtime
+                        .sqlite_clone()
+                        .load_recoverable_forge_mutation_receipts()
+                        .is_err()
+                );
+                assert_eq!(
+                    std::fs::read(sqlite.db_path()).unwrap(),
+                    original,
+                    "neither opt-out deletion nor opt-in retention may mutate an unhealthy store"
+                );
+                let conn = rusqlite::Connection::open_with_flags(
+                    sqlite.db_path(),
+                    rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+                )
+                .unwrap();
+                assert_eq!(
+                    conn.query_row(
+                        "SELECT count(*) FROM sqlite_schema WHERE name='transcript_fts'",
+                        [],
+                        |row| row.get::<_, i64>(0)
+                    )
+                    .unwrap(),
+                    0,
+                );
+                assert_eq!(
+                    conn.query_row("PRAGMA journal_mode", [], |row| row.get::<_, String>(0))
+                        .unwrap(),
+                    "delete",
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn startup_planning_decode_failure_blocks_shared_store_workers() {
+        let root = tempfile::tempdir().unwrap();
+        let sqlite = SqliteStore::at(root.path());
+        sqlite.load_config().unwrap();
+        sqlite.create_scratch("retained", None, None, None).unwrap();
+        let conn = rusqlite::Connection::open(sqlite.db_path()).unwrap();
+        conn.execute_batch(
+            "UPDATE scratch_work SET state='unknown-state';
+             INSERT INTO transcript_documents VALUES('retained', 'turn', 'item', 'user', NULL, 'retained body', 1);",
+        ).unwrap();
+        drop(conn);
+        assert_eq!(sqlite.health().unwrap().integrity, "ok");
+        let original = std::fs::read(sqlite.db_path()).unwrap();
+        let worker = sqlite.clone();
+        let (runtime, _) = RuntimeStore::bootstrap(sqlite).unwrap();
+        assert!(!runtime.writable);
+        assert!(
+            runtime
+                .error()
+                .unwrap()
+                .contains("planning store unavailable")
+        );
+        assert!(worker.save_state(&LocalStateV1::default()).is_err());
+        assert!(worker.clear_transcript_index().is_err());
+        assert!(worker.load_recoverable_operation_receipts().is_err());
+        assert_eq!(std::fs::read(worker.db_path()).unwrap(), original);
+        drop(runtime);
+
+        let conn = rusqlite::Connection::open(worker.db_path()).unwrap();
+        conn.execute_batch("UPDATE scratch_work SET state='inbox';")
+            .unwrap();
+        drop(conn);
+        assert!(
+            worker
+                .create_scratch("still refused", None, None, None)
+                .is_err()
+        );
+        assert_eq!(worker.health().unwrap().integrity, "ok");
+        worker
+            .create_scratch("after repair and health retry", None, None, None)
+            .unwrap();
+    }
 
     #[test]
     fn degraded_local_store_does_not_write_opted_in_transcript_index() {

@@ -1,36 +1,54 @@
 use unicode_segmentation::UnicodeSegmentation;
 use unicode_width::UnicodeWidthStr;
 
+fn sanitized_character(ch: char) -> char {
+    if matches!(ch, '\n' | '\r' | '\t') {
+        ' '
+    } else if ch.is_control()
+        || matches!(
+            ch,
+            '\u{00ad}'
+                | '\u{061c}'
+                | '\u{200b}'
+                | '\u{200e}'
+                | '\u{200f}'
+                | '\u{2028}'..='\u{202e}'
+                | '\u{2060}'
+                | '\u{2066}'..='\u{206f}'
+                | '\u{feff}'
+        )
+    {
+        '\u{fffd}'
+    } else {
+        ch
+    }
+}
+
 pub fn sanitize_inline(value: &str) -> String {
-    value
-        .chars()
-        .map(|ch| {
-            if matches!(ch, '\n' | '\r' | '\t') {
-                ' '
-            } else if ch.is_control()
-                || matches!(
-                    ch,
-                    '\u{00ad}'
-                        | '\u{061c}'
-                        | '\u{200b}'
-                        | '\u{200e}'
-                        | '\u{200f}'
-                        | '\u{2028}'..='\u{202e}'
-                        | '\u{2060}'
-                        | '\u{2066}'..='\u{206f}'
-                        | '\u{feff}'
-                )
-            {
-                '\u{fffd}'
-            } else {
-                ch
-            }
-        })
-        .collect()
+    value.chars().map(sanitized_character).collect()
 }
 
 pub fn display_width(value: &str) -> usize {
     UnicodeWidthStr::width(value)
+}
+
+/// Body text preserves logical lines and indentation, while using the same
+/// control/bidi policy as inline labels. CRLF is one line break; lone CR is data.
+pub fn sanitize_multiline(value: &str) -> String {
+    let mut result = String::with_capacity(value.len());
+    let mut chars = value.chars().peekable();
+    while let Some(ch) = chars.next() {
+        match ch {
+            '\r' if chars.peek() == Some(&'\n') => {
+                chars.next();
+                result.push('\n');
+            }
+            '\n' => result.push('\n'),
+            '\t' => result.push_str("    "),
+            ch => result.push(sanitized_character(ch)),
+        }
+    }
+    result
 }
 
 pub fn truncate_display(value: &str, max_columns: usize) -> String {

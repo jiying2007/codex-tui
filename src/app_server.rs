@@ -36,6 +36,8 @@ mod history_hit;
 mod lifecycle;
 mod pagination;
 mod resource_budget;
+mod subscriptions;
+use subscriptions::should_queue_rpc_message;
 mod watch_lifecycle;
 mod watch_set;
 use watch_set::{WatchSet, WatchSetGuard};
@@ -272,7 +274,17 @@ pub enum ConversationEvent {
         outcome: crate::user_response::UserResponseOutcome,
     },
     Loaded(ConversationPage),
-    OlderLoaded(ConversationPage),
+    OlderLoaded {
+        page: ConversationPage,
+        turn_cursor: Option<String>,
+        item_cursor: Option<String>,
+    },
+    OlderFailed {
+        thread_id: ThreadId,
+        turn_cursor: Option<String>,
+        item_cursor: Option<String>,
+        error: String,
+    },
     PromptSubmitted {
         thread_id: ThreadId,
         request_id: u64,
@@ -859,10 +871,10 @@ fn requires_authoritative_registry_refresh(message: &Value) -> bool {
     let Some(params) = message.get("params") else {
         return false;
     };
-    if !params
+    if params
         .get("threadId")
         .and_then(Value::as_str)
-        .is_some_and(|id| !id.is_empty())
+        .is_none_or(|id| id.is_empty())
     {
         return false;
     }
@@ -910,6 +922,8 @@ async fn run_registry_actor(
 ) {
     let (mut hydration, target, watched_threads, watched_queue_threads) = setup;
     let _watch_guard = WatchSetGuard::new(watched_threads.clone(), watched_queue_threads.clone());
+    let mut history_changes = watched_threads.changes();
+    let mut queue_changes = watched_queue_threads.changes();
     let mut generation = 0_u64;
     let mut threads = by_id(initial_threads);
     let mut pending_requests: BTreeMap<RpcRequestId, PendingServerRequest> = BTreeMap::new();
@@ -947,11 +961,37 @@ async fn run_registry_actor(
         // Drain that semantic backlog *before* serving newly queued commands,
         // otherwise the actor can immediately enter another 5-second RPC.
         let semantic_backlog = rpc.has_queued_messages();
+        let desired_subscriptions =
+            subscriptions::desired(&watched_threads, &watched_queue_threads, &pending_requests);
+        let subscription_action = (!semantic_backlog)
+            .then(|| rpc.subscriptions.next_action(&desired_subscriptions))
+            .flatten()
+            .filter(|(_, subscribe)| !*subscribe || command_rx.is_empty());
+        let subscription_deadline = rpc.subscriptions.deadline();
         let registry_page_can_advance =
             (hydration.is_some() || reconcile.is_some() || loaded_hydration.is_some())
                 && !semantic_backlog;
         tokio::select! {
             biased;
+            _ = history_changes.changed() => {}
+            _ = queue_changes.changed() => {}
+            _ = tokio::time::sleep_until(subscription_deadline.unwrap_or_else(|| tokio::time::Instant::now() + REFRESH_INTERVAL)), if subscription_deadline.is_some() && !semantic_backlog => {
+                self_quarantine(&mut rpc, &anyhow!("App Server subscription acknowledgement timed out; connection stopped without replaying the request"));
+            }
+            _ = std::future::ready(()), if subscription_action.is_some() => {
+                let (thread_id, subscribe) = subscription_action.expect("checked subscription work");
+                match rpc.change_subscription(&thread_id, subscribe).await {
+                    Ok(()) if subscribe => {
+                        subscriptions::refresh_owned(&mut rpc, thread_id, &watched_threads, &watched_queue_threads, &conversation_tx).await;
+                    }
+                    Ok(()) => {}
+                    Err(error) => {
+                        status.error = Some(format!("App Server subscription change failed: {error}"));
+                        generation = generation.saturating_add(1);
+                        let _ = tx.send(snapshot(generation, &threads, &status));
+                    }
+                }
+            }
             command = command_rx.recv(), if !semantic_backlog => {
                 let Some(command) = command else {
                     return;
@@ -972,7 +1012,17 @@ async fn run_registry_actor(
                     }
                     BackendCommand::LoadConversation(thread_id) => {
                         if !watched_threads.contains(&thread_id.0) { continue; }
-                        emit_conversation_load(&mut rpc, thread_id, &conversation_tx).await;
+                        match rpc.ensure_subscribed(&thread_id).await {
+                            Ok(()) if watched_threads.contains(&thread_id.0) => {
+                                emit_conversation_load(&mut rpc, thread_id, &conversation_tx).await;
+                            }
+                            Ok(()) => {}
+                            Err(error) => {
+                                send_conversation_event(&conversation_tx, ConversationEvent::Failed {
+                                    thread_id, error: format!("subscribe to conversation: {error}"),
+                                }).await;
+                            }
+                        }
                     }
                     BackendCommand::LoadOlderConversation {
                         thread_id,
@@ -980,26 +1030,30 @@ async fn run_registry_actor(
                         item_cursor,
                     } => {
                         if !watched_threads.contains(&thread_id.0) { continue; }
-                        match load_older_conversation(
+                        match async {
+                            rpc.ensure_subscribed(&thread_id).await?;
+                            load_older_conversation(
                             &mut rpc,
                             thread_id.clone(),
-                            turn_cursor,
-                            item_cursor,
-                        )
-                        .await
+                            turn_cursor.clone(),
+                            item_cursor.clone(),
+                            ).await
+                        }.await
                         {
                             Ok(page) => {
                                 send_conversation_event(
                                     &conversation_tx,
-                                    ConversationEvent::OlderLoaded(page),
+                                    ConversationEvent::OlderLoaded { page, turn_cursor, item_cursor },
                                 )
                                 .await;
                             }
                             Err(error) => {
                                 send_conversation_event(
                                     &conversation_tx,
-                                    ConversationEvent::Failed {
+                                    ConversationEvent::OlderFailed {
                                         thread_id,
+                                        turn_cursor,
+                                        item_cursor,
                                         error: error.to_string(),
                                     },
                                 )
@@ -1189,7 +1243,10 @@ async fn run_registry_actor(
                     BackendCommand::JumpToTranscriptHit(hit) => {
                         let thread_id = hit.thread_id.clone();
                         if !watched_threads.contains(&thread_id.0) { continue; }
-                        match load_transcript_hit(&mut rpc, &hit).await {
+                        match async {
+                            rpc.ensure_subscribed(&thread_id).await?;
+                            load_transcript_hit(&mut rpc, &hit).await
+                        }.await {
                             Ok(page) => {
                                 let item_id = hit.item_id.clone().unwrap_or_default();
                                 send_conversation_event(
@@ -1215,7 +1272,10 @@ async fn run_registry_actor(
                     }
                     BackendCommand::RefreshThreadQueue(thread_id) => {
                         if !watched_queue_threads.contains(&thread_id.0) { continue; }
-                        match load_thread_queue(&mut rpc, thread_id.clone()).await {
+                        match async {
+                            rpc.ensure_subscribed(&thread_id).await?;
+                            load_thread_queue(&mut rpc, thread_id.clone()).await
+                        }.await {
                             Ok(snapshot) => {
                                 mark_optional_capability(&mut status, "thread/queue/list", true);
                                 send_conversation_event(
@@ -1247,7 +1307,10 @@ async fn run_registry_actor(
                         let capability = thread_queue_mutation_capability(&mutation);
                         let thread_id = thread_queue_mutation_thread_id(&mutation).clone();
 
-                        match execute_thread_queue_mutation(&mut rpc, &mutation).await {
+                        match async {
+                            rpc.ensure_subscribed(&thread_id).await?;
+                            execute_thread_queue_mutation(&mut rpc, &mutation).await
+                        }.await {
                             Ok(()) => {
                                 mark_optional_capability(&mut status, capability, true);
                                 match load_thread_queue(&mut rpc, thread_id.clone()).await {
@@ -1785,7 +1848,12 @@ async fn emit_conversation_load(
     thread_id: ThreadId,
     tx: &mpsc::Sender<ConversationEvent>,
 ) {
-    match load_conversation(rpc, thread_id.clone()).await {
+    match async {
+        rpc.ensure_subscribed(&thread_id).await?;
+        load_conversation(rpc, thread_id.clone()).await
+    }
+    .await
+    {
         Ok(page) => {
             send_conversation_event(tx, ConversationEvent::Loaded(page)).await;
         }
@@ -1809,6 +1877,10 @@ async fn submit_prompt(
     text: String,
     active_turn_id: Option<String>,
 ) -> Result<String> {
+    rpc.ensure_subscribed(thread_id).await?;
+    if let Some(thread) = threads.get_mut(&thread_id.0) {
+        thread.metadata.loaded = Some(true);
+    }
     if let Some(turn_id) = active_turn_id {
         let response = rpc
             .request(
@@ -1832,7 +1904,6 @@ async fn submit_prompt(
             .context("turn/steer response missing turnId");
     }
 
-    ensure_thread_loaded(rpc, threads, thread_id).await?;
     let response = rpc
         .request(
             "turn/start",
@@ -1852,59 +1923,6 @@ async fn submit_prompt(
         .and_then(Value::as_str)
         .map(ToOwned::to_owned)
         .context("turn/start response missing turn.id")
-}
-
-async fn ensure_thread_loaded(
-    rpc: &mut RpcSession,
-    threads: &mut BTreeMap<String, ThreadSummary>,
-    thread_id: &ThreadId,
-) -> Result<()> {
-    let metadata = rpc
-        .request(
-            "thread/read",
-            json!({
-                "threadId": thread_id.0,
-                "includeTurns": false
-            }),
-        )
-        .await
-        .context("read thread before turn start")?;
-    let is_not_loaded = metadata
-        .pointer("/thread/status/type")
-        .and_then(Value::as_str)
-        == Some("notLoaded");
-    if !is_not_loaded {
-        return Ok(());
-    }
-
-    let resume = rpc
-        .request(
-            "thread/resume",
-            json!({
-                "threadId": thread_id.0,
-                "excludeTurns": true
-            }),
-        )
-        .await;
-    match resume {
-        Ok(_) => {}
-        Err(error) if is_history_pagination_unsupported(&error) => {
-            rpc.request(
-                "thread/resume",
-                json!({
-                    "threadId": thread_id.0
-                }),
-            )
-            .await
-            .context("resume legacy thread before turn start")?;
-        }
-        Err(error) => return Err(error).context("resume thread before turn start"),
-    }
-
-    if let Some(thread) = threads.get_mut(&thread_id.0) {
-        thread.metadata.loaded = Some(true);
-    }
-    Ok(())
 }
 
 async fn interrupt_turn(rpc: &mut RpcSession, thread_id: &ThreadId, turn_id: &str) -> Result<()> {
@@ -2334,6 +2352,19 @@ async fn handle_unsolicited(
     watched_queue_threads: &WatchSet,
     conversation_tx: &mpsc::Sender<ConversationEvent>,
 ) -> Result<bool> {
+    if let Some(result) = rpc.subscription_response(&message) {
+        if let Some(thread_id) = result? {
+            subscriptions::refresh_owned(
+                rpc,
+                thread_id,
+                watched_threads,
+                watched_queue_threads,
+                conversation_tx,
+            )
+            .await;
+        }
+        return Ok(false);
+    }
     if message.get("id").is_some() && message.get("method").is_some() {
         if let Err(error) = admit_pending_request(pending_requests, &message) {
             self_quarantine(rpc, &error);
@@ -2444,9 +2475,10 @@ async fn handle_unsolicited(
         return Ok(false);
     }
 
-    watch_lifecycle::retire_removed_watches(
+    subscriptions::retire_removed_owners(
         method,
         params,
+        pending_requests,
         watched_threads,
         watched_queue_threads,
         conversation_tx,
@@ -2464,7 +2496,12 @@ async fn handle_unsolicited(
 
     let conversation_boundary =
         matches!(method, "turn/started" | "turn/completed" | "item/completed");
-    if conversation_boundary && watched_threads.contains(thread_id) {
+    if conversation_boundary
+        && watched_threads.contains(thread_id)
+        && rpc.subscriptions.confirmed(thread_id)
+    {
+        // Buffered events from a retired or rejected subscription cannot act
+        // as an explicit command that retries its acquisition.
         emit_conversation_load(rpc, ThreadId::new(thread_id), conversation_tx).await;
     }
 
@@ -2484,32 +2521,6 @@ fn now_unix_ms() -> u64 {
         .unwrap_or_default()
         .as_millis();
     u64::try_from(millis).unwrap_or(u64::MAX)
-}
-
-fn should_queue_rpc_message(message: &Value) -> bool {
-    if message.get("id").is_some() && message.get("method").is_some() {
-        return true;
-    }
-
-    matches!(
-        message.get("method").and_then(Value::as_str),
-        Some(
-            "serverRequest/resolved"
-                | "thread/goal/updated"
-                | "thread/goal/cleared"
-                | "thread/queue/changed"
-                | "thread/started"
-                | "thread/status/changed"
-                | "thread/archived"
-                | "thread/deleted"
-                | "thread/unarchived"
-                | "thread/name/updated"
-                | "thread/project/updated"
-                | "turn/started"
-                | "turn/completed"
-                | "item/completed"
-        )
-    )
 }
 
 async fn with_rpc_deadline<T>(
@@ -2532,6 +2543,8 @@ struct RpcSession {
     queued_messages: VecDeque<Value>,
     queued_bytes: usize,
     fatal_error: Option<String>,
+    subscriptions: subscriptions::Subscriptions,
+    interrupted_request: Option<u64>,
 }
 
 impl RpcSession {
@@ -2542,6 +2555,8 @@ impl RpcSession {
             queued_messages: VecDeque::new(),
             queued_bytes: 0,
             fatal_error: None,
+            subscriptions: subscriptions::Subscriptions::default(),
+            interrupted_request: None,
         })
     }
 
@@ -2555,6 +2570,7 @@ impl RpcSession {
     }
 
     async fn request_without_timeout(&mut self, method: &str, params: Value) -> Result<Value> {
+        self.interrupted_request = None;
         let id = self.next_id;
         self.next_id = self.next_id.saturating_add(1);
         self.write_message(&json!({
@@ -2569,26 +2585,11 @@ impl RpcSession {
             if message.get("id").and_then(Value::as_u64) == Some(id)
                 && message.get("method").is_none()
             {
-                if let Some(error) = message.get("error") {
-                    let code = error.get("code").and_then(Value::as_i64);
-                    let error_message = error
-                        .get("message")
-                        .and_then(Value::as_str)
-                        .map(ToOwned::to_owned)
-                        .unwrap_or_else(|| error.to_string());
-                    return Err(RpcResponseError {
-                        method: method.to_string(),
-                        code,
-                        message: error_message,
-                    }
-                    .into());
-                }
-                return message
-                    .get("result")
-                    .cloned()
-                    .ok_or_else(|| anyhow!("{method} response missing result"));
+                return subscriptions::response_result(&message, method);
             }
-            if should_queue_rpc_message(&message) {
+            if should_queue_rpc_message(&message)
+                || self.subscriptions.is_pending_response(&message)
+            {
                 // An inbound server request may require a user approval before
                 // the current RPC can complete. Preserve it and yield the
                 // actor to the normal request dispatcher immediately instead
@@ -2601,6 +2602,7 @@ impl RpcSession {
                     return Err(error);
                 }
                 if server_request {
+                    self.interrupted_request = Some(id);
                     anyhow::bail!(
                         "{method} interrupted by pending App Server request; RPC outcome unknown"
                     );
@@ -2640,7 +2642,11 @@ impl RpcSession {
     }
 
     async fn read_wire_message(&mut self) -> Result<Option<Value>> {
-        self.transport.read_json().await
+        let message = self.transport.read_json().await?;
+        if let Some(message) = &message {
+            self.subscriptions.observe_wire(message);
+        }
+        Ok(message)
     }
 
     async fn reject_request(&mut self, id: Value, message: &str) -> Result<()> {

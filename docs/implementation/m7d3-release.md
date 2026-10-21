@@ -42,7 +42,7 @@ Manual release dispatch must use `main`. The workflow computes the tag from the 
 
 Stable publication is explicitly two-phase. A `stable + publish=true` dispatch must provide `stable_qualification_run`, the run ID of a successful prior `stable + publish=false` release workflow. The publication run downloads that prior run's immutable `release-gate` artifact and verifies that it was a workflow-dispatch run on `main`, succeeded on the same exact source SHA, reported a valid stable verification with `publish=false`, and used the same canonical CI plus retained compatibility, terminal-restoration and performance evidence. The automated qualification receipt may differ because it is regenerated independently on each exact-SHA release run.
 
-Stable qualification also reads the live `main` branch metadata and refuses to continue if `main` has moved away from the workflow's exact source SHA. Stable publication additionally requires `main.protected=true`. For `publish=true`, the administrator-read credential verifies the canonical protection policy itself: strict required checks must include `rust-1.88-msrv`, `ubuntu-24.04`, `macos-latest` and `windows-latest`; each required check must be pinned through GitHub's `checks[].app_id` to the same GitHub Actions App dynamically observed on the exact source SHA; administrators remain subject to protection; force pushes and branch deletion remain disabled. A protected-but-weakened branch or a same-name check from a different integration therefore fails closed instead of satisfying publication governance.
+Stable qualification also reads the live `main` branch metadata and refuses to continue if `main` has moved away from the workflow's exact source SHA. Stable publication additionally requires `main.protected=true`. For `publish=true`, the administrator-read credential verifies the canonical protection policy itself: strict required checks must include `rust-1.88-msrv`, `ubuntu-24.04`, `macos-latest`, `windows-latest` and `security-gate`; each required check must be pinned through GitHub's `checks[].app_id` to the same GitHub Actions App dynamically observed on the exact source SHA; administrators remain subject to protection; force pushes and branch deletion remain disabled. A protected-but-weakened branch or a same-name check from a different integration therefore fails closed instead of satisfying publication governance.
 
 The stable publication authority is the exact retained `release-bundle` produced by the successful prior `stable + publish=false` qualification, not a fresh rebuild. Consequently, `stable + publish=true` skips the otherwise redundant current-run Linux/macOS/Windows package matrix and bundle aggregation after the current exact-SHA release gate succeeds; preview and stable `publish=false` continue to run the full package/archive-smoke matrix. Before creating any stable draft, the publish job downloads that retained bundle, requires its `SHA256SUMS` to cover every bundled file exactly, recomputes every digest, requires exactly three native Linux/macOS/Windows archives, revalidates the embedded stable `release-verification.json` and `release-evidence.json` against the exact version/tag/source SHA, and then replaces the current-run bundle with those already-qualified bytes. The promotion receipt is retained as `codex-tui/stable-bundle-promotion/v1`. This makes the bytes reviewed in `publish=false` the bytes uploaded during `publish=true` without pretending that independent hosted-runner rebuilds are bit-for-bit reproducible. Preview publication continues to use the current-run bundle.
 
@@ -93,7 +93,7 @@ The helper changes only the matching `Unreleased` heading; it never commits, pus
 
 Stable publication requires live `main.protected=true` **and** a successful administrator-read verification of the canonical policy. For this personal-first repository, the retained policy is:
 
-- require the four canonical PR CI checks: `rust-1.88-msrv`, `ubuntu-24.04`, `macos-latest`, `windows-latest`;
+- require the four canonical PR CI checks (`rust-1.88-msrv`, `ubuntu-24.04`, `macos-latest`, `windows-latest`) and the dependency `security-gate`;
 - require the branch to be up to date before merge;
 - apply protection to administrators as well;
 - block force pushes;
@@ -106,7 +106,9 @@ Preview the exact GitHub REST payload without changing repository settings:
 python3 scripts/release/configure_main_protection.py
 ```
 
-The helper first requires clean local `main` to equal GitHub `main`, verifies the current exact-SHA canonical checks are successful and produced by one GitHub Actions App, records that observed App ID, and builds the branch-protection payload with every required check explicitly pinned to that App through `checks[].app_id`. It also validates that the local CI workflow still declares the expected MSRV/platform matrix.
+The helper first requires clean local `main` to equal GitHub `main`, verifies the current exact-SHA canonical checks are successful and produced by one GitHub Actions App, records that observed App ID, and builds the branch-protection payload with every required check explicitly pinned to that App through `checks[].app_id`. It also validates the expected MSRV/platform matrix and that the security workflow always runs for PRs and main pushes, without path filters. `security-gate` uses `always()` to report failure if either cargo-deny or RustSec fails, is cancelled, or is skipped; only two successful dependency jobs pass.
+
+For the first adoption of `security-gate`, merge the workflow change using the existing protection policy, wait for the new check to succeed on the exact main SHA, then preview and apply the five-check policy below. Requiring a name before its workflow exists would leave earlier PRs waiting for a check they cannot produce. Repository settings still require administrator access and a verified readback; changing this file alone does not change GitHub protection.
 
 Only after reviewing the emitted plan, apply it with an explicit repository confirmation:
 
@@ -117,6 +119,14 @@ python3 scripts/release/configure_main_protection.py \
 ```
 
 The apply path uses GitHub's branch-protection REST endpoint and therefore requires a locally authenticated `gh` credential with repository Administration write permission. It re-reads the applied policy and branch metadata and fails unless administrators are protected, all canonical checks are required and pinned to the observed GitHub Actions App, force pushes/deletion are disabled, and `main.protected=true`.
+
+## TLS and dependency verification
+
+The WSS client explicitly constructs rustls with the `ring` provider from production dependencies and loads native trust roots. Certificate-chain and endpoint-name verification remain enabled; there is no insecure TLS mode. The rustls minimum is 0.23.46, which fixes RUSTSEC-2026-0346 through RUSTSEC-2026-0349. The lockfile also absorbs the reviewed serde_json 1.0.154 and tokio 1.53.3 patches from dependency PR #351; all three crates declare Rust 1.71 compatibility, with this project's Rust 1.88 CI check remaining authoritative. PR #352's install-action 2.87.28 update is pinned to commit `1168f6810a3cb30a3514bf5756a3b7f0422c6df8` in both audit consumers. Other dependency versions are unchanged.
+
+`tests/wss_transport.rs` launches the actual binary against ephemeral local Python/OpenSSL TLS peers. It covers a trusted TLS RPC exchange, an unknown issuer, a hostname mismatch, and a peer that closes before TLS. The fixture sets only isolated XDG paths and per-process trust variables, does not change the user's trust store, and does not disable certificate validation. It is automated transport evidence, not real Codex account qualification.
+
+The native Linux release job runs the same smoke against `cargo build --release --locked` output before packaging, so test-only feature unification cannot hide a missing production provider. The existing exact-SHA release cargo-audit/cargo-deny steps remain separate and mandatory.
 
 ## Project license
 

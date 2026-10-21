@@ -245,6 +245,12 @@ impl ThreadSummary {
 pub struct ThreadUiState {
     pub draft: String,
     pub scroll: u16,
+    #[serde(default)]
+    pub scroll_anchor: Option<String>,
+    #[serde(default)]
+    pub scroll_turn_id: Option<String>,
+    #[serde(default)]
+    pub scroll_offset: usize,
     pub follow: bool,
 }
 
@@ -253,6 +259,9 @@ impl Default for ThreadUiState {
         Self {
             draft: String::new(),
             scroll: 0,
+            scroll_anchor: None,
+            scroll_turn_id: None,
+            scroll_offset: 0,
             follow: true,
         }
     }

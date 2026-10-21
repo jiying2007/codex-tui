@@ -18,6 +18,7 @@ use serde::de::DeserializeOwned;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use tempfile::NamedTempFile;
 
@@ -39,6 +40,16 @@ pub struct LocalWriterGuard {
 pub struct SqliteStore {
     config_store: FileStore,
     db_path: PathBuf,
+    // Cloned runtime workers must share a failed health admission. A read API
+    // can otherwise initialize derived tables while the UI is already degraded.
+    health_admission: Arc<Mutex<HealthAdmission>>,
+}
+
+#[derive(Debug)]
+enum HealthAdmission {
+    Unchecked,
+    Healthy,
+    Failed(String),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -77,6 +88,7 @@ impl SqliteStore {
         Self {
             db_path: config_store.data_dir().join("state-v2.sqlite3"),
             config_store,
+            health_admission: Arc::new(Mutex::new(HealthAdmission::Unchecked)),
         }
     }
 
@@ -105,13 +117,76 @@ impl SqliteStore {
     }
 
     pub fn health(&self) -> Result<StoreHealth> {
-        let conn = self.open_ready()?;
+        let mut admission = self
+            .health_admission
+            .lock()
+            .map_err(|_| anyhow::anyhow!("SQLite health admission unavailable"))?;
+        let result: Result<StoreHealth> = (|| {
+            if let Some(health) = self.inspect_existing_health()? {
+                return Ok(health);
+            }
+            let conn = self.open_configured()?;
+            Ok(StoreHealth {
+                schema_version: DB_SCHEMA_VERSION,
+                integrity: quick_check(&conn)?,
+                db_path: self.db_path.clone(),
+            })
+        })();
+        *admission = match &result {
+            Ok(_) => HealthAdmission::Healthy,
+            Err(error) => HealthAdmission::Failed(format!("{error:#}")),
+        };
+        result
+    }
+
+    /// Share a failed runtime startup qualification with background workers.
+    /// An explicit successful health check is required before clones can open
+    /// configured connections again; ordinary missing records do not call this.
+    pub fn reject_startup_admission(&self, reason: &str) -> Result<()> {
+        let mut admission = self
+            .health_admission
+            .lock()
+            .map_err(|_| anyhow::anyhow!("SQLite health admission unavailable"))?;
+        *admission = HealthAdmission::Failed(reason.to_string());
+        Ok(())
+    }
+
+    fn inspect_existing_health(&self) -> Result<Option<StoreHealth>> {
+        refuse_unsafe_sqlite_path(&self.db_path)?;
+        if !self
+            .db_path
+            .try_exists()
+            .context("inspect SQLite store path")?
+        {
+            return Ok(None);
+        }
+        // Do not enable WAL, create FTS, initialize schema or chmod the live
+        // image until a read-only scan has accepted the existing database.
+        let conn =
+            Connection::open_with_flags(&self.db_path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+                .context("open read-only SQLite health connection")?;
+        let schema_version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
+        anyhow::ensure!(
+            schema_version == 0 || schema_version == DB_SCHEMA_VERSION,
+            "unsupported SQLite schema version {schema_version}"
+        );
         let integrity = quick_check(&conn)?;
-        Ok(StoreHealth {
-            schema_version: conn.query_row("PRAGMA user_version", [], |row| row.get(0))?,
+        if schema_version == 0 {
+            let objects: i64 =
+                conn.query_row("SELECT count(*) FROM sqlite_schema", [], |row| row.get(0))?;
+            anyhow::ensure!(
+                objects == 0,
+                "refusing to initialize nonempty unversioned SQLite database"
+            );
+            return Ok(None);
+        }
+        validate_application_checks(&conn)?;
+        recovery::validate_operator_envelope(&conn)?;
+        Ok(Some(StoreHealth {
+            schema_version,
             integrity,
             db_path: self.db_path.clone(),
-        })
+        }))
     }
 
     pub fn create_recovery_backup(
@@ -355,84 +430,19 @@ impl SqliteStore {
             ));
         }
         let conn = self.open_ready()?;
-        let limit = limit.min(crate::transcript_search::TRANSCRIPT_SEARCH_RESULT_LIMIT);
-        let limit_i64 = i64::try_from(limit).context("transcript search limit overflow")?;
-        let mut hits = Vec::new();
-
-        if transcript_fts_available(&conn)? && query.chars().count() >= 3 {
-            if let Some(match_query) = fts_match_query(query) {
-                let mut stmt = conn.prepare(
-                    "SELECT thread_id, turn_id, item_id,
-                            snippet(transcript_fts, 5, '[', ']', ' … ', 24)
-                     FROM transcript_fts
-                     WHERE transcript_fts MATCH ?1
-                     ORDER BY rank
-                     LIMIT ?2",
-                )?;
-                let rows = stmt.query_map(params![match_query, limit_i64], |row| {
-                    Ok(TranscriptSearchHit {
-                        thread_id: crate::domain::ThreadId::new(row.get::<_, String>(0)?),
-                        turn_id: Some(row.get(1)?),
-                        item_id: Some(row.get(2)?),
-                        snippet: row.get(3)?,
-                        turn_cursor: None,
-                        match_start_utf16: None,
-                        match_end_utf16: None,
-                    })
-                })?;
-                hits = rows.collect::<rusqlite::Result<Vec<_>>>()?;
-            }
-        } else {
-            // LIKE wildcard characters in a user query are data, not SQL syntax.
-            // Escape backslash first to keep literal %, _ and \ searchable.
-            let literal = query
-                .replace('\\', "\\\\")
-                .replace('%', "\\%")
-                .replace('_', "\\_");
-            let pattern = format!("%{literal}%");
-            let mut stmt = conn.prepare(
-                "SELECT thread_id, turn_id, item_id,
-                        CASE
-                          WHEN length(text) <= 240 THEN text
-                          ELSE substr(text, 1, 237) || '…'
-                        END
-                 FROM transcript_documents
-                 WHERE lower(title) LIKE lower(?1) ESCAPE '\\'
-                    OR lower(text) LIKE lower(?1) ESCAPE '\\'
-                 ORDER BY observed_at_unix_ms DESC
-                 LIMIT ?2",
-            )?;
-            let rows = stmt.query_map(params![pattern, limit_i64], |row| {
-                Ok(TranscriptSearchHit {
-                    thread_id: crate::domain::ThreadId::new(row.get::<_, String>(0)?),
-                    turn_id: Some(row.get(1)?),
-                    item_id: Some(row.get(2)?),
-                    snippet: row.get(3)?,
-                    turn_cursor: None,
-                    match_start_utf16: None,
-                    match_end_utf16: None,
-                })
-            })?;
-            hits = rows.collect::<rusqlite::Result<Vec<_>>>()?;
-        }
-
-        Ok(TranscriptSearchResults {
-            query: query.to_string(),
-            source: TranscriptSearchSource::LocalFts,
-            hits,
-            complete: false,
-        })
+        search_transcript(&conn, query, limit)
     }
 
     pub fn load_planning_snapshot(&self) -> Result<PlanningSnapshot> {
-        let conn = self.open_ready()?;
+        let mut conn = self.open_ready()?;
+        let snapshot = conn.transaction().context("begin planning snapshot read")?;
         Ok(PlanningSnapshot {
-            cards: load_cards(&conn)?,
-            scratch: load_scratch(&conn)?,
-            saved_views: load_saved_views(&conn)?,
-            notes: load_notes(&conn)?,
-            bookmarks: load_bookmarks(&conn)?,
-            hot_slots: load_hot_slots(&conn)?,
+            cards: load_cards(&snapshot)?,
+            scratch: load_scratch(&snapshot)?,
+            saved_views: load_saved_views(&snapshot)?,
+            notes: load_notes(&snapshot)?,
+            bookmarks: load_bookmarks(&snapshot)?,
+            hot_slots: load_hot_slots(&snapshot)?,
         })
     }
 
@@ -617,16 +627,28 @@ impl SqliteStore {
     }
 
     pub fn work_card_for_anchor(&self, anchor: &SourceRef) -> Result<Option<WorkCardRecord>> {
+        let mut conn = self.open_ready()?;
+        let snapshot = conn.transaction().context("begin WorkCard read")?;
+        let mut stmt = snapshot.prepare(&format!(
+            "{WORK_CARD_SELECT} WHERE anchor_kind=?1 AND anchor_ref=?2"
+        ))?;
+        let mut rows = stmt.query(params![enum_text(&anchor.kind)?, anchor.value])?;
+        let Some(row) = rows.next()? else {
+            return Ok(None);
+        };
+        let mut card = decode_work_card(row)?;
+        card.links = load_links(&snapshot, Some(&card.local_id))?
+            .remove(&card.local_id)
+            .unwrap_or_default();
+        Ok(Some(card))
+    }
+
+    pub fn scratch_work(&self, id: &str) -> Result<Option<ScratchWork>> {
+        let rowid = parse_prefixed_id(id, "scratch:")?;
         let conn = self.open_ready()?;
-        let local_id = conn
-            .query_row(
-                "SELECT local_id FROM work_cards WHERE anchor_kind=?1 AND anchor_ref=?2",
-                params![enum_text(&anchor.kind)?, anchor.value],
-                |row| row.get::<_, String>(0),
-            )
-            .optional()
-            .context("query WorkCard anchor")?;
-        local_id.map(|id| load_card(&conn, &id)).transpose()
+        let mut stmt = conn.prepare(&format!("{SCRATCH_SELECT} WHERE id=?1"))?;
+        let mut rows = stmt.query([rowid])?;
+        rows.next()?.map(decode_scratch).transpose()
     }
 
     pub fn create_scratch(
@@ -931,7 +953,7 @@ impl SqliteStore {
                 canonical_path,
                 branch,
                 created_by_operation_id,
-                adopted: adopted != 0,
+                adopted: decode_sqlite_bool(adopted, "managed_worktrees.adopted")?,
                 created_at_unix_ms: i64_to_u64(created_at)?,
                 last_verified_at_unix_ms: i64_to_u64(last_verified_at)?,
             })
@@ -1103,6 +1125,32 @@ impl SqliteStore {
     }
 
     fn open_ready(&self) -> Result<Connection> {
+        let mut admission = self
+            .health_admission
+            .lock()
+            .map_err(|_| anyhow::anyhow!("SQLite health admission unavailable"))?;
+        if matches!(*admission, HealthAdmission::Unchecked) {
+            // Keep first-use configuration inside admission: clones must not
+            // initialize the same fresh schema concurrently or proceed after
+            // the first connection fails. Ordinary admitted connections only
+            // take the short status lock below; health() can explicitly retry.
+            let result = self
+                .inspect_existing_health()
+                .and_then(|_| self.open_configured());
+            *admission = match &result {
+                Ok(_) => HealthAdmission::Healthy,
+                Err(error) => HealthAdmission::Failed(format!("{error:#}")),
+            };
+            return result;
+        }
+        if let HealthAdmission::Failed(error) = &*admission {
+            anyhow::bail!("SQLite health admission refused: {error}");
+        }
+        drop(admission);
+        self.open_configured()
+    }
+
+    fn open_configured(&self) -> Result<Connection> {
         ensure_private_parent(&self.db_path)?;
         refuse_unsafe_sqlite_path(&self.db_path)?;
         let mut conn = Connection::open(&self.db_path)
@@ -1110,8 +1158,8 @@ impl SqliteStore {
         configure_connection(&conn)?;
         ensure_schema(&mut conn)?;
         recovery::validate_operator_envelope(&conn)?;
-        // Full SQLite integrity scanning is a startup/Doctor qualification,
-        // not a per-connection hot-path cost. SQLite errors still fail closed.
+        // The shared admission performs a full scan only on first access or
+        // explicit health requests, never for every state/index connection.
         ensure_private_file(&self.db_path)?;
         Ok(conn)
     }
@@ -1167,6 +1215,82 @@ fn prune_transcript_documents(tx: &Transaction<'_>, has_fts: bool, observed_at: 
         params![cutoff, TRANSCRIPT_MAX_DOCUMENTS],
     )?;
     Ok(())
+}
+
+// Local transcript search matches cached user/assistant body text only. Title
+// lookup belongs to the metadata search; short queries and absent FTS must not
+// silently add title matches to every cached message in a thread.
+fn search_transcript(
+    conn: &Connection,
+    query: &str,
+    limit: usize,
+) -> Result<TranscriptSearchResults> {
+    let limit = limit.min(crate::transcript_search::TRANSCRIPT_SEARCH_RESULT_LIMIT);
+    let limit_i64 = i64::try_from(limit).context("transcript search limit overflow")?;
+    let mut hits = Vec::new();
+
+    if transcript_fts_available(conn)? && query.chars().count() >= 3 {
+        if let Some(match_query) = fts_match_query(query) {
+            let mut stmt = conn.prepare(
+                "SELECT thread_id, turn_id, item_id,
+                        snippet(transcript_fts, 5, '[', ']', ' … ', 24)
+                 FROM transcript_fts
+                 WHERE transcript_fts MATCH ?1
+                 ORDER BY rank
+                 LIMIT ?2",
+            )?;
+            let rows = stmt.query_map(params![match_query, limit_i64], |row| {
+                Ok(TranscriptSearchHit {
+                    thread_id: crate::domain::ThreadId::new(row.get::<_, String>(0)?),
+                    turn_id: Some(row.get(1)?),
+                    item_id: Some(row.get(2)?),
+                    snippet: row.get(3)?,
+                    turn_cursor: None,
+                    match_start_utf16: None,
+                    match_end_utf16: None,
+                })
+            })?;
+            hits = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+        }
+    } else {
+        // LIKE wildcard characters in a user query are data, not SQL syntax.
+        // Escape backslash first to keep literal %, _ and \ searchable.
+        let literal = query
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_");
+        let pattern = format!("%{literal}%");
+        let mut stmt = conn.prepare(
+            "SELECT thread_id, turn_id, item_id,
+                    CASE
+                      WHEN length(text) <= 240 THEN text
+                      ELSE substr(text, 1, 237) || '…'
+                    END
+             FROM transcript_documents
+             WHERE lower(text) LIKE lower(?1) ESCAPE '\\'
+             ORDER BY observed_at_unix_ms DESC
+             LIMIT ?2",
+        )?;
+        let rows = stmt.query_map(params![pattern, limit_i64], |row| {
+            Ok(TranscriptSearchHit {
+                thread_id: crate::domain::ThreadId::new(row.get::<_, String>(0)?),
+                turn_id: Some(row.get(1)?),
+                item_id: Some(row.get(2)?),
+                snippet: row.get(3)?,
+                turn_cursor: None,
+                match_start_utf16: None,
+                match_end_utf16: None,
+            })
+        })?;
+        hits = rows.collect::<rusqlite::Result<Vec<_>>>()?;
+    }
+
+    Ok(TranscriptSearchResults {
+        query: query.to_string(),
+        source: TranscriptSearchSource::LocalFts,
+        hits,
+        complete: false,
+    })
 }
 
 fn transcript_fts_available(conn: &Connection) -> Result<bool> {
@@ -1349,131 +1473,103 @@ fn save_operator_state_tx(tx: &Transaction<'_>, state: &LocalStateV1) -> Result<
     Ok(())
 }
 
-fn load_cards(conn: &Connection) -> Result<Vec<WorkCardRecord>> {
-    let mut stmt = conn.prepare(
-        "SELECT local_id, anchor_kind, anchor_ref, title_override, note, pinned,
-                tags_json, priority, manual_ready, done_at_unix_ms, snooze_until_unix_ms
-         FROM work_cards ORDER BY local_id",
-    )?;
-    let rows = stmt.query_map([], |row| {
-        Ok((
-            row.get::<_, String>(0)?,
-            row.get::<_, String>(1)?,
-            row.get::<_, String>(2)?,
-            row.get::<_, Option<String>>(3)?,
-            row.get::<_, Option<String>>(4)?,
-            row.get::<_, i64>(5)?,
-            row.get::<_, String>(6)?,
-            row.get::<_, Option<i32>>(7)?,
-            row.get::<_, i64>(8)?,
-            row.get::<_, Option<i64>>(9)?,
-            row.get::<_, Option<i64>>(10)?,
-        ))
-    })?;
+const WORK_CARD_SELECT: &str =
+    "SELECT local_id, anchor_kind, anchor_ref, title_override, note, pinned,
+            tags_json, priority, manual_ready, done_at_unix_ms, snooze_until_unix_ms
+     FROM work_cards";
 
+fn decode_work_card(row: &rusqlite::Row<'_>) -> Result<WorkCardRecord> {
+    Ok(WorkCardRecord {
+        local_id: row.get(0)?,
+        anchor: SourceRef {
+            kind: enum_from_text(&row.get::<_, String>(1)?)?,
+            value: row.get(2)?,
+        },
+        links: vec![],
+        overlay: WorkCardOverlay {
+            title_override: row.get(3)?,
+            note: row.get(4)?,
+            pinned: decode_sqlite_bool(row.get(5)?, "work_cards.pinned")?,
+            tags: serde_json::from_str(&row.get::<_, String>(6)?)
+                .context("decode WorkCard tags")?,
+            priority: row.get(7)?,
+            manual_ready: decode_sqlite_bool(row.get(8)?, "work_cards.manual_ready")?,
+            done_at_unix_ms: row.get::<_, Option<i64>>(9)?.map(i64_to_u64).transpose()?,
+            snooze_until_unix_ms: row.get::<_, Option<i64>>(10)?.map(i64_to_u64).transpose()?,
+        },
+    })
+}
+
+fn load_cards(conn: &Connection) -> Result<Vec<WorkCardRecord>> {
+    let mut stmt = conn.prepare(&format!("{WORK_CARD_SELECT} ORDER BY local_id"))?;
+    let mut rows = stmt.query([])?;
     let mut cards = Vec::new();
-    for row in rows {
-        let (
-            local_id,
-            anchor_kind,
-            anchor_ref,
-            title_override,
-            note,
-            pinned,
-            tags_json,
-            priority,
-            manual_ready,
-            done_at,
-            snooze_until,
-        ) = row?;
-        let mut card = WorkCardRecord {
-            local_id: local_id.clone(),
-            anchor: SourceRef {
-                kind: enum_from_text(&anchor_kind)?,
-                value: anchor_ref,
-            },
-            links: vec![],
-            overlay: WorkCardOverlay {
-                title_override,
-                note,
-                pinned: pinned != 0,
-                tags: serde_json::from_str(&tags_json).context("decode WorkCard tags")?,
-                priority,
-                manual_ready: manual_ready != 0,
-                done_at_unix_ms: done_at.map(i64_to_u64).transpose()?,
-                snooze_until_unix_ms: snooze_until.map(i64_to_u64).transpose()?,
-            },
-        };
-        card.links = load_links(conn, &local_id)?;
-        cards.push(card);
+    while let Some(row) = rows.next()? {
+        cards.push(decode_work_card(row)?);
+    }
+    // One ordered links query for the snapshot, rather than one query per card.
+    let mut links = load_links(conn, None)?;
+    for card in &mut cards {
+        card.links = links.remove(&card.local_id).unwrap_or_default();
     }
     Ok(cards)
 }
 
-fn load_card(conn: &Connection, local_id: &str) -> Result<WorkCardRecord> {
-    load_cards(conn)?
-        .into_iter()
-        .find(|card| card.local_id == local_id)
-        .with_context(|| format!("WorkCard disappeared during read: {local_id}"))
+fn load_links(
+    conn: &Connection,
+    local_id: Option<&str>,
+) -> Result<BTreeMap<String, Vec<WorkCardLink>>> {
+    let mut stmt = conn.prepare(match local_id {
+        Some(_) => {
+            "SELECT work_card_id, role, source_kind, source_ref
+                    FROM work_card_links WHERE work_card_id=?1
+                    ORDER BY role, source_kind, source_ref"
+        }
+        None => {
+            "SELECT work_card_id, role, source_kind, source_ref
+                 FROM work_card_links ORDER BY work_card_id, role, source_kind, source_ref"
+        }
+    })?;
+    let mut rows = stmt.query(rusqlite::params_from_iter(local_id))?;
+    let mut links: BTreeMap<String, Vec<WorkCardLink>> = BTreeMap::new();
+    while let Some(row) = rows.next()? {
+        links.entry(row.get(0)?).or_default().push(WorkCardLink {
+            role: enum_from_text(&row.get::<_, String>(1)?)?,
+            source: SourceRef {
+                kind: enum_from_text(&row.get::<_, String>(2)?)?,
+                value: row.get(3)?,
+            },
+        });
+    }
+    Ok(links)
 }
 
-fn load_links(conn: &Connection, local_id: &str) -> Result<Vec<WorkCardLink>> {
-    let mut stmt = conn.prepare(
-        "SELECT role, source_kind, source_ref
-         FROM work_card_links WHERE work_card_id=?1 ORDER BY role, source_kind, source_ref",
-    )?;
-    let rows = stmt.query_map([local_id], |row| {
-        Ok((
-            row.get::<_, String>(0)?,
-            row.get::<_, String>(1)?,
-            row.get::<_, String>(2)?,
-        ))
-    })?;
-    rows.map(|row| {
-        let (role, kind, value) = row?;
-        Ok(WorkCardLink {
-            role: enum_from_text(&role)?,
-            source: SourceRef {
-                kind: enum_from_text(&kind)?,
-                value,
-            },
-        })
+const SCRATCH_SELECT: &str = "SELECT id, title, note, workspace, priority, state,
+            created_at_unix_ms, updated_at_unix_ms FROM scratch_work";
+
+fn decode_scratch(row: &rusqlite::Row<'_>) -> Result<ScratchWork> {
+    Ok(ScratchWork {
+        id: scratch_id(row.get(0)?),
+        title: row.get(1)?,
+        note: row.get(2)?,
+        workspace: row.get(3)?,
+        priority: row.get(4)?,
+        state: enum_from_text(&row.get::<_, String>(5)?)?,
+        created_at_unix_ms: i64_to_u64(row.get(6)?)?,
+        updated_at_unix_ms: i64_to_u64(row.get(7)?)?,
     })
-    .collect()
 }
 
 fn load_scratch(conn: &Connection) -> Result<Vec<ScratchWork>> {
-    let mut stmt = conn.prepare(
-        "SELECT id, title, note, workspace, priority, state,
-                created_at_unix_ms, updated_at_unix_ms
-         FROM scratch_work ORDER BY priority IS NULL, priority, id",
-    )?;
-    let rows = stmt.query_map([], |row| {
-        Ok((
-            row.get::<_, i64>(0)?,
-            row.get::<_, String>(1)?,
-            row.get::<_, Option<String>>(2)?,
-            row.get::<_, Option<String>>(3)?,
-            row.get::<_, Option<i32>>(4)?,
-            row.get::<_, String>(5)?,
-            row.get::<_, i64>(6)?,
-            row.get::<_, i64>(7)?,
-        ))
-    })?;
-    rows.map(|row| {
-        let (id, title, note, workspace, priority, state, created, updated) = row?;
-        Ok(ScratchWork {
-            id: scratch_id(id),
-            title,
-            note,
-            workspace,
-            priority,
-            state: enum_from_text(&state)?,
-            created_at_unix_ms: i64_to_u64(created)?,
-            updated_at_unix_ms: i64_to_u64(updated)?,
-        })
-    })
-    .collect()
+    let mut stmt = conn.prepare(&format!(
+        "{SCRATCH_SELECT} ORDER BY priority IS NULL, priority, id"
+    ))?;
+    let mut rows = stmt.query([])?;
+    let mut scratch = Vec::new();
+    while let Some(row) = rows.next()? {
+        scratch.push(decode_scratch(row)?);
+    }
+    Ok(scratch)
 }
 
 fn load_saved_views(conn: &Connection) -> Result<Vec<SavedView>> {
@@ -1582,6 +1678,7 @@ fn load_hot_slots(conn: &Connection) -> Result<Vec<HotSlot>> {
     })?;
     rows.map(|row| {
         let (slot, kind, value, updated_at) = row?;
+        anyhow::ensure!((1..=9).contains(&slot), "hot slot must be between 1 and 9");
         let slot = u8::try_from(slot).context("hot slot outside u8 range")?;
         Ok(HotSlot {
             slot,
@@ -1595,9 +1692,38 @@ fn load_hot_slots(conn: &Connection) -> Result<Vec<HotSlot>> {
     .collect()
 }
 
+fn validate_application_checks(conn: &Connection) -> Result<()> {
+    // Bundled SQLite does not retain CHECK expressions on read-only handles.
+    // Validate the current schema's four CHECK constraints explicitly, before
+    // configuration can change WAL or derived tables. This is admission-only.
+    for (query, requirement) in [
+        (
+            "SELECT EXISTS(SELECT 1 FROM hot_slots WHERE slot NOT BETWEEN 1 AND 9)",
+            "hot slot must be between 1 and 9",
+        ),
+        (
+            "SELECT EXISTS(SELECT 1 FROM work_cards WHERE pinned NOT IN (0,1) OR manual_ready NOT IN (0,1))",
+            "work_cards.pinned and work_cards.manual_ready must be 0 or 1",
+        ),
+        (
+            "SELECT EXISTS(SELECT 1 FROM managed_worktrees WHERE adopted NOT IN (0,1))",
+            "managed_worktrees.adopted must be 0 or 1",
+        ),
+    ] {
+        let invalid: bool = conn
+            .query_row(query, [], |row| row.get(0))
+            .context("validate SQLite application CHECK constraints")?;
+        anyhow::ensure!(!invalid, "SQLite application CHECK failed: {requirement}");
+    }
+    Ok(())
+}
+
 fn quick_check(conn: &Connection) -> Result<String> {
-    conn.query_row("PRAGMA quick_check(1)", [], |row| row.get(0))
-        .context("SQLite quick_check")
+    let integrity: String = conn
+        .query_row("PRAGMA quick_check(1)", [], |row| row.get(0))
+        .context("SQLite quick_check")?;
+    anyhow::ensure!(integrity == "ok", "SQLite quick_check failed: {integrity}");
+    Ok(integrity)
 }
 
 fn enum_text<T: Serialize>(value: &T) -> Result<String> {
@@ -1611,6 +1737,14 @@ fn enum_from_text<T: DeserializeOwned>(value: &str) -> Result<T> {
 
 fn bool_i64(value: bool) -> i64 {
     i64::from(value)
+}
+
+fn decode_sqlite_bool(value: i64, field: &str) -> Result<bool> {
+    match value {
+        0 => Ok(false),
+        1 => Ok(true),
+        _ => anyhow::bail!("SQLite boolean {field} must be 0 or 1"),
+    }
 }
 
 fn u64_to_i64(value: u64) -> Result<i64> {

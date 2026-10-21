@@ -810,7 +810,7 @@ fn managed_worktree_plan_requires_explicit_confirmation_before_execution() {
                 branch: Some("main".into()),
                 managed_by_codex_tui: false,
             }),
-            head: Some("deadbeef".into()),
+            head: Some("0123456789abcdef0123456789abcdef01234567".into()),
             branch: Some("main".into()),
             upstream: None,
             ahead: 0,
@@ -847,8 +847,26 @@ fn managed_worktree_plan_requires_explicit_confirmation_before_execution() {
     for ch in "HEAD".chars() {
         reduce(&mut app, Action::InputChar(ch));
     }
+    for missing in [None, Some("deadbeef".into())] {
+        app.git_contexts.get_mut("thread-impl").unwrap().head = missing;
+        assert!(reduce(&mut app, Action::CommitInput).is_empty());
+        assert!(app.pending_operation.is_none());
+        assert_eq!(app.input_mode, InputMode::WorktreeCreateStartPoint);
+        assert_eq!(app.create_worktree_branch.as_deref(), Some("feature"));
+        assert_eq!(app.create_worktree_path.as_deref(), Some(target.as_str()));
+    }
+    app.git_contexts.get_mut("thread-impl").unwrap().head =
+        Some("0123456789abcdef0123456789abcdef01234567".into());
     assert!(reduce(&mut app, Action::CommitInput).is_empty());
-    assert!(app.pending_operation.is_some());
+    let plan = app.pending_operation.as_ref().unwrap();
+    assert_eq!(
+        plan.expected_start_commit(),
+        Some("0123456789abcdef0123456789abcdef01234567")
+    );
+    assert_eq!(
+        plan.argv.last().map(String::as_str),
+        plan.expected_start_commit()
+    );
 
     let effects = reduce(&mut app, Action::ConfirmPendingOperation);
     assert!(matches!(effects.as_slice(), [Effect::ExecuteOperation(_)]));
