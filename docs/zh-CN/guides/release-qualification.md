@@ -34,6 +34,10 @@ Development Qualification 额外保留 `failure-case-execution.json`，逐项记
 
 Stable 前管理员须验证 `main` 严格 Required Checks（含 GitHub Actions App ID 绑定）、禁止 Force Push/删除、管理员同样受保护，以及 **GitHub Immutable Releases** 已开启。没有权限或读取失败就是阻塞，不能绕过；管理员令牌不得进入公共 PR 工作流。
 
+`configure_main_protection.py` 默认只生成不写入的计划，不默认新增审批要求；已有审查规则及其撤销/绕过主体、推送限制、额外检查及 App 绑定、线性历史、讨论解决要求、分支锁定、分支创建限制和 Fork 同步设置均须保留。只有完整读取保护配置成功且能安全规范化策略，才能给出可执行计划。完整读取失败（包括 403/404）、策略不完整或保护语义未知时拒绝写入；404 不证明保护不存在。本辅助工具不初始化不可读或未受保护的 `main`；管理员须先建立已审阅且可读取的初始保护策略。
+
+应用仍须显式传入 `--apply --confirm-repository jiying2007/codex-tui`。每轮完整 GET 成功后，缺失的可选资源都通过各自端点确认。工具在 PUT 前立即重读保护配置和分支元数据，发现可观察的策略变化、保护失效或 main 偏离计划的精确源码 SHA 即停止；PUT 后通过独立 GET 验证最低策略、全部保留设置及同一受保护 main SHA。签名保护不写入此 PUT，且已有签名要求不得下降。此端点没有 `If-Match` 原子更新保证，因此这些检查不能消除并发修改竞态。失败不会自动放松保护、重试写入或回滚；若 PUT 后读回失败，结果仍未核实，设置可能已经改变。操作步骤见[主线保护说明](../../implementation/m7d3-release.md#main-branch-protection)。
+
 ## 精确候选 Stable 非发布演练
 <!-- docs-section: dryrun -->
 

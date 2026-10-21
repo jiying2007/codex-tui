@@ -308,10 +308,10 @@
     "src/app/history_cache.rs": 303,
     "src/app/thread_navigation.rs": 91,
     "src/app_server/subscriptions/fault_tests.rs": 231,
-    "src/app_server/subscriptions/fixture.rs": 233,
+    "src/app_server/subscriptions/fixture.rs": 244,
     "src/app_server/subscriptions/tests.rs": 100,
     "src/app_server/subscriptions/wire_order_tests.rs": 189,
-    "src/app_server/subscriptions/wire_tests.rs": 459,
+    "src/app_server/subscriptions/wire_tests.rs": 471,
     "src/app_server/subscriptions.rs": 424,
     "src/conversation_viewport/rows.rs": 118,
     "src/conversation_viewport/tests.rs": 207,
@@ -992,6 +992,16 @@
         "src/worktree_git.rs"
       ],
       "policy": "Reviewed v1.4 defect and security maintenance; unchanged module limits remain intact. No new task, queue, Git or Forge authority; no Stable or real-environment qualification. Require fresh candidate and main CI, security, terminal and release-binary evidence."
+    },
+    {
+      "date": "2026-10-21",
+      "kind": "test-synchronization-fix",
+      "scope": "Make the subscription fixture barrier await bounded command admission and its dedicated goal receipt. Deterministically poll it while the held read keeps the command queue full, then retain discarded-read, no-resubscribe and watch-cleanup assertions after the FIFO marker completes.",
+      "modules": [
+        "src/app_server/subscriptions/fixture.rs",
+        "src/app_server/subscriptions/wire_tests.rs"
+      ],
+      "policy": "Reviewed test-only maintenance for the Windows queue-full failure. Production admission and watch ownership remain unchanged; only these two exact LOC ceilings change. Source module identities and convergence capabilities remain unchanged. Require fresh candidate and main CI; no Stable or real-environment qualification."
     }
   ]
 }

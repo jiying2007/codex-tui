@@ -446,18 +446,7 @@ jobs:
           import configure_main_protection as p
 
           app_id = 15368
-          policy = p.protection_payload(app_id)
-          assert policy["required_status_checks"]["strict"] is True
-          assert "contexts" not in policy["required_status_checks"]
-          assert policy["required_status_checks"]["checks"] == [
-              {"context": name, "app_id": app_id}
-              for name in p.REQUIRED_CHECKS
-          ]
-          assert policy["enforce_admins"] is True
-          assert policy["required_pull_request_reviews"] is None
-          assert policy["restrictions"] is None
-          assert policy["allow_force_pushes"] is False
-          assert policy["allow_deletions"] is False
+          # Preservation and API failure paths are exercised by test_main_protection.py.
 
           ci_text = open(".github/workflows/ci.yml", encoding="utf-8").read()
           p.validate_ci_contract(ci_text)

@@ -163,9 +163,20 @@ async fn full_command_queue_cannot_block_release_or_recreate_a_discarded_watch()
             .contains("queue is full")
     );
     started.handle.stop_watching_conversation(id).unwrap();
-    release.send(()).unwrap();
-    peer.wait_count("thread/unsubscribe", 1).await;
-    barrier(&mut started.handle).await;
+    assert!(started.handle.history_watches.snapshot().is_empty());
+    {
+        let drained = barrier(&mut started.handle);
+        tokio::pin!(drained);
+        // The held read keeps every command slot occupied. Polling here makes
+        // a nonblocking barrier fail deterministically instead of racing drain.
+        assert!(
+            futures_util::poll!(drained.as_mut()).is_pending(),
+            "barrier must wait for the full command queue"
+        );
+        release.send(()).unwrap();
+        peer.wait_count("thread/unsubscribe", 1).await;
+        drained.await;
+    }
     assert_eq!(
         peer.count("thread/read"),
         2,
@@ -176,6 +187,7 @@ async fn full_command_queue_cannot_block_release_or_recreate_a_discarded_watch()
         1,
         "queued discarded reads do not reacquire"
     );
+    assert!(started.handle.history_watches.snapshot().is_empty());
     assert!(peer.subscriptions().is_empty());
 }
 

@@ -91,14 +91,14 @@ The helper changes only the matching `Unreleased` heading; it never commits, pus
 
 ## Main branch protection
 
-Stable publication requires live `main.protected=true` **and** a successful administrator-read verification of the canonical policy. For this personal-first repository, the retained policy is:
+Stable publication requires live `main.protected=true` **and** a successful administrator-read verification of the canonical policy. For this personal-first repository, the minimum policy is:
 
 - require the four canonical PR CI checks (`rust-1.88-msrv`, `ubuntu-24.04`, `macos-latest`, `windows-latest`) and the dependency `security-gate`;
 - require the branch to be up to date before merge;
 - apply protection to administrators as well;
 - block force pushes;
 - block branch deletion;
-- do not require approving reviews, which would make a single-maintainer repository self-blocking.
+- do not add approving-review requirements by default; preserve any existing review requirements and other stronger protections.
 
 Preview the exact GitHub REST payload without changing repository settings:
 
@@ -106,9 +106,11 @@ Preview the exact GitHub REST payload without changing repository settings:
 python3 scripts/release/configure_main_protection.py
 ```
 
-The helper first requires clean local `main` to equal GitHub `main`, verifies the current exact-SHA canonical checks are successful and produced by one GitHub Actions App, records that observed App ID, and builds the branch-protection payload with every required check explicitly pinned to that App through `checks[].app_id`. It also validates the expected MSRV/platform matrix and that the security workflow always runs for PRs and main pushes, without path filters. `security-gate` uses `always()` to report failure if either cargo-deny or RustSec fails, is cancelled, or is skipped; only two successful dependency jobs pass.
+The helper first requires clean local `main` to equal GitHub `main`, verifies the current exact-SHA canonical checks are successful and produced by one GitHub Actions App, and records that observed App ID. It also validates the expected MSRV/platform matrix and that the security workflow always runs for PRs and main pushes, without path filters. `security-gate` uses `always()` to report failure if either cargo-deny or RustSec fails, is cancelled, or is skipped; only two successful dependency jobs pass.
 
-For the first adoption of `security-gate`, merge the workflow change using the existing protection policy, wait for the new check to succeed on the exact main SHA, then preview and apply the five-check policy below. Requiring a name before its workflow exists would leave earlier PRs waiting for a check they cannot produce. Repository settings still require administrator access and a verified readback; changing this file alone does not change GitHub protection.
+An executable plan requires a successful full GET of the existing branch protection and safe normalization of its policy. The helper retains review rules and their dismissal/bypass actors, push restrictions, additional required checks and their App bindings, linear history, conversation resolution, branch locking, branch-creation restrictions and fork-sync settings. It adds the canonical checks with the observed GitHub Actions App binding without silently replacing a conflicting existing binding. Missing optional resources are checked through their own endpoints after the full read succeeds; only an explicit subresource 404 confirms that a resource is not configured. Every subsequent policy read repeats this normalization. A failed full read, including 403 or 404, incomplete policy or unknown protection semantics refuses a write; a full-read 404 is not evidence that protection is absent. This helper does not initialize an unreadable or unprotected `main`: an administrator must first establish a reviewed initial protection policy that can be read successfully.
+
+For the first adoption of `security-gate`, merge the workflow change using the existing protection policy, wait for the new check to succeed on the exact main SHA, then preview and apply the minimum five-check policy below while retaining existing protections. Requiring a name before its workflow exists would leave earlier PRs waiting for a check they cannot produce. Repository settings still require administrator access and a verified readback; changing this file alone does not change GitHub protection.
 
 Only after reviewing the emitted plan, apply it with an explicit repository confirmation:
 
@@ -118,11 +120,11 @@ python3 scripts/release/configure_main_protection.py \
   --confirm-repository jiying2007/codex-tui
 ```
 
-The apply path uses GitHub's branch-protection REST endpoint and therefore requires a locally authenticated `gh` credential with repository Administration write permission. It re-reads the applied policy and branch metadata and fails unless administrators are protected, all canonical checks are required and pinned to the observed GitHub Actions App, force pushes/deletion are disabled, and `main.protected=true`.
+The apply path uses GitHub's branch-protection REST endpoint and therefore requires a locally authenticated `gh` credential with repository Administration write permission. Immediately before PUT it re-reads the full policy and branch metadata, refusing an observable policy change, loss of protection or movement from the plan's exact source SHA. After PUT, an independent GET verifies both the minimum policy and all retained settings; branch metadata must still report `main.protected=true` at that same SHA. Commit-signature protection is managed separately and is never sent in this PUT; readback must show that an existing signature requirement has not weakened. GitHub does not provide an `If-Match` atomic update guarantee for this endpoint, so the repeated reads do not eliminate concurrent-change races. A failure stops the helper without automatically relaxing protection, retrying the write or rolling back. If readback fails after PUT, settings may already have changed and the result remains unverified.
 
 ## TLS and dependency verification
 
-The WSS client explicitly constructs rustls with the `ring` provider from production dependencies and loads native trust roots. Certificate-chain and endpoint-name verification remain enabled; there is no insecure TLS mode. The rustls minimum is 0.23.46, which fixes RUSTSEC-2026-0346 through RUSTSEC-2026-0349. The lockfile also absorbs the reviewed serde_json 1.0.154 and tokio 1.53.3 patches from dependency PR #351; all three crates declare Rust 1.71 compatibility, with this project's Rust 1.88 CI check remaining authoritative. PR #352's install-action 2.87.28 update is pinned to commit `1168f6810a3cb30a3514bf5756a3b7f0422c6df8` in both audit consumers. Other dependency versions are unchanged.
+The WSS client explicitly constructs rustls with the `ring` provider from production dependencies and loads native trust roots. Certificate-chain and endpoint-name verification remain enabled; there is no insecure TLS mode. The rustls minimum is 0.23.46, which fixes RUSTSEC-2026-0346 through RUSTSEC-2026-0349. The lockfile also absorbs the reviewed serde_json 1.0.154 and tokio 1.53.3 patches from dependency PR #351; all three crates declare Rust 1.71 compatibility, with this project's Rust 1.88 CI check remaining authoritative. PR #352 pins install-action 2.87.29 to commit `8cca0918f8471c33515202b73f56ab27f2bed283` in both audit consumers. PR #354 updates rustls-native-certs to 0.8.5: its Unix loader avoids repeated reads of certificate-path aliases by device/inode identity, while its Rust 1.71 minimum remains unchanged. The repository's Rust 1.88 CI remains the compatibility check for the combined dependency set.
 
 `tests/wss_transport.rs` launches the actual binary against ephemeral local Python/OpenSSL TLS peers. It covers a trusted TLS RPC exchange, an unknown issuer, a hostname mismatch, and a peer that closes before TLS. The fixture sets only isolated XDG paths and per-process trust variables, does not change the user's trust store, and does not disable certificate validation. It is automated transport evidence, not real Codex account qualification.
 

@@ -225,9 +225,20 @@ pub(super) async fn event(
 }
 
 pub(super) async fn barrier(handle: &mut RegistryHandle) {
-    handle.refresh_goal(ThreadId::new("one")).unwrap();
+    // Wait behind accepted commands even when the production queue is full.
+    // A dedicated id cannot be satisfied by an earlier eager goal probe.
+    let marker = ThreadId::new("fixture-command-barrier");
+    tokio::time::timeout(
+        Duration::from_secs(3),
+        handle
+            .command_tx
+            .send(BackendCommand::RefreshGoal(marker.clone())),
+    )
+    .await
+    .expect("barrier command admission deadline")
+    .expect("live actor");
     event(handle, |event| {
-        matches!(event, ConversationEvent::GoalCleared(_))
+        matches!(event, ConversationEvent::GoalCleared(id) if id == &marker)
     })
     .await;
 }
