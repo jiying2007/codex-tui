@@ -375,6 +375,12 @@ async fn check_preconditions(
     }
     match plan.kind {
         OperationKind::CreateWorktree => {
+            if let Some(commit) = plan.expected_start_commit() {
+                anyhow::ensure!(
+                    plan.argv.last().map(String::as_str) == Some(commit),
+                    "create argv no longer matches the confirmed start commit"
+                );
+            }
             let target = plan
                 .target_worktree
                 .as_deref()
@@ -417,7 +423,7 @@ async fn check_preconditions(
             );
             anyhow::ensure!(
                 worktree_is_clean(target).await?,
-                "refusing to remove dirty worktree: {target}"
+                "refusing to remove dirty worktree (tracked changes, untracked or ignored files): {target}"
             );
             let target_scope = MutationScope {
                 repo: Some(plan.repo.clone()),
@@ -490,6 +496,12 @@ async fn verify_success(store: &SqliteStore, plan: &OperationPlan) -> Result<(St
                 worktree.branch.as_deref() == Some(branch),
                 "created worktree branch mismatch"
             );
+            if let Some(commit) = plan.expected_start_commit() {
+                anyhow::ensure!(
+                    worktree.head.as_deref() == Some(commit),
+                    "created worktree HEAD does not match the confirmed start commit {commit}"
+                );
+            }
             let canonical = canonical_path(target);
             let now = now_unix_ms();
             store.upsert_managed_worktree(&ManagedWorktreeRecord {

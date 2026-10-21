@@ -245,7 +245,11 @@ mod tests {
                         active_page(id.clone())
                     };
                     let action = if older {
-                        Action::OlderConversationLoaded(partial)
+                        Action::OlderConversationLoaded {
+                            page: partial,
+                            turn_cursor: None,
+                            item_cursor: None,
+                        }
                     } else {
                         Action::TranscriptSearchLoadedPage {
                             page: partial,

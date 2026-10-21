@@ -1,16 +1,20 @@
 use super::*;
-use crate::conversation::{ConversationItem, ConversationItemKind, ConversationPage};
-use crate::domain::ThreadId;
+use crate::app::{Action, Effect, View, reduce};
+use crate::conversation::{
+    ConversationItem, ConversationItemKind, ConversationPage, ConversationState,
+};
+use crate::domain::{ThreadId, ThreadUiState};
+use ratatui::{Terminal, backend::TestBackend};
 
 fn page(text: &str) -> ConversationPage {
     ConversationPage {
-        thread_id: ThreadId::new("cache-thread"),
-        title: Some("cache".into()),
+        thread_id: ThreadId::new("viewport-thread"),
+        title: None,
         turns: vec![],
         items: vec![ConversationItem {
-            turn_id: "turn-1".into(),
-            item_id: "item-1".into(),
-            kind: ConversationItemKind::User,
+            turn_id: "turn".into(),
+            item_id: "item".into(),
+            kind: ConversationItemKind::Assistant,
             text: text.into(),
             status: None,
         }],
@@ -19,73 +23,258 @@ fn page(text: &str) -> ConversationPage {
     }
 }
 
-#[test]
-fn presentation_cache_invalidates_on_conversation_revision() {
-    let mut conversation = ConversationState::loading(ThreadId::new("cache-thread"));
-    conversation.replace_page(page("before"));
-    let before = formatted_items(&conversation, 0, 1);
-    assert!(before[0].text.contains("before"));
+fn app(text: &str) -> AppState {
+    let mut app = AppState::new(vec![]);
+    app.view = View::Thread(ThreadId::new("viewport-thread"));
+    let mut conversation = ConversationState::loading(ThreadId::new("viewport-thread"));
+    conversation.replace_page(page(text));
+    app.conversations
+        .insert("viewport-thread".into(), conversation);
+    app.thread_ui
+        .insert("viewport-thread".into(), ThreadUiState::default());
+    app
+}
 
-    conversation.replace_page(page("after"));
-    let after = formatted_items(&conversation, 0, 1);
-    assert!(after[0].text.contains("after"));
-    assert!(!Arc::ptr_eq(&before, &after));
+fn screen(app: &AppState) -> String {
+    sized_screen(app, 24)
+}
+
+fn sized_screen(app: &AppState, height: u16) -> String {
+    let mut terminal = Terminal::new(TestBackend::new(70, height)).unwrap();
+    terminal
+        .draw(|frame| render_thread(frame, app, "viewport-thread", frame.area()))
+        .unwrap();
+    let buffer = terminal.backend().buffer();
+    (0..height)
+        .map(|y| (0..70).map(|x| buffer[(x, y)].symbol()).collect::<String>())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 #[test]
-fn long_history_window_is_bounded_and_tracks_item_offset() {
-    let (start, end) = item_window(10_000, 9_000, 40);
-    assert_eq!(start, 9_000);
-    assert!(end > start);
-    assert!(end - start <= MAX_WINDOW_ITEMS);
-    assert!(end - start >= MIN_WINDOW_ITEMS);
-}
-
-#[test]
-fn oversized_offset_clamps_to_last_item() {
-    assert_eq!(item_window(5, u16::MAX, 10), (4, 5));
-}
-
-#[test]
-fn reloaded_thread_cannot_reuse_an_old_instance_presentation() {
-    let mut before = ConversationState::loading(ThreadId::new("cache-thread"));
-    before.replace_page(page("old instance"));
-    let old = formatted_items(&before, 0, 1);
-    let mut after = ConversationState::loading(ThreadId::new("cache-thread"));
-    after.replace_page(page("new instance"));
-    let new = formatted_items(&after, 0, 1);
-    assert!(old[0].text.contains("old instance"));
-    assert!(new[0].text.contains("new instance"));
-}
-
-#[test]
-fn cold_presentation_formats_only_the_selected_window() {
-    let mut conversation = ConversationState::loading(ThreadId::new("cache-thread"));
-    let mut history = page("large history");
-    history.items = (0..10_000)
-        .map(|index| {
-            let mut item = history.items[0].clone();
-            item.item_id = format!("item-{index}");
-            item
-        })
-        .collect();
-    conversation.replace_page(history);
-    let (start, end) = item_window(10_000, 9000, 40);
-    let items = formatted_items(&conversation, start, end);
-    assert!(items.len() <= MAX_WINDOW_ITEMS);
-    assert_eq!(items[0].item_id, "item-9000");
-}
-
-#[test]
-fn untrusted_conversation_payload_cannot_spoof_terminal_controls() {
-    let original = format!("text{}[2J{}fake row{}tail", '\u{001b}', '\u{202e}', '\n');
-    let mut state = ConversationState::loading(ThreadId::new("cache-thread"));
-    state.replace_page(page(&original));
-    let formatted = formatted_items(&state, 0, 1);
-    assert!(formatted[0].text.contains("fake row"));
-    for character in ['\u{001b}', '\u{202e}', '\n', '\r', '\t'] {
-        assert!(!formatted[0].text.contains(character));
+fn rendered_long_message_can_scroll_to_both_ends_and_resume_following() {
+    let text = (0..200)
+        .map(|n| format!("VISIBLE-{n:03}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut app = app(&text);
+    assert!(screen(&app).contains("VISIBLE-199"));
+    assert!(!screen(&app).contains("VISIBLE-000"));
+    reduce(&mut app, Action::ConversationStart);
+    assert!(screen(&app).contains("VISIBLE-000"));
+    for _ in 0..40 {
+        reduce(&mut app, Action::ScrollBy(5));
     }
-    // The originating upstream record remains untouched by presentation.
-    assert!(state.items[0].text.contains('\u{001b}'));
+    assert!(screen(&app).contains("VISIBLE-199"));
+    for _ in 0..40 {
+        reduce(&mut app, Action::ScrollBy(-5));
+    }
+    assert!(screen(&app).contains("VISIBLE-000"));
+    reduce(&mut app, Action::FollowNewest);
+    assert!(screen(&app).contains("VISIBLE-199"));
+    reduce(
+        &mut app,
+        Action::ConversationLoaded(page(&format!("{text}\nNEWEST-MARKER"))),
+    );
+    assert!(screen(&app).contains("NEWEST-MARKER"));
+    reduce(&mut app, Action::ConversationStart);
+    let before = screen(&app);
+    reduce(
+        &mut app,
+        Action::ConversationLoaded(page(&format!("{text}\nNEWEST-MARKER\nANOTHER-MARKER"))),
+    );
+    assert_eq!(screen(&app), before);
+}
+
+#[test]
+fn older_page_is_requested_only_at_the_first_visual_row() {
+    let mut history = page(
+        &(0..200)
+            .map(|n| format!("line {n}"))
+            .collect::<Vec<_>>()
+            .join("\n"),
+    );
+    history.next_turn_cursor = Some("older".into());
+    let mut app = app("");
+    reduce(&mut app, Action::ConversationLoaded(history));
+    screen(&app);
+    let effects = reduce(&mut app, Action::ScrollBy(-5));
+    assert!(
+        !effects
+            .iter()
+            .any(|effect| matches!(effect, Effect::LoadOlderConversation { .. }))
+    );
+    reduce(&mut app, Action::ConversationStart);
+    let effects = reduce(&mut app, Action::ScrollBy(-5));
+    assert!(
+        effects
+            .iter()
+            .any(|effect| matches!(effect, Effect::LoadOlderConversation { .. }))
+    );
+    assert!(!app.thread_ui["viewport-thread"].follow);
+    let mut older = page("OLDER-PAGE-MARKER");
+    older.items[0].item_id = "older-item".into();
+    reduce(
+        &mut app,
+        Action::OlderConversationLoaded {
+            page: older,
+            turn_cursor: Some("older".into()),
+            item_cursor: None,
+        },
+    );
+    assert!(screen(&app).contains("line 0"));
+    reduce(&mut app, Action::ScrollBy(-5));
+    assert!(screen(&app).contains("OLDER-PAGE-MARKER"));
+}
+
+#[test]
+fn exact_search_hit_is_visible_after_a_long_preceding_item() {
+    let mut app = app("");
+    let mut history = page(&"long preceding paragraph\n".repeat(200));
+    let mut hit = history.items[0].clone();
+    hit.item_id = "hit".into();
+    hit.text = "EXACT-SEARCH-HIT".into();
+    history.items.push(hit);
+    reduce(
+        &mut app,
+        Action::TranscriptSearchLoadedPage {
+            page: history,
+            item_id: "hit".into(),
+        },
+    );
+    assert!(screen(&app).contains("EXACT-SEARCH-HIT"));
+}
+
+#[test]
+fn renderer_retains_code_indentation_and_blank_paragraphs() {
+    let app = app("paragraph\n\n    let answer = 42;\nnext line");
+    let output = screen(&app);
+    let rows = output.lines().collect::<Vec<_>>();
+    let paragraph = rows
+        .iter()
+        .position(|line| line.contains("paragraph"))
+        .unwrap();
+    let code = rows
+        .iter()
+        .position(|line| line.contains("let answer = 42;"))
+        .unwrap();
+    assert_eq!(code, paragraph + 2);
+    assert!(rows[code].contains("│    let answer"));
+}
+
+#[test]
+fn small_body_page_keys_do_not_skip_any_content() {
+    for height in [13, 14] {
+        let text = (0..30)
+            .map(|n| format!("SMALL-{n:02}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let mut app = app(&text);
+        reduce(&mut app, Action::ConversationStart);
+        let mut seen = String::new();
+        for _ in 0..32 {
+            seen.push_str(&sized_screen(&app, height));
+            reduce(&mut app, Action::ScrollBy(5));
+        }
+        for n in 0..30 {
+            assert!(
+                seen.contains(&format!("SMALL-{n:02}")),
+                "height {height} skipped {n}"
+            );
+        }
+    }
+}
+
+#[test]
+fn pending_approval_keeps_history_navigation_and_follow_available() {
+    use crate::conversation::{
+        ApprovalContext, InteractiveRequest, InteractiveRequestKind, RpcRequestId,
+    };
+    let text = (0..40)
+        .map(|n| format!("PENDING-HISTORY-{n:02}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut app = app(&text);
+    app.pending_requests.push(InteractiveRequest {
+        request_id: RpcRequestId::Integer(3),
+        thread_id: ThreadId::new("viewport-thread"),
+        turn_id: "turn".into(),
+        item_id: "approval".into(),
+        kind: InteractiveRequestKind::CommandApproval {
+            context: ApprovalContext::from(serde_json::json!({})),
+            command: "cargo check".into(),
+            cwd: "/repo".into(),
+            reason: None,
+        },
+    });
+    let initial = screen(&app);
+    assert!(initial.contains("NEEDS YOU"));
+    assert!(initial.contains("PENDING-HISTORY-39"));
+    reduce(&mut app, Action::ConversationStart);
+    assert!(screen(&app).contains("PENDING-HISTORY-00"));
+    let mut seen = String::new();
+    for _ in 0..42 {
+        let output = sized_screen(&app, 14);
+        assert!(output.contains("NEEDS YOU"));
+        seen.push_str(&output);
+        reduce(&mut app, Action::ScrollBy(5));
+    }
+    for n in 0..40 {
+        assert!(seen.contains(&format!("PENDING-HISTORY-{n:02}")));
+    }
+    reduce(&mut app, Action::FollowNewest);
+    assert!(screen(&app).contains("PENDING-HISTORY-39"));
+}
+
+#[test]
+fn paged_old_body_stays_visible_when_recent_refresh_drops_its_anchor_until_end() {
+    let mut app = app("RECENT-BODY");
+    let mut recent = page("RECENT-BODY");
+    recent.next_item_cursor = Some("older".into());
+    reduce(&mut app, Action::ConversationLoaded(recent));
+    screen(&app);
+    reduce(&mut app, Action::ConversationStart);
+    reduce(&mut app, Action::ScrollBy(-5));
+    let mut older = page(
+        &(0..40)
+            .map(|n| format!("OLD-BODY-{n:02}"))
+            .collect::<Vec<_>>()
+            .join("\n"),
+    );
+    older.items[0].item_id = "old-item".into();
+    older.next_item_cursor = Some("ancient".into());
+    reduce(
+        &mut app,
+        Action::OlderConversationLoaded {
+            page: older,
+            turn_cursor: None,
+            item_cursor: Some("older".into()),
+        },
+    );
+    reduce(&mut app, Action::ConversationStart);
+    reduce(&mut app, Action::ScrollBy(5));
+    let before = screen(&app)
+        .lines()
+        .filter(|line| line.contains("OLD-BODY-"))
+        .map(ToOwned::to_owned)
+        .collect::<Vec<_>>();
+    assert!(!before.is_empty());
+    let mut latest = page("NEWEST-BODY");
+    latest.items[0].item_id = "new-item".into();
+    latest.next_item_cursor = Some("recent-gap".into());
+    reduce(&mut app, Action::ConversationLoaded(latest));
+    assert!(app.is_reading_snapshot("viewport-thread"));
+    let paused = screen(&app);
+    assert_eq!(
+        paused
+            .lines()
+            .filter(|line| line.contains("OLD-BODY-"))
+            .map(ToOwned::to_owned)
+            .collect::<Vec<_>>(),
+        before
+    );
+    assert!(!paused.contains("NEWEST-BODY"));
+    reduce(&mut app, Action::FollowNewest);
+    assert!(screen(&app).contains("NEWEST-BODY"));
+    assert!(!app.is_reading_snapshot("viewport-thread"));
 }

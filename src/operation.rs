@@ -199,7 +199,7 @@ impl OperationPlan {
                 },
                 OperationPrecondition {
                     key: "worktree-clean".into(),
-                    expected: "true".into(),
+                    expected: "no tracked changes, untracked files or ignored files".into(),
                 },
                 OperationPrecondition {
                     key: "no-active-mutation-scope-overlap".into(),
@@ -208,6 +208,32 @@ impl OperationPlan {
             ],
             planned_at_unix_ms,
         }
+    }
+
+    pub fn bind_observed_head(mut self, commit: &str) -> anyhow::Result<Self> {
+        anyhow::ensure!(
+            self.kind == OperationKind::CreateWorktree
+                && self.argv.len() == 6
+                && matches!(commit.len(), 40 | 64)
+                && commit.bytes().all(|byte| byte.is_ascii_hexdigit()),
+            "selected worktree has no valid full HEAD commit; refresh Git context and review again"
+        );
+        let commit = commit.to_ascii_lowercase();
+        self.argv[5] = commit.clone();
+        self.expected_side_effect =
+            format!("new managed worktree and branch created from observed HEAD commit {commit}");
+        self.preconditions.push(OperationPrecondition {
+            key: "start-commit".into(),
+            expected: commit,
+        });
+        Ok(self)
+    }
+
+    pub fn expected_start_commit(&self) -> Option<&str> {
+        self.preconditions
+            .iter()
+            .find(|condition| condition.key == "start-commit")
+            .map(|condition| condition.expected.as_str())
     }
 
     pub fn adopt_worktree(

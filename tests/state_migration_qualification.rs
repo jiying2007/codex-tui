@@ -18,6 +18,7 @@ fn seed_operator(store: &SqliteStore) -> LocalStateV1 {
             draft: "fresh first-deployment draft".into(),
             scroll: 7,
             follow: false,
+            ..ThreadUiState::default()
         },
     );
     store.save_state(&state).expect("seed fresh SQLite state");

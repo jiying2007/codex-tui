@@ -269,7 +269,7 @@ jobs:
           command: check
 
       - name: Install RustSec audit
-        uses: taiki-e/install-action@f7e5d7c961414b23f5b25b2da9294395d08513ad # v2
+        uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2
         with:
           tool: cargo-audit
 
@@ -565,6 +565,23 @@ jobs:
 
       - name: Build locked release binary
         run: cargo build --release --locked
+
+      - name: Smoke TLS using the final Linux release features
+        if: runner.os == 'Linux'
+        run: >
+          python3 scripts/testing/wss_transport_regression.py
+          "${{ matrix.binary }}" "${{ runner.temp }}/wss-smoke"
+
+      - name: Retain final-binary TLS evidence
+        if: ${{ always() && runner.os == 'Linux' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: wss-release-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/wss-smoke/*.json
+            ${{ runner.temp }}/wss-smoke/*.txt
+          if-no-files-found: warn
+          retention-days: 90
 
       - name: Generate third-party notices
         run: ${{ matrix.python }} scripts/release/generate_notices.py --output dist/THIRD_PARTY_NOTICES.txt

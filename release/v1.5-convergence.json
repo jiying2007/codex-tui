@@ -49,7 +49,10 @@
         "src/app/prompt",
         "src/app/user_input",
         "src/app/user_response",
-        "src/conversation"
+        "src/conversation",
+        "src/app/thread_navigation",
+        "src/app/reading_snapshot",
+        "src/app/request_details"
       ],
       "modules": [
         "src/runtime_prompt.rs",
@@ -67,7 +70,18 @@
         "src/conversation.rs",
         "src/conversation/approval.rs",
         "src/conversation/approval_scope.rs",
-        "src/conversation/user_input.rs"
+        "src/conversation/user_input.rs",
+        "src/conversation_viewport.rs",
+        "src/conversation_viewport/rows.rs",
+        "src/conversation_viewport/tests.rs",
+        "src/app/thread_navigation.rs",
+        "src/app/reading_snapshot.rs",
+        "src/app/reading_snapshot/tests.rs",
+        "src/app/request_details.rs",
+        "src/app/request_details/format.rs",
+        "src/app/request_details/tests.rs",
+        "src/ui/thread/request_details.rs",
+        "src/ui/thread/request_details_tests.rs"
       ]
     },
     "thread-queue-ui": {

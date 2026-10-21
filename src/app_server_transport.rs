@@ -3,6 +3,7 @@ use anyhow::{Context, Result};
 use futures_util::{SinkExt, StreamExt};
 use serde_json::Value;
 use std::process::Stdio;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter};
 use tokio::net::TcpStream;
@@ -14,7 +15,7 @@ use tokio::time::timeout;
 #[cfg(unix)]
 use tokio_tungstenite::client_async_with_config;
 use tokio_tungstenite::{
-    MaybeTlsStream, WebSocketStream, connect_async_with_config,
+    Connector, MaybeTlsStream, WebSocketStream, connect_async_tls_with_config,
     tungstenite::{
         Message,
         client::IntoClientRequest,
@@ -59,6 +60,27 @@ fn websocket_config() -> WebSocketConfig {
     WebSocketConfig::default()
         .max_message_size(Some(APP_SERVER_MAX_MESSAGE_BYTES))
         .max_frame_size(Some(APP_SERVER_MAX_FRAME_BYTES))
+}
+
+fn native_tls_connector() -> Result<Connector> {
+    let native = rustls_native_certs::load_native_certs();
+    let mut roots = rustls::RootCertStore::empty();
+    roots.add_parsable_certificates(native.certs);
+    anyhow::ensure!(
+        !roots.is_empty(),
+        "no usable native root CA certificates found (errors: {:?})",
+        native.errors
+    );
+    // Choose the provider for this connection explicitly. Do not depend on
+    // process-global initialization or on features enabled only by test crates.
+    let config = rustls::ClientConfig::builder_with_provider(Arc::new(
+        rustls::crypto::ring::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .context("configure App Server TLS protocol versions")?
+    .with_root_certificates(roots)
+    .with_no_client_auth();
+    Ok(Connector::Rustls(Arc::new(config)))
 }
 
 impl AppServerTransport {
@@ -126,16 +148,25 @@ impl AppServerTransport {
                         .context("encode App Server bearer authorization header")?;
                     request.headers_mut().insert(AUTHORIZATION, value);
                 }
-                let (stream, _) =
-                    connect_async_with_config(request, Some(websocket_config()), false)
-                        .await
-                        .with_context(|| {
-                            format!(
-                                "connect App Server target {:?} at {}",
-                                target.name,
-                                target.diagnostic_endpoint()
-                            )
-                        })?;
+                let connector = if request.uri().scheme_str() == Some("wss") {
+                    Some(native_tls_connector().context("load App Server TLS trust roots")?)
+                } else {
+                    None
+                };
+                let (stream, _) = connect_async_tls_with_config(
+                    request,
+                    Some(websocket_config()),
+                    false,
+                    connector,
+                )
+                .await
+                .with_context(|| {
+                    format!(
+                        "connect App Server target {:?} at {}",
+                        target.name,
+                        target.diagnostic_endpoint()
+                    )
+                })?;
                 Transport::WebSocket {
                     stream: Box::new(stream),
                 }

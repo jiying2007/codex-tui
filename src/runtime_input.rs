@@ -12,7 +12,7 @@ use codex_tui::{
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 pub(crate) fn handle_paste(app: &mut AppState, text: String) -> Vec<Effect> {
-    if text.is_empty() {
+    if text.is_empty() || app.request_details_open() {
         return vec![];
     }
     if app.terminal_focused {
@@ -36,6 +36,22 @@ fn is_terminal_release_key(key: KeyEvent) -> bool {
 pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
     if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
         return vec![];
+    }
+
+    // Details are a local reading surface. No approval or global write shortcut
+    // can reach the request while the operator is still inspecting its scope.
+    if app.request_details_open() {
+        let action = match key.code {
+            KeyCode::Esc => Action::CloseRequestDetails,
+            KeyCode::Up => Action::ScrollRequestDetails(-1),
+            KeyCode::Down => Action::ScrollRequestDetails(1),
+            KeyCode::PageUp => Action::PageRequestDetails(-1),
+            KeyCode::PageDown => Action::PageRequestDetails(1),
+            KeyCode::Home => Action::RequestDetailsBoundary(false),
+            KeyCode::End => Action::RequestDetailsBoundary(true),
+            _ => return vec![],
+        };
+        return reduce(app, action);
     }
 
     if app.terminal_focused {
@@ -265,3 +281,6 @@ fn terminal_key_bytes(key: KeyEvent) -> Option<Vec<u8>> {
     }
     Some(bytes)
 }
+
+#[cfg(test)]
+mod request_details_tests;

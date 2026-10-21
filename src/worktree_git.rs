@@ -13,6 +13,7 @@ const MAX_MUTATION_OUTPUT_BYTES: usize = 256 * 1024;
 pub(crate) struct WorktreeEntry {
     pub(crate) path: String,
     pub(crate) branch: Option<String>,
+    pub(crate) head: Option<String>,
 }
 
 pub(crate) async fn list_worktrees(cwd: &str) -> Result<Vec<WorktreeEntry>> {
@@ -59,6 +60,7 @@ fn parse_worktree_records<'a>(
     let mut entries = Vec::new();
     let mut path: Option<String> = None;
     let mut branch: Option<String> = None;
+    let mut head: Option<String> = None;
     let mut has_identity = false;
     let mut has_branch_status = false;
 
@@ -74,6 +76,7 @@ fn parse_worktree_records<'a>(
             entries.push(WorktreeEntry {
                 path,
                 branch: branch.take(),
+                head: head.take(),
             });
             has_identity = false;
             has_branch_status = false;
@@ -86,14 +89,15 @@ fn parse_worktree_records<'a>(
             continue;
         }
         anyhow::ensure!(path.is_some(), "Git worktree metadata has no worktree path");
-        if let Some(head) = record.strip_prefix("HEAD ") {
+        if let Some(value) = record.strip_prefix("HEAD ") {
             anyhow::ensure!(
                 !has_identity
-                    && !head.is_empty()
-                    && head.bytes().all(|byte| byte.is_ascii_hexdigit()),
+                    && !value.is_empty()
+                    && value.bytes().all(|byte| byte.is_ascii_hexdigit()),
                 "Git worktree HEAD identity is duplicate or invalid"
             );
             has_identity = true;
+            head = Some(value.to_string());
         } else if record == "bare" {
             anyhow::ensure!(!has_identity, "duplicate Git bare identity");
             has_identity = true;
@@ -151,7 +155,18 @@ pub(crate) async fn branch_exists(cwd: &str, branch: &str) -> Result<bool> {
 }
 
 pub(crate) async fn worktree_is_clean(path: &str) -> Result<bool> {
-    let output = run_git(path, ["status", "--porcelain", "--untracked-files=all"]).await?;
+    // Git itself permits removal of ignored files. The product refuses any
+    // such local assets, with the same output/deadline bounds as other probes.
+    let output = run_git(
+        path,
+        [
+            "status",
+            "--porcelain",
+            "--untracked-files=all",
+            "--ignored",
+        ],
+    )
+    .await?;
     anyhow::ensure!(
         output.success,
         "git status failed: {}",

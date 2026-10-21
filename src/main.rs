@@ -589,7 +589,8 @@ fn conversation_event_changes_planning(event: &ConversationEvent) -> bool {
         | ConversationEvent::ThreadCreated { .. } => true,
         ConversationEvent::ThreadLifecycleFailed { .. }
         | ConversationEvent::Loaded(_)
-        | ConversationEvent::OlderLoaded(_)
+        | ConversationEvent::OlderLoaded { .. }
+        | ConversationEvent::OlderFailed { .. }
         | ConversationEvent::TranscriptSearchLoaded(_)
         | ConversationEvent::TranscriptSearchJumpLoaded { .. }
         | ConversationEvent::TranscriptSearchFailed { .. }
@@ -650,12 +651,31 @@ fn drain_registry(
                 }
                 Action::ConversationLoaded(page)
             }
-            ConversationEvent::OlderLoaded(page) => {
+            ConversationEvent::OlderLoaded {
+                page,
+                turn_cursor,
+                item_cursor,
+            } => {
                 if let Some(error) = store.index_conversation_page(&page) {
                     effects.extend(reduce(app, Action::MutationNotice(error)));
                 }
-                Action::OlderConversationLoaded(page)
+                Action::OlderConversationLoaded {
+                    page,
+                    turn_cursor,
+                    item_cursor,
+                }
             }
+            ConversationEvent::OlderFailed {
+                thread_id,
+                turn_cursor,
+                item_cursor,
+                error,
+            } => Action::OlderConversationFailed {
+                thread_id,
+                turn_cursor,
+                item_cursor,
+                error,
+            },
             ConversationEvent::TranscriptSearchLoaded(results) => {
                 Action::TranscriptSearchLoaded(results)
             }
@@ -1520,14 +1540,16 @@ fn apply_effects(
                 if let Some(registry) = registry
                     && let Err(error) = registry.load_older_conversation(
                         thread_id.clone(),
-                        turn_cursor,
-                        item_cursor,
+                        turn_cursor.clone(),
+                        item_cursor.clone(),
                     )
                 {
                     reduce(
                         app,
-                        Action::ConversationFailed {
+                        Action::OlderConversationFailed {
                             thread_id,
+                            turn_cursor,
+                            item_cursor,
                             error: error.to_string(),
                         },
                     );

@@ -7,7 +7,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
         &action,
         Action::ReplaceThreads(_)
             | Action::ConversationLoaded(_)
-            | Action::OlderConversationLoaded(_)
+            | Action::OlderConversationLoaded { .. }
             | Action::TranscriptSearchLoadedPage { .. }
             | Action::ConversationFailed { .. }
             | Action::BeginSearch
@@ -18,6 +18,8 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             | Action::Quit
     );
     let mut effects = reduce_inner(state, action);
+    state.invalidate_request_details();
+    state.invalidate_reading_snapshot();
     // Return routes may outlive their bounded presentation cache entry.
     if old_view != state.view
         && !state.should_quit
@@ -1482,34 +1484,50 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::ConversationLoaded(page) => {
             state.prompt_submissions.history_resolved(&page.thread_id);
             let thread_id = page.thread_id.clone();
-            let key = thread_id.0.clone();
-            state
-                .conversations
-                .entry(key)
-                .or_insert_with(|| ConversationState::loading(thread_id.clone()))
-                .replace_page(page);
+            state.install_latest_conversation(page);
             state.observe_history_activity(&thread_id);
             state.touch_conversation_cache(&thread_id);
         }
-        Action::OlderConversationLoaded(page) => {
+        Action::OlderConversationLoaded {
+            page,
+            turn_cursor,
+            item_cursor,
+        } => {
             let thread_id = page.thread_id.clone();
-            let key = thread_id.0.clone();
-            state
-                .conversations
-                .entry(key)
-                .or_insert_with(|| ConversationState::loading(thread_id.clone()))
-                .prepend_page(page);
-            // Older pages are not authoritative current-turn observations.
-            state.touch_conversation_cache(&thread_id);
+            if state.install_older_conversation(page, turn_cursor, item_cursor) {
+                // Older pages are not authoritative current-turn observations.
+                state.touch_conversation_cache(&thread_id);
+            }
+        }
+        Action::OlderConversationFailed {
+            thread_id,
+            turn_cursor,
+            item_cursor,
+            error,
+        } => {
+            state.older_conversation_failed(thread_id, turn_cursor, item_cursor, error);
         }
         Action::TranscriptSearchLoadedPage { page, item_id } => {
             let thread_id = page.thread_id.clone();
+            state.discard_reading_snapshot(&thread_id);
             let key = thread_id.0.clone();
             let target_index = page
                 .items
                 .iter()
-                .position(|item| item.item_id == item_id)
+                .position(|item| {
+                    item.item_id == item_id
+                        && state
+                            .transcript_search_active_hit
+                            .as_ref()
+                            .filter(|hit| hit.thread_id == thread_id)
+                            .and_then(|hit| hit.turn_id.as_deref())
+                            .is_none_or(|turn| item.turn_id == turn)
+                })
                 .unwrap_or(0);
+            let target_turn = page
+                .items
+                .get(target_index)
+                .map(|item| item.turn_id.clone());
             state
                 .conversations
                 .entry(key)
@@ -1517,11 +1535,15 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 .replace_page(page);
             let ui = state.thread_ui.entry(thread_id.0.clone()).or_default();
             ui.follow = false;
-            ui.scroll = u16::try_from(target_index.saturating_sub(2)).unwrap_or(u16::MAX);
+            ui.scroll = u16::try_from(target_index).unwrap_or(u16::MAX);
+            ui.scroll_anchor = Some(item_id);
+            ui.scroll_turn_id = target_turn;
+            ui.scroll_offset = 0;
             // An exact hit contains no current-turn status; retain known activity.
             state.touch_conversation_cache(&thread_id);
         }
         Action::ConversationFailed { thread_id, error } => {
+            state.discard_reading_snapshot(&thread_id);
             state.active_history_watches.remove(&thread_id.0);
             state.unregistered_watches.remove(&thread_id.0);
             state.prompt_submissions.history_resolved(&thread_id);
@@ -1578,6 +1600,9 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             ensure_selection_visible(state);
         }
         Action::ResolvePending(resolution) => {
+            if state.request_details_open() {
+                return vec![];
+            }
             if let Some(request) = state.current_pending_request().cloned() {
                 if state.user_response_blocked(&request.request_id) {
                     return vec![];
@@ -1594,7 +1619,16 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 }
             }
         }
-        Action::BeginUserInput => state.begin_user_input(),
+        Action::BeginUserInput => {
+            if !state.request_details_open() {
+                state.begin_user_input();
+            }
+        }
+        Action::OpenRequestDetails => state.open_request_details(),
+        Action::CloseRequestDetails => state.close_request_details(),
+        Action::ScrollRequestDetails(delta) => state.scroll_request_details(delta),
+        Action::PageRequestDetails(delta) => state.page_request_details(delta),
+        Action::RequestDetailsBoundary(end) => state.request_details_boundary(end),
         Action::MoveSelection(delta) => move_selection(state, delta),
         Action::OpenSelected => {
             if let Some(id) = state.selected_thread_id() {
@@ -1717,51 +1751,10 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 return vec![Effect::PersistOperatorStateDeferred];
             }
         }
-        Action::ScrollBy(delta) => {
-            if let Some(id) = state.current_thread_id().cloned() {
-                let current_scroll = state.thread_ui.entry(id.0.clone()).or_default().scroll;
-                if delta.is_negative() && current_scroll == 0 {
-                    let older_request = state.conversations.get(&id.0).and_then(|conversation| {
-                        (!conversation.loading_older
-                            && (conversation.next_turn_cursor.is_some()
-                                || conversation.next_item_cursor.is_some()))
-                        .then(|| {
-                            (
-                                conversation.next_turn_cursor.clone(),
-                                conversation.next_item_cursor.clone(),
-                            )
-                        })
-                    });
-                    if let Some((turn_cursor, item_cursor)) = older_request {
-                        if let Some(conversation) = state.conversations.get_mut(&id.0) {
-                            conversation.loading_older = true;
-                        }
-                        return vec![Effect::LoadOlderConversation {
-                            thread_id: id,
-                            turn_cursor,
-                            item_cursor,
-                        }];
-                    }
-                    return vec![];
-                }
-
-                let ui = state.thread_ui.entry(id.0).or_default();
-                ui.follow = false;
-                ui.scroll = if delta.is_negative() {
-                    ui.scroll.saturating_sub(delta.unsigned_abs())
-                } else {
-                    ui.scroll.saturating_add(delta as u16)
-                };
-                return vec![Effect::PersistOperatorStateDeferred];
-            }
-        }
-        Action::ToggleFollow => {
-            if let Some(id) = state.current_thread_id().cloned() {
-                let ui = state.thread_ui.entry(id.0).or_default();
-                ui.follow = !ui.follow;
-                return vec![Effect::PersistOperatorState];
-            }
-        }
+        Action::ScrollBy(delta) => return super::thread_navigation::scroll(state, delta),
+        Action::ToggleFollow => return super::thread_navigation::toggle_follow(state),
+        Action::FollowNewest => return super::thread_navigation::position(state, true),
+        Action::ConversationStart => return super::thread_navigation::position(state, false),
         Action::MarkUnread => {
             if state.selected_thread().is_some()
                 && let Some(thread) = state.threads.get_mut(state.selected)
@@ -2254,20 +2247,44 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 let Some(repo) = context.repo.clone() else {
                     return vec![];
                 };
-                let Some(branch) = state.create_worktree_branch.take() else {
+                let observed_head = context.head.clone();
+                let Some(branch) = state.create_worktree_branch.clone() else {
                     return vec![];
                 };
-                let Some(path) = state.create_worktree_path.take() else {
+                let Some(path) = state.create_worktree_path.clone() else {
                     return vec![];
                 };
-                state.pending_operation = Some(OperationPlan::create_worktree(
+                let bind_head = start_point == "HEAD";
+                let plan = OperationPlan::create_worktree(
                     repo.clone(),
                     repo.primary_root,
                     path,
                     branch,
                     start_point,
                     now_unix_ms(),
-                ));
+                );
+                let plan = if bind_head {
+                    match plan.bind_observed_head(observed_head.as_deref().unwrap_or_default()) {
+                        Ok(plan) => plan,
+                        Err(error) => {
+                            state.mutation_notice = Some(format!(
+                                "{}: {error}",
+                                local_text(
+                                    state.language,
+                                    "cannot bind worktree HEAD",
+                                    "无法固定 worktree HEAD"
+                                )
+                            ));
+                            return vec![];
+                        }
+                    }
+                } else {
+                    plan
+                };
+                state.pending_operation = Some(plan);
+                state.create_worktree_branch = None;
+                state.create_worktree_path = None;
+                state.mutation_notice = None;
                 state.mutation_editor = None;
                 state.input_mode = InputMode::Normal;
                 state.input_buffer.clear();

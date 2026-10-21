@@ -1,5 +1,5 @@
 use crate::app::{AppState, ContextChoice, InputMode, View};
-use crate::conversation::{ApprovalContext, InteractiveRequest, InteractiveRequestKind};
+use crate::conversation::InteractiveRequest;
 use crate::domain::{AttentionReason, CwdLocality, RuntimeStatus, display_cwd};
 use crate::forge::ForgeFreshness;
 use crate::goal::GoalStatus;
@@ -1979,7 +1979,9 @@ fn render_managed_worktrees(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
 const HELP_LINES: &[&str] = &[
     "Global: ? help · Ctrl+K palette · / search · Ctrl+F transcript · . actions · Esc back",
     "Registry: j/k · Enter · Space attention · l local-only · g repo-only · h recent/all-history · p pin · e alias · x ack",
-    "Thread: a composer · q Thread Queue · y/n/c approval · i answer · Ctrl+C interrupt · r review",
+    "Thread: a composer · q Thread Queue · d request details · y/n/c approval · i answer · Ctrl+C interrupt · r review",
+    "Thread: PageUp/PageDown scroll · Home loaded history start · End follow latest",
+    "Request details: ↑/↓ or PageUp/PageDown scroll · Home/End · Esc back without responding",
     "Review: j/k file · w word-diff · e editor · o external · . Forge actions · PageUp/PageDown · Esc",
     "Workspace: . actions/launch presets · r review · m worktrees · Esc",
     "Managed Worktrees: n create · a adopt · d remove · x delete branch · y confirm",
@@ -1994,7 +1996,9 @@ const HELP_LINES: &[&str] = &[
 const HELP_LINES_ZH: &[&str] = &[
     "全局: ? 帮助 · Ctrl+K 命令面板 · / 搜索 · . 操作 · Esc 返回",
     "任务中心: j/k 移动 · Enter 打开 · Space 待处理 · l 仅本机 · g 仅仓库 · h 最近/全部历史 · p 固定 · e 别名 · x 已处理",
-    "会话: a 编辑消息 · y/n/c 审批 · i 回答 · Ctrl+C 中断 · r 评审",
+    "会话: a 编辑消息 · d 请求详情 · y/n/c 审批 · i 回答 · Ctrl+C 中断 · r 评审",
+    "会话: PageUp/PageDown 滚动 · Home 已加载历史开头 · End 跟随最新",
+    "请求详情: ↑/↓ 或 PageUp/PageDown 滚动 · Home/End · Esc 返回，不提交响应",
     "评审: j/k 文件 · w 单词级 diff · e 编辑器 · o 外部打开 · . Forge 操作 · PageUp/PageDown · Esc",
     "工作区: Git + Forge · . 操作/启动预设 · r 评审 · m worktree · Esc",
     "受管 Worktree: n 创建 · a 接管 · d 移除 · x 删除分支 · y 确认",
@@ -2027,169 +2031,14 @@ fn render_help(frame: &mut Frame<'_>, language: UiLanguage) {
     );
 }
 
-fn approval_scope_label(kind: &str, language: UiLanguage) -> &'static str {
-    match (kind, language) {
-        ("grant-root", UiLanguage::SimplifiedChinese) => "授权根目录",
-        ("network", UiLanguage::SimplifiedChinese) => "网络权限",
-        ("network-host", UiLanguage::SimplifiedChinese) => "网络主机",
-        ("filesystem", UiLanguage::SimplifiedChinese) => "文件权限",
-        ("filesystem-read", UiLanguage::SimplifiedChinese) => "文件读取",
-        ("filesystem-write", UiLanguage::SimplifiedChinese) => "文件写入",
-        ("permission-category", UiLanguage::SimplifiedChinese) => "其他权限类别",
-        ("permission-detail", UiLanguage::SimplifiedChinese) => "未识别权限字段",
-        ("grant-root", _) => "grant root",
-        ("network", _) => "network",
-        ("network-host", _) => "network host",
-        ("filesystem", _) => "filesystem",
-        ("filesystem-read", _) => "filesystem read",
-        ("filesystem-write", _) => "filesystem write",
-        ("permission-detail", _) => "unrecognized permission field",
-        _ => "other permission category",
-    }
-}
-
-fn append_approval_scope(
-    lines: &mut Vec<Line<'static>>,
-    context: &ApprovalContext,
-    language: UiLanguage,
-) {
-    for (kind, value) in context.visible_scope() {
-        let value = sanitize_inline(&value);
-        let value = if matches!(kind.as_str(), "permission-category" | "permission-detail") {
-            format!(
-                "{value} · {}",
-                tr_language(language, "details hidden", "详情已隐藏")
-            )
-        } else {
-            value
-        };
-        lines.push(Line::from(format!(
-            "{}: {value}",
-            approval_scope_label(&kind, language)
-        )));
-    }
-}
-
 fn interactive_request_lines(
     request: &InteractiveRequest,
     language: UiLanguage,
 ) -> Vec<Line<'static>> {
-    let mut lines = vec![Line::from(tr_language(language, "NEEDS YOU", "需要你处理"))];
-    match &request.kind {
-        InteractiveRequestKind::CommandApproval {
-            context,
-            command,
-            cwd,
-            reason,
-        } => {
-            lines.push(Line::from(format!(
-                "{}: {}",
-                tr_language(language, "Command approval", "命令审批"),
-                sanitize_inline(command)
-            )));
-            if !cwd.is_empty() {
-                lines.push(Line::from(format!("cwd: {}", sanitize_inline(cwd))));
-            }
-            if let Some(reason) = reason {
-                lines.push(Line::from(format!(
-                    "{}: {}",
-                    tr_language(language, "reason", "原因"),
-                    sanitize_inline(reason)
-                )));
-            }
-            append_approval_scope(&mut lines, context, language);
-            lines.push(Line::from(tr_language(
-                language,
-                "y accept · n decline · c cancel",
-                "y 接受 · n 拒绝 · c 取消",
-            )));
-        }
-        InteractiveRequestKind::FileChangeApproval { context, reason } => {
-            lines.push(Line::from(tr_language(
-                language,
-                "File change approval",
-                "文件变更审批",
-            )));
-            if let Some(reason) = reason {
-                lines.push(Line::from(format!(
-                    "{}: {}",
-                    tr_language(language, "reason", "原因"),
-                    sanitize_inline(reason)
-                )));
-            }
-            append_approval_scope(&mut lines, context, language);
-            lines.push(Line::from(tr_language(
-                language,
-                "y accept · n decline · c cancel",
-                "y 接受 · n 拒绝 · c 取消",
-            )));
-        }
-        InteractiveRequestKind::PermissionsApproval {
-            context,
-            reason,
-            network_requested,
-            filesystem_requested,
-        } => {
-            if language.is_simplified_chinese() {
-                lines.push(Line::from(format!(
-                    "权限请求: network={} filesystem={}",
-                    network_requested, filesystem_requested
-                )));
-            } else {
-                lines.push(Line::from(format!(
-                    "Permission request: network={} filesystem={}",
-                    network_requested, filesystem_requested
-                )));
-            }
-            if let Some(reason) = reason {
-                lines.push(Line::from(format!(
-                    "{}: {}",
-                    tr_language(language, "reason", "原因"),
-                    sanitize_inline(reason)
-                )));
-            }
-            append_approval_scope(&mut lines, context, language);
-            lines.push(Line::from(tr_language(
-                language,
-                "y grant for this turn · n/c decline",
-                "y 本轮授权 · n/c 拒绝",
-            )));
-        }
-        InteractiveRequestKind::UserInput { questions } => {
-            if language.is_simplified_chinese() {
-                lines.push(Line::from(format!(
-                    "需要用户输入: {} 个问题",
-                    questions.len()
-                )));
-            } else {
-                lines.push(Line::from(format!(
-                    "User input requested: {} question(s)",
-                    questions.len()
-                )));
-            }
-            if let Some(question) = questions.first() {
-                lines.push(Line::from(format!(
-                    "{}: {}",
-                    sanitize_inline(&question.header),
-                    sanitize_inline(&question.question)
-                )));
-                if !question.options.is_empty() {
-                    lines.push(Line::from(format!(
-                        "{}: {}",
-                        tr_language(language, "options", "选项"),
-                        question
-                            .options
-                            .iter()
-                            .map(|option| sanitize_inline(option))
-                            .collect::<Vec<_>>()
-                            .join(", ")
-                    )));
-                }
-            }
-            lines.push(Line::from(tr_language(language, "i answer", "i 回答")));
-        }
-    }
-    lines
+    crate::app::request_details::request_lines(request, language, false)
+        .into_iter()
+        .map(Line::from)
+        .collect()
 }
 
 fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {

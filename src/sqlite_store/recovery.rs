@@ -29,11 +29,8 @@ pub(super) fn validate_recovery_database(path: &Path) -> Result<i64> {
         "unsupported recovery SQLite schema version {version}"
     );
     validate_operator_envelope(&conn)?;
-    let integrity = quick_check(&conn)?;
-    anyhow::ensure!(
-        integrity == "ok",
-        "recovery SQLite quick_check failed: {integrity}"
-    );
+    quick_check(&conn).context("validate recovery SQLite integrity")?;
+    validate_application_checks(&conn).context("validate recovery application CHECKs")?;
     Ok(version)
 }
 

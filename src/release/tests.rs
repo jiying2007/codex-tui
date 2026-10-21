@@ -56,10 +56,7 @@ fn release_contract_rejects_mismatched_stable_criteria_version() {
     fs::write(
         root.path()
             .join(stable_criteria_filename(env!("CARGO_PKG_VERSION"))),
-        format!(
-            r#"{{"schema":"{}","stableVersion":"9.9.9"}}"#,
-            STABLE_CRITERIA_SCHEMA
-        ),
+        format!(r#"{{"schema":"{STABLE_CRITERIA_SCHEMA}","stableVersion":"9.9.9"}}"#),
     )
     .expect("criteria");
 

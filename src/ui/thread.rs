@@ -1,6 +1,5 @@
 use super::{goal_status_label, goal_summary, interactive_request_lines, tr};
 use crate::app::{AppState, InputMode};
-use crate::conversation::ConversationState;
 use crate::domain::ThreadSummary;
 use ratatui::{
     Frame,
@@ -9,91 +8,6 @@ use ratatui::{
     text::Line,
     widgets::{Block, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap},
 };
-use std::sync::{Arc, LazyLock, Mutex};
-
-const MIN_WINDOW_ITEMS: usize = 64;
-const MAX_WINDOW_ITEMS: usize = 512;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-struct CachedItemPresentation {
-    item_id: String,
-    text: String,
-}
-
-#[derive(Clone)]
-struct CachedConversationPresentation {
-    thread_id: String,
-    revision: u64,
-    start: usize,
-    end: usize,
-    items: Arc<Vec<CachedItemPresentation>>,
-}
-
-static PRESENTATION_CACHE: LazyLock<Mutex<Option<CachedConversationPresentation>>> =
-    LazyLock::new(|| Mutex::new(None));
-
-fn formatted_items(
-    conversation: &ConversationState,
-    start: usize,
-    end: usize,
-) -> Arc<Vec<CachedItemPresentation>> {
-    let mut cache = PRESENTATION_CACHE
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-
-    if let Some(entry) = cache.as_ref()
-        && entry.thread_id == conversation.thread_id.0
-        && entry.revision == conversation.presentation_revision()
-        && entry.start == start
-        && entry.end == end
-    {
-        return Arc::clone(&entry.items);
-    }
-
-    let items = Arc::new(
-        conversation.items[start..end]
-            .iter()
-            .map(|item| {
-                let status = item
-                    .status
-                    .as_deref()
-                    .map(|value| format!(" [{value}]"))
-                    .unwrap_or_default();
-                CachedItemPresentation {
-                    item_id: item.item_id.clone(),
-                    text: crate::text::sanitize_inline(&format!(
-                        "{:>5}{status} {}",
-                        item.kind.label(),
-                        item.text
-                    )),
-                }
-            })
-            .collect::<Vec<_>>(),
-    );
-
-    *cache = Some(CachedConversationPresentation {
-        thread_id: conversation.thread_id.0.clone(),
-        revision: conversation.presentation_revision(),
-        start,
-        end,
-        items: Arc::clone(&items),
-    });
-    items
-}
-
-fn item_window(total: usize, scroll: u16, area_height: u16) -> (usize, usize) {
-    if total == 0 {
-        return (0, 0);
-    }
-    let visible_rows = area_height.saturating_sub(2) as usize;
-    let capacity = visible_rows
-        .saturating_mul(4)
-        .clamp(MIN_WINDOW_ITEMS, MAX_WINDOW_ITEMS);
-    let start = (scroll as usize).min(total.saturating_sub(1));
-    let end = start.saturating_add(capacity).min(total);
-    (start, end)
-}
-
 fn render_item_scrollbar(
     frame: &mut Frame<'_>,
     area: Rect,
@@ -125,13 +39,24 @@ fn render_item_scrollbar(
 }
 
 pub(super) fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area: Rect) {
+    if app.request_details_open() {
+        request_details::render(frame, app, area);
+        return;
+    }
+    let (header_height, composer_height) = if area.height >= 14 {
+        (5, 4)
+    } else if area.height >= 9 {
+        (3, 2)
+    } else {
+        (0, 0)
+    };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(5),
-            Constraint::Min(4),
-            Constraint::Length(4),
-            Constraint::Length(1),
+            Constraint::Length(header_height),
+            Constraint::Min(1),
+            Constraint::Length(composer_height),
+            Constraint::Length(area.height.saturating_sub(1).min(1)),
         ])
         .split(area);
 
@@ -151,16 +76,40 @@ pub(super) fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
 
     let ui = app.thread_ui.get(thread_id).cloned().unwrap_or_default();
     let pending_request = app.current_pending_request();
-    let effective_scroll = if pending_request.is_some() {
-        0
-    } else {
-        ui.scroll
-    };
+    let body_has_border = chunks[1].width >= 3 && chunks[1].height >= 3;
+    let border_size = if body_has_border { 2 } else { 0 };
+    let (body_width, body_height) = (
+        chunks[1].width.saturating_sub(border_size),
+        chunks[1].height.saturating_sub(border_size),
+    );
+    // Keep the pending request visible without stealing all navigation rows.
+    // Count actual wrapped request rows before sizing the history viewport.
+    let mut request_lines = Vec::new();
+    let request_limit = usize::from(body_height.saturating_sub(1));
+    if let Some(request) = pending_request {
+        for line in interactive_request_lines(request, app.language) {
+            let text = line.to_string();
+            for row in crate::conversation_viewport::WrappedRows::new(&text, body_width, 0)
+                .take(request_limit.saturating_sub(request_lines.len()))
+            {
+                request_lines.push(Line::from(text[row].to_owned()));
+            }
+            if request_lines.len() == request_limit {
+                break;
+            }
+        }
+        if request_lines.len() < request_limit {
+            request_lines.push(Line::from(""));
+        }
+    }
+    let history_height = body_height.saturating_sub(request_lines.len() as u16);
+    app.thread_viewport_size.set((body_width, history_height));
+    let mut scrollbar = (0, 0, 0);
 
     let mut window_start = 0;
     let mut window_end = 0;
     let mut total_items = 0;
-    let mut conversation_lines = match app.conversations.get(thread_id) {
+    let mut conversation_lines = match app.displayed_conversation(thread_id) {
         Some(conversation) if conversation.loading => vec![Line::from(tr(
             app,
             "Loading recent Codex history…",
@@ -184,26 +133,32 @@ pub(super) fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
         ))],
         Some(conversation) => {
             total_items = conversation.items.len();
-            (window_start, window_end) =
-                item_window(total_items, effective_scroll, chunks[1].height);
-            let cached = formatted_items(conversation, window_start, window_end);
-            cached
-                .iter()
-                .map(|item| {
+            let view = crate::conversation_viewport::viewport(
+                conversation,
+                &ui,
+                body_width,
+                history_height,
+            );
+            (window_start, window_end) = (view.start, view.end);
+            scrollbar = view.scrollbar();
+            view.visible()
+                .into_iter()
+                .map(|(turn_id, item_id, text)| {
                     let is_search_target =
                         app.transcript_search_active_hit
                             .as_ref()
                             .is_some_and(|hit| {
                                 hit.thread_id.0 == thread_id
-                                    && hit.item_id.as_deref() == Some(item.item_id.as_str())
+                                    && hit.item_id.as_deref() == Some(item_id)
+                                    && hit.turn_id.as_deref().is_none_or(|turn| turn == turn_id)
                             });
                     if is_search_target {
                         Line::styled(
-                            item.text.clone(),
+                            text.to_owned(),
                             Style::default().add_modifier(Modifier::REVERSED),
                         )
                     } else {
-                        Line::from(item.text.clone())
+                        Line::from(text.to_owned())
                     }
                 })
                 .collect()
@@ -215,16 +170,13 @@ pub(super) fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
         ))],
     };
 
-    if let Some(request) = pending_request {
-        let mut request_lines = interactive_request_lines(request, app.language);
-        request_lines.push(Line::from(""));
+    if pending_request.is_some() {
         request_lines.append(&mut conversation_lines);
         conversation_lines = request_lines;
     }
 
     let page_hint = app
-        .conversations
-        .get(thread_id)
+        .displayed_conversation(thread_id)
         .is_some_and(|conversation| {
             conversation.next_turn_cursor.is_some() || conversation.next_item_cursor.is_some()
         });
@@ -244,24 +196,33 @@ pub(super) fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
     } else {
         ""
     };
+    let paused = if app.is_reading_snapshot(thread_id) {
+        tr(
+            app,
+            " · paused reading · End latest",
+            " · 暂停阅读 · End 最新",
+        )
+    } else {
+        ""
+    };
+    let body_block = if body_has_border {
+        Block::bordered().title(format!(
+            " {}{}{}{} ",
+            tr(app, "Conversation", "会话"),
+            paused,
+            range,
+            older
+        ))
+    } else {
+        Block::default()
+    };
     frame.render_widget(
         Paragraph::new(conversation_lines)
-            .block(Block::bordered().title(format!(
-                " {}{}{} ",
-                tr(app, "Conversation", "会话"),
-                range,
-                older
-            )))
+            .block(body_block)
             .wrap(Wrap { trim: false }),
         chunks[1],
     );
-    render_item_scrollbar(
-        frame,
-        chunks[1],
-        total_items,
-        window_start,
-        window_end.saturating_sub(window_start),
-    );
+    render_item_scrollbar(frame, chunks[1], scrollbar.0, scrollbar.1, scrollbar.2);
 
     let (composer_title, composer_text) = if app.input_mode == InputMode::GoalObjective {
         (
@@ -350,16 +311,31 @@ pub(super) fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
                 tr(app, " Draft · a edit ", " 草稿 · a 编辑 ")
             },
             format!(
-                "{}\n{}={} {}={}",
+                "{}\n{}",
                 if ui.draft.is_empty() {
                     tr(app, "<empty>", "<空>")
                 } else {
                     &ui.draft
                 },
-                tr(app, "item offset", "条目偏移"),
-                ui.scroll,
-                tr(app, "follow", "跟随"),
-                ui.follow
+                if app.is_reading_snapshot(thread_id) {
+                    tr(
+                        app,
+                        "Paused reading · End for latest",
+                        "暂停阅读 · End 查看最新",
+                    )
+                } else if ui.follow {
+                    tr(
+                        app,
+                        "Following latest · PageUp to browse",
+                        "跟随最新 · PageUp 浏览历史",
+                    )
+                } else {
+                    tr(
+                        app,
+                        "Browsing history · End to follow latest",
+                        "浏览历史 · End 跟随最新",
+                    )
+                }
             ),
         )
     };
@@ -370,12 +346,25 @@ pub(super) fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
     frame.render_widget(
         Paragraph::new(tr(
             app,
-            "a composer · q queue · g goal · m worktrees · y accept · n decline · c cancel · i answer · Ctrl+C interrupt",
-            "a 编辑 · q 队列 · g 目标 · m worktree · y 接受 · n 拒绝 · c 取消 · i 回答 · Ctrl+C 中断",
+            if pending_request.is_some() {
+                "d full details · PgUp/PgDn scroll · Home start · End follow · y/n/c approval · i answer"
+            } else {
+                "PgUp/PgDn scroll · Home start · End follow · a composer · q queue · ? help"
+            },
+            if pending_request.is_some() {
+                "d 完整详情 · PgUp/PgDn 滚动 · Home 开头 · End 跟随 · y/n/c 审批 · i 回答"
+            } else {
+                "PgUp/PgDn 滚动 · Home 开头 · End 跟随 · a 编辑 · q 队列 · ? 帮助"
+            },
         )),
         chunks[3],
     );
 }
 
+mod request_details;
+
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod request_details_tests;

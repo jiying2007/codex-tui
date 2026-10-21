@@ -24,6 +24,7 @@ log = open(os.environ['MOCK_LOG'], 'w', buffering=1)
 mode = os.environ['MOCK_MODE']
 seq = 0
 submitted = False
+subscriptions = set()
 turn_status = 'inProgress' if mode == 'history-complete' else 'completed'
 rows = {name: {'id':name, 'name':'READY_'+name, 'cwd':str(home),
         'updatedAt':2000000000-(0 if name=='watch-a' else 1),
@@ -32,6 +33,12 @@ rows = {name: {'id':name, 'name':'READY_'+name, 'cwd':str(home),
 def emit(value):
     with lock:
         print(json.dumps(value, separators=(',',':')), flush=True)
+def deliver(event):
+    ident = event['params'].get('threadId')
+    scoped = ('id' in event or event['method'].startswith(('item/', 'turn/'))
+              or event['method'] in ('thread/queue/changed', 'serverRequest/resolved'))
+    if not scoped or ident in subscriptions:
+        emit(event)
 def control():
     global seq, turn_status
     while True:
@@ -47,7 +54,9 @@ def control():
                         if event['method']=='thread/deleted': rows.pop(ident, None)
                         if event['method']=='thread/status/changed' and ident in rows:
                             rows[ident]['status'] = event['params']['status']
-                        emit(event)
+                        if event['method'] in ('thread/archived', 'thread/deleted', 'thread/closed'):
+                            subscriptions.discard(ident)
+                        deliver(event)
                     for ident, row in rows.items():
                         row['name'] = 'ACK_%d_%s' % (seq, ident)
                         emit({'method':'thread/name/updated','params':{'threadId':ident,'threadName':row['name']}})
@@ -78,6 +87,14 @@ for line in sys.stdin:
         if m=='initialize': out={'serverInfo':{'name':'watch-fixture','version':'0.0.0'}}
         elif m=='thread/list': out={'data':list(rows.values()),'nextCursor':None}
         elif m=='thread/loaded/list': out={'data':list(rows),'nextCursor':None}
+        elif m=='thread/resume':
+            assert p == {'threadId':ident, 'excludeTurns':True}
+            subscriptions.add(ident)
+            out={'thread':dict(rows.get(ident, {'id':ident}))}
+        elif m=='thread/unsubscribe':
+            status='notLoaded' if ident not in rows else ('unsubscribed' if ident in subscriptions else 'notSubscribed')
+            subscriptions.discard(ident)
+            out={'status':status}
         elif m=='thread/read': out={'thread':dict(rows.get(ident, {'id':ident}), name='History '+str(seq))}
         elif m=='thread/turns/list': out={'data':[{'id':'turn-1','status':turn_status}],'nextCursor':None}
         elif m=='thread/items/list': out={'data':[{'turnId':'turn-1','item':{'id':'item-1','type':'agentMessage','text':'BODY_'+str(seq)}}],'nextCursor':None}

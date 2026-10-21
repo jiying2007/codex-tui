@@ -25,19 +25,43 @@ fn parse_lifecycle_thread(result: Value, operation: &str) -> Result<ThreadSummar
         .with_context(|| format!("{operation} response missing thread"))?;
     let thread: ThreadWire =
         serde_json::from_value(value).with_context(|| format!("decode {operation} thread"))?;
+    anyhow::ensure!(
+        !thread.id.trim().is_empty(),
+        "{operation} returned an empty thread identity"
+    );
     Ok(normalize_thread(thread, None))
+}
+
+fn finish_created_thread(
+    rpc: &mut RpcSession,
+    result: Result<Value>,
+    operation: &str,
+) -> Result<ThreadSummary> {
+    match result.and_then(|value| parse_lifecycle_thread(value, operation)) {
+        Ok(thread) => {
+            rpc.subscriptions.confirm(&thread.id.0)?;
+            Ok(thread)
+        }
+        Err(error) => {
+            // Creation may have attached a new id before failing. With no
+            // confirmed identity there is no safe targeted release or replay.
+            if !is_method_unsupported(&error, operation) {
+                super::self_quarantine(rpc, &error);
+            }
+            Err(error)
+        }
+    }
 }
 
 async fn start_thread(rpc: &mut RpcSession, cwd: String) -> Result<ThreadSummary> {
     anyhow::ensure!(!cwd.trim().is_empty(), "thread/start cwd is empty");
-    let result = rpc
-        .request("thread/start", json!({ "cwd": cwd }))
-        .await
-        .context("start Codex thread")?;
-    parse_lifecycle_thread(result, "thread/start")
+    rpc.subscriptions.capacity()?;
+    let result = rpc.request("thread/start", json!({ "cwd": cwd })).await;
+    finish_created_thread(rpc, result, "thread/start").context("start Codex thread")
 }
 
 async fn fork_thread(rpc: &mut RpcSession, thread_id: ThreadId) -> Result<ThreadSummary> {
+    rpc.subscriptions.capacity()?;
     let result = rpc
         .request(
             "thread/fork",
@@ -46,9 +70,8 @@ async fn fork_thread(rpc: &mut RpcSession, thread_id: ThreadId) -> Result<Thread
                 "excludeTurns": true
             }),
         )
-        .await
-        .context("fork Codex thread")?;
-    parse_lifecycle_thread(result, "thread/fork")
+        .await;
+    finish_created_thread(rpc, result, "thread/fork").context("fork Codex thread")
 }
 
 async fn publish_success(

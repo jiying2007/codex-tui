@@ -109,6 +109,62 @@ fn local_short_search_treats_sql_like_metacharacters_as_literals() {
 }
 
 #[test]
+fn transcript_search_fields_are_body_only_with_or_without_fts() {
+    use crate::conversation::{ConversationItem, ConversationItemKind, ConversationPage};
+    let root = tempdir().unwrap();
+    let store = SqliteStore::at(root.path());
+    store
+        .index_conversation_page(&ConversationPage {
+            thread_id: crate::domain::ThreadId::new("field-semantics"),
+            title: Some("TitleOnly元信息".into()),
+            turns: vec![],
+            items: vec![ConversationItem {
+                turn_id: "turn".into(),
+                item_id: "body-match".into(),
+                kind: ConversationItemKind::User,
+                text: "PCR02Network 实例正文 100% under_score C:\\data".into(),
+                status: None,
+            }],
+            next_turn_cursor: None,
+            next_item_cursor: None,
+        })
+        .unwrap();
+    let conn = store.open_ready().unwrap();
+    for has_fts in [true, false] {
+        if !has_fts {
+            // Exercise the same query implementation without the optional
+            // acceleration table, without re-opening/initializing the schema.
+            conn.execute("DROP TABLE transcript_fts", []).unwrap();
+        }
+        assert_eq!(transcript_fts_available(&conn).unwrap(), has_fts);
+        for query in ["Ti", "Tit", "TitleOnly", "元信", "元信息"] {
+            assert!(
+                search_transcript(&conn, query, 20).unwrap().hits.is_empty(),
+                "title-only query {query:?}, FTS={has_fts}"
+            );
+        }
+        for query in [
+            "PC",
+            "pcr",
+            "PCR02Network",
+            "实例",
+            "实例正文",
+            "%",
+            "100%",
+            "_",
+            "under_score",
+            "\\",
+            "C:\\data",
+        ] {
+            let result = search_transcript(&conn, query, 20).unwrap();
+            assert_eq!(result.hits.len(), 1, "body query {query:?}, FTS={has_fts}");
+            assert_eq!(result.hits[0].item_id.as_deref(), Some("body-match"));
+            assert!(!result.complete);
+        }
+    }
+}
+
+#[test]
 fn transcript_title_and_text_persistence_share_explicit_size_budget() {
     use crate::conversation::{ConversationItem, ConversationItemKind, ConversationPage};
     use crate::domain::ThreadId;
@@ -408,6 +464,68 @@ fn planning_relations_round_trip_without_copying_external_state() {
     assert_eq!(snapshot.cards, vec![card]);
     assert_eq!(snapshot.scratch, vec![scratch]);
     assert_eq!(snapshot.saved_views, vec![view]);
+}
+
+#[test]
+fn single_planning_lookups_do_not_decode_unrelated_records_and_bulk_links_stay_ordered() {
+    let root = tempdir().unwrap();
+    let store = SqliteStore::at(root.path());
+    let mut expected = Vec::new();
+    for id in ["a", "b", "c"] {
+        let mut card = WorkCardRecord::implicit_thread(&crate::domain::ThreadId::new(id));
+        if id != "b" {
+            card.links = vec![
+                WorkCardLink {
+                    role: LinkRole::ReviewThread,
+                    source: SourceRef::codex_thread(&crate::domain::ThreadId::new("shared")),
+                },
+                WorkCardLink {
+                    role: LinkRole::Worktree,
+                    source: SourceRef {
+                        kind: SourceKind::Worktree,
+                        value: format!("/repo/{id}"),
+                    },
+                },
+            ];
+        }
+        store.upsert_work_card(&card).unwrap();
+        expected.push(card);
+    }
+    assert_eq!(store.load_planning_snapshot().unwrap().cards, expected);
+    let wanted = store
+        .create_scratch("wanted", Some("keep"), Some("workspace"), Some(1))
+        .unwrap();
+    let unrelated = store.create_scratch("unrelated", None, None, None).unwrap();
+    let conn = store.open_ready().unwrap();
+    conn.execute(
+        "UPDATE work_cards SET tags_json='invalid-json' WHERE local_id=?1",
+        [&expected[2].local_id],
+    )
+    .unwrap();
+    conn.execute(
+        "UPDATE scratch_work SET state='unknown-state' WHERE id=?1",
+        [parse_prefixed_id(&unrelated.id, "scratch:").unwrap()],
+    )
+    .unwrap();
+    drop(conn);
+    assert_eq!(
+        store.work_card_for_anchor(&expected[0].anchor).unwrap(),
+        Some(expected[0].clone())
+    );
+    assert_eq!(store.scratch_work(&wanted.id).unwrap(), Some(wanted));
+    assert!(
+        store
+            .work_card_for_anchor(&SourceRef::codex_thread(&crate::domain::ThreadId::new(
+                "missing"
+            )))
+            .unwrap()
+            .is_none()
+    );
+    assert!(store.scratch_work("scratch:99999").unwrap().is_none());
+    assert!(
+        store.load_planning_snapshot().is_err(),
+        "full snapshots still validate all records"
+    );
 }
 
 #[test]
@@ -811,6 +929,154 @@ fn integrity_scan_remains_on_explicit_health_not_per_operation() {
     let store = SqliteStore::at(root.path());
     // The existing health API keeps explicit corruption screening.
     assert_eq!(store.health().expect("health").integrity, "ok");
+}
+
+#[test]
+fn first_connection_configuration_failure_blocks_clones_until_explicit_health_retry() {
+    let root = tempdir().unwrap();
+    let fixture = SqliteStore::at(root.path());
+    fixture.health().unwrap();
+    let blocker = Connection::open(fixture.db_path()).unwrap();
+    blocker
+        .execute_batch("PRAGMA journal_mode=DELETE; BEGIN IMMEDIATE;")
+        .unwrap();
+
+    let store = SqliteStore::at(root.path());
+    let worker = store.clone();
+    // A reserved writer still permits the read-only integrity scan, but it
+    // prevents the first configured connection from switching to WAL.
+    assert!(store.inspect_existing_health().unwrap().is_some());
+    let error = store.load_state().unwrap_err();
+    assert!(format!("{error:#}").contains("enable SQLite WAL journal mode"));
+    blocker.execute_batch("ROLLBACK").unwrap();
+    drop(blocker);
+
+    let error = worker
+        .create_scratch("refused", None, None, None)
+        .unwrap_err();
+    assert!(format!("{error:#}").contains("SQLite health admission refused"));
+    assert_eq!(store.health().unwrap().integrity, "ok");
+    worker
+        .create_scratch("after explicit health retry", None, None, None)
+        .unwrap();
+}
+
+#[test]
+fn application_check_constraints_are_screened_before_configuration() {
+    for (corruption, expected) in [
+        (
+            "INSERT INTO hot_slots VALUES(10, 'codex-thread', 'health-sentinel', 1);",
+            "hot slot must be between 1 and 9",
+        ),
+        (
+            "INSERT INTO work_cards(local_id, anchor_kind, anchor_ref, pinned, updated_at_unix_ms)
+             VALUES('invalid', 'codex-thread', 'health-sentinel', 2, 1);",
+            "work_cards.pinned",
+        ),
+        (
+            "INSERT INTO work_cards(local_id, anchor_kind, anchor_ref, manual_ready, updated_at_unix_ms)
+             VALUES('invalid', 'codex-thread', 'health-sentinel', 2, 1);",
+            "work_cards.manual_ready",
+        ),
+        (
+            "INSERT INTO managed_worktrees VALUES('/repo/.git', '/repo', '/repo/worktree', NULL, 'operation', 2, 1, 1);",
+            "managed_worktrees.adopted",
+        ),
+    ] {
+        let root = tempdir().unwrap();
+        let store = SqliteStore::at(root.path());
+        store.health().unwrap();
+        let worker = store.clone();
+        let conn = Connection::open(store.db_path()).unwrap();
+        conn.execute_batch(
+            "PRAGMA journal_mode=DELETE;
+             DROP TABLE transcript_fts;
+             PRAGMA ignore_check_constraints=ON;",
+        ).unwrap();
+        conn.execute_batch(corruption).unwrap();
+        conn.execute_batch("PRAGMA ignore_check_constraints=OFF;").unwrap();
+        drop(conn);
+        let original = fs::read(store.db_path()).unwrap();
+
+        let error = store.health().unwrap_err();
+        assert!(format!("{error:#}").contains(expected), "{error:#}");
+        assert!(worker.save_state(&LocalStateV1::default()).is_err());
+        assert!(worker.load_recoverable_operation_receipts().is_err());
+        assert!(SqliteStore::at(root.path()).load_state().is_err());
+        assert!(validate_recovery_database(store.db_path()).is_err());
+        assert_eq!(fs::read(store.db_path()).unwrap(), original);
+
+        let conn = Connection::open_with_flags(
+            store.db_path(), rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        ).unwrap();
+        assert!(!transcript_fts_available(&conn).unwrap());
+        assert_eq!(
+            conn.query_row("PRAGMA journal_mode", [], |row| row.get::<_, String>(0)).unwrap(),
+            "delete",
+        );
+        if expected.starts_with("hot slot") {
+            assert!(load_hot_slots(&conn).is_err());
+        } else if expected.starts_with("work_cards") {
+            assert!(load_cards(&conn).is_err());
+        }
+    }
+}
+
+#[test]
+fn failed_quick_check_blocks_store_clones_before_any_schema_or_derivative_write() {
+    let root = tempdir().unwrap();
+    let store = SqliteStore::at(root.path());
+    store.health().unwrap();
+    let backup = root.path().join("healthy.sqlite3");
+    store.create_recovery_backup(&backup).unwrap();
+    let worker = store.clone();
+    let conn = Connection::open(store.db_path()).unwrap();
+    // Bundled SQLite omits CHECK expressions on read-only connections. A
+    // persisted NOT NULL inconsistency still produces a non-ok result row.
+    conn.execute_batch(
+        "PRAGMA journal_mode=DELETE;
+         DROP TABLE transcript_fts;
+         CREATE TABLE health_sentinel(value TEXT);
+         INSERT INTO health_sentinel VALUES(NULL);
+         PRAGMA writable_schema=ON;
+         UPDATE sqlite_schema SET sql='CREATE TABLE health_sentinel(value TEXT NOT NULL)'
+             WHERE name='health_sentinel';
+         PRAGMA writable_schema=OFF;",
+    )
+    .unwrap();
+    drop(conn);
+    let original = fs::read(store.db_path()).unwrap();
+    let error = store.health().unwrap_err();
+    assert!(format!("{error:#}").contains("NULL value in health_sentinel.value"));
+    assert!(worker.save_state(&LocalStateV1::default()).is_err());
+    assert!(worker.create_scratch("refused", None, None, None).is_err());
+    assert!(worker.clear_transcript_index().is_err());
+    assert!(worker.load_recoverable_operation_receipts().is_err());
+    assert!(worker.load_managed_worktrees().is_err());
+    assert!(
+        SqliteStore::at(root.path()).load_state().is_err(),
+        "first access screens existing state too"
+    );
+    assert!(validate_recovery_database(store.db_path()).is_err());
+    assert_eq!(fs::read(store.db_path()).unwrap(), original);
+    let conn =
+        Connection::open_with_flags(store.db_path(), rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .unwrap();
+    assert!(
+        !transcript_fts_available(&conn).unwrap(),
+        "failed health must not recreate FTS"
+    );
+    assert_eq!(
+        conn.query_row("PRAGMA journal_mode", [], |row| row.get::<_, String>(0))
+            .unwrap(),
+        "delete"
+    );
+    drop(conn);
+    store.restore_recovery_backup(&backup).unwrap();
+    assert_eq!(store.health().unwrap().integrity, "ok");
+    worker
+        .create_scratch("after validated restore", None, None, None)
+        .unwrap();
 }
 
 #[test]

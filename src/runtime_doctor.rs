@@ -43,6 +43,9 @@ pub(crate) async fn doctor(scope: Option<&str>, target_override: Option<&str>) -
         config.ui.presentation.background_redraw_interval_ms()
     );
 
+    // Screen the existing image before any read path can initialize derivative
+    // tables or configure WAL. Failed admission is shared by all store clones.
+    let health = store.health();
     match store.load_state() {
         Ok(state) => doctor_println!("operator-schemaVersion: {}", state.schema_version),
         Err(error) => {
@@ -52,7 +55,10 @@ pub(crate) async fn doctor(scope: Option<&str>, target_override: Option<&str>) -
     }
 
     if scope == Some("store") {
-        match store.health() {
+        doctor_println!(
+            "integrity-scope: read-only SQLite quick_check plus current application CHECK constraints"
+        );
+        match health {
             Ok(health) => {
                 doctor_println!("store-backend: sqlite");
                 doctor_println!("store-schema: {}", health.schema_version);

@@ -5,6 +5,16 @@ use codex_tui::{
 };
 
 pub(crate) fn action_for_command(app: &AppState, command: Command) -> Option<Action> {
+    if app.request_details_open() {
+        return match command {
+            Command::Back => Some(Action::CloseRequestDetails),
+            Command::PageUp => Some(Action::PageRequestDetails(-1)),
+            Command::PageDown => Some(Action::PageRequestDetails(1)),
+            Command::ConversationStart => Some(Action::RequestDetailsBoundary(false)),
+            Command::FollowNewest => Some(Action::RequestDetailsBoundary(true)),
+            _ => None,
+        };
+    }
     let action = match command {
         Command::QuitOrInterrupt => match app.view_kind() {
             ViewKind::Registry => Action::Quit,
@@ -52,6 +62,7 @@ pub(crate) fn action_for_command(app: &AppState, command: Command) -> Option<Act
         Command::DeclinePending => Action::ResolvePending(InteractiveResolution::Decline),
         Command::CancelPending => Action::ResolvePending(InteractiveResolution::Cancel),
         Command::AnswerPending => Action::BeginUserInput,
+        Command::RequestDetails => Action::OpenRequestDetails,
         Command::Board => Action::OpenBoard,
         Command::BoardLeft => Action::MoveBoardColumn(-1),
         Command::BoardRight => Action::MoveBoardColumn(1),
@@ -83,6 +94,8 @@ pub(crate) fn action_for_command(app: &AppState, command: Command) -> Option<Act
             }
         }
         Command::ToggleWordDiff => Action::ToggleReviewWordDiff,
+        Command::FollowNewest => Action::FollowNewest,
+        Command::ConversationStart => Action::ConversationStart,
         Command::ExternalEditor => Action::OpenReviewExternalEditor,
         Command::TerminalDrawer => Action::ToggleTerminalDrawer,
         Command::CloseTerminalDrawer => Action::CloseTerminalDrawer,

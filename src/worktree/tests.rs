@@ -378,6 +378,108 @@ async fn create_and_remove_managed_worktree_preserve_branch_separation() {
 }
 
 #[tokio::test]
+async fn default_head_plan_uses_selected_worktree_commit_even_after_head_moves() {
+    use crate::app::{Action, AppState, View, reduce};
+    use crate::backend::{CodexBackend, FakeBackend};
+    for kind in ["main", "linked", "detached"] {
+        let temp = tempdir().unwrap();
+        let primary = temp.path().join("repo");
+        init_repo(&primary);
+        let selected = if kind == "main" {
+            primary.clone()
+        } else {
+            let path = temp.path().join("selected");
+            if kind == "detached" {
+                git(
+                    &primary,
+                    &["worktree", "add", "--detach", path.to_str().unwrap()],
+                );
+            } else {
+                git(
+                    &primary,
+                    &["worktree", "add", "-b", "selected", path.to_str().unwrap()],
+                );
+            }
+            git(
+                &path,
+                &["commit", "--allow-empty", "-m", "selected worktree commit"],
+            );
+            path
+        };
+        let mut threads = FakeBackend::scaled(1).snapshot().threads;
+        threads[0].metadata.cwd = selected.to_string_lossy().into_owned();
+        let thread_id = threads[0].id.clone();
+        let context = crate::git::probe_context(thread_id.clone(), threads[0].metadata.cwd.clone())
+            .await
+            .unwrap();
+        let observed = context.head.clone().unwrap();
+        let mut app = AppState::new(threads);
+        app.view = View::ManagedWorktrees(thread_id.clone());
+        app.git_contexts.insert(thread_id.0.clone(), context);
+        reduce(&mut app, Action::BeginCreateWorktree);
+        app.input_buffer = "created".into();
+        assert!(reduce(&mut app, Action::CommitInput).is_empty());
+        let target = temp.path().join("created");
+        app.input_buffer = target.to_string_lossy().into_owned();
+        assert!(reduce(&mut app, Action::CommitInput).is_empty());
+        assert_eq!(app.input_buffer, "HEAD");
+        assert!(reduce(&mut app, Action::CommitInput).is_empty());
+        let plan = app.pending_operation.take().expect("reviewable plan");
+        assert_eq!(
+            plan.expected_start_commit(),
+            Some(observed.as_str()),
+            "{kind}"
+        );
+        assert!(plan.expected_side_effect.contains("observed HEAD commit"));
+        git(
+            &selected,
+            &["commit", "--allow-empty", "-m", "after preview"],
+        );
+        let store = SqliteStore::at(temp.path().join("store"));
+        let receipt = execute_request(
+            &store,
+            MutationRequest {
+                plan: plan.clone(),
+                active_scopes: vec![],
+                admitted_at: Instant::now(),
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            receipt.state,
+            OperationState::Succeeded,
+            "{kind}: {receipt:?}"
+        );
+        let created = crate::git::probe_context(thread_id, target.to_string_lossy().into_owned())
+            .await
+            .unwrap();
+        assert_eq!(created.head.as_deref(), Some(observed.as_str()), "{kind}");
+        git(
+            &target,
+            &["commit", "--allow-empty", "-m", "different result commit"],
+        );
+        assert!(
+            verify_success(&store, &plan)
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("confirmed start commit")
+        );
+        assert!(
+            matches!(
+                reconcile_receipt(&store, OperationReceipt::planned(plan))
+                    .await
+                    .unwrap()
+                    .state,
+                OperationState::OutcomeUnknown
+            ),
+            "a different HEAD is never proof of this create"
+        );
+    }
+}
+
+#[tokio::test]
 async fn uncertain_remove_requires_both_git_and_filesystem_absence() {
     let temp = tempdir().expect("tempdir");
     let repo_root = temp.path().join("repo");
@@ -478,6 +580,129 @@ async fn dirty_managed_worktree_is_refused_without_force() {
             .is_some_and(|failure| failure.contains("dirty"))
     );
     assert!(target.exists());
+}
+
+#[tokio::test]
+async fn ignored_local_assets_added_after_preview_block_managed_worktree_removal() {
+    let temp = tempdir().unwrap();
+    let primary = temp.path().join("repo");
+    let repo = init_repo(&primary);
+    std::fs::write(primary.join(".gitignore"), ".env\ncache/\n").unwrap();
+    git(&primary, &["add", ".gitignore"]);
+    git(&primary, &["commit", "-m", "ignore local assets"]);
+    let target = temp.path().join("managed");
+    let store = SqliteStore::at(temp.path().join("store"));
+    let create = OperationPlan::create_worktree(
+        repo.clone(),
+        repo.primary_root.clone(),
+        target.to_string_lossy().into_owned(),
+        "managed".into(),
+        "HEAD".into(),
+        1,
+    );
+    assert_eq!(
+        execute_request(
+            &store,
+            MutationRequest {
+                plan: create,
+                active_scopes: vec![],
+                admitted_at: Instant::now(),
+            }
+        )
+        .await
+        .unwrap()
+        .state,
+        OperationState::Succeeded
+    );
+    let remove = OperationPlan::remove_worktree(
+        repo.clone(),
+        repo.primary_root.clone(),
+        canonical_path(target.to_str().unwrap()),
+        2,
+    );
+    assert!(
+        remove
+            .preconditions
+            .iter()
+            .any(|condition| condition.expected.contains("ignored files"))
+    );
+    assert!(!remove.argv.iter().any(|argument| argument == "--force"));
+    std::fs::write(target.join(".env"), "LOCAL_ASSET_SENTINEL=1").unwrap();
+    std::fs::create_dir(target.join("cache")).unwrap();
+    std::fs::write(target.join("cache/asset"), "retained ignored asset").unwrap();
+    let receipt = execute_request(
+        &store,
+        MutationRequest {
+            plan: remove,
+            active_scopes: vec![],
+            admitted_at: Instant::now(),
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(receipt.state, OperationState::Failed);
+    assert!(receipt.failure.unwrap().contains("ignored files"));
+    assert_eq!(
+        std::fs::read_to_string(target.join(".env")).unwrap(),
+        "LOCAL_ASSET_SENTINEL=1"
+    );
+    assert!(target.join("cache/asset").exists());
+    assert!(
+        store
+            .managed_worktree(
+                &repo.git_common_dir,
+                &canonical_path(target.to_str().unwrap())
+            )
+            .unwrap()
+            .is_some()
+    );
+    std::fs::remove_file(target.join(".env")).unwrap();
+    std::fs::remove_dir_all(target.join("cache")).unwrap();
+    std::fs::write(target.join("untracked.txt"), "untracked asset").unwrap();
+    let remove = OperationPlan::remove_worktree(
+        repo.clone(),
+        repo.primary_root.clone(),
+        canonical_path(target.to_str().unwrap()),
+        3,
+    );
+    assert_eq!(
+        execute_request(
+            &store,
+            MutationRequest {
+                plan: remove,
+                active_scopes: vec![],
+                admitted_at: Instant::now(),
+            }
+        )
+        .await
+        .unwrap()
+        .state,
+        OperationState::Failed
+    );
+    assert!(target.join("untracked.txt").exists());
+    std::fs::remove_file(target.join("untracked.txt")).unwrap();
+    let remove = OperationPlan::remove_worktree(
+        repo.clone(),
+        repo.primary_root.clone(),
+        canonical_path(target.to_str().unwrap()),
+        4,
+    );
+    assert_eq!(
+        execute_request(
+            &store,
+            MutationRequest {
+                plan: remove,
+                active_scopes: vec![],
+                admitted_at: Instant::now(),
+            }
+        )
+        .await
+        .unwrap()
+        .state,
+        OperationState::Succeeded
+    );
+    assert!(!target.exists());
+    assert!(branch_exists(&repo.primary_root, "managed").await.unwrap());
 }
 
 #[tokio::test]
