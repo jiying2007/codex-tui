@@ -1,5 +1,6 @@
 """Retain actionable WSS failures without disclosing the fixture credential."""
 import json
+import os
 from pathlib import Path
 import subprocess
 import tempfile
@@ -10,6 +11,47 @@ import wss_transport_regression as smoke
 
 
 class WssDiagnostics(unittest.TestCase):
+    def test_certificates_ignore_conflicting_host_extensions(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            host_config = root / "host.cnf"
+            host_config.write_text(
+                "[req]\ndistinguished_name=host_dn\nprompt=no\nx509_extensions=host_ca\n"
+                "[host_dn]\nCN=host fixture\n"
+                "[host_ca]\nbasicConstraints=critical,CA:FALSE\n"
+                "keyUsage=critical,digitalSignature\nsubjectAltName=DNS:host.invalid\n",
+                encoding="utf-8",
+            )
+            with patch.dict(os.environ, {"OPENSSL_CONF": str(host_config)}):
+                smoke.certificates(root)
+            for name in ("ca", "untrusted"):
+                with self.subTest(root=name):
+                    certificate = root / (name + ".pem")
+                    text = subprocess.run(
+                        ["openssl", "x509", "-in", str(certificate), "-noout", "-text"],
+                        check=True, capture_output=True, text=True, timeout=15,
+                    ).stdout
+                    self.assertEqual(text.count("X509v3 Basic Constraints:"), 1)
+                    self.assertIn("X509v3 Basic Constraints: critical", text)
+                    self.assertIn("CA:TRUE", text)
+                    self.assertNotIn("CA:FALSE", text)
+                    self.assertEqual(text.count("X509v3 Key Usage:"), 1)
+                    self.assertIn("X509v3 Key Usage: critical", text)
+                    self.assertIn("Certificate Sign, CRL Sign", text)
+                    self.assertNotIn("Digital Signature", text)
+                    self.assertNotIn("X509v3 Subject Alternative Name", text)
+                    self.assertNotIn("host.invalid", text)
+                    self.assertIn("ecdsa-with-SHA256", text)
+                    subprocess.run(
+                        ["openssl", "verify", "-CAfile", str(certificate), str(certificate)],
+                        check=True, capture_output=True, timeout=15,
+                    )
+            subprocess.run(
+                ["openssl", "verify", "-CAfile", str(root / "ca.pem"),
+                 "-purpose", "sslserver", "-verify_hostname", "localhost", str(root / "server.pem")],
+                check=True, capture_output=True, timeout=15,
+            )
+
     def run_failed_case(self, completed=None, process_error=None, server_errors=None):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

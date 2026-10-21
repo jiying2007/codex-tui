@@ -23,9 +23,21 @@ def require(value, message):
 
 
 def certificates(root):
+    # OpenSSL 1.1.1 appends -addext to host-configured extensions, which can
+    # duplicate basicConstraints and make the generated trust root invalid.
+    config = root / "fixture.cnf"
+    config.write_text(
+        "[req]\ndistinguished_name=fixture_dn\nprompt=no\n"
+        "[fixture_dn]\nCN=codex-tui fixture\n"
+        "[fixture_ca]\nbasicConstraints=critical,CA:TRUE\n"
+        "keyUsage=critical,keyCertSign,cRLSign\nsubjectKeyIdentifier=hash\n",
+        encoding="utf-8",
+    )
+    env = dict(os.environ, OPENSSL_CONF=str(config.resolve()))
+
     def openssl(*args):
         subprocess.run(
-            ["openssl", *args], cwd=root, check=True,
+            ["openssl", *args], cwd=root, env=env, check=True,
             stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=15,
         )
 
@@ -34,12 +46,12 @@ def certificates(root):
             "req", "-x509", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1",
             "-nodes", "-keyout", name + ".key", "-out", name + ".pem", "-days", "1",
             "-subj", "/CN=codex-tui fixture " + name,
-            "-addext", "basicConstraints=critical,CA:TRUE",
-            "-addext", "keyUsage=critical,keyCertSign,cRLSign",
+            "-sha256", "-config", "fixture.cnf", "-extensions", "fixture_ca",
         )
     openssl(
         "req", "-new", "-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1",
         "-nodes", "-keyout", "server.key", "-out", "server.csr", "-subj", "/CN=localhost",
+        "-sha256", "-config", "fixture.cnf",
     )
     (root / "server.ext").write_text(
         "basicConstraints=critical,CA:FALSE\n"
@@ -47,7 +59,7 @@ def certificates(root):
         "extendedKeyUsage=serverAuth\nsubjectAltName=DNS:localhost\n", encoding="utf-8",
     )
     openssl(
-        "x509", "-req", "-in", "server.csr", "-CA", "ca.pem", "-CAkey", "ca.key",
+        "x509", "-req", "-sha256", "-in", "server.csr", "-CA", "ca.pem", "-CAkey", "ca.key",
         "-CAcreateserial", "-out", "server.pem", "-days", "1", "-extfile", "server.ext",
     )
 
