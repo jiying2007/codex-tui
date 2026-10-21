@@ -568,19 +568,20 @@ jobs:
 
       - name: Smoke TLS using the final Linux release features
         if: runner.os == 'Linux'
-        run: >
-          python3 scripts/testing/wss_transport_regression.py
-          "${{ matrix.binary }}" "${{ runner.temp }}/wss-smoke"
+        run: |
+          # Keep producer and container action paths relative to the workspace.
+          rm -rf qualification/wss-release
+          python3 scripts/testing/wss_transport_regression.py \
+            "${{ matrix.binary }}" qualification/wss-release
+          test -s qualification/wss-release/receipt.json
 
       - name: Retain final-binary TLS evidence
         if: ${{ always() && runner.os == 'Linux' }}
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: wss-release-${{ github.sha }}
-          path: |
-            ${{ runner.temp }}/wss-smoke/*.json
-            ${{ runner.temp }}/wss-smoke/*.txt
-          if-no-files-found: warn
+          path: qualification/wss-release/
+          if-no-files-found: error
           retention-days: 90
 
       - name: Generate third-party notices
