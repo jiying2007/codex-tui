@@ -237,8 +237,9 @@ pub(super) async fn barrier(handle: &mut RegistryHandle) {
     .await
     .expect("barrier command admission deadline")
     .expect("live actor");
-    event(handle, |event| {
-        matches!(event, ConversationEvent::GoalCleared(id) if id == &marker)
-    })
+    event(
+        handle,
+        |event| matches!(event, ConversationEvent::GoalCleared(id) if id == &marker),
+    )
     .await;
 }
