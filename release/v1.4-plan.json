@@ -307,7 +307,7 @@
     "src/app_server/watch_lifecycle/tests.rs": 161,
     "src/app/history_cache.rs": 303,
     "src/app/thread_navigation.rs": 91,
-    "src/app_server/subscriptions/fault_tests.rs": 228,
+    "src/app_server/subscriptions/fault_tests.rs": 231,
     "src/app_server/subscriptions/fixture.rs": 233,
     "src/app_server/subscriptions/tests.rs": 100,
     "src/app_server/subscriptions/wire_order_tests.rs": 189,

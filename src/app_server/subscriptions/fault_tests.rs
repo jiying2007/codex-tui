@@ -11,7 +11,10 @@ fn approval() -> Value {
 async fn wait_with_clock_paused(phase: &str, mut complete: impl FnMut() -> bool) {
     let deadline = std::time::Instant::now() + Duration::from_secs(2);
     while !complete() {
-        assert!(std::time::Instant::now() < deadline, "fixture stalled: {phase}");
+        assert!(
+            std::time::Instant::now() < deadline,
+            "fixture stalled: {phase}"
+        );
         // Remain runnable while real socket I/O completes so Tokio cannot
         // automatically advance the paused clock to an unrelated deadline.
         tokio::task::yield_now().await;
