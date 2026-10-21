@@ -8,6 +8,16 @@ fn approval() -> Value {
     }})
 }
 
+async fn wait_with_clock_paused(phase: &str, mut complete: impl FnMut() -> bool) {
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    while !complete() {
+        assert!(std::time::Instant::now() < deadline, "fixture stalled: {phase}");
+        // Remain runnable while real socket I/O completes so Tokio cannot
+        // automatically advance the paused clock to an unrelated deadline.
+        tokio::task::yield_now().await;
+    }
+}
+
 #[tokio::test]
 async fn pending_unsubscribe_does_not_authorize_new_work_before_its_ack() {
     let (target, listener) = listener().await;
@@ -62,8 +72,16 @@ async fn pending_unsubscribe_does_not_authorize_new_work_before_its_ack() {
     server.await.unwrap();
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn subscription_ack_deadline_stops_actor_and_does_not_replay_an_accepted_prompt() {
+    // Start on the timer's exact initial tick and keep a runnable task outside
+    // the socket fixture, preventing automatic clock advances during real I/O.
+    let fixture = tokio::spawn(subscription_ack_deadline_fixture());
+    wait_with_clock_paused("subscription timeout fixture", || fixture.is_finished()).await;
+    fixture.await.unwrap();
+}
+
+async fn subscription_ack_deadline_fixture() {
     let (target, listener) = listener().await;
     let server = tokio::spawn(async move {
         let mut socket = accept_async(listener.accept().await.unwrap().0)
@@ -84,9 +102,7 @@ async fn subscription_ack_deadline_stops_actor_and_does_not_replay_an_accepted_p
         let mut requests = vec![existing, request];
         // Never acknowledge the resume. Only registry reads may follow; neither
         // the subscription request nor the accepted prompt may be replayed.
-        while let Ok(Some(Ok(frame))) =
-            tokio::time::timeout(Duration::from_secs(3), socket.next()).await
-        {
+        while let Some(Ok(frame)) = socket.next().await {
             if !frame.is_text() {
                 break;
             }
@@ -107,10 +123,10 @@ async fn subscription_ack_deadline_stops_actor_and_does_not_replay_an_accepted_p
         .unwrap();
     let id = ThreadId::new("one");
     assert!(rpc.ensure_subscribed(&id).await.is_err());
-    // Exercise the real actor deadline branch without spending the production
-    // five-second budget. The request and interruption used the actual wire.
-    rpc.subscriptions.pending.as_mut().unwrap().deadline =
-        Instant::now() + Duration::from_millis(20);
+    // Keep the production deadline, with the clock stopped until the actor has
+    // handled the accepted prompt and completed its initial registry read.
+    let ack_deadline = rpc.subscriptions.deadline().unwrap();
+    assert!(ack_deadline > Instant::now());
     let watches = WatchSet::default();
     watches.admit("one", || Ok(())).unwrap();
     let queue = WatchSet::default();
@@ -140,10 +156,30 @@ async fn subscription_ack_deadline_stops_actor_and_does_not_replay_an_accepted_p
         command_rx,
         (None, target, watches.clone(), queue.clone()),
     ));
-    tokio::time::timeout(Duration::from_secs(2), actor)
-        .await
-        .unwrap()
-        .unwrap();
+    let mut failures = 0;
+    wait_with_clock_paused("accepted prompt and registry reply", || {
+        while let Ok(event) = event_rx.try_recv() {
+            if let ConversationEvent::PromptFailed { error, .. } = event {
+                assert!(error.contains("subscription acknowledgement is pending"));
+                failures += 1;
+            }
+        }
+        failures > 0
+            && snapshot_rx
+                .borrow()
+                .status
+                .capabilities
+                .iter()
+                .any(|value| value == "thread/loaded/list")
+    })
+    .await;
+    assert_eq!(failures, 1);
+    assert!(!actor.is_finished());
+    // Cross Tokio's millisecond timer boundary without changing the deadline.
+    tokio::time::advance(ack_deadline.duration_since(Instant::now()) + Duration::from_millis(1))
+        .await;
+    wait_with_clock_paused("subscription deadline quarantine", || actor.is_finished()).await;
+    actor.await.unwrap();
     assert!(watches.snapshot().is_empty());
     assert!(queue.snapshot().is_empty());
     assert!(
@@ -159,7 +195,6 @@ async fn subscription_ack_deadline_stops_actor_and_does_not_replay_an_accepted_p
             .unwrap()
             .contains("subscription acknowledgement timed out")
     );
-    let mut failures = 0;
     while let Ok(event) = event_rx.try_recv() {
         if let ConversationEvent::PromptFailed { error, .. } = event {
             assert!(error.contains("subscription acknowledgement is pending"));
@@ -167,6 +202,7 @@ async fn subscription_ack_deadline_stops_actor_and_does_not_replay_an_accepted_p
         }
     }
     assert_eq!(failures, 1);
+    wait_with_clock_paused("quarantined peer disconnect", || server.is_finished()).await;
     let requests = server.await.unwrap();
     assert_eq!(
         requests

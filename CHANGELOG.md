@@ -18,7 +18,7 @@ All notable codex-tui changes are recorded here.
 ### Audit hardening
 
 - Reject unhealthy SQLite images before WAL/schema/FTS initialization; share failed startup admission with cloned recovery/index workers, return Doctor exit 3, and allow explicit health re-admission after repair. Read one WorkCard or ScratchWork by its indexed identity and batch snapshot links inside one read transaction.
-- Configure WSS with a production ring provider and native trust roots; preserve certificate/hostname checks. Update rustls to 0.23.46, serde_json to 1.0.154 and tokio to 1.53.3; retain actual-binary trusted/untrusted/hostname/early-close TLS regressions.
+- Configure WSS with a production ring provider and native trust roots; preserve certificate/hostname checks. Update rustls to 0.23.46, rustls-webpki to 0.103.16 (RUSTSEC-2026-0382), serde_json to 1.0.154 and tokio to 1.53.3; retain actual-binary trusted/untrusted/hostname/early-close TLS regressions.
 - Track confirmed App Server subscriptions separately from server-loaded inventory and local watch ownership. Acquire with lightweight resume, release on final-owner departure, and preserve late-ack, shutdown, rejection, pending-approval and command-backpressure ordering without automatic write replay.
 - Restore multiline conversation rendering, grapheme-aware visual-row navigation and newest-content follow. Preserve turn/item/byte reading anchors across resize and prepends; bound page movement to available rows and use sparse layout checkpoints for newline-heavy messages.
 - Bind default Worktree HEAD to the selected worktree's observed full commit, verify the resulting HEAD, and include ignored assets in removal preflight, including assets added after preview.

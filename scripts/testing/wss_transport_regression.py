@@ -14,6 +14,9 @@ import tempfile
 import threading
 
 
+FIXTURE_TOKEN = "fixture-bearer-value"
+
+
 def require(value, message):
     if not value:
         raise RuntimeError(message)
@@ -82,8 +85,10 @@ def send_json(stream, value):
 
 def serve(listener, context, mode, events, failures):
     try:
+        events.append("waiting-for-tcp")
         connection, _ = listener.accept()
         with connection:
+            events.append("tcp-accepted")
             connection.settimeout(6)
             if mode == "peer-close":
                 events.append("tcp-closed-before-tls")
@@ -106,7 +111,7 @@ def serve(listener, context, mode, events, failures):
                     name.lower(): value.strip()
                     for name, value in (line.split(":", 1) for line in lines[1:] if ":" in line)
                 }
-                require(fields.get("authorization") == "Bearer fixture-bearer-value", "missing bearer")
+                require(fields.get("authorization") == "Bearer " + FIXTURE_TOKEN, "missing bearer")
                 key = fields["sec-websocket-key"] + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
                 accept = base64.b64encode(hashlib.sha1(key.encode("ascii")).digest()).decode("ascii")
                 secured.sendall((
@@ -160,36 +165,64 @@ def run_case(binary, output, root, context, mode):
             "XDG_CONFIG_HOME": str(case / "config"), "XDG_DATA_HOME": str(case / "data"),
             "XDG_CACHE_HOME": str(case / "cache"), "XDG_STATE_HOME": str(case / "state"),
             "SSL_CERT_FILE": str(root / ("untrusted.pem" if mode == "unknown-ca" else "ca.pem")),
-            "SSL_CERT_DIR": str(empty_roots), "CODEX_TUI_TLS_TEST_TOKEN": "fixture-bearer-value",
+            "SSL_CERT_DIR": str(empty_roots), "CODEX_TUI_TLS_TEST_TOKEN": FIXTURE_TOKEN,
         })
         events, failures = [], []
         server = threading.Thread(target=serve, args=(listener, context, mode, events, failures), daemon=True)
         server.start()
-        completed = subprocess.run(
-            [str(binary), "doctor", "codex", "--target", "tls-fixture"], cwd=case, env=env,
-            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10,
-        )
+        command = [str(binary), "doctor", "codex", "--target", "tls-fixture"]
+        process_error = None
+        try:
+            completed = subprocess.run(
+                command, cwd=case, env=env, stdin=subprocess.DEVNULL,
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=10,
+            )
+        except (OSError, subprocess.TimeoutExpired) as error:
+            process_error = repr(error)
+            # No exit status was returned. Preserve any output captured before
+            # a timeout without misreporting it as a normal degraded exit.
+            completed = subprocess.CompletedProcess(
+                command, None, getattr(error, "output", None) or b"",
+                getattr(error, "stderr", None) or b"",
+            )
         server.join(timeout=8)
-        (output / (mode + ".stdout.txt")).write_bytes(completed.stdout)
-        (output / (mode + ".stderr.txt")).write_bytes(completed.stderr)
-        (output / (mode + ".server.json")).write_text(json.dumps({"events": events, "errors": failures}), encoding="utf-8")
-        require(not server.is_alive(), mode + ": fixture thread did not finish")
-        require(not failures, mode + ": fixture failure: " + repr(failures))
+
+        def redacted(value):
+            return value.decode("utf-8", errors="replace").replace(FIXTURE_TOKEN, "<redacted-fixture-token>")
+
+        report = {
+            "case": mode, "url": url, "listener": listener.getsockname(),
+            "configPath": str(config / "config.toml"), "trustRoot": env["SSL_CERT_FILE"],
+            "python": sys.version, "openssl": ssl.OPENSSL_VERSION,
+            "returncode": completed.returncode, "processError": process_error,
+            "stdout": redacted(completed.stdout), "stderr": redacted(completed.stderr),
+            "events": list(events), "errors": list(failures), "serverAlive": server.is_alive(),
+        }
+        diagnostic = json.dumps(report, indent=2).replace(FIXTURE_TOKEN, "<redacted-fixture-token>")
+        (output / (mode + ".stdout.txt")).write_text(report["stdout"], encoding="utf-8")
+        (output / (mode + ".stderr.txt")).write_text(report["stderr"], encoding="utf-8")
+        (output / (mode + ".server.json")).write_text(diagnostic + "\n", encoding="utf-8")
+
+        def check(value, message):
+            require(value, mode + ": " + message + "\n" + diagnostic)
+
+        check(process_error is None, "doctor process did not complete")
+        check(not server.is_alive(), "fixture thread did not finish")
+        check(not failures, "fixture failure")
     text = (completed.stdout + completed.stderr).decode("utf-8", errors="replace")
-    require("panicked" not in text and "fixture-bearer-value" not in text, mode + ": panic or token disclosure")
+    check("panicked" not in text and FIXTURE_TOKEN not in text, "panic or token disclosure")
     if mode == "trusted":
-        require(completed.returncode == 0, mode + ": doctor failed: " + text)
-        require("connected: true" in text and "thread/list" in events, "TLS did not carry real RPC")
-        require(any(event in ("TLSv1.2", "TLSv1.3") for event in events), "TLS was not negotiated")
+        check(completed.returncode == 0, "doctor failed")
+        check("connected: true" in text and "thread/list" in events, "TLS did not carry real RPC")
+        check(any(event in ("TLSv1.2", "TLSv1.3") for event in events), "TLS was not negotiated")
     else:
-        require(completed.returncode == 3 and "connected: false" in text, mode + ": failure was not degraded")
-        require("initialize" not in events, mode + ": application data sent after rejected TLS")
+        check(completed.returncode == 3 and "connected: false" in text, "failure was not degraded")
+        check("initialize" not in events, "application data sent after rejected TLS")
         if mode in ("unknown-ca", "wrong-host"):
             # rustls may render certificate failures as enum names or user-facing prose.
             markers = (("unknownissuer", "unknown issuer") if mode == "unknown-ca"
                        else ("notvalidforname", "certificate not valid for name"))
-            require(any(marker in text.lower() for marker in markers),
-                    mode + ": missing certificate diagnostic: " + text)
+            check(any(marker in text.lower() for marker in markers), "missing certificate diagnostic")
     return {"case": mode, "passed": True, "exitCode": completed.returncode, "events": events}
 
 

@@ -4,6 +4,23 @@
 use std::{path::Path, process::Command};
 
 #[test]
+fn wss_fixture_preserves_failed_process_diagnostics() {
+    let result = Command::new("python3")
+        .arg(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("scripts/testing/test_wss_transport_regression.py"),
+        )
+        .output()
+        .expect("run WSS diagnostic regressions");
+    assert!(
+        result.status.success(),
+        "WSS diagnostics failed:\n{}\n{}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+#[test]
 fn wss_uses_native_trust_and_reports_certificate_and_connection_errors() {
     let output = tempfile::tempdir().unwrap();
     let result = Command::new("python3")
