@@ -1,4 +1,6 @@
+import copy
 import hashlib
+import io
 import json
 import pathlib
 import subprocess
@@ -58,6 +60,93 @@ def valid_protection(app_id=ACTIONS_APP_ID):
     }
 
 
+def protection_snapshot(strong=False):
+    value = valid_protection()
+    value["required_status_checks"]["contexts"] = list(cfg.REQUIRED_CHECKS)
+    value["required_pull_request_reviews"] = None
+    value["restrictions"] = None
+    value["required_signatures"] = {"enabled": strong}
+    for name in cfg.PRESERVED_FLAGS:
+        value[name] = {"enabled": strong}
+    if strong:
+        actors = {
+            "users": [{"login": "release-owner", "id": 1}],
+            "teams": [{"slug": "maintainers", "id": 2}],
+            "apps": [{"slug": "policy-bot", "id": 3}],
+        }
+        value["required_pull_request_reviews"] = {
+            "dismiss_stale_reviews": True,
+            "require_code_owner_reviews": True,
+            "require_last_push_approval": True,
+            "required_approving_review_count": 2,
+            "dismissal_restrictions": copy.deepcopy(actors),
+            "bypass_pull_request_allowances": copy.deepcopy(actors),
+        }
+        value["restrictions"] = actors
+        value["required_status_checks"]["contexts"].append("independent-attestation")
+        value["required_status_checks"]["checks"].append(
+            {"context": "independent-attestation", "app_id": 45678}
+        )
+    return value
+
+
+def http_response(payload, status=200):
+    return completed(
+        returncode=0 if status == 200 else 1,
+        stdout=f"HTTP/2.0 {status} response\r\nContent-Type: application/json\r\n\r\n" + json.dumps(payload),
+    )
+
+
+class ConfigurationAPI:
+    """Only the subprocess boundary is mocked; run the real CLI orchestration."""
+
+    def __init__(self, snapshots, subresources=None, protected=True, branch_shas=None):
+        self.snapshots = iter(snapshots)
+        self.subresources = subresources or {}
+        self.protected = protected
+        self.branch_shas = iter(branch_shas) if branch_shas is not None else None
+        self.commands = []
+        self.puts = []
+
+    def run(self, command, **kwargs):
+        self.commands.append(command)
+        if command[:2] == ["git", "status"]:
+            return completed(stdout="")
+        if command[:2] == ["git", "branch"]:
+            return completed(stdout="main\n")
+        if command[:2] == ["git", "rev-parse"]:
+            return completed(stdout=SOURCE_SHA + "\n")
+        if command[:2] != ["gh", "api"]:
+            raise AssertionError(f"unexpected subprocess: {command}")
+        if "PUT" in command:
+            self.puts.append(json.loads(kwargs["input_text"]))
+            # A successful minimum-only PUT response must not replace a fresh GET.
+            return completed(stdout=json.dumps(valid_protection()))
+        endpoint = command[-1]
+        if endpoint.endswith("/branches/main"):
+            sha = next(self.branch_shas) if self.branch_shas is not None else SOURCE_SHA
+            return completed(stdout=json.dumps({"protected": self.protected, "commit": {"sha": sha}}))
+        if "/check-runs?" in endpoint:
+            return completed(stdout=json.dumps(valid_check_runs()))
+        if endpoint.endswith("/protection"):
+            value = next(self.snapshots)
+            return value if isinstance(value, subprocess.CompletedProcess) else http_response(copy.deepcopy(value))
+        if "/protection/" in endpoint:
+            name = endpoint.rsplit("/", 1)[1]
+            return self.subresources.get(name, http_response({"message": "Not Found"}, 404))
+        raise AssertionError(f"unexpected API request: {command}")
+
+    def invoke(self, apply=True, confirmation="owner/repo"):
+        argv = ["configure_main_protection.py", "--github-repo", "owner/repo"]
+        if apply:
+            argv.extend(["--apply", "--confirm-repository", confirmation])
+        self.output = io.StringIO()
+        with mock.patch.object(cfg, "run", side_effect=self.run), mock.patch("sys.argv", argv), mock.patch("sys.stdout", self.output):
+            if cfg.main() != 0:
+                raise AssertionError("configuration did not return success")
+        return json.loads(self.output.getvalue())
+
+
 def write_check_runs(root: pathlib.Path, payload=None):
     path = root / "check-runs.json"
     raw = json.dumps(
@@ -70,14 +159,14 @@ def write_check_runs(root: pathlib.Path, payload=None):
 
 class MainProtectionConfiguration(unittest.TestCase):
     def test_payload_pins_every_required_check_to_observed_actions_app(self):
-        payload = cfg.protection_payload(ACTIONS_APP_ID)
+        payload = cfg.protection_payload(ACTIONS_APP_ID, protection_snapshot())
         status = payload["required_status_checks"]
         self.assertNotIn("contexts", status)
         self.assertEqual(
             status["checks"],
             [
                 {"context": name, "app_id": ACTIONS_APP_ID}
-                for name in cfg.REQUIRED_CHECKS
+                for name in sorted(cfg.REQUIRED_CHECKS)
             ],
         )
         cfg.validate_applied_protection(
@@ -94,7 +183,7 @@ class MainProtectionConfiguration(unittest.TestCase):
         for app_id in (0, -1, True, "15368"):
             with self.subTest(app_id=app_id):
                 with self.assertRaises(ValueError):
-                    cfg.protection_payload(app_id)
+                    cfg.protection_payload(app_id, protection_snapshot())
 
     def test_security_gate_cannot_be_missing_from_checks_or_protection(self):
         checks = valid_check_runs()
@@ -110,6 +199,182 @@ class MainProtectionConfiguration(unittest.TestCase):
         ]
         with self.assertRaisesRegex(SystemExit, "security-gate"):
             cfg.validate_applied_protection(policy, ACTIONS_APP_ID)
+
+
+class MainProtectionPreservation(unittest.TestCase):
+    def test_apply_adds_gate_without_losing_existing_governance(self):
+        before = protection_snapshot(strong=True)
+        before["required_status_checks"]["contexts"].remove("security-gate")
+        before["required_status_checks"]["checks"] = [
+            item for item in before["required_status_checks"]["checks"] if item["context"] != "security-gate"
+        ]
+        original = copy.deepcopy(before)
+        api = ConfigurationAPI([before, before, protection_snapshot(strong=True)])
+        plan = api.invoke()
+        self.assertEqual(len(api.puts), 1)
+        payload = api.puts[0]
+        checks = {item["context"]: item["app_id"] for item in payload["required_status_checks"]["checks"]}
+        self.assertEqual(checks.pop("independent-attestation"), 45678)
+        self.assertEqual(checks, dict.fromkeys(cfg.REQUIRED_CHECKS, ACTIONS_APP_ID))
+        reviews = payload["required_pull_request_reviews"]
+        self.assertEqual(reviews["required_approving_review_count"], 2)
+        for name in ("dismiss_stale_reviews", "require_code_owner_reviews", "require_last_push_approval"):
+            self.assertIs(reviews[name], True)
+        expected_actors = {"users": ["release-owner"], "teams": ["maintainers"], "apps": ["policy-bot"]}
+        self.assertEqual(payload["restrictions"], expected_actors)
+        self.assertEqual(reviews["dismissal_restrictions"], expected_actors)
+        self.assertEqual(reviews["bypass_pull_request_allowances"], expected_actors)
+        for name in cfg.PRESERVED_FLAGS:
+            self.assertIs(payload[name], True)
+        self.assertNotIn("required_signatures", payload)
+        self.assertTrue(plan["existingProtectionPreserved"])
+        self.assertTrue(plan["signatureProtectionObserved"])
+        self.assertEqual(before, original)
+        full_reads = [cmd for cmd in api.commands if cmd[-1].endswith("/protection")]
+        self.assertEqual(len(full_reads), 3)
+
+    def test_unreadable_or_unsafe_full_snapshot_never_writes(self):
+        missing_flag = protection_snapshot(strong=True)
+        del missing_flag["lock_branch"]
+        empty_reviews = protection_snapshot(strong=True)
+        empty_reviews["required_pull_request_reviews"] = {}
+        unknown_control = protection_snapshot(strong=True)
+        unknown_control["required_deployments"] = {"enabled": True}
+        missing_actor = protection_snapshot(strong=True)
+        del missing_actor["restrictions"]["apps"][0]["slug"]
+        cases = [
+            http_response({"message": "Forbidden"}, 403),
+            http_response({"message": "Not Found"}, 404),
+            completed(stdout="HTTP/2.0 200 OK\n\n{"),
+            missing_flag, empty_reviews, unknown_control, missing_actor,
+        ]
+        for response in cases:
+            with self.subTest(response=response):
+                api = ConfigurationAPI([response])
+                with self.assertRaises(SystemExit):
+                    api.invoke()
+                self.assertEqual(api.puts, [])
+        api = ConfigurationAPI([http_response({"message": "Not Found"}, 404)], protected=False)
+        with self.assertRaises(SystemExit):
+            api.invoke()
+        self.assertEqual(api.puts, [])
+
+    def test_optional_resource_absence_is_read_and_confirmed_each_time(self):
+        before = protection_snapshot()
+        for name in ("required_pull_request_reviews", "restrictions", "required_signatures"):
+            del before[name]
+        api = ConfigurationAPI([before, before, before])
+        plan = api.invoke()
+        self.assertTrue(plan["existingProtectionPreserved"])
+        self.assertFalse(plan["signatureProtectionObserved"])
+        self.assertIsNone(api.puts[0]["required_pull_request_reviews"])
+        self.assertIsNone(api.puts[0]["restrictions"])
+        for name in ("required_pull_request_reviews", "restrictions", "required_signatures"):
+            self.assertEqual(sum(cmd[-1].endswith("/protection/" + name) for cmd in api.commands), 3)
+
+    def test_unreadable_optional_resource_never_becomes_disabled(self):
+        before = protection_snapshot()
+        for status in (403, 429, 500):
+            with self.subTest(status=status):
+                api = ConfigurationAPI([before], {"required_pull_request_reviews": http_response({"message": "unreadable"}, status)})
+                with self.assertRaises(SystemExit):
+                    api.invoke()
+                self.assertEqual(api.puts, [])
+
+    def test_observed_concurrent_policy_change_refuses_put(self):
+        before = protection_snapshot(strong=True)
+        changed = copy.deepcopy(before)
+        changed["required_pull_request_reviews"]["required_approving_review_count"] = 3
+        api = ConfigurationAPI([before, changed])
+        with self.assertRaisesRegex(SystemExit, "changed after planning"):
+            api.invoke()
+        self.assertEqual(api.puts, [])
+
+    def test_observed_main_movement_refuses_put(self):
+        before = protection_snapshot(strong=True)
+        api = ConfigurationAPI([before, before], branch_shas=[SOURCE_SHA, "b" * 40])
+        with self.assertRaisesRegex(SystemExit, "main moved after planning"):
+            api.invoke()
+        self.assertEqual(api.puts, [])
+
+    def test_post_write_read_failure_does_not_claim_no_write_or_retry(self):
+        before = protection_snapshot(strong=True)
+        for response in (
+            http_response({"message": "Forbidden"}, 403),
+            http_response({"message": "server failure"}, 500),
+            completed(stdout="HTTP/2.0 200 OK\n\n{"),
+        ):
+            with self.subTest(response=response):
+                api = ConfigurationAPI([before, before, response])
+                with self.assertRaises(SystemExit) as failure:
+                    api.invoke()
+                self.assertEqual(len(api.puts), 1)
+                self.assertNotIn("no settings written", str(failure.exception))
+                self.assertEqual(api.output.getvalue(), "")
+
+    def test_independent_get_detects_lost_controls_despite_successful_put(self):
+        before = protection_snapshot(strong=True)
+        for field in ("required_signatures", "required_conversation_resolution"):
+            after = copy.deepcopy(before)
+            after[field]["enabled"] = False
+            with self.subTest(field=field):
+                api = ConfigurationAPI([before, before, after])
+                with self.assertRaisesRegex(SystemExit, "independent protection readback"):
+                    api.invoke()
+                self.assertEqual(len(api.puts), 1)
+        after = copy.deepcopy(before)
+        after["required_status_checks"]["contexts"].remove("independent-attestation")
+        after["required_status_checks"]["checks"] = [
+            check for check in after["required_status_checks"]["checks"] if check["context"] != "independent-attestation"
+        ]
+        api = ConfigurationAPI([before, before, after])
+        with self.assertRaisesRegex(SystemExit, "independent protection readback"):
+            api.invoke()
+        self.assertEqual(len(api.puts), 1)
+
+    def test_extra_checks_keep_their_app_binding_and_unbound_semantics(self):
+        before = protection_snapshot(strong=True)
+        before["required_status_checks"]["checks"][-1]["app_id"] = None
+        policy = cfg.protection_payload(ACTIONS_APP_ID, before)
+        self.assertEqual(
+            next(item for item in policy["required_status_checks"]["checks"] if item["context"] == "independent-attestation"),
+            {"context": "independent-attestation", "app_id": -1},
+        )
+        before["required_status_checks"]["checks"][0]["app_id"] = 98765
+        api = ConfigurationAPI([before])
+        with self.assertRaisesRegex(SystemExit, "another app"):
+            api.invoke()
+        self.assertEqual(api.puts, [])
+
+    def test_malformed_check_identity_never_writes(self):
+        for mutation in ("missing-app", "contexts-mismatch", "duplicate-context", "boolean-app"):
+            before = protection_snapshot(strong=True)
+            status = before["required_status_checks"]
+            if mutation == "missing-app":
+                del status["checks"][0]["app_id"]
+            elif mutation == "contexts-mismatch":
+                status["contexts"].append("unobserved-check")
+            elif mutation == "duplicate-context":
+                status["checks"].append(copy.deepcopy(status["checks"][0]))
+            else:
+                status["checks"][0]["app_id"] = True
+            api = ConfigurationAPI([before])
+            with self.subTest(mutation=mutation), self.assertRaises(SystemExit):
+                api.invoke()
+            self.assertEqual(api.puts, [])
+
+    def test_dry_run_and_wrong_confirmation_never_write(self):
+        before = protection_snapshot(strong=True)
+        api = ConfigurationAPI([before])
+        plan = api.invoke(apply=False)
+        self.assertFalse(plan["applyRequested"])
+        self.assertEqual(plan["schema"], "codex-tui/main-protection-plan/v2")
+        self.assertEqual(len(plan["observedPolicySha256"]), 64)
+        self.assertEqual(api.puts, [])
+        api = ConfigurationAPI([before])
+        with self.assertRaisesRegex(SystemExit, "confirm-repository"):
+            api.invoke(confirmation="another/repo")
+        self.assertEqual(api.puts, [])
 
 
 class MainProtectionReceipt(unittest.TestCase):
