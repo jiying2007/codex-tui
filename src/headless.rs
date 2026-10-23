@@ -1,6 +1,4 @@
 use crate::{
-    app_server,
-    backend::{BackendSnapshot, CodexBackend, FakeBackend},
     compat,
     domain::{AttentionReason, ThreadSummary},
     planning::{
@@ -14,7 +12,13 @@ use anyhow::Result;
 use serde::Serialize;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+mod options;
+mod source;
 mod surfaces;
+
+use options::HeadlessOptions;
+pub use options::validate_options;
+use source::{SnapshotSource, print_source};
 
 fn headless_field(value: &str) -> String {
     crate::text::sanitize_inline(value)
@@ -34,6 +38,9 @@ enum OutputFormat {
 #[serde(rename_all = "camelCase")]
 struct SourceStatus {
     source: String,
+    target_id: Option<String>,
+    transport: Option<String>,
+    scope: &'static str,
     connected: bool,
     version: Option<String>,
     platform: Option<String>,
@@ -96,6 +103,7 @@ struct WorkSnapshot {
     generated_at_unix_ms: u64,
     degraded: bool,
     source: SourceStatus,
+    local_store_scope: &'static str,
     local_store_error: Option<String>,
     work: Vec<WorkRow>,
 }
@@ -105,27 +113,20 @@ pub async fn run(args: &[String]) -> Result<i32> {
         print_usage();
         return Ok(EXIT_USAGE);
     };
-    let flags = &args[1..];
-    if flags
-        .iter()
-        .any(|arg| !matches!(arg.as_str(), "--json" | "--fake" | "--fixture-10k"))
-    {
-        eprintln!("unknown headless option");
-        print_usage();
-        return Ok(EXIT_USAGE);
-    }
-
-    let format = if flags.iter().any(|arg| arg == "--json") {
-        OutputFormat::Json
-    } else {
-        OutputFormat::Text
+    let words = args[1..].iter().map(String::as_str).collect::<Vec<_>>();
+    let options = match HeadlessOptions::parse(command, &words) {
+        Ok(options) => options,
+        Err(error) => {
+            eprintln!("{}", headless_field(&error));
+            print_usage();
+            return Ok(EXIT_USAGE);
+        }
     };
-    let fixture_10k = flags.iter().any(|arg| arg == "--fixture-10k");
-    let fake = fixture_10k || flags.iter().any(|arg| arg == "--fake");
+    let format = options.format;
 
     match command {
         "threads" => {
-            let snapshot = build_thread_snapshot(fake, fixture_10k).await;
+            let snapshot = build_thread_snapshot(&options).await;
             let exit = if snapshot.degraded {
                 EXIT_DEGRADED
             } else {
@@ -135,7 +136,7 @@ pub async fn run(args: &[String]) -> Result<i32> {
             Ok(exit)
         }
         "work" => {
-            let snapshot = build_work_snapshot(fake, fixture_10k).await;
+            let snapshot = build_work_snapshot(&options).await;
             let exit = if snapshot.degraded {
                 EXIT_DEGRADED
             } else {
@@ -144,11 +145,11 @@ pub async fn run(args: &[String]) -> Result<i32> {
             print_work_snapshot(&snapshot, format)?;
             Ok(exit)
         }
-        "status" => surfaces::run_status(fake, fixture_10k, format).await,
-        "attention" => surfaces::run_attention(fake, fixture_10k, format).await,
-        "board" => surfaces::run_board(fake, fixture_10k, format).await,
-        "forge" => surfaces::run_forge(fake, format).await,
-        "worktrees" => surfaces::run_worktrees(fake, format),
+        "status" => surfaces::run_status(&options).await,
+        "attention" => surfaces::run_attention(&options).await,
+        "board" => surfaces::run_board(&options).await,
+        "forge" => surfaces::run_forge(options.fake, format).await,
+        "worktrees" => surfaces::run_worktrees(options.fake, format),
         _ => {
             eprintln!("unknown headless command: {}", headless_field(command));
             print_usage();
@@ -171,49 +172,40 @@ pub async fn doctor_compat(json: bool) -> Result<i32> {
     })
 }
 
-async fn build_thread_snapshot(fake: bool, fixture_10k: bool) -> ThreadSnapshot {
+async fn build_thread_snapshot(options: &HeadlessOptions) -> ThreadSnapshot {
     let generated_at_unix_ms = now_unix_ms();
-    match load_backend_snapshot(fake, fixture_10k).await {
-        Ok(snapshot) => {
-            let source = source_status(&snapshot);
-            let degraded = source.degraded;
-            let mut threads = snapshot.threads.iter().map(thread_row).collect::<Vec<_>>();
-            threads.sort_by(|left, right| left.id.cmp(&right.id));
-            ThreadSnapshot {
-                schema: "codex-tui/headless-threads/v1",
-                generated_at_unix_ms,
-                degraded,
-                source,
-                threads,
-            }
-        }
-        Err(error) => ThreadSnapshot {
-            schema: "codex-tui/headless-threads/v1",
-            generated_at_unix_ms,
-            degraded: true,
-            source: SourceStatus {
-                source: if fake {
-                    "fake".into()
-                } else {
-                    "codex-app-server".into()
-                },
-                connected: false,
-                version: None,
-                platform: None,
-                capabilities: vec![],
-                optional_capabilities_missing: vec![],
-                last_refresh_unix_ms: None,
-                degraded: true,
-                error: Some(format!("{error:#}")),
-            },
-            threads: vec![],
-        },
+    let (threads, source) = match SnapshotSource::resolve(options) {
+        Ok(source) => source.load().await,
+        Err(source) => (vec![], *source),
+    };
+    let mut threads = threads.iter().map(thread_row).collect::<Vec<_>>();
+    threads.sort_by(|left, right| left.id.cmp(&right.id));
+    ThreadSnapshot {
+        schema: "codex-tui/headless-threads/v1",
+        generated_at_unix_ms,
+        degraded: source.degraded,
+        source,
+        threads,
     }
 }
 
-async fn build_work_snapshot(fake: bool, fixture_10k: bool) -> WorkSnapshot {
+async fn build_work_snapshot(options: &HeadlessOptions) -> WorkSnapshot {
     let generated_at_unix_ms = now_unix_ms();
-    let (local, planning, local_store_error) = if fake {
+    let source = match SnapshotSource::resolve(options) {
+        Ok(source) => source,
+        Err(source) => {
+            return WorkSnapshot {
+                schema: "codex-tui/headless-work/v1",
+                generated_at_unix_ms,
+                degraded: true,
+                source: *source,
+                local_store_scope: "not-loaded",
+                local_store_error: None,
+                work: vec![],
+            };
+        }
+    };
+    let (local, planning, local_store_error) = if options.fake {
         (LocalStateV1::default(), PlanningSnapshot::default(), None)
     } else {
         match SqliteStore::discover() {
@@ -249,31 +241,7 @@ async fn build_work_snapshot(fake: bool, fixture_10k: bool) -> WorkSnapshot {
         }
     };
 
-    let backend = load_backend_snapshot(fake, fixture_10k).await;
-    let (mut threads, source) = match backend {
-        Ok(snapshot) => {
-            let source = source_status(&snapshot);
-            (snapshot.threads, source)
-        }
-        Err(error) => (
-            vec![],
-            SourceStatus {
-                source: if fake {
-                    "fake".into()
-                } else {
-                    "codex-app-server".into()
-                },
-                connected: false,
-                version: None,
-                platform: None,
-                capabilities: vec![],
-                optional_capabilities_missing: vec![],
-                last_refresh_unix_ms: None,
-                degraded: true,
-                error: Some(format!("{error:#}")),
-            },
-        ),
-    };
+    let (mut threads, source) = source.load().await;
 
     apply_local_operator_state(&mut threads, &local);
 
@@ -313,19 +281,14 @@ async fn build_work_snapshot(fake: bool, fixture_10k: bool) -> WorkSnapshot {
         generated_at_unix_ms,
         degraded,
         source,
+        local_store_scope: if options.fake {
+            "fixture"
+        } else {
+            "shared-across-targets"
+        },
         local_store_error,
         work,
     }
-}
-
-async fn load_backend_snapshot(fake: bool, fixture_10k: bool) -> Result<BackendSnapshot> {
-    if fixture_10k {
-        return Ok(FakeBackend::scaled(10_000).snapshot());
-    }
-    if fake {
-        return Ok(FakeBackend::seeded().snapshot());
-    }
-    app_server::probe(None).await
 }
 
 fn apply_local_operator_state(threads: &mut [ThreadSummary], local: &LocalStateV1) {
@@ -337,21 +300,6 @@ fn apply_local_operator_state(threads: &mut [ThreadSummary], local: &LocalStateV
         {
             thread.attention.push(AttentionReason::MarkedUnread);
         }
-    }
-}
-
-fn source_status(snapshot: &BackendSnapshot) -> SourceStatus {
-    let status = &snapshot.status;
-    SourceStatus {
-        source: status.source.clone(),
-        connected: status.connected,
-        version: status.version.clone(),
-        platform: status.platform.clone(),
-        capabilities: status.capabilities.clone(),
-        optional_capabilities_missing: status.optional_capabilities_missing.clone(),
-        last_refresh_unix_ms: status.last_refresh_unix_ms,
-        degraded: !status.connected || status.error.is_some(),
-        error: status.error.clone(),
     }
 }
 
@@ -427,14 +375,7 @@ fn print_thread_snapshot(snapshot: &ThreadSnapshot, format: OutputFormat) -> Res
         OutputFormat::Text => {
             println!("schema: {}", snapshot.schema);
             println!("degraded: {}", snapshot.degraded);
-            println!(
-                "source: {} connected={}",
-                headless_field(&snapshot.source.source),
-                snapshot.source.connected
-            );
-            if let Some(error) = &snapshot.source.error {
-                println!("error: {}", headless_field(error));
-            }
+            print_source(&snapshot.source);
             println!("threads: {}", snapshot.threads.len());
             for thread in &snapshot.threads {
                 println!(
@@ -457,14 +398,8 @@ fn print_work_snapshot(snapshot: &WorkSnapshot, format: OutputFormat) -> Result<
         OutputFormat::Text => {
             println!("schema: {}", snapshot.schema);
             println!("degraded: {}", snapshot.degraded);
-            println!(
-                "source: {} connected={}",
-                headless_field(&snapshot.source.source),
-                snapshot.source.connected
-            );
-            if let Some(error) = &snapshot.source.error {
-                println!("source-error: {}", headless_field(error));
-            }
+            print_source(&snapshot.source);
+            println!("local-store-scope: {}", snapshot.local_store_scope);
             if let Some(error) = &snapshot.local_store_error {
                 println!("store-error: {}", headless_field(error));
             }
@@ -487,7 +422,7 @@ fn print_work_snapshot(snapshot: &WorkSnapshot, format: OutputFormat) -> Result<
 fn print_usage() {
     eprintln!(
         "usage: codex-tui headless <threads|work|status|attention|board|forge|worktrees> \
-         [--json] [--fake|--fixture-10k]"
+         [--json] [--fake|--fixture-10k|--target NAME]"
     );
 }
 
@@ -516,68 +451,4 @@ fn now_unix_ms() -> u64 {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn terminal_text_fields_escape_spoofing_and_preserve_column_tabs_and_json() {
-        let original = "Title\tpart\n\u{202e}\u{001b}[2J";
-        let displayed = headless_field(original);
-        assert_eq!(displayed, "Title part \u{fffd}\u{fffd}[2J");
-        assert_eq!(
-            format!("{}\t{}", headless_field(original), headless_field("中文")),
-            format!("{displayed}\t中文")
-        );
-        assert_eq!(original, "Title\tpart\n\u{202e}\u{001b}[2J");
-        let json = serde_json::to_string(original).expect("serialize original");
-        assert!(json.contains(r"\t"));
-        assert!(json.contains(r"\n"));
-        assert!(!json.contains("\u{fffd}"));
-    }
-
-    #[test]
-    fn terminal_state_top_level_aliases_are_read_only_headless_routes() {
-        let cases = [
-            (vec!["status"], vec!["status"]),
-            (vec!["thread", "list", "--json"], vec!["threads", "--json"]),
-            (
-                vec!["attention", "list", "--json"],
-                vec!["attention", "--json"],
-            ),
-            (vec!["board", "list"], vec!["board"]),
-            (vec!["forge", "status"], vec!["forge"]),
-            (vec!["worktree", "list"], vec!["worktrees"]),
-        ];
-        for (input, expected) in cases {
-            let input = input.into_iter().map(str::to_string).collect::<Vec<_>>();
-            let expected = expected.into_iter().map(str::to_string).collect::<Vec<_>>();
-            assert_eq!(top_level_alias(&input), Some(expected));
-        }
-        assert_eq!(top_level_alias(&["doctor".into(), "store".into()]), None);
-    }
-
-    #[tokio::test]
-    async fn fixture_10k_thread_snapshot_is_stable_and_not_degraded() {
-        let snapshot = build_thread_snapshot(true, true).await;
-        assert_eq!(snapshot.schema, "codex-tui/headless-threads/v1");
-        assert!(!snapshot.degraded);
-        assert_eq!(snapshot.threads.len(), 10_000);
-        assert_eq!(
-            snapshot.threads.first().expect("first").id,
-            "thread-scale-00000"
-        );
-        assert_eq!(
-            snapshot.threads.last().expect("last").id,
-            "thread-scale-09999"
-        );
-    }
-
-    #[tokio::test]
-    async fn fixture_work_snapshot_does_not_probe_or_load_local_state() {
-        let snapshot = build_work_snapshot(true, false).await;
-        assert_eq!(snapshot.schema, "codex-tui/headless-work/v1");
-        assert!(!snapshot.degraded);
-        assert_eq!(snapshot.work.len(), 4);
-        assert!(snapshot.local_store_error.is_none());
-    }
-}
+mod tests;

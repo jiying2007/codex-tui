@@ -1,9 +1,14 @@
-use super::{EXIT_DEGRADED, EXIT_OK, OutputFormat, SourceStatus, WorkRow, headless_field};
+use super::{
+    EXIT_DEGRADED, EXIT_OK, OutputFormat, SourceStatus, WorkRow, headless_field,
+    options::HeadlessOptions,
+};
+mod presentation;
 use crate::{
     forge::{self, ForgeFreshness},
     sqlite_store::SqliteStore,
 };
 use anyhow::Result;
+use presentation::{print_attention, print_board, print_forge, print_status, print_worktrees};
 use serde::Serialize;
 use std::collections::BTreeMap;
 
@@ -14,6 +19,7 @@ struct StatusSnapshot {
     generated_at_unix_ms: u64,
     degraded: bool,
     source: SourceStatus,
+    local_store_scope: &'static str,
     local_store_error: Option<String>,
     thread_count: usize,
     work_count: usize,
@@ -28,6 +34,7 @@ struct AttentionSnapshot {
     generated_at_unix_ms: u64,
     degraded: bool,
     source: SourceStatus,
+    local_store_scope: &'static str,
     local_store_error: Option<String>,
     items: Vec<WorkRow>,
 }
@@ -46,6 +53,7 @@ struct BoardSnapshot {
     generated_at_unix_ms: u64,
     degraded: bool,
     source: SourceStatus,
+    local_store_scope: &'static str,
     local_store_error: Option<String>,
     columns: Vec<BoardColumn>,
 }
@@ -61,6 +69,7 @@ struct CapabilityRow {
 #[serde(rename_all = "camelCase")]
 struct ForgeStatusSnapshot {
     schema: &'static str,
+    scope: &'static str,
     generated_at_unix_ms: u64,
     degraded: bool,
     cwd: String,
@@ -94,14 +103,16 @@ struct WorktreeRow {
 #[serde(rename_all = "camelCase")]
 struct WorktreeSnapshot {
     schema: &'static str,
+    scope: &'static str,
     generated_at_unix_ms: u64,
     degraded: bool,
     local_store_error: Option<String>,
     worktrees: Vec<WorktreeRow>,
 }
 
-pub(super) async fn run_status(fake: bool, fixture_10k: bool, format: OutputFormat) -> Result<i32> {
-    let work = super::build_work_snapshot(fake, fixture_10k).await;
+pub(super) async fn run_status(options: &HeadlessOptions) -> Result<i32> {
+    let format = options.format;
+    let work = super::build_work_snapshot(options).await;
     let mut stages = BTreeMap::new();
     for row in &work.work {
         *stages.entry(row.stage.clone()).or_insert(0) += 1;
@@ -111,6 +122,7 @@ pub(super) async fn run_status(fake: bool, fixture_10k: bool, format: OutputForm
         generated_at_unix_ms: work.generated_at_unix_ms,
         degraded: work.degraded,
         source: work.source,
+        local_store_scope: work.local_store_scope,
         local_store_error: work.local_store_error,
         thread_count: work
             .work
@@ -133,12 +145,9 @@ pub(super) async fn run_status(fake: bool, fixture_10k: bool, format: OutputForm
     })
 }
 
-pub(super) async fn run_attention(
-    fake: bool,
-    fixture_10k: bool,
-    format: OutputFormat,
-) -> Result<i32> {
-    let work = super::build_work_snapshot(fake, fixture_10k).await;
+pub(super) async fn run_attention(options: &HeadlessOptions) -> Result<i32> {
+    let format = options.format;
+    let work = super::build_work_snapshot(options).await;
     let items = work
         .work
         .iter()
@@ -150,6 +159,7 @@ pub(super) async fn run_attention(
         generated_at_unix_ms: work.generated_at_unix_ms,
         degraded: work.degraded,
         source: work.source,
+        local_store_scope: work.local_store_scope,
         local_store_error: work.local_store_error,
         items,
     };
@@ -161,8 +171,9 @@ pub(super) async fn run_attention(
     })
 }
 
-pub(super) async fn run_board(fake: bool, fixture_10k: bool, format: OutputFormat) -> Result<i32> {
-    let work = super::build_work_snapshot(fake, fixture_10k).await;
+pub(super) async fn run_board(options: &HeadlessOptions) -> Result<i32> {
+    let format = options.format;
+    let work = super::build_work_snapshot(options).await;
     let columns = ["inbox", "ready", "working", "review", "done"]
         .into_iter()
         .map(|stage| BoardColumn {
@@ -180,6 +191,7 @@ pub(super) async fn run_board(fake: bool, fixture_10k: bool, format: OutputForma
         generated_at_unix_ms: work.generated_at_unix_ms,
         degraded: work.degraded,
         source: work.source,
+        local_store_scope: work.local_store_scope,
         local_store_error: work.local_store_error,
         columns,
     };
@@ -195,6 +207,7 @@ pub(super) async fn run_forge(fake: bool, format: OutputFormat) -> Result<i32> {
     let snapshot = if fake {
         ForgeStatusSnapshot {
             schema: "codex-tui/headless-forge/v1",
+            scope: if fake { "fixture" } else { "current-directory" },
             generated_at_unix_ms: super::now_unix_ms(),
             degraded: false,
             cwd: "<fake>".into(),
@@ -217,6 +230,7 @@ pub(super) async fn run_forge(fake: bool, format: OutputFormat) -> Result<i32> {
             Err(error) => {
                 let snapshot = ForgeStatusSnapshot {
                     schema: "codex-tui/headless-forge/v1",
+                    scope: if fake { "fixture" } else { "current-directory" },
                     generated_at_unix_ms: super::now_unix_ms(),
                     degraded: true,
                     cwd: String::new(),
@@ -254,6 +268,7 @@ pub(super) async fn run_forge(fake: bool, format: OutputFormat) -> Result<i32> {
             || doctor.observation.core_data_incomplete();
         ForgeStatusSnapshot {
             schema: "codex-tui/headless-forge/v1",
+            scope: if fake { "fixture" } else { "current-directory" },
             generated_at_unix_ms: super::now_unix_ms(),
             degraded,
             cwd,
@@ -291,6 +306,11 @@ pub(super) fn run_worktrees(fake: bool, format: OutputFormat) -> Result<i32> {
     let snapshot = if fake {
         WorktreeSnapshot {
             schema: "codex-tui/headless-worktrees/v1",
+            scope: if fake {
+                "fixture"
+            } else {
+                "shared-local-cache"
+            },
             generated_at_unix_ms,
             degraded: false,
             local_store_error: None,
@@ -300,6 +320,11 @@ pub(super) fn run_worktrees(fake: bool, format: OutputFormat) -> Result<i32> {
         match SqliteStore::discover().and_then(|store| store.load_managed_worktrees()) {
             Ok(records) => WorktreeSnapshot {
                 schema: "codex-tui/headless-worktrees/v1",
+                scope: if fake {
+                    "fixture"
+                } else {
+                    "shared-local-cache"
+                },
                 generated_at_unix_ms,
                 degraded: false,
                 local_store_error: None,
@@ -318,6 +343,11 @@ pub(super) fn run_worktrees(fake: bool, format: OutputFormat) -> Result<i32> {
             },
             Err(error) => WorktreeSnapshot {
                 schema: "codex-tui/headless-worktrees/v1",
+                scope: if fake {
+                    "fixture"
+                } else {
+                    "shared-local-cache"
+                },
                 generated_at_unix_ms,
                 degraded: true,
                 local_store_error: Some(format!("{error:#}")),
@@ -333,141 +363,13 @@ pub(super) fn run_worktrees(fake: bool, format: OutputFormat) -> Result<i32> {
     })
 }
 
-fn print_status(snapshot: &StatusSnapshot, format: OutputFormat) -> Result<()> {
-    match format {
-        OutputFormat::Json => println!("{}", serde_json::to_string_pretty(snapshot)?),
-        OutputFormat::Text => {
-            println!("schema: {}", snapshot.schema);
-            println!("degraded: {}", snapshot.degraded);
-            println!(
-                "source: {} connected={}",
-                headless_field(&snapshot.source.source),
-                snapshot.source.connected
-            );
-            println!("threads: {}", snapshot.thread_count);
-            println!("work: {}", snapshot.work_count);
-            println!("needs-you: {}", snapshot.needs_you_count);
-            for (stage, count) in &snapshot.stages {
-                println!("stage-{}: {count}", headless_field(stage));
-            }
-            if let Some(error) = &snapshot.local_store_error {
-                println!("store-error: {}", headless_field(error));
-            }
-        }
-    }
-    Ok(())
-}
-
-fn print_attention(snapshot: &AttentionSnapshot, format: OutputFormat) -> Result<()> {
-    match format {
-        OutputFormat::Json => println!("{}", serde_json::to_string_pretty(snapshot)?),
-        OutputFormat::Text => {
-            println!("schema: {}", snapshot.schema);
-            println!("degraded: {}", snapshot.degraded);
-            println!("attention: {}", snapshot.items.len());
-            for item in &snapshot.items {
-                println!(
-                    "{}\t{}\t{}\t{}",
-                    headless_field(&item.local_id),
-                    headless_field(&item.stage),
-                    headless_field(&item.attention.join(",")),
-                    headless_field(&item.title)
-                );
-            }
-        }
-    }
-    Ok(())
-}
-
-fn print_board(snapshot: &BoardSnapshot, format: OutputFormat) -> Result<()> {
-    match format {
-        OutputFormat::Json => println!("{}", serde_json::to_string_pretty(snapshot)?),
-        OutputFormat::Text => {
-            println!("schema: {}", snapshot.schema);
-            println!("degraded: {}", snapshot.degraded);
-            for column in &snapshot.columns {
-                println!("[{}] {}", headless_field(&column.stage), column.items.len());
-                for item in &column.items {
-                    println!(
-                        "{}\t{}\t{}",
-                        headless_field(&item.local_id),
-                        headless_field(&item.attention.join(",")),
-                        headless_field(&item.title)
-                    );
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
-fn print_forge(snapshot: &ForgeStatusSnapshot, format: OutputFormat) -> Result<()> {
-    match format {
-        OutputFormat::Json => println!("{}", serde_json::to_string_pretty(snapshot)?),
-        OutputFormat::Text => {
-            println!("schema: {}", snapshot.schema);
-            println!("degraded: {}", snapshot.degraded);
-            println!("cwd: {}", headless_field(&snapshot.cwd));
-            println!(
-                "provider: {}",
-                headless_field(snapshot.provider.as_deref().unwrap_or("unknown"))
-            );
-            println!(
-                "authenticated: {}",
-                snapshot
-                    .authenticated
-                    .map_or("unknown".into(), |value| value.to_string())
-            );
-            println!("freshness: {}", headless_field(&snapshot.freshness));
-            for capability in &snapshot.capabilities {
-                println!(
-                    "capability-{}: {}",
-                    headless_field(&capability.name),
-                    headless_field(&capability.state)
-                );
-            }
-            if let Some(error) = &snapshot.error {
-                println!("error: {}", headless_field(error));
-            }
-        }
-    }
-    Ok(())
-}
-
-fn print_worktrees(snapshot: &WorktreeSnapshot, format: OutputFormat) -> Result<()> {
-    match format {
-        OutputFormat::Json => println!("{}", serde_json::to_string_pretty(snapshot)?),
-        OutputFormat::Text => {
-            println!("schema: {}", snapshot.schema);
-            println!("degraded: {}", snapshot.degraded);
-            println!("worktrees: {}", snapshot.worktrees.len());
-            for worktree in &snapshot.worktrees {
-                println!(
-                    "{}\t{}\t{}",
-                    headless_field(worktree.branch.as_deref().unwrap_or("<detached>")),
-                    if worktree.adopted {
-                        "adopted"
-                    } else {
-                        "created"
-                    },
-                    headless_field(&worktree.canonical_path)
-                );
-            }
-            if let Some(error) = &snapshot.local_store_error {
-                println!("store-error: {}", headless_field(error));
-            }
-        }
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[tokio::test]
     async fn fake_status_and_board_are_deterministic_and_not_degraded() {
-        let work = super::super::build_work_snapshot(true, false).await;
+        let work = super::super::build_work_snapshot(&HeadlessOptions::fixture(false)).await;
         assert!(!work.degraded);
         assert_eq!(work.work.len(), 4);
 

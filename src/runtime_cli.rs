@@ -1,5 +1,6 @@
 //! Pure argument validation. This module must never discover configuration, touch
 //! state, spawn a process, or enter a terminal (including the help/error paths).
+use codex_tui::headless::validate_options as headless_options;
 use std::collections::BTreeSet;
 
 const HELP: &str = "Usage: codex-tui [--fake | --target NAME]
@@ -7,7 +8,7 @@ const HELP: &str = "Usage: codex-tui [--fake | --target NAME]
        codex-tui doctor [codex|git|forge|store|presets|terminal]
        codex-tui doctor compat [--json]
        codex-tui doctor bundle [--output PATH]
-       codex-tui headless <threads|work|status|attention|board|forge|worktrees> [--json] [--fake|--fixture-10k]
+       codex-tui headless <threads|work|status|attention|board|forge|worktrees> [--json] [--fake|--fixture-10k|--target NAME]
        codex-tui status | thread list | attention list | board list | forge status | worktree list
        codex-tui release <verify|benchmark|render-benchmark|interaction-benchmark|scale|failure-matrix> [OPTIONS]
        codex-tui soak [--rows N] [--cycles N] [--duration-seconds N] [--json]
@@ -21,7 +22,8 @@ const DOCTOR_HELP: &str = "Usage: codex-tui doctor [codex|git|forge|store|preset
        codex-tui doctor bundle [--output PATH]
 
 Failed requested diagnostics exit 3; unknown scopes/options exit 2.";
-const HEADLESS_HELP: &str = "Usage: codex-tui headless <threads|work|status|attention|board|forge|worktrees> [--json] [--fake|--fixture-10k]
+const HEADLESS_HELP: &str = "Usage: codex-tui headless <threads|work|status|attention|board|forge|worktrees> [--json] [--fake|--fixture-10k|--target NAME]
+Codex views use configured active target or --target NAME; forge/worktrees reject --target.
 Read-only aliases: status, thread list, attention list, board list, forge status, worktree list.
 Exit codes: 0 success, 2 invalid usage, 3 degraded.";
 const RELEASE_HELP: &str = "Usage: codex-tui release verify --channel preview|stable --tag TAG --commit SHA [--evidence PATH] [--publish] [--json]
@@ -94,11 +96,11 @@ fn validate(words: &[&str], help: bool) -> Result<(), String> {
                 Some(
                     &("threads" | "work" | "status" | "attention" | "board" | "forge"
                     | "worktrees"),
-                ) => headless_options(&words[2..]),
+                ) => headless_options(words[1], &words[2..]),
                 _ => Err("headless requires a known read-only command".into()),
             }
         }
-        Some("status") => headless_options(&words[1..]),
+        Some("status") => headless_options("status", &words[1..]),
         Some("thread" | "attention" | "board" | "forge" | "worktree") => {
             if words.len() == 1 && help {
                 return Ok(());
@@ -111,7 +113,12 @@ fn validate(words: &[&str], help: bool) -> Result<(), String> {
             if words.get(1) != Some(&verb) {
                 return Err(format!("usage: codex-tui {} {verb}", words[0]));
             }
-            headless_options(&words[2..])
+            let command = match words[0] {
+                "thread" => "threads",
+                "worktree" => "worktrees",
+                other => other,
+            };
+            headless_options(command, &words[2..])
         }
         Some("release") => {
             if words.len() == 1 && help {
@@ -186,14 +193,6 @@ fn validate_limits(words: &[&str]) -> Result<(), String> {
         if pair[1].parse::<usize>().is_ok_and(|value| value > maximum) {
             return Err(format!("{} must be <= {maximum}", pair[0]));
         }
-    }
-    Ok(())
-}
-
-fn headless_options(words: &[&str]) -> Result<(), String> {
-    options(words, &["--json", "--fake", "--fixture-10k"], &[])?;
-    if words.contains(&"--fake") && words.contains(&"--fixture-10k") {
-        return Err("choose --fake or --fixture-10k, not both".into());
     }
     Ok(())
 }

@@ -468,16 +468,16 @@ fn registry_repo_only_filter_keeps_unresolved_and_degraded_candidates() {
     let effects = reduce(&mut app, Action::ToggleRepoBackedFilter);
     assert_eq!(effects, vec![Effect::PersistOperatorState]);
     assert!(app.repo_backed_only);
-    assert_eq!(app.visible_indices(), vec![0, 2]);
+    assert_eq!(app.visible_indices(), vec![2, 0]);
 
     app.git_contexts.remove(&degraded_id.0);
-    assert_eq!(app.visible_indices(), vec![0, 2]);
+    assert_eq!(app.visible_indices(), vec![2, 0]);
 
     app.git_contexts.insert(
         degraded_id.0.clone(),
         GitContext::pending(degraded_id.clone(), cwd.clone()),
     );
-    assert_eq!(app.visible_indices(), vec![0, 2]);
+    assert_eq!(app.visible_indices(), vec![2, 0]);
 
     let context = app.git_contexts.get_mut(&degraded_id.0).expect("context");
     context.observed_at_unix_ms = 1;
@@ -485,7 +485,7 @@ fn registry_repo_only_filter_keeps_unresolved_and_degraded_candidates() {
 
     reduce(&mut app, Action::ToggleRepoBackedFilter);
     assert!(!app.repo_backed_only);
-    assert_eq!(app.visible_indices(), vec![0, 1, 2, 3]);
+    assert_eq!(app.visible_indices(), vec![2, 1, 0, 3]);
 }
 
 #[test]
@@ -2397,7 +2397,7 @@ fn per_thread_draft_scroll_and_follow_are_independent() {
     reduce(&mut app, Action::SetDraft("first draft".into()));
     reduce(&mut app, Action::ScrollBy(5));
     reduce(&mut app, Action::Back);
-    reduce(&mut app, Action::MoveSelection(1));
+    app.selected = 1;
     reduce(&mut app, Action::OpenSelected);
     reduce(&mut app, Action::SetDraft("second draft".into()));
 
