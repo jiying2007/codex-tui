@@ -57,6 +57,7 @@ mod queue_confirmation;
 mod queue_editor;
 mod reading_snapshot;
 mod reducer;
+mod registry;
 pub(crate) mod request_details;
 mod review;
 mod state;
@@ -69,6 +70,8 @@ mod watch;
 pub use queue_confirmation::QueueConfirmation;
 pub use reducer::reduce;
 pub use types::{Action, ContextChoice, Effect, InputMode, View, ViewKind};
+
+use registry::{ensure_selection_visible, restore_selection};
 
 const REGISTRY_RECENT_LIMIT: usize = 100;
 const CONVERSATION_CACHE_LIMIT: usize = 16;
@@ -982,15 +985,6 @@ fn normalize_pasted_input(mode: InputMode, value: &str) -> String {
             .collect()
     } else {
         sanitize_inline(value)
-    }
-}
-
-fn ensure_selection_visible(state: &mut AppState) {
-    let visible = state.visible_indices();
-    if visible.is_empty() {
-        state.selected = 0;
-    } else if !visible.contains(&state.selected) {
-        state.selected = visible[0];
     }
 }
 

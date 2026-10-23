@@ -108,18 +108,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.threads = threads;
             state.rebuild_thread_indexes();
             state.reconcile_cwd_locality_cache(state.host_local_only || state.repo_backed_only);
-            if state.threads.is_empty() {
-                state.selected = 0;
-            } else if let Some(id) = selected_id {
-                state.selected = state
-                    .thread_index_by_id
-                    .get(&id.0)
-                    .copied()
-                    .unwrap_or_else(|| state.selected.min(state.threads.len() - 1));
-            } else {
-                state.selected = state.selected.min(state.threads.len() - 1);
-            }
-            ensure_selection_visible(state);
+            restore_selection(state, selected_id);
         }
         Action::BackendStatus(status) => state.backend_status = status,
         Action::RefreshGitProjections => {

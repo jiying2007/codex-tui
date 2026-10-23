@@ -41,6 +41,7 @@ codex-tui doctor bundle --output ./codex-tui-support
 
 ~~~bash
 codex-tui headless threads --json
+codex-tui headless threads --target local-alt --json
 codex-tui headless work --json
 codex-tui headless status --json
 codex-tui headless attention --json
@@ -48,6 +49,7 @@ codex-tui headless board --json
 codex-tui headless forge --json
 codex-tui headless worktrees --json
 codex-tui status
+codex-tui status --target local-alt --json
 codex-tui thread list
 codex-tui attention list
 codex-tui board list
@@ -56,6 +58,17 @@ codex-tui worktree list
 ~~~
 
 `headless threads --fixture-10k` gives synthetic scale metadata. There is no headless mutation API. Do not infer Forge authentication from headless fixture output.
+
+`threads`, `work`, `status`, `attention` and `board`, including their top-level aliases, resolve the configured `[app_server].active` target unless `--target NAME` overrides it. Each invocation reads one target. An unknown target, invalid configuration or failed connection reports a degraded result and exits `3`; it never silently falls back to local or fixture data. A missing configuration uses in-memory defaults without creating a config file. Missing or duplicate target arguments, `--target` with `--fake`/`--fixture-10k`, and `--target` on `forge`/`worktrees` are syntax errors (`2`).
+
+| Output | Scope |
+| --- | --- |
+| Codex-backed `source.targetId`, `source.transport`, `source.scope` | Selected target and transport; `single-target` for real reads, `fixture` for synthetic input |
+| `work`/`status`/`attention`/`board` `localStoreScope` | `shared-across-targets` for local metadata, `not-loaded` if source resolution failed before loading, or `fixture` |
+| Forge `scope` | `current-directory` (or `fixture`) |
+| Worktrees `scope` | `shared-local-cache` (or `fixture`) |
+
+The local store still keys aliases, pins and planning metadata by bare thread IDs. Two targets reusing an ID can therefore share that metadata; target selection does not isolate it. `threads` reports the source inventory without those overlays. Invalid target resolution occurs before store loading. Successful local-store reads retain the existing SQLite initialization/WAL behavior; “read-only” describes the lack of upstream mutations, not a promise of zero local filesystem writes. Plain-text output also identifies the source and scope and presents failures explicitly.
 
 ## Development-only release and soak measurements
 <!-- docs-section: diagnostics -->

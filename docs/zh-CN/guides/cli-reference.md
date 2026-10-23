@@ -41,6 +41,7 @@ codex-tui doctor bundle --output ./codex-tui-support
 
 ~~~bash
 codex-tui headless threads --json
+codex-tui headless threads --target local-alt --json
 codex-tui headless work --json
 codex-tui headless status --json
 codex-tui headless attention --json
@@ -48,6 +49,7 @@ codex-tui headless board --json
 codex-tui headless forge --json
 codex-tui headless worktrees --json
 codex-tui status
+codex-tui status --target local-alt --json
 codex-tui thread list
 codex-tui attention list
 codex-tui board list
@@ -56,6 +58,17 @@ codex-tui worktree list
 ~~~
 
 `headless threads --fixture-10k` 只是合成规模数据，没有无头写操作接口，不可将它视为真实 Forge/账号验收。
+
+`threads`、`work`、`status`、`attention`、`board` 及其顶层别名，默认解析 `[app_server].active`，也可用 `--target NAME` 覆盖。每次调用只读取一个目标。未知目标、配置错误或连接失败会明确降级并返回 `3`，不会悄悄回退到本机或测试数据。配置不存在时仅使用内存默认值，不创建配置文件。缺失/重复的目标参数、`--target` 与 `--fake`/`--fixture-10k` 混用，以及对 `forge`/`worktrees` 使用 `--target`，均返回语法错误 `2`。
+
+| 输出字段 | 范围 |
+| --- | --- |
+| Codex 视图的 `source.targetId`、`source.transport`、`source.scope` | 所选目标和传输；真实读取为 `single-target`，合成数据为 `fixture` |
+| `work`/`status`/`attention`/`board` 的 `localStoreScope` | 本地元数据为 `shared-across-targets`，目标解析失败且尚未加载时为 `not-loaded`，测试数据为 `fixture` |
+| Forge 的 `scope` | `current-directory` 或 `fixture` |
+| Worktrees 的 `scope` | `shared-local-cache` 或 `fixture` |
+
+本地别名、置顶与规划元数据仍以不含目标的会话 ID 为键；两个目标使用相同 ID 时，可能共享这些元数据，切换目标不会隔离它们。`threads` 只报告源清单，不应用这些覆盖层。无效目标在读取本地存储前失败；成功读取仍可能触发已有 SQLite 初始化/WAL 行为。“只读”指没有上游变更接口，不承诺本地文件系统零写入。纯文本同样显示来源、范围与明确的失败原因。
 
 ## 开发诊断、基准与长稳
 <!-- docs-section: diagnostics -->

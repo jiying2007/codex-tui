@@ -74,12 +74,16 @@ The global `Ctrl+K` Command Palette now shows **Mission Control actions first** 
 
 ### Mission Control
 
-- Workspaces grouped from Codex project identity, Git repository identity, or cwd
-- Threads grouped into Needs You / Working / Ready / Inactive
+- Attention-first thread list: Needs You before pinned work, then recent activity, with stable thread selection across refreshes
+- The recent window stays bounded; pins and actionable attention remain reachable outside that window
+- Workspace-grouped List and Review Queue Saved Views on the Board, derived from project/repository identity or cwd
+- Needs You / Working / Ready / Inactive status, including attention reasons in compact terminals
 - Fuzzy filter/search
 - Pin and local alias
 - Exact-thread navigation
 - Jump to next attention item
+
+Use `b` to open the Board and `Tab` to choose Needs You or Needs Review; these list views keep each workspace together. Use `r` for Review and `w` for Workspace context on the selected thread. Headless Codex projections use the configured active target or `--target NAME`, one target per invocation; their output distinguishes that target from local metadata shared across targets. See the [operator handbook](docs/guides/operator-guide.md) and [CLI reference](docs/guides/cli-reference.md).
 
 ### Thread View (maintenance-only compatibility surface)
 

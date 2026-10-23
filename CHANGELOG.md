@@ -17,6 +17,10 @@ All notable codex-tui changes are recorded here.
 
 ### Audit hardening
 
+- Prioritize actionable Mission Control rows within the existing bounded registry window, preserve selected thread identity across refreshes, and show attention reasons in compact layouts with direct Board/Review/Workspace hints.
+- Keep workspace/stage/source groups contiguous in List and Review Queue Saved Views while preserving the selected order within each group and existing Board column behavior.
+- Resolve Headless Codex views through the configured active target or `--target`, report target/transport and local-store scopes explicitly, and reject invalid selections before local-store loading without silently falling back or materializing default configuration. Preserve shared bare-thread-ID local metadata and disclose its cross-target scope.
+
 - Reject unhealthy SQLite images before WAL/schema/FTS initialization; share failed startup admission with cloned recovery/index workers, return Doctor exit 3, and allow explicit health re-admission after repair. Read one WorkCard or ScratchWork by its indexed identity and batch snapshot links inside one read transaction.
 - Configure WSS with a production ring provider and native trust roots; preserve certificate/hostname checks. Update rustls to 0.23.46, rustls-webpki to 0.103.16 (RUSTSEC-2026-0382), serde_json to 1.0.154 and tokio to 1.53.3; retain actual-binary trusted/untrusted/hostname/early-close TLS regressions.
 - Track confirmed App Server subscriptions separately from server-loaded inventory and local watch ownership. Acquire with lightweight resume, release on final-owner departure, and preserve late-ack, shutdown, rejection, pending-approval and command-backpressure ordering without automatic write replay.

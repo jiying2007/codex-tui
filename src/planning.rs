@@ -5,6 +5,9 @@ use crate::goal::{GoalObservation, GoalStatus};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
+mod saved_views;
+pub use saved_views::apply_saved_view;
+
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum SourceKind {
@@ -294,41 +297,6 @@ pub fn builtin_saved_views() -> Vec<SavedView> {
             visible_fields: vec!["workspace".into(), "stage".into(), "attention".into()],
         },
     ]
-}
-
-pub fn apply_saved_view<'a>(
-    cards: &'a [WorkCardProjection],
-    view: &SavedView,
-) -> Vec<&'a WorkCardProjection> {
-    let mut selected = cards
-        .iter()
-        .filter(|card| source_scope_matches(card, &view.source_scope))
-        .filter(|card| card_matches_filter(card, &view.filter))
-        .collect::<Vec<_>>();
-
-    match view.order_by.as_deref() {
-        Some("title") => selected.sort_by(|left, right| left.title.cmp(&right.title)),
-        Some("stage") => selected.sort_by(|left, right| {
-            left.stage
-                .cmp(&right.stage)
-                .then_with(|| left.title.cmp(&right.title))
-        }),
-        Some("workspace") => selected.sort_by(|left, right| {
-            left.workspace
-                .as_deref()
-                .unwrap_or("")
-                .cmp(right.workspace.as_deref().unwrap_or(""))
-                .then_with(|| left.title.cmp(&right.title))
-        }),
-        _ => selected.sort_by(|left, right| {
-            left.overlay
-                .priority
-                .unwrap_or(i32::MAX)
-                .cmp(&right.overlay.priority.unwrap_or(i32::MAX))
-                .then_with(|| left.title.cmp(&right.title))
-        }),
-    }
-    selected
 }
 
 pub fn saved_view_group_key(card: &WorkCardProjection, group_by: Option<&str>) -> String {
