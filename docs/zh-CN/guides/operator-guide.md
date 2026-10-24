@@ -44,7 +44,7 @@ Mission Control 按待处理、置顶、最近活动排序，同优先级以会�
 
 Registry 提醒也包含已经观测到的 Goal 阻塞、用量或预算限制、流水线失败、请求修改及工作树冲突。Board、List 和 Review Queue 每张卡片使用一行，按终端宽度截断长标题或工作区名称，使导航选中项保持可见。
 
-`j/k` 选中、Enter 打开、`/` 筛选、`Ctrl+K` 命令面板、`?` 查看实时键位。`b` 打开 Board，`Tab` 切换 Saved View，包括按工作区分组的 Needs You / Needs Review 列表。List/Review Queue 将同一工作区连续排列，组内按所选顺序排序；Board 列仍按工作流阶段排列。Board 内用 `h/l` 切换列、`j/k` 选择卡片；Mission Control 的 `r` 进入所选会话的 Review，`w` 进入 Workspace。这些入口直达既有交付上下文；Board/Attention 始终是派生视图。
+选中任务或看板卡片按 `=`、再按 `1–9` 绑定快捷槽。Registry、Board、Thread、Review、Workspace、Managed Worktrees 中按 `1–9` 可直接打开绑定会话或本地 Scratch；当前会话重复选中不会重载。目标不可用会明确提示，不会误开其他会话。文本编辑、审批确认和 Terminal Drawer 聚焦时，按键仍由这些操作处理；快捷槽不启动或调度任务。\n\n`j/k` 选中、Enter 打开、`/` 筛选、`Ctrl+K` 命令面板、`?` 查看实时键位。`b` 打开 Board，`Tab` 切换 Saved View，包括按工作区分组的 Needs You / Needs Review 列表。List/Review Queue 将同一工作区连续排列，组内按所选顺序排序；Board 列仍按工作流阶段排列。Board 内用 `h/l` 切换列、`j/k` 选择卡片；Mission Control 的 `r` 进入所选会话的 Review，`w` 进入 Workspace。这些入口直达既有交付上下文；Board/Attention 始终是派生视图。
 
 Headless 的 `threads`、`work`、`status`、`attention`、`board` 使用配置中的活动 Codex 目标或 `--target NAME`，一次只获取一个目标。来源字段标明目标与传输，规划视图明确标记本地存储跨目标共享。别名/置顶/卡片仍以不含目标的会话 ID 为键，跨目标的相同 ID 可能共享本地元数据。Forge 读取当前目录，Worktrees 读取共享本地缓存。详见 [CLI 范围与失败语义](cli-reference.md#只读无头命令)。
 
@@ -76,7 +76,7 @@ Forge 概览仅获取各能力最近 20 条记录。GitHub Issues API 会混入 
 ## 本地语言与可访问性
 <!-- docs-section: language -->
 
-配置 `[ui].language = "en"` 或 `"zh-CN"`，或使用 `"auto"` 跟随进程简体语言环境。`presentation = "quiet"` 合并后台刷新；`"screen-reader"` 降低后台刷新频率但保持直接输入即时响应。`[notifications].mode` 默认 `"off"`。桌面通知仅在输出时净化和限制标题的显示宽度；Linux 系统通知在 `notify-send --` 选项终止符之后传递动态文本，原始工作项名称与通知追踪状态保持不变。启用通知后使用有界分派队列和 128 条待投递重试队列，由正常 UI 循环非阻塞排空；超过容量会明确提示未入队数量并引导查看 Needs You，而不是声称不会丢提醒。这些都只是本地偏好，不会创建团队同步权威。
+配置 `[ui].language = "en"` 或 `"zh-CN"`，或使用 `"auto"` 跟随进程简体语言环境。`presentation = "quiet"` 合并后台刷新；`"screen-reader"` 降低后台刷新频率但保持直接输入即时响应。`[notifications].mode` 默认 `"off"`。同一 75 毫秒窗口的多条完成／待处理提醒会合并为一次响铃或通知，保留最高优先级事件与其余提醒数量；原始 Attention/事件边沿不丢失。Windows SSH Ubuntu 时，即使选择 `"os"`，也经 SSH 回退为客户端终端响铃，不会误以为服务器的桌面通知是 Windows Toast；Windows Terminal SSH 配置可设 `"bellStyle": "all"` 实现声音和任务栏闪烁，在 Ubuntu 用 `printf '\\a'` 验证。TUI 必须持续运行并连接，断线、终端模拟器或 tmux 可能影响送达；未增加 Windows 远端通知桥接器。桌面通知仅在输出时净化和限制标题的显示宽度；Linux 系统通知在 `notify-send --` 选项终止符之后传递动态文本，原始工作项名称与通知追踪状态保持不变。启用通知后使用有界分派队列和 128 条待投递重试队列，由正常 UI 循环非阻塞排空；超过容量会明确提示未入队数量并引导查看 Needs You，而不是声称不会丢提醒。这些都只是本地偏好，不会创建团队同步权威。
 
 受管 Worktree 变更与异常协调优先使用完整 NUL 分隔 Git 清单，以准确保留换行和尾随空格。Linux 资格镜像中的旧 Git 2.25 不支持 Worktree `-z`：此时使用严格完整的纯文本 porcelain 解析，保留尾随空格；遇到格式歧义时拒绝，不得据此推断工作树不存在。包含换行的工作树路径需要支持 NUL 的新版 Git。非法编码及标准输出超过 256 KiB 时保守拒绝；超大清单另做资格验证。
 
