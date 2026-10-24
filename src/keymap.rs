@@ -28,7 +28,7 @@ pub const HELP_BINDINGS: &[HelpBinding] = &[
     HelpBinding { surface: "Global", scope: HelpScope::AllViews, token: "Esc", code: KeyCode::Esc, modifiers: KeyModifiers::NONE, command: Command::Back },
     HelpBinding { surface: "Terminal drawer", scope: HelpScope::NonScratch, token: "t", code: KeyCode::Char('t'), modifiers: KeyModifiers::NONE, command: Command::TerminalDrawer },
     HelpBinding { surface: "Terminal drawer", scope: HelpScope::NonScratch, token: "T", code: KeyCode::Char('T'), modifiers: KeyModifiers::NONE, command: Command::CloseTerminalDrawer },
-    HelpBinding { surface: "Hot slots", scope: HelpScope::NonScratch, token: "= then 1–9", code: KeyCode::Char('='), modifiers: KeyModifiers::NONE, command: Command::BeginHotSlotBind },
+    HelpBinding { surface: "Hot slots", scope: HelpScope::NonScratch, token: "=", code: KeyCode::Char('='), modifiers: KeyModifiers::NONE, command: Command::BeginHotSlotBind },
     HelpBinding { surface: "Hot slots", scope: HelpScope::NonScratch, token: "1–9", code: KeyCode::Char('1'), modifiers: KeyModifiers::NONE, command: Command::HotSlot(1) },
     HelpBinding { surface: "Hot slots", scope: HelpScope::NonScratch, token: "1–9", code: KeyCode::Char('9'), modifiers: KeyModifiers::NONE, command: Command::HotSlot(9) },
     HelpBinding { surface: "Registry", scope: HelpScope::View(ViewKind::Registry), token: "j/k", code: KeyCode::Char('j'), modifiers: KeyModifiers::NONE, command: Command::Next },

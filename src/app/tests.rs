@@ -2975,6 +2975,9 @@ fn same_cwd_git_fanout_shares_inventory_without_sharing_thread_identity() {
 #[test]
 fn hot_slots_jump_directly_across_views_and_keep_bounded_history() {
     let mut state = app();
+    for thread in &mut state.threads {
+        thread.runtime = RuntimeStatus::Inactive;
+    }
     let first = state.threads[0].id.clone();
     let second = state.threads[1].id.clone();
     state.view = View::Thread(first.clone());

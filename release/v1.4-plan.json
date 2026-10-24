@@ -149,7 +149,7 @@
   ],
   "moduleRatchet": {
     "src/app.rs": 1015,
-    "src/ui.rs": 1426,
+    "src/ui.rs": 1428,
     "src/app_server.rs": 2682,
     "src/main.rs": 1881,
     "src/sqlite_store.rs": 1849,
@@ -276,7 +276,7 @@
     "src/forge/remote_identity_tests.rs": 47,
     "src/app/reducer.rs": 2522,
     "src/app/state.rs": 835,
-    "src/app/tests.rs": 3031,
+    "src/app/tests.rs": 3034,
     "src/app/thread_queue_reducer_tests.rs": 123,
     "src/ui/tests.rs": 1164,
     "src/sqlite_store/tests.rs": 1098,
