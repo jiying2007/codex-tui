@@ -26,12 +26,34 @@
       "id": "stable-0.162.1-project-unassignment",
       "path": "tests/fixtures/protocol/stable-0.162.1/project-unassignment.jsonl",
       "expectation": "pass"
+    },
+    {
+      "id": "stable-0.164.0-registry",
+      "path": "tests/fixtures/protocol/stable-0.164.0/registry.jsonl",
+      "expectation": "pass"
+    },
+    {
+      "id": "stable-0.164.0-thread-list",
+      "path": "tests/fixtures/protocol/stable-0.164.0/thread-list.json",
+      "expectation": "pass"
+    },
+    {
+      "id": "stable-0.164.0-thread-read",
+      "path": "tests/fixtures/protocol/stable-0.164.0/thread-read.json",
+      "expectation": "pass"
+    },
+    {
+      "id": "stable-0.164.0-items",
+      "path": "tests/fixtures/protocol/stable-0.164.0/items.json",
+      "expectation": "pass"
     }
   ],
   "upstreamBaseline": {
     "repository": "openai/codex",
-    "releaseTag": "rust-v0.162.1",
-    "releaseDate": "2026-10-09",
-    "authority": "pinned public generated App Server protocol plus authoritative project-clear integration fixture; no real server L3 qualification"
+    "releaseTag": "rust-v0.164.0",
+    "releaseDate": "2026-10-23",
+    "authority": "pinned public generated App Server protocol and tagged source review with synthetic production-parser replay; no real server L3 qualification",
+    "releaseCommit": "6aaac694803004a63c6f393d153c96d22521a6b9",
+    "assessmentPath": "tests/fixtures/protocol/stable-0.164.0/assessment.json"
   }
 }

@@ -1,6 +1,8 @@
 use codex_tui::{
     backend::CodexBackend,
-    domain::{AttentionReason, RuntimeStatus},
+    codex_protocol::{normalize_thread, parse_thread_list},
+    conversation::{ConversationItemKind, parse_items_page, parse_legacy_thread_read},
+    domain::{AttentionReason, RuntimeStatus, ThreadId},
     replay_backend::ReplayBackend,
 };
 
@@ -26,6 +28,79 @@ fn current_registry_fixture_replays_through_production_normalization() {
 
     let renamed = replay.tick();
     assert_eq!(renamed.threads[0].title, "Current renamed");
+}
+
+#[test]
+fn stable_0_164_0_read_state_events_do_not_change_local_attention_or_drop_updates() {
+    let mut replay = ReplayBackend::from_jsonl(include_str!(
+        "fixtures/protocol/stable-0.164.0/registry.jsonl"
+    ))
+    .expect("reviewed upstream notification shapes");
+    assert_eq!(
+        replay.frame_count(),
+        4,
+        "read-state events stay unsupported"
+    );
+    let started = replay.tick();
+    assert!(started.threads[0].attention.is_empty());
+    let waiting = replay.tick();
+    assert_eq!(waiting.threads[0].runtime, RuntimeStatus::WaitingHuman);
+    assert_eq!(
+        waiting.threads[0].attention,
+        [AttentionReason::ApprovalRequired]
+    );
+    let renamed = replay.tick();
+    assert_eq!(renamed.threads[0].title, "Still actionable");
+    assert_eq!(renamed.threads[0].attention, waiting.threads[0].attention);
+}
+
+#[test]
+fn stable_0_164_0_thread_list_accepts_additive_read_state_without_owning_it() {
+    let value = serde_json::from_str(include_str!(
+        "fixtures/protocol/stable-0.164.0/thread-list.json"
+    ))
+    .unwrap();
+    let page = parse_thread_list(value).expect("additive list response");
+    assert_eq!(page.next_cursor.as_deref(), Some("next-page"));
+    let thread = normalize_thread(page.data.into_iter().next().unwrap(), None);
+    assert_eq!(thread.id.0, "stable-0164-thread");
+    assert_eq!(thread.title, "Protocol fixture");
+    assert_eq!(thread.runtime, RuntimeStatus::Ready);
+    assert!(
+        thread.attention.is_empty(),
+        "no implicit upstream unread sync"
+    );
+}
+
+#[test]
+fn stable_0_164_0_read_state_does_not_break_existing_history_parser() {
+    let value = serde_json::from_str(include_str!(
+        "fixtures/protocol/stable-0.164.0/thread-read.json"
+    ))
+    .unwrap();
+    let page = parse_legacy_thread_read(value, ThreadId::new("stable-0164-thread"))
+        .expect("additive read response");
+    assert_eq!(page.title.as_deref(), Some("Protocol fixture"));
+    assert_eq!(page.items.len(), 2);
+    assert_eq!(page.items[0].kind, ConversationItemKind::User);
+    assert_eq!(page.items[1].text, "Fixture response");
+}
+
+#[test]
+fn stable_0_164_0_image_result_variants_keep_neighboring_history_and_pagination() {
+    let value =
+        serde_json::from_str(include_str!("fixtures/protocol/stable-0.164.0/items.json")).unwrap();
+    let (items, cursor) = parse_items_page(value).expect("image result variants");
+    assert_eq!(cursor.as_deref(), Some("older-items"));
+    assert_eq!(items.len(), 3);
+    for (item, id) in items[..2].iter().zip(["image-inline", "image-reference"]) {
+        assert_eq!(item.item_id, id);
+        assert_eq!(item.kind, ConversationItemKind::Other);
+        assert_eq!(item.text, "imageGeneration");
+        assert_eq!(item.status.as_deref(), Some("completed"));
+    }
+    assert_eq!(items[2].kind, ConversationItemKind::Assistant);
+    assert_eq!(items[2].text, "Text after images");
 }
 
 #[test]

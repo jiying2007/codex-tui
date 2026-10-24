@@ -1,0 +1,115 @@
+{
+  "schema": "codex-tui/upstream-protocol-review/v1",
+  "reviewedOn": "2026-10-24",
+  "repository": "openai/codex",
+  "fromTag": "rust-v0.162.1",
+  "releaseTag": "rust-v0.164.0",
+  "releaseCommit": "6aaac694803004a63c6f393d153c96d22521a6b9",
+  "releaseDate": "2026-10-23",
+  "authority": "tagged public protocol/source review and synthetic production-parser replay",
+  "realAccountQualified": false,
+  "l3Qualified": false,
+  "stableQualified": false,
+  "scope": "Review client-consumed protocol shapes and connection subscription contracts. This is not a complete upstream implementation audit or a live interoperability claim.",
+  "decisions": [
+    {
+      "surface": "thread/list.excludedThreadIds",
+      "change": "Optional exclusions, at most 100; unchanged behavior when omitted.",
+      "decision": "Keep existing paginated inventory requests; do not exclude unseen threads."
+    },
+    {
+      "surface": "thread/list.readStates, thread/read.readState, thread/readState/changed",
+      "change": "Experimental revision-bound durable read receipts and notifications.",
+      "decision": "Ignore additive metadata and unknown notifications. Preserve local unread/acknowledge authority; no readState/update writes or new sync capability."
+    },
+    {
+      "surface": "imageGeneration",
+      "change": "Generated item accepts result or fileId, plus optional inputImages.",
+      "decision": "Retain the existing explicit generic item presentation for both image variants; preserve adjacent text and pagination without fetching image files."
+    },
+    {
+      "surface": "TurnToolOutput.retain",
+      "change": "Optional retention request on tool output.",
+      "decision": "Client does not send tool-output payloads; no new history-writing behavior."
+    },
+    {
+      "surface": "thread/resume, thread/unsubscribe",
+      "change": "Public request/status shapes unchanged; source refactors unloading and restores saved model/permission settings.",
+      "decision": "Keep explicit per-connection resume with excludeTurns, release cleanup after an attached error, response-before-request replay, and no implicit subscription from inventory/history reads."
+    },
+    {
+      "surface": "thread/sample, thread/items/read, prediction-mode forks, feedback/save and other capabilities",
+      "change": "New or extended capabilities outside this client feature scope.",
+      "decision": "Do not opt into new methods; preserve the convergence freeze and fail-soft notification handling."
+    }
+  ],
+  "sources": [
+    {
+      "path": "codex-rs/app-server-protocol/schema/typescript/v2/ThreadListParams.ts",
+      "gitBlob": "66f0d1e1cb7f3022ef924a1d7d4c7b0354e0986d",
+      "url": "https://github.com/openai/codex/blob/6aaac694803004a63c6f393d153c96d22521a6b9/codex-rs/app-server-protocol/schema/typescript/v2/ThreadListParams.ts"
+    },
+    {
+      "path": "codex-rs/app-server-protocol/src/protocol/v2/thread.rs",
+      "gitBlob": "a7a76234f36eb3918c633026fac52e96c6b9817f",
+      "url": "https://github.com/openai/codex/blob/6aaac694803004a63c6f393d153c96d22521a6b9/codex-rs/app-server-protocol/src/protocol/v2/thread.rs"
+    },
+    {
+      "path": "codex-rs/app-server-protocol/src/protocol/common.rs",
+      "gitBlob": "b183d6a2e55553793cff129defd0ff1a69db6e7b",
+      "url": "https://github.com/openai/codex/blob/6aaac694803004a63c6f393d153c96d22521a6b9/codex-rs/app-server-protocol/src/protocol/common.rs"
+    },
+    {
+      "path": "codex-rs/app-server-protocol/schema/typescript/v2/ThreadReadState.ts",
+      "gitBlob": "8324a78a75172fc0e94fba06650510f26845660b",
+      "url": "https://github.com/openai/codex/blob/6aaac694803004a63c6f393d153c96d22521a6b9/codex-rs/app-server-protocol/schema/typescript/v2/ThreadReadState.ts"
+    },
+    {
+      "path": "codex-rs/app-server-protocol/schema/typescript/v2/ThreadReadStateChangedNotification.ts",
+      "gitBlob": "c640b4f9abf391e0b091e27c2948449369cb5ea1",
+      "url": "https://github.com/openai/codex/blob/6aaac694803004a63c6f393d153c96d22521a6b9/codex-rs/app-server-protocol/schema/typescript/v2/ThreadReadStateChangedNotification.ts"
+    },
+    {
+      "path": "codex-rs/app-server-protocol/schema/typescript/ImageGenerationItem.ts",
+      "gitBlob": "1dfe3aa12096ed00d54fc5a4db1245059291ffba",
+      "url": "https://github.com/openai/codex/blob/6aaac694803004a63c6f393d153c96d22521a6b9/codex-rs/app-server-protocol/schema/typescript/ImageGenerationItem.ts"
+    },
+    {
+      "path": "codex-rs/app-server-protocol/schema/typescript/ImageGenerationInputImage.ts",
+      "gitBlob": "fe604dfc2703d4b98d18bfaf459bb35618814862",
+      "url": "https://github.com/openai/codex/blob/6aaac694803004a63c6f393d153c96d22521a6b9/codex-rs/app-server-protocol/schema/typescript/ImageGenerationInputImage.ts"
+    },
+    {
+      "path": "codex-rs/app-server-protocol/schema/typescript/v2/TurnToolOutput.ts",
+      "gitBlob": "72955a7dd2c900a2320a8b5ffe02d5e2fbcaa573",
+      "url": "https://github.com/openai/codex/blob/6aaac694803004a63c6f393d153c96d22521a6b9/codex-rs/app-server-protocol/schema/typescript/v2/TurnToolOutput.ts"
+    },
+    {
+      "path": "codex-rs/app-server-protocol/schema/typescript/v2/ThreadResumeParams.ts",
+      "gitBlob": "4da03970e9f2f0d7b5e796c4dd0ea96fda69a95e",
+      "url": "https://github.com/openai/codex/blob/6aaac694803004a63c6f393d153c96d22521a6b9/codex-rs/app-server-protocol/schema/typescript/v2/ThreadResumeParams.ts"
+    },
+    {
+      "path": "codex-rs/app-server-protocol/schema/typescript/v2/ThreadUnsubscribeStatus.ts",
+      "gitBlob": "2970598dc1b48cfad5222febfd9336b86bf1d265",
+      "url": "https://github.com/openai/codex/blob/6aaac694803004a63c6f393d153c96d22521a6b9/codex-rs/app-server-protocol/schema/typescript/v2/ThreadUnsubscribeStatus.ts"
+    },
+    {
+      "path": "codex-rs/app-server/src/request_processors/thread_lifecycle.rs",
+      "gitBlob": "ab13ac6b0d4831912c691a85ebbcde850e1ce984",
+      "url": "https://github.com/openai/codex/blob/6aaac694803004a63c6f393d153c96d22521a6b9/codex-rs/app-server/src/request_processors/thread_lifecycle.rs"
+    },
+    {
+      "path": "codex-rs/app-server/src/request_processors/thread_processor.rs",
+      "gitBlob": "4d104e2d5e3818577d3725c801cc06c5c44d053a",
+      "url": "https://github.com/openai/codex/blob/6aaac694803004a63c6f393d153c96d22521a6b9/codex-rs/app-server/src/request_processors/thread_processor.rs"
+    }
+  ],
+  "testEntryPoints": [
+    "tests/protocol_replay.rs",
+    "src/app_server/subscriptions/wire_tests.rs",
+    "src/app_server/subscriptions/fault_tests.rs",
+    "src/app_server/subscriptions/wire_order_tests.rs"
+  ],
+  "remainingQualification": "Authenticated Codex L3, internal GitLab and real controlling TTY remain tracked by issue #211."
+}

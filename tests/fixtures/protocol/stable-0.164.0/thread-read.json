@@ -1,0 +1,43 @@
+{
+  "thread": {
+    "id": "stable-0164-thread",
+    "name": "Protocol fixture",
+    "preview": "Fixture question",
+    "updatedAt": 1,
+    "status": {
+      "type": "idle"
+    },
+    "cwd": "/fixtures/repo",
+    "source": "cli",
+    "turns": [
+      {
+        "id": "fixture-turn",
+        "status": "completed",
+        "items": [
+          {
+            "type": "userMessage",
+            "id": "user-fixture",
+            "content": [
+              {
+                "type": "text",
+                "text": "Fixture question"
+              }
+            ]
+          },
+          {
+            "type": "agentMessage",
+            "id": "agent-fixture",
+            "text": "Fixture response"
+          }
+        ]
+      }
+    ]
+  },
+  "readState": {
+    "firstUnread": {
+      "type": "turn",
+      "turnId": "fixture-turn"
+    },
+    "revision": "opaque-revision-1"
+  }
+}
