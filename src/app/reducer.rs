@@ -20,6 +20,7 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
     let mut effects = reduce_inner(state, action);
     if old_view != state.view && matches!(old_view, View::Thread(_)) {
         state.quick_prompt_return_view = None;
+        state.hot_slot_return_selected = None;
     }
     state.invalidate_request_details();
     state.invalidate_reading_snapshot();
@@ -1233,13 +1234,17 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             match target.kind {
                 SourceKind::CodexThread => {
                     let id = ThreadId::new(target.value);
-                    if let Some(index) = state
-                        .thread_index_by_id
-                        .get(&id.0)
-                        .copied()
-                        .filter(|index| {
-                            state.threads.get(*index).is_some_and(|thread| thread.id == id)
-                        })
+                    if let Some(index) =
+                        state
+                            .thread_index_by_id
+                            .get(&id.0)
+                            .copied()
+                            .filter(|index| {
+                                state
+                                    .threads
+                                    .get(*index)
+                                    .is_some_and(|thread| thread.id == id)
+                            })
                     {
                         if matches!(&state.view, View::Thread(current) if *current == id) {
                             // Re-selecting the current slot must not reload the transcript
@@ -1249,6 +1254,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                         // A hot-slot jump is reversible: Esc returns to the exact
                         // work surface, not always the generic Registry.
                         let return_view = state.view.clone();
+                        state.hot_slot_return_selected = state.selected_thread_id();
                         state.previous_target = state.current_thread_id().cloned();
                         state.quick_prompt_return_view = Some(return_view);
                         state.selected = index;
@@ -1664,6 +1670,20 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 .take()
                 .filter(|view| state.search_return_view_is_valid(view))
                 .unwrap_or(View::Registry);
+            if thread_id.is_some() {
+                if let Some(selected_id) = state.hot_slot_return_selected.take()
+                    && let Some(index) = state.thread_index_by_id.get(&selected_id.0).copied()
+                    && state
+                        .threads
+                        .get(index)
+                        .is_some_and(|thread| thread.id == selected_id)
+                {
+                    state.selected = index;
+                }
+                if matches!(state.view, View::Registry) {
+                    ensure_selection_visible(state);
+                }
+            }
             if let Some(thread_id) = thread_id {
                 return vec![Effect::StopWatchingConversation(thread_id)];
             }

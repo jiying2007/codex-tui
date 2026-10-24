@@ -3006,6 +3006,7 @@ fn hot_slots_jump_directly_across_views_and_keep_bounded_history() {
     assert!(same.is_empty(), "the active slot must not reload history");
     let back = reduce(&mut state, Action::Back);
     assert_eq!(state.view, View::Review(first.clone()));
+    assert_eq!(state.selected, 0, "the originating selection must be restored");
     assert!(back.contains(&Effect::StopWatchingConversation(second)));
     assert!(state.watched_conversations.contains(&first.0));
 }
@@ -3067,6 +3068,7 @@ fn hot_slot_jumps_return_to_the_originating_surface_without_reloading() {
 
         let back = reduce(&mut state, Action::Back);
         assert_eq!(state.view, origin, "hot slot lost its originating page");
+        assert_eq!(state.selected, 0, "hot slot lost the original selection");
         assert!(
             back.contains(&Effect::StopWatchingConversation(destination)),
             "completed foreground watch should be released on return"
@@ -3094,4 +3096,31 @@ fn hot_slot_index_rejects_an_outdated_identity_instead_of_opening_another_thread
         state.mutation_notice.as_deref(),
         Some("shortcut thread is not available on this target")
     );
+}
+
+#[test]
+fn hot_slot_return_keeps_registry_filter_and_original_selection() {
+    let mut state = app();
+    for thread in &mut state.threads {
+        thread.runtime = RuntimeStatus::Inactive;
+    }
+    let selected = state.threads[0].id.clone();
+    let destination = state.threads[1].id.clone();
+    state.filter = state.threads[0].title.clone();
+    state
+        .planning_snapshot
+        .hot_slots
+        .push(crate::planning::HotSlot {
+            slot: 9,
+            target: SourceRef::codex_thread(&destination),
+            updated_at_unix_ms: 1,
+        });
+    assert!(state.visible_indices().contains(&state.selected));
+    let _ = reduce(&mut state, Action::UseHotSlot(9));
+    assert_eq!(state.view, View::Thread(destination));
+    assert_ne!(state.selected_thread_id(), Some(selected.clone()));
+    let _ = reduce(&mut state, Action::Back);
+    assert_eq!(state.view, View::Registry);
+    assert_eq!(state.selected_thread_id(), Some(selected));
+    assert!(state.visible_indices().contains(&state.selected));
 }
