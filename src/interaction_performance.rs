@@ -4,6 +4,7 @@ use crate::{
     app::{Action, AppState, planning_worker, reduce},
     backend::{CodexBackend, FakeBackend},
     conversation::ConversationPage,
+    planning::SavedViewLayout,
     render_performance::{board_fixture, percentile, thread_fixture},
     ui,
 };
@@ -11,6 +12,10 @@ use anyhow::{Context, Result};
 use ratatui::{Terminal, backend::TestBackend};
 use serde::Serialize;
 use std::time::Instant;
+mod cli;
+mod fixtures;
+pub use cli::run_cli;
+use fixtures::{HeadlessFixture, list_fixture};
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -36,6 +41,7 @@ impl Distribution {
 struct Fixture {
     #[serde(rename = "fixture")]
     name: &'static str,
+    rows: usize,
     #[serde(flatten)]
     timing: Distribution,
 }
@@ -66,16 +72,13 @@ pub fn run(warmup: usize, iterations: usize, source: String) -> Result<Report> {
     let mut registry = AppState::new(FakeBackend::scaled(10_000).snapshot().threads);
     let mut board = board_fixture();
     let mut thread = thread_fixture();
+    let mut list = list_fixture(SavedViewLayout::List);
+    let mut review_queue = list_fixture(SavedViewLayout::ReviewQueue);
+    let headless = HeadlessFixture::new(10_000);
+    let mut rebase_50k = AppState::new(FakeBackend::scaled(50_000).snapshot().threads);
     let mut terminal = Terminal::new(TestBackend::new(160, 40))?;
-    let names = [
-        "registry-input-and-render-10k",
-        "board-navigation-and-render-10k",
-        "thread-revision-and-render-10k",
-        "planning-ui-snapshot-10k",
-        "planning-worker-compute-10k",
-        "planning-ui-commit-10k",
-    ];
-    let mut samples: [Vec<f64>; 6] = std::array::from_fn(|_| Vec::with_capacity(iterations));
+    let mut samples: [Vec<f64>; fixtures::NAMES.len()] =
+        std::array::from_fn(|_| Vec::with_capacity(iterations));
     for index in 0..warmup + iterations {
         let started = Instant::now();
         reduce(&mut registry, Action::MoveSelection(1));
@@ -106,6 +109,17 @@ pub fn run(warmup: usize, iterations: usize, source: String) -> Result<Report> {
         terminal.draw(|frame| ui::render(frame, &thread))?;
         let thread_ms = started.elapsed().as_secs_f64() * 1000.0;
         let planning = planning_worker::measure_once(&mut registry, index as u64);
+        let started = Instant::now();
+        reduce(&mut list, Action::MovePlanningSelection(1));
+        terminal.draw(|frame| ui::render(frame, &list))?;
+        let list_ms = started.elapsed().as_secs_f64() * 1000.0;
+        let started = Instant::now();
+        reduce(&mut review_queue, Action::MovePlanningSelection(1));
+        terminal.draw(|frame| ui::render(frame, &review_queue))?;
+        let review_queue_ms = started.elapsed().as_secs_f64() * 1000.0;
+        let headless_ms = headless.measure();
+        let rebase_10k_ms = planning_worker::measure_rebase_once(&mut registry, index as u64);
+        let rebase_50k_ms = planning_worker::measure_rebase_once(&mut rebase_50k, index as u64);
         if index >= warmup {
             for (values, value) in samples.iter_mut().zip([
                 registry_ms,
@@ -114,6 +128,11 @@ pub fn run(warmup: usize, iterations: usize, source: String) -> Result<Report> {
                 planning[0],
                 planning[1],
                 planning[2],
+                list_ms,
+                review_queue_ms,
+                headless_ms,
+                rebase_10k_ms,
+                rebase_50k_ms,
             ]) {
                 values.push(value);
             }
@@ -128,10 +147,11 @@ pub fn run(warmup: usize, iterations: usize, source: String) -> Result<Report> {
         iterations,
         viewport_width: 160,
         viewport_height: 40,
-        fixtures: names
+        fixtures: fixtures::NAMES
             .into_iter()
             .zip(samples)
             .map(|(name, values)| Fixture {
+                rows: 10_000 * if name.ends_with("50k") { 5 } else { 1 },
                 name,
                 timing: Distribution::of(values),
             })
@@ -144,39 +164,14 @@ pub fn run(warmup: usize, iterations: usize, source: String) -> Result<Report> {
     })
 }
 
-pub fn run_cli(args: &[String]) -> Result<i32> {
-    let (mut warmup, mut iterations) = (20, 200);
-    let mut source = "local-diagnostic".to_string();
-    let mut index = 0;
-    while let Some(arg) = args.get(index) {
-        match arg.as_str() {
-            "--warmup" | "--iterations" | "--source" => {
-                index += 1;
-                let value = args.get(index).context("benchmark option requires value")?;
-                match arg.as_str() {
-                    "--warmup" => warmup = value.parse()?,
-                    "--iterations" => iterations = value.parse()?,
-                    _ => source = value.clone(),
-                }
-            }
-            "--json" => {}
-            other => anyhow::bail!("unknown interaction benchmark option: {other}"),
-        }
-        index += 1;
-    }
-    println!(
-        "{}",
-        serde_json::to_string_pretty(&run(warmup, iterations, source)?)?
-    );
-    Ok(0)
-}
 #[cfg(test)]
 mod tests {
     use super::*;
     #[test]
     fn changed_state_diagnostics_do_not_claim_real_terminal_or_cost_savings() {
         let report = run(1, 2, "test".into()).unwrap();
-        assert_eq!(report.fixtures.len(), 6);
+        assert_eq!(report.fixtures.len(), 11);
+        assert_eq!(report.fixtures.last().unwrap().rows, 50_000);
         assert!(!report.sample_qualified);
         assert_eq!(report.model_inference_calls, 0);
         assert!(report.human_time_savings.is_none() && report.model_token_savings.is_none());

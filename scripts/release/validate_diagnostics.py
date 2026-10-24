@@ -13,6 +13,8 @@ INTERACTION_FIXTURES = {
     "registry-input-and-render-10k", "board-navigation-and-render-10k",
     "thread-revision-and-render-10k", "planning-ui-snapshot-10k",
     "planning-worker-compute-10k", "planning-ui-commit-10k",
+    "list-navigation-and-render-10k", "review-queue-navigation-and-render-10k",
+    "headless-local-cards-10k", "planning-ui-rebase-10k", "planning-ui-rebase-50k",
 }
 SCALE_TIMINGS = ("planningReconcile", "recentProjection", "allHistoryProjection",
                  "searchProjection", "hostLocalProjection")
@@ -94,6 +96,9 @@ def validate_performance(report: dict, kind: str, commit: str) -> None:
         for field in ("humanTimeSavings", "modelTokenSavings"):
             require(field in report and report[field] is None, "unsupported savings claim: " + field)
     for fixture in fixtures:
+        if kind == "interaction":
+            rows = 50_000 if fixture["fixture"].endswith("50k") else 10_000
+            require(integer(fixture.get("rows"), "fixture.rows", 1) == rows, "interaction fixture rows mismatch")
         if kind == "render":
             require(integer(fixture.get("rows"), "fixture.rows", 1) == 10_000, "render rows mismatch")
         distribution(fixture, fixture["fixture"])

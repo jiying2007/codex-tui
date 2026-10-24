@@ -81,3 +81,82 @@ async fn direct_library_calls_reject_invalid_options_before_any_source_work() {
         assert_eq!(run(&args).await.expect("usage result"), EXIT_USAGE);
     }
 }
+
+#[test]
+fn indexed_work_projection_preserves_missing_duplicate_and_scratch_overlays() {
+    use crate::{
+        backend::{CodexBackend, FakeBackend},
+        planning::{
+            ReconcileInput, ScratchState, ScratchWork, SourceRef, WorkCardOverlay, WorkCardRecord,
+            reconcile_scratch_card_with_local, reconcile_thread_card,
+        },
+    };
+    let threads = FakeBackend::scaled(40).snapshot().threads;
+    let mut planning = PlanningSnapshot::default();
+    for (index, thread) in threads.iter().enumerate().step_by(2) {
+        let mut record = WorkCardRecord::implicit_thread(&thread.id);
+        record.overlay.title_override = Some(format!("local title {index}"));
+        record.overlay.priority = Some(index as i32);
+        record.overlay.snooze_until_unix_ms = Some(200);
+        planning.cards.push(record);
+    }
+    planning.cards.reverse();
+    let mut duplicate = planning.cards[0].clone();
+    duplicate.overlay.title_override = Some("must not replace first match".into());
+    planning.cards.push(duplicate);
+    planning.scratch.push(ScratchWork {
+        id: "scratch-local".into(),
+        title: "scratch".into(),
+        note: None,
+        workspace: Some("repo".into()),
+        priority: None,
+        state: ScratchState::Inbox,
+        created_at_unix_ms: 1,
+        updated_at_unix_ms: 1,
+    });
+    let scratch_anchor = SourceRef {
+        kind: SourceKind::ScratchWork,
+        value: "scratch-local".into(),
+    };
+    let scratch_record = WorkCardRecord {
+        local_id: "local-scratch".into(),
+        anchor: scratch_anchor.clone(),
+        links: vec![],
+        overlay: WorkCardOverlay {
+            title_override: Some("local scratch title".into()),
+            priority: Some(99),
+            ..WorkCardOverlay::default()
+        },
+    };
+    planning.cards.push(scratch_record.clone());
+    let mut expected = threads
+        .iter()
+        .map(|thread| {
+            let anchor = SourceRef::codex_thread(&thread.id);
+            reconcile_thread_card(ReconcileInput {
+                thread,
+                git: None,
+                local: planning.cards.iter().find(|card| card.anchor == anchor),
+                collision_count: 0,
+                backend_observed_at_unix_ms: Some(10),
+                backend_error: Some("fixture source error"),
+                now_unix_ms: 100,
+            })
+        })
+        .collect::<Vec<_>>();
+    expected.push(reconcile_scratch_card_with_local(
+        &planning.scratch[0],
+        Some(&scratch_record),
+        100,
+    ));
+    assert_eq!(
+        projection::reconcile_work(
+            &threads,
+            &planning,
+            Some(10),
+            Some("fixture source error"),
+            100
+        ),
+        expected
+    );
+}

@@ -1,10 +1,7 @@
 use crate::{
     compat,
     domain::{AttentionReason, ThreadSummary},
-    planning::{
-        Freshness, PlanningSnapshot, ReconcileInput, SourceKind, SourceRef, WorkCardProjection,
-        reconcile_scratch_card_with_local, reconcile_thread_card,
-    },
+    planning::{Freshness, PlanningSnapshot, SourceKind, WorkCardProjection},
     sqlite_store::SqliteStore,
     store::{LocalStateV1, LocalStore},
 };
@@ -13,6 +10,7 @@ use serde::Serialize;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 mod options;
+pub(crate) mod projection;
 mod source;
 mod surfaces;
 
@@ -245,32 +243,13 @@ async fn build_work_snapshot(options: &HeadlessOptions) -> WorkSnapshot {
 
     apply_local_operator_state(&mut threads, &local);
 
-    let mut projections = Vec::with_capacity(threads.len() + planning.scratch.len());
-    for thread in &threads {
-        let anchor = SourceRef::codex_thread(&thread.id);
-        let local_card = planning.cards.iter().find(|card| card.anchor == anchor);
-        projections.push(reconcile_thread_card(ReconcileInput {
-            thread,
-            git: None,
-            local: local_card,
-            collision_count: 0,
-            backend_observed_at_unix_ms: source.last_refresh_unix_ms,
-            backend_error: source.error.as_deref(),
-            now_unix_ms: generated_at_unix_ms,
-        }));
-    }
-    for scratch in &planning.scratch {
-        let anchor = SourceRef {
-            kind: SourceKind::ScratchWork,
-            value: scratch.id.clone(),
-        };
-        let local_card = planning.cards.iter().find(|card| card.anchor == anchor);
-        projections.push(reconcile_scratch_card_with_local(
-            scratch,
-            local_card,
-            generated_at_unix_ms,
-        ));
-    }
+    let projections = projection::reconcile_work(
+        &threads,
+        &planning,
+        source.last_refresh_unix_ms,
+        source.error.as_deref(),
+        generated_at_unix_ms,
+    );
 
     let mut work = projections.iter().map(work_row).collect::<Vec<_>>();
     work.sort_by(|left, right| left.local_id.cmp(&right.local_id));

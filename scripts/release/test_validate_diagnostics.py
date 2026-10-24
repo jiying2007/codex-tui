@@ -58,6 +58,20 @@ class DiagnosticContracts(unittest.TestCase):
                 with self.assertRaises(ValueError):
                     self.validate(kind, report)
 
+    def test_interaction_sizes_and_expanded_path_coverage_are_required(self):
+        for name in ("list-navigation-and-render-10k", "review-queue-navigation-and-render-10k",
+                     "headless-local-cards-10k", "planning-ui-rebase-10k", "planning-ui-rebase-50k"):
+            with self.subTest(fixture=name):
+                report = fixture("interaction")
+                entry = next(item for item in report["fixtures"] if item["fixture"] == name)
+                report["fixtures"].remove(entry)
+                with self.assertRaises(ValueError):
+                    self.validate("interaction", report)
+                report["fixtures"].append(entry)
+                entry["rows"] = 1
+                with self.assertRaises(ValueError):
+                    self.validate("interaction", report)
+
     def test_scale_phase_coverage_is_complete_and_typed(self):
         for mutation in (lambda r: r["planningPhases"].pop("sort"),
                          lambda r: r["planningPhases"].update(extra={}),
