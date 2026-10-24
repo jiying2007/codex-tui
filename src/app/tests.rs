@@ -2973,7 +2973,7 @@ fn same_cwd_git_fanout_shares_inventory_without_sharing_thread_identity() {
 }
 
 #[test]
-fn hot_slots_jump_directly_across_views_and_release_superseded_history() {
+fn hot_slots_jump_directly_across_views_and_keep_bounded_history() {
     let mut state = app();
     let first = state.threads[0].id.clone();
     let second = state.threads[1].id.clone();
@@ -2993,7 +2993,8 @@ fn hot_slots_jump_directly_across_views_and_release_superseded_history() {
     assert_eq!(state.previous_target, Some(first.clone()));
     assert!(effects.contains(&Effect::LoadConversation(second.clone())));
     assert!(state.watched_conversations.contains(&second.0));
-    assert!(!state.watched_conversations.contains(&first.0));
+    assert!(state.watched_conversations.len() <= 2);
+    assert!(state.watched_conversations.contains(&first.0));
 
     let same = reduce(&mut state, Action::UseHotSlot(4));
     assert!(same.is_empty(), "the active slot must not reload history");

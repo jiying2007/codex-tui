@@ -1,7 +1,8 @@
 use anyhow::{Context, Result, anyhow};
 use codex_tui::{
     app::AppState,
-    notification::{NotificationMode, NotificationObservation, NotificationTracker},
+    i18n::UiLanguage,
+    notification::{NotificationKind, NotificationMode, NotificationObservation, NotificationTracker},
 };
 use std::{
     collections::VecDeque,
@@ -15,11 +16,15 @@ const NOTIFICATION_QUEUE_CAPACITY: usize = 32;
 const NOTIFICATION_PENDING_CAPACITY: usize = 128;
 const NOTIFICATION_NOTICE_CAPACITY: usize = 16;
 const OS_NOTIFICATION_TIMEOUT: Duration = Duration::from_secs(3);
+// Coalesce a single burst without adding a second scheduler or durable queue.
+const NOTIFICATION_BURST_WINDOW: Duration = Duration::from_millis(75);
 
 #[derive(Clone, Debug)]
 struct Delivery {
     title: String,
     body: String,
+    kind: NotificationKind,
+    language: UiLanguage,
 }
 
 pub(crate) struct RuntimeNotifications {
@@ -95,7 +100,12 @@ impl RuntimeNotifications {
                 continue;
             }
             let (title, body) = event.text(app.language);
-            self.pending.push_back(Delivery { title, body });
+            self.pending.push_back(Delivery {
+                title,
+                body,
+                kind: event.kind,
+                language: app.language,
+            });
         }
         dispatched = dispatched.saturating_add(self.flush_pending()?);
         anyhow::ensure!(
@@ -151,13 +161,69 @@ impl Drop for RuntimeNotifications {
     }
 }
 
+fn mode_for_session(configured: NotificationMode, ssh: bool) -> NotificationMode {
+    // A notification process started on the SSH host cannot create a toast on
+    // the operator's Windows desktop. BEL traverses the existing SSH TTY.
+    if ssh && configured == NotificationMode::Os {
+        NotificationMode::Terminal
+    } else {
+        configured
+    }
+}
+
+fn priority(kind: NotificationKind) -> u8 {
+    match kind {
+        NotificationKind::ApprovalRequired => 6,
+        NotificationKind::UserInputRequired => 5,
+        NotificationKind::PipelineFailed => 4,
+        NotificationKind::GoalBlocked => 3,
+        NotificationKind::ReviewRequested => 2,
+        NotificationKind::Completion => 1,
+    }
+}
+
+fn coalesce_ready(mut primary: Delivery, rx: &mut mpsc::Receiver<Delivery>) -> Delivery {
+    let mut count = 1_usize;
+    while let Ok(candidate) = rx.try_recv() {
+        count = count.saturating_add(1);
+        if priority(candidate.kind) > priority(primary.kind) {
+            primary = candidate;
+        }
+    }
+    if count > 1 {
+        let more = count - 1;
+        let summary = if primary.language.is_simplified_chinese() {
+            format!("另有 {more} 项更新；请到 Mission Control 查看")
+        } else {
+            format!("{more} other updates; open Mission Control")
+        };
+        primary.body = format!("{} · {summary}", primary.body);
+    }
+    primary
+}
+
 async fn run_actor(
     mode: NotificationMode,
     mut command_rx: mpsc::Receiver<Delivery>,
     notice_tx: mpsc::Sender<String>,
 ) {
-    while let Some(delivery) = command_rx.recv().await {
-        let result = match mode {
+    let ssh = std::env::var_os("SSH_TTY").is_some()
+        || std::env::var_os("SSH_CONNECTION").is_some();
+    let delivery_mode = mode_for_session(mode, ssh);
+    let mut reported_ssh_fallback = false;
+    while let Some(first) = command_rx.recv().await {
+        // A tiny bounded window avoids dozens of bells/toasts when multiple
+        // tasks finish on the same registry reconciliation.
+        tokio::time::sleep(NOTIFICATION_BURST_WINDOW).await;
+        let delivery = coalesce_ready(first, &mut command_rx);
+        if ssh && mode == NotificationMode::Os && !reported_ssh_fallback {
+            reported_ssh_fallback = true;
+            let _ = notice_tx.try_send(
+                "SSH desktop notifications are remote-host-only; using the terminal bell"
+                    .to_string(),
+            );
+        }
+        let result = match delivery_mode {
             NotificationMode::Off => Ok(()),
             NotificationMode::Terminal => ring_terminal(),
             NotificationMode::Os => match deliver_os(&delivery).await {
@@ -286,6 +352,8 @@ mod tests {
         let delivery = Delivery {
             title: "codex-tui test".into(),
             body: "--icon=spoofed".into(),
+            kind: NotificationKind::Completion,
+            language: UiLanguage::English,
         };
         let command = linux_notification_command(&delivery);
         let args = command
@@ -404,6 +472,59 @@ mod tests {
         assert!(runtime.try_notice().unwrap().contains("unavailable"));
         assert!(runtime.try_notice().is_none());
         assert_eq!(runtime.pending.len(), pending);
+    }
+
+
+    fn delivery(kind: NotificationKind, subject: &str) -> Delivery {
+        Delivery {
+            title: format!("codex-tui · {}", kind.label()),
+            body: subject.into(),
+            kind,
+            language: UiLanguage::English,
+        }
+    }
+
+    #[test]
+    fn ssh_desktop_notifications_fall_back_to_the_client_terminal() {
+        assert_eq!(mode_for_session(NotificationMode::Off, true), NotificationMode::Off);
+        assert_eq!(
+            mode_for_session(NotificationMode::Terminal, true),
+            NotificationMode::Terminal
+        );
+        assert_eq!(
+            mode_for_session(NotificationMode::Os, true),
+            NotificationMode::Terminal
+        );
+        assert_eq!(mode_for_session(NotificationMode::Os, false), NotificationMode::Os);
+    }
+
+    #[test]
+    fn alert_burst_preserves_highest_priority_and_count_without_replaying_edges() {
+        let (tx, mut rx) = mpsc::channel(8);
+        tx.try_send(delivery(NotificationKind::Completion, "completed A"))
+            .unwrap();
+        tx.try_send(delivery(NotificationKind::ApprovalRequired, "approval B"))
+            .unwrap();
+        tx.try_send(delivery(NotificationKind::PipelineFailed, "failed C"))
+            .unwrap();
+        let first = rx.try_recv().unwrap();
+        let summary = coalesce_ready(first, &mut rx);
+        assert_eq!(summary.kind, NotificationKind::ApprovalRequired);
+        assert!(summary.body.contains("approval B"));
+        assert!(summary.body.contains("2 other updates"));
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn single_alert_is_unchanged_and_chinese_burst_label_is_localized() {
+        let (tx, mut rx) = mpsc::channel(8);
+        let one = delivery(NotificationKind::Completion, "single");
+        assert_eq!(coalesce_ready(one.clone(), &mut rx).body, "single");
+        let mut zh = one;
+        zh.language = UiLanguage::SimplifiedChinese;
+        tx.try_send(delivery(NotificationKind::Completion, "another")).unwrap();
+        let merged = coalesce_ready(zh, &mut rx);
+        assert!(merged.body.contains("另有 1 项更新"));
     }
 
     #[test]
