@@ -149,7 +149,7 @@
   ],
   "moduleRatchet": {
     "src/app.rs": 1015,
-    "src/ui.rs": 1428,
+    "src/ui.rs": 1426,
     "src/app_server.rs": 2682,
     "src/main.rs": 1881,
     "src/sqlite_store.rs": 1849,

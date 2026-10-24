@@ -1339,7 +1339,7 @@ fn render_managed_worktrees(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
 }
 
 const HELP_LINES: &[&str] = &[
-    "Global: ? help · Ctrl+K palette · / search · Ctrl+F transcript · . actions · Esc back",
+    "Global: = bind · 1–9 jump · ? help · Ctrl+K palette · / search · Ctrl+F transcript · . actions · Esc back",
     "Registry: j/k · Enter · Space attention · l local-only · g repo-only · h recent/all-history · p pin · e alias · x ack",
     "Thread: a composer · q Thread Queue · d request details · y/n/c approval · i answer · Ctrl+C interrupt · r review",
     "Thread: PageUp/PageDown scroll · Home loaded history start · End follow latest",
@@ -1350,14 +1350,13 @@ const HELP_LINES: &[&str] = &[
     "Board: h/l stage · j/k item · Space attention · s snooze · = bind · 1–9 hot slot",
     "Board: Tab Saved View · . batch-local/context · Enter open · a Quick Prompt · n Scratch",
     "Scratch: Esc Board",
-    "Hot slots: = bind selected task · 1–9 jump directly from work views",
     "Terminal drawer: t open · T close",
     "Terminal focus: keys go to PTY · F6 return to app · Ctrl+] alternate · Shift+PgUp/PgDn scrollback.",
     "Authority: Codex/Git/Forge stay canonical; codex-tui stores operator state only.",
 ];
 
 const HELP_LINES_ZH: &[&str] = &[
-    "全局: ? 帮助 · Ctrl+K 命令面板 · / 搜索 · . 操作 · Esc 返回",
+    "全局: = 绑定 · 1–9 直达 · ? 帮助 · Ctrl+K 命令面板 · / 搜索 · . 操作 · Esc 返回",
     "任务中心: j/k 移动 · Enter 打开 · Space 待处理 · l 仅本机 · g 仅仓库 · h 最近/全部历史 · p 固定 · e 别名 · x 已处理",
     "会话: a 编辑消息 · d 请求详情 · y/n/c 审批 · i 回答 · Ctrl+C 中断 · r 评审",
     "会话: PageUp/PageDown 滚动 · Home 已加载历史开头 · End 跟随最新",
@@ -1368,7 +1367,6 @@ const HELP_LINES_ZH: &[&str] = &[
     "看板: h/l 阶段 · j/k 项目 · Space 待处理 · s 稍后提醒 · = 绑定 · 1–9 快捷槽",
     "看板: Tab 已保存视图 · . 本地批量/上下文 · Enter 打开 · a Quick Prompt · n Scratch",
     "Scratch: 仅本地详情 · Esc 返回看板",
-    "快捷槽: = 绑定所选任务 · 1–9 从工作视图直接跳转",
     "终端抽屉: t 打开 · T 关闭（Scratch 除外）",
     "终端聚焦: 按键发送给 PTY · F6 返回应用 · Ctrl+] 备用 · Shift+PgUp/PgDn 回滚",
     "权限边界: Codex/Git/Forge 保持权威来源；codex-tui 只保存操作员状态。",
