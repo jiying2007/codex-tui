@@ -218,3 +218,113 @@ fn chinese_refusal_is_visible_and_executes_nothing() {
     refused(&mut app);
     assert!(app.mutation_notice.as_ref().unwrap().contains("未执行"));
 }
+
+#[test]
+fn quick_prompt_palette_opens_visible_composer_and_restores_its_origin() {
+    use codex_tui::{conversation::ConversationPage, domain::RuntimeStatus, ui};
+    use ratatui::{Terminal, backend::TestBackend};
+    for origin in 0..6 {
+        let mut threads = FakeBackend::scaled(1).snapshot().threads;
+        threads[0].runtime = RuntimeStatus::Inactive;
+        threads[0].attention.clear();
+        let id = threads[0].id.clone();
+        let mut app = AppState::new(threads);
+        reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 1 });
+        app.view = match origin {
+            0 => View::Registry,
+            1 => View::Board,
+            2 => View::Review(id.clone()),
+            3 => View::Workspace(id.clone()),
+            4 => View::ManagedWorktrees(id.clone()),
+            _ => View::Thread(id.clone()),
+        };
+        let original = app.view.clone();
+        choose(&mut app, Command::QuickPrompt);
+        let effects = enter(&mut app);
+        assert_eq!(
+            app.view,
+            View::Thread(id.clone()),
+            "{original:?}; card={:?}; notice={:?}; effects={effects:?}",
+            app.selected_planning_card(),
+            app.mutation_notice
+        );
+        assert_eq!(app.input_mode, InputMode::Composer);
+        assert!(effects.contains(&Effect::LoadConversation(id.clone())));
+        assert!(!effects.contains(&Effect::StopWatchingConversation(id.clone())));
+        reduce(
+            &mut app,
+            Action::ConversationLoaded(ConversationPage {
+                thread_id: id.clone(),
+                title: None,
+                turns: vec![],
+                items: vec![],
+                next_turn_cursor: None,
+                next_item_cursor: None,
+            }),
+        );
+        crate::runtime_input::handle_paste(&mut app, "VISIBLE_DRAFT".into());
+        let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
+        terminal.draw(|frame| ui::render(frame, &app)).unwrap();
+        let screen = terminal
+            .backend()
+            .buffer()
+            .content()
+            .iter()
+            .map(|cell| cell.symbol())
+            .collect::<String>();
+        assert!(screen.contains("VISIBLE_DRAFT"), "{original:?}");
+
+        // Esc leaves the editor first, retaining both the draft and the origin.
+        crate::runtime_input::handle_key(&mut app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        assert_eq!(app.input_mode, InputMode::Normal);
+        assert_eq!(app.view, View::Thread(id.clone()));
+        assert_eq!(app.thread_ui[&id.0].draft, "VISIBLE_DRAFT");
+        crate::runtime_input::handle_key(&mut app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        let expected = if origin == 5 {
+            View::Registry
+        } else {
+            original.clone()
+        };
+        assert_eq!(app.view, expected);
+        choose(&mut app, Command::QuickPrompt);
+        enter(&mut app);
+        reduce(
+            &mut app,
+            Action::ConversationLoaded(ConversationPage {
+                thread_id: id.clone(),
+                title: None,
+                turns: vec![],
+                items: vec![],
+                next_turn_cursor: None,
+                next_item_cursor: None,
+            }),
+        );
+        let effects = crate::runtime_input::handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE),
+        );
+        assert!(effects.iter().any(|effect| matches!(effect,
+            Effect::SubmitPrompt { thread_id, text, .. } if *thread_id == id && text == "VISIBLE_DRAFT"
+        )), "{original:?}");
+        crate::runtime_input::handle_key(&mut app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
+        let expected = if origin == 5 {
+            View::Registry
+        } else {
+            original
+        };
+        assert_eq!(app.view, expected);
+    }
+}
+
+#[test]
+fn quick_prompt_return_route_is_discarded_on_thread_switch() {
+    let mut app = fixture();
+    app.view = View::Review(app.threads[0].id.clone());
+    choose(&mut app, Command::QuickPrompt);
+    enter(&mut app);
+    reduce(&mut app, Action::CancelInput);
+    app.selected = 1;
+    reduce(&mut app, Action::OpenSelected);
+    reduce(&mut app, Action::Back);
+    assert_eq!(app.view, View::Registry);
+}

@@ -18,6 +18,9 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             | Action::Quit
     );
     let mut effects = reduce_inner(state, action);
+    if old_view != state.view && matches!(old_view, View::Thread(_)) {
+        state.quick_prompt_return_view = None;
+    }
     state.invalidate_request_details();
     state.invalidate_reading_snapshot();
     // Return routes may outlive their bounded presentation cache entry.
@@ -1561,32 +1564,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 return vec![Effect::LoadConversation(id)];
             }
         }
-        Action::QuickPrompt => {
-            let id = match state.current_thread_id().cloned() {
-                Some(id) => id,
-                None if matches!(state.view, View::Board) => {
-                    let Some(card) = state.selected_planning_card() else {
-                        return vec![];
-                    };
-                    if card.anchor.kind != SourceKind::CodexThread {
-                        return vec![];
-                    }
-                    ThreadId::new(card.anchor.value.clone())
-                }
-                None => {
-                    let Some(id) = state.selected_thread_id() else {
-                        return vec![];
-                    };
-                    state.previous_target = None;
-                    state.view = View::Thread(id.clone());
-                    id
-                }
-            };
-            state.thread_ui.entry(id.0.clone()).or_default();
-            state.prepare_conversation(&id);
-            state.input_mode = InputMode::Composer;
-            return vec![Effect::LoadConversation(id)];
-        }
+        Action::QuickPrompt => return super::prompt::open(state),
         Action::InterruptCurrent => {
             if let Some(thread_id) = state.current_thread_id().cloned() {
                 let active_turn_id = state
@@ -1653,7 +1631,11 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             } else {
                 state.input_mode = InputMode::Normal;
             }
-            state.view = View::Registry;
+            state.view = state
+                .quick_prompt_return_view
+                .take()
+                .filter(|view| state.search_return_view_is_valid(view))
+                .unwrap_or(View::Registry);
             if let Some(thread_id) = thread_id {
                 return vec![Effect::StopWatchingConversation(thread_id)];
             }

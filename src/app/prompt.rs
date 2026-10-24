@@ -4,6 +4,9 @@ use super::{Action, AppState, Effect, InputMode, local_text, reduce};
 use crate::domain::ThreadId;
 use std::collections::{BTreeMap, BTreeSet};
 
+mod quick;
+pub(super) use quick::open;
+
 const MAX_PENDING: usize = 32;
 
 #[derive(Clone, Debug)]
