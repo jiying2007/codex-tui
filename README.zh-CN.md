@@ -92,7 +92,9 @@ active = "local"
 
 `auto` 依次读取 `LC_ALL`、`LC_MESSAGES`、`LANG`。`zh_CN/zh_SG/zh-Hans` 等简体语言环境选中文；繁体语言环境及未知环境默认英文，不假定简体等价。技术标识和上游错误原样保留以便定位。Quiet 和 Screen-reader 只调整后台刷新节奏；输入/键盘/窗口改变仍即时响应。
 
-如需“完成／审批／阻塞／失败”时提醒，主动把 `[notifications].mode` 改为 `"terminal"`。**Windows SSH Ubuntu** 时，通知由 Ubuntu 进程通过当前 SSH 终端发送 BEL；即使配置 `"os"`，SSH 下也安全回退到 BEL，**不会在 Windows 自动弹出 Toast**。Windows Terminal 的 SSH 配置文件可以设置 `"bellStyle": "all"`（任务栏闪烁／响铃），并在 SSH 窗口运行 `printf '\\a'` 验证。最多 75 毫秒的同批事件合并为一条提醒，优先显示审批、输入和失败，其余数量写在提醒中；精确状态仍看 Mission Control。程序退出或 SSH 断开后不继续监听。快捷槽可在 Registry／Board 选中任务按 `=` 再按 `1–9` 绑定；在 Registry、Board、Thread、Review、Workspace、Managed Worktrees 中按数字即直达该会话，编辑和确认框不会被抢键。\n\n远程 Codex 可在本地 TOML 配置命名的 stdio/WebSocket/Unix Socket 目标，令牌只通过 `auth_token_env` 指定环境变量名；不要提交真实密钥。详见英文 [Remote App Server 技术说明](docs/implementation/v1.3-remote-app-server-targets.md)。
+如需“完成／审批／阻塞／失败”时提醒，主动把 `[notifications].mode` 改为 `"terminal"`。**Windows SSH Ubuntu** 时，通知由 Ubuntu 进程通过当前 SSH 终端发送 BEL；即使配置 `"os"`，SSH 下也安全回退到 BEL，**不会在 Windows 自动弹出 Toast**。Windows Terminal 的 SSH 配置文件可以设置 `"bellStyle": "all"`（任务栏闪烁／响铃），并在 SSH 窗口运行 `printf '\a'` 验证。最多 75 毫秒的同批事件合并为一条提醒，优先显示审批、输入和失败，其余数量写在提醒中；精确状态仍看 Mission Control。程序退出或 SSH 断开后不继续监听。快捷槽可在 Registry／Board 选中任务按 `=` 再按 `1–9` 绑定；在 Registry、Board、Thread、Review、Workspace、Managed Worktrees 中按数字即直达该会话，编辑和确认框不会被抢键。
+
+远程 Codex 可在本地 TOML 配置命名的 stdio/WebSocket/Unix Socket 目标，令牌只通过 `auth_token_env` 指定环境变量名；不要提交真实密钥。详见英文 [Remote App Server 技术说明](docs/implementation/v1.3-remote-app-server-targets.md)。
 
 ## 明确不做的功能
 <!-- docs-section: boundaries -->
