@@ -3006,7 +3006,10 @@ fn hot_slots_jump_directly_across_views_and_keep_bounded_history() {
     assert!(same.is_empty(), "the active slot must not reload history");
     let back = reduce(&mut state, Action::Back);
     assert_eq!(state.view, View::Review(first.clone()));
-    assert_eq!(state.selected, 0, "the originating selection must be restored");
+    assert_eq!(
+        state.selected, 0,
+        "the originating selection must be restored"
+    );
     assert!(back.contains(&Effect::StopWatchingConversation(second)));
     assert!(state.watched_conversations.contains(&first.0));
 }
