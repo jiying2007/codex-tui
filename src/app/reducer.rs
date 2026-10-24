@@ -1233,13 +1233,24 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             match target.kind {
                 SourceKind::CodexThread => {
                     let id = ThreadId::new(target.value);
-                    if let Some(index) = state.threads.iter().position(|thread| thread.id == id) {
+                    if let Some(index) = state
+                        .thread_index_by_id
+                        .get(&id.0)
+                        .copied()
+                        .filter(|index| {
+                            state.threads.get(*index).is_some_and(|thread| thread.id == id)
+                        })
+                    {
                         if matches!(&state.view, View::Thread(current) if *current == id) {
-                            // Re-selecting the current slot must not reload the transcript.
+                            // Re-selecting the current slot must not reload the transcript
+                            // or overwrite its one-level return destination.
                             return vec![];
                         }
+                        // A hot-slot jump is reversible: Esc returns to the exact
+                        // work surface, not always the generic Registry.
+                        let return_view = state.view.clone();
                         state.previous_target = state.current_thread_id().cloned();
-                        state.quick_prompt_return_view = None;
+                        state.quick_prompt_return_view = Some(return_view);
                         state.selected = index;
                         state.thread_ui.entry(id.0.clone()).or_default();
                         state.prepare_conversation(&id);
