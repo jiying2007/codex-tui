@@ -112,3 +112,99 @@ fn large_registry_retains_source_window_and_out_of_window_exceptions() {
     app.show_all_history = true;
     assert_eq!(app.visible_indices().len(), 5_000);
 }
+
+fn observe_goal(app: &mut AppState, index: usize, status: GoalStatus) {
+    reduce(
+        app,
+        Action::GoalObserved(GoalObservation {
+            thread_id: app.threads[index].id.clone(),
+            objective: "fixture goal".into(),
+            status,
+            token_budget: None,
+            tokens_used: 0,
+            time_used_seconds: 0,
+            created_at: 1,
+            updated_at: 1,
+            observed_at_unix_ms: 1,
+        }),
+    );
+}
+
+#[test]
+fn observed_goal_attention_survives_recent_window_and_acknowledgment() {
+    use ratatui::{Terminal, backend::TestBackend};
+    let mut app = AppState::new(threads(150));
+    for status in [
+        GoalStatus::Blocked,
+        GoalStatus::UsageLimited,
+        GoalStatus::BudgetLimited,
+    ] {
+        observe_goal(&mut app, 149, status);
+        reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 1 });
+        assert!(app.thread_needs_attention(149), "{status:?}");
+        assert_eq!(app.visible_indices()[0], 149);
+        assert_eq!(app.visible_indices().len(), REGISTRY_RECENT_LIMIT + 1);
+        app.selected = 0;
+        reduce(&mut app, Action::NextAttention);
+        assert_eq!(app.selected, 149);
+        reduce(&mut app, Action::AcknowledgeAttention);
+        assert!(app.thread_needs_attention(149));
+    }
+    let mut terminal = Terminal::new(TestBackend::new(180, 40)).unwrap();
+    terminal
+        .draw(|frame| crate::ui::render(frame, &app))
+        .unwrap();
+    let screen = terminal
+        .backend()
+        .buffer()
+        .content()
+        .iter()
+        .map(|cell| cell.symbol())
+        .collect::<String>();
+    assert!(screen.contains("1 need attention"), "{screen}");
+    assert!(
+        screen.contains("budget-"),
+        "derived reason is missing: {screen}"
+    );
+
+    let mut local = WorkCardRecord::implicit_thread(&app.threads[149].id);
+    local.overlay.snooze_until_unix_ms = Some(100);
+    app.planning_snapshot.cards.push(local);
+    reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 1 });
+    assert!(!app.thread_needs_attention(149));
+    assert!(!app.visible_indices().contains(&149));
+    reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 100 });
+    assert!(app.thread_needs_attention(149));
+}
+
+#[test]
+fn informational_goal_completion_respects_acknowledgment() {
+    let mut app = AppState::new(threads(1));
+    observe_goal(&mut app, 0, GoalStatus::Complete);
+    reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 1 });
+    assert!(app.thread_needs_attention(0));
+    reduce(&mut app, Action::AcknowledgeAttention);
+    assert!(!app.thread_needs_attention(0));
+    // A new live request is actionable before another Planning reconciliation.
+    app.threads[0]
+        .attention
+        .push(AttentionReason::UserInputRequired);
+    assert!(app.thread_needs_attention(0));
+}
+
+#[test]
+fn forge_and_conflict_actionables_are_not_silenced_by_acknowledgment() {
+    let mut app = AppState::new(threads(1));
+    reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 1 });
+    reduce(&mut app, Action::AcknowledgeAttention);
+    let card_index = app.work_card_by_thread[&app.threads[0].id.0];
+    for reason in [
+        PlanningAttention::ConflictRisk,
+        PlanningAttention::PipelineFailed,
+        PlanningAttention::ChangeRequested,
+    ] {
+        app.work_cards[card_index].attention.clear();
+        app.work_cards[card_index].attention.insert(reason.clone());
+        assert!(app.thread_needs_attention(0), "{reason:?}");
+    }
+}

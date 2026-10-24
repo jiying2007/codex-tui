@@ -1,4 +1,5 @@
 use super::*;
+use crate::planning::PlanningAttention;
 
 impl AppState {
     pub fn visible_indices_with_match_count(&self) -> (Vec<usize>, usize) {
@@ -56,10 +57,13 @@ impl AppState {
         let Some(thread) = self.threads.get(index) else {
             return false;
         };
-        if self
-            .work_card_for_thread(&thread.id)
-            .is_some_and(|card| card.snoozed)
-        {
+        // The reconciliation index makes the full Registry pass O(T log C).
+        // Live requests below remain actionable while that projection catches up.
+        let card = self
+            .work_card_by_thread
+            .get(&thread.id.0)
+            .and_then(|index| self.work_cards.get(*index));
+        if card.is_some_and(|card| card.snoozed) {
             return false;
         }
         let actionable = thread.attention.iter().any(|reason| {
@@ -71,9 +75,25 @@ impl AppState {
             )
         });
         let interactive = self.pending_request_threads.contains(&thread.id.0);
+        let derived_actionable = card.is_some_and(|card| {
+            card.attention.iter().any(|reason| {
+                matches!(
+                    reason,
+                    PlanningAttention::ConflictRisk
+                        | PlanningAttention::GoalBlocked
+                        | PlanningAttention::UsageLimited
+                        | PlanningAttention::BudgetLimited
+                        | PlanningAttention::PipelineFailed
+                        | PlanningAttention::ChangeRequested
+                )
+            })
+        });
+        let unseen = !thread.attention.is_empty()
+            || card.is_some_and(|card| card.attention.contains(&PlanningAttention::ReviewUnseen));
         actionable
             || interactive
-            || (!thread.attention.is_empty() && !self.acknowledged_attention.contains(&thread.id.0))
+            || derived_actionable
+            || (unseen && !self.acknowledged_attention.contains(&thread.id.0))
     }
 }
 

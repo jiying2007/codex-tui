@@ -202,16 +202,36 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
             .iter()
             .any(|request| request.thread_id == thread.id);
         let needs_attention = app.thread_needs_attention(index);
-        let snoozed_attention = (!thread.attention.is_empty() || pending_interactive)
-            && app
-                .work_card_for_thread(&thread.id)
-                .is_some_and(|card| card.snoozed);
+        let card = app.work_card_for_thread(&thread.id);
+        let snoozed_attention = (!thread.attention.is_empty()
+            || pending_interactive
+            || card.is_some_and(|card| !card.attention.is_empty()))
+            && card.is_some_and(|card| card.snoozed);
         let attention = if needs_attention {
             let mut reasons = thread
                 .attention
                 .iter()
                 .map(|reason| attention_reason_label(reason, app.language))
                 .collect::<Vec<_>>();
+            if let Some(card) = card {
+                for reason in card.attention.iter().filter(|reason| {
+                    matches!(
+                        reason,
+                        PlanningAttention::ConflictRisk
+                            | PlanningAttention::GoalBlocked
+                            | PlanningAttention::UsageLimited
+                            | PlanningAttention::BudgetLimited
+                            | PlanningAttention::PipelineFailed
+                            | PlanningAttention::ChangeRequested
+                            | PlanningAttention::ReviewUnseen
+                    )
+                }) {
+                    let label = planning_attention_label(reason, app.language);
+                    if !reasons.contains(&label) {
+                        reasons.push(label);
+                    }
+                }
+            }
             if pending_interactive {
                 reasons.push(tr(app, "interactive", "交互"));
             }
