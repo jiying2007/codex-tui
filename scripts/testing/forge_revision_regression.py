@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import sqlite3
 import subprocess
 import sys
@@ -155,6 +156,17 @@ def validate_outcome(rows, trace, mode):
     return {'state':row['state'],'writeCount':len(writes),'confirmedSha':SHA_A}
 
 
+def registry_visible(screen):
+    return 'Mission Control' in screen and re.search(r'\b1 total\b', screen) is not None
+
+
+def wait_registry(app):
+    # q only exits Registry. A fixed drain after Esc can leave both bytes queued
+    # while the TUI is busy, where they are parsed together as Alt+q.
+    app.wait(lambda: registry_visible(app.screen()), 'Registry not observed before q exit')
+    (app.output/'registry-before-exit.txt').write_text(app.screen(), encoding='utf-8')
+
+
 def case(binary, output, home, scenario):
     provider, operation, mode = scenario.split('-', 2)
     env = environment(home, home/'server.log', 'forge-revision')
@@ -199,8 +211,9 @@ def case(binary, output, home, scenario):
             require(not receipt_rows(home), 'missing revision created a durable operation')
             require(not any(r['method']!='GET' for r in trace()), 'missing revision invoked a write')
             app.send(b'\x1b')
+            wait_registry(app)
             return {'planRefused':True, 'writeCount':0, 'resources':resources(app.proc.pid),
-                    'terminal':app.finish()}
+                    'registryReturnObserved':True, 'terminal':app.finish()}
         app.wait(lambda: 'confirmed-head-sha' in app.screen() or 'Confirmed HEAD:' in app.screen(), 'confirmation did not display revision')
         require(SHA_A in app.screen(), 'full confirmed revision was not displayed')
         (output/'confirmation.txt').write_text(app.screen(), encoding='utf-8')
@@ -219,11 +232,14 @@ def case(binary, output, home, scenario):
         # Restart the actual binary with the same store; recover only through its
         # normal startup path. Unknown operations must not issue another write.
         app.send(b'\x1b')
+        wait_registry(app)
+        result['registryReturnObserved'] = True
         result['terminal'] = app.finish()
         app.close(); app = None
         recovered = Session(binary, output/'restart', home, env)
         app = recovered
-        app.wait(lambda: '1 total' in app.screen(), 'restart did not load Registry')
+        wait_registry(app)
+        result['restartRegistryObserved'] = True
         if rows[0]['state'] == 'outcome-unknown':
             app.wait(lambda: receipt_rows(home)[0]['updated_at_unix_ms'] > rows[0]['updated_at_unix_ms'],
                      'restart did not actually reconcile the unknown operation', 15)

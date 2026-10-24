@@ -331,6 +331,7 @@ pub struct ForgeReviewTarget {
     pub project_id: String,
     pub project_path: String,
     pub change_request_iid: u64,
+    pub head_sha: Option<String>,
 }
 
 /// In-memory result retaining the exact target that the actor actually requested.

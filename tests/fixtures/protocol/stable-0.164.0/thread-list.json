@@ -1,0 +1,26 @@
+{
+  "data": [
+    {
+      "id": "stable-0164-thread",
+      "name": "Protocol fixture",
+      "preview": "Fixture question",
+      "updatedAt": 1,
+      "status": {
+        "type": "idle"
+      },
+      "cwd": "/fixtures/repo",
+      "source": "cli"
+    }
+  ],
+  "readStates": {
+    "stable-0164-thread": {
+      "firstUnread": {
+        "type": "turn",
+        "turnId": "fixture-turn"
+      },
+      "revision": "opaque-revision-1"
+    }
+  },
+  "nextCursor": "next-page",
+  "backwardsCursor": "previous-page"
+}

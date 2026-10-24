@@ -2,13 +2,21 @@
 import copy
 import json
 import unittest
-from forge_revision_regression import CASES, SHA_A, SHA_B, validate_outcome
+from forge_revision_regression import CASES, SHA_A, SHA_B, registry_visible, validate_outcome
 
 
 class ForgeAssertions(unittest.TestCase):
     def test_exact_unique_case_coverage(self):
         self.assertEqual(len(CASES), 22)
         self.assertEqual(len(set(CASES)), 22)
+
+    def test_exit_requires_the_observed_single_thread_registry(self):
+        self.assertTrue(registry_visible('Mission Control\n0 need attention · 1 total · rows 1-1/1'))
+        for screen in ('Workspace · Git + Forge\n1 total',
+                       'Mission Control\n0 total', 'Mission Control\n11 total',
+                       'Mission Control', 'Command Palette\n1 total'):
+            with self.subTest(screen=screen):
+                self.assertFalse(registry_visible(screen))
 
     def fixture(self, state='succeeded'):
         rows = [{'state':state, 'plan_json':json.dumps({'preconditions':[

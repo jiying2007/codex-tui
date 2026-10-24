@@ -913,7 +913,15 @@ pub fn parse_git_remote_url(url: &str) -> Option<(String, String)> {
         {
             return None;
         }
-        return normalize_remote_parts(parsed.host_str()?, parsed.path());
+        let host = parsed.host_str()?;
+        // HTTP(S) remotes name the API authority, including a nondefault port.
+        // SSH/git transport ports must not become the provider's API port.
+        let authority = if matches!(parsed.scheme(), "http" | "https") {
+            &parsed[url::Position::BeforeHost..url::Position::AfterPort]
+        } else {
+            host
+        };
+        return normalize_remote_parts(authority, parsed.path());
     }
 
     // SCP-like remotes may carry user@host:path, not URI query/fragment.

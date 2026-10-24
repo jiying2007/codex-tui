@@ -64,6 +64,7 @@
         "src/ui/thread/tests.rs",
         "src/user_response.rs",
         "src/app/prompt.rs",
+        "src/app/prompt/quick.rs",
         "src/app/user_input.rs",
         "src/app/user_response.rs",
         "src/app/user_response/tests.rs",

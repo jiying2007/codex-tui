@@ -229,7 +229,7 @@ python3 "$ROOT/scripts/release/sample_device_process.py" \
 
 Only after every required terminal observation really passes, in window A on the SAME controlling TTY, run the first block below. If SSH reconnected, prepare and witness anew; never sign the old pending manifest on another TTY. The --pass block is intentionally manual, not part of any unattended helper. Unobserved mandatory cases block it.
 
-Use fresh destinations for final capture. For final release qualification only, run linux_qualify without --dispatch. It rebuilds, so compare its binary with the witnessed copy afterwards. A changed binary needs renewed affected evidence even if a generated JSON says valid. Final release notes must already be committed. Administrator protection/immutability readback, independent signoff, exact-candidate Stable publish=false rehearsal, and separately authorized publication remain outside this device runner.
+Use fresh destinations for final capture. `terminal_smoke.py` and `create_terminal_receipt.py` refuse existing pending/receipt outputs and symbolic links, including dangling links. Keep the previous attempt and start a fresh evidence directory instead of deleting an old record to reuse its name. For final release qualification only, run linux_qualify without --dispatch. It rebuilds, so compare its binary with the witnessed copy afterwards. A changed binary needs renewed affected evidence even if a generated JSON says valid. Final release notes must already be committed. Administrator protection/immutability readback, independent signoff, exact-candidate Stable publish=false rehearsal, and separately authorized publication remain outside this device runner.
 
 ```bash
 # MANUAL ONLY: after actual witness, on the same controlling TTY.

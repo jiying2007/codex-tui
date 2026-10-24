@@ -14,6 +14,22 @@ use std::{
 use tempfile::tempdir;
 
 #[test]
+fn canonical_criteria_count_matches_the_executable_failure_matrix() {
+    let criteria: serde_json::Value =
+        serde_json::from_str(include_str!("../release/v1.4-criteria.json")).unwrap();
+    let gate = criteria["requiredGates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|gate| gate["id"] == "failure-matrix")
+        .unwrap();
+    assert!(gate["evidence"].as_str().unwrap().starts_with(&format!(
+        "failure-matrix/v2 has {} cases ",
+        FAILURE_MATRIX.len()
+    )));
+}
+
+#[test]
 fn retained_failure_matrix_contains_the_release_blocking_cases() {
     for id in [
         "app-server-exit-during-hydration",

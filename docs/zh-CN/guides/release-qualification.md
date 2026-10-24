@@ -27,6 +27,8 @@ Development Qualification 额外保留 `failure-case-execution.json`，逐项记
 
 `linux_qualify.py` 会在网络查询、编译和基准测试之前校验传入的 Linux 终端收据；缺失、格式错误、非 PASS 或源码不匹配时立即停止。通过校验的 UTF-8 原始字节保留到新 `--output-dir` 下的 `terminal-restoration.json`，解析和 SHA-256 均使用这一份快照，不再重新读取原输入路径；已有快照不会被覆盖。这只是验证操作者提供的收据，不替代真实终端见证，不生成虚构 PASS，也不授权发布。
 
+`terminal_smoke.py prepare`、`terminal_smoke.py record-pass` 和 `create_terminal_receipt.py` 以独占方式创建输出文件。已有 pending 清单、收据及符号链接（含悬空链接）均被拒绝，不替换原有内容或链接目标。每次尝试使用新的 `--pending` 和 `--output` 路径，保留之前的失败记录。显式 `--pass` 仍须真实人工见证；独占创建不证明见证真实性，也不能阻止后续文件系统修改。
+
 必须独立采集并绑定当前源码：①真实登录 Codex App Server/Provider 能力；②内部使用档真实 `glab` 及 Issue/MR/Pipeline 可用；③Linux 和 Windows→SSH Ubuntu 的**控制终端** Focus/Resize/Ctrl+C/退出/恢复；④实际机器的性能、资源和异常恢复。托管 CI 不得伪造为真实 PASS。
 
 ## 管理员独立治理

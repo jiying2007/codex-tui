@@ -1,5 +1,6 @@
 """Required security checks must report a result for every PR and fail closed."""
 import itertools
+import json
 import os
 from pathlib import Path
 import subprocess
@@ -14,6 +15,14 @@ SOURCE = (ROOT / ".github/workflows/security.yml").read_text(encoding="utf-8")
 
 
 class SecurityGate(unittest.TestCase):
+    def test_canonical_criteria_names_every_enforced_check(self):
+        criteria = json.loads((ROOT / "release/v1.4-criteria.json").read_text(encoding="utf-8"))
+        evidence = next(gate["evidence"] for gate in criteria["requiredGates"]
+                        if gate["id"] == "main-protection-integrity")
+        for check in protection.REQUIRED_CHECKS:
+            with self.subTest(check=check):
+                self.assertIn(check, evidence)
+
     def test_every_pr_and_main_push_can_produce_the_required_result(self):
         protection.validate_security_contract(SOURCE)
         self.assertIn("security-gate", protection.REQUIRED_CHECKS)

@@ -1,0 +1,42 @@
+{
+  "data": [
+    {
+      "turnId": "fixture-turn",
+      "item": {
+        "type": "imageGeneration",
+        "id": "image-inline",
+        "status": "completed",
+        "revisedPrompt": null,
+        "failure": null,
+        "result": "synthetic-inline-image"
+      }
+    },
+    {
+      "turnId": "fixture-turn",
+      "item": {
+        "type": "imageGeneration",
+        "id": "image-reference",
+        "status": "completed",
+        "revisedPrompt": null,
+        "failure": null,
+        "fileId": "synthetic-file-id",
+        "inputImages": [
+          {
+            "path": "/fixtures/input.png",
+            "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          }
+        ]
+      }
+    },
+    {
+      "turnId": "fixture-turn",
+      "item": {
+        "type": "agentMessage",
+        "id": "agent-after-images",
+        "text": "Text after images"
+      }
+    }
+  ],
+  "nextCursor": "older-items",
+  "backwardsCursor": null
+}

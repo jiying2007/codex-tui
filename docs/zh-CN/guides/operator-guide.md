@@ -36,9 +36,13 @@ Thread 页面用 `PageUp`/`PageDown` 按显示行滚动消息，长段落和代�
 
 有待处理请求且未在编辑文本时，在 Thread 页面按 `d` 查看命令、工作目录和权限详情。详情页用 `PageUp`/`PageDown` 或 `↑`/`↓` 滚动，`Home`/`End` 移到两端，`Esc` 只返回，不会提交或取消请求。请求解决或被替换后，其详情页失效；浏览仅使用本地内容，不向 App Server 发送请求。未识别的权限字段仍明确标记为隐藏，接受操作保持禁用。
 
-打开会话或其队列时，会在当前 App Server 连接上获取订阅；服务端的已加载清单和历史读取本身不建立订阅。最后一个历史、队列或待处理请求的持有者离开后才释放订阅，活跃工作与可操作请求继续保留既有持有关系。订阅被拒绝或结果未知时会明确报告，不会静默重放写操作。协议契约已对照 Codex 0.162.1 和 0.163.0，真实账号验收仍需单独完成。
+打开会话或其队列时，会在当前 App Server 连接上获取订阅；服务端的已加载清单和历史读取本身不建立订阅。最后一个历史、队列或待处理请求的持有者离开后才释放订阅，活跃工作与可操作请求继续保留既有持有关系。订阅被拒绝或结果未知时会明确报告，不会静默重放写操作。固定协议基线已通过标签源码审阅和合成解析回放核对至 Codex 0.164.0，真实账号验收仍需单独完成。新增的上游已读状态字段及通知不会同步本地未读/确认状态；图像生成条目的内联结果和文件引用均保留通用条目显示，客户端不读取对应图像文件。详见[保留的兼容性评估](../../../tests/fixtures/protocol/stable-0.164.0/assessment.json)。
 
 Mission Control 按待处理、置顶、最近活动排序，同优先级以会话 ID 确定顺序。仍保留原有“最近会话窗口＋置顶/待处理例外”，不会自动展开全部历史。Snooze 暂停待处理提升，但保留置顶；已读确认不会掩盖真实审批、输入请求或错误。首次加载选中显示首项，之后刷新按会话 ID 保留可见的选中项。窄终端在运行状态列直接显示待处理原因，普通会话仍显示运行状态。
+
+快速消息会从 Mission Control、Board、Review、Workspace 或 Managed Worktrees 进入所选会话的可见输入框。`Esc` 退出输入并保留草稿，再按一次 `Esc` 回到原页面；切换其他会话后清除这次临时返回路径。
+
+Registry 提醒也包含已经观测到的 Goal 阻塞、用量或预算限制、流水线失败、请求修改及工作树冲突。Board、List 和 Review Queue 每张卡片使用一行，按终端宽度截断长标题或工作区名称，使导航选中项保持可见。
 
 `j/k` 选中、Enter 打开、`/` 筛选、`Ctrl+K` 命令面板、`?` 查看实时键位。`b` 打开 Board，`Tab` 切换 Saved View，包括按工作区分组的 Needs You / Needs Review 列表。List/Review Queue 将同一工作区连续排列，组内按所选顺序排序；Board 列仍按工作流阶段排列。Board 内用 `h/l` 切换列、`j/k` 选择卡片；Mission Control 的 `r` 进入所选会话的 Review，`w` 进入 Workspace。这些入口直达既有交付上下文；Board/Attention 始终是派生视图。
 
@@ -56,6 +60,10 @@ Review 外部浏览器链接必须是主机明确的 HTTP(S) URL，不允许嵌�
 <!-- docs-section: forge -->
 
 在有 Git Remote 的目标仓库执行 `codex-tui doctor git` 和 `codex-tui doctor forge`。内部 GitLab 使用已认证 `glab`，GitHub 使用 `gh`。GitLab/GitHub 某一只读接口失败时，对应能力会降级，其他成功的数据可保留，但 Forge 会明确提示不完整；三个核心接口全部失败时不得报告“最新空结果”。Headless Forge 若缺少核心能力应以降级退出码返回。
+
+Review 详情绑定当前仓库、分支、变更请求 ID 和已观测的 head 版本。分支或 head 变更会使不匹配的缓存详情和迟到响应失效；打开 Review 时，按已有 Forge 刷新间隔重新获取已过期或失败的详情。
+
+HTTP(S) Git 远端会在平台地址中保留非默认端口，例如 `gitlab.example:8443`；请在 `glab` 中认证该地址。SSH 传输端口（如 `:2222`）不作为 API 端口；SSH 与 API 端点不同时，在平台 CLI 配置中维护映射。
 
 Forge 概览仅获取各能力最近 20 条记录。GitHub Issues API 会混入 PR，系统在过滤 PR 前保留原始分页是否触顶的证据；因此即使展示 0 条 Issue，只要原始页已满，也不得断言不存在。当前分支的 CR/Pipeline 未命中**不代表不存在**；Board 数据来源与 Review 会提示该不确定性，精确结果仍应向平台核实。MR/PR 创建、评论、批准、合并遵循先预览→明确确认→再执行；Approval/Merge 会重新校验目标修订版本，结果不确定时禁止盲目重试。Review 状态权威在 GitLab/GitHub。Forge Merge 要求明确可合并状态和经验证的审批信息；GitHub 合并性未知、GitLab 审批数量缺失或详细状态未知时必须阻止执行。创建/审批的前置检查使用有界完整分页，不把第一页当作全部数据，服务端仍为最终权威。GitHub Fork PR 与 Actions 工作流均使用 `owner/repo:branch` 等完整源仓库标识展示，不得仅凭同名分支绑定到本地 Git 分支。工作流若缺少 `head_repository`，标记为 `unverified-source:branch`，不能将其失败误归属本地分支。与本地分支绑定的审批、评论和合并需要 PR 源仓库 ID 与路径均匹配；缺少来源信息时保守拒绝。GitLab 跨项目 MR 也会以 `project/<id>:branch` 标记来源，不能冒充本地分支；与本地分支绑定的写操作要求 `source_project_id` 和 `target_project_id` 与当前项目一致，缺失或 Fork 来源均保守拒绝。见 [真实资格采集](../qualification/provider.md)。
 

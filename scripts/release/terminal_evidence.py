@@ -1,0 +1,26 @@
+"""Retain terminal observations without replacing earlier evidence."""
+from __future__ import annotations
+
+import pathlib
+
+from _compat import require_python38
+
+require_python38()
+
+
+def write_new_terminal_evidence(path: pathlib.Path, text: str) -> None:
+    # Keep the leaf unresolved. Windows "x" can follow a dangling symlink, so
+    # reject existing links explicitly; "x" still protects competing file creation.
+    # This local evidence helper does not defend against hostile link swaps.
+    try:
+        if path.is_symlink():
+            raise FileExistsError
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("x", encoding="utf-8", newline="\n") as handle:
+            handle.write(text)
+    except FileExistsError:
+        raise SystemExit(
+            "refusing to overwrite terminal evidence; choose a fresh output path"
+        ) from None
+    except OSError:
+        raise SystemExit("cannot retain terminal evidence (details redacted)") from None

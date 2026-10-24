@@ -8,7 +8,7 @@ import pathlib
 import re
 import sys
 
-from _compat import write_text_lf
+from terminal_evidence import write_new_terminal_evidence
 
 SCHEMA = "codex-tui/terminal-restoration/v1"
 HEX40 = re.compile(r"^[0-9a-fA-F]{40}$")
@@ -54,8 +54,7 @@ def main() -> int:
     }
 
     output = pathlib.Path(args.output)
-    output.parent.mkdir(parents=True, exist_ok=True)
-    write_text_lf(output, json.dumps(receipt, indent=2, sort_keys=True) + "\n")
+    write_new_terminal_evidence(output, json.dumps(receipt, indent=2, sort_keys=True) + "\n")
     print(json.dumps(receipt, indent=2, sort_keys=True))
     return 0
 

@@ -9,6 +9,9 @@ on:
       - "src/release_benchmark.rs"
       - "src/render_performance.rs"
       - "src/interaction_performance.rs"
+      - "src/interaction_performance/**"
+      - "src/headless.rs"
+      - "src/headless/**"
       - "src/app/**"
       - "src/runtime_store_worker.rs"
       - "src/main.rs"
@@ -69,7 +72,7 @@ jobs:
             --source "github-hosted:ubuntu-24.04" \
             --json | tee user-perceived-performance.json
 
-      - name: Capture changed-state and planning phase diagnostics
+      - name: Capture layout, local-card and planning drift diagnostics
         shell: bash
         run: |
           set -euo pipefail

@@ -2,6 +2,8 @@
 //! PTY state, drafts and mutation confirmations never enter this worker.
 use super::*;
 mod clock;
+mod diagnostics;
+pub(crate) use diagnostics::{measure_once, measure_rebase_once};
 mod rebase;
 use clock::ProjectionClock;
 use std::sync::mpsc::{self, Receiver, SyncSender, TryRecvError};
@@ -159,18 +161,6 @@ impl PlanningWorker {
         }
         Ok(applied)
     }
-}
-
-pub(crate) fn measure_once(state: &mut AppState, now: u64) -> [f64; 3] {
-    let started = Instant::now();
-    let input = Input::capture(state, now);
-    let capture = started.elapsed().as_secs_f64() * 1000.0;
-    let started = Instant::now();
-    let output = input.compute();
-    let compute = started.elapsed().as_secs_f64() * 1000.0;
-    let started = Instant::now();
-    assert!(output.apply_at(state, now).is_some());
-    [capture, compute, started.elapsed().as_secs_f64() * 1000.0]
 }
 
 #[cfg(test)]

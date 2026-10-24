@@ -48,6 +48,8 @@ def fixture(kind, commit=COMMIT):
                 for entry in report["fixtures"]:
                     entry["rows"] = 10000
             else:
+                for entry in report["fixtures"]:
+                    entry["rows"] = 50000 if entry["fixture"].endswith("50k") else 10000
                 report.update(rows=10000, authority="synthetic-cpu-path-diagnostic-not-terminal-slo",
                               modelInferenceCalls=0, humanTimeSavings=None, modelTokenSavings=None)
     return report

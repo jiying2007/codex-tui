@@ -49,7 +49,33 @@ class StableWatchTests(unittest.TestCase):
         path = Path(__file__).resolve().parents[2] / "tests/fixtures/protocol/manifest.json"
         baseline = json.loads(path.read_text(encoding="utf-8"))["upstreamBaseline"]
         self.assertEqual(baseline["repository"], "openai/codex")
-        self.assertEqual(baseline["releaseTag"], "rust-v0.162.1")
+        self.assertEqual(baseline["releaseTag"], "rust-v0.164.0")
+
+    def test_baseline_is_bound_to_reviewed_sources_without_qualification(self):
+        root = Path(__file__).resolve().parents[2]
+        manifest = json.loads((root / "tests/fixtures/protocol/manifest.json").read_text(encoding="utf-8"))
+        baseline = manifest["upstreamBaseline"]
+        review = json.loads((root / baseline["assessmentPath"]).read_text(encoding="utf-8"))
+        self.assertEqual(review["schema"], "codex-tui/upstream-protocol-review/v1")
+        for field in ("repository", "releaseTag", "releaseCommit", "releaseDate"):
+            self.assertEqual(review[field], baseline[field])
+        self.assertRegex(review["releaseCommit"], r"^[0-9a-f]{40}$")
+        for field in ("realAccountQualified", "l3Qualified", "stableQualified"):
+            self.assertIs(review[field], False)
+        self.assertGreaterEqual(len(review["sources"]), 4)
+        for source in review["sources"]:
+            self.assertRegex(source["gitBlob"], r"^[0-9a-f]{40}$")
+            self.assertEqual(source["url"], "https://github.com/openai/codex/blob/" +
+                             review["releaseCommit"] + "/" + source["path"])
+        retained = {fixture["path"] for fixture in manifest["fixtures"]}
+        fixture_dir = Path(baseline["assessmentPath"]).parent
+        for name in ("registry.jsonl", "thread-list.json", "thread-read.json", "items.json"):
+            path = (fixture_dir / name).as_posix()
+            self.assertIn(path, retained)
+            self.assertTrue((root / path).is_file())
+        contract = json.loads((root / "tests/fixtures/protocol/subscription-contract.json").read_text(encoding="utf-8"))
+        self.assertIn(baseline["releaseTag"], contract["reviewedTags"])
+        self.assertIs(contract["realAccountQualified"], False)
 
 
 if __name__ == "__main__":

@@ -120,7 +120,8 @@ fn reachable_threads(state: &AppState) -> BTreeSet<String> {
             View::Review(_) => pending.extend(state.review_return_view.as_ref()),
             View::Workspace(_) => pending.extend(state.workspace_return_view.as_ref()),
             View::ManagedWorktrees(_) => pending.extend(state.managed_return_view.as_ref()),
-            View::Registry | View::Thread(_) => {}
+            View::Thread(_) => pending.extend(state.quick_prompt_return_view.as_ref()),
+            View::Registry => {}
         }
     }
     if !owners.is_empty()

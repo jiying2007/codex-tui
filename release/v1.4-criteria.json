@@ -76,7 +76,7 @@
     {
       "id": "failure-matrix",
       "authority": "retained automated qualification",
-      "evidence": "failure-matrix/v2 has 13 cases with executable evidence identifiers verified against cargo test -- --list; exact matrix JSON is SHA-256 bound into automated qualification"
+      "evidence": "failure-matrix/v2 has 14 cases with executable evidence identifiers verified against cargo test -- --list; exact matrix JSON is SHA-256 bound into automated qualification"
     },
     {
       "id": "scale-evidence",
@@ -151,7 +151,7 @@
     {
       "id": "main-protection-integrity",
       "authority": "GitHub main branch protection REST state",
-      "evidence": "stable publication requires strict main protection with rust-1.88-msrv, ubuntu-24.04, macos-latest and windows-latest required checks, and each required check must be pinned through checks[].app_id to the same GitHub Actions App dynamically observed on the exact source SHA; administrator enforcement, force-push blocking and deletion blocking remain mandatory; codex-tui/main-protection-state/v2 SHA-256 binds both the raw protection response and the exact-main check-runs snapshot at authorization and publish-point revalidation"
+      "evidence": "stable publication requires strict main protection with rust-1.88-msrv, ubuntu-24.04, macos-latest, windows-latest and security-gate required checks, and each required check must be pinned through checks[].app_id to the same GitHub Actions App dynamically observed on the exact source SHA; administrator enforcement, force-push blocking and deletion blocking remain mandatory; codex-tui/main-protection-state/v2 SHA-256 binds both the raw protection response and the exact-main check-runs snapshot at authorization and publish-point revalidation"
     },
     {
       "id": "prior-stable-dry-run",

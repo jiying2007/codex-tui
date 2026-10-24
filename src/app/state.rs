@@ -34,6 +34,7 @@ impl AppState {
             selected: 0,
             view: View::Registry,
             previous_target: None,
+            quick_prompt_return_view: None,
             watched_conversations: BTreeSet::new(),
             unregistered_watches: BTreeSet::new(),
             active_history_watches: BTreeSet::new(),
