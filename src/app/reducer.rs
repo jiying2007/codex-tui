@@ -3,6 +3,7 @@ use super::*;
 pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
     let old_view = state.view.clone();
     let old_previous = state.previous_target.clone();
+    let hot_slot_navigation = matches!(&action, Action::UseHotSlot(_));
     let status_may_change = matches!(
         &action,
         Action::ReplaceThreads(_)
@@ -18,7 +19,12 @@ pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
             | Action::Quit
     );
     let mut effects = reduce_inner(state, action);
-    if old_view != state.view && matches!(old_view, View::Thread(_)) {
+    if old_view != state.view
+        && matches!(old_view, View::Thread(_))
+        && !(hot_slot_navigation && matches!(state.view, View::Thread(_)))
+    {
+        // A hot slot between two threads retains one return hop; all other
+        // departures invalidate the stale navigation route.
         state.quick_prompt_return_view = None;
         state.hot_slot_return_selected = None;
     }
