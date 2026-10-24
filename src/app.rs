@@ -44,6 +44,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::time::Instant;
 
 mod context_menu;
+mod forge_review;
 mod history_cache;
 mod lifecycle;
 mod local_edit;
@@ -589,6 +590,7 @@ fn propagate_git_context(state: &mut AppState, context: GitContext) {
     for thread_id in target_ids {
         let mut projection = context.clone();
         projection.thread_id = thread_id.clone();
+        forge_review::context_changed(state, &projection);
         state.git_contexts.insert(thread_id.0, projection);
     }
 }
@@ -635,16 +637,15 @@ fn propagate_forge_observation(state: &mut AppState, observation: ForgeObservati
         let existing_review = state
             .forge_observations
             .get(&thread_id.0)
-            .filter(|existing| {
-                existing.identity.is_some() && existing.identity == observation.identity
-            })
-            .and_then(|existing| existing.review.clone())
-            .filter(|review| {
-                review.cwd == cwd
-                    && observation
-                        .change_requests
-                        .iter()
-                        .any(|change| change.iid == review.change_request_iid)
+            .and_then(|existing| {
+                forge_review::retain(
+                    existing,
+                    &observation,
+                    &cwd,
+                    state
+                        .git_context(&thread_id)
+                        .and_then(|context| context.branch.as_deref()),
+                )
             });
 
         let mut projected = observation.clone();

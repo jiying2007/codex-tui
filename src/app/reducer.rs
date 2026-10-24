@@ -133,52 +133,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::ForgeObservationLoaded(observation) => {
             propagate_forge_observation(state, observation);
         }
-        Action::ForgeReviewLoaded(result) => {
-            let crate::forge::ForgeReviewResult {
-                target,
-                summary: review,
-            } = *result;
-            if state
-                .thread_by_id(&target.thread_id)
-                .is_none_or(|thread| thread.metadata.cwd != target.cwd)
-                || target.thread_id != review.thread_id
-                || target.cwd != review.cwd
-                || target.change_request_iid != review.change_request_iid
-            {
-                return vec![];
-            }
-            if let Some(observation) = state.forge_observations.get_mut(&review.thread_id.0)
-                && observation.cwd == review.cwd
-                && observation.identity.as_ref().is_some_and(|identity| {
-                    identity.provider == target.provider
-                        && identity.host == target.host
-                        && identity.project_id == target.project_id
-                        && identity.path_with_namespace == target.project_path
-                })
-                && observation
-                    .change_requests
-                    .iter()
-                    .any(|change| change.iid == review.change_request_iid)
-            {
-                observation.capabilities.insert(
-                    ForgeCapability::ApprovalSummary,
-                    if review.approvals_available {
-                        CapabilityState::Available
-                    } else {
-                        CapabilityState::Unavailable
-                    },
-                );
-                observation.capabilities.insert(
-                    ForgeCapability::Discussions,
-                    if review.discussions_available {
-                        CapabilityState::Available
-                    } else {
-                        CapabilityState::Unavailable
-                    },
-                );
-                observation.review = Some(review);
-            }
-        }
+        Action::ForgeReviewLoaded(result) => super::forge_review::install(state, *result),
         Action::GitReviewLoaded(review) => state.install_git_review(review),
         Action::PlanningSnapshotLoaded(snapshot) => {
             let selection = planning_selection::PlanningSelection::capture(state);
@@ -1332,29 +1287,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.review_scroll = 0;
             state.prepare_git_review(&thread_id, cwd.clone());
 
-            let forge_review_effect = state
-                .git_context(&thread_id)
-                .and_then(|context| context.branch.as_deref())
-                .and_then(|branch| {
-                    state.forge_observation(&thread_id).and_then(|observation| {
-                        let identity = observation.identity.as_ref()?;
-                        let change = observation.change_request_for_branch(branch)?;
-                        let already_loaded = observation.review.as_ref().is_some_and(|review| {
-                            review.change_request_iid == change.iid && review.cwd == cwd
-                        });
-                        (!already_loaded).then(|| {
-                            Effect::ProbeForgeReview(ForgeReviewTarget {
-                                thread_id: thread_id.clone(),
-                                cwd: cwd.clone(),
-                                provider: identity.provider,
-                                host: identity.host.clone(),
-                                project_id: identity.project_id.clone(),
-                                project_path: identity.path_with_namespace.clone(),
-                                change_request_iid: change.iid,
-                            })
-                        })
-                    })
-                });
+            let forge_review_effect = super::forge_review::probe(state, &thread_id, &cwd);
 
             state.view = View::Review(thread_id.clone());
             let mut effects = vec![Effect::LoadGitReview { thread_id, cwd }];
