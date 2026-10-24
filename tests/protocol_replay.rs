@@ -1,4 +1,5 @@
 use codex_tui::{
+    app::{Action, AppState, reduce},
     backend::CodexBackend,
     codex_protocol::{normalize_thread, parse_thread_list},
     conversation::{ConversationItemKind, parse_items_page, parse_legacy_thread_read},
@@ -43,15 +44,45 @@ fn stable_0_164_0_read_state_events_do_not_change_local_attention_or_drop_update
     );
     let started = replay.tick();
     assert!(started.threads[0].attention.is_empty());
+    let mut app = AppState::new(started.threads);
+    reduce(&mut app, Action::MarkUnread);
     let waiting = replay.tick();
     assert_eq!(waiting.threads[0].runtime, RuntimeStatus::WaitingHuman);
     assert_eq!(
         waiting.threads[0].attention,
         [AttentionReason::ApprovalRequired]
     );
+    reduce(&mut app, Action::ReplaceThreads(waiting.threads.clone()));
+    assert!(
+        app.to_local_state()
+            .marked_unread
+            .contains("stable-0164-thread")
+    );
+    assert!(
+        app.threads[0]
+            .attention
+            .contains(&AttentionReason::MarkedUnread)
+    );
+    reduce(&mut app, Action::AcknowledgeAttention);
     let renamed = replay.tick();
     assert_eq!(renamed.threads[0].title, "Still actionable");
     assert_eq!(renamed.threads[0].attention, waiting.threads[0].attention);
+    reduce(&mut app, Action::ReplaceThreads(renamed.threads));
+    assert!(app.acknowledged_attention.contains("stable-0164-thread"));
+    assert!(
+        !app.to_local_state()
+            .marked_unread
+            .contains("stable-0164-thread")
+    );
+    assert!(
+        !app.threads[0]
+            .attention
+            .contains(&AttentionReason::MarkedUnread)
+    );
+    assert!(
+        app.thread_needs_attention(0),
+        "live approval remains actionable"
+    );
 }
 
 #[test]

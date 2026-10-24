@@ -40,6 +40,10 @@ Opening a thread or its queue acquires an App Server subscription on the active 
 
 Mission Control puts actionable attention first, then pinned threads and recent activity, with deterministic ID tie-breaking. It preserves the existing recent-thread window plus pins and attention exceptions, rather than expanding into all history. Snooze suppresses attention elevation while retaining pins; acknowledging an item does not hide a live approval, input request or error. Initial loading selects the first displayed thread; later refreshes retain the selected thread ID while it remains visible. Compact terminals show the attention reason in the runtime column, while ordinary rows retain their runtime state.
 
+Quick prompt opens the selected thread's visible composer from Mission Control, Board, Review, Workspace or Managed Worktrees. `Esc` leaves composition while retaining the draft; another `Esc` returns to the originating page. Navigating to another thread clears that temporary return route.
+
+Registry attention also includes already observed Goal blocking, usage/budget limits, failed pipelines, requested changes and worktree conflicts. Board, List and Review Queue display one row per card and truncate long titles or workspace labels to the terminal width, so navigation keeps the selection visible.
+
 Select with `j/k`, open with Enter, filter via `/`, use `Ctrl+K` for commands, and `?` for the live keymap. `b` opens the Board; `Tab` cycles Saved Views, including workspace-grouped Needs You and Needs Review lists. List/Review Queue grouping keeps each workspace together and applies the chosen order within it; Board columns retain workflow-stage order. In Board, `h/l` changes columns and `j/k` selects a WorkCard. From Mission Control, `r` opens Review and `w` opens Workspace for the selected thread. These routes expose existing delivery context. Board and Attention remain **projections**, never a second team task authority.
 
 Headless `threads`, `work`, `status`, `attention` and `board` use the configured active Codex target or `--target NAME`; each invocation is a single-target snapshot. Their source fields identify target and transport, and planning views identify the local store as shared across targets. Existing aliases/pins/cards are keyed by bare thread ID, so identical IDs on different targets can share local metadata. Forge instead reads the current directory; Worktrees reads the shared local cache. See the [CLI scope and failure contract](cli-reference.md#read-only-headless-commands).
@@ -56,6 +60,8 @@ Review external browser links require an unambiguous HTTP(S) host without embedd
 <!-- docs-section: forge -->
 
 Switch to a repository with a configured Git remote and run `codex-tui doctor git` and `codex-tui doctor forge`. Internal GitLab uses authenticated `glab`; GitHub uses `gh`. A partial GitLab/GitHub read failure keeps healthy capabilities visible but marks Forge data incomplete; failure of all core read endpoints is unavailable, not a fresh empty result. Headless Forge returns a degraded exit code when any core capability is missing.
+
+Review details are tied to the current repository, branch, change-request ID and observed head revision. A branch or head change invalidates mismatched cached details and late responses. Opening Review refreshes expired or failed details using the existing Forge refresh interval.
 
 HTTP(S) Git remotes retain a nondefault port in the provider authority, such as `gitlab.example:8443`; authenticate that authority in `glab`. An SSH transport port, such as `:2222`, is not an API port. If SSH and API endpoints differ, keep their mapping in the provider CLI configuration.
 

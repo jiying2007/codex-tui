@@ -40,6 +40,10 @@ Thread 页面用 `PageUp`/`PageDown` 按显示行滚动消息，长段落和代�
 
 Mission Control 按待处理、置顶、最近活动排序，同优先级以会话 ID 确定顺序。仍保留原有“最近会话窗口＋置顶/待处理例外”，不会自动展开全部历史。Snooze 暂停待处理提升，但保留置顶；已读确认不会掩盖真实审批、输入请求或错误。首次加载选中显示首项，之后刷新按会话 ID 保留可见的选中项。窄终端在运行状态列直接显示待处理原因，普通会话仍显示运行状态。
 
+快速消息会从 Mission Control、Board、Review、Workspace 或 Managed Worktrees 进入所选会话的可见输入框。`Esc` 退出输入并保留草稿，再按一次 `Esc` 回到原页面；切换其他会话后清除这次临时返回路径。
+
+Registry 提醒也包含已经观测到的 Goal 阻塞、用量或预算限制、流水线失败、请求修改及工作树冲突。Board、List 和 Review Queue 每张卡片使用一行，按终端宽度截断长标题或工作区名称，使导航选中项保持可见。
+
 `j/k` 选中、Enter 打开、`/` 筛选、`Ctrl+K` 命令面板、`?` 查看实时键位。`b` 打开 Board，`Tab` 切换 Saved View，包括按工作区分组的 Needs You / Needs Review 列表。List/Review Queue 将同一工作区连续排列，组内按所选顺序排序；Board 列仍按工作流阶段排列。Board 内用 `h/l` 切换列、`j/k` 选择卡片；Mission Control 的 `r` 进入所选会话的 Review，`w` 进入 Workspace。这些入口直达既有交付上下文；Board/Attention 始终是派生视图。
 
 Headless 的 `threads`、`work`、`status`、`attention`、`board` 使用配置中的活动 Codex 目标或 `--target NAME`，一次只获取一个目标。来源字段标明目标与传输，规划视图明确标记本地存储跨目标共享。别名/置顶/卡片仍以不含目标的会话 ID 为键，跨目标的相同 ID 可能共享本地元数据。Forge 读取当前目录，Worktrees 读取共享本地缓存。详见 [CLI 范围与失败语义](cli-reference.md#只读无头命令)。
@@ -56,6 +60,8 @@ Review 外部浏览器链接必须是主机明确的 HTTP(S) URL，不允许嵌�
 <!-- docs-section: forge -->
 
 在有 Git Remote 的目标仓库执行 `codex-tui doctor git` 和 `codex-tui doctor forge`。内部 GitLab 使用已认证 `glab`，GitHub 使用 `gh`。GitLab/GitHub 某一只读接口失败时，对应能力会降级，其他成功的数据可保留，但 Forge 会明确提示不完整；三个核心接口全部失败时不得报告“最新空结果”。Headless Forge 若缺少核心能力应以降级退出码返回。
+
+Review 详情绑定当前仓库、分支、变更请求 ID 和已观测的 head 版本。分支或 head 变更会使不匹配的缓存详情和迟到响应失效；打开 Review 时，按已有 Forge 刷新间隔重新获取已过期或失败的详情。
 
 HTTP(S) Git 远端会在平台地址中保留非默认端口，例如 `gitlab.example:8443`；请在 `glab` 中认证该地址。SSH 传输端口（如 `:2222`）不作为 API 端口；SSH 与 API 端点不同时，在平台 CLI 配置中维护映射。
 
