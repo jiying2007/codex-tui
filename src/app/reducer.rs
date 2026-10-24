@@ -1234,9 +1234,26 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 SourceKind::CodexThread => {
                     let id = ThreadId::new(target.value);
                     if let Some(index) = state.threads.iter().position(|thread| thread.id == id) {
+                        if matches!(&state.view, View::Thread(current) if *current == id) {
+                            // Re-selecting the current slot must not reload the transcript.
+                            return vec![];
+                        }
+                        state.previous_target = state.current_thread_id().cloned();
+                        state.quick_prompt_return_view = None;
                         state.selected = index;
-                        state.view = View::Registry;
+                        state.thread_ui.entry(id.0.clone()).or_default();
+                        state.prepare_conversation(&id);
+                        state.view = View::Thread(id.clone());
+                        return vec![Effect::LoadConversation(id)];
                     }
+                    state.mutation_notice = Some(
+                        local_text(
+                            state.language,
+                            "shortcut thread is not available on this target",
+                            "快捷槽会话在当前目标中不可用",
+                        )
+                        .into(),
+                    );
                 }
                 SourceKind::ScratchWork
                     if state

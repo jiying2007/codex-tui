@@ -1339,7 +1339,7 @@ fn render_managed_worktrees(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
 }
 
 const HELP_LINES: &[&str] = &[
-    "Global: ? help · Ctrl+K palette · / search · Ctrl+F transcript · . actions · Esc back",
+    "Global: = bind · 1–9 jump · ? help · Ctrl+K palette · / search · Ctrl+F transcript · . actions · Esc back",
     "Registry: j/k · Enter · Space attention · l local-only · g repo-only · h recent/all-history · p pin · e alias · x ack",
     "Thread: a composer · q Thread Queue · d request details · y/n/c approval · i answer · Ctrl+C interrupt · r review",
     "Thread: PageUp/PageDown scroll · Home loaded history start · End follow latest",
@@ -1356,7 +1356,7 @@ const HELP_LINES: &[&str] = &[
 ];
 
 const HELP_LINES_ZH: &[&str] = &[
-    "全局: ? 帮助 · Ctrl+K 命令面板 · / 搜索 · . 操作 · Esc 返回",
+    "全局: = 绑定 · 1–9 直达 · ? 帮助 · Ctrl+K 命令面板 · / 搜索 · . 操作 · Esc 返回",
     "任务中心: j/k 移动 · Enter 打开 · Space 待处理 · l 仅本机 · g 仅仓库 · h 最近/全部历史 · p 固定 · e 别名 · x 已处理",
     "会话: a 编辑消息 · d 请求详情 · y/n/c 审批 · i 回答 · Ctrl+C 中断 · r 评审",
     "会话: PageUp/PageDown 滚动 · Home 已加载历史开头 · End 跟随最新",

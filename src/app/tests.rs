@@ -2971,3 +2971,64 @@ fn same_cwd_git_fanout_shares_inventory_without_sharing_thread_identity() {
         assert!(std::sync::Arc::ptr_eq(&inventory, &projected.changes));
     }
 }
+
+#[test]
+fn hot_slots_jump_directly_across_views_and_keep_bounded_history() {
+    let mut state = app();
+    for thread in &mut state.threads {
+        thread.runtime = RuntimeStatus::Inactive;
+    }
+    let first = state.threads[0].id.clone();
+    let second = state.threads[1].id.clone();
+    state.view = View::Thread(first.clone());
+    // Load the old history once, so switching has a real subscription to release.
+    let _ = reduce(&mut state, Action::OpenSelected);
+    state.view = View::Review(first.clone());
+    state
+        .planning_snapshot
+        .hot_slots
+        .push(crate::planning::HotSlot {
+            slot: 4,
+            target: SourceRef::codex_thread(&second),
+            updated_at_unix_ms: 1,
+        });
+
+    let effects = reduce(&mut state, Action::UseHotSlot(4));
+    assert_eq!(state.selected, 1);
+    assert_eq!(state.view, View::Thread(second.clone()));
+    assert_eq!(state.previous_target, Some(first.clone()));
+    assert!(effects.contains(&Effect::LoadConversation(second.clone())));
+    assert!(state.watched_conversations.contains(&second.0));
+    assert!(state.watched_conversations.len() <= 2);
+    assert!(state.watched_conversations.contains(&first.0));
+
+    let same = reduce(&mut state, Action::UseHotSlot(4));
+    assert!(same.is_empty(), "the active slot must not reload history");
+    let back = reduce(&mut state, Action::Back);
+    assert_eq!(state.view, View::Registry);
+    assert!(back.contains(&Effect::StopWatchingConversation(second)));
+}
+
+#[test]
+fn stale_hot_slot_target_is_visible_and_never_opens_an_unrelated_thread() {
+    let mut state = app();
+    let selected = state.selected;
+    state
+        .planning_snapshot
+        .hot_slots
+        .push(crate::planning::HotSlot {
+            slot: 8,
+            target: SourceRef::codex_thread(&ThreadId::new("unknown-thread")),
+            updated_at_unix_ms: 1,
+        });
+    assert!(reduce(&mut state, Action::UseHotSlot(8)).is_empty());
+    assert_eq!(state.selected, selected);
+    assert_eq!(state.view, View::Registry);
+    assert!(
+        state
+            .mutation_notice
+            .as_deref()
+            .unwrap()
+            .contains("not available")
+    );
+}
