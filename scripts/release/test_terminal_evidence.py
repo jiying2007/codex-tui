@@ -77,6 +77,38 @@ class TerminalReceiptEvidence(TerminalEvidenceFixture):
         self.assertTrue(self.output.is_symlink())
         self.assertFalse(target.exists())
 
+    def test_symlink_is_refused_even_when_exclusive_open_follows_it(self):
+        target = self.root / "windows-missing.json"
+        self.symlink(self.output, target)
+        original_open = Path.open
+
+        def follow_link_on_open(path, *args, **kwargs):
+            # Model the Windows runtime observed in CI: "x" follows a dangling
+            # symlink and creates its absent target instead of refusing the link.
+            return original_open(target if path == self.output else path, *args, **kwargs)
+
+        with mock.patch.object(Path, "open", follow_link_on_open):
+            with self.assertRaisesRegex(SystemExit, "fresh output path"):
+                self.invoke()
+        self.assertTrue(self.output.is_symlink())
+        self.assertFalse(target.exists())
+
+    def test_competing_regular_file_is_still_protected_by_exclusive_creation(self):
+        original_mkdir = Path.mkdir
+        old = b"another collector's retained observation"
+
+        def concurrent_collector(path, *args, **kwargs):
+            result = original_mkdir(path, *args, **kwargs)
+            if path == self.output.parent:
+                # Another collector creates a regular file just before open.
+                self.output.write_bytes(old)
+            return result
+
+        with mock.patch.object(Path, "mkdir", concurrent_collector):
+            with self.assertRaisesRegex(SystemExit, "fresh output path"):
+                self.invoke()
+        self.assertEqual(self.output.read_bytes(), old)
+
     def test_rejected_attestation_creates_no_output(self):
         with mock.patch.object(sys, "argv", ["create_terminal_receipt.py",
                 "--platform", "linux", "--terminal", LABEL,

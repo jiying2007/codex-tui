@@ -9,8 +9,12 @@ require_python38()
 
 
 def write_new_terminal_evidence(path: pathlib.Path, text: str) -> None:
-    # Do not resolve the leaf: exclusive creation must reject dangling links too.
+    # Keep the leaf unresolved. Windows "x" can follow a dangling symlink, so
+    # reject existing links explicitly; "x" still protects competing file creation.
+    # This local evidence helper does not defend against hostile link swaps.
     try:
+        if path.is_symlink():
+            raise FileExistsError
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("x", encoding="utf-8", newline="\n") as handle:
             handle.write(text)
