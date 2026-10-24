@@ -272,18 +272,24 @@ Terminal-restoration evidence remains an explicit real-controlling-TTY smoke rec
 For Linux Tier 1, use the two-phase helper so the receipt is bound to the same real controlling TTY and exact main SHA without manually typing the SHA or terminal identifier:
 
 ```bash
-python3 scripts/release/terminal_smoke.py prepare
+umask 077
+mkdir -p release/evidence/linux
+TTY_EVIDENCE="$(mktemp -d release/evidence/linux/terminal.XXXXXX)"
+python3 scripts/release/terminal_smoke.py prepare \
+  --pending "$TTY_EVIDENCE/pending.json"
 ```
 
-The prepare step requires stdin/stdout/stderr plus `/dev/tty` to be real TTYs, requires clean `main == origin/main`, verifies the parent terminal already has `ICANON/ECHO/ISIG`, writes an ignored pending manifest under `release/evidence/linux/`, and prints the exact `CODEX_TUI_GIT_SHA=... cargo run --release --locked --bin codex-tui` candidate command plus the documented interactive procedure.
+The prepare step requires stdin/stdout/stderr plus `/dev/tty` to be real TTYs, requires clean `main == origin/main`, verifies the parent terminal already has `ICANON/ECHO/ISIG`, exclusively creates an ignored pending manifest in the fresh directory, and prints the exact `CODEX_TUI_GIT_SHA=... cargo run --release --locked --bin codex-tui` candidate command plus the documented interactive procedure. Keep this shell's `TTY_EVIDENCE` value for the matching receipt. Each new attempt uses a new directory; retain earlier observations.
 
 After completing the real Drawer/resize/Ctrl-C/focus/normal-exit/abnormal-exit observations and verifying cursor, echo and line editing in the parent terminal:
 
 ```bash
-python3 scripts/release/terminal_smoke.py record-pass --pass
+python3 scripts/release/terminal_smoke.py record-pass \
+  --pending "$TTY_EVIDENCE/pending.json" \
+  --output "$TTY_EVIDENCE/terminal-linux.json" --pass
 ```
 
-`record-pass` must run on the same controlling TTY and exact SHA, rechecks clean/live main plus `ICANON/ECHO/ISIG`, and then delegates to `create_terminal_receipt.py`. The explicit `--pass` remains mandatory because software cannot honestly infer the user-observed cursor and line-editing restoration.
+`record-pass` must run on the same controlling TTY and exact SHA, rechecks clean/live main plus `ICANON/ECHO/ISIG`, and then delegates to `create_terminal_receipt.py`. Pending and receipt writes refuse existing files and symbolic links (including dangling links), so rerunning cannot replace an earlier record. The explicit `--pass` remains mandatory because software cannot honestly infer the user-observed cursor and line-editing restoration.
 
 ## Versioned stable criteria
 

@@ -27,6 +27,8 @@ Protocol qualification is intentionally tiered: **L1** replays retained registry
 
 `linux_qualify.py` validates the supplied Linux terminal receipt before any network query, compilation or benchmark. Missing, malformed, non-PASS or wrong-source input stops immediately. The accepted UTF-8 bytes are retained verbatim as `terminal-restoration.json` in a fresh `--output-dir`; parsing and SHA-256 use that same snapshot, not a later read of the input path. An existing retained snapshot is never overwritten. This verifies the operator-supplied receipt, not the truth of a real-TTY attestation; it does not synthesize PASS or authorize publication.
 
+`terminal_smoke.py prepare`, `terminal_smoke.py record-pass` and `create_terminal_receipt.py` exclusively create their output files. Existing pending manifests, receipts and symbolic links (including dangling links) are refused without replacing their contents or link targets. Use fresh `--pending` and `--output` destinations for each attempt and preserve earlier failures. The explicit `--pass` still requires actual human observation; exclusive creation does not certify that observation or prevent later filesystem changes.
+
 Separate, current-source receipts are required for (1) actual authenticated Codex App Server/provider capabilities, (2) internal GitLab `glab` and required Issues/MRs/Pipelines where the internal deployment profile is used, (3) Linux and Windows→SSH Ubuntu **controlling terminal** focus/resize/Ctrl+C/exit/restore, and (4) operator review of target machine performance, resource and error recovery. Repository CI cannot synthesize these as PASS.
 
 ## Administrator-owned release protection

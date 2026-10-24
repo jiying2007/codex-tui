@@ -229,7 +229,7 @@ python3 "$ROOT/scripts/release/sample_device_process.py" \
 
 只有所有必需终端观察真实通过后，才能在窗口 A、同一控制 TTY 执行以下第一段。SSH 已重连则重新 prepare 和见证，不能在另一 TTY 签旧 pending。--pass 故意保持人工执行，不属于无人值守辅助程序；必需项未观察则阻塞。
 
-最终采集仍用新输出路径。只有正式候选才执行不带 --dispatch 的 linux_qualify；该脚本会重建，结束后核对程序是否与见证副本相同。字节变化须重做受影响证据，不能只信生成 JSON 的 valid。此时发布说明必须已经合入。管理员保护／不可变设置、独立签核、精确候选 Stable publish=false 演练和另行授权发布仍不由本设备执行器代办。
+最终采集仍用新输出路径。`terminal_smoke.py` 和 `create_terminal_receipt.py` 拒绝已有 pending／收据输出及符号链接（含悬空链接）。保留上次尝试并创建新证据目录，不删除旧记录来重复使用同名路径。只有正式候选才执行不带 --dispatch 的 linux_qualify；该脚本会重建，结束后核对程序是否与见证副本相同。字节变化须重做受影响证据，不能只信生成 JSON 的 valid。此时发布说明必须已经合入。管理员保护／不可变设置、独立签核、精确候选 Stable publish=false 演练和另行授权发布仍不由本设备执行器代办。
 
 ```bash
 # MANUAL ONLY: after actual witness, on the same controlling TTY.

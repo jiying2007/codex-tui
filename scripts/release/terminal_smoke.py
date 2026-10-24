@@ -10,7 +10,7 @@ import subprocess
 import sys
 import termios
 
-from _compat import write_text_lf
+from terminal_evidence import write_new_terminal_evidence
 
 PENDING_SCHEMA = "codex-tui/terminal-smoke-pending/v1"
 
@@ -150,8 +150,8 @@ def main() -> int:
             "procedure": "docs/implementation/m7c3-pty-lifecycle.md#interactive-smoke-procedure",
             "candidateCommand": candidate_command,
         }
-        pending_path = (root / args.pending).resolve()
-        write_text_lf(pending_path, json.dumps(pending, indent=2, sort_keys=True) + "\n")
+        pending_path = root / args.pending
+        write_new_terminal_evidence(pending_path, json.dumps(pending, indent=2, sort_keys=True) + "\n")
         print(
             "\nREAL TTY SMOKE (human observation required):\n"
             f"  candidate: {candidate_command}\n"
@@ -197,7 +197,7 @@ def main() -> int:
     restored = termios.tcgetattr(sys.stdin.fileno())
     validate_restored_lflag(restored[3])
 
-    output = (root / args.output).resolve()
+    output = root / args.output
     notes = (
         "terminal-smoke-v1; post-smoke flags ICANON/ECHO/ISIG verified; "
         + (args.notes.strip() or "documented interactive procedure observed PASS")
