@@ -3051,11 +3051,14 @@ fn hot_slot_jumps_return_to_the_originating_surface_without_reloading() {
             thread.runtime = RuntimeStatus::Inactive;
         }
         let destination = state.threads[1].id.clone();
-        state.planning_snapshot.hot_slots.push(crate::planning::HotSlot {
-            slot: 7,
-            target: SourceRef::codex_thread(&destination),
-            updated_at_unix_ms: 1,
-        });
+        state
+            .planning_snapshot
+            .hot_slots
+            .push(crate::planning::HotSlot {
+                slot: 7,
+                target: SourceRef::codex_thread(&destination),
+                updated_at_unix_ms: 1,
+            });
         state.view = origin.clone();
         let jump = reduce(&mut state, Action::UseHotSlot(7));
         assert_eq!(state.view, View::Thread(destination.clone()));
@@ -3075,11 +3078,14 @@ fn hot_slot_jumps_return_to_the_originating_surface_without_reloading() {
 fn hot_slot_index_rejects_an_outdated_identity_instead_of_opening_another_thread() {
     let mut state = app();
     let target = state.threads[0].id.clone();
-    state.planning_snapshot.hot_slots.push(crate::planning::HotSlot {
-        slot: 5,
-        target: SourceRef::codex_thread(&target),
-        updated_at_unix_ms: 1,
-    });
+    state
+        .planning_snapshot
+        .hot_slots
+        .push(crate::planning::HotSlot {
+            slot: 5,
+            target: SourceRef::codex_thread(&target),
+            updated_at_unix_ms: 1,
+        });
     // A stale index must never redirect a persisted shortcut to the wrong thread.
     state.threads[0].id = ThreadId::new("different-thread");
     assert!(reduce(&mut state, Action::UseHotSlot(5)).is_empty());
