@@ -2,7 +2,9 @@ use anyhow::{Context, Result, anyhow};
 use codex_tui::{
     app::AppState,
     i18n::UiLanguage,
-    notification::{NotificationKind, NotificationMode, NotificationObservation, NotificationTracker},
+    notification::{
+        NotificationKind, NotificationMode, NotificationObservation, NotificationTracker,
+    },
 };
 use std::{
     collections::VecDeque,
@@ -207,8 +209,7 @@ async fn run_actor(
     mut command_rx: mpsc::Receiver<Delivery>,
     notice_tx: mpsc::Sender<String>,
 ) {
-    let ssh = std::env::var_os("SSH_TTY").is_some()
-        || std::env::var_os("SSH_CONNECTION").is_some();
+    let ssh = std::env::var_os("SSH_TTY").is_some() || std::env::var_os("SSH_CONNECTION").is_some();
     let delivery_mode = mode_for_session(mode, ssh);
     let mut reported_ssh_fallback = false;
     while let Some(first) = command_rx.recv().await {
@@ -474,7 +475,6 @@ mod tests {
         assert_eq!(runtime.pending.len(), pending);
     }
 
-
     fn delivery(kind: NotificationKind, subject: &str) -> Delivery {
         Delivery {
             title: format!("codex-tui · {}", kind.label()),
@@ -486,7 +486,10 @@ mod tests {
 
     #[test]
     fn ssh_desktop_notifications_fall_back_to_the_client_terminal() {
-        assert_eq!(mode_for_session(NotificationMode::Off, true), NotificationMode::Off);
+        assert_eq!(
+            mode_for_session(NotificationMode::Off, true),
+            NotificationMode::Off
+        );
         assert_eq!(
             mode_for_session(NotificationMode::Terminal, true),
             NotificationMode::Terminal
@@ -495,7 +498,10 @@ mod tests {
             mode_for_session(NotificationMode::Os, true),
             NotificationMode::Terminal
         );
-        assert_eq!(mode_for_session(NotificationMode::Os, false), NotificationMode::Os);
+        assert_eq!(
+            mode_for_session(NotificationMode::Os, false),
+            NotificationMode::Os
+        );
     }
 
     #[test]
@@ -522,7 +528,8 @@ mod tests {
         assert_eq!(coalesce_ready(one.clone(), &mut rx).body, "single");
         let mut zh = one;
         zh.language = UiLanguage::SimplifiedChinese;
-        tx.try_send(delivery(NotificationKind::Completion, "another")).unwrap();
+        tx.try_send(delivery(NotificationKind::Completion, "another"))
+            .unwrap();
         let merged = coalesce_ready(zh, &mut rx);
         assert!(merged.body.contains("另有 1 项更新"));
     }

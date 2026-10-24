@@ -128,21 +128,13 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
         ) => Some(Command::CloseTerminalDrawer),
         (_, KeyCode::Esc) => Some(Command::Back),
         (
-            ViewKind::Thread
-            | ViewKind::Review
-            | ViewKind::Workspace
-            | ViewKind::ManagedWorktrees,
+            ViewKind::Thread | ViewKind::Review | ViewKind::Workspace | ViewKind::ManagedWorktrees,
             KeyCode::Char('='),
         ) if key.modifiers == KeyModifiers::NONE => Some(Command::BeginHotSlotBind),
         (
-            ViewKind::Thread
-            | ViewKind::Review
-            | ViewKind::Workspace
-            | ViewKind::ManagedWorktrees,
+            ViewKind::Thread | ViewKind::Review | ViewKind::Workspace | ViewKind::ManagedWorktrees,
             KeyCode::Char(c @ '1'..='9'),
-        ) if key.modifiers == KeyModifiers::NONE => {
-            Some(Command::HotSlot(c.to_digit(10)? as u8))
-        }
+        ) if key.modifiers == KeyModifiers::NONE => Some(Command::HotSlot(c.to_digit(10)? as u8)),
         (ViewKind::Registry, KeyCode::Char('q')) => Some(Command::QuitOrInterrupt),
         (ViewKind::Registry, KeyCode::Char('l')) => Some(Command::ToggleHostLocalFilter),
         (ViewKind::Registry, KeyCode::Char('g')) => Some(Command::ToggleRepoBackedFilter),

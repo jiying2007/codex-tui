@@ -2981,11 +2981,14 @@ fn hot_slots_jump_directly_across_views_and_keep_bounded_history() {
     // Load the old history once, so switching has a real subscription to release.
     let _ = reduce(&mut state, Action::OpenSelected);
     state.view = View::Review(first.clone());
-    state.planning_snapshot.hot_slots.push(crate::planning::HotSlot {
-        slot: 4,
-        target: SourceRef::codex_thread(&second),
-        updated_at_unix_ms: 1,
-    });
+    state
+        .planning_snapshot
+        .hot_slots
+        .push(crate::planning::HotSlot {
+            slot: 4,
+            target: SourceRef::codex_thread(&second),
+            updated_at_unix_ms: 1,
+        });
 
     let effects = reduce(&mut state, Action::UseHotSlot(4));
     assert_eq!(state.selected, 1);
@@ -3007,13 +3010,22 @@ fn hot_slots_jump_directly_across_views_and_keep_bounded_history() {
 fn stale_hot_slot_target_is_visible_and_never_opens_an_unrelated_thread() {
     let mut state = app();
     let selected = state.selected;
-    state.planning_snapshot.hot_slots.push(crate::planning::HotSlot {
-        slot: 8,
-        target: SourceRef::codex_thread(&ThreadId::new("unknown-thread")),
-        updated_at_unix_ms: 1,
-    });
+    state
+        .planning_snapshot
+        .hot_slots
+        .push(crate::planning::HotSlot {
+            slot: 8,
+            target: SourceRef::codex_thread(&ThreadId::new("unknown-thread")),
+            updated_at_unix_ms: 1,
+        });
     assert!(reduce(&mut state, Action::UseHotSlot(8)).is_empty());
     assert_eq!(state.selected, selected);
     assert_eq!(state.view, View::Registry);
-    assert!(state.mutation_notice.as_deref().unwrap().contains("not available"));
+    assert!(
+        state
+            .mutation_notice
+            .as_deref()
+            .unwrap()
+            .contains("not available")
+    );
 }
