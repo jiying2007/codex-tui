@@ -138,6 +138,7 @@ pub struct AppState {
     pub view: View,
     pub previous_target: Option<ThreadId>,
     quick_prompt_return_view: Option<View>,
+    hot_slot_return_selected: Option<ThreadId>,
     /// Local ownership of backend history watches, never persisted or inferred from cache.
     watched_conversations: BTreeSet<String>,
     unregistered_watches: BTreeSet<String>,

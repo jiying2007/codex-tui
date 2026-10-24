@@ -3005,8 +3005,13 @@ fn hot_slots_jump_directly_across_views_and_keep_bounded_history() {
     let same = reduce(&mut state, Action::UseHotSlot(4));
     assert!(same.is_empty(), "the active slot must not reload history");
     let back = reduce(&mut state, Action::Back);
-    assert_eq!(state.view, View::Registry);
+    assert_eq!(state.view, View::Review(first.clone()));
+    assert_eq!(
+        state.selected, 0,
+        "the originating selection must be restored"
+    );
     assert!(back.contains(&Effect::StopWatchingConversation(second)));
+    assert!(state.watched_conversations.contains(&first.0));
 }
 
 #[test]
@@ -3031,4 +3036,94 @@ fn stale_hot_slot_target_is_visible_and_never_opens_an_unrelated_thread() {
             .unwrap()
             .contains("not available")
     );
+}
+
+#[test]
+fn hot_slot_jumps_return_to_the_originating_surface_without_reloading() {
+    let first = ThreadId::new("thread-impl");
+    let origins = [
+        View::Registry,
+        View::Board,
+        View::Thread(first.clone()),
+        View::Review(first.clone()),
+        View::Workspace(first.clone()),
+        View::ManagedWorktrees(first.clone()),
+    ];
+    for origin in origins {
+        let mut state = app();
+        for thread in &mut state.threads {
+            thread.runtime = RuntimeStatus::Inactive;
+        }
+        let destination = state.threads[1].id.clone();
+        state
+            .planning_snapshot
+            .hot_slots
+            .push(crate::planning::HotSlot {
+                slot: 7,
+                target: SourceRef::codex_thread(&destination),
+                updated_at_unix_ms: 1,
+            });
+        state.view = origin.clone();
+        let jump = reduce(&mut state, Action::UseHotSlot(7));
+        assert_eq!(state.view, View::Thread(destination.clone()));
+        assert!(jump.contains(&Effect::LoadConversation(destination.clone())));
+        assert!(reduce(&mut state, Action::UseHotSlot(7)).is_empty());
+
+        let back = reduce(&mut state, Action::Back);
+        assert_eq!(state.view, origin, "hot slot lost its originating page");
+        assert_eq!(state.selected, 0, "hot slot lost the original selection");
+        assert!(
+            back.contains(&Effect::StopWatchingConversation(destination)),
+            "completed foreground watch should be released on return"
+        );
+    }
+}
+
+#[test]
+fn hot_slot_index_rejects_an_outdated_identity_instead_of_opening_another_thread() {
+    let mut state = app();
+    let target = state.threads[0].id.clone();
+    state
+        .planning_snapshot
+        .hot_slots
+        .push(crate::planning::HotSlot {
+            slot: 5,
+            target: SourceRef::codex_thread(&target),
+            updated_at_unix_ms: 1,
+        });
+    // A stale index must never redirect a persisted shortcut to the wrong thread.
+    state.threads[0].id = ThreadId::new("different-thread");
+    assert!(reduce(&mut state, Action::UseHotSlot(5)).is_empty());
+    assert_eq!(state.view, View::Registry);
+    assert_eq!(
+        state.mutation_notice.as_deref(),
+        Some("shortcut thread is not available on this target")
+    );
+}
+
+#[test]
+fn hot_slot_return_keeps_registry_filter_and_original_selection() {
+    let mut state = app();
+    for thread in &mut state.threads {
+        thread.runtime = RuntimeStatus::Inactive;
+    }
+    let selected = state.threads[0].id.clone();
+    let destination = state.threads[1].id.clone();
+    state.filter = state.threads[0].title.clone();
+    state
+        .planning_snapshot
+        .hot_slots
+        .push(crate::planning::HotSlot {
+            slot: 9,
+            target: SourceRef::codex_thread(&destination),
+            updated_at_unix_ms: 1,
+        });
+    assert!(state.visible_indices().contains(&state.selected));
+    let _ = reduce(&mut state, Action::UseHotSlot(9));
+    assert_eq!(state.view, View::Thread(destination));
+    assert_ne!(state.selected_thread_id(), Some(selected.clone()));
+    let _ = reduce(&mut state, Action::Back);
+    assert_eq!(state.view, View::Registry);
+    assert_eq!(state.selected_thread_id(), Some(selected));
+    assert!(state.visible_indices().contains(&state.selected));
 }

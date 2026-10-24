@@ -148,7 +148,7 @@
     "user-perceived-performance-evidence"
   ],
   "moduleRatchet": {
-    "src/app.rs": 1015,
+    "src/app.rs": 1016,
     "src/ui.rs": 1426,
     "src/app_server.rs": 2682,
     "src/main.rs": 1881,
@@ -274,9 +274,9 @@
     "src/forge/gitlab_projection_tests.rs": 164,
     "src/forge/error_redaction_tests.rs": 43,
     "src/forge/remote_identity_tests.rs": 47,
-    "src/app/reducer.rs": 2522,
-    "src/app/state.rs": 835,
-    "src/app/tests.rs": 3034,
+    "src/app/reducer.rs": 2559,
+    "src/app/state.rs": 836,
+    "src/app/tests.rs": 3129,
     "src/app/thread_queue_reducer_tests.rs": 123,
     "src/ui/tests.rs": 1164,
     "src/sqlite_store/tests.rs": 1098,
