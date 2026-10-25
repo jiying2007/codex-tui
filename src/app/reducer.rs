@@ -1222,6 +1222,11 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.hot_slot_bind_pending = state.selected_local_target();
         }
         Action::OpenRecentNotification => {
+            if !state.recent_alert_controls_available() {
+                // Hidden by an overlay or active editor: do not navigate behind
+                // it and do not consume the event before its real expiry.
+                return vec![];
+            }
             let Some(recent) = state.recent_notification.take() else {
                 return vec![];
             };

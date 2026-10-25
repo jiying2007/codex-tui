@@ -251,9 +251,7 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
         recent.visible_until > std::time::Instant::now()
             && primary_area.height >= 8
             && primary_area.width >= 40
-            && app.input_mode == InputMode::Normal
-            && !app.terminal_focused
-            && !app.request_details_open()
+            && app.recent_alert_controls_available()
     });
     let content_area = if recent.is_some() {
         Rect {

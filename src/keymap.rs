@@ -27,6 +27,7 @@ pub const HELP_BINDINGS: &[HelpBinding] = &[
     HelpBinding { surface: "Global", scope: HelpScope::AllViews, token: ".", code: KeyCode::Char('.'), modifiers: KeyModifiers::NONE, command: Command::ContextActions },
     HelpBinding { surface: "Global", scope: HelpScope::AllViews, token: "Esc", code: KeyCode::Esc, modifiers: KeyModifiers::NONE, command: Command::Back },
     HelpBinding { surface: "Global", scope: HelpScope::AllViews, token: "!", code: KeyCode::Char('!'), modifiers: KeyModifiers::NONE, command: Command::OpenRecentNotification },
+    HelpBinding { surface: "Global", scope: HelpScope::AllViews, token: "!", code: KeyCode::Char('1'), modifiers: KeyModifiers::SHIFT, command: Command::OpenRecentNotification },
     HelpBinding { surface: "Terminal drawer", scope: HelpScope::NonScratch, token: "t", code: KeyCode::Char('t'), modifiers: KeyModifiers::NONE, command: Command::TerminalDrawer },
     HelpBinding { surface: "Terminal drawer", scope: HelpScope::NonScratch, token: "T", code: KeyCode::Char('T'), modifiers: KeyModifiers::NONE, command: Command::CloseTerminalDrawer },
     HelpBinding { surface: "Global", scope: HelpScope::NonScratch, token: "=", code: KeyCode::Char('='), modifiers: KeyModifiers::NONE, command: Command::BeginHotSlotBind },
@@ -128,9 +129,12 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
             KeyCode::Char('T'),
         ) => Some(Command::CloseTerminalDrawer),
         (_, KeyCode::Esc) => Some(Command::Back),
-        (_, KeyCode::Char('!'))
-            if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT =>
+        (_, KeyCode::Char('!') | KeyCode::Char('1'))
+            if key.modifiers == KeyModifiers::SHIFT =>
         {
+            Some(Command::OpenRecentNotification)
+        }
+        (_, KeyCode::Char('!')) if key.modifiers.is_empty() => {
             Some(Command::OpenRecentNotification)
         }
         (
@@ -159,8 +163,12 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
         (ViewKind::Registry, KeyCode::Char('e')) => Some(Command::EditAlias),
         (ViewKind::Registry, KeyCode::Char('x')) => Some(Command::AcknowledgeAttention),
         (ViewKind::Registry, KeyCode::Char('n')) => Some(Command::New),
-        (ViewKind::Registry, KeyCode::Char('=')) => Some(Command::BeginHotSlotBind),
-        (ViewKind::Registry, KeyCode::Char(c @ '1'..='9')) => {
+        (ViewKind::Registry, KeyCode::Char('=')) if key.modifiers == KeyModifiers::NONE => {
+            Some(Command::BeginHotSlotBind)
+        }
+        (ViewKind::Registry, KeyCode::Char(c @ '1'..='9'))
+            if key.modifiers == KeyModifiers::NONE =>
+        {
             Some(Command::HotSlot(c.to_digit(10)? as u8))
         }
         (ViewKind::Thread, KeyCode::Char('a')) => Some(Command::QuickPrompt),
@@ -207,8 +215,12 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
         (ViewKind::Board, KeyCode::Char('a')) => Some(Command::QuickPrompt),
         (ViewKind::Board, KeyCode::Char('n')) => Some(Command::New),
         (ViewKind::Board, KeyCode::Char('s')) => Some(Command::Snooze),
-        (ViewKind::Board, KeyCode::Char('=')) => Some(Command::BeginHotSlotBind),
-        (ViewKind::Board, KeyCode::Char(c @ '1'..='9')) => {
+        (ViewKind::Board, KeyCode::Char('=')) if key.modifiers == KeyModifiers::NONE => {
+            Some(Command::BeginHotSlotBind)
+        }
+        (ViewKind::Board, KeyCode::Char(c @ '1'..='9'))
+            if key.modifiers == KeyModifiers::NONE =>
+        {
             Some(Command::HotSlot(c.to_digit(10)? as u8))
         }
         (ViewKind::Board, KeyCode::Char('r')) => Some(Command::Review),

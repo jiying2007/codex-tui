@@ -110,6 +110,15 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
         };
     }
 
+    if app.show_help {
+        // Help is modal: shortcuts cannot silently change a conversation
+        // behind the visible help overlay. Esc and ? both close it.
+        return match key.code {
+            KeyCode::Esc | KeyCode::Char('?') => reduce(app, Action::ToggleHelp),
+            _ => vec![],
+        };
+    }
+
     if app.thread_queue_open && app.input_mode == InputMode::Normal {
         if app.pending_queue_confirmation.is_some() {
             return match key.code {
