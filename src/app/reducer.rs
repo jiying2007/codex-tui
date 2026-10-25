@@ -1768,7 +1768,19 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 select_next_attention(state);
             }
         }
-        Action::ToggleHelp => state.show_help = !state.show_help,
+        Action::ToggleHelp => {
+            state.show_help = !state.show_help;
+            if state.show_help {
+                state.help_top = 0;
+            }
+        }
+        Action::MoveHelp(delta) => {
+            if state.show_help {
+                state.help_top = ((state.help_top as i32).saturating_add(delta))
+                    .clamp(0, (HELP_ENTRY_COUNT - 1) as i32)
+                    as usize;
+            }
+        }
         Action::SetDraft(draft) => {
             if let Some(id) = state.current_thread_id().cloned() {
                 state.prompt_submissions.edited(&id);
