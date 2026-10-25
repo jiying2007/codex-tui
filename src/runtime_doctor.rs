@@ -28,7 +28,10 @@ pub(crate) async fn doctor(scope: Option<&str>, target_override: Option<&str>) -
     doctor_println!("codex-tui {}", env!("CARGO_PKG_VERSION"));
     doctor_println!("config: {}", store.config_path().display());
     doctor_println!("state: {}", store.db_path().display());
-    doctor_println!("mouse: {}", config.ui.mouse);
+    doctor_println!(
+        "mouse: disabled (pointer navigation not implemented; legacy config mouse={} ignored)",
+        config.ui.mouse
+    );
     doctor_println!(
         "language: {} -> {}",
         config.ui.language.as_str(),
