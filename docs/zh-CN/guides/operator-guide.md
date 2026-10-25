@@ -17,6 +17,10 @@ codex-tui doctor codex
 codex-tui
 ~~~
 
+日常操作优先学习：按 `Space` 找下一条待处理任务、`Enter` 打开、`/` 搜索、`1–9` 切换已绑定的任务。按 `?` 展开完整帮助：在窄 SSH 终端中 `↑/↓` 或 `j/k` 逐项滚动、`PgUp/PgDn` 每次跳三项、`Home/End` 到第一/最后一项、`Esc` 关闭，不会在背景执行其他快捷键。小屏 Board 只显示一个阶段，用 `h/l` 切换阶段、`Tab` 切换 Saved View。
+
+**鼠标限制：** 当前没有点击/滚轮事件处理，应用已停止捕获鼠标报告，以免影响终端原生文字选取和滚动。旧 `[ui].mouse` 仍能读取，但会被忽略；配置 `mouse = true` 并不会启用点击导航。
+
 默认连接本机的 `codex app-server --listen stdio://`。命名目标由本地 TOML 配置，单次可使用 `codex-tui --target NAME`。非回环地址的明文 `ws://` 即使未配置令牌也拒绝连接；远程使用 `wss://` 或 SSH 隧道映射到回环地址。`localhost`、IPv4/IPv6 回环仍可用于本地开发。真实后端失败不会悄悄切到假数据，`--fake` 只用于测试。命名 App Server 的细节见 [英文设计](../../implementation/v1.3-remote-app-server-targets.md)。
 
 `doctor` 命令会对外部路径、分支、主机名、诊断字段和错误信息进行终端输出端净化；ANSI 控制符与 Unicode 双向覆盖符显示为可见替换字符，原始 Codex/Git/Forge 数据不变。
