@@ -137,7 +137,7 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
             return match key.code {
                 KeyCode::Char('y') if is_plain_press(key) => {
                     reduce(app, Action::ConfirmPendingOperation)
-                },
+                }
                 KeyCode::Char('c') | KeyCode::Esc => reduce(app, Action::CancelPendingOperation),
                 _ => vec![],
             };
@@ -196,7 +196,7 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
         return match key.code {
             KeyCode::Char('y') if is_plain_press(key) => {
                 reduce(app, Action::ConfirmPendingOperation)
-            },
+            }
             KeyCode::Char('c') | KeyCode::Esc => reduce(app, Action::CancelPendingOperation),
             _ => vec![],
         };
@@ -206,7 +206,7 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
         return match key.code {
             KeyCode::Char('y') if is_plain_press(key) => {
                 reduce(app, Action::ConfirmPendingOperation)
-            },
+            }
             KeyCode::Char('c') | KeyCode::Esc => reduce(app, Action::CancelPendingOperation),
             _ => vec![],
         };
@@ -216,7 +216,7 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
         return match key.code {
             KeyCode::Char('y') if is_plain_press(key) => {
                 reduce(app, Action::ConfirmPendingOperation)
-            },
+            }
             KeyCode::Char('c') | KeyCode::Esc => reduce(app, Action::CancelPendingOperation),
             _ => vec![],
         };
@@ -227,8 +227,12 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
             KeyCode::Esc => Some(Action::CloseGoalActions),
             KeyCode::Enter if is_plain_press(key) => Some(Action::BeginGoalObjective),
             KeyCode::Char('e') if is_plain_press(key) => Some(Action::BeginGoalObjective),
-            KeyCode::Char('p') if is_plain_press(key) => Some(Action::SetGoalStatus(GoalStatus::Paused)),
-            KeyCode::Char('r') if is_plain_press(key) => Some(Action::SetGoalStatus(GoalStatus::Active)),
+            KeyCode::Char('p') if is_plain_press(key) => {
+                Some(Action::SetGoalStatus(GoalStatus::Paused))
+            }
+            KeyCode::Char('r') if is_plain_press(key) => {
+                Some(Action::SetGoalStatus(GoalStatus::Active))
+            }
             KeyCode::Char('c') if is_plain_press(key) => Some(Action::ClearGoal),
             _ => None,
         };
@@ -259,13 +263,13 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
             }
             (_, KeyCode::Char('y')) if is_plain_press(key) => {
                 Some(Action::ResolvePending(InteractiveResolution::Accept))
-            },
+            }
             (_, KeyCode::Char('n')) if is_plain_press(key) => {
                 Some(Action::ResolvePending(InteractiveResolution::Decline))
-            },
+            }
             (_, KeyCode::Char('c')) if is_plain_press(key) => {
                 Some(Action::ResolvePending(InteractiveResolution::Cancel))
-            },
+            }
             _ => None,
         };
         if let Some(action) = action {
