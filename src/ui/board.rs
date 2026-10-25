@@ -249,15 +249,24 @@ pub(super) fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
             tr(app, "LOCAL STORE DEGRADED", "本地存储已降级"),
             truncate_display(error, 80)
         )
+    } else if area.width < 40 {
+        tr(app, "Space need · h/l stage · ? help", "Space 待办 · h/l 阶段 · ? 帮助").into()
+    } else if area.width < 80 {
+        tr(
+            app,
+            "Space attention · 1–9 jump · h/l stage · Tab view · ? help",
+            "Space 待办 · 1–9 快切 · h/l 阶段 · Tab 视图 · ? 帮助",
+        )
+        .into()
     } else if app.language.is_simplified_chinese() {
         format!(
-            "h/l 阶段 · j/k 项目 · Tab 视图 · Enter 打开 · Space 待处理 · s 稍后提醒 · = 绑定 · 1–9 跳转 · n Scratch · 视图 {}/{}",
+            "Space 待办 · 1–9 快切 · h/l 阶段 · j/k 选择 · Tab 视图 · Enter 打开 · ? 帮助 · 视图 {}/{}",
             app.planning_view_index + 1,
             app.planning_views().len()
         )
     } else {
         format!(
-            "h/l stage · j/k item · Tab view · Enter open · Space attention · s snooze · = bind · 1–9 jump · n scratch · view {}/{}",
+            "Space attention · 1–9 jump · h/l stage · j/k select · Tab view · Enter open · ? help · view {}/{}",
             app.planning_view_index + 1,
             app.planning_views().len()
         )
