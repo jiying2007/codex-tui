@@ -250,7 +250,12 @@ pub(super) fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
             truncate_display(error, 80)
         )
     } else if area.width < 40 {
-        tr(app, "Space need · h/l stage · ? help", "Space 待办 · h/l 阶段 · ? 帮助").into()
+        tr(
+            app,
+            "Space need · h/l stage · ? help",
+            "Space 待办 · h/l 阶段 · ? 帮助",
+        )
+        .into()
     } else if area.width < 80 {
         tr(
             app,
