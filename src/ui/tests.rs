@@ -1287,3 +1287,27 @@ fn narrow_registry_footer_prioritizes_actionable_navigation() {
         assert!(screen.contains("1–9"), "missing one-key switch: {screen}");
     }
 }
+
+#[test]
+fn compact_board_shows_stage_and_attention_navigation_before_advanced_keys() {
+    let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+    app.view = View::Board;
+    for (language, expected) in [
+        (UiLanguage::English, "Space attention"),
+        (UiLanguage::SimplifiedChinese, "Space 待办"),
+    ] {
+        app.language = language;
+        let mut terminal = Terminal::new(TestBackend::new(60, 24)).unwrap();
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let buffer = terminal.backend().buffer();
+        let mut screen = String::new();
+        for y in 0..buffer.area.height {
+            for x in 0..buffer.area.width {
+                screen.push_str(buffer[(x, y)].symbol());
+            }
+            screen.push('\n');
+        }
+        assert!(screen.contains(expected), "missing attention hint: {screen}");
+        assert!(screen.contains("1–9"), "missing jump hint: {screen}");
+    }
+}
