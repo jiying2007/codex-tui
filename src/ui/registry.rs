@@ -303,8 +303,8 @@ pub(super) fn registry_footer(app: &AppState, width: u16) -> Line<'static> {
     } else {
         tr(
             app,
-            "Space needs-you 1–9 / ? b Board r Review w Workspace t terminal l local-only g repo-only",
-            "Space 待办 1–9 / ? b 看板 r 评审 w 工作区 t 终端 l 仅本机 g 仅仓库",
+            "Space needs-you 1–9 / search ? b Board r Review w Workspace t terminal l local-only g repo-only",
+            "Space 待办 1–9 / 搜索 ? b 看板 r 评审 w 工作区 t 终端 l 仅本机 g 仅仓库",
         )
     };
     Line::from(truncate_display(hint, usize::from(width)))
