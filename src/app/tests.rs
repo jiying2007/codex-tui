@@ -3260,7 +3260,8 @@ fn notification_thread_membership_checks_the_indexed_source_identity() {
 fn alert_jump_is_fenced_during_transient_modals_without_consuming_the_event() {
     use crate::notification::{NotificationEvent, NotificationKind, RecentNotification};
 
-    let blockers: &[(&str, fn(&mut AppState))] = &[
+    type AlertBlocker = (&'static str, fn(&mut AppState));
+    let blockers: &[AlertBlocker] = &[
         ("help", |state| state.show_help = true),
         ("command palette", |state| state.command_palette_open = true),
         ("context menu", |state| state.context_open = true),
