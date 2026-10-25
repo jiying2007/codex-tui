@@ -336,6 +336,51 @@ mod tests {
         }
     }
 
+
+    #[test]
+    fn live_confirmations_require_plain_non_repeated_key_presses() {
+        let cases = [
+            (ViewKind::Thread, KeyCode::Char('y'), Command::ApprovePending),
+            (ViewKind::Thread, KeyCode::Char('n'), Command::DeclinePending),
+            (ViewKind::Thread, KeyCode::Char('c'), Command::CancelPending),
+            (ViewKind::Thread, KeyCode::Char('i'), Command::AnswerPending),
+            (
+                ViewKind::ManagedWorktrees,
+                KeyCode::Char('y'),
+                Command::ConfirmOperation,
+            ),
+            (
+                ViewKind::ManagedWorktrees,
+                KeyCode::Char('c'),
+                Command::CancelOperation,
+            ),
+        ];
+        for (view, code, command) in cases {
+            assert_eq!(
+                command_for_key(KeyEvent::new(code, KeyModifiers::NONE), view),
+                Some(command)
+            );
+            for modifiers in [
+                KeyModifiers::SHIFT,
+                KeyModifiers::ALT,
+                KeyModifiers::CONTROL,
+                KeyModifiers::SUPER,
+            ] {
+                assert_ne!(
+                    command_for_key(KeyEvent::new(code, modifiers), view),
+                    Some(command)
+                );
+            }
+            assert_ne!(
+                command_for_key(
+                    KeyEvent::new_with_kind(code, KeyModifiers::NONE, KeyEventKind::Repeat),
+                    view
+                ),
+                Some(command)
+            );
+        }
+    }
+
     #[test]
     fn global_keyboard_surfaces_are_reachable_without_pointer_input() {
         for view in [
