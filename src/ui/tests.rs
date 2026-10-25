@@ -1162,3 +1162,44 @@ fn forge_merge_confirmation_keeps_full_revision_and_controls_above_guard_truncat
         }
     }
 }
+
+#[test]
+fn recent_alert_header_is_sanitized_and_never_covers_an_active_composer() {
+    use crate::notification::{NotificationEvent, NotificationKind, RecentNotification};
+    let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+    let thread_id = app.threads[0].id.clone();
+    app.recent_notification = Some(RecentNotification::new(
+        NotificationEvent {
+            key: "completion:1".into(),
+            item_id: thread_id.0.clone(),
+            kind: NotificationKind::Completion,
+            subject: "alert\x1b[31m\nspoof".into(),
+        },
+        Some(thread_id),
+        2,
+    ));
+    let snapshot = |app: &AppState| {
+        let mut terminal = Terminal::new(TestBackend::new(90, 25)).unwrap();
+        terminal.draw(|frame| render(frame, app)).unwrap();
+        let buffer = terminal.backend().buffer();
+        let mut result = String::new();
+        for y in 0..buffer.area.height {
+            for x in 0..buffer.area.width {
+                result.push_str(buffer[(x, y)].symbol());
+            }
+            result.push('\n');
+        }
+        result
+    };
+    let result = snapshot(&app);
+    assert!(result.contains("Work completed"));
+    assert!(result.contains("2 more updates"));
+    assert!(!result.contains('\x1b'));
+    app.input_mode = InputMode::Composer;
+    let hidden = snapshot(&app);
+    assert!(!hidden.contains("2 more updates"));
+    app.input_mode = InputMode::Normal;
+    app.terminal_focused = true;
+    let focused = snapshot(&app);
+    assert!(!focused.contains("2 more updates"));
+}

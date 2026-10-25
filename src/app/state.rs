@@ -86,6 +86,7 @@ impl AppState {
             terminal_snapshot: None,
             recent_forge_operations: vec![],
             mutation_notice: None,
+            recent_notification: None,
             create_worktree_branch: None,
             create_worktree_path: None,
             planning_store_error: None,

@@ -53,6 +53,7 @@ pub(crate) fn action_for_command(app: &AppState, command: Command) -> Option<Act
             }
         }
         Command::NextAttention => Action::NextAttention,
+        Command::OpenRecentNotification => Action::OpenRecentNotification,
         Command::QuickPrompt => Action::QuickPrompt,
         Command::MarkUnread => Action::MarkUnread,
         Command::TogglePin => Action::TogglePin,

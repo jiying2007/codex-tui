@@ -260,3 +260,24 @@ fn desktop_notification_subjects_are_bounded_by_visible_columns() {
     assert!(crate::text::display_width(&body) <= MAX_NOTIFICATION_SUBJECT_COLUMNS);
     assert_eq!(event.subject, original);
 }
+
+#[test]
+fn recent_notification_uses_existing_safe_subject_and_localized_count() {
+    let event = NotificationEvent {
+        key: "completion:id".into(),
+        item_id: "id".into(),
+        kind: NotificationKind::Completion,
+        subject: "你好\x1b[31m\n假状态".into(),
+    };
+    let recent = RecentNotification::new(event, Some(ThreadId::new("id")), 3);
+    let zh = recent.display(UiLanguage::SimplifiedChinese);
+    assert!(zh.contains("工作已完成"));
+    assert!(zh.contains("另有 3 项更新"));
+    assert!(zh.contains("! 跳转"));
+    assert!(!zh.contains('\x1b'));
+    let en = recent.display(UiLanguage::English);
+    assert!(en.contains("Work completed"));
+    assert!(en.contains("3 more updates"));
+    assert!(en.contains("! open"));
+    assert!(recent.visible_until > std::time::Instant::now());
+}

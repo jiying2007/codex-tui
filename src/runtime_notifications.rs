@@ -3,7 +3,8 @@ use codex_tui::{
     app::AppState,
     i18n::UiLanguage,
     notification::{
-        NotificationKind, NotificationMode, NotificationObservation, NotificationTracker,
+        NotificationEvent, NotificationKind, NotificationMode, NotificationObservation,
+        NotificationTracker, RecentNotification,
     },
 };
 use std::{
@@ -35,6 +36,7 @@ pub(crate) struct RuntimeNotifications {
     command_tx: Option<mpsc::Sender<Delivery>>,
     pending: VecDeque<Delivery>,
     dispatcher_notice_emitted: bool,
+    recent: Option<RecentNotification>,
     notice_rx: mpsc::Receiver<String>,
     task: Option<JoinHandle<()>>,
 }
@@ -49,6 +51,7 @@ impl RuntimeNotifications {
                 command_tx: None,
                 pending: VecDeque::new(),
                 dispatcher_notice_emitted: false,
+                recent: None,
                 notice_rx,
                 task: None,
             };
@@ -62,6 +65,7 @@ impl RuntimeNotifications {
             command_tx: Some(command_tx),
             pending: VecDeque::new(),
             dispatcher_notice_emitted: false,
+            recent: None,
             notice_rx,
             task: Some(task),
         }
@@ -91,6 +95,8 @@ impl RuntimeNotifications {
 
         let mut overflow = 0usize;
         let mut attempted_extra_flush = false;
+        let mut observed_count = 0_usize;
+        let mut primary: Option<NotificationEvent> = None;
         for event in events {
             // Reclaim available actor capacity once before declaring overload.
             if self.pending.len() == NOTIFICATION_PENDING_CAPACITY && !attempted_extra_flush {
@@ -101,6 +107,13 @@ impl RuntimeNotifications {
                 overflow = overflow.saturating_add(1);
                 continue;
             }
+            observed_count = observed_count.saturating_add(1);
+            if primary
+                .as_ref()
+                .is_none_or(|current| priority(event.kind) > priority(current.kind))
+            {
+                primary = Some(event.clone());
+            }
             let (title, body) = event.text(app.language);
             self.pending.push_back(Delivery {
                 title,
@@ -108,6 +121,14 @@ impl RuntimeNotifications {
                 kind: event.kind,
                 language: app.language,
             });
+        }
+        if let Some(event) = primary {
+            let thread_id = event_thread_id(app, &event);
+            self.recent = Some(RecentNotification::new(
+                event,
+                thread_id,
+                observed_count.saturating_sub(1),
+            ));
         }
         dispatched = dispatched.saturating_add(self.flush_pending()?);
         anyhow::ensure!(
@@ -141,6 +162,10 @@ impl RuntimeNotifications {
         Ok(dispatched)
     }
 
+    pub(crate) fn take_recent(&mut self) -> Option<RecentNotification> {
+        self.recent.take()
+    }
+
     pub(crate) fn try_notice(&mut self) -> Option<String> {
         // Called by the existing 16ms TUI loop even without a fresh planning
         // projection, so temporarily full channels cannot strand prior edges.
@@ -161,6 +186,30 @@ impl Drop for RuntimeNotifications {
             task.abort();
         }
     }
+}
+
+/// Notification card IDs are local projections, not necessarily thread IDs.
+fn event_thread_id(
+    app: &AppState,
+    event: &NotificationEvent,
+) -> Option<codex_tui::domain::ThreadId> {
+    use codex_tui::{domain::ThreadId, planning::SourceKind};
+
+    if event.kind == NotificationKind::Completion {
+        let id = ThreadId::new(event.item_id.clone());
+        return app
+            .threads
+            .iter()
+            .any(|thread| thread.id == id)
+            .then_some(id);
+    }
+    let card = app
+        .work_cards
+        .iter()
+        .find(|card| card.local_id == event.item_id)?;
+    (card.anchor.kind == SourceKind::CodexThread)
+        .then(|| ThreadId::new(card.anchor.value.clone()))
+        .filter(|id| app.threads.iter().any(|thread| thread.id == *id))
 }
 
 fn mode_for_session(configured: NotificationMode, ssh: bool) -> NotificationMode {
@@ -532,6 +581,49 @@ mod tests {
             .unwrap();
         let merged = coalesce_ready(zh, &mut rx);
         assert!(merged.body.contains("另有 1 项更新"));
+    }
+
+    #[tokio::test]
+    async fn observed_completion_keeps_only_a_bounded_recent_context() {
+        let mut runtime = RuntimeNotifications::start(NotificationMode::Terminal);
+        runtime.task.take().unwrap().abort();
+        let (tx, _rx) = mpsc::channel(32);
+        runtime.command_tx = Some(tx);
+        let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+        for thread in &mut app.threads {
+            thread.runtime = RuntimeStatus::Working;
+        }
+        runtime.seed(&app);
+        for thread in &mut app.threads {
+            thread.runtime = RuntimeStatus::Ready;
+        }
+        assert!(runtime.observe(&app).is_ok());
+        let notice = runtime.take_recent().expect("observed completion");
+        assert_eq!(notice.event.kind, NotificationKind::Completion);
+        assert!(notice.thread_id.is_some());
+        assert_eq!(notice.other_count, app.threads.len() - 1);
+        assert!(runtime.take_recent().is_none());
+        assert_eq!(runtime.observe(&app).unwrap(), 0);
+        assert!(runtime.take_recent().is_none());
+    }
+
+    #[test]
+    fn stale_or_non_thread_notification_never_guesses_another_thread_target() {
+        let app = AppState::new(FakeBackend::seeded().snapshot().threads);
+        let missing = NotificationEvent {
+            key: "completion:unknown".into(),
+            item_id: "unknown".into(),
+            kind: NotificationKind::Completion,
+            subject: "stale".into(),
+        };
+        assert!(event_thread_id(&app, &missing).is_none());
+        let card_only = NotificationEvent {
+            key: "pipeline:issue".into(),
+            item_id: "unlinked-issue".into(),
+            kind: NotificationKind::PipelineFailed,
+            subject: "forge".into(),
+        };
+        assert!(event_thread_id(&app, &card_only).is_none());
     }
 
     #[test]

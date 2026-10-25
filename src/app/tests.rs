@@ -3127,3 +3127,93 @@ fn hot_slot_return_keeps_registry_filter_and_original_selection() {
     assert_eq!(state.selected_thread_id(), Some(selected));
     assert!(state.visible_indices().contains(&state.selected));
 }
+
+#[test]
+fn recent_alert_opens_exact_thread_then_returns_to_original_review() {
+    use crate::notification::{NotificationEvent, NotificationKind, RecentNotification};
+    let mut state = app();
+    for thread in &mut state.threads {
+        thread.runtime = RuntimeStatus::Inactive;
+    }
+    let origin = state.threads[0].id.clone();
+    let destination = state.threads[1].id.clone();
+    state.view = View::Review(origin.clone());
+    let recent = RecentNotification::new(
+        NotificationEvent {
+            key: "completion:destination".into(),
+            item_id: destination.0.clone(),
+            kind: NotificationKind::Completion,
+            subject: "finished task".into(),
+        },
+        Some(destination.clone()),
+        0,
+    );
+    reduce(&mut state, Action::RecentNotificationObserved(recent));
+    let effects = reduce(&mut state, Action::OpenRecentNotification);
+    assert_eq!(state.view, View::Thread(destination.clone()));
+    assert_eq!(state.selected, 1);
+    assert!(state.recent_notification.is_none());
+    assert!(effects.contains(&Effect::LoadConversation(destination.clone())));
+    let back = reduce(&mut state, Action::Back);
+    assert_eq!(state.view, View::Review(origin));
+    assert_eq!(state.selected, 0);
+    assert!(back.contains(&Effect::StopWatchingConversation(destination)));
+}
+
+#[test]
+fn stale_recent_alert_does_not_open_another_thread_or_replay_history() {
+    use crate::notification::{NotificationEvent, NotificationKind, RecentNotification};
+    let mut state = app();
+    let missing = ThreadId::new("unknown-alert-thread");
+    let recent = RecentNotification::new(
+        NotificationEvent {
+            key: "completion:missing".into(),
+            item_id: missing.0.clone(),
+            kind: NotificationKind::Completion,
+            subject: "old".into(),
+        },
+        Some(missing),
+        0,
+    );
+    reduce(&mut state, Action::RecentNotificationObserved(recent));
+    assert!(reduce(&mut state, Action::OpenRecentNotification).is_empty());
+    assert_eq!(state.view, View::Registry);
+    assert_eq!(state.selected, 0);
+    assert!(state.recent_notification.is_none());
+    assert!(
+        state
+            .mutation_notice
+            .as_deref()
+            .unwrap()
+            .contains("no longer available")
+    );
+}
+
+#[test]
+fn non_thread_alert_shows_a_board_fallback_without_guessing_a_thread_id() {
+    use crate::notification::{NotificationEvent, NotificationKind, RecentNotification};
+    let mut state = app();
+    reduce(
+        &mut state,
+        Action::RecentNotificationObserved(RecentNotification::new(
+            NotificationEvent {
+                key: "pipeline:forge".into(),
+                item_id: "issue-card".into(),
+                kind: NotificationKind::PipelineFailed,
+                subject: "Forge issue".into(),
+            },
+            None,
+            1,
+        )),
+    );
+    assert!(reduce(&mut state, Action::OpenRecentNotification).is_empty());
+    assert_eq!(state.view, View::Registry);
+    assert!(
+        state
+            .mutation_notice
+            .as_deref()
+            .unwrap()
+            .contains("inspect the Board")
+    );
+    assert!(state.recent_notification.is_none());
+}

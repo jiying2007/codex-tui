@@ -26,6 +26,7 @@ pub const HELP_BINDINGS: &[HelpBinding] = &[
     HelpBinding { surface: "Global", scope: HelpScope::AllViews, token: "Ctrl+F", code: KeyCode::Char('f'), modifiers: KeyModifiers::CONTROL, command: Command::TranscriptSearch },
     HelpBinding { surface: "Global", scope: HelpScope::AllViews, token: ".", code: KeyCode::Char('.'), modifiers: KeyModifiers::NONE, command: Command::ContextActions },
     HelpBinding { surface: "Global", scope: HelpScope::AllViews, token: "Esc", code: KeyCode::Esc, modifiers: KeyModifiers::NONE, command: Command::Back },
+    HelpBinding { surface: "Global", scope: HelpScope::AllViews, token: "!", code: KeyCode::Char('!'), modifiers: KeyModifiers::NONE, command: Command::OpenRecentNotification },
     HelpBinding { surface: "Terminal drawer", scope: HelpScope::NonScratch, token: "t", code: KeyCode::Char('t'), modifiers: KeyModifiers::NONE, command: Command::TerminalDrawer },
     HelpBinding { surface: "Terminal drawer", scope: HelpScope::NonScratch, token: "T", code: KeyCode::Char('T'), modifiers: KeyModifiers::NONE, command: Command::CloseTerminalDrawer },
     HelpBinding { surface: "Global", scope: HelpScope::NonScratch, token: "=", code: KeyCode::Char('='), modifiers: KeyModifiers::NONE, command: Command::BeginHotSlotBind },
@@ -127,6 +128,11 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
             KeyCode::Char('T'),
         ) => Some(Command::CloseTerminalDrawer),
         (_, KeyCode::Esc) => Some(Command::Back),
+        (_, KeyCode::Char('!'))
+            if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT =>
+        {
+            Some(Command::OpenRecentNotification)
+        }
         (
             ViewKind::Thread | ViewKind::Review | ViewKind::Workspace | ViewKind::ManagedWorktrees,
             KeyCode::Char('='),
@@ -253,6 +259,22 @@ mod tests {
                     Some(binding.command),
                     "help token {} drifted in {view:?}",
                     binding.token
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn recent_alert_shortcut_accepts_shifted_bang_but_not_alt_or_control() {
+        for view in [ViewKind::Registry, ViewKind::Thread, ViewKind::Board] {
+            assert_eq!(
+                command_for_key(KeyEvent::new(KeyCode::Char('!'), KeyModifiers::SHIFT), view),
+                Some(Command::OpenRecentNotification)
+            );
+            for modifiers in [KeyModifiers::ALT, KeyModifiers::CONTROL] {
+                assert_ne!(
+                    command_for_key(KeyEvent::new(KeyCode::Char('!'), modifiers), view),
+                    Some(Command::OpenRecentNotification)
                 );
             }
         }

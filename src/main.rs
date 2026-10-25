@@ -501,6 +501,18 @@ async fn run_app(fake_mode: bool, target_override: Option<&str>) -> Result<()> {
                 }
             }
 
+            if let Some(recent) = services.notifications.take_recent() {
+                reduce(&mut app, Action::RecentNotificationObserved(recent));
+                needs_render = true;
+            }
+            if app
+                .recent_notification
+                .as_ref()
+                .is_some_and(|recent| recent.visible_until <= Instant::now())
+            {
+                reduce(&mut app, Action::ClearRecentNotification);
+                needs_render = true;
+            }
             if let Some(notice) = services.notifications.try_notice() {
                 reduce(
                     &mut app,
