@@ -78,7 +78,8 @@ Maintainers can retain a capability fixture with `scripts/release/capture_forge_
 
 The small set worth learning first:
 
-- `=` then `1–9`: bind the selected task; `1–9` jumps directly to that task across work views (outside editors/confirmations);\n- `Ctrl+K`: contextual command palette;
+- `=` then `1–9`: bind the selected task; `1–9` jumps directly to that task across work views (outside editors/confirmations);\n- `!` (or physical `Shift+1`): open a recent source alert, only when no modal/editor owns input; help closes with `Esc` or `?`;
+- `Ctrl+K`: contextual command palette;
 - `/`: global search, with Esc restoring the origin view when possible;
 - `j/k` + Enter: navigate/open;
 - `t`: Terminal Drawer; `F6` (or Ctrl+]) returns focus to codex-tui;
