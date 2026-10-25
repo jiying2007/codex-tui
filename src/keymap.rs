@@ -129,9 +129,7 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
             KeyCode::Char('T'),
         ) => Some(Command::CloseTerminalDrawer),
         (_, KeyCode::Esc) => Some(Command::Back),
-        (_, KeyCode::Char('!') | KeyCode::Char('1'))
-            if key.modifiers == KeyModifiers::SHIFT =>
-        {
+        (_, KeyCode::Char('!') | KeyCode::Char('1')) if key.modifiers == KeyModifiers::SHIFT => {
             Some(Command::OpenRecentNotification)
         }
         (_, KeyCode::Char('!')) if key.modifiers.is_empty() => {
@@ -218,9 +216,7 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
         (ViewKind::Board, KeyCode::Char('=')) if key.modifiers == KeyModifiers::NONE => {
             Some(Command::BeginHotSlotBind)
         }
-        (ViewKind::Board, KeyCode::Char(c @ '1'..='9'))
-            if key.modifiers == KeyModifiers::NONE =>
-        {
+        (ViewKind::Board, KeyCode::Char(c @ '1'..='9')) if key.modifiers == KeyModifiers::NONE => {
             Some(Command::HotSlot(c.to_digit(10)? as u8))
         }
         (ViewKind::Board, KeyCode::Char('r')) => Some(Command::Review),
@@ -301,10 +297,7 @@ mod tests {
             ViewKind::Scratch,
         ] {
             assert_eq!(
-                command_for_key(
-                    KeyEvent::new(KeyCode::Char('1'), KeyModifiers::SHIFT),
-                    view,
-                ),
+                command_for_key(KeyEvent::new(KeyCode::Char('1'), KeyModifiers::SHIFT), view,),
                 Some(Command::OpenRecentNotification),
                 "Shift+1 must be a recent alert in {view:?}"
             );

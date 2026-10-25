@@ -3266,7 +3266,9 @@ fn alert_jump_is_fenced_during_transient_modals_without_consuming_the_event() {
         ("context menu", |state| state.context_open = true),
         ("launch menu", |state| state.launch_menu_open = true),
         ("queue", |state| state.thread_queue_open = true),
-        ("transcript search", |state| state.transcript_search_open = true),
+        ("transcript search", |state| {
+            state.transcript_search_open = true
+        }),
         ("goal actions", |state| state.goal_actions_open = true),
         ("PTY focus", |state| state.terminal_focused = true),
         ("composer", |state| state.input_mode = InputMode::Composer),
