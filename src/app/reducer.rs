@@ -1225,6 +1225,11 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             let Some(recent) = state.recent_notification.take() else {
                 return vec![];
             };
+            // The main-loop expiry sweep is a presentation convenience, not
+            // authorization to open a source after its alert has expired.
+            if recent.visible_until <= Instant::now() {
+                return vec![];
+            }
             let Some(id) = recent.thread_id else {
                 state.mutation_notice = Some(
                     local_text(

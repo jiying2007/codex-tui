@@ -221,6 +221,15 @@ impl AppState {
         self.thread_indices_by_cwd = thread_indices_by_cwd;
     }
 
+    /// Indexed membership check for read-only notification routing.
+    /// Validate the indexed item instead of trusting a stale thread-ID mapping.
+    pub fn contains_thread_id(&self, thread_id: &ThreadId) -> bool {
+        self.thread_index_by_id
+            .get(&thread_id.0)
+            .and_then(|index| self.threads.get(*index))
+            .is_some_and(|thread| thread.id == *thread_id)
+    }
+
     pub(super) fn thread_by_id(&self, thread_id: &ThreadId) -> Option<&ThreadSummary> {
         self.thread_index_by_id
             .get(&thread_id.0)
