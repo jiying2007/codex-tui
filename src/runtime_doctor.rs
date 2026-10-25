@@ -38,6 +38,11 @@ pub(crate) async fn doctor(scope: Option<&str>, target_override: Option<&str>) -
         config.ui.language.resolve().as_str()
     );
     doctor_println!("notifications: {}", config.notifications.mode.label());
+    if config.notifications.mode == codex_tui::notification::NotificationMode::Off {
+        doctor_println!(
+            "notification-tip: alerts are opt-in; set [notifications].mode = \"terminal\" for SSH client BEL (not Windows Toast)"
+        );
+    }
     doctor_println!("app-server-target: {}", target.name);
     doctor_println!("app-server-endpoint: {}", target.diagnostic_endpoint());
     doctor_println!(
