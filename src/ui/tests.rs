@@ -1173,7 +1173,7 @@ fn recent_alert_header_is_sanitized_and_never_covers_an_active_composer() {
             key: "completion:1".into(),
             item_id: thread_id.0.clone(),
             kind: NotificationKind::Completion,
-            subject: "alert\\x1b[31m\\nspoof".into(),
+            subject: "alert\x1b[31m\nspoof".into(),
         },
         Some(thread_id),
         2,
@@ -1187,14 +1187,14 @@ fn recent_alert_header_is_sanitized_and_never_covers_an_active_composer() {
             for x in 0..buffer.area.width {
                 result.push_str(buffer[(x, y)].symbol());
             }
-            result.push('\\n');
+            result.push('\n');
         }
         result
     };
     let result = snapshot(&app);
     assert!(result.contains("Work completed"));
     assert!(result.contains("2 more updates"));
-    assert!(!result.contains("\\x1b[31m"));
+    assert!(!result.contains('\x1b'));
     app.input_mode = InputMode::Composer;
     let hidden = snapshot(&app);
     assert!(!hidden.contains("2 more updates"));

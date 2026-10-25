@@ -267,14 +267,14 @@ fn recent_notification_uses_existing_safe_subject_and_localized_count() {
         key: "completion:id".into(),
         item_id: "id".into(),
         kind: NotificationKind::Completion,
-        subject: "你好\\x1b[31m\\n假状态".into(),
+        subject: "你好\x1b[31m\n假状态".into(),
     };
     let recent = RecentNotification::new(event, Some(ThreadId::new("id")), 3);
     let zh = recent.display(UiLanguage::SimplifiedChinese);
     assert!(zh.contains("工作已完成"));
     assert!(zh.contains("另有 3 项更新"));
     assert!(zh.contains("! 跳转"));
-    assert!(!zh.contains("\\x1b[31m"));
+    assert!(!zh.contains('\x1b'));
     let en = recent.display(UiLanguage::English);
     assert!(en.contains("Work completed"));
     assert!(en.contains("3 more updates"));
