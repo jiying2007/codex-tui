@@ -1764,6 +1764,56 @@ mod accessibility_input_tests {
     }
 
     #[test]
+    fn help_modal_does_not_switch_tasks_or_consume_recent_alerts() {
+        use codex_tui::{
+            app::View,
+            notification::{NotificationEvent, NotificationKind, RecentNotification},
+            planning::{HotSlot, SourceRef},
+        };
+
+        let mut app = app();
+        let destination = app.threads[1].id.clone();
+        app.planning_snapshot.hot_slots.push(HotSlot {
+            slot: 1,
+            target: SourceRef::codex_thread(&destination),
+            updated_at_unix_ms: 1,
+        });
+        app.recent_notification = Some(RecentNotification::new(
+            NotificationEvent {
+                key: format!("completion:{}", destination.0),
+                item_id: destination.0.clone(),
+                kind: NotificationKind::Completion,
+                subject: "important work finished".into(),
+            },
+            Some(destination.clone()),
+            0,
+        ));
+        app.show_help = true;
+        for (code, modifiers) in [
+            (KeyCode::Char('!'), KeyModifiers::SHIFT),
+            (KeyCode::Char('1'), KeyModifiers::SHIFT),
+            (KeyCode::Char('1'), KeyModifiers::NONE),
+            (KeyCode::Char('='), KeyModifiers::NONE),
+            (KeyCode::Char('j'), KeyModifiers::NONE),
+        ] {
+            assert!(handle_key(&mut app, KeyEvent::new(code, modifiers)).is_empty());
+            assert_eq!(app.view, View::Registry);
+            assert_eq!(app.selected, 0);
+            assert!(app.show_help);
+            assert!(app.recent_notification.is_some());
+        }
+        assert!(handle_key(&mut app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)).is_empty());
+        assert!(!app.show_help);
+
+        let effects = handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('1'), KeyModifiers::SHIFT),
+        );
+        assert!(effects.contains(&Effect::LoadConversation(destination.clone())));
+        assert_eq!(app.view, View::Thread(destination));
+    }
+
+    #[test]
     fn terminal_focus_traps_normal_app_shortcuts() {
         let mut app = app();
         app.terminal_drawer_open = true;

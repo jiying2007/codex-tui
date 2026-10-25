@@ -293,6 +293,41 @@ mod tests {
     }
 
     #[test]
+    fn shifted_digit_alias_is_an_alert_not_hot_slot_one() {
+        for view in [
+            ViewKind::Registry,
+            ViewKind::Board,
+            ViewKind::Thread,
+            ViewKind::Scratch,
+        ] {
+            assert_eq!(
+                command_for_key(
+                    KeyEvent::new(KeyCode::Char('1'), KeyModifiers::SHIFT),
+                    view,
+                ),
+                Some(Command::OpenRecentNotification),
+                "Shift+1 must be a recent alert in {view:?}"
+            );
+        }
+        for view in [ViewKind::Registry, ViewKind::Board, ViewKind::Thread] {
+            for modifier in [
+                KeyModifiers::SHIFT,
+                KeyModifiers::CONTROL,
+                KeyModifiers::ALT,
+            ] {
+                assert_ne!(
+                    command_for_key(KeyEvent::new(KeyCode::Char('2'), modifier), view),
+                    Some(Command::HotSlot(2))
+                );
+                assert_ne!(
+                    command_for_key(KeyEvent::new(KeyCode::Char('='), modifier), view),
+                    Some(Command::BeginHotSlotBind)
+                );
+            }
+        }
+    }
+
+    #[test]
     fn global_keyboard_surfaces_are_reachable_without_pointer_input() {
         for view in [
             ViewKind::Registry,

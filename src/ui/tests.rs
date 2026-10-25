@@ -1202,6 +1202,14 @@ fn recent_alert_header_is_sanitized_and_never_covers_an_active_composer() {
     app.terminal_focused = true;
     let focused = snapshot(&app);
     assert!(!focused.contains("2 more updates"));
+    app.terminal_focused = false;
+    app.show_help = true;
+    let helped = snapshot(&app);
+    assert!(!helped.contains("2 more updates"));
+    app.show_help = false;
+    app.command_palette_open = true;
+    let palette = snapshot(&app);
+    assert!(!palette.contains("2 more updates"));
 }
 
 #[test]

@@ -3255,3 +3255,50 @@ fn notification_thread_membership_checks_the_indexed_source_identity() {
     assert!(!state.contains_thread_id(&id));
     assert!(!state.contains_thread_id(&absent));
 }
+
+#[test]
+fn alert_jump_is_fenced_during_transient_modals_without_consuming_the_event() {
+    use crate::notification::{NotificationEvent, NotificationKind, RecentNotification};
+
+    let blockers: &[(&str, fn(&mut AppState))] = &[
+        ("help", |state| state.show_help = true),
+        ("command palette", |state| state.command_palette_open = true),
+        ("context menu", |state| state.context_open = true),
+        ("launch menu", |state| state.launch_menu_open = true),
+        ("queue", |state| state.thread_queue_open = true),
+        ("transcript search", |state| state.transcript_search_open = true),
+        ("goal actions", |state| state.goal_actions_open = true),
+        ("PTY focus", |state| state.terminal_focused = true),
+        ("composer", |state| state.input_mode = InputMode::Composer),
+        ("closing", |state| state.should_quit = true),
+        ("hot slot bind", |state| {
+            state.hot_slot_bind_pending = Some(SourceRef::codex_thread(&state.threads[0].id));
+        }),
+    ];
+
+    for (name, block) in blockers {
+        let mut state = app();
+        let destination = state.threads[1].id.clone();
+        let alert = RecentNotification::new(
+            NotificationEvent {
+                key: format!("completion:{}", destination.0),
+                item_id: destination.0.clone(),
+                kind: NotificationKind::Completion,
+                subject: "task complete".into(),
+            },
+            Some(destination),
+            0,
+        );
+        state.recent_notification = Some(alert.clone());
+        block(&mut state);
+        assert!(!state.recent_alert_controls_available(), "{name}");
+        assert!(
+            reduce(&mut state, Action::OpenRecentNotification).is_empty(),
+            "{name}"
+        );
+        assert_eq!(state.view, View::Registry, "{name}");
+        assert_eq!(state.selected, 0, "{name}");
+        assert_eq!(state.recent_notification, Some(alert), "{name}");
+        assert!(state.watched_conversations.is_empty(), "{name}");
+    }
+}
