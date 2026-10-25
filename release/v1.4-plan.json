@@ -278,7 +278,7 @@
     "src/app/state.rs": 871,
     "src/app/tests.rs": 3307,
     "src/app/thread_queue_reducer_tests.rs": 123,
-    "src/ui/tests.rs": 1313,
+    "src/ui/tests.rs": 1322,
     "src/sqlite_store/tests.rs": 1098,
     "src/app_server/tests.rs": 993,
     "src/planning/tests.rs": 710,
@@ -331,7 +331,7 @@
     "src/headless/surfaces/presentation.rs": 139,
     "src/headless/tests.rs": 162,
     "src/planning/saved_views.rs": 169,
-    "src/ui/registry.rs": 314,
+    "src/ui/registry.rs": 318,
     "src/ui/registry/tests.rs": 148,
     "src/app/forge_review.rs": 155,
     "src/app/planning_worker/diagnostics.rs": 34,
@@ -339,7 +339,7 @@
     "src/headless/projection.rs": 48,
     "src/interaction_performance/cli.rs": 28,
     "src/interaction_performance/fixtures.rs": 133,
-    "src/ui/board.rs": 395
+    "src/ui/board.rs": 400
   },
   "ratchetPolicy": {
     "baseline": "inherit v1.3 Search & Multi-Target ceilings; feature work may only add bounded module-specific ceilings",
