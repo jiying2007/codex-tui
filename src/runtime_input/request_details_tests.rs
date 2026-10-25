@@ -109,9 +109,7 @@ fn modified_or_repeated_confirmation_keys_cannot_resolve_a_live_request() {
         assert_eq!(app.pending_requests, pending);
     }
     for code in [KeyCode::Char('y'), KeyCode::Char('n'), KeyCode::Char('i')] {
-        assert!(
-            handle_key(&mut app, KeyEvent::new(code, KeyModifiers::CONTROL)).is_empty()
-        );
+        assert!(handle_key(&mut app, KeyEvent::new(code, KeyModifiers::CONTROL)).is_empty());
         assert_eq!(app.pending_requests, pending);
     }
 }
