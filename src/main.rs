@@ -1703,7 +1703,10 @@ mod command_palette_input_tests {
     #[test]
     fn help_can_open_the_palette_without_leaving_an_invisible_help_overlay() {
         let mut app = app();
-        handle_key(&mut app, KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE));
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE),
+        );
         assert!(app.show_help);
         assert!(
             handle_key(
