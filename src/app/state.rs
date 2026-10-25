@@ -223,6 +223,30 @@ impl AppState {
 
     /// Indexed membership check for read-only notification routing.
     /// Validate the indexed item instead of trusting a stale thread-ID mapping.
+    /// A recent alert is a navigation hint only when the main work surface
+    /// owns the keyboard. Share this policy with rendering and the reducer so
+    /// transient modals cannot hide a view change or consume an alert.
+    pub fn recent_alert_controls_available(&self) -> bool {
+        self.input_mode == InputMode::Normal
+            && !self.should_quit
+            && !self.terminal_focused
+            && !self.request_details_open()
+            && !self.show_help
+            && !self.command_palette_open
+            && !self.context_open
+            && !self.launch_menu_open
+            && !self.thread_queue_open
+            && !self.transcript_search_open
+            && !self.goal_actions_open
+            && self.saved_view_editor.is_none()
+            && self.pending_operation.is_none()
+            && self.pending_queue_confirmation.is_none()
+            && self.pending_launch_plan.is_none()
+            && self.pending_local_batch.is_none()
+            && self.pending_forge_operation.is_none()
+            && self.hot_slot_bind_pending.is_none()
+    }
+
     pub fn contains_thread_id(&self, thread_id: &ThreadId) -> bool {
         self.thread_index_by_id
             .get(&thread_id.0)

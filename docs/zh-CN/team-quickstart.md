@@ -63,7 +63,7 @@ codex-tui doctor forge
 ## 5. 每日工作流
 <!-- docs-section: daily -->
 
-选中任务按 `=`、`1–9` 绑定快捷槽，进入会话、评审或看板后可直接按 `1–9` 跳转（编辑/确认时不会抢键）。Windows SSH Ubuntu 的提醒建议在 Ubuntu 配置 `[notifications].mode = "terminal"`，Windows Terminal SSH 配置设置 `"bellStyle": "all"` 并用 `printf '\a'` 验证；这只是终端响铃或任务栏提示，不是 Windows Toast 或离线监控。
+选中任务按 `=`、`1–9` 绑定快捷槽，进入会话、评审或看板后可直接按 `1–9` 跳转（编辑/确认时不会抢键）。最近任务提醒按 `!` 或 `Shift+1` 打开；帮助窗口用 `Esc` 或 `?` 关闭，弹层内不会从背后跳转或吞掉提醒。Windows SSH Ubuntu 的提醒建议在 Ubuntu 配置 `[notifications].mode = "terminal"`，Windows Terminal SSH 配置设置 `"bellStyle": "all"` 并用 `printf '\a'` 验证；这只是终端响铃或任务栏提示，不是 Windows Toast 或离线监控。
 
 `Ctrl+K` 打开面板，`/` 搜索，`j/k` 导航并 `Enter` 进入；`b` 查看 Board，`h/l` 切换列，`t` 打开 Terminal Drawer；按 `F6`（或终端支持时 `Ctrl+]`）将控制权返回 codex-tui。`?` 为键盘说明的权威来源，若按键与终端冲突，以实时帮助和 `doctor terminal` 为准。
 
