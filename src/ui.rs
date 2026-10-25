@@ -1,4 +1,4 @@
-use crate::app::{AppState, ContextChoice, InputMode, View, HELP_ENTRY_COUNT};
+use crate::app::{AppState, ContextChoice, HELP_ENTRY_COUNT, InputMode, View};
 use crate::conversation::InteractiveRequest;
 use crate::domain::{AttentionReason, CwdLocality, RuntimeStatus, display_cwd};
 use crate::forge::ForgeFreshness;
