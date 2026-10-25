@@ -1203,3 +1203,29 @@ fn recent_alert_header_is_sanitized_and_never_covers_an_active_composer() {
     let focused = snapshot(&app);
     assert!(!focused.contains("2 more updates"));
 }
+
+#[test]
+fn narrow_recent_alert_keeps_the_jump_key_visible_before_a_long_subject() {
+    use crate::notification::{NotificationEvent, NotificationKind, RecentNotification};
+    let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+    let id = app.threads[0].id.clone();
+    app.recent_notification = Some(RecentNotification::new(
+        NotificationEvent {
+            key: format!("completion:{}", id.0),
+            item_id: id.0.clone(),
+            kind: NotificationKind::Completion,
+            subject: "important task ".to_string() + &"x".repeat(180),
+        },
+        Some(id),
+        3,
+    ));
+
+    let mut terminal = Terminal::new(TestBackend::new(44, 12)).unwrap();
+    terminal.draw(|frame| render(frame, &app)).unwrap();
+    let buffer = terminal.backend().buffer();
+    let row = (0..44_u16)
+        .map(|x| buffer[(x, 0)].symbol())
+        .collect::<String>();
+    assert!(row.starts_with("! open · Work completed:"), "{row}");
+    assert!(row.contains("important"), "{row}");
+}

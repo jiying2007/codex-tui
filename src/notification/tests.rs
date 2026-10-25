@@ -271,13 +271,30 @@ fn recent_notification_uses_existing_safe_subject_and_localized_count() {
     };
     let recent = RecentNotification::new(event, Some(ThreadId::new("id")), 3);
     let zh = recent.display(UiLanguage::SimplifiedChinese);
-    assert!(zh.contains("工作已完成"));
+    assert!(zh.starts_with("! 跳转 · 工作已完成:"));
     assert!(zh.contains("另有 3 项更新"));
-    assert!(zh.contains("! 跳转"));
     assert!(!zh.contains('\x1b'));
     let en = recent.display(UiLanguage::English);
-    assert!(en.contains("Work completed"));
+    assert!(en.starts_with("! open · Work completed:"));
     assert!(en.contains("3 more updates"));
-    assert!(en.contains("! open"));
     assert!(recent.visible_until > std::time::Instant::now());
+}
+
+#[test]
+fn narrow_terminal_preserves_the_action_and_task_before_optional_context() {
+    let event = NotificationEvent {
+        key: "completion:one".into(),
+        item_id: "one".into(),
+        kind: NotificationKind::Completion,
+        subject: "important task ".to_string() + &"x".repeat(180),
+    };
+    let recent = RecentNotification::new(event.clone(), Some(ThreadId::new("one")), 5);
+    let narrow = crate::text::truncate_display(&recent.display(UiLanguage::English), 40);
+    assert!(narrow.starts_with("! open · Work completed:"));
+    assert!(narrow.contains("important"));
+    assert!(crate::text::display_width(&narrow) <= 40);
+
+    let board = RecentNotification::new(event, None, 0);
+    assert!(board.display(UiLanguage::English).starts_with("Board · Work completed:"));
+    assert!(board.display(UiLanguage::SimplifiedChinese).starts_with("看板 · 工作已完成:"));
 }

@@ -3217,3 +3217,41 @@ fn non_thread_alert_shows_a_board_fallback_without_guessing_a_thread_id() {
     );
     assert!(state.recent_notification.is_none());
 }
+
+#[test]
+fn expired_alert_cannot_open_even_before_the_periodic_ui_expiry_sweep() {
+    use crate::notification::{NotificationEvent, NotificationKind, RecentNotification};
+    use std::time::{Duration, Instant};
+    let mut state = app();
+    let id = state.threads[0].id.clone();
+    let mut recent = RecentNotification::new(
+        NotificationEvent {
+            key: format!("completion:{}", id.0),
+            item_id: id.0.clone(),
+            kind: NotificationKind::Completion,
+            subject: "old alert".into(),
+        },
+        Some(id),
+        0,
+    );
+    recent.visible_until = Instant::now() - Duration::from_secs(1);
+    reduce(&mut state, Action::RecentNotificationObserved(recent));
+    assert!(reduce(&mut state, Action::OpenRecentNotification).is_empty());
+    assert_eq!(state.view, View::Registry);
+    assert!(state.recent_notification.is_none());
+    assert!(state.watched_conversations.is_empty());
+}
+
+#[test]
+fn notification_thread_membership_checks_the_indexed_source_identity() {
+    let mut state = app();
+    let id = state.threads[0].id.clone();
+    assert!(state.contains_thread_id(&id));
+    let absent = ThreadId::new("no-such-thread");
+    assert!(!state.contains_thread_id(&absent));
+
+    // Detect even an inconsistent index without routing to a neighbor.
+    state.threads[0].id = ThreadId::new("different");
+    assert!(!state.contains_thread_id(&id));
+    assert!(!state.contains_thread_id(&absent));
+}

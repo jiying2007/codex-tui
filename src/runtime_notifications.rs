@@ -623,6 +623,21 @@ mod tests {
     }
 
     #[test]
+    fn large_registry_completion_alert_routes_by_index_and_rejects_stale_identity() {
+        let mut app = AppState::new(FakeBackend::scaled(5000).snapshot().threads);
+        let id = app.threads.last().unwrap().id.clone();
+        let event = NotificationEvent {
+            key: format!("completion:{}", id.0),
+            item_id: id.0.clone(),
+            kind: NotificationKind::Completion,
+            subject: "far thread".into(),
+        };
+        assert_eq!(event_thread_id(&app, &event), Some(id.clone()));
+        app.threads.last_mut().unwrap().id = codex_tui::domain::ThreadId::new("changed");
+        assert!(event_thread_id(&app, &event).is_none());
+    }
+
+    #[test]
     fn notification_channels_are_bounded() {
         let source = include_str!("runtime_notifications.rs");
         let production = source
