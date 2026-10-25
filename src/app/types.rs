@@ -295,6 +295,7 @@ pub enum Action {
     QuickPrompt,
     InterruptCurrent,
     ToggleHelp,
+    MoveHelp(i32),
     SetDraft(String),
     ScrollBy(i16),
     ToggleFollow,
