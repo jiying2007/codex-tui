@@ -1697,6 +1697,23 @@ mod command_palette_input_tests {
         );
         assert!(effects.is_empty());
         assert_eq!(app.input_mode, InputMode::Search);
+        assert!(!app.show_help, "search must not start behind help");
+    }
+
+    #[test]
+    fn help_can_open_the_palette_without_leaving_an_invisible_help_overlay() {
+        let mut app = app();
+        handle_key(&mut app, KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE));
+        assert!(app.show_help);
+        assert!(
+            handle_key(
+                &mut app,
+                KeyEvent::new(KeyCode::Char('k'), KeyModifiers::CONTROL)
+            )
+            .is_empty()
+        );
+        assert!(!app.show_help);
+        assert!(app.command_palette_open);
     }
 
     #[test]

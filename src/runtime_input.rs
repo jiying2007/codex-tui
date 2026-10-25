@@ -111,10 +111,19 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
     }
 
     if app.show_help {
-        // Help is modal: shortcuts cannot silently change a conversation
-        // behind the visible help overlay. Esc and ? both close it.
-        return match key.code {
-            KeyCode::Esc | KeyCode::Char('?') => reduce(app, Action::ToggleHelp),
+        // Help blocks task mutations and invisible navigation. Search and the
+        // palette remain intentional safe exits: dismiss help first so neither
+        // starts hidden behind a visible overlay.
+        return match (key.code, key.modifiers) {
+            (KeyCode::Esc | KeyCode::Char('?'), _) => reduce(app, Action::ToggleHelp),
+            (KeyCode::Char('/'), KeyModifiers::NONE) => {
+                reduce(app, Action::ToggleHelp);
+                reduce(app, Action::BeginSearch)
+            }
+            (KeyCode::Char('k'), KeyModifiers::CONTROL) => {
+                reduce(app, Action::ToggleHelp);
+                reduce(app, Action::OpenCommandPalette)
+            }
             _ => vec![],
         };
     }
