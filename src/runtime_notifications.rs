@@ -189,14 +189,24 @@ impl Drop for RuntimeNotifications {
 }
 
 /// Notification card IDs are local projections, not necessarily thread IDs.
-fn event_thread_id(app: &AppState, event: &NotificationEvent) -> Option<codex_tui::domain::ThreadId> {
+fn event_thread_id(
+    app: &AppState,
+    event: &NotificationEvent,
+) -> Option<codex_tui::domain::ThreadId> {
     use codex_tui::{domain::ThreadId, planning::SourceKind};
 
     if event.kind == NotificationKind::Completion {
         let id = ThreadId::new(event.item_id.clone());
-        return app.threads.iter().any(|thread| thread.id == id).then_some(id);
+        return app
+            .threads
+            .iter()
+            .any(|thread| thread.id == id)
+            .then_some(id);
     }
-    let card = app.work_cards.iter().find(|card| card.local_id == event.item_id)?;
+    let card = app
+        .work_cards
+        .iter()
+        .find(|card| card.local_id == event.item_id)?;
     (card.anchor.kind == SourceKind::CodexThread)
         .then(|| ThreadId::new(card.anchor.value.clone()))
         .filter(|id| app.threads.iter().any(|thread| thread.id == *id))

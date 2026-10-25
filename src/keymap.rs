@@ -132,7 +132,7 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
             if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT =>
         {
             Some(Command::OpenRecentNotification)
-        },
+        }
         (
             ViewKind::Thread | ViewKind::Review | ViewKind::Workspace | ViewKind::ManagedWorktrees,
             KeyCode::Char('='),

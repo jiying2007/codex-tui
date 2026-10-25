@@ -3180,7 +3180,13 @@ fn stale_recent_alert_does_not_open_another_thread_or_replay_history() {
     assert_eq!(state.view, View::Registry);
     assert_eq!(state.selected, 0);
     assert!(state.recent_notification.is_none());
-    assert!(state.mutation_notice.as_deref().unwrap().contains("no longer available"));
+    assert!(
+        state
+            .mutation_notice
+            .as_deref()
+            .unwrap()
+            .contains("no longer available")
+    );
 }
 
 #[test]
@@ -3202,6 +3208,12 @@ fn non_thread_alert_shows_a_board_fallback_without_guessing_a_thread_id() {
     );
     assert!(reduce(&mut state, Action::OpenRecentNotification).is_empty());
     assert_eq!(state.view, View::Registry);
-    assert!(state.mutation_notice.as_deref().unwrap().contains("inspect the Board"));
+    assert!(
+        state
+            .mutation_notice
+            .as_deref()
+            .unwrap()
+            .contains("inspect the Board")
+    );
     assert!(state.recent_notification.is_none());
 }

@@ -3,7 +3,10 @@ use super::*;
 pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
     let old_view = state.view.clone();
     let old_previous = state.previous_target.clone();
-    let hot_slot_navigation = matches!(&action, Action::UseHotSlot(_) | Action::OpenRecentNotification);
+    let hot_slot_navigation = matches!(
+        &action,
+        Action::UseHotSlot(_) | Action::OpenRecentNotification
+    );
     let status_may_change = matches!(
         &action,
         Action::ReplaceThreads(_)
@@ -1233,9 +1236,17 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 );
                 return vec![];
             };
-            let Some(index) = state.thread_index_by_id.get(&id.0).copied().filter(|index| {
-                state.threads.get(*index).is_some_and(|thread| thread.id == id)
-            }) else {
+            let Some(index) = state
+                .thread_index_by_id
+                .get(&id.0)
+                .copied()
+                .filter(|index| {
+                    state
+                        .threads
+                        .get(*index)
+                        .is_some_and(|thread| thread.id == id)
+                })
+            else {
                 state.mutation_notice = Some(
                     local_text(
                         state.language,

@@ -87,7 +87,6 @@ impl NotificationEvent {
     }
 }
 
-
 const RECENT_EVENT_DISPLAY_DURATION: Duration = Duration::from_secs(20);
 
 /// One ephemeral, read-only indication of observed source state, not a new task
