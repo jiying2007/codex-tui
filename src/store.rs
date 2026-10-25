@@ -200,7 +200,12 @@ mod tests {
         let store = FileStore::at(root.path());
         let config = store.load_config().expect("config");
         assert!(!config.ui.mouse);
-        assert!(toml::from_str::<AppConfig>("[ui]\nmouse = true\n").unwrap().ui.mouse);
+        assert!(
+            toml::from_str::<AppConfig>("[ui]\\nmouse = true\\n")
+                .unwrap()
+                .ui
+                .mouse
+        );
         assert_eq!(config.ui.language, LanguagePreference::Auto);
         assert_eq!(config.ui.presentation, PresentationMode::Normal);
         assert_eq!(config.notifications.mode, NotificationMode::Off);
