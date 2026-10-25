@@ -295,6 +295,14 @@ fn narrow_terminal_preserves_the_action_and_task_before_optional_context() {
     assert!(crate::text::display_width(&narrow) <= 40);
 
     let board = RecentNotification::new(event, None, 0);
-    assert!(board.display(UiLanguage::English).starts_with("Board · Work completed:"));
-    assert!(board.display(UiLanguage::SimplifiedChinese).starts_with("看板 · 工作已完成:"));
+    assert!(
+        board
+            .display(UiLanguage::English)
+            .starts_with("Board · Work completed:")
+    );
+    assert!(
+        board
+            .display(UiLanguage::SimplifiedChinese)
+            .starts_with("看板 · 工作已完成:")
+    );
 }

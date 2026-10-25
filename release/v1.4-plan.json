@@ -254,7 +254,7 @@
     "src/keymap.rs": 415,
     "src/launch.rs": 309,
     "src/lib.rs": 58,
-    "src/notification/tests.rs": 300,
+    "src/notification/tests.rs": 308,
     "src/operation.rs": 473,
     "src/planning.rs": 1035,
     "src/pty.rs": 674,
