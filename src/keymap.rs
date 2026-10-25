@@ -177,16 +177,16 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
         (ViewKind::Thread, KeyCode::Char('b')) => Some(Command::Board),
         (ViewKind::Thread, KeyCode::Char('y')) if is_plain_press(key) => {
             Some(Command::ApprovePending)
-        },
+        }
         (ViewKind::Thread, KeyCode::Char('n')) if is_plain_press(key) => {
             Some(Command::DeclinePending)
-        },
+        }
         (ViewKind::Thread, KeyCode::Char('c')) if is_plain_press(key) => {
             Some(Command::CancelPending)
-        },
+        }
         (ViewKind::Thread, KeyCode::Char('i')) if is_plain_press(key) => {
             Some(Command::AnswerPending)
-        },
+        }
         (ViewKind::Thread, KeyCode::Char('d')) if key.modifiers == KeyModifiers::NONE => {
             Some(Command::RequestDetails)
         }
@@ -216,10 +216,10 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
         (ViewKind::ManagedWorktrees, KeyCode::Char('x')) => Some(Command::DeleteBranch),
         (ViewKind::ManagedWorktrees, KeyCode::Char('y')) if is_plain_press(key) => {
             Some(Command::ConfirmOperation)
-        },
+        }
         (ViewKind::ManagedWorktrees, KeyCode::Char('c')) if is_plain_press(key) => {
             Some(Command::CancelOperation)
-        },
+        }
         (ViewKind::Board, KeyCode::Char('h') | KeyCode::Left) => Some(Command::BoardLeft),
         (ViewKind::Board, KeyCode::Char('l') | KeyCode::Right) => Some(Command::BoardRight),
         (ViewKind::Board, KeyCode::Char('j') | KeyCode::Down) => Some(Command::Next),
@@ -336,12 +336,19 @@ mod tests {
         }
     }
 
-
     #[test]
     fn live_confirmations_require_plain_non_repeated_key_presses() {
         let cases = [
-            (ViewKind::Thread, KeyCode::Char('y'), Command::ApprovePending),
-            (ViewKind::Thread, KeyCode::Char('n'), Command::DeclinePending),
+            (
+                ViewKind::Thread,
+                KeyCode::Char('y'),
+                Command::ApprovePending,
+            ),
+            (
+                ViewKind::Thread,
+                KeyCode::Char('n'),
+                Command::DeclinePending,
+            ),
             (ViewKind::Thread, KeyCode::Char('c'), Command::CancelPending),
             (ViewKind::Thread, KeyCode::Char('i'), Command::AnswerPending),
             (
