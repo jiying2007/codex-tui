@@ -1255,8 +1255,11 @@ fn help_reaches_last_english_and_chinese_entries_on_narrow_ttys() {
         let buffer = terminal.backend().buffer();
         let mut screen = String::new();
         for y in 0..buffer.area.height {
-            for x in 0..buffer.area.width {
-                screen.push_str(buffer[(x, y)].symbol());
+            let mut x = 0;
+            while x < buffer.area.width {
+                let symbol = buffer[(x, y)].symbol();
+                screen.push_str(symbol);
+                x += unicode_width::UnicodeWidthStr::width(symbol).max(1) as u16;
             }
             screen.push('\n');
         }
@@ -1284,8 +1287,11 @@ fn narrow_registry_footer_prioritizes_actionable_navigation() {
         let buffer = terminal.backend().buffer();
         let mut screen = String::new();
         for y in 0..buffer.area.height {
-            for x in 0..buffer.area.width {
-                screen.push_str(buffer[(x, y)].symbol());
+            let mut x = 0;
+            while x < buffer.area.width {
+                let symbol = buffer[(x, y)].symbol();
+                screen.push_str(symbol);
+                x += unicode_width::UnicodeWidthStr::width(symbol).max(1) as u16;
             }
             screen.push('\n');
         }
@@ -1308,8 +1314,11 @@ fn compact_board_shows_stage_and_attention_navigation_before_advanced_keys() {
         let buffer = terminal.backend().buffer();
         let mut screen = String::new();
         for y in 0..buffer.area.height {
-            for x in 0..buffer.area.width {
-                screen.push_str(buffer[(x, y)].symbol());
+            let mut x = 0;
+            while x < buffer.area.width {
+                let symbol = buffer[(x, y)].symbol();
+                screen.push_str(symbol);
+                x += unicode_width::UnicodeWidthStr::width(symbol).max(1) as u16;
             }
             screen.push('\n');
         }
