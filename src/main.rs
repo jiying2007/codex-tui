@@ -299,7 +299,7 @@ async fn run_app(fake_mode: bool, target_override: Option<&str>) -> Result<()> {
     services.notifications.seed(&app);
 
     let mut exit_signal = runtime_shutdown::ExitSignal::install()?;
-    let mut terminal = TerminalSession::enter(config.ui.mouse)?;
+    let mut terminal = TerminalSession::enter()?;
     let mut last_fake_tick = Instant::now();
     let mut last_git_reconcile = Instant::now();
     let mut last_forge_reconcile = Instant::now();
