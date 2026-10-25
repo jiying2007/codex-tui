@@ -1260,8 +1260,14 @@ fn help_reaches_last_english_and_chinese_entries_on_narrow_ttys() {
             }
             screen.push('\n');
         }
-        assert!(screen.contains(expected), "missing final help entry: {screen}");
-        assert!(screen.contains("PgUp/PgDn"), "missing scroll hint: {screen}");
+        assert!(
+            screen.contains(expected),
+            "missing final help entry: {screen}"
+        );
+        assert!(
+            screen.contains("PgUp/PgDn"),
+            "missing scroll hint: {screen}"
+        );
     }
 }
 
@@ -1307,7 +1313,10 @@ fn compact_board_shows_stage_and_attention_navigation_before_advanced_keys() {
             }
             screen.push('\n');
         }
-        assert!(screen.contains(expected), "missing attention hint: {screen}");
+        assert!(
+            screen.contains(expected),
+            "missing attention hint: {screen}"
+        );
         assert!(screen.contains("1–9"), "missing jump hint: {screen}");
     }
 }
