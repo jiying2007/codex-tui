@@ -299,7 +299,7 @@ async fn run_app(fake_mode: bool, target_override: Option<&str>) -> Result<()> {
     services.notifications.seed(&app);
 
     let mut exit_signal = runtime_shutdown::ExitSignal::install()?;
-    let mut terminal = TerminalSession::enter(config.ui.mouse)?;
+    let mut terminal = TerminalSession::enter()?;
     let mut last_fake_tick = Instant::now();
     let mut last_git_reconcile = Instant::now();
     let mut last_forge_reconcile = Instant::now();
@@ -1959,5 +1959,41 @@ mod cli_terminal_presentation_tests {
         assert_eq!(cli_terminal_field(original), "path\u{fffd}[2J\u{fffd} 中文");
         assert_eq!(original, "path\u{001b}[2J\u{202e}\n中文");
         assert_eq!(cli_terminal_field("normal 中文"), "normal 中文");
+    }
+}
+
+#[cfg(test)]
+mod compact_help_navigation_tests {
+    use super::*;
+
+    #[test]
+    fn help_scrolls_to_all_entries_without_navigating_the_background() {
+        let mut app = AppState::new(vec![]);
+        assert!(!app.show_help);
+        assert_eq!(app.help_top, 0);
+        let press = |app: &mut AppState, code: KeyCode| {
+            let _ = handle_key(app, KeyEvent::new(code, KeyModifiers::NONE));
+        };
+
+        press(&mut app, KeyCode::Char('?'));
+        assert!(app.show_help);
+        press(&mut app, KeyCode::PageDown);
+        assert_eq!(app.help_top, 3);
+        press(&mut app, KeyCode::End);
+        assert_eq!(app.help_top, codex_tui::app::HELP_ENTRY_COUNT - 1);
+        press(&mut app, KeyCode::Down);
+        assert_eq!(app.help_top, codex_tui::app::HELP_ENTRY_COUNT - 1);
+        press(&mut app, KeyCode::PageUp);
+        assert_eq!(app.help_top, codex_tui::app::HELP_ENTRY_COUNT - 4);
+        press(&mut app, KeyCode::Home);
+        assert_eq!(app.help_top, 0);
+        assert_eq!(app.view_kind(), ViewKind::Registry);
+        assert_eq!(app.selected, 0);
+
+        press(&mut app, KeyCode::Esc);
+        assert!(!app.show_help);
+        press(&mut app, KeyCode::Char('?'));
+        assert!(app.show_help);
+        assert_eq!(app.help_top, 0);
     }
 }

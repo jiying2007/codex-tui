@@ -167,6 +167,18 @@
       ]
     },
     {
+      "id": "ux-qualification",
+      "en": "docs/guides/ux-qualification.md",
+      "zh-CN": "docs/zh-CN/guides/ux-qualification.md",
+      "sections": [
+        "overview",
+        "preparation",
+        "recording",
+        "acceptance",
+        "decision"
+      ]
+    },
+    {
       "id": "cli",
       "en": "docs/guides/cli-reference.md",
       "zh-CN": "docs/zh-CN/guides/cli-reference.md",

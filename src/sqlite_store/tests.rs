@@ -805,7 +805,7 @@ fn config_remains_toml_while_runtime_state_moves_to_sqlite() {
     let root = tempdir().expect("tempdir");
     let store = SqliteStore::at(root.path());
     let config = store.load_config().expect("config");
-    assert!(config.ui.mouse);
+    assert!(!config.ui.mouse);
     assert!(store.config_store.config_path().exists());
     store
         .save_state(&LocalStateV1::default())

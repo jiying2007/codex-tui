@@ -1237,3 +1237,95 @@ fn narrow_recent_alert_keeps_the_jump_key_visible_before_a_long_subject() {
     assert!(row.starts_with("! open · Work completed:"), "{row}");
     assert!(row.contains("important"), "{row}");
 }
+
+#[test]
+fn help_reaches_last_english_and_chinese_entries_on_narrow_ttys() {
+    assert_eq!(HELP_LINES.len(), crate::app::HELP_ENTRY_COUNT);
+    assert_eq!(HELP_LINES_ZH.len(), crate::app::HELP_ENTRY_COUNT);
+    for (language, expected) in [
+        (UiLanguage::English, "Authority:"),
+        (UiLanguage::SimplifiedChinese, "权限边界:"),
+    ] {
+        let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+        app.language = language;
+        app.show_help = true;
+        app.help_top = crate::app::HELP_ENTRY_COUNT - 1;
+        let mut terminal = Terminal::new(TestBackend::new(60, 24)).unwrap();
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let buffer = terminal.backend().buffer();
+        let mut screen = String::new();
+        for y in 0..buffer.area.height {
+            let mut x = 0;
+            while x < buffer.area.width {
+                let symbol = buffer[(x, y)].symbol();
+                screen.push_str(symbol);
+                x += unicode_width::UnicodeWidthStr::width(symbol).max(1) as u16;
+            }
+            screen.push('\n');
+        }
+        assert!(
+            screen.contains(expected),
+            "missing final help entry: {screen}"
+        );
+        assert!(
+            screen.contains("PgUp/PgDn"),
+            "missing scroll hint: {screen}"
+        );
+    }
+}
+
+#[test]
+fn narrow_registry_footer_prioritizes_actionable_navigation() {
+    for (language, expected) in [
+        (UiLanguage::English, "Space needs-you"),
+        (UiLanguage::SimplifiedChinese, "Space 待办"),
+    ] {
+        let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+        app.language = language;
+        let mut terminal = Terminal::new(TestBackend::new(60, 24)).unwrap();
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let buffer = terminal.backend().buffer();
+        let mut screen = String::new();
+        for y in 0..buffer.area.height {
+            let mut x = 0;
+            while x < buffer.area.width {
+                let symbol = buffer[(x, y)].symbol();
+                screen.push_str(symbol);
+                x += unicode_width::UnicodeWidthStr::width(symbol).max(1) as u16;
+            }
+            screen.push('\n');
+        }
+        assert!(screen.contains(expected), "action hidden: {screen}");
+        assert!(screen.contains("1–9"), "missing one-key switch: {screen}");
+    }
+}
+
+#[test]
+fn compact_board_shows_stage_and_attention_navigation_before_advanced_keys() {
+    let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+    app.view = View::Board;
+    for (language, expected) in [
+        (UiLanguage::English, "Space attention"),
+        (UiLanguage::SimplifiedChinese, "Space 待办"),
+    ] {
+        app.language = language;
+        let mut terminal = Terminal::new(TestBackend::new(60, 24)).unwrap();
+        terminal.draw(|frame| render(frame, &app)).unwrap();
+        let buffer = terminal.backend().buffer();
+        let mut screen = String::new();
+        for y in 0..buffer.area.height {
+            let mut x = 0;
+            while x < buffer.area.width {
+                let symbol = buffer[(x, y)].symbol();
+                screen.push_str(symbol);
+                x += unicode_width::UnicodeWidthStr::width(symbol).max(1) as u16;
+            }
+            screen.push('\n');
+        }
+        assert!(
+            screen.contains(expected),
+            "missing attention hint: {screen}"
+        );
+        assert!(screen.contains("1–9"), "missing jump hint: {screen}");
+    }
+}

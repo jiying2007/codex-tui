@@ -12,7 +12,7 @@
 
 - [中文项目概览](../README.zh-CN.md) · [English overview](../README.md)
 - [团队快速入门](zh-CN/team-quickstart.md) · [安装与首次部署](zh-CN/release/install-upgrade.md)
-- [日常操作指南](zh-CN/guides/operator-guide.md) · [CLI 速查](zh-CN/guides/cli-reference.md) · [故障排查](zh-CN/guides/troubleshooting.md)
+- [日常操作指南](zh-CN/guides/operator-guide.md) · [使用体验与效率验收](zh-CN/guides/ux-qualification.md) · [CLI 速查](zh-CN/guides/cli-reference.md) · [故障排查](zh-CN/guides/troubleshooting.md)
 
 ## 运行时权威与发布资格
 <!-- docs-section: operators -->

@@ -119,6 +119,7 @@ impl AppState {
             user_input_editor: None,
             user_responses: Default::default(),
             show_help: false,
+            help_top: 0,
             should_quit: false,
             backend_status: BackendStatus::starting("unknown"),
             language: UiLanguage::English,

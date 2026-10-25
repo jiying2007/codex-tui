@@ -14,7 +14,9 @@ use tempfile::NamedTempFile;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UiConfig {
-    #[serde(default = "default_true")]
+    // Legacy config key retained for TOML compatibility; pointer capture is
+    // intentionally disabled until clicks/wheel have a real handler.
+    #[serde(default)]
     pub mouse: bool,
     #[serde(default)]
     pub language: LanguagePreference,
@@ -22,14 +24,10 @@ pub struct UiConfig {
     pub presentation: PresentationMode,
 }
 
-const fn default_true() -> bool {
-    true
-}
-
 impl Default for UiConfig {
     fn default() -> Self {
         Self {
-            mouse: true,
+            mouse: false,
             language: LanguagePreference::Auto,
             presentation: PresentationMode::Normal,
         }
@@ -201,7 +199,13 @@ mod tests {
         let root = tempdir().expect("tempdir");
         let store = FileStore::at(root.path());
         let config = store.load_config().expect("config");
-        assert!(config.ui.mouse);
+        assert!(!config.ui.mouse);
+        assert!(
+            toml::from_str::<AppConfig>("[ui]\nmouse = true\n")
+                .unwrap()
+                .ui
+                .mouse
+        );
         assert_eq!(config.ui.language, LanguagePreference::Auto);
         assert_eq!(config.ui.presentation, PresentationMode::Normal);
         assert_eq!(config.notifications.mode, NotificationMode::Off);
@@ -210,6 +214,7 @@ mod tests {
 
         let config_text = fs::read_to_string(store.config_path()).expect("read config");
         assert!(config_text.contains("[ui]"));
+        assert!(config_text.contains("mouse = false"));
         assert!(config_text.contains("language = \"auto\""));
         assert!(config_text.contains("presentation = \"normal\""));
         assert!(config_text.contains("[notifications]"));

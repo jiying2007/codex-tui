@@ -21,6 +21,8 @@ v1.4 已冻结新增核心功能，仅接受缺陷、安全、互操作、证据
 ## 核心价值与每日工作
 <!-- docs-section: product -->
 
+**一分钟入门：** 打开任务中心，按 `Space` 定位需要处理的会话，按 `/` 搜索，`Enter` 打开；对常用任务按 `=`、数字 `1–9` 绑定，之后可一键切换。按 `?` 查看完整帮助；用 `↑/↓` 或 `j/k` 逐项阅读、`PgUp/PgDn` 翻阅、`Home/End` 到首末项、`Esc` 关闭。小终端优先显示这些高频操作。当前不提供鼠标点击/滚轮导航，因此不再捕获鼠标事件；旧配置 `[ui].mouse` 仍可解析，但该值暂不生效。
+
 Mission Control 优先回答：**正在做什么、哪条会话需要我、如何回到准确的会话、当前代码有何变化？**
 
 - Mission Control 优先显示待处理会话，其次是置顶与最近活动；刷新保留选中会话，最近窗口仍有界，窗口外的置顶与待处理项仍可达。窄终端直接显示待处理原因。
@@ -32,6 +34,8 @@ Mission Control 优先回答：**正在做什么、哪条会话需要我、如�
 `b` 打开 Board，`Tab` 切换 Needs You / Needs Review；`r` 进入所选会话的 Review，`w` 查看 Workspace。Headless 的 Codex 投影视图使用配置中的活动目标或 `--target NAME`，每次只读取一个目标，并明确标记跨目标共享的本地元数据范围。详见[操作指南](docs/zh-CN/guides/operator-guide.md)与 [CLI 参考](docs/zh-CN/guides/cli-reference.md)。
 
 快捷键以应用内 `?` 帮助为准：`Ctrl+K` 命令面板，`/` 搜索，`j/k` 选择、`Enter` 打开，`b` Board，`t` Drawer，`F6` 或 `Ctrl+]` 返回聚焦（取决于实际终端支持）。详见 [操作指南](docs/zh-CN/guides/operator-guide.md)。
+
+**任务提醒需主动启用：** 在 `codex-tui doctor` 打印的本地配置中设置 `[notifications].mode = "terminal"`，在 Windows Terminal 的 SSH Profile 中可设置 `"bellStyle": "all"` 并从 Ubuntu 用 `printf '\a'` 测试。提醒只在 TUI 运行且连通时产生，是终端响铃/闪烁，不是 Windows Toast 或离线推送。不想有提示音时保持默认 `off`。
 
 ## 架构和权威边界
 <!-- docs-section: architecture -->
@@ -80,7 +84,7 @@ Windows 原生环境可以使用对应 Windows 产物；通过 **Windows SSH 登
 ~~~toml
 [ui]
 language = "zh-CN"     # auto | en | zh-CN
-mouse = true
+mouse = false # 未实现鼠标导航前不捕获鼠标事件
 presentation = "normal" # normal | quiet | screen-reader
 
 [notifications]

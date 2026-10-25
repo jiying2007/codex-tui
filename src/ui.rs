@@ -1,4 +1,4 @@
-use crate::app::{AppState, ContextChoice, InputMode, View};
+use crate::app::{AppState, ContextChoice, HELP_ENTRY_COUNT, InputMode, View};
 use crate::conversation::InteractiveRequest;
 use crate::domain::{AttentionReason, CwdLocality, RuntimeStatus, display_cwd};
 use crate::forge::ForgeFreshness;
@@ -301,7 +301,7 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
         render_command_palette(frame, app);
     }
     if app.show_help {
-        render_help(frame, app.language);
+        render_help(frame, app);
     }
     if app.context_open {
         render_context_actions(frame, app);
@@ -1400,24 +1400,57 @@ const HELP_LINES_ZH: &[&str] = &[
     "权限边界: Codex/Git/Forge 保持权威来源；codex-tui 只保存操作员状态。",
 ];
 
-fn render_help(frame: &mut Frame<'_>, language: UiLanguage) {
-    let area = centered_rect(70, 70, frame.area());
-    let help_lines = if language.is_simplified_chinese() {
+fn render_help(frame: &mut Frame<'_>, app: &AppState) {
+    let area = centered_rect(90, 84, frame.area());
+    let help_lines = if app.language.is_simplified_chinese() {
         HELP_LINES_ZH
     } else {
         HELP_LINES
     };
+    debug_assert_eq!(help_lines.len(), HELP_ENTRY_COUNT);
+    if area.width < 4 || area.height < 4 {
+        return;
+    }
+    // Advance by complete help entries instead of estimating physical wrap
+    // offsets; End always reaches the final entry on narrow SSH terminals.
+    let top = app.help_top.min(help_lines.len().saturating_sub(1));
+    let inner = Rect {
+        x: area.x + 1,
+        y: area.y + 1,
+        width: area.width - 2,
+        height: area.height - 3,
+    };
+    let footer = Rect {
+        y: area.y + area.height - 2,
+        height: 1,
+        ..inner
+    };
+    let title = if app.language.is_simplified_chinese() {
+        format!(" 帮助 · 从 {}/{} 项查看 ", top + 1, help_lines.len())
+    } else {
+        format!(" Help · from {}/{} ", top + 1, help_lines.len())
+    };
+    let controls = tr_language(
+        app.language,
+        "↑↓ scroll · PgUp/PgDn jump · Home/End · Esc close",
+        "↑↓ 滚动 · PgUp/PgDn 翻页 · Home/End · Esc 关闭",
+    );
     frame.render_widget(Clear, area);
+    frame.render_widget(Block::bordered().title(title), area);
     frame.render_widget(
         Paragraph::new(
             help_lines
                 .iter()
+                .skip(top)
                 .map(|line| Line::from(*line))
                 .collect::<Vec<_>>(),
         )
-        .block(Block::bordered().title(tr_language(language, " Help ", " 帮助 ")))
         .wrap(Wrap { trim: true }),
-        area,
+        inner,
+    );
+    frame.render_widget(
+        Paragraph::new(truncate_display(controls, footer.width.into())),
+        footer,
     );
 }
 

@@ -75,6 +75,9 @@ pub use types::{Action, ContextChoice, Effect, InputMode, View, ViewKind};
 
 use registry::{ensure_selection_visible, restore_selection};
 
+// Executable help entries in src/ui.rs; keep the two arrays in lockstep.
+pub const HELP_ENTRY_COUNT: usize = 14;
+
 const REGISTRY_RECENT_LIMIT: usize = 100;
 const CONVERSATION_CACHE_LIMIT: usize = 16;
 const GIT_REVIEW_CACHE_LIMIT: usize = 4;
@@ -226,6 +229,7 @@ pub struct AppState {
     user_input_editor: Option<user_input::UserInputEditor>,
     user_responses: user_response::UserResponses,
     pub show_help: bool,
+    pub help_top: usize,
     pub should_quit: bool,
     pub backend_status: BackendStatus,
     pub language: UiLanguage,

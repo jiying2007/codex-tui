@@ -128,6 +128,16 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
                 reduce(app, Action::ToggleHelp);
                 reduce(app, Action::OpenCommandPalette)
             }
+            (KeyCode::Down | KeyCode::Char('j'), KeyModifiers::NONE) => {
+                reduce(app, Action::MoveHelp(1))
+            }
+            (KeyCode::Up | KeyCode::Char('k'), KeyModifiers::NONE) => {
+                reduce(app, Action::MoveHelp(-1))
+            }
+            (KeyCode::PageDown, KeyModifiers::NONE) => reduce(app, Action::MoveHelp(3)),
+            (KeyCode::PageUp, KeyModifiers::NONE) => reduce(app, Action::MoveHelp(-3)),
+            (KeyCode::Home, KeyModifiers::NONE) => reduce(app, Action::MoveHelp(-1000)),
+            (KeyCode::End, KeyModifiers::NONE) => reduce(app, Action::MoveHelp(1000)),
             _ => vec![],
         };
     }
