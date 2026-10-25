@@ -89,7 +89,7 @@ The small set worth learning first (in this order):
 - `t`: Terminal Drawer; `F6` (or Ctrl+]) returns focus to codex-tui;
 - Board: `b`/palette to open, then `h/l` columns and `j/k` items.
 
-There is no mouse click/wheel navigation. The terminal does not capture pointer events, so normal terminal selection remains available; the obsolete `[ui].mouse` setting is accepted but ignored. Notifications are opt-in (`[notifications].mode = "off"` by default). To try low-noise SSH alerts: change your local config to `[notifications].mode = "terminal"`, set your Windows Terminal SSH profile `"bellStyle": "all"`, and from Ubuntu run `printf '\\a'` to verify bell behavior. It is a terminal BEL while the TUI is running and connected—not Windows Toast, offline monitoring or a guaranteed alert.
+There is no mouse click/wheel navigation. The terminal does not capture pointer events, so normal terminal selection remains available; the obsolete `[ui].mouse` setting is accepted but ignored. Notifications are opt-in (`[notifications].mode = "off"` by default). To try low-noise SSH alerts: change your local config to `[notifications].mode = "terminal"`, set your Windows Terminal SSH profile `"bellStyle": "all"`, and from Ubuntu run `printf '\a'` to verify bell behavior. It is a terminal BEL while the TUI is running and connected—not Windows Toast, offline monitoring or a guaranteed alert.
 
 Approval, rejection, and destructive confirmation hotkeys accept a plain key press only; holding a key or adding Ctrl/Alt/Shift does not repeat or authorize a pending action. Ctrl+C remains the explicit interrupt/cancel shortcut.
 
