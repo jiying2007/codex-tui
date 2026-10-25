@@ -17,6 +17,10 @@ codex-tui doctor codex
 codex-tui
 ~~~
 
+The default workflow is deliberately short: `Space` jumps to the next Needs You item, `Enter` opens the selected work, `/` searches, and `1–9` switches bound tasks. Press `?` to show full keyboard help; on a narrow SSH terminal `↑/↓` or `j/k` scroll entries, `PgUp/PgDn` move three entries, `Home/End` reach the first/last item, and `Esc` closes without navigating behind the overlay. Compact Board layouts display one stage at a time (`h/l` changes stage, `Tab` switches Saved View).
+
+**Pointer limitation:** mouse click and wheel events are not handled. To avoid swallowing normal terminal selection/scroll behavior, the app no longer requests mouse capture. The legacy `[ui].mouse` setting is still parsed but ignored. Do not treat `mouse = true` as enabling navigation.
+
 Default target is local `codex app-server --listen stdio://`. Named targets are configured in local TOML; one invocation can use `codex-tui --target NAME`. Non-loopback plaintext `ws://` targets are rejected even without a configured token; use `wss://` or loopback through an SSH tunnel. Loopback IPv4, IPv6 and `localhost` remain permitted for local development. A dead or incompatible backend is **not** silently replaced by fake data; distinguish `--fake` fixture mode from real sessions. Read [Remote Target design](../implementation/v1.3-remote-app-server-targets.md).
 
 `doctor` prints a single-line, terminal-safe presentation of external paths, branches, host names, diagnostics and error strings; ANSI controls and Unicode bidi overrides become visible replacement characters. Original Codex/Git/Forge data is not rewritten.
