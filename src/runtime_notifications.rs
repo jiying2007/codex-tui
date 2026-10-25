@@ -194,12 +194,12 @@ fn event_thread_id(app: &AppState, event: &NotificationEvent) -> Option<codex_tu
 
     if event.kind == NotificationKind::Completion {
         let id = ThreadId::new(event.item_id.clone());
-        return app.thread_by_id(&id).map(|_| id);
+        return app.threads.iter().any(|thread| thread.id == id).then_some(id);
     }
     let card = app.work_cards.iter().find(|card| card.local_id == event.item_id)?;
     (card.anchor.kind == SourceKind::CodexThread)
         .then(|| ThreadId::new(card.anchor.value.clone()))
-        .filter(|id| app.thread_by_id(id).is_some())
+        .filter(|id| app.threads.iter().any(|thread| thread.id == *id))
 }
 
 fn mode_for_session(configured: NotificationMode, ssh: bool) -> NotificationMode {

@@ -44,6 +44,8 @@ Mission Control 按待处理、置顶、最近活动排序，同优先级以会�
 
 Registry 提醒也包含已经观测到的 Goal 阻塞、用量或预算限制、流水线失败、请求修改及工作树冲突。Board、List 和 Review Queue 每张卡片使用一行，按终端宽度截断长标题或工作区名称，使导航选中项保持可见。
 
+观察到任务完成、审批/输入请求、流水线失败或待评审等事件后，有足够终端空间时会短暂显示一行**最近提醒**。按 `!` 可跳转到关联的活跃 Codex 会话，`Esc` 按一级路径返回。提醒显示约 20 秒，纯内存、不持久化、不代表终端响铃或系统通知必然送达；没有关联会话的 Forge/Scratch 工作项仍在 Board 查看，绝不误开其他会话。编辑框、审批详情和聚焦终端不会被提醒抢占。
+
 选中任务或看板卡片按 `=`、再按 `1–9` 绑定快捷槽。Registry、Board、Thread、Review、Workspace、Managed Worktrees 中按 `1–9` 可直接打开绑定会话或本地 Scratch。跳转 Codex 会话后按一次 `Esc` 返回原工作页面（仅保留一级返回路径，不引入独立历史栈）；重复选中当前会话不会重载。快捷槽通过已有会话 ID 索引定位，不再全量扫描会话清单。目标不可用会明确提示，不会误开其他会话。文本编辑、审批确认和 Terminal Drawer 聚焦时，按键仍由这些操作处理；快捷槽不启动或调度任务。
 
 `j/k` 选中、Enter 打开、`/` 筛选、`Ctrl+K` 命令面板、`?` 查看实时键位。`b` 打开 Board，`Tab` 切换 Saved View，包括按工作区分组的 Needs You / Needs Review 列表。List/Review Queue 将同一工作区连续排列，组内按所选顺序排序；Board 列仍按工作流阶段排列。Board 内用 `h/l` 切换列、`j/k` 选择卡片；Mission Control 的 `r` 进入所选会话的 Review，`w` 进入 Workspace。这些入口直达既有交付上下文；Board/Attention 始终是派生视图。
