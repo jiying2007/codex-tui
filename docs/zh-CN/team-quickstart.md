@@ -69,7 +69,7 @@ codex-tui doctor forge
 
 选中任务按 `=`、`1–9` 绑定快捷槽，进入会话、评审或看板后可直接按 `1–9` 跳转（编辑/确认时不会抢键）。最近任务提醒按 `!` 或 `Shift+1` 打开；帮助窗口用 `Esc` 或 `?` 关闭，弹层内不会从背后跳转或吞掉提醒。审批及破坏性确认快捷键要求不带修饰键的单次按下；长按重复、Ctrl/Alt/Shift 组合不会意外批准，Ctrl+C 保留原有中断或取消语义。Windows SSH Ubuntu 的提醒建议在 Ubuntu 配置 `[notifications].mode = "terminal"`，Windows Terminal SSH 配置设置 `"bellStyle": "all"` 并用 `printf '\a'` 验证；这只是终端响铃或任务栏提示，不是 Windows Toast 或离线监控。
 
-通知默认为 `off`，只有主动设置本地 `[notifications].mode = "terminal"` 才会发送 SSH 终端响铃；Windows Terminal 可在 SSH Profile 设置 `"bellStyle": "all"`，Ubuntu 通过 `printf '\\a'` 验证。它依赖 TUI 持续运行与连接，不是 Windows Toast、后台监控或保证送达的消息服务。
+通知默认为 `off`，只有主动设置本地 `[notifications].mode = "terminal"` 才会发送 SSH 终端响铃；Windows Terminal 可在 SSH Profile 设置 `"bellStyle": "all"`，Ubuntu 通过 `printf '\a'` 验证。它依赖 TUI 持续运行与连接，不是 Windows Toast、后台监控或保证送达的消息服务。
 
 `Ctrl+K` 打开面板，`/` 搜索，`j/k` 导航并 `Enter` 进入；`b` 查看 Board，`h/l` 切换列，`t` 打开 Terminal Drawer；按 `F6`（或终端支持时 `Ctrl+]`）将控制权返回 codex-tui。`?` 为键盘说明的权威来源，若按键与终端冲突，以实时帮助和 `doctor terminal` 为准。
 
