@@ -3,7 +3,7 @@ use super::*;
 pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
     let old_view = state.view.clone();
     let old_previous = state.previous_target.clone();
-    let hot_slot_navigation = matches!(&action, Action::UseHotSlot(_));
+    let hot_slot_navigation = matches!(&action, Action::UseHotSlot(_) | Action::OpenRecentNotification);
     let status_may_change = matches!(
         &action,
         Action::ReplaceThreads(_)
@@ -252,6 +252,12 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
         }
         Action::MutationNotice(notice) => {
             state.mutation_notice = Some(notice);
+        }
+        Action::RecentNotificationObserved(recent) => {
+            state.recent_notification = Some(recent);
+        }
+        Action::ClearRecentNotification => {
+            state.recent_notification = None;
         }
         Action::MoveManagedWorktree(delta) => {
             let len = state.visible_managed_worktrees().len();
@@ -1211,6 +1217,46 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
         }
         Action::BeginHotSlotBind => {
             state.hot_slot_bind_pending = state.selected_local_target();
+        }
+        Action::OpenRecentNotification => {
+            let Some(recent) = state.recent_notification.take() else {
+                return vec![];
+            };
+            let Some(id) = recent.thread_id else {
+                state.mutation_notice = Some(
+                    local_text(
+                        state.language,
+                        "this update has no active Codex thread; inspect the Board",
+                        "该更新没有可打开的 Codex 会话；请查看看板",
+                    )
+                    .into(),
+                );
+                return vec![];
+            };
+            let Some(index) = state.thread_index_by_id.get(&id.0).copied().filter(|index| {
+                state.threads.get(*index).is_some_and(|thread| thread.id == id)
+            }) else {
+                state.mutation_notice = Some(
+                    local_text(
+                        state.language,
+                        "notified thread is no longer available",
+                        "收到提醒的会话已不可用",
+                    )
+                    .into(),
+                );
+                return vec![];
+            };
+            if matches!(&state.view, View::Thread(current) if *current == id) {
+                return vec![];
+            }
+            state.hot_slot_return_selected = state.selected_thread_id();
+            state.previous_target = state.current_thread_id().cloned();
+            state.quick_prompt_return_view = Some(state.view.clone());
+            state.selected = index;
+            state.thread_ui.entry(id.0.clone()).or_default();
+            state.prepare_conversation(&id);
+            state.view = View::Thread(id.clone());
+            return vec![Effect::LoadConversation(id)];
         }
         Action::UseHotSlot(slot) => {
             if let Some(target) = state.hot_slot_bind_pending.take() {

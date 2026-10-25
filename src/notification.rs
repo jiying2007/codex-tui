@@ -1,5 +1,5 @@
 use crate::{
-    domain::{RuntimeStatus, ThreadSummary},
+    domain::{RuntimeStatus, ThreadId, ThreadSummary},
     goal::{GoalObservation, GoalStatus},
     i18n::UiLanguage,
     planning::{PlanningAttention, WorkCardProjection},
@@ -8,7 +8,10 @@ use crate::{
 
 const MAX_NOTIFICATION_SUBJECT_COLUMNS: usize = 160;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    time::{Duration, Instant},
+};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -81,6 +84,51 @@ impl NotificationEvent {
             format!("codex-tui · {label}"),
             truncate_display(&self.subject, MAX_NOTIFICATION_SUBJECT_COLUMNS),
         )
+    }
+}
+
+
+const RECENT_EVENT_DISPLAY_DURATION: Duration = Duration::from_secs(20);
+
+/// One ephemeral, read-only indication of observed source state, not a new task
+/// ledger. It expires on the existing UI loop and is never persisted to SQLite.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RecentNotification {
+    pub event: NotificationEvent,
+    pub thread_id: Option<ThreadId>,
+    pub other_count: usize,
+    pub visible_until: Instant,
+}
+
+impl RecentNotification {
+    pub fn new(event: NotificationEvent, thread_id: Option<ThreadId>, other_count: usize) -> Self {
+        Self {
+            event,
+            thread_id,
+            other_count,
+            visible_until: Instant::now() + RECENT_EVENT_DISPLAY_DURATION,
+        }
+    }
+
+    pub fn display(&self, language: UiLanguage) -> String {
+        let (title, subject) = self.event.text(language);
+        let other = if self.other_count == 0 {
+            String::new()
+        } else if language.is_simplified_chinese() {
+            format!(" · 另有 {} 项更新", self.other_count)
+        } else {
+            format!(" · {} more updates", self.other_count)
+        };
+        let action = if self.thread_id.is_some() {
+            if language.is_simplified_chinese() {
+                " · ! 跳转"
+            } else {
+                " · ! open"
+            }
+        } else {
+            ""
+        };
+        format!("{title}: {subject}{other}{action}")
     }
 }
 

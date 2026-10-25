@@ -22,6 +22,7 @@ use crate::launch::{LaunchPlan, LaunchPreset};
 use crate::metadata_search::{
     MetadataSearchContext, filter_requires_locality, matches_metadata_query,
 };
+use crate::notification::RecentNotification;
 use crate::operation::{
     ManagedWorktreeRecord, MutationScope, OperationPlan, OperationReceipt, OperationState,
     mutation_scope_for_thread, now_unix_ms,
@@ -192,6 +193,7 @@ pub struct AppState {
     pub terminal_snapshot: Option<TerminalSnapshot>,
     pub recent_forge_operations: Vec<ForgeMutationReceipt>,
     pub mutation_notice: Option<String>,
+    pub recent_notification: Option<RecentNotification>,
     pub create_worktree_branch: Option<String>,
     pub create_worktree_path: Option<String>,
     pub planning_store_error: Option<String>,
