@@ -265,6 +265,22 @@ mod tests {
     }
 
     #[test]
+    fn recent_alert_shortcut_accepts_shifted_bang_but_not_alt_or_control() {
+        for view in [ViewKind::Registry, ViewKind::Thread, ViewKind::Board] {
+            assert_eq!(
+                command_for_key(KeyEvent::new(KeyCode::Char('!'), KeyModifiers::SHIFT), view),
+                Some(Command::OpenRecentNotification)
+            );
+            for modifiers in [KeyModifiers::ALT, KeyModifiers::CONTROL] {
+                assert_ne!(
+                    command_for_key(KeyEvent::new(KeyCode::Char('!'), modifiers), view),
+                    Some(Command::OpenRecentNotification)
+                );
+            }
+        }
+    }
+
+    #[test]
     fn global_keyboard_surfaces_are_reachable_without_pointer_input() {
         for view in [
             ViewKind::Registry,

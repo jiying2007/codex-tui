@@ -573,6 +573,49 @@ mod tests {
         assert!(merged.body.contains("另有 1 项更新"));
     }
 
+    #[tokio::test]
+    async fn observed_completion_keeps_only_a_bounded_recent_context() {
+        let mut runtime = RuntimeNotifications::start(NotificationMode::Terminal);
+        runtime.task.take().unwrap().abort();
+        let (tx, _rx) = mpsc::channel(32);
+        runtime.command_tx = Some(tx);
+        let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+        for thread in &mut app.threads {
+            thread.runtime = RuntimeStatus::Working;
+        }
+        runtime.seed(&app);
+        for thread in &mut app.threads {
+            thread.runtime = RuntimeStatus::Ready;
+        }
+        assert!(runtime.observe(&app).is_ok());
+        let notice = runtime.take_recent().expect("observed completion");
+        assert_eq!(notice.event.kind, NotificationKind::Completion);
+        assert!(notice.thread_id.is_some());
+        assert_eq!(notice.other_count, app.threads.len() - 1);
+        assert!(runtime.take_recent().is_none());
+        assert_eq!(runtime.observe(&app).unwrap(), 0);
+        assert!(runtime.take_recent().is_none());
+    }
+
+    #[test]
+    fn stale_or_non_thread_notification_never_guesses_another_thread_target() {
+        let app = AppState::new(FakeBackend::seeded().snapshot().threads);
+        let missing = NotificationEvent {
+            key: "completion:unknown".into(),
+            item_id: "unknown".into(),
+            kind: NotificationKind::Completion,
+            subject: "stale".into(),
+        };
+        assert!(event_thread_id(&app, &missing).is_none());
+        let card_only = NotificationEvent {
+            key: "pipeline:issue".into(),
+            item_id: "unlinked-issue".into(),
+            kind: NotificationKind::PipelineFailed,
+            subject: "forge".into(),
+        };
+        assert!(event_thread_id(&app, &card_only).is_none());
+    }
+
     #[test]
     fn notification_channels_are_bounded() {
         let source = include_str!("runtime_notifications.rs");
