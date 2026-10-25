@@ -12,7 +12,7 @@ The **current operator and governance documentation** is available in English an
 
 - [Project overview](../README.md) · [中文项目概览](../README.zh-CN.md)
 - [Team quickstart](team-quickstart.md) · [Installation and first deployment](release/install-upgrade.md)
-- [Daily operator handbook](guides/operator-guide.md) · [CLI command reference](guides/cli-reference.md) · [Troubleshooting](guides/troubleshooting.md)
+- [Daily operator handbook](guides/operator-guide.md) · [UX qualification and measurable efficiency](guides/ux-qualification.md) · [CLI command reference](guides/cli-reference.md) · [Troubleshooting](guides/troubleshooting.md)
 
 ## Runtime authorities and release qualification
 <!-- docs-section: operators -->
