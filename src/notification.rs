@@ -111,6 +111,15 @@ impl RecentNotification {
 
     pub fn display(&self, language: UiLanguage) -> String {
         let (title, subject) = self.event.text(language);
+        // Put the action first: terminal-width clipping must never hide the
+        // only hint for opening the alert's source conversation.
+        let label = title.strip_prefix("codex-tui · ").unwrap_or(&title);
+        let action = match (self.thread_id.is_some(), language.is_simplified_chinese()) {
+            (true, true) => "! 跳转",
+            (true, false) => "! open",
+            (false, true) => "看板",
+            (false, false) => "Board",
+        };
         let other = if self.other_count == 0 {
             String::new()
         } else if language.is_simplified_chinese() {
@@ -118,16 +127,7 @@ impl RecentNotification {
         } else {
             format!(" · {} more updates", self.other_count)
         };
-        let action = if self.thread_id.is_some() {
-            if language.is_simplified_chinese() {
-                " · ! 跳转"
-            } else {
-                " · ! open"
-            }
-        } else {
-            ""
-        };
-        format!("{title}: {subject}{other}{action}")
+        format!("{action} · {label}: {subject}{other}")
     }
 }
 
