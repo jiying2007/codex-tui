@@ -201,7 +201,7 @@ mod tests {
         let config = store.load_config().expect("config");
         assert!(!config.ui.mouse);
         assert!(
-            toml::from_str::<AppConfig>("[ui]\\nmouse = true\\n")
+            toml::from_str::<AppConfig>("[ui]\nmouse = true\n")
                 .unwrap()
                 .ui
                 .mouse
