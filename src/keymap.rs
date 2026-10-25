@@ -91,6 +91,10 @@ pub const HELP_BINDINGS: &[HelpBinding] = &[
     HelpBinding { surface: "Scratch", scope: HelpScope::View(ViewKind::Scratch), token: "Esc", code: KeyCode::Esc, modifiers: KeyModifiers::NONE, command: Command::Back },
 ];
 
+fn is_plain_press(key: KeyEvent) -> bool {
+    key.kind == KeyEventKind::Press && key.modifiers == KeyModifiers::NONE
+}
+
 pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
     if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
         return None;
@@ -171,10 +175,18 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
         }
         (ViewKind::Thread, KeyCode::Char('a')) => Some(Command::QuickPrompt),
         (ViewKind::Thread, KeyCode::Char('b')) => Some(Command::Board),
-        (ViewKind::Thread, KeyCode::Char('y')) => Some(Command::ApprovePending),
-        (ViewKind::Thread, KeyCode::Char('n')) => Some(Command::DeclinePending),
-        (ViewKind::Thread, KeyCode::Char('c')) => Some(Command::CancelPending),
-        (ViewKind::Thread, KeyCode::Char('i')) => Some(Command::AnswerPending),
+        (ViewKind::Thread, KeyCode::Char('y')) if is_plain_press(key) => {
+            Some(Command::ApprovePending)
+        }
+        (ViewKind::Thread, KeyCode::Char('n')) if is_plain_press(key) => {
+            Some(Command::DeclinePending)
+        }
+        (ViewKind::Thread, KeyCode::Char('c')) if is_plain_press(key) => {
+            Some(Command::CancelPending)
+        }
+        (ViewKind::Thread, KeyCode::Char('i')) if is_plain_press(key) => {
+            Some(Command::AnswerPending)
+        }
         (ViewKind::Thread, KeyCode::Char('d')) if key.modifiers == KeyModifiers::NONE => {
             Some(Command::RequestDetails)
         }
@@ -202,8 +214,12 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
         (ViewKind::ManagedWorktrees, KeyCode::Char('a')) => Some(Command::AdoptWorktree),
         (ViewKind::ManagedWorktrees, KeyCode::Char('d')) => Some(Command::RemoveWorktree),
         (ViewKind::ManagedWorktrees, KeyCode::Char('x')) => Some(Command::DeleteBranch),
-        (ViewKind::ManagedWorktrees, KeyCode::Char('y')) => Some(Command::ConfirmOperation),
-        (ViewKind::ManagedWorktrees, KeyCode::Char('c')) => Some(Command::CancelOperation),
+        (ViewKind::ManagedWorktrees, KeyCode::Char('y')) if is_plain_press(key) => {
+            Some(Command::ConfirmOperation)
+        }
+        (ViewKind::ManagedWorktrees, KeyCode::Char('c')) if is_plain_press(key) => {
+            Some(Command::CancelOperation)
+        }
         (ViewKind::Board, KeyCode::Char('h') | KeyCode::Left) => Some(Command::BoardLeft),
         (ViewKind::Board, KeyCode::Char('l') | KeyCode::Right) => Some(Command::BoardRight),
         (ViewKind::Board, KeyCode::Char('j') | KeyCode::Down) => Some(Command::Next),
@@ -317,6 +333,58 @@ mod tests {
                     Some(Command::BeginHotSlotBind)
                 );
             }
+        }
+    }
+
+    #[test]
+    fn live_confirmations_require_plain_non_repeated_key_presses() {
+        let cases = [
+            (
+                ViewKind::Thread,
+                KeyCode::Char('y'),
+                Command::ApprovePending,
+            ),
+            (
+                ViewKind::Thread,
+                KeyCode::Char('n'),
+                Command::DeclinePending,
+            ),
+            (ViewKind::Thread, KeyCode::Char('c'), Command::CancelPending),
+            (ViewKind::Thread, KeyCode::Char('i'), Command::AnswerPending),
+            (
+                ViewKind::ManagedWorktrees,
+                KeyCode::Char('y'),
+                Command::ConfirmOperation,
+            ),
+            (
+                ViewKind::ManagedWorktrees,
+                KeyCode::Char('c'),
+                Command::CancelOperation,
+            ),
+        ];
+        for (view, code, command) in cases {
+            assert_eq!(
+                command_for_key(KeyEvent::new(code, KeyModifiers::NONE), view),
+                Some(command)
+            );
+            for modifiers in [
+                KeyModifiers::SHIFT,
+                KeyModifiers::ALT,
+                KeyModifiers::CONTROL,
+                KeyModifiers::SUPER,
+            ] {
+                assert_ne!(
+                    command_for_key(KeyEvent::new(code, modifiers), view),
+                    Some(command)
+                );
+            }
+            assert_ne!(
+                command_for_key(
+                    KeyEvent::new_with_kind(code, KeyModifiers::NONE, KeyEventKind::Repeat),
+                    view
+                ),
+                Some(command)
+            );
         }
     }
 

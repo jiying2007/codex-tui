@@ -27,6 +27,10 @@ pub(crate) fn handle_paste(app: &mut AppState, text: String) -> Vec<Effect> {
     vec![]
 }
 
+fn is_plain_press(key: KeyEvent) -> bool {
+    key.kind == KeyEventKind::Press && key.modifiers == KeyModifiers::NONE
+}
+
 fn is_terminal_release_key(key: KeyEvent) -> bool {
     matches!(key.code, KeyCode::F(6))
         || (key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char(']'))
@@ -131,7 +135,9 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
     if app.thread_queue_open && app.input_mode == InputMode::Normal {
         if app.pending_queue_confirmation.is_some() {
             return match key.code {
-                KeyCode::Char('y') => reduce(app, Action::ConfirmPendingOperation),
+                KeyCode::Char('y') if is_plain_press(key) => {
+                    reduce(app, Action::ConfirmPendingOperation)
+                }
                 KeyCode::Char('c') | KeyCode::Esc => reduce(app, Action::CancelPendingOperation),
                 _ => vec![],
             };
@@ -188,7 +194,9 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
 
     if app.pending_launch_plan.is_some() {
         return match key.code {
-            KeyCode::Char('y') => reduce(app, Action::ConfirmPendingOperation),
+            KeyCode::Char('y') if is_plain_press(key) => {
+                reduce(app, Action::ConfirmPendingOperation)
+            }
             KeyCode::Char('c') | KeyCode::Esc => reduce(app, Action::CancelPendingOperation),
             _ => vec![],
         };
@@ -196,7 +204,9 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
 
     if app.pending_local_batch.is_some() {
         return match key.code {
-            KeyCode::Char('y') => reduce(app, Action::ConfirmPendingOperation),
+            KeyCode::Char('y') if is_plain_press(key) => {
+                reduce(app, Action::ConfirmPendingOperation)
+            }
             KeyCode::Char('c') | KeyCode::Esc => reduce(app, Action::CancelPendingOperation),
             _ => vec![],
         };
@@ -204,7 +214,9 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
 
     if app.pending_forge_operation.is_some() {
         return match key.code {
-            KeyCode::Char('y') => reduce(app, Action::ConfirmPendingOperation),
+            KeyCode::Char('y') if is_plain_press(key) => {
+                reduce(app, Action::ConfirmPendingOperation)
+            }
             KeyCode::Char('c') | KeyCode::Esc => reduce(app, Action::CancelPendingOperation),
             _ => vec![],
         };
@@ -213,10 +225,15 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
     if app.goal_actions_open {
         let action = match key.code {
             KeyCode::Esc => Some(Action::CloseGoalActions),
-            KeyCode::Enter | KeyCode::Char('e') => Some(Action::BeginGoalObjective),
-            KeyCode::Char('p') => Some(Action::SetGoalStatus(GoalStatus::Paused)),
-            KeyCode::Char('r') => Some(Action::SetGoalStatus(GoalStatus::Active)),
-            KeyCode::Char('c') => Some(Action::ClearGoal),
+            KeyCode::Enter if is_plain_press(key) => Some(Action::BeginGoalObjective),
+            KeyCode::Char('e') if is_plain_press(key) => Some(Action::BeginGoalObjective),
+            KeyCode::Char('p') if is_plain_press(key) => {
+                Some(Action::SetGoalStatus(GoalStatus::Paused))
+            }
+            KeyCode::Char('r') if is_plain_press(key) => {
+                Some(Action::SetGoalStatus(GoalStatus::Active))
+            }
+            KeyCode::Char('c') if is_plain_press(key) => Some(Action::ClearGoal),
             _ => None,
         };
         if let Some(action) = action {
@@ -229,18 +246,30 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
         && let Some(request) = app.current_pending_request()
     {
         let action = match (&request.kind, key.code) {
-            (InteractiveRequestKind::UserInput { .. }, KeyCode::Enter | KeyCode::Char('i')) => {
+            (InteractiveRequestKind::UserInput { .. }, KeyCode::Enter | KeyCode::Char('i'))
+                if is_plain_press(key) =>
+            {
                 Some(Action::BeginUserInput)
             }
-            (InteractiveRequestKind::UserInput { .. }, KeyCode::Char('n')) => {
+            (InteractiveRequestKind::UserInput { .. }, KeyCode::Char('n'))
+                if is_plain_press(key) =>
+            {
                 Some(Action::ResolvePending(InteractiveResolution::Decline))
             }
-            (InteractiveRequestKind::UserInput { .. }, KeyCode::Char('c')) => {
+            (InteractiveRequestKind::UserInput { .. }, KeyCode::Char('c'))
+                if is_plain_press(key) =>
+            {
                 Some(Action::ResolvePending(InteractiveResolution::Cancel))
             }
-            (_, KeyCode::Char('y')) => Some(Action::ResolvePending(InteractiveResolution::Accept)),
-            (_, KeyCode::Char('n')) => Some(Action::ResolvePending(InteractiveResolution::Decline)),
-            (_, KeyCode::Char('c')) => Some(Action::ResolvePending(InteractiveResolution::Cancel)),
+            (_, KeyCode::Char('y')) if is_plain_press(key) => {
+                Some(Action::ResolvePending(InteractiveResolution::Accept))
+            }
+            (_, KeyCode::Char('n')) if is_plain_press(key) => {
+                Some(Action::ResolvePending(InteractiveResolution::Decline))
+            }
+            (_, KeyCode::Char('c')) if is_plain_press(key) => {
+                Some(Action::ResolvePending(InteractiveResolution::Cancel))
+            }
             _ => None,
         };
         if let Some(action) = action {

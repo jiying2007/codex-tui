@@ -89,3 +89,37 @@ fn d_remains_input_in_an_editor_and_does_not_open_over_goal_actions() {
     );
     assert!(!app.request_details_open());
 }
+
+#[test]
+fn modified_or_repeated_confirmation_keys_cannot_resolve_a_live_request() {
+    let mut app = app();
+    let pending = app.pending_requests.clone();
+    for code in [
+        KeyCode::Char('y'),
+        KeyCode::Char('n'),
+        KeyCode::Char('i'),
+        KeyCode::Char('c'),
+    ] {
+        for modifiers in [KeyModifiers::SHIFT, KeyModifiers::ALT, KeyModifiers::SUPER] {
+            assert!(handle_key(&mut app, KeyEvent::new(code, modifiers)).is_empty());
+            assert_eq!(app.pending_requests, pending);
+        }
+        let repeat = KeyEvent::new_with_kind(code, KeyModifiers::NONE, KeyEventKind::Repeat);
+        assert!(handle_key(&mut app, repeat).is_empty());
+        assert_eq!(app.pending_requests, pending);
+    }
+    for code in [KeyCode::Char('y'), KeyCode::Char('n'), KeyCode::Char('i')] {
+        assert!(handle_key(&mut app, KeyEvent::new(code, KeyModifiers::CONTROL)).is_empty());
+        assert_eq!(app.pending_requests, pending);
+    }
+}
+
+#[test]
+fn modified_goal_actions_are_not_executed_behind_the_goal_dialog() {
+    let mut app = app();
+    app.goal_actions_open = true;
+    for code in [KeyCode::Char('c'), KeyCode::Char('p'), KeyCode::Char('r')] {
+        assert!(handle_key(&mut app, KeyEvent::new(code, KeyModifiers::ALT)).is_empty());
+        assert!(app.goal_actions_open);
+    }
+}

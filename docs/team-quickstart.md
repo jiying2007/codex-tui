@@ -78,12 +78,15 @@ Maintainers can retain a capability fixture with `scripts/release/capture_forge_
 
 The small set worth learning first:
 
-- `=` then `1–9`: bind the selected task; `1–9` jumps directly to that task across work views (outside editors/confirmations);\n- `!` (or physical `Shift+1`): open a recent source alert, only when no modal/editor owns input; help closes with `Esc` or `?`;
+- `=` then `1–9`: bind the selected task; `1–9` jumps directly to that task across work views (outside editors/confirmations);
+- `!` (or physical `Shift+1`): open a recent source alert, only when no modal/editor owns input; help closes with `Esc` or `?`;
 - `Ctrl+K`: contextual command palette;
 - `/`: global search, with Esc restoring the origin view when possible;
 - `j/k` + Enter: navigate/open;
 - `t`: Terminal Drawer; `F6` (or Ctrl+]) returns focus to codex-tui;
 - Board: `b`/palette to open, then `h/l` columns and `j/k` items.
+
+Approval, rejection, and destructive confirmation hotkeys accept a plain key press only; holding a key or adding Ctrl/Alt/Shift does not repeat or authorize a pending action. Ctrl+C remains the explicit interrupt/cancel shortcut.
 
 `?` is the executable Help contract; CI checks it against the keymap/Command/reducer surface.
 
