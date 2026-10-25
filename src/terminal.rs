@@ -1,6 +1,6 @@
 use crossterm::{
     cursor,
-    event::{DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture},
+    event::{DisableBracketedPaste, EnableBracketedPaste},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
@@ -31,35 +31,28 @@ impl<F: FnOnce()> Drop for RestoreGuard<F> {
     }
 }
 
-fn restore_terminal(mouse: bool) {
+fn restore_terminal() {
     let _ = disable_raw_mode();
     let mut out = stdout();
     let _ = execute!(out, DisableBracketedPaste);
-    if mouse {
-        let _ = execute!(out, DisableMouseCapture);
-    }
     let _ = execute!(out, LeaveAlternateScreen, cursor::Show);
 }
 
 pub struct TerminalSession {
     terminal: Terminal<CrosstermBackend<Stdout>>,
-    mouse: bool,
 }
 
 impl TerminalSession {
-    pub fn enter(mouse: bool) -> io::Result<Self> {
+    pub fn enter() -> io::Result<Self> {
         enable_raw_mode()?;
-        let mut rollback = RestoreGuard::new(move || restore_terminal(mouse));
+        let mut rollback = RestoreGuard::new(restore_terminal);
         let mut out = stdout();
         execute!(out, EnterAlternateScreen, cursor::Hide)?;
         let _ = execute!(out, EnableBracketedPaste);
-        if mouse {
-            execute!(out, EnableMouseCapture)?;
-        }
         let backend = CrosstermBackend::new(out);
         let terminal = Terminal::new(backend)?;
         rollback.disarm();
-        Ok(Self { terminal, mouse })
+        Ok(Self { terminal })
     }
 
     pub fn terminal_mut(&mut self) -> &mut Terminal<CrosstermBackend<Stdout>> {
@@ -69,7 +62,7 @@ impl TerminalSession {
 
 impl Drop for TerminalSession {
     fn drop(&mut self) {
-        restore_terminal(self.mouse);
+        restore_terminal();
     }
 }
 
@@ -127,5 +120,9 @@ mod tests {
         assert!(bracketed_paste < terminal);
         assert!(terminal < disarm);
         assert!(production.contains("DisableBracketedPaste"));
+        // Until pointer events have a real dispatcher, do not capture terminal
+        // mouse reports and silently discard clicks or wheel navigation.
+        assert!(!production.contains("EnableMouseCapture"));
+        assert!(!production.contains("DisableMouseCapture"));
     }
 }
