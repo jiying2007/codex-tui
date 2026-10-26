@@ -19,6 +19,12 @@ pub(super) fn begin_bind(state: &mut AppState) {
     state.mutation_notice = Some(message.into());
 }
 
+pub(super) fn cancelled(state: &mut AppState) {
+    state.mutation_notice = Some(local_text(
+        state.language, "shortcut binding cancelled", "快捷槽绑定已取消"
+    ).into());
+}
+
 pub(super) fn empty_slot(state: &mut AppState, slot: u8) {
     state.mutation_notice = Some(format!(
         "{} {slot}: {}",
