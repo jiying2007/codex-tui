@@ -16,7 +16,7 @@ impl AppState {
         for id in &self.prompt_submissions.awaiting_history {
             actions.push(Action::ConversationFailed {
                 thread_id: ThreadId::new(id.clone()),
-                error: "App Server actor stopped before authoritative prompt history arrived".into(),
+                error: "App Server actor stopped; prompt history unavailable".into(),
             });
         }
         let prompts_changed = !actions.is_empty();
@@ -42,16 +42,17 @@ mod tests {
         assert!(app.prompt_submissions.by_thread.is_empty());
         assert_eq!(app.thread_ui.get(&thread.0).unwrap().draft, "keep draft");
         assert!(app.conversations.get(&thread.0).unwrap().error.is_some());
-        assert!(!app.settle_stopped_actor(&mut effects), "settlement is idempotent");
-        assert!(app.prompt_submissions.begin(&thread).is_some(), "capacity released");
-        assert_ne!(app.prompt_submissions.by_thread[&thread.0].request_id, ticket);
+        assert!(!app.settle_stopped_actor(&mut effects));
+        let next = app.prompt_submissions.begin(&thread).expect("capacity released");
+        assert_ne!(next, ticket);
     }
 
     #[test]
     fn actor_exit_closes_acknowledged_but_unread_history() {
         let mut app = AppState::new(vec![]);
         let thread = ThreadId::new("accepted");
-        app.prompt_submissions.awaiting_history.insert(thread.0.clone());
+        let pending_history = &mut app.prompt_submissions.awaiting_history;
+        pending_history.insert(thread.0.clone());
         let mut effects = vec![];
         assert!(app.settle_stopped_actor(&mut effects));
         assert!(app.prompt_submissions.awaiting_history.is_empty());
