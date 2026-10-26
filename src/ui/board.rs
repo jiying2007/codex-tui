@@ -239,8 +239,8 @@ pub(super) fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
     } else if app.hot_slot_bind_pending.is_some() {
         tr(
             app,
-            "bind hot slot: press 1–9 · Esc cancels other input only",
-            "绑定快捷槽：按 1–9 · Esc 仅取消其他输入",
+            "bind hot slot: press 1–9 · Esc cancels binding",
+            "绑定快捷槽：按 1–9 · Esc 取消绑定",
         )
         .into()
     } else if let Some(error) = &app.planning_store_error {
