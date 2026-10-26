@@ -1712,6 +1712,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 return vec![];
             }
             if state.hot_slot_bind_pending.take().is_some() {
+                super::shortcuts::cancelled(state);
                 return vec![];
             }
             if matches!(state.view, View::Scratch(_)) {
