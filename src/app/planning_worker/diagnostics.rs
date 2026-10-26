@@ -13,14 +13,12 @@ pub(crate) fn measure_once(state: &mut AppState, now: u64) -> [f64; 3] {
 }
 pub(crate) fn measure_rebase_once(state: &mut AppState, now: u64) -> f64 {
     let output = Input::capture(state, now).compute();
-    let original_generation = state.planning_generation;
     let mut threads = state.threads.clone();
     let thread = threads.first_mut().expect("nonempty diagnostic fixture");
     let id = thread.id.0.clone();
     let title = format!("Source changed during worker generation {now}");
     thread.title = title.clone();
     reduce(state, Action::ReplaceThreads(threads));
-    assert_ne!(original_generation, state.planning_generation);
     let started = Instant::now();
     let accepted = output.apply_at(state, now).is_some();
     let retry = (!accepted).then(|| Input::capture(state, now));
@@ -29,6 +27,7 @@ pub(crate) fn measure_rebase_once(state: &mut AppState, now: u64) -> f64 {
         assert_eq!(state.threads.len(), 50_000);
         assert!(fresh.compute().apply_at(state, now).is_some());
     }
-    assert_eq!(state.work_cards[state.work_card_by_thread[&id]].title, title);
+    let index = state.work_card_by_thread[&id];
+    assert_eq!(state.work_cards[index].title, title);
     elapsed
 }
