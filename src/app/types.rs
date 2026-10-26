@@ -15,7 +15,6 @@ use crate::{
     thread_queue::{ThreadQueueMutation, ThreadQueueSnapshot},
     transcript_search::{TranscriptSearchHit, TranscriptSearchResults},
 };
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum View {
     Registry,
@@ -26,7 +25,6 @@ pub enum View {
     Board,
     Scratch(String),
 }
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ViewKind {
     Registry,
@@ -37,7 +35,6 @@ pub enum ViewKind {
     Board,
     Scratch,
 }
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InputMode {
     Normal,
@@ -312,6 +309,9 @@ pub enum Action {
     InputChar(char),
     InputText(String),
     InputBackspace,
+    ComposerCursorMove(i32),
+    ComposerCursorBoundary(bool),
+    ComposerViewScroll(i32),
     CommitInput,
     CancelInput,
     Quit,

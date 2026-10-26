@@ -137,6 +137,8 @@ impl AppState {
             transcript_search_active_hit: None,
             input_mode: InputMode::Normal,
             input_buffer: String::new(),
+            composer_cursor: 0,
+            composer_scroll_back: 0,
             input_original: String::new(),
             alias_target: None,
             mutation_editor: None,
@@ -149,14 +151,12 @@ impl AppState {
             .as_ref()
             .and_then(|results| results.hits.get(self.transcript_search_selected))
     }
-
     pub fn transcript_search_source_label(&self) -> &'static str {
         self.transcript_search_results
             .as_ref()
             .map(|results| results.source.label())
             .unwrap_or("pending")
     }
-
     pub fn selected_thread_queue_submission(&self) -> Option<&QueuedSubmission> {
         self.thread_queue_snapshot
             .as_ref()
