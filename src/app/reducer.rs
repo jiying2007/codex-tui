@@ -1783,6 +1783,8 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
         }
         Action::SetDraft(draft) => {
             if let Some(id) = state.current_thread_id().cloned() {
+                state.composer_cursor = draft.chars().count();
+                state.composer_scroll_back = 0;
                 state.prompt_submissions.edited(&id);
                 state.thread_ui.entry(id.0).or_default().draft = draft;
                 return vec![Effect::PersistOperatorStateDeferred];
@@ -1967,14 +1969,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::InputChar(character) => match state.input_mode {
             InputMode::Normal => {}
             InputMode::Composer => {
-                if let Some(id) = state.current_thread_id().cloned() {
-                    state.prompt_submissions.edited(&id);
-                    state
-                        .thread_ui
-                        .entry(id.0)
-                        .or_default()
-                        .draft
-                        .push(character);
+                if super::composer::insert(state, &character.to_string()) {
                     return vec![Effect::PersistOperatorStateDeferred];
                 }
             }
@@ -2019,15 +2014,8 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
             match state.input_mode {
                 InputMode::Normal => {}
-                InputMode::Composer => {
-                    if let Some(id) = state.current_thread_id().cloned() {
-                        state.prompt_submissions.edited(&id);
-                        state
-                            .thread_ui
-                            .entry(id.0)
-                            .or_default()
-                            .draft
-                            .push_str(&text);
+                    InputMode::Composer => {
+                    if super::composer::insert(state, &text) {
                         return vec![Effect::PersistOperatorStateDeferred];
                     }
                 }
@@ -2066,9 +2054,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::InputBackspace => match state.input_mode {
             InputMode::Normal => {}
             InputMode::Composer => {
-                if let Some(id) = state.current_thread_id().cloned() {
-                    state.prompt_submissions.edited(&id);
-                    state.thread_ui.entry(id.0).or_default().draft.pop();
+                if super::composer::backspace(state) {
                     return vec![Effect::PersistOperatorStateDeferred];
                 }
             }
@@ -2103,6 +2089,9 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 }
             }
         },
+        Action::ComposerCursorMove(delta) => super::composer::move_cursor(state, delta),
+        Action::ComposerCursorBoundary(end) => super::composer::boundary(state, end),
+        Action::ComposerViewScroll(delta) => super::composer::scroll(state, delta),
         Action::CommitInput => {
             let mode = state.input_mode;
             if !state.guard_mutation_editor(mode) {
