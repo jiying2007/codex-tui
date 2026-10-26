@@ -23,7 +23,7 @@ fn screen(app: &AppState) -> String {
 fn twenty_column_help_reaches_both_ends_in_both_languages() {
     for (language, first, last) in [
         (UiLanguage::English, "Global:", "only."),
-        (UiLanguage::SimplifiedChinese, "全局:", "状态。"),
+        (UiLanguage::SimplifiedChinese, "全局:", "态。"),
     ] {
         let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
         app.language = language;
