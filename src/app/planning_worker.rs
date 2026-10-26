@@ -3,11 +3,11 @@
 use super::*;
 mod clock;
 mod diagnostics;
+mod merge;
 pub(crate) use diagnostics::{measure_once, measure_rebase_once};
 mod rebase;
 use clock::ProjectionClock;
 use std::sync::mpsc::{self, Receiver, SyncSender, TryRecvError};
-
 struct Input {
     generation: u64,
     intent_generation: u64,
