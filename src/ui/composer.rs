@@ -4,12 +4,7 @@ use crate::app::{AppState, InputMode};
 use crate::conversation_viewport::WrappedRows;
 use ratatui::layout::Rect;
 
-pub(super) fn prepare(
-    app: &AppState,
-    text: String,
-    draft: &str,
-    area: Rect,
-) -> (String, u16) {
+pub(super) fn prepare(app: &AppState, text: String, draft: &str, area: Rect) -> (String, u16) {
     if app.input_mode != InputMode::Composer || area.width <= 2 || area.height <= 2 {
         return (text, 0);
     }
@@ -35,7 +30,8 @@ pub(super) fn prepare(
     let visible = usize::from(area.height - 2);
     let max_top = rows.len().saturating_sub(visible);
     let base_top = caret_row.saturating_sub(visible.saturating_sub(1));
-    let top = base_top.saturating_sub(app.composer_scroll_back).min(max_top);
+    let top = base_top.saturating_sub(app.composer_scroll_back);
+    let top = top.min(max_top);
     (rows.join("\n"), u16::try_from(top).unwrap_or(u16::MAX))
 }
 
@@ -52,7 +48,11 @@ mod tests {
         let area = Rect::new(0, 0, 80, 4);
         let (full, top) = prepare(&app, format!("{draft}\nstatus"), &draft, area);
         assert!(top > 0);
-        let visible = full.lines().skip(usize::from(top)).take(2).collect::<Vec<_>>();
+        let visible = full
+            .lines()
+            .skip(usize::from(top))
+            .take(2)
+            .collect::<Vec<_>>();
         assert!(visible.join("\n").contains("TAIL_SENTINEL"));
         app.composer_scroll_back = 3;
         let (_, earlier) = prepare(&app, format!("{draft}\nstatus"), &draft, area);
@@ -65,7 +65,8 @@ mod tests {
         app.input_mode = InputMode::Composer;
         let draft = "中文🙂".repeat(50);
         app.composer_cursor = draft.chars().count();
-        let (display, offset) = prepare(&app, format!("{draft}\nstatus"), &draft, Rect::new(0, 0, 20, 10));
+        let area = Rect::new(0, 0, 20, 10);
+        let (display, offset) = prepare(&app, format!("{draft}\nstatus"), &draft, area);
         assert!(display.contains("▏"));
         assert!(offset > 0);
     }
