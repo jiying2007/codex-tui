@@ -150,7 +150,7 @@
   "moduleRatchet": {
     "src/app.rs": 1022,
     "src/ui.rs": 1487,
-    "src/ui/help_wrapped_tests.rs": 37,
+    "src/ui/help_wrapped_tests.rs": 43,
     "src/app_server.rs": 2682,
     "src/main.rs": 2005,
     "src/sqlite_store.rs": 1849,
