@@ -2014,7 +2014,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
             match state.input_mode {
                 InputMode::Normal => {}
-                    InputMode::Composer => {
+                InputMode::Composer => {
                     if super::composer::insert(state, &text) {
                         return vec![Effect::PersistOperatorStateDeferred];
                     }
