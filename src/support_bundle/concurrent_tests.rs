@@ -19,7 +19,8 @@
 
         let successes = handles
             .into_iter()
-            .filter(|handle| handle.join().expect("collector thread"))
+            .map(|handle| handle.join().expect("collector thread"))
+            .filter(|success| *success)
             .count();
         assert_eq!(successes, 1, "only one collector may claim an output path");
         assert!(destination.join("snapshot.json").is_file());
