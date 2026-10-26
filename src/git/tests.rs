@@ -117,13 +117,16 @@ pub(super) fn git_command(cwd: &Path, args: &[&str]) -> std::process::Command {
 
 pub(super) fn protect_fixture_repository(cwd: &Path) {
     // Production read/mutation code subsequently uses this temporary repo.
-    // Pin these local values as well, without changing production Git policy.
+    // Pin these local values (including LF checkout) as well, without changing
+    // production Git policy or depending on a platform global config.
     let null = if cfg!(windows) { "NUL" } else { "/dev/null" };
     for (key, value) in [
         ("core.hooksPath", null),
         ("commit.gpgsign", "false"),
         ("tag.gpgsign", "false"),
         ("core.fsmonitor", "false"),
+        ("core.autocrlf", "false"),
+        ("core.eol", "lf"),
     ] {
         assert!(
             git_command(cwd, &["config", "--local", key, value])

@@ -85,13 +85,16 @@ fn git(cwd: &Path, args: &[&str]) {
     assert!(status.success(), "git command failed: {args:?}");
     if args.first() == Some(&"init") {
         // These temporary repositories are also exercised by production Git
-        // callers, so neutralize inherited hooks/signing/fsmonitor locally.
+        // callers. Keep hooks/signing/fsmonitor and line-ending conversion
+        // consistent even when those callers read a platform global config.
         let null = if cfg!(windows) { "NUL" } else { "/dev/null" };
         for (key, value) in [
             ("core.hooksPath", null),
             ("commit.gpgsign", "false"),
             ("tag.gpgsign", "false"),
             ("core.fsmonitor", "false"),
+            ("core.autocrlf", "false"),
+            ("core.eol", "lf"),
         ] {
             assert!(
                 git_command(cwd, &["config", "--local", key, value])
@@ -126,6 +129,54 @@ fn futures_lite_probe(root: &Path) -> LocalRepoIdentity {
         git_common_dir: common.to_string_lossy().into_owned(),
         primary_root: canonical_path(root.to_string_lossy().as_ref()),
     }
+}
+
+#[test]
+fn fixture_line_endings_stay_clean_when_creator_reads_global_autocrlf() {
+    let temp = tempdir().unwrap();
+    let root = temp.path().join("repo");
+    init_repo(&root);
+    let global = temp.path().join("creator-global.config");
+    std::fs::write(&global, "[core]\n autocrlf = true\n eol = crlf\n").unwrap();
+    let target = temp.path().join("linked");
+    // Match the original failure: creation sees a platform/user line-ending
+    // policy, whereas the fixture cleanup helper ignores global Git config.
+    // Other inherited config, hooks and signing remain disabled per child.
+    let created = git_command(
+        &root,
+        &[
+            "worktree",
+            "add",
+            "-b",
+            "line-ending-fixture",
+            target.to_str().unwrap(),
+            "HEAD",
+        ],
+    )
+    .env("GIT_CONFIG_GLOBAL", &global)
+    .output()
+    .unwrap();
+    assert!(
+        created.status.success(),
+        "{}",
+        String::from_utf8_lossy(&created.stderr)
+    );
+    assert_eq!(
+        std::fs::read(target.join("tracked.txt")).unwrap(),
+        b"base\n"
+    );
+    let status = git_command(&target, &["status", "--porcelain"])
+        .output()
+        .unwrap();
+    assert!(status.status.success());
+    assert!(
+        status.stdout.is_empty(),
+        "{}",
+        String::from_utf8_lossy(&status.stdout)
+    );
+    // Do not force removal: a conversion mismatch must remain a test failure.
+    git(&root, &["worktree", "remove", target.to_str().unwrap()]);
+    assert!(!target.exists());
 }
 
 #[cfg(unix)]
