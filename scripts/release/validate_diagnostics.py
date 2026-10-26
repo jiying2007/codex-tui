@@ -6,6 +6,7 @@ import argparse
 import json
 import math
 from pathlib import Path
+from typing import Optional
 import re
 
 TIMINGS = ("p50Ms", "p95Ms", "p99Ms", "maxMs")
@@ -160,12 +161,12 @@ def validate_soak(report: dict, commit: str, rows: int = 50_000,
                 "sustained soak needs temporally separated resource samples")
 
 
-def validate_support_snapshot(manifest: dict, snapshot_path: Path) -> None:
+def validate_support_snapshot(manifest: dict, snapshot_path: Path, snapshot_raw: Optional[bytes] = None) -> None:
     entries = manifest.get("files")
     require(isinstance(entries, list), "support manifest has no file entries")
     matches = [entry for entry in entries if isinstance(entry, dict) and entry.get("file") == "snapshot.json"]
     require(len(matches) == 1, "support snapshot manifest entry must be unique")
-    raw = snapshot_path.read_bytes()
+    raw = snapshot_path.read_bytes() if snapshot_raw is None else snapshot_raw
     checksum = 0xcbf29ce484222325
     for byte in raw:
         checksum = ((checksum ^ byte) * 0x100000001b3) & 0xffffffffffffffff

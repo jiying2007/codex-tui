@@ -18,16 +18,10 @@ V14_COMPLETION_SCHEMA = "codex-tui/v1.4-completion/v1"
 HEX40 = re.compile(r"^[0-9a-fA-F]{40}$")
 
 
-def load(path: pathlib.Path) -> dict:
-    return json.loads(path.read_text(encoding="utf-8"))
-
-
-def sha256(path: pathlib.Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+def load_with_digest(path: pathlib.Path) -> tuple[dict, str]:
+    """Parse and hash identical evidence bytes to prevent read-back drift."""
+    raw = path.read_bytes()
+    return json.loads(raw.decode("utf-8")), hashlib.sha256(raw).hexdigest()
 
 
 def default_plan_path() -> pathlib.Path:
@@ -81,7 +75,7 @@ def main() -> int:
         raise SystemExit("--commit must be exactly 40 hexadecimal characters")
 
     plan_path = pathlib.Path(args.plan) if args.plan else default_plan_path()
-    plan = load(plan_path)
+    plan, plan_hash = load_with_digest(plan_path)
     validate_plan(plan)
 
     completion_path = (
@@ -91,9 +85,9 @@ def main() -> int:
     )
     automated_path = pathlib.Path(args.automated_qualification)
     protocol_path = pathlib.Path(args.protocol_manifest)
-    completion = load(completion_path)
-    automated = load(automated_path)
-    protocol = load(protocol_path)
+    completion, completion_hash = load_with_digest(completion_path)
+    automated, automated_hash = load_with_digest(automated_path)
+    protocol, protocol_hash = load_with_digest(protocol_path)
     active_scope_status = scope_status(plan, completion)
 
     if completion.get("stableReady") is not False:
@@ -158,7 +152,7 @@ def main() -> int:
     scope = {
         "status": active_scope_status,
         "schema": completion["schema"],
-        "manifestSha256": sha256(completion_path),
+        "manifestSha256": completion_hash,
         "targetVersion": completion.get("targetVersion"),
         "featureCompletionBaselineSha": completion.get("featureCompletionBaselineSha"),
         "stableReady": False,
@@ -173,12 +167,12 @@ def main() -> int:
         "phase": plan.get("phase"),
         "observedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "planSchema": plan["schema"],
-        "planSha256": sha256(plan_path),
+        "planSha256": plan_hash,
         "scopeCompletion": scope,
         "repositoryAutomatedQualification": {
             "status": "pass",
             "schema": automated["schema"],
-            "receiptSha256": sha256(automated_path),
+            "receiptSha256": automated_hash,
             "gates": {gate: gates[gate] for gate in required_gates},
         },
         "moduleRatchet": {
@@ -188,7 +182,7 @@ def main() -> int:
         "protocolReplay": {
             "status": "pass",
             "schema": protocol["schema"],
-            "manifestSha256": sha256(protocol_path),
+            "manifestSha256": protocol_hash,
             "fixtureCount": len(fixtures),
         },
         "securityGovernance": {

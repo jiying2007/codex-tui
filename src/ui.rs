@@ -8,6 +8,7 @@ use crate::operation::OperationState;
 use crate::planning::{PlanningAttention, SavedView, SavedViewLayout, ScratchState, WorkflowStage};
 use crate::text::{fit_display, sanitize_inline, truncate_display};
 mod board;
+mod composer;
 mod overlays;
 use board::render_board;
 #[cfg(test)]
@@ -16,7 +17,6 @@ mod registry;
 mod review;
 mod terminal;
 mod thread;
-
 #[cfg(test)]
 use crate::{pty::TerminalSize, terminal_drawer::TerminalProcessState};
 use overlays::{
