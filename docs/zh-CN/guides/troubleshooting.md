@@ -94,5 +94,5 @@ Forge 读取器把有界 8KiB 缓冲区放在堆上，避免缓冲区内嵌到�
 ## 提供最小脱敏证据
 <!-- docs-section: artifacts -->
 
-`codex-tui doctor bundle --output ./codex-tui-support` 生成脱敏元数据和摘要，分享前仍需检查内部主机名、个人路径、凭据、Prompt、原始日志和评论正文。提供最小复现命令、退出码、源码 SHA 和关联 CI Run ID，未获取的真实环境证据明确标为**尚未验证**。
+`codex-tui doctor bundle --offline --output ./codex-tui-support` 不启动 Codex App Server，仅采集本地脱敏元数据和摘要；真实账号资格须走单独授权的在线流程。分享前仍需检查内部主机名、个人路径、凭据、Prompt、原始日志和评论正文。提供最小复现命令、退出码、源码 SHA 和关联 CI Run ID，未获取的真实环境证据明确标为**尚未验证**。
 
