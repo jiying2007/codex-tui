@@ -2,11 +2,14 @@ use crate::pty::{PtyCommand, PtyEvent, PtyHandle, TerminalSize};
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
+fn nz(value: u16) -> std::num::NonZeroU16 {
+    std::num::NonZeroU16::new(value.max(1)).expect("positive terminal dimension")
+}
+
 pub const DEFAULT_DRAWER_ROWS: u16 = 12;
 pub const DEFAULT_DRAWER_COLS: u16 = 80;
 pub const DEFAULT_SCROLLBACK_LINES: usize = 2_000;
 const MAX_PTY_EVENTS_PER_DRAIN: usize = 16;
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum TerminalProcessState {
     Starting,
@@ -51,7 +54,6 @@ pub struct TerminalDrawerRuntime {
     mode_tail: Vec<u8>,
     bracketed_paste: bool,
 }
-
 impl Default for TerminalDrawerRuntime {
     fn default() -> Self {
         let size = TerminalSize {
@@ -60,7 +62,7 @@ impl Default for TerminalDrawerRuntime {
         };
         Self {
             handle: None,
-            parser: vt100::Parser::new(size.rows, size.cols, DEFAULT_SCROLLBACK_LINES),
+            parser: vt100::Parser::new(nz(size.rows), nz(size.cols), DEFAULT_SCROLLBACK_LINES),
             cwd: None,
             size,
             state: TerminalProcessState::Exited {
@@ -73,7 +75,6 @@ impl Default for TerminalDrawerRuntime {
         }
     }
 }
-
 impl TerminalDrawerRuntime {
     pub fn open(&mut self, cwd: impl Into<PathBuf>, size: TerminalSize) -> Result<()> {
         self.close();
@@ -87,7 +88,7 @@ impl TerminalDrawerRuntime {
             canonical.display()
         );
 
-        self.parser = vt100::Parser::new(size.rows, size.cols, DEFAULT_SCROLLBACK_LINES);
+        self.parser = vt100::Parser::new(nz(size.rows), nz(size.cols), DEFAULT_SCROLLBACK_LINES);
         self.handle = Some(PtyHandle::start(canonical.clone(), size)?);
         self.cwd = Some(canonical);
         self.size = size;
@@ -97,7 +98,6 @@ impl TerminalDrawerRuntime {
         self.bracketed_paste = false;
         Ok(())
     }
-
     pub fn is_open(&self) -> bool {
         self.handle.is_some()
     }
@@ -140,7 +140,7 @@ impl TerminalDrawerRuntime {
             .as_ref()
             .context("terminal drawer is not open")?;
         handle.send(PtyCommand::Resize(size))?;
-        self.parser.screen_mut().set_size(size.rows, size.cols);
+        self.parser.set_size(nz(size.rows), nz(size.cols));
         self.size = size;
         Ok(())
     }
@@ -388,7 +388,7 @@ mod tests {
         runtime
             .parser
             .screen_mut()
-            .set_size(requested.rows, requested.cols);
+            .set_size(nz(requested.rows), nz(requested.cols));
         runtime.size = requested;
 
         TerminalDrawerRuntime::observe_ready(
