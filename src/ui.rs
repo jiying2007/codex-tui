@@ -1411,9 +1411,15 @@ fn render_help(frame: &mut Frame<'_>, app: &AppState) {
     if area.width < 4 || area.height < 4 {
         return;
     }
-    // Advance by complete help entries instead of estimating physical wrap
-    // offsets; End always reaches the final entry on narrow SSH terminals.
-    let top = app.help_top.min(help_lines.len().saturating_sub(1));
+    // The scroll unit is a physical wrapped row, not a help entry.
+    let rows = help_lines
+        .iter()
+        .flat_map(|line| {
+            crate::conversation_viewport::WrappedRows::new(line, area.width - 2, 0)
+                .map(|span| Line::from(&line[span]))
+        })
+        .collect::<Vec<_>>();
+    let top = app.help_top.min(rows.len().saturating_sub(usize::from(area.height - 3)));
     let inner = Rect {
         x: area.x + 1,
         y: area.y + 1,
@@ -1426,9 +1432,9 @@ fn render_help(frame: &mut Frame<'_>, app: &AppState) {
         ..inner
     };
     let title = if app.language.is_simplified_chinese() {
-        format!(" 帮助 · 从 {}/{} 项查看 ", top + 1, help_lines.len())
+        format!(" 帮助 · 第 {}/{} 行 ", top + 1, rows.len())
     } else {
-        format!(" Help · from {}/{} ", top + 1, help_lines.len())
+        format!(" Help · row {}/{} ", top + 1, rows.len())
     };
     let controls = tr_language(
         app.language,
@@ -1438,14 +1444,7 @@ fn render_help(frame: &mut Frame<'_>, app: &AppState) {
     frame.render_widget(Clear, area);
     frame.render_widget(Block::bordered().title(title), area);
     frame.render_widget(
-        Paragraph::new(
-            help_lines
-                .iter()
-                .skip(top)
-                .map(|line| Line::from(*line))
-                .collect::<Vec<_>>(),
-        )
-        .wrap(Wrap { trim: true }),
+        Paragraph::new(rows.into_iter().skip(top).collect::<Vec<_>>()),
         inner,
     );
     frame.render_widget(
