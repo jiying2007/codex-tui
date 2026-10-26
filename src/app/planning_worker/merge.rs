@@ -8,10 +8,12 @@ pub(super) fn install(
     updates: BTreeMap<String, WorkCardProjection>,
     active_threads: &HashMap<String, usize>,
 ) {
-    if updates.is_empty() && cards.iter().all(|card| {
-        card.anchor.kind != SourceKind::CodexThread
-            || active_threads.contains_key(&card.anchor.value)
-    }) {
+    if updates.is_empty()
+        && cards.iter().all(|card| {
+            card.anchor.kind != SourceKind::CodexThread
+                || active_threads.contains_key(&card.anchor.value)
+        })
+    {
         return;
     }
     let mut retained = std::mem::take(cards);
