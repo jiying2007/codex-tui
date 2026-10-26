@@ -298,14 +298,12 @@ pub async fn create(output: Option<PathBuf>) -> Result<PathBuf> {
 }
 
 pub fn write_bundle(output: &Path, snapshot: &SupportSnapshot) -> Result<()> {
-    anyhow::ensure!(
-        !output.exists(),
-        "support bundle destination already exists: {}",
-        output.display()
-    );
-    fs::create_dir_all(output)
-        .with_context(|| format!("create support bundle {}", output.display()))?;
-
+    // Atomically claim the final directory: concurrent collectors must not overwrite.
+    if let Some(parent) = output.parent().filter(|path| !path.as_os_str().is_empty()) {
+        fs::create_dir_all(parent).context("create support bundle parent")?;
+    }
+    fs::create_dir(output)
+        .with_context(|| format!("create exclusive support bundle {}", output.display()))?;
     let privacy = concat!(
         "This bundle is intentionally metadata-only. It does not collect environment variables, ",
         "authentication tokens, prompts, transcripts, comment bodies, Git paths, repository names, ",
@@ -569,6 +567,8 @@ mod tests {
             );
         }
     }
+
+    include!("support_bundle/concurrent_tests.rs");
 
     #[test]
     fn checksums_are_stable() {
