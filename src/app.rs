@@ -63,6 +63,7 @@ mod registry;
 pub(crate) mod request_details;
 mod review;
 mod state;
+mod sort;
 mod thread_navigation;
 mod types;
 mod user_input;
@@ -74,6 +75,7 @@ pub use reducer::reduce;
 pub use types::{Action, ContextChoice, Effect, InputMode, View, ViewKind};
 
 use registry::{ensure_selection_visible, restore_selection};
+use sort::{compare_planning_cards, sort_planning_cards};
 
 // Executable help entries in src/ui.rs; keep the two arrays in lockstep.
 pub const HELP_ENTRY_COUNT: usize = 14;
@@ -995,24 +997,6 @@ fn normalize_pasted_input(mode: InputMode, value: &str) -> String {
     } else {
         sanitize_inline(value)
     }
-}
-
-fn sort_planning_cards(cards: &mut [WorkCardProjection]) {
-    cards.sort_by(|left, right| {
-        right
-            .overlay
-            .pinned
-            .cmp(&left.overlay.pinned)
-            .then_with(|| left.stage.cmp(&right.stage))
-            .then_with(|| {
-                left.overlay
-                    .priority
-                    .unwrap_or(i32::MAX)
-                    .cmp(&right.overlay.priority.unwrap_or(i32::MAX))
-            })
-            .then_with(|| left.title.cmp(&right.title))
-            .then_with(|| left.local_id.cmp(&right.local_id))
-    });
 }
 
 #[cfg(test)]
