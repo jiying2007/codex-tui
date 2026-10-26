@@ -20,7 +20,8 @@ pub(super) fn insert(state: &mut AppState, text: &str) -> bool {
     state.prompt_submissions.edited(&id);
     let draft = &mut state.thread_ui.entry(id.0).or_default().draft;
     let cursor = state.composer_cursor.min(draft.chars().count());
-    draft.insert_str(byte_offset(draft, cursor), text);
+    let offset = byte_offset(draft, cursor);
+    draft.insert_str(offset, text);
     state.composer_cursor = cursor.saturating_add(text.chars().count());
     state.composer_scroll_back = 0;
     true
@@ -32,7 +33,8 @@ pub(super) fn backspace(state: &mut AppState) -> bool {
     let cursor = state.composer_cursor.min(draft.chars().count());
     if cursor == 0 { return false; }
     state.prompt_submissions.edited(&id);
-    draft.remove(byte_offset(draft, cursor - 1));
+    let offset = byte_offset(draft, cursor - 1);
+    draft.remove(offset);
     state.composer_cursor = cursor - 1;
     state.composer_scroll_back = 0;
     true
