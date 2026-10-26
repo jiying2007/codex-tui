@@ -120,6 +120,7 @@ impl AppState {
             user_responses: Default::default(),
             show_help: false,
             help_top: 0,
+            help_max_top: help_scroll::Limit::new(HELP_ENTRY_COUNT - 1),
             should_quit: false,
             backend_status: BackendStatus::starting("unknown"),
             language: UiLanguage::English,
@@ -145,7 +146,6 @@ impl AppState {
             search_return_view: None,
         }
     }
-
     pub fn transcript_search_hit(&self) -> Option<&TranscriptSearchHit> {
         self.transcript_search_results
             .as_ref()

@@ -150,6 +150,7 @@
   "moduleRatchet": {
     "src/app.rs": 1022,
     "src/ui/composer.rs": 73,
+    "src/ui/help_wrapped_tests.rs": 43,
     "src/ui.rs": 1487,
     "src/app_server.rs": 2682,
     "src/main.rs": 2005,
@@ -310,6 +311,7 @@
     "src/app_server/watch_set.rs": 145,
     "src/app_server/watch_lifecycle.rs": 50,
     "src/app_server/watch_lifecycle/tests.rs": 161,
+    "src/app/help_scroll.rs": 25,
     "src/app/history_cache.rs": 303,
     "src/app/thread_navigation.rs": 91,
     "src/app_server/subscriptions/fault_tests.rs": 231,

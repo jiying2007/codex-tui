@@ -1777,7 +1777,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::MoveHelp(delta) => {
             if state.show_help {
                 state.help_top = ((state.help_top as i32).saturating_add(delta))
-                    .clamp(0, (HELP_ENTRY_COUNT - 1) as i32)
+                    .clamp(0, state.help_max_top.get() as i32)
                     as usize;
             }
         }
