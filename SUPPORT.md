@@ -23,7 +23,7 @@ Run `codex-tui doctor forge` **from the affected repository**, after setting up 
 ## Creating a useful issue
 <!-- docs-section: issue -->
 
-Use the bilingual [bug form](.github/ISSUE_TEMPLATE/bug_report.yml). Provide codex-tui version and exact SHA, OS/terminal (including Windows→SSH Ubuntu, TERM), Codex CLI version/target type, whether the case is real or `--fake`, expected vs actual behavior, minimal sanitized commands, and the names/IDs of CI runs if relevant. Use `codex-tui doctor bundle --output ./codex-tui-support` only after verifying privacy; do not upload sensitive files. The maintainer cannot infer real-provider PASS from hosted fixtures.
+Use the bilingual [bug form](.github/ISSUE_TEMPLATE/bug_report.yml). Provide codex-tui version and exact SHA, OS/terminal (including Windows→SSH Ubuntu, TERM), Codex CLI version/target type, whether the case is real or `--fake`, expected vs actual behavior, minimal sanitized commands, and the names/IDs of CI runs if relevant. Use `codex-tui doctor bundle --offline --output ./codex-tui-support` for ordinary metadata-only collection without launching a Codex App Server. Review privacy before sharing and never upload sensitive files; authenticated qualification uses a separate explicit online procedure. The maintainer cannot infer real-provider PASS from hosted fixtures.
 
 ## Known limitations and escalation
 <!-- docs-section: limits -->

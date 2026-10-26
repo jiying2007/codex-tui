@@ -23,7 +23,7 @@ codex-tui doctor terminal
 ## 如何提交有效 Issue
 <!-- docs-section: issue -->
 
-使用 [中英 Bug 表单](.github/ISSUE_TEMPLATE/bug_report.yml)，注明版本/源码 SHA、系统和终端（含 Windows→SSH Ubuntu、TERM）、Codex 版本与目标类型、真实/`--fake` 场景、期望与实际表现、脱敏的复现命令以及相关 CI Run ID。`codex-tui doctor bundle --output ./codex-tui-support` 生成的材料也应先自行复核隐私；模拟 CI 不能替代真实环境 PASS。
+使用 [中英 Bug 表单](.github/ISSUE_TEMPLATE/bug_report.yml)，注明版本/源码 SHA、系统和终端（含 Windows→SSH Ubuntu、TERM）、Codex 版本与目标类型、真实/`--fake` 场景、期望与实际表现、脱敏的复现命令以及相关 CI Run ID。普通排障请用 `codex-tui doctor bundle --offline --output ./codex-tui-support` 只读采集本地脱敏元数据，避免启动 Codex App Server；分享前仍需自行复核隐私。真实账号资格须显式走独立在线流程，模拟 CI 不能替代真实环境 PASS。
 
 ## 限制与处理边界
 <!-- docs-section: limits -->
