@@ -31,7 +31,7 @@ two-face = { version = "0.5.2", default-features = false, features = ["syntect-f
 unicode-segmentation = "1"
 unicode-width = "0.2"
 url = "2.5"
-vt100 = "0.16.2"
+vt100 = "0.18.1"
 
 [dev-dependencies]
 divan = "0.1"
