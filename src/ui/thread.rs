@@ -37,7 +37,6 @@ fn render_item_scrollbar(
         &mut state,
     );
 }
-
 pub(super) fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area: Rect) {
     if app.request_details_open() {
         request_details::render(frame, app, area);
@@ -59,7 +58,6 @@ pub(super) fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
             Constraint::Length(area.height.saturating_sub(1).min(1)),
         ])
         .split(area);
-
     let thread = app.threads.iter().find(|thread| thread.id.0 == thread_id);
     let title = thread
         .map(ThreadSummary::display_title)
@@ -73,7 +71,6 @@ pub(super) fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
         .block(Block::bordered().title(tr(app, " Thread ", " 会话 "))),
         chunks[0],
     );
-
     let ui = app.thread_ui.get(thread_id).cloned().unwrap_or_default();
     let pending_request = app.current_pending_request();
     let body_has_border = chunks[1].width >= 3 && chunks[1].height >= 3;
@@ -105,7 +102,6 @@ pub(super) fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
     let history_height = body_height.saturating_sub(request_lines.len() as u16);
     app.thread_viewport_size.set((body_width, history_height));
     let mut scrollbar = (0, 0, 0);
-
     let mut window_start = 0;
     let mut window_end = 0;
     let mut total_items = 0;
@@ -304,8 +300,8 @@ pub(super) fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
             if app.input_mode == InputMode::Composer {
                 tr(
                     app,
-                    " Composer · Enter send · Esc keep draft ",
-                    " 编辑消息 · Enter 发送 · Esc 保留草稿 ",
+                    " Composer · ←/→ cursor · PgUp/PgDn read · Enter send · Esc keep ",
+                    " 编辑消息 · ←/→ 光标 · PgUp/PgDn 查看 · Enter 发送 · Esc 保留 ",
                 )
             } else {
                 tr(app, " Draft · a edit ", " 草稿 · a 编辑 ")
@@ -339,8 +335,12 @@ pub(super) fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
             ),
         )
     };
+    let (composer_text, composer_top) =
+        super::composer::prepare(app, composer_text, &ui.draft, chunks[2]);
     frame.render_widget(
-        Paragraph::new(composer_text).block(Block::bordered().title(composer_title)),
+        Paragraph::new(composer_text)
+            .block(Block::bordered().title(composer_title))
+            .scroll((composer_top, 0)),
         chunks[2],
     );
     frame.render_widget(

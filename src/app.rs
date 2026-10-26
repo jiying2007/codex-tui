@@ -43,7 +43,7 @@ use crate::transcript_search::{
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::time::Instant;
-
+mod composer;
 mod context_menu;
 mod forge_review;
 mod history_cache;
@@ -72,14 +72,12 @@ mod watch;
 
 pub use queue_confirmation::QueueConfirmation;
 pub use reducer::reduce;
-pub use types::{Action, ContextChoice, Effect, InputMode, View, ViewKind};
-
 use registry::{ensure_selection_visible, restore_selection};
 use sort::{compare_planning_cards, sort_planning_cards};
+pub use types::{Action, ContextChoice, Effect, InputMode, View, ViewKind};
 
 // Executable help entries in src/ui.rs; keep the two arrays in lockstep.
 pub const HELP_ENTRY_COUNT: usize = 14;
-
 const REGISTRY_RECENT_LIMIT: usize = 100;
 const CONVERSATION_CACHE_LIMIT: usize = 16;
 const GIT_REVIEW_CACHE_LIMIT: usize = 4;
@@ -249,6 +247,8 @@ pub struct AppState {
     pub transcript_search_active_hit: Option<TranscriptSearchHit>,
     pub input_mode: InputMode,
     pub input_buffer: String,
+    pub composer_cursor: usize,
+    pub composer_scroll_back: usize,
     input_original: String,
     alias_target: Option<ThreadId>,
     mutation_editor: Option<mutation_editor::MutationEditor>,
