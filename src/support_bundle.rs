@@ -299,7 +299,7 @@ pub async fn create(output: Option<PathBuf>) -> Result<PathBuf> {
 
 pub fn write_bundle(output: &Path, snapshot: &SupportSnapshot) -> Result<()> {
     // Atomically claim the final directory: concurrent collectors must not overwrite.
-    if let Some(parent) = output.parent() {
+    if let Some(parent) = output.parent().filter(|path| !path.as_os_str().is_empty()) {
         fs::create_dir_all(parent).context("create support bundle parent")?;
     }
     fs::create_dir(output)
