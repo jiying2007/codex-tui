@@ -1384,9 +1384,9 @@ const HELP_LINES: &[&str] = &[
 ];
 
 const HELP_LINES_ZH: &[&str] = &[
-    "全局: ! 最近提醒 · = 绑定 · 1–9 直达 · ? 帮助 · Ctrl+K 命令面板 · / 搜索 · . 操作 · Esc 返回",
+    "全局: ! 最近提醒 · = 绑定 · 1–9 直达 · ? 帮助 · Ctrl+K 命令面板 · / 搜索 · Ctrl+F 全文搜索 · . 操作 · Esc 返回",
     "任务中心: j/k 移动 · Enter 打开 · Space 待处理 · l 仅本机 · g 仅仓库 · h 最近/全部历史 · p 固定 · e 别名 · x 已处理",
-    "会话: a 编辑消息 · d 请求详情 · y/n/c 审批 · i 回答 · Ctrl+C 中断 · r 评审",
+    "会话: a 编辑消息 · q 会话队列 · d 请求详情 · y/n/c 审批 · i 回答 · Ctrl+C 中断 · r 评审",
     "会话: PageUp/PageDown 滚动 · Home 已加载历史开头 · End 跟随最新",
     "请求详情: ↑/↓ 或 PageUp/PageDown 滚动 · Home/End · Esc 返回，不提交响应",
     "评审: j/k 文件 · w 单词级 diff · e 编辑器 · o 外部打开 · . Forge 操作 · PageUp/PageDown · Esc",
