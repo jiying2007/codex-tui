@@ -46,7 +46,6 @@ mod tests {
         let next = app.prompt_submissions.begin(&thread).expect("capacity released");
         assert_ne!(next, ticket);
     }
-
     #[test]
     fn actor_exit_closes_acknowledged_but_unread_history() {
         let mut app = AppState::new(vec![]);
