@@ -94,5 +94,5 @@ Planning edits read a requested WorkCard or ScratchWork by its key. A full plann
 ## Share a minimal safe diagnostic
 <!-- docs-section: artifacts -->
 
-`codex-tui doctor bundle --output ./codex-tui-support` retains redacted metadata and checksums. Check its contents yourself before sharing; remove credentials, internal host names, personal paths, prompts, raw logs and comment bodies. Include minimal command and exit status, the exact Git commit and CI Run IDs when available. Treat unverified real-environment evidence as **not yet verified**.
+`codex-tui doctor bundle --offline --output ./codex-tui-support` collects local redacted metadata and checksums without starting Codex App Server; real authenticated qualification requires a separately authorized online procedure. Check its contents yourself before sharing; remove credentials, internal host names, personal paths, prompts, raw logs and comment bodies. Include minimal command and exit status, the exact Git commit and CI Run IDs when available. Treat unverified real-environment evidence as **not yet verified**.
 
