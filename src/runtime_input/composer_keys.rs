@@ -2,9 +2,8 @@
 use super::*;
 
 pub(super) fn action(key: KeyEvent) -> Option<Action> {
-    if key.modifiers.intersects(
-        KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER,
-    ) {
+    let blocked = KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SUPER;
+    if key.modifiers.intersects(blocked) {
         return None;
     }
     match key.code {
@@ -27,10 +26,14 @@ mod tests {
     #[test]
     fn editing_keys_do_not_leak_to_thread_history() {
         let plain = KeyModifiers::NONE;
-        assert_eq!(action(KeyEvent::new(KeyCode::Home, plain)), Some(Action::ComposerCursorBoundary(false)));
-        assert_eq!(action(KeyEvent::new(KeyCode::Left, plain)), Some(Action::ComposerCursorMove(-1)));
-        assert_eq!(action(KeyEvent::new(KeyCode::PageUp, plain)), Some(Action::ComposerViewScroll(3)));
+        let home = action(KeyEvent::new(KeyCode::Home, plain));
+        let left = action(KeyEvent::new(KeyCode::Left, plain));
+        let page = action(KeyEvent::new(KeyCode::PageUp, plain));
+        assert_eq!(home, Some(Action::ComposerCursorBoundary(false)));
+        assert_eq!(left, Some(Action::ComposerCursorMove(-1)));
+        assert_eq!(page, Some(Action::ComposerViewScroll(3)));
         assert_eq!(action(KeyEvent::new(KeyCode::Enter, plain)), None);
-        assert_eq!(action(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)), None);
+        let ctrl = action(KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL));
+        assert_eq!(ctrl, None);
     }
 }
