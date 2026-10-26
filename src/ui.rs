@@ -7,7 +7,6 @@ use crate::i18n::{UiLanguage, pick};
 use crate::operation::OperationState;
 use crate::planning::{PlanningAttention, SavedView, SavedViewLayout, ScratchState, WorkflowStage};
 use crate::text::{fit_display, sanitize_inline, truncate_display};
-
 mod board;
 mod overlays;
 use board::render_board;
