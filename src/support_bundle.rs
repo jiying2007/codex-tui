@@ -304,7 +304,6 @@ pub fn write_bundle(output: &Path, snapshot: &SupportSnapshot) -> Result<()> {
     }
     fs::create_dir(output)
         .with_context(|| format!("create exclusive support bundle {}", output.display()))?;
-
     let privacy = concat!(
         "This bundle is intentionally metadata-only. It does not collect environment variables, ",
         "authentication tokens, prompts, transcripts, comment bodies, Git paths, repository names, ",
