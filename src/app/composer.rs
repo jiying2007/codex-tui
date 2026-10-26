@@ -10,13 +10,17 @@ fn byte_offset(draft: &str, position: usize) -> usize {
 }
 
 pub(super) fn open(state: &mut AppState, thread: &ThreadId) {
-    state.composer_cursor = state.thread_ui.get(&thread.0)
+    state.composer_cursor = state
+        .thread_ui
+        .get(&thread.0)
         .map_or(0, |ui| ui.draft.chars().count());
     state.composer_scroll_back = 0;
 }
 
 pub(super) fn insert(state: &mut AppState, text: &str) -> bool {
-    let Some(id) = state.current_thread_id().cloned() else { return false };
+    let Some(id) = state.current_thread_id().cloned() else {
+        return false;
+    };
     state.prompt_submissions.edited(&id);
     let draft = &mut state.thread_ui.entry(id.0).or_default().draft;
     let cursor = state.composer_cursor.min(draft.chars().count());
@@ -28,10 +32,14 @@ pub(super) fn insert(state: &mut AppState, text: &str) -> bool {
 }
 
 pub(super) fn backspace(state: &mut AppState) -> bool {
-    let Some(id) = state.current_thread_id().cloned() else { return false };
+    let Some(id) = state.current_thread_id().cloned() else {
+        return false;
+    };
     let draft = &mut state.thread_ui.entry(id.0.clone()).or_default().draft;
     let cursor = state.composer_cursor.min(draft.chars().count());
-    if cursor == 0 { return false; }
+    if cursor == 0 {
+        return false;
+    }
     state.prompt_submissions.edited(&id);
     let offset = byte_offset(draft, cursor - 1);
     draft.remove(offset);
@@ -41,15 +49,24 @@ pub(super) fn backspace(state: &mut AppState) -> bool {
 }
 
 pub(super) fn move_cursor(state: &mut AppState, delta: i32) {
-    let len = state.current_thread_ui().map_or(0, |ui| ui.draft.chars().count());
-    state.composer_cursor = state.composer_cursor.saturating_add_signed(delta as isize).min(len);
+    let len = state
+        .current_thread_ui()
+        .map_or(0, |ui| ui.draft.chars().count());
+    state.composer_cursor = state
+        .composer_cursor
+        .saturating_add_signed(delta as isize)
+        .min(len);
     state.composer_scroll_back = 0;
 }
 
 pub(super) fn boundary(state: &mut AppState, end: bool) {
     state.composer_cursor = if end {
-        state.current_thread_ui().map_or(0, |ui| ui.draft.chars().count())
-    } else { 0 };
+        state
+            .current_thread_ui()
+            .map_or(0, |ui| ui.draft.chars().count())
+    } else {
+        0
+    };
     state.composer_scroll_back = 0;
 }
 
@@ -57,7 +74,9 @@ pub(super) fn scroll(state: &mut AppState, delta: i32) {
     if delta >= 0 {
         state.composer_scroll_back = state.composer_scroll_back.saturating_add(delta as usize);
     } else {
-        state.composer_scroll_back = state.composer_scroll_back.saturating_sub(delta.unsigned_abs() as usize);
+        state.composer_scroll_back = state
+            .composer_scroll_back
+            .saturating_sub(delta.unsigned_abs() as usize);
     }
 }
 
