@@ -6,6 +6,29 @@ use tempfile::tempdir;
 
 const WAIT: Duration = Duration::from_secs(8);
 
+#[cfg(windows)]
+fn windows_fixture_command(system_root: &std::path::Path) -> portable_pty::CommandBuilder {
+    // Build each component with native separators: CMD parses its own command line,
+    // so a mixed-separator argv[0] must not introduce a slash-prefixed option.
+    let mut command =
+        portable_pty::CommandBuilder::new(system_root.join("System32").join("cmd.exe"));
+    command.arg("/D"); // Disable registry AutoRun commands.
+    command
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_fixture_uses_native_executable_path_and_disables_autorun() {
+    let command = windows_fixture_command(std::path::Path::new(r"C:\Windows"));
+    assert_eq!(
+        command.get_argv(),
+        &vec![
+            std::ffi::OsString::from(r"C:\Windows\System32\cmd.exe"),
+            std::ffi::OsString::from("/D"),
+        ]
+    );
+}
+
 // Never inherit login-shell startup files or a caller's executable selection.
 fn start_fixture(cwd: &std::path::Path, size: TerminalSize) -> anyhow::Result<PtyHandle> {
     #[cfg(unix)]
@@ -18,7 +41,7 @@ fn start_fixture(cwd: &std::path::Path, size: TerminalSize) -> anyhow::Result<Pt
     #[cfg(windows)]
     anyhow::ensure!(system_root.is_absolute(), "SystemRoot must be absolute");
     #[cfg(windows)]
-    let mut command = portable_pty::CommandBuilder::new(system_root.join("System32/cmd.exe"));
+    let mut command = windows_fixture_command(&system_root);
     command.env_clear();
     #[cfg(unix)]
     {
@@ -27,7 +50,6 @@ fn start_fixture(cwd: &std::path::Path, size: TerminalSize) -> anyhow::Result<Pt
     }
     #[cfg(windows)]
     {
-        command.arg("/D"); // Disable registry AutoRun commands.
         command.env("SystemRoot", &system_root);
         command.env("PATH", system_root.join("System32"));
     }
