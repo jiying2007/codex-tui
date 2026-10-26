@@ -7,8 +7,8 @@ use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
-    text::{Line, Span},
-    widgets::{Block, Paragraph, Wrap},
+    text::Line,
+    widgets::{Block, List, ListState, Paragraph, Wrap},
 };
 
 fn safe_review_file_row(prefix: &str, status: &str, path: &str) -> String {
@@ -162,22 +162,18 @@ pub(super) fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
         );
     } else {
         let evidence = review_evidence_lines(app, thread_id);
-        let files = review
-            .changes
-            .iter()
-            .enumerate()
-            .map(|(index, change)| {
-                let selected = index == app.review_selected;
-                let prefix = if selected { ">" } else { " " };
-                let text = safe_review_file_row(prefix, &change.status_label(), &change.path);
-                let style = if selected {
-                    Style::default().add_modifier(Modifier::REVERSED)
-                } else {
-                    Style::default()
-                };
-                Line::from(Span::styled(text, style))
-            })
-            .collect::<Vec<_>>();
+        // Keep one row per file so long paths cannot hide the current selection.
+        let files = List::new(
+            review
+                .changes
+                .iter()
+                .map(|change| safe_review_file_row("", &change.status_label(), &change.path)),
+        )
+        .highlight_symbol(">")
+        .highlight_style(Style::default().add_modifier(Modifier::REVERSED));
+        let mut selected_file = ListState::default().with_selected(
+            (app.review_selected < review.changes.len()).then_some(app.review_selected),
+        );
 
         let cached =
             cached_review_diff(thread_id, review.observed_at_unix_ms, app.review_word_diff);
@@ -228,15 +224,14 @@ pub(super) fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
                     .wrap(Wrap { trim: false }),
                 left[0],
             );
-            frame.render_widget(
-                Paragraph::new(files)
-                    .block(Block::bordered().title(format!(
-                        " {} ({}) ",
-                        tr(app, "Changed files", "变更文件"),
-                        review.changes.len()
-                    )))
-                    .wrap(Wrap { trim: false }),
+            frame.render_stateful_widget(
+                files.block(Block::bordered().title(format!(
+                    " {} ({}) ",
+                    tr(app, "Changed files", "变更文件"),
+                    review.changes.len()
+                ))),
                 left[1],
+                &mut selected_file,
             );
             frame.render_widget(
                 Paragraph::new(diff_lines)
@@ -265,11 +260,10 @@ pub(super) fn render_review(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
                     .wrap(Wrap { trim: false }),
                 rows[0],
             );
-            frame.render_widget(
-                Paragraph::new(files)
-                    .block(Block::bordered().title(tr(app, " Changed files ", " 变更文件 ")))
-                    .wrap(Wrap { trim: false }),
+            frame.render_stateful_widget(
+                files.block(Block::bordered().title(tr(app, " Changed files ", " 变更文件 "))),
                 rows[1],
+                &mut selected_file,
             );
             frame.render_widget(
                 Paragraph::new(diff_lines)
