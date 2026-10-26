@@ -1249,7 +1249,7 @@ fn help_reaches_last_english_and_chinese_entries_on_narrow_ttys() {
         let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
         app.language = language;
         app.show_help = true;
-        app.help_top = crate::app::HELP_ENTRY_COUNT - 1;
+        app.help_top = 4096;
         let mut terminal = Terminal::new(TestBackend::new(60, 24)).unwrap();
         terminal.draw(|frame| render(frame, &app)).unwrap();
         let buffer = terminal.backend().buffer();
