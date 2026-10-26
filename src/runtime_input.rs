@@ -38,7 +38,6 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
     if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
         return vec![];
     }
-
     // Details are a local reading surface. No approval or global write shortcut
     // can reach the request while the operator is still inspecting its scope.
     if app.request_details_open() {
@@ -54,7 +53,6 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
         };
         return reduce(app, action);
     }
-
     if app.terminal_focused {
         if is_terminal_release_key(key) {
             return reduce(app, Action::SetTerminalFocus(false));
