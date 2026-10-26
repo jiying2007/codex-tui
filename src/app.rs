@@ -72,7 +72,6 @@ mod watch;
 pub use queue_confirmation::QueueConfirmation;
 pub use reducer::reduce;
 pub use types::{Action, ContextChoice, Effect, InputMode, View, ViewKind};
-
 use registry::{ensure_selection_visible, restore_selection};
 
 // Executable help entries in src/ui.rs; keep the two arrays in lockstep.
@@ -230,6 +229,7 @@ pub struct AppState {
     user_responses: user_response::UserResponses,
     pub show_help: bool,
     pub help_top: usize,
+    pub(crate) help_max_top: std::cell::Cell<usize>,
     pub should_quit: bool,
     pub backend_status: BackendStatus,
     pub language: UiLanguage,
