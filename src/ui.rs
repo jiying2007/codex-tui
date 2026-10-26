@@ -1419,7 +1419,8 @@ fn render_help(frame: &mut Frame<'_>, app: &AppState) {
                 .map(|span| Line::from(&line[span]))
         })
         .collect::<Vec<_>>();
-    let top = app.help_top.min(rows.len().saturating_sub(usize::from(area.height - 3)));
+    let scrollable = rows.len().saturating_sub(usize::from(area.height - 3));
+    let top = app.help_top.min(scrollable);
     let inner = Rect {
         x: area.x + 1,
         y: area.y + 1,
