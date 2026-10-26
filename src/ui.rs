@@ -1398,7 +1398,6 @@ const HELP_LINES_ZH: &[&str] = &[
     "终端聚焦: 按键发送给 PTY · F6 返回应用 · Ctrl+] 备用 · Shift+PgUp/PgDn 回滚",
     "权限边界: Codex/Git/Forge 保持权威来源；codex-tui 只保存操作员状态。",
 ];
-
 fn render_help(frame: &mut Frame<'_>, app: &AppState) {
     let area = centered_rect(90, 84, frame.area());
     let help_lines = if app.language.is_simplified_chinese() {
