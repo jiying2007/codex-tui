@@ -120,7 +120,7 @@ impl AppState {
             user_responses: Default::default(),
             show_help: false,
             help_top: 0,
-            help_max_top: std::cell::Cell::new(HELP_ENTRY_COUNT - 1),
+            help_max_top: help_scroll::Limit::new(HELP_ENTRY_COUNT - 1),
             should_quit: false,
             backend_status: BackendStatus::starting("unknown"),
             language: UiLanguage::English,
