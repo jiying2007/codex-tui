@@ -14,12 +14,10 @@ from validate_diagnostics import validate_scale, validate_soak, validate_support
 HEX40 = re.compile(r"^[0-9a-fA-F]{40}$")
 
 
-def sha256(path: pathlib.Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
+def read_evidence(path: pathlib.Path) -> tuple[dict, str, bytes]:
+    """Bind validation and the signed digest to the same input bytes."""
+    raw = path.read_bytes()
+    return json.loads(raw.decode("utf-8")), hashlib.sha256(raw).hexdigest(), raw
 
 
 def main() -> int:
@@ -42,10 +40,10 @@ def main() -> int:
     soak_path = pathlib.Path(args.soak)
     support_path = pathlib.Path(args.support_manifest)
     support_snapshot_path = pathlib.Path(args.support_snapshot)
-    failure_matrix = json.loads(failure_matrix_path.read_text(encoding="utf-8"))
-    scale = json.loads(scale_path.read_text(encoding="utf-8"))
-    soak = json.loads(soak_path.read_text(encoding="utf-8"))
-    support_snapshot = json.loads(support_snapshot_path.read_text(encoding="utf-8"))
+    failure_matrix, failure_hash, _ = read_evidence(failure_matrix_path)
+    scale, scale_hash, _ = read_evidence(scale_path)
+    soak, soak_hash, _ = read_evidence(soak_path)
+    support_snapshot, snapshot_hash, snapshot_raw = read_evidence(support_snapshot_path)
 
     if failure_matrix.get("schema") != "codex-tui/failure-matrix/v2":
         raise SystemExit("unexpected Failure Matrix schema")
@@ -56,12 +54,12 @@ def main() -> int:
         evidence = case.get("evidence")
         if not isinstance(evidence, list) or not evidence:
             raise SystemExit(f"Failure Matrix case {case.get('id')} has no evidence")
-    support = json.loads(support_path.read_text(encoding="utf-8"))
+    support, support_hash, _ = read_evidence(support_path)
 
     try:
         validate_scale(scale, args.commit.lower())
         validate_soak(soak, args.commit.lower())
-        validate_support_snapshot(support, support_snapshot_path)
+        validate_support_snapshot(support, support_snapshot_path, snapshot_raw)
         if args.require_offline_support or support_snapshot.get("collectionMode") == "offline":
             validate_offline_support(support_snapshot)
     except ValueError as error:
@@ -107,11 +105,11 @@ def main() -> int:
             "supportBundleRedaction": "pass",
         },
         "artifacts": {
-            "failureMatrixSha256": sha256(failure_matrix_path),
-            "scaleEvidenceSha256": sha256(scale_path),
-            "soakEvidenceSha256": sha256(soak_path),
-            "supportManifestSha256": sha256(support_path),
-            "supportSnapshotSha256": sha256(support_snapshot_path),
+            "failureMatrixSha256": failure_hash,
+            "scaleEvidenceSha256": scale_hash,
+            "soakEvidenceSha256": soak_hash,
+            "supportManifestSha256": support_hash,
+            "supportSnapshotSha256": snapshot_hash,
         },
     }
 

@@ -264,6 +264,7 @@
     "src/soak.rs": 387,
     "src/store.rs": 343,
     "src/support_bundle.rs": 577,
+    "src/support_bundle/concurrent_tests.rs": 34,
     "src/terminal.rs": 131,
     "src/terminal_drawer.rs": 439,
     "src/text.rs": 165,
