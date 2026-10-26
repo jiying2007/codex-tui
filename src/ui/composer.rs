@@ -47,7 +47,7 @@ mod tests {
     fn long_drafts_reveal_tail_and_remain_scrollable() {
         let mut app = AppState::new(vec![]);
         app.input_mode = InputMode::Composer;
-        let draft = format!("{}TAIL_SENTINEL", "A".repeat(100));
+        let draft = format!("{}TAIL_SENTINEL", "A".repeat(250));
         app.composer_cursor = draft.chars().count();
         let area = Rect::new(0, 0, 80, 4);
         let (full, top) = prepare(&app, format!("{draft}\nstatus"), &draft, area);
