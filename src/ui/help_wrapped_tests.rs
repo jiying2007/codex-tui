@@ -29,8 +29,8 @@ fn twenty_column_help_reaches_both_ends_in_both_languages() {
         app.language = language;
         app.show_help = true;
         app.help_top = 0;
-        assert!(screen(&app).contains(first), "first row hidden for {language:?}");
+        assert!(screen(&app).contains(first));
         app.help_top = 4096;
-        assert!(screen(&app).contains(last), "last row hidden for {language:?}");
+        assert!(screen(&app).contains(last));
     }
 }
