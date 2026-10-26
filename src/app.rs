@@ -72,8 +72,8 @@ mod watch;
 
 pub use queue_confirmation::QueueConfirmation;
 pub use reducer::reduce;
-pub use types::{Action, ContextChoice, Effect, InputMode, View, ViewKind};
 use registry::{ensure_selection_visible, restore_selection};
+pub use types::{Action, ContextChoice, Effect, InputMode, View, ViewKind};
 // Executable help entries in src/ui.rs; keep the two arrays in lockstep.
 pub const HELP_ENTRY_COUNT: usize = 14;
 
