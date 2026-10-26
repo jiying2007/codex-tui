@@ -64,6 +64,7 @@ impl Output {
             .iter()
             .map(|note| (&note.owner, note))
             .collect::<BTreeMap<_, _>>();
+        let mut updates = BTreeMap::new();
         for thread in changed {
             let anchor = SourceRef::codex_thread(&thread.id);
             let mut card = reconcile_thread_card_with_goal_and_forge(
@@ -82,17 +83,9 @@ impl Output {
             if let Some(note) = notes.get(&anchor) {
                 card.overlay.note = Some(note.text.clone());
             }
-            if let Some(index) = self.by_thread.get(&thread.id.0) {
-                self.cards[*index] = card;
-            } else {
-                self.cards.push(card);
-            }
+            updates.insert(thread.id.0.clone(), card);
         }
-        self.cards.retain(|card| {
-            card.anchor.kind != SourceKind::CodexThread
-                || state.thread_index_by_id.contains_key(&card.anchor.value)
-        });
-        sort_planning_cards(&mut self.cards);
+        super::merge::install(&mut self.cards, updates, &state.thread_index_by_id);
         self.by_thread = self
             .cards
             .iter()
