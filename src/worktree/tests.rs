@@ -47,14 +47,60 @@ async fn queued_destructive_mutation_requires_fresh_admission_proof() {
     assert!(error.to_string().contains("snapshot expired"));
 }
 
-fn git(cwd: &Path, args: &[&str]) {
-    let status = std::process::Command::new("git")
+fn git_command(cwd: &Path, args: &[&str]) -> std::process::Command {
+    let mut command = std::process::Command::new("git");
+    for (key, _) in std::env::vars_os() {
+        if key
+            .to_string_lossy()
+            .to_ascii_uppercase()
+            .starts_with("GIT_")
+        {
+            command.env_remove(key);
+        }
+    }
+    let null = if cfg!(windows) { "NUL" } else { "/dev/null" };
+    command
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_SYSTEM", null)
+        .env("GIT_CONFIG_GLOBAL", null)
+        .env("GIT_CONFIG_COUNT", "0")
+        .env_remove("GIT_CONFIG_PARAMETERS")
+        .env("GIT_TEMPLATE_DIR", "")
+        .args([
+            "-c",
+            &format!("core.hooksPath={null}"),
+            "-c",
+            "commit.gpgsign=false",
+            "-c",
+            "tag.gpgsign=false",
+        ])
         .arg("-C")
         .arg(cwd)
-        .args(args)
-        .status()
-        .expect("spawn git");
+        .args(args);
+    command
+}
+
+fn git(cwd: &Path, args: &[&str]) {
+    let status = git_command(cwd, args).status().expect("spawn git");
     assert!(status.success(), "git command failed: {args:?}");
+    if args.first() == Some(&"init") {
+        // These temporary repositories are also exercised by production Git
+        // callers, so neutralize inherited hooks/signing/fsmonitor locally.
+        let null = if cfg!(windows) { "NUL" } else { "/dev/null" };
+        for (key, value) in [
+            ("core.hooksPath", null),
+            ("commit.gpgsign", "false"),
+            ("tag.gpgsign", "false"),
+            ("core.fsmonitor", "false"),
+        ] {
+            assert!(
+                git_command(cwd, &["config", "--local", key, value])
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+        }
+    }
 }
 
 fn init_repo(root: &Path) -> LocalRepoIdentity {
@@ -69,10 +115,7 @@ fn init_repo(root: &Path) -> LocalRepoIdentity {
 }
 
 fn futures_lite_probe(root: &Path) -> LocalRepoIdentity {
-    let common = std::process::Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(["rev-parse", "--git-common-dir"])
+    let common = git_command(root, &["rev-parse", "--git-common-dir"])
         .output()
         .expect("git rev-parse");
     assert!(common.status.success());

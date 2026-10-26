@@ -79,14 +79,147 @@ async fn capped_reader_bounds_memory_even_at_utf8_boundary() {
     assert!(!display.is_empty());
 }
 
+pub(super) fn isolate_git_environment(command: &mut std::process::Command) {
+    // Per-child only: parallel tests must not rewrite the test runner's env.
+    for (key, _) in std::env::vars_os() {
+        if key
+            .to_string_lossy()
+            .to_ascii_uppercase()
+            .starts_with("GIT_")
+        {
+            command.env_remove(key);
+        }
+    }
+    let null = if cfg!(windows) { "NUL" } else { "/dev/null" };
+    command
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .env("GIT_CONFIG_SYSTEM", null)
+        .env("GIT_CONFIG_GLOBAL", null)
+        .env("GIT_CONFIG_COUNT", "0")
+        .env_remove("GIT_CONFIG_PARAMETERS")
+        .env("GIT_TEMPLATE_DIR", "")
+        .args([
+            "-c",
+            &format!("core.hooksPath={null}"),
+            "-c",
+            "commit.gpgsign=false",
+            "-c",
+            "tag.gpgsign=false",
+        ]);
+}
+
+pub(super) fn git_command(cwd: &Path, args: &[&str]) -> std::process::Command {
+    let mut command = std::process::Command::new("git");
+    isolate_git_environment(&mut command);
+    command.arg("-C").arg(cwd).args(args);
+    command
+}
+
+pub(super) fn protect_fixture_repository(cwd: &Path) {
+    // Production read/mutation code subsequently uses this temporary repo.
+    // Pin these local values as well, without changing production Git policy.
+    let null = if cfg!(windows) { "NUL" } else { "/dev/null" };
+    for (key, value) in [
+        ("core.hooksPath", null),
+        ("commit.gpgsign", "false"),
+        ("tag.gpgsign", "false"),
+        ("core.fsmonitor", "false"),
+    ] {
+        assert!(
+            git_command(cwd, &["config", "--local", key, value])
+                .status()
+                .unwrap()
+                .success()
+        );
+    }
+}
+
 fn git(cwd: &Path, args: &[&str]) {
-    let status = std::process::Command::new("git")
-        .arg("-C")
-        .arg(cwd)
-        .args(args)
-        .status()
-        .expect("spawn git");
+    let status = git_command(cwd, args).status().expect("spawn git");
     assert!(status.success(), "git command failed: {args:?}");
+    if args.first() == Some(&"init") {
+        protect_fixture_repository(cwd);
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn fixture_git_ignores_hostile_inherited_config_and_hook_programs() {
+    use std::os::unix::fs::PermissionsExt;
+    let root = tempfile::tempdir().unwrap();
+    let hooks = root.path().join("hostile-hooks");
+    std::fs::create_dir(&hooks).unwrap();
+    let marker = root.path().join("unexpected-hook");
+    let hook = hooks.join("pre-commit");
+    std::fs::write(
+        &hook,
+        "#!/bin/sh\nprintf called > \"$FIXTURE_HOOK_MARKER\"\nexit 97\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let hostile = root.path().join("hostile.config");
+    std::fs::write(&hostile, format!("[core]\n hooksPath = {}\n[commit]\n gpgsign = true\n[gpg]\n program = {}\n[safety]\n inherited = forbidden\n", hooks.display(), hook.display())).unwrap();
+    let repo = root.path().join("repo");
+    std::fs::create_dir(&repo).unwrap();
+    git(&repo, &["init"]);
+    let mut command = std::process::Command::new("git");
+    command
+        .env("FIXTURE_HOOK_MARKER", &marker)
+        .env("GIT_CONFIG_GLOBAL", &hostile)
+        .env("GIT_CONFIG_SYSTEM", &hostile)
+        .env("GIT_CONFIG_PARAMETERS", "'commit.gpgsign=true'")
+        .env("GIT_CONFIG_COUNT", "1")
+        .env("GIT_CONFIG_KEY_0", "core.hooksPath")
+        .env("GIT_CONFIG_VALUE_0", &hooks);
+    isolate_git_environment(&mut command);
+    let output = command
+        .arg("-C")
+        .arg(&repo)
+        .args([
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "--allow-empty",
+            "-m",
+            "isolated fixture",
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(
+        !marker.exists(),
+        "fixture invoked an inherited hook/signing program"
+    );
+    let mut query = std::process::Command::new("git");
+    query
+        .env("GIT_CONFIG_GLOBAL", &hostile)
+        .env("GIT_CONFIG_SYSTEM", &hostile);
+    isolate_git_environment(&mut query);
+    let queried = query
+        .arg("-C")
+        .arg(&repo)
+        .args(["config", "--get", "safety.inherited"])
+        .output()
+        .unwrap();
+    assert_eq!(queried.status.code(), Some(1));
+    assert!(queried.stdout.is_empty());
+    assert_eq!(
+        String::from_utf8(
+            git_command(&repo, &["config", "--local", "--get", "core.hooksPath"])
+                .output()
+                .unwrap()
+                .stdout
+        )
+        .unwrap()
+        .trim(),
+        "/dev/null"
+    );
 }
 
 #[test]

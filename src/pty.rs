@@ -108,6 +108,17 @@ pub struct PtyHandle {
 
 impl PtyHandle {
     pub fn start(cwd: impl Into<PathBuf>, size: TerminalSize) -> Result<Self> {
+        Self::start_with_command(cwd, size, CommandBuilder::new_default_prog())
+    }
+
+    /// Fixture entry point: exercise the real PTY actor with an explicitly isolated command.
+    /// The caller owns executable/environment isolation. Production callers use `start`.
+    #[doc(hidden)]
+    pub fn start_with_command(
+        cwd: impl Into<PathBuf>,
+        size: TerminalSize,
+        command: CommandBuilder,
+    ) -> Result<Self> {
         let cwd = cwd.into();
         size.validate()?;
         let (command_tx, command_rx) = sync_channel(64);
@@ -116,7 +127,7 @@ impl PtyHandle {
         let actor_runtime = runtime.clone();
         let actor = thread::Builder::new()
             .name("codex-tui-pty".into())
-            .spawn(move || run_actor(cwd, size, command_rx, event_tx, actor_runtime))
+            .spawn(move || run_actor(cwd, size, command, command_rx, event_tx, actor_runtime))
             .context("spawn PTY actor")?;
 
         Ok(Self {
@@ -175,11 +186,12 @@ impl Drop for PtyHandle {
 fn run_actor(
     cwd: PathBuf,
     size: TerminalSize,
+    command: CommandBuilder,
     command_rx: Receiver<PtyCommand>,
     event_tx: SyncSender<PtyEvent>,
     runtime: PtyRuntime,
 ) {
-    let result = run_actor_inner(&cwd, size, command_rx, &event_tx, &runtime);
+    let result = run_actor_inner(&cwd, size, command, command_rx, &event_tx, &runtime);
     if let Ok(mut master) = runtime.pty_master.lock() {
         master.take();
     }
@@ -191,6 +203,7 @@ fn run_actor(
 fn run_actor_inner(
     cwd: &Path,
     size: TerminalSize,
+    mut command: CommandBuilder,
     command_rx: Receiver<PtyCommand>,
     event_tx: &SyncSender<PtyEvent>,
     runtime: &PtyRuntime,
@@ -208,7 +221,6 @@ fn run_actor_inner(
         .openpty(size.portable())
         .context("open native PTY")?;
 
-    let mut command = CommandBuilder::new_default_prog();
     command.cwd(&cwd);
     spawn_and_drive_pty(pair, command, cwd, size, command_rx, event_tx, runtime)
 }
@@ -495,6 +507,8 @@ mod tests {
 
         let mut command = {
             let mut command = CommandBuilder::new("/bin/sh");
+            command.env_clear();
+            command.env("PATH", "/usr/bin:/bin");
             command.arg("-c");
             command.arg("printf CODEX_TUI_EOF");
             command

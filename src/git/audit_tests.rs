@@ -184,15 +184,13 @@ fn cloned_contexts_share_one_immutable_file_inventory() {
 
 #[cfg(unix)]
 fn git(root: &Path, args: &[&str]) {
-    let output = std::process::Command::new("git")
-        .arg("-C")
-        .arg(root)
-        .args(args)
-        .output()
-        .unwrap();
+    let output = super::tests::git_command(root, args).output().unwrap();
     assert!(
         output.status.success(),
         "{args:?}: {}",
         String::from_utf8_lossy(&output.stderr)
     );
+    if args.first() == Some(&"init") {
+        super::tests::protect_fixture_repository(root);
+    }
 }

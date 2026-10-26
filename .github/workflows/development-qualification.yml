@@ -113,9 +113,9 @@ jobs:
 
           ./target/release/codex-tui soak             --rows 50000             --cycles 256             --json > qualification/soak-evidence.json
 
-          ./target/release/codex-tui doctor bundle             --output qualification/support-bundle
+          ./target/release/codex-tui doctor bundle --offline             --output qualification/support-bundle
 
-          python scripts/release/create_automated_qualification.py             --output qualification/automated-qualification.json             --commit "${{ github.sha }}"             --failure-matrix qualification/failure-matrix.json             --scale qualification/scale-evidence.json             --soak qualification/soak-evidence.json             --support-manifest qualification/support-bundle/manifest.json             --support-snapshot qualification/support-bundle/snapshot.json
+          python scripts/release/create_automated_qualification.py             --output qualification/automated-qualification.json             --commit "${{ github.sha }}"             --failure-matrix qualification/failure-matrix.json             --scale qualification/scale-evidence.json             --soak qualification/soak-evidence.json             --support-manifest qualification/support-bundle/manifest.json             --support-snapshot qualification/support-bundle/snapshot.json --require-offline-support
 
           python scripts/release/create_development_qualification.py             --output qualification/development-qualification.json             --automated-qualification qualification/automated-qualification.json             --commit "${{ github.sha }}"
 

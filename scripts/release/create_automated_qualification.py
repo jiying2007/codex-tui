@@ -9,7 +9,7 @@ import re
 from datetime import datetime, timezone
 
 from _compat import write_text_lf
-from validate_diagnostics import validate_scale, validate_soak, validate_support_snapshot
+from validate_diagnostics import validate_scale, validate_soak, validate_support_snapshot, validate_offline_support
 
 HEX40 = re.compile(r"^[0-9a-fA-F]{40}$")
 
@@ -31,6 +31,7 @@ def main() -> int:
     parser.add_argument("--soak", required=True)
     parser.add_argument("--support-manifest", required=True)
     parser.add_argument("--support-snapshot", required=True)
+    parser.add_argument("--require-offline-support", action="store_true")
     args = parser.parse_args()
 
     if not HEX40.fullmatch(args.commit):
@@ -61,6 +62,8 @@ def main() -> int:
         validate_scale(scale, args.commit.lower())
         validate_soak(soak, args.commit.lower())
         validate_support_snapshot(support, support_snapshot_path)
+        if args.require_offline_support or support_snapshot.get("collectionMode") == "offline":
+            validate_offline_support(support_snapshot)
     except ValueError as error:
         raise SystemExit(str(error)) from error
 

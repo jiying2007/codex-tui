@@ -66,6 +66,8 @@ fn exercise(role: &str) {
         .env("CODEX_TUI_EXTERNAL_TEST_ROLE", role)
         .env("CODEX_TUI_EDITOR", &script)
         .env("CODEX_TUI_BROWSER", &script)
+        .env_remove("BASH_ENV")
+        .env_remove("ENV")
         .env_remove("RUST_BACKTRACE")
         .output()
         .unwrap();

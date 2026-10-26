@@ -326,7 +326,7 @@ jobs:
             --cycles 256 \
             --json > qualification/soak-evidence.json
 
-          ./target/release/codex-tui doctor bundle \
+          ./target/release/codex-tui doctor bundle --offline \
             --output qualification/support-bundle
 
           python3 scripts/release/create_automated_qualification.py \
@@ -336,7 +336,7 @@ jobs:
             --scale qualification/scale-evidence.json \
             --soak qualification/soak-evidence.json \
             --support-manifest qualification/support-bundle/manifest.json \
-            --support-snapshot qualification/support-bundle/snapshot.json
+            --support-snapshot qualification/support-bundle/snapshot.json --require-offline-support
 
           python3 scripts/release/create_development_qualification.py \
             --output qualification/development-qualification.json \

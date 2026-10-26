@@ -103,9 +103,21 @@ class Session:
         os.close(self.slave)
 
 
-def drawer(binary, output, home, name):
+def isolated_drawer_environment(home):
     env = environment(home, home/'server.log', 'drawer')
-    env['SHELL'] = '/bin/sh'
+    # portable-pty gives default shells a login argv0. Apply that only to this
+    # inert script; its explicit non-login /bin/sh never sources /etc/profile.
+    shell = home/'bin/fixture-shell'
+    shell.write_text("#!/bin/sh\nexec /bin/sh\n", encoding='utf-8')
+    shell.chmod(0o755)
+    env['SHELL'] = str(shell)
+    env['ENV'] = ''
+    env['BASH_ENV'] = ''
+    return env
+
+
+def drawer(binary, output, home, name):
+    env = isolated_drawer_environment(home)
     app = Session(binary, output, home, env)
     try:
         app.wait(lambda: '1 total' in app.screen(), 'Registry did not load')
