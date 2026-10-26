@@ -297,7 +297,7 @@
     "src/app_server_transport/health.rs": 153,
     "src/app_server_transport/cancelled_write_test.rs": 62,
     "src/app_server/transport_fault_tests.rs": 193,
-    "src/app/planning_worker/merge.rs": 38,
+    "src/app/planning_worker/merge.rs": 40,
     "src/app/planning_worker/rebase.rs": 108,
     "src/app/planning_worker/rebase_tests.rs": 129,
     "src/forge/process_lifecycle_tests.rs": 98,
