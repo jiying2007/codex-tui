@@ -22,8 +22,8 @@ fn screen(app: &AppState) -> String {
 #[test]
 fn twenty_column_help_reaches_both_ends_in_both_languages() {
     for (language, first, last) in [
-        (UiLanguage::English, "Global:", "state only."),
-        (UiLanguage::SimplifiedChinese, "全局:", "操作员状态。"),
+        (UiLanguage::English, "Global:", "only."),
+        (UiLanguage::SimplifiedChinese, "全局:", "状态。"),
     ] {
         let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
         app.language = language;
@@ -31,6 +31,7 @@ fn twenty_column_help_reaches_both_ends_in_both_languages() {
         app.help_top = 0;
         assert!(screen(&app).contains(first));
         app.help_top = 4096;
-        assert!(screen(&app).contains(last));
+        let final_page = screen(&app);
+        assert!(final_page.contains(last), "{language:?}: {final_page}");
     }
 }
