@@ -1776,9 +1776,8 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
         }
         Action::MoveHelp(delta) => {
             if state.show_help {
-                state.help_top = ((state.help_top as i32).saturating_add(delta))
-                    .clamp(0, 4096)
-                    as usize;
+                state.help_top =
+                    ((state.help_top as i32).saturating_add(delta)).clamp(0, 4096) as usize;
             }
         }
         Action::SetDraft(draft) => {
