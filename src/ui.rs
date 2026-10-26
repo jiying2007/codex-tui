@@ -1481,6 +1481,7 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
         ])
         .split(vertical[1])[1]
 }
-
+#[cfg(test)]
+mod help_wrapped_tests;
 #[cfg(test)]
 mod tests;
