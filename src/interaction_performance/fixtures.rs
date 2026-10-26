@@ -22,7 +22,7 @@ pub(super) const NAMES: [&str; 11] = [
     "review-queue-navigation-and-render-10k",
     "headless-local-cards-10k",
     "planning-ui-rebase-10k",
-    "planning-ui-rebase-50k",
+    "planning-ui-stale-retry-50k",
 ];
 
 pub(super) fn list_fixture(layout: SavedViewLayout) -> AppState {
