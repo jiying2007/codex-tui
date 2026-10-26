@@ -30,8 +30,14 @@ fn twenty_column_help_reaches_both_ends_in_both_languages() {
         app.show_help = true;
         app.help_top = 0;
         assert!(screen(&app).contains(first));
-        app.help_top = 4096;
+        crate::app::reduce(&mut app, crate::app::Action::MoveHelp(1000));
+        let end = app.help_top;
+        assert!(end > crate::app::HELP_ENTRY_COUNT - 1);
         let final_page = screen(&app);
         assert!(final_page.contains(last), "{language:?}: {final_page}");
+        crate::app::reduce(&mut app, crate::app::Action::MoveHelp(-1));
+        assert_eq!(app.help_top, end - 1);
+        crate::app::reduce(&mut app, crate::app::Action::MoveHelp(-1000));
+        assert_eq!(app.help_top, 0);
     }
 }
