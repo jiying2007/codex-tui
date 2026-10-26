@@ -7,7 +7,7 @@ const HELP: &str = "Usage: codex-tui [--fake | --target NAME]
        codex-tui --help | --version
        codex-tui doctor [codex|git|forge|store|presets|terminal]
        codex-tui doctor compat [--json]
-       codex-tui doctor bundle [--output PATH]
+       codex-tui doctor bundle [--offline] [--output PATH]
        codex-tui headless <threads|work|status|attention|board|forge|worktrees> [--json] [--fake|--fixture-10k|--target NAME]
        codex-tui status | thread list | attention list | board list | forge status | worktree list
        codex-tui release <verify|benchmark|render-benchmark|interaction-benchmark|scale|failure-matrix> [OPTIONS]
@@ -19,7 +19,7 @@ The default starts the interactive workbench. No headless mutation API exists.";
 const DOCTOR_HELP: &str = "Usage: codex-tui doctor [codex|git|forge|store|presets|terminal]
        codex-tui doctor codex [--target NAME]
        codex-tui doctor compat [--json]
-       codex-tui doctor bundle [--output PATH]
+       codex-tui doctor bundle [--offline] [--output PATH]
 
 Failed requested diagnostics exit 3; unknown scopes/options exit 2.";
 const HEADLESS_HELP: &str = "Usage: codex-tui headless <threads|work|status|attention|board|forge|worktrees> [--json] [--fake|--fixture-10k|--target NAME]
@@ -84,7 +84,7 @@ fn validate(words: &[&str], help: bool) -> Result<(), String> {
                     options(flags, &[], &[])
                 }
                 Some("compat") => options(flags, &["--json"], &[]),
-                Some("bundle") => options(flags, &[], &["--output"]),
+                Some("bundle") => options(flags, &["--offline"], &["--output"]),
                 Some(other) => Err(format!("unknown doctor scope: {other}")),
             }
         }

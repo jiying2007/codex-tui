@@ -44,6 +44,8 @@ class SecurityGate(unittest.TestCase):
         states = ("success", "failure", "cancelled", "skipped", "")
         for deny, audit in itertools.product(states, repeat=2):
             env = os.environ.copy()
+            env.pop("BASH_ENV", None)
+            env.pop("ENV", None)
             env.update(CARGO_DENY_RESULT=deny, RUSTSEC_RESULT=audit)
             result = subprocess.run(
                 ["bash", "-e", "-o", "pipefail", "-c", script], env=env,

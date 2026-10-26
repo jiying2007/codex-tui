@@ -76,6 +76,8 @@ mod tests {
             let size = TerminalSize { rows: 24, cols: 80 };
             let pair = native_pty_system().openpty(size.portable()).unwrap();
             let mut command = CommandBuilder::new("/bin/sh");
+            command.env_clear();
+            command.env("PATH", "/usr/bin:/bin");
             command.args(["-c", "exec sleep 30"]);
             command.cwd(home.path());
             let (_commands, rx) = sync_channel(4);
@@ -122,6 +124,8 @@ mod tests {
         let size = TerminalSize { rows: 24, cols: 80 };
         let pair = native_pty_system().openpty(size.portable()).unwrap();
         let mut command = CommandBuilder::new("/bin/sh");
+        command.env_clear();
+        command.env("PATH", "/usr/bin:/bin");
         command.args(["-c", "exec sleep 30"]);
         let (commands, rx) = sync_channel(1);
         let (tx, events) = sync_channel(1);

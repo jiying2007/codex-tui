@@ -175,6 +175,71 @@ def validate_support_snapshot(manifest: dict, snapshot_path: Path) -> None:
     require(integer(entry.get("bytes"), "snapshot bytes") == len(raw), "support snapshot size mismatch")
 
 
+def validate_offline_support(snapshot: dict) -> None:
+    """Offline evidence is redaction/local metadata evidence, never live qualification."""
+    require(snapshot.get("collectionMode") == "offline", "support collection must be explicitly offline")
+    require(snapshot.get("realCodexQualification") is False, "offline support cannot claim real Codex qualification")
+    compat = snapshot.get("compat")
+    store = snapshot.get("store")
+    require(isinstance(compat, dict) and isinstance(store, dict), "offline local metadata missing")
+    require(type(store.get("available")) is bool, "offline store availability must be boolean")
+    if store["available"]:
+        require(type(store.get("schemaVersion")) is int and store["schemaVersion"] > 0
+                and isinstance(store.get("integrity"), str), "offline local store health missing")
+    else:
+        require(store.get("schemaVersion") is None and store.get("integrity") is None,
+                "unavailable offline store cannot claim health")
+    count_keys = ("operatorPins", "operatorAliases", "operatorDrafts", "markedUnread", "workCards",
+                  "scratch", "savedViews", "notes", "bookmarks", "hotSlots", "managedWorktrees",
+                  "recentOperationReceipts", "recentForgeReceipts")
+    require(all(type(store.get(key)) is int and store[key] >= 0
+                and (store["available"] or store[key] == 0) for key in count_keys),
+            "offline local store counts must be nonnegative integers with no unavailable observations")
+    require(type(snapshot.get("generatedAtUnixMs")) is int and snapshot["generatedAtUnixMs"] >= 0,
+            "offline generation timestamp must be a nonnegative integer")
+    sqlite_ok = store["available"] and store["integrity"] == "ok"
+    require(compat.get("readiness") == "blocked", "offline compatibility must remain blocked")
+    require(compat.get("requiredDegraded") == [], "offline compatibility cannot hide degraded probes")
+    failures = ["codex-app-server", "git", "terminal-pty"] + ([] if sqlite_ok else ["sqlite"])
+    require(compat.get("requiredFailures") == failures, "offline required failures mismatch")
+    require(compat.get("optionalUnavailable") == ["gh", "glab"], "offline optional availability mismatch")
+    components = compat.get("components")
+    require(isinstance(components, list), "offline components must be a list")
+    ids = [entry.get("id") for entry in components if isinstance(entry, dict)]
+    require(all(isinstance(ident, str) for ident in ids), "offline component ID must be text")
+    require(len(ids) == len(components) == len(set(ids)), "offline component identity must be unique")
+    require(set(ids) == {"codex-app-server", "git", "terminal-pty", "gh", "glab", "sqlite"},
+            "offline support component set mismatch")
+    for entry in components:
+        ident = entry["id"]
+        expected = {
+            "id": ident, "requirement": "optional" if ident in ("gh", "glab") else "required",
+            "state": "available" if ident == "sqlite" and sqlite_ok else "unavailable",
+            "version": ("schema-" + str(store["schemaVersion"])) if ident == "sqlite" and store["available"] else None,
+            "facts": {"probeStatus": "local-metadata-only" if ident == "sqlite" else "not-probed-offline"},
+        }
+        require(entry == expected, "offline component claims inconsistent evidence: " + ident)
+    git = snapshot.get("git", {})
+    require(git.get("errorCode") == "not-probed-offline"
+            and all(git.get(key) is False for key in ("repository", "worktree", "dirty"))
+            and all(type(git.get(key)) is int and git[key] == 0 for key in ("changedFiles", "ahead", "behind")),
+            "offline git status must be explicitly unobserved")
+    forge = snapshot.get("forge", {})
+    require(forge.get("errorCode") == "not-probed-offline" and forge.get("freshness") == "not-probed"
+            and forge.get("authenticated") is None and forge.get("capabilities") == {}
+            and all(forge.get(key) is None for key in ("clientName", "clientVersion", "serverVersion",
+                                                      "serverEdition", "serverTier", "provider"))
+            and all(type(forge.get(key)) is int and forge[key] == 0 for key in ("recentIssues", "openChangeRequests",
+                                                                            "recentPipelines", "issueBoards")),
+            "offline forge status must not claim authority")
+    require(snapshot.get("degradedReasons") == ["external-probes-not-run-offline"],
+            "offline support must preserve its unobserved scope")
+    errors = snapshot.get("errors", {})
+    require(errors.get("codes") == ["external-probes-not-run-offline"] and errors.get("window") == "bundle-run"
+            and type(errors.get("maxEntries")) is int and errors["maxEntries"] == 16,
+            "offline support error scope mismatch")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("kind", choices=sorted(SCHEMAS))

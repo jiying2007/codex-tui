@@ -26,10 +26,17 @@ fn save(app: &mut AppState, worker: &mut StoreWorker, effect: Effect) {
     });
 }
 fn settle(app: &mut AppState, worker: &mut StoreWorker) {
-    let deadline = Instant::now() + Duration::from_secs(5);
+    settle_until(app, worker, Instant::now() + Duration::from_secs(5));
+}
+fn settle_until(app: &mut AppState, worker: &mut StoreWorker, deadline: Instant) {
     while app.pending_local_edit_ticket().is_some() {
         if let Some(event) = worker.try_event() {
             apply_event(app, event);
+        }
+        // A received completion wins even if scheduling crossed the deadline.
+        // Only a still-pending write can be missing its receipt.
+        if app.pending_local_edit_ticket().is_none() {
+            return;
         }
         assert!(Instant::now() < deadline, "missing local save receipt");
         std::thread::sleep(Duration::from_millis(1));
@@ -230,4 +237,52 @@ fn unrelated_planning_receipt_does_not_retire_local_editor() {
     );
     assert_eq!(app.pending_local_edit_ticket(), Some(ticket));
     assert_eq!(app.input_buffer, "durable draft");
+}
+
+#[test]
+fn buffered_save_receipt_wins_over_elapsed_wait_deadline() {
+    let root = tempfile::tempdir().unwrap();
+    let mut worker = StoreWorker::at_for_test(root.path());
+    let (mut app, effects) = draft();
+    save(&mut app, &mut worker, effects[0].clone());
+    // The worker sends each receipt before accepting the next queued job.
+    // This barrier guarantees the real committed save receipt is buffered.
+    let (sent, ready) = mpsc::sync_channel(0);
+    worker
+        .submit(move |_| {
+            sent.send(()).unwrap();
+            StoreEvent::Notice(None)
+        })
+        .unwrap();
+    ready.recv_timeout(Duration::from_secs(5)).unwrap();
+    settle_until(&mut app, &mut worker, Instant::now());
+    assert!(app.pending_local_edit_ticket().is_none());
+    assert!(app.input_buffer.is_empty());
+    assert_eq!(app.planning_snapshot.scratch.len(), 1);
+    worker
+        .flush_operator_state_on_exit(&LocalStateV1::default())
+        .unwrap();
+}
+
+#[test]
+fn elapsed_wait_deadline_still_rejects_a_missing_receipt() {
+    let root = tempfile::tempdir().unwrap();
+    let mut worker = StoreWorker::at_for_test(root.path());
+    let (mut app, _effects) = draft();
+    let ticket = app.pending_local_edit_ticket();
+    assert!(ticket.is_some());
+    // No write was submitted, so no receipt can retire this pending editor.
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        settle_until(&mut app, &mut worker, Instant::now());
+    }));
+    let failure = result.expect_err("missing receipt must still time out");
+    assert_eq!(
+        failure.downcast_ref::<&str>(),
+        Some(&"missing local save receipt")
+    );
+    assert_eq!(app.pending_local_edit_ticket(), ticket);
+    assert_eq!(app.input_buffer, "durable draft");
+    worker
+        .flush_operator_state_on_exit(&LocalStateV1::default())
+        .unwrap();
 }

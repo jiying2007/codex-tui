@@ -31,10 +31,12 @@ codex-tui doctor forge
 codex-tui doctor store
 codex-tui doctor presets
 codex-tui doctor terminal
-codex-tui doctor bundle --output ./codex-tui-support
+codex-tui doctor bundle --offline --output ./codex-tui-support
 ~~~
 
 `doctor compat` does not query remote Forge and can be Ready even when `glab` is absent. Probe Forge inside the relevant repository. `doctor bundle` contains redacted metadata; review it before sharing.
+
+`doctor bundle --offline` collects build identity and local SQLite metadata without starting external executables or connecting to App Server/Forge targets. External components are explicitly unavailable/not-probed, readiness remains Blocked, and `realCodexQualification=false`. This is local support/redaction evidence, not live-server or device qualification. Automatic development and release bundle collection uses this mode and checks its markers; all existing qualification gates remain. Without `--offline`, bundle collection retains live probes and may start Codex App Server. Review either bundle before sharing.
 
 ## Read-only headless commands
 <!-- docs-section: headless -->

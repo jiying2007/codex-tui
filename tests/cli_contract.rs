@@ -96,12 +96,57 @@ fn requested_missing_backend_is_not_reported_as_success() {
     for directory in ["AppData/Roaming", "AppData/Local"] {
         std::fs::create_dir_all(home.path().join(directory)).unwrap();
     }
-    let output = invoke(&["doctor", "codex"], &home);
+    // Empty PATH is not a no-exec boundary on Windows: Rust also searches
+    // executable/system directories and the parent PATH. Select an absolute,
+    // nonexistent fixture program instead of ever resolving the name `codex`.
+    #[cfg(target_os = "windows")]
+    let config_path = home
+        .path()
+        .join("AppData/Roaming/jiying2007/codex-tui/config/config.toml");
+    #[cfg(target_os = "macos")]
+    let config_path = home
+        .path()
+        .join("Library/Application Support/dev.jiying2007.codex-tui/config.toml");
+    #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+    let config_path = home.path().join("config/codex-tui/config.toml");
+    let missing = home.path().join("missing-backend-fixture.exe");
+    assert!(missing.is_absolute() && !missing.exists());
+    let target_name = format!(
+        "missing-fixture-{}",
+        home.path().file_name().unwrap().to_string_lossy()
+    );
+    let mut config = codex_tui::store::AppConfig::default();
+    config.app_server.active = target_name.clone();
+    config.app_server.targets.insert(
+        target_name.clone(),
+        codex_tui::app_server_target::AppServerTargetConfig::Stdio {
+            codex_bin: Some(missing.to_str().unwrap().into()),
+        },
+    );
+    std::fs::create_dir_all(config_path.parent().unwrap()).unwrap();
+    let text = toml::to_string(&config).unwrap();
+    std::fs::write(&config_path, &text).unwrap();
+    let parsed: codex_tui::store::AppConfig = toml::from_str(&text).unwrap();
+    let target = codex_tui::app_server_target::ResolvedAppServerTarget::resolve(
+        &parsed.app_server,
+        Some(&target_name),
+    )
+    .unwrap();
+    assert!(
+        matches!(target.endpoint, codex_tui::app_server_target::ResolvedAppServerEndpoint::Stdio { codex_bin: Some(path) } if path == missing.as_os_str())
+    );
+    let output = invoke(&["doctor", "codex", "--target", &target_name], &home);
     assert_eq!(output.status.code(), Some(3), "{output:?}");
     assert!(
         String::from_utf8_lossy(&output.stdout).contains("connected: false"),
         "{output:?}"
     );
+    assert!(
+        String::from_utf8_lossy(&output.stdout)
+            .contains(&format!("app-server-target: {target_name}")),
+        "{output:?}"
+    );
+    assert!(!missing.exists());
 }
 
 #[test]

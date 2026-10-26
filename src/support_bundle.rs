@@ -18,6 +18,8 @@ use std::{
 pub const SUPPORT_BUNDLE_SCHEMA: &str = "codex-tui/support-bundle/v1";
 const MAX_ERROR_CODES: usize = 16;
 
+mod offline;
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BuildSnapshot {
@@ -111,6 +113,8 @@ pub struct ErrorSnapshot {
 #[serde(rename_all = "camelCase")]
 pub struct SupportSnapshot {
     pub schema: &'static str,
+    pub collection_mode: &'static str,
+    pub real_codex_qualification: bool,
     pub generated_at_unix_ms: u64,
     pub build: BuildSnapshot,
     pub compat: CompatSnapshot,
@@ -256,6 +260,8 @@ pub async fn collect() -> SupportSnapshot {
 
     SupportSnapshot {
         schema: SUPPORT_BUNDLE_SCHEMA,
+        collection_mode: "live-probes",
+        real_codex_qualification: false,
         generated_at_unix_ms: now_unix_ms(),
         build: BuildSnapshot {
             product_version: env!("CARGO_PKG_VERSION"),
@@ -274,6 +280,14 @@ pub async fn collect() -> SupportSnapshot {
             codes,
         },
     }
+}
+
+/// Collect only local metadata; never constructs an external probe or transport.
+pub fn create_offline(output: Option<PathBuf>) -> Result<PathBuf> {
+    let snapshot = offline::collect();
+    let output = output.unwrap_or_else(default_output_path);
+    write_bundle(&output, &snapshot)?;
+    Ok(output)
 }
 
 pub async fn create(output: Option<PathBuf>) -> Result<PathBuf> {
@@ -461,6 +475,8 @@ mod tests {
     fn fixture() -> SupportSnapshot {
         SupportSnapshot {
             schema: SUPPORT_BUNDLE_SCHEMA,
+            collection_mode: "live-probes",
+            real_codex_qualification: false,
             generated_at_unix_ms: 1,
             build: BuildSnapshot {
                 product_version: "1.4.0",

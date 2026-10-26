@@ -138,25 +138,31 @@ async fn main() -> Result<()> {
         && args.get(1).is_some_and(|arg| arg == "bundle")
     {
         let mut output = None;
+        let mut offline = false;
         let mut index = 2usize;
         while index < args.len() {
             match args[index].as_str() {
+                "--offline" => offline = true,
                 "--output" => {
                     index += 1;
                     let Some(path) = args.get(index) else {
-                        eprintln!("usage: codex-tui doctor bundle [--output PATH]");
+                        eprintln!("usage: codex-tui doctor bundle [--offline] [--output PATH]");
                         std::process::exit(codex_tui::headless::EXIT_USAGE);
                     };
                     output = Some(std::path::PathBuf::from(path));
                 }
                 _ => {
-                    eprintln!("usage: codex-tui doctor bundle [--output PATH]");
+                    eprintln!("usage: codex-tui doctor bundle [--offline] [--output PATH]");
                     std::process::exit(codex_tui::headless::EXIT_USAGE);
                 }
             }
             index += 1;
         }
-        let path = codex_tui::support_bundle::create(output).await?;
+        let path = if offline {
+            codex_tui::support_bundle::create_offline(output)?
+        } else {
+            codex_tui::support_bundle::create(output).await?
+        };
         println!(
             "support-bundle: {}",
             cli_terminal_field(&path.display().to_string())

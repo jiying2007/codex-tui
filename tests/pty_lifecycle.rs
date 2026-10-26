@@ -6,6 +6,62 @@ use tempfile::tempdir;
 
 const WAIT: Duration = Duration::from_secs(8);
 
+#[cfg(windows)]
+fn windows_fixture_command(system_root: &std::path::Path) -> portable_pty::CommandBuilder {
+    // Build each component with native separators: CMD parses its own command line,
+    // so a mixed-separator argv[0] must not introduce a slash-prefixed option.
+    let mut command =
+        portable_pty::CommandBuilder::new(system_root.join("System32").join("cmd.exe"));
+    command.arg("/D"); // Disable registry AutoRun commands.
+    command
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_fixture_uses_native_executable_path_and_disables_autorun() {
+    let command = windows_fixture_command(std::path::Path::new(r"C:\Windows"));
+    assert_eq!(
+        command.get_argv(),
+        &vec![
+            std::ffi::OsString::from(r"C:\Windows\System32\cmd.exe"),
+            std::ffi::OsString::from("/D"),
+        ]
+    );
+}
+
+// Never inherit login-shell startup files or a caller's executable selection.
+fn start_fixture(cwd: &std::path::Path, size: TerminalSize) -> anyhow::Result<PtyHandle> {
+    #[cfg(unix)]
+    let mut command = portable_pty::CommandBuilder::new("/bin/sh");
+    #[cfg(windows)]
+    let system_root = std::path::PathBuf::from(
+        std::env::var_os("SystemRoot")
+            .ok_or_else(|| anyhow::anyhow!("Windows fixture requires SystemRoot"))?,
+    );
+    #[cfg(windows)]
+    anyhow::ensure!(system_root.is_absolute(), "SystemRoot must be absolute");
+    #[cfg(windows)]
+    let mut command = windows_fixture_command(&system_root);
+    command.env_clear();
+    #[cfg(unix)]
+    {
+        command.arg("-i");
+        command.env("PATH", "/usr/bin:/bin");
+    }
+    #[cfg(windows)]
+    {
+        command.env("SystemRoot", &system_root);
+        command.env("PATH", system_root.join("System32"));
+    }
+    for key in ["HOME", "USERPROFILE", "XDG_CONFIG_HOME", "ZDOTDIR"] {
+        command.env(key, cwd);
+    }
+    for key in ["ENV", "BASH_ENV"] {
+        command.env(key, "");
+    }
+    PtyHandle::start_with_command(cwd, size, command)
+}
+
 fn wait_event(handle: &PtyHandle, predicate: impl Fn(&PtyEvent) -> bool) -> PtyEvent {
     let deadline = Instant::now() + WAIT;
     loop {
@@ -103,7 +159,7 @@ fn ensure_shell_ready(handle: &PtyHandle) {
 fn default_shell_starts_accepts_input_and_exits() {
     let root = tempdir().expect("tempdir");
     let handle =
-        PtyHandle::start(root.path(), TerminalSize { rows: 24, cols: 80 }).expect("start PTY");
+        start_fixture(root.path(), TerminalSize { rows: 24, cols: 80 }).expect("start PTY");
 
     let ready = wait_event(&handle, |event| matches!(event, PtyEvent::Ready { .. }));
     match ready {
@@ -127,7 +183,7 @@ fn default_shell_starts_accepts_input_and_exits() {
 fn resize_command_is_accepted_while_shell_is_running() {
     let root = tempdir().expect("tempdir");
     let handle =
-        PtyHandle::start(root.path(), TerminalSize { rows: 12, cols: 40 }).expect("start PTY");
+        start_fixture(root.path(), TerminalSize { rows: 12, cols: 40 }).expect("start PTY");
     wait_event(&handle, |event| matches!(event, PtyEvent::Ready { .. }));
 
     handle
@@ -149,7 +205,7 @@ fn resize_command_is_accepted_while_shell_is_running() {
 fn explicit_terminate_stops_a_long_running_child_promptly() {
     let root = tempdir().expect("tempdir");
     let handle =
-        PtyHandle::start(root.path(), TerminalSize { rows: 24, cols: 80 }).expect("start PTY");
+        start_fixture(root.path(), TerminalSize { rows: 24, cols: 80 }).expect("start PTY");
     wait_event(&handle, |event| matches!(event, PtyEvent::Ready { .. }));
     ensure_shell_ready(&handle);
 
@@ -176,7 +232,7 @@ fn explicit_terminate_stops_a_long_running_child_promptly() {
 fn ctrl_c_is_delivered_to_child_and_shell_remains_usable() {
     let root = tempdir().expect("tempdir");
     let handle =
-        PtyHandle::start(root.path(), TerminalSize { rows: 24, cols: 80 }).expect("start PTY");
+        start_fixture(root.path(), TerminalSize { rows: 24, cols: 80 }).expect("start PTY");
     wait_event(&handle, |event| matches!(event, PtyEvent::Ready { .. }));
     ensure_shell_ready(&handle);
 
@@ -208,7 +264,7 @@ fn ctrl_c_is_delivered_to_child_and_shell_remains_usable() {
 fn dropping_handle_cleans_up_actor_without_hanging() {
     let root = tempdir().expect("tempdir");
     let handle =
-        PtyHandle::start(root.path(), TerminalSize { rows: 24, cols: 80 }).expect("start PTY");
+        start_fixture(root.path(), TerminalSize { rows: 24, cols: 80 }).expect("start PTY");
     wait_event(&handle, |event| matches!(event, PtyEvent::Ready { .. }));
     ensure_shell_ready(&handle);
 
@@ -234,7 +290,7 @@ fn dropping_handle_cleans_up_actor_without_hanging() {
 fn natural_shell_exit_reports_completion_without_a_terminate_command() {
     let root = tempdir().expect("tempdir");
     let handle =
-        PtyHandle::start(root.path(), TerminalSize { rows: 24, cols: 80 }).expect("start PTY");
+        start_fixture(root.path(), TerminalSize { rows: 24, cols: 80 }).expect("start PTY");
     wait_event(&handle, |event| matches!(event, PtyEvent::Ready { .. }));
     ensure_shell_ready(&handle);
     handle
@@ -243,4 +299,24 @@ fn natural_shell_exit_reports_completion_without_a_terminate_command() {
     let (success, code) = wait_shutdown(&handle);
     assert!(success);
     assert_eq!(code, Some(0));
+}
+
+#[test]
+fn isolated_shell_does_not_source_home_startup_files() {
+    let root = tempdir().unwrap();
+    for name in [
+        ".profile",
+        ".bash_profile",
+        ".bashrc",
+        ".zprofile",
+        ".zshrc",
+    ] {
+        std::fs::write(root.path().join(name), "echo unsafe > startup-was-read\n").unwrap();
+    }
+    let handle = start_fixture(root.path(), TerminalSize { rows: 24, cols: 80 }).unwrap();
+    wait_event(&handle, |event| matches!(event, PtyEvent::Ready { .. }));
+    ensure_shell_ready(&handle);
+    handle.send(PtyCommand::Input(line("exit"))).unwrap();
+    let _ = wait_shutdown(&handle);
+    assert!(!root.path().join("startup-was-read").exists());
 }
