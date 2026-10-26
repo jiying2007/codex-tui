@@ -1419,6 +1419,7 @@ fn render_help(frame: &mut Frame<'_>, app: &AppState) {
         })
         .collect::<Vec<_>>();
     let scrollable = rows.len().saturating_sub(usize::from(area.height - 3));
+    app.help_max_top.set(scrollable);
     let top = app.help_top.min(scrollable);
     let inner = Rect {
         x: area.x + 1,
