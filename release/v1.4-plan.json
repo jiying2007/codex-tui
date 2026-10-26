@@ -217,6 +217,7 @@
     "src/app/planning_worker/clock.rs": 50,
     "src/app/planning_worker/live_tests.rs": 179,
     "src/app/prompt.rs": 172,
+    "src/app/prompt/cleanup.rs": 60,
     "src/runtime_prompt.rs": 93,
     "src/latest_read.rs": 171,
     "src/forge/read_order_tests.rs": 84,
