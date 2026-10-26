@@ -43,8 +43,8 @@ mod tests {
         assert_eq!(app.thread_ui.get(&thread.0).unwrap().draft, "keep draft");
         assert!(app.conversations.get(&thread.0).unwrap().error.is_some());
         assert!(!app.settle_stopped_actor(&mut effects));
-        let next = app.prompt_submissions.begin(&thread).expect("capacity released");
-        assert_ne!(next, ticket);
+        assert!(app.prompt_submissions.begin(&thread).is_some());
+        assert!(app.prompt_submissions.by_thread[&thread.0].request_id > ticket);
     }
     #[test]
     fn actor_exit_closes_acknowledged_but_unread_history() {
