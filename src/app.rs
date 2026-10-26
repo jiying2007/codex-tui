@@ -62,13 +62,13 @@ mod reducer;
 mod registry;
 pub(crate) mod request_details;
 mod review;
+mod shortcuts;
 mod state;
 mod thread_navigation;
 mod types;
 mod user_input;
 mod user_response;
 mod watch;
-
 pub use queue_confirmation::QueueConfirmation;
 pub use reducer::reduce;
 pub use types::{Action, ContextChoice, Effect, InputMode, View, ViewKind};
