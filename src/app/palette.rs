@@ -292,12 +292,8 @@ impl AppState {
 
     pub(super) fn move_command_palette(&mut self, delta: i32) {
         let len = self.command_palette_matches().len();
-        if len == 0 {
-            self.command_palette_selected = 0;
-        } else {
-            self.command_palette_selected =
-                (self.command_palette_selected as i32 + delta).rem_euclid(len as i32) as usize;
-        }
+        self.command_palette_selected =
+            super::reducer::wrap_selection(self.command_palette_selected, delta, len);
     }
 
     pub(super) fn input_command_palette_char(&mut self, character: char) {

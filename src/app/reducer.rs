@@ -1,5 +1,13 @@
 use super::*;
 
+/// Wrap even stale/oversized indices without truncating usize to i32.
+pub(super) fn wrap_selection(selected: usize, delta: i32, len: usize) -> usize {
+    if len == 0 {
+        return 0;
+    }
+    ((selected as i128 + i128::from(delta)).rem_euclid(len as i128)) as usize
+}
+
 pub fn reduce(state: &mut AppState, action: Action) -> Vec<Effect> {
     let old_view = state.view.clone();
     let old_previous = state.previous_target.clone();
@@ -264,12 +272,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
         }
         Action::MoveManagedWorktree(delta) => {
             let len = state.visible_managed_worktrees().len();
-            if len == 0 {
-                state.managed_selected = 0;
-            } else {
-                state.managed_selected =
-                    (state.managed_selected as i32 + delta).rem_euclid(len as i32) as usize;
-            }
+            state.managed_selected = wrap_selection(state.managed_selected, delta, len);
         }
         Action::BeginCreateWorktree => {
             state.pending_forge_operation = None;
@@ -517,12 +520,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 .as_ref()
                 .map(|snapshot| snapshot.submissions.len())
                 .unwrap_or(0);
-            if len == 0 {
-                state.thread_queue_selected = 0;
-            } else {
-                state.thread_queue_selected =
-                    (state.thread_queue_selected as i32 + delta).rem_euclid(len as i32) as usize;
-            }
+            state.thread_queue_selected = wrap_selection(state.thread_queue_selected, delta, len);
         }
         Action::BeginThreadQueueAdd => state.begin_queue_input(false),
         Action::BeginThreadQueueEdit => state.begin_queue_input(true),
@@ -538,7 +536,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 return vec![];
             }
             let from = state.thread_queue_selected.min(len - 1);
-            let to = (from as i32 + delta).clamp(0, (len - 1) as i32) as usize;
+            let to = (from as i128 + i128::from(delta)).clamp(0, (len - 1) as i128) as usize;
             if from == to {
                 return vec![];
             }
@@ -628,28 +626,17 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.board_selected = 0;
         }
         Action::MoveBoardColumn(delta) => {
-            let len = WorkflowStage::ALL.len() as i32;
             state.board_stage_index =
-                (state.board_stage_index as i32 + delta).rem_euclid(len) as usize;
+                wrap_selection(state.board_stage_index, delta, WorkflowStage::ALL.len());
             state.board_selected = 0;
         }
         Action::MovePlanningSelection(delta) => {
             let len = state.visible_planning_cards().len();
-            if len == 0 {
-                state.board_selected = 0;
-            } else {
-                state.board_selected =
-                    (state.board_selected as i32 + delta).rem_euclid(len as i32) as usize;
-            }
+            state.board_selected = wrap_selection(state.board_selected, delta, len);
         }
         Action::CycleSavedView(delta) => {
             let len = state.planning_views().len();
-            if len == 0 {
-                state.planning_view_index = 0;
-            } else {
-                state.planning_view_index =
-                    (state.planning_view_index as i32 + delta).rem_euclid(len as i32) as usize;
-            }
+            state.planning_view_index = wrap_selection(state.planning_view_index, delta, len);
             state.board_selected = 0;
         }
         Action::CloseSavedViewEditor => {
@@ -751,12 +738,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::CloseContext => state.close_context_menu(),
         Action::MoveContext(delta) => {
             let len = state.context_choices().len();
-            if len == 0 {
-                state.context_selected = 0;
-            } else {
-                state.context_selected =
-                    (state.context_selected as i32 + delta).rem_euclid(len as i32) as usize;
-            }
+            state.context_selected = wrap_selection(state.context_selected, delta, len);
         }
         Action::ExecuteContext => {
             let Some(choice) = state.take_context_choice() else {
@@ -1127,12 +1109,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
         }
         Action::MoveLaunchPreset(delta) => {
             let len = state.launch_presets.len();
-            if len == 0 {
-                state.launch_selected = 0;
-            } else {
-                state.launch_selected =
-                    (state.launch_selected as i32 + delta).rem_euclid(len as i32) as usize;
-            }
+            state.launch_selected = wrap_selection(state.launch_selected, delta, len);
         }
         Action::SelectLaunchPreset => {
             let Some(preset) = state.launch_presets.get(state.launch_selected).cloned() else {
@@ -1455,8 +1432,8 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 state.review_selected = 0;
                 return vec![];
             }
-            let len = review.changes.len() as i32;
-            state.review_selected = (state.review_selected as i32 + delta).rem_euclid(len) as usize;
+            state.review_selected =
+                wrap_selection(state.review_selected, delta, review.changes.len());
             state.review_scroll = 0;
         }
         Action::ScrollReviewBy(delta) => {
@@ -1776,8 +1753,8 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
         }
         Action::MoveHelp(delta) => {
             if state.show_help {
-                state.help_top = ((state.help_top as i32).saturating_add(delta))
-                    .clamp(0, state.help_max_top.get() as i32)
+                state.help_top = (state.help_top as i128 + i128::from(delta))
+                    .clamp(0, state.help_max_top.get() as i128)
                     as usize;
             }
         }
@@ -1920,13 +1897,8 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 .as_ref()
                 .map(|results| results.hits.len())
                 .unwrap_or(0);
-            if len == 0 {
-                state.transcript_search_selected = 0;
-            } else {
-                state.transcript_search_selected = (state.transcript_search_selected as i32 + delta)
-                    .rem_euclid(len as i32)
-                    as usize;
-            }
+            state.transcript_search_selected =
+                wrap_selection(state.transcript_search_selected, delta, len);
         }
         Action::OpenTranscriptSearchSelected => {
             let Some(hit) = state.transcript_search_hit().cloned() else {
