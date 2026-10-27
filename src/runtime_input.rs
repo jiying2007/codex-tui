@@ -141,9 +141,7 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
     if app.thread_queue_open && app.input_mode == InputMode::Normal {
         if app.pending_queue_confirmation.is_some() {
             return match key.code {
-                KeyCode::Char('y') if plain => {
-                    reduce(app, Action::ConfirmPendingOperation)
-                }
+                KeyCode::Char('y') if plain => reduce(app, Action::ConfirmPendingOperation),
                 KeyCode::Char('c') | KeyCode::Esc => reduce(app, Action::CancelPendingOperation),
                 _ => vec![],
             };
@@ -205,9 +203,7 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
 
     if app.pending_launch_plan.is_some() {
         return match key.code {
-            KeyCode::Char('y') if plain => {
-                reduce(app, Action::ConfirmPendingOperation)
-            }
+            KeyCode::Char('y') if plain => reduce(app, Action::ConfirmPendingOperation),
             KeyCode::Char('c') | KeyCode::Esc => reduce(app, Action::CancelPendingOperation),
             _ => vec![],
         };
@@ -215,9 +211,7 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
 
     if app.pending_local_batch.is_some() {
         return match key.code {
-            KeyCode::Char('y') if plain => {
-                reduce(app, Action::ConfirmPendingOperation)
-            }
+            KeyCode::Char('y') if plain => reduce(app, Action::ConfirmPendingOperation),
             KeyCode::Char('c') | KeyCode::Esc => reduce(app, Action::CancelPendingOperation),
             _ => vec![],
         };
@@ -225,9 +219,7 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
 
     if app.pending_forge_operation.is_some() {
         return match key.code {
-            KeyCode::Char('y') if plain => {
-                reduce(app, Action::ConfirmPendingOperation)
-            }
+            KeyCode::Char('y') if plain => reduce(app, Action::ConfirmPendingOperation),
             KeyCode::Char('c') | KeyCode::Esc => reduce(app, Action::CancelPendingOperation),
             _ => vec![],
         };
@@ -238,12 +230,8 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
             KeyCode::Esc => Some(Action::CloseGoalActions),
             KeyCode::Enter if plain => Some(Action::BeginGoalObjective),
             KeyCode::Char('e') if plain => Some(Action::BeginGoalObjective),
-            KeyCode::Char('p') if plain => {
-                Some(Action::SetGoalStatus(GoalStatus::Paused))
-            }
-            KeyCode::Char('r') if plain => {
-                Some(Action::SetGoalStatus(GoalStatus::Active))
-            }
+            KeyCode::Char('p') if plain => Some(Action::SetGoalStatus(GoalStatus::Paused)),
+            KeyCode::Char('r') if plain => Some(Action::SetGoalStatus(GoalStatus::Active)),
             KeyCode::Char('c') if plain => Some(Action::ClearGoal),
             _ => None,
         };
@@ -259,14 +247,10 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
             {
                 Some(Action::BeginUserInput)
             }
-            (InteractiveRequestKind::UserInput { .. }, KeyCode::Char('n'))
-                if plain =>
-            {
+            (InteractiveRequestKind::UserInput { .. }, KeyCode::Char('n')) if plain => {
                 Some(Action::ResolvePending(InteractiveResolution::Decline))
             }
-            (InteractiveRequestKind::UserInput { .. }, KeyCode::Char('c'))
-                if plain =>
-            {
+            (InteractiveRequestKind::UserInput { .. }, KeyCode::Char('c')) if plain => {
                 Some(Action::ResolvePending(InteractiveResolution::Cancel))
             }
             (_, KeyCode::Char('y')) if plain => {
@@ -338,6 +322,6 @@ fn terminal_key_bytes(key: KeyEvent) -> Option<Vec<u8>> {
 }
 
 #[cfg(test)]
-mod request_details_tests;
-#[cfg(test)]
 mod overlay_action_tests;
+#[cfg(test)]
+mod request_details_tests;
