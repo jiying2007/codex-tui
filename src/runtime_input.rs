@@ -89,6 +89,7 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
             _ => vec![],
         };
     }
+
     if app.launch_menu_open {
         return match key.code {
             KeyCode::Esc => reduce(app, Action::CloseLaunchPresets),
@@ -98,6 +99,7 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
             _ => vec![],
         };
     }
+
     if app.context_open {
         return match key.code {
             KeyCode::Esc => reduce(app, Action::CloseContext),
@@ -245,10 +247,7 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
             KeyCode::Char('c') if plain => Some(Action::ClearGoal),
             _ => None,
         };
-        if let Some(action) = action {
-            return reduce(app, action);
-        }
-        return vec![];
+        return action.map_or_else(Vec::new, |action| reduce(app, action));
     }
 
     if app.view_kind() == ViewKind::Thread
@@ -291,6 +290,7 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
     };
     handle_command(app, command)
 }
+
 fn terminal_key_bytes(key: KeyEvent) -> Option<Vec<u8>> {
     if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
         return None;
