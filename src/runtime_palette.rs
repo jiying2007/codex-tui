@@ -1,6 +1,6 @@
 use crate::runtime_commands::handle_command;
 use codex_tui::app::{Action, AppState, Effect, reduce};
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
 pub(crate) fn handle_command_palette_paste(app: &mut AppState, text: String) -> Vec<Effect> {
     reduce(app, Action::CommandPaletteInputText(text))
@@ -15,7 +15,7 @@ pub(crate) fn handle_command_palette_key(app: &mut AppState, key: KeyEvent) -> V
         KeyCode::Down => reduce(app, Action::MoveCommandPalette(1)),
         KeyCode::Up => reduce(app, Action::MoveCommandPalette(-1)),
         KeyCode::Backspace => reduce(app, Action::CommandPaletteBackspace),
-        KeyCode::Enter => {
+        KeyCode::Enter if key.kind == KeyEventKind::Press && key.modifiers.is_empty() => {
             let Some(choice) = app.take_command_palette_choice() else {
                 return vec![];
             };
