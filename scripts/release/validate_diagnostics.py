@@ -15,7 +15,7 @@ INTERACTION_FIXTURES = {
     "thread-revision-and-render-10k", "planning-ui-snapshot-10k",
     "planning-worker-compute-10k", "planning-ui-commit-10k",
     "list-navigation-and-render-10k", "review-queue-navigation-and-render-10k",
-    "headless-local-cards-10k", "planning-ui-rebase-10k", "planning-ui-rebase-50k",
+    "headless-local-cards-10k", "planning-ui-rebase-10k", "planning-ui-stale-retry-50k",
 }
 SCALE_TIMINGS = ("planningReconcile", "recentProjection", "allHistoryProjection",
                  "searchProjection", "hostLocalProjection")

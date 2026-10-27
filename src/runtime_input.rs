@@ -10,7 +10,7 @@ use codex_tui::{
     keymap::command_for_key,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-
+mod composer_keys;
 pub(crate) fn handle_paste(app: &mut AppState, text: String) -> Vec<Effect> {
     if text.is_empty() || app.request_details_open() {
         return vec![];
@@ -26,22 +26,18 @@ pub(crate) fn handle_paste(app: &mut AppState, text: String) -> Vec<Effect> {
     }
     vec![]
 }
-
 fn is_plain_press(key: KeyEvent) -> bool {
     key.kind == KeyEventKind::Press && key.modifiers == KeyModifiers::NONE
 }
-
 fn is_terminal_release_key(key: KeyEvent) -> bool {
     matches!(key.code, KeyCode::F(6))
         || (key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char(']'))
         || key.code == KeyCode::Char('\u{001d}')
 }
-
 pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
     if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
         return vec![];
     }
-
     // Details are a local reading surface. No approval or global write shortcut
     // can reach the request while the operator is still inspecting its scope.
     if app.request_details_open() {
@@ -57,7 +53,6 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
         };
         return reduce(app, action);
     }
-
     if app.terminal_focused {
         if is_terminal_release_key(key) {
             return reduce(app, Action::SetTerminalFocus(false));
@@ -185,6 +180,11 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
         return handle_command(app, Command::QuitOrInterrupt);
     }
 
+    if app.input_mode == InputMode::Composer
+        && let Some(action) = composer_keys::action(key)
+    {
+        return reduce(app, action);
+    }
     if app.input_mode != InputMode::Normal {
         let action = match key.code {
             KeyCode::Esc => Action::CancelInput,

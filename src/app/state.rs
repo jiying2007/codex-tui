@@ -120,6 +120,7 @@ impl AppState {
             user_responses: Default::default(),
             show_help: false,
             help_top: 0,
+            help_max_top: help_scroll::Limit::new(HELP_ENTRY_COUNT - 1),
             should_quit: false,
             backend_status: BackendStatus::starting("unknown"),
             language: UiLanguage::English,
@@ -137,26 +138,25 @@ impl AppState {
             transcript_search_active_hit: None,
             input_mode: InputMode::Normal,
             input_buffer: String::new(),
+            composer_cursor: 0,
+            composer_scroll_back: 0,
             input_original: String::new(),
             alias_target: None,
             mutation_editor: None,
             search_return_view: None,
         }
     }
-
     pub fn transcript_search_hit(&self) -> Option<&TranscriptSearchHit> {
         self.transcript_search_results
             .as_ref()
             .and_then(|results| results.hits.get(self.transcript_search_selected))
     }
-
     pub fn transcript_search_source_label(&self) -> &'static str {
         self.transcript_search_results
             .as_ref()
             .map(|results| results.source.label())
             .unwrap_or("pending")
     }
-
     pub fn selected_thread_queue_submission(&self) -> Option<&QueuedSubmission> {
         self.thread_queue_snapshot
             .as_ref()
