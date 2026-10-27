@@ -60,7 +60,7 @@ class DiagnosticContracts(unittest.TestCase):
 
     def test_interaction_sizes_and_expanded_path_coverage_are_required(self):
         for name in ("list-navigation-and-render-10k", "review-queue-navigation-and-render-10k",
-                     "headless-local-cards-10k", "planning-ui-rebase-10k", "planning-ui-rebase-50k"):
+                     "headless-local-cards-10k", "planning-ui-rebase-10k", "planning-ui-stale-retry-50k"):
             with self.subTest(fixture=name):
                 report = fixture("interaction")
                 entry = next(item for item in report["fixtures"] if item["fixture"] == name)
