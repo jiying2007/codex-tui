@@ -8,7 +8,7 @@ use ratatui::{
     layout::Rect,
     style::{Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Clear, Paragraph, Wrap},
+    widgets::{Block, Clear, List, ListState, Paragraph, Wrap},
 };
 
 pub(super) fn render_command_palette(frame: &mut Frame<'_>, app: &AppState) {
@@ -64,16 +64,15 @@ pub(super) fn render_command_palette(frame: &mut Frame<'_>, app: &AppState) {
         "type/paste fuzzy query · ↑/↓ move · Enter execute · Backspace edit · Esc close · Ctrl+K toggle",
         "输入/粘贴模糊搜索 · ↑/↓ 移动 · Enter 执行 · Backspace 编辑 · Esc 关闭 · Ctrl+K 切换",
     )));
-    let height = u16::try_from(lines.len().saturating_add(2))
-        .unwrap_or(20)
-        .clamp(7, 26);
+    let height = lines.len().saturating_add(2).clamp(7, 26) as u16;
     let area = centered_fixed(86, height, frame.area());
+    let selected =
+        (app.command_palette_selected < matches.len()).then(|| app.command_palette_selected + 1);
     frame.render_widget(Clear, area);
-    frame.render_widget(
-        Paragraph::new(lines)
-            .block(Block::bordered().title(tr(app, " Command Palette ", " 命令面板 ")))
-            .wrap(Wrap { trim: false }),
+    frame.render_stateful_widget(
+        List::new(lines).block(Block::bordered().title(tr(app, " Command Palette ", " 命令面板 "))),
         area,
+        &mut ListState::default().with_selected(selected),
     );
 }
 
