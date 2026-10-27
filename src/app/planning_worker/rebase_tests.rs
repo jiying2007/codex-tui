@@ -98,7 +98,6 @@ fn local_snapshot_change_still_fences_an_old_result() {
     reduce(&mut live, Action::PlanningSnapshotLoaded(snapshot));
     assert!(!output.apply(&mut live));
 }
-
 #[test]
 fn shared_worktree_peer_is_reprojected_when_only_one_runtime_changes() {
     let mut live = app(20);
@@ -127,3 +126,4 @@ fn shared_worktree_peer_is_reprojected_when_only_one_runtime_changes() {
     reduce(&mut live, Action::ReplaceThreads(threads));
     assert_current(live, output);
 }
+include!("stale_retry_tests.rs");

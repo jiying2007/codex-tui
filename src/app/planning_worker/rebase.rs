@@ -1,7 +1,6 @@
-//! Rebase a small source delta, never install a stale source or operator snapshot.
-//! Large/global changes retain the full worker retry rather than expanding UI work.
+//! Rebase small source deltas; never install stale authority or operator intent.
+//! Beyond 10k threads defer to a fresh worker pass instead of blocking the UI.
 use super::*;
-
 const MAX_REBASED_CARDS: usize = 64;
 
 pub(super) struct Source {
@@ -19,7 +18,8 @@ impl Output {
     pub(super) fn rebase(&mut self, state: &AppState) -> bool {
         // Remote capabilities, local overlays and operator intent are not guessed
         // from old cards. A change in these domains needs a fresh full snapshot.
-        if self.source.intent_generation != state.planning_intent_generation
+        if state.threads.len() > 10_000
+            || self.source.intent_generation != state.planning_intent_generation
             || self.source.git != state.git_contexts
             || self.source.forge != state.forge_observations
             || self.source.goals != state.goals
