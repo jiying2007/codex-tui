@@ -1432,7 +1432,8 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 state.review_selected = 0;
                 return vec![];
             }
-            state.review_selected = wrap_selection(state.review_selected, delta, review.changes.len());
+            state.review_selected =
+                wrap_selection(state.review_selected, delta, review.changes.len());
             state.review_scroll = 0;
         }
         Action::ScrollReviewBy(delta) => {
