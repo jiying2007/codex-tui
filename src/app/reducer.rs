@@ -536,7 +536,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 return vec![];
             }
             let from = state.thread_queue_selected.min(len - 1);
-            let to = (from as i32 + delta).clamp(0, (len - 1) as i32) as usize;
+            let to = (from as i128 + i128::from(delta)).clamp(0, (len - 1) as i128) as usize;
             if from == to {
                 return vec![];
             }
@@ -1752,8 +1752,8 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
         }
         Action::MoveHelp(delta) => {
             if state.show_help {
-                state.help_top = ((state.help_top as i32).saturating_add(delta))
-                    .clamp(0, state.help_max_top.get() as i32)
+                state.help_top = (state.help_top as i128 + i128::from(delta))
+                    .clamp(0, state.help_max_top.get() as i128)
                     as usize;
             }
         }
