@@ -160,6 +160,7 @@
     "src/release.rs": 618,
     "src/runtime_store.rs": 660,
     "src/runtime_input/composer_keys.rs": 39,
+    "src/runtime_input/overlay_action_tests.rs": 182,
     "src/runtime_input.rs": 343,
     "src/app_server_registry.rs": 271,
     "src/app_server_wire.rs": 7,

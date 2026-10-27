@@ -38,6 +38,7 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
     if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
         return vec![];
     }
+    let plain = is_plain_press(key);
     // Details are a local reading surface. No approval or global write shortcut
     // can reach the request while the operator is still inspecting its scope.
     if app.request_details_open() {
@@ -83,8 +84,8 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
             KeyCode::Right | KeyCode::Char('l') => {
                 reduce(app, Action::CycleSavedViewEditorValue(1))
             }
-            KeyCode::Enter => reduce(app, Action::BeginSavedViewFieldEdit),
-            KeyCode::Char('s') => reduce(app, Action::SaveSavedViewEditor),
+            KeyCode::Enter if plain => reduce(app, Action::BeginSavedViewFieldEdit),
+            KeyCode::Char('s') if plain => reduce(app, Action::SaveSavedViewEditor),
             _ => vec![],
         };
     }
@@ -94,7 +95,7 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
             KeyCode::Esc => reduce(app, Action::CloseLaunchPresets),
             KeyCode::Char('j') | KeyCode::Down => reduce(app, Action::MoveLaunchPreset(1)),
             KeyCode::Char('k') | KeyCode::Up => reduce(app, Action::MoveLaunchPreset(-1)),
-            KeyCode::Enter => reduce(app, Action::SelectLaunchPreset),
+            KeyCode::Enter if plain => reduce(app, Action::SelectLaunchPreset),
             _ => vec![],
         };
     }
@@ -104,7 +105,7 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
             KeyCode::Esc => reduce(app, Action::CloseContext),
             KeyCode::Char('j') | KeyCode::Down => reduce(app, Action::MoveContext(1)),
             KeyCode::Char('k') | KeyCode::Up => reduce(app, Action::MoveContext(-1)),
-            KeyCode::Enter => reduce(app, Action::ExecuteContext),
+            KeyCode::Enter if plain => reduce(app, Action::ExecuteContext),
             _ => vec![],
         };
     }
@@ -140,9 +141,7 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
     if app.thread_queue_open && app.input_mode == InputMode::Normal {
         if app.pending_queue_confirmation.is_some() {
             return match key.code {
-                KeyCode::Char('y') if is_plain_press(key) => {
-                    reduce(app, Action::ConfirmPendingOperation)
-                }
+                KeyCode::Char('y') if plain => reduce(app, Action::ConfirmPendingOperation),
                 KeyCode::Char('c') | KeyCode::Esc => reduce(app, Action::CancelPendingOperation),
                 _ => vec![],
             };
@@ -151,13 +150,13 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
             KeyCode::Esc | KeyCode::Char('q') => reduce(app, Action::CloseThreadQueue),
             KeyCode::Char('j') | KeyCode::Down => reduce(app, Action::MoveThreadQueue(1)),
             KeyCode::Char('k') | KeyCode::Up => reduce(app, Action::MoveThreadQueue(-1)),
-            KeyCode::Char('n') => reduce(app, Action::BeginThreadQueueAdd),
-            KeyCode::Char('e') => reduce(app, Action::BeginThreadQueueEdit),
-            KeyCode::Char('x') => reduce(app, Action::BeginThreadQueueDelete),
-            KeyCode::Char('s') => reduce(app, Action::BeginThreadQueueStart),
-            KeyCode::Char('[') => reduce(app, Action::ReorderThreadQueue(-1)),
-            KeyCode::Char(']') => reduce(app, Action::ReorderThreadQueue(1)),
-            KeyCode::Char('r') => reduce(app, Action::RefreshThreadQueue),
+            KeyCode::Char('n') if plain => reduce(app, Action::BeginThreadQueueAdd),
+            KeyCode::Char('e') if plain => reduce(app, Action::BeginThreadQueueEdit),
+            KeyCode::Char('x') if plain => reduce(app, Action::BeginThreadQueueDelete),
+            KeyCode::Char('s') if plain => reduce(app, Action::BeginThreadQueueStart),
+            KeyCode::Char('[') if plain => reduce(app, Action::ReorderThreadQueue(-1)),
+            KeyCode::Char(']') if plain => reduce(app, Action::ReorderThreadQueue(1)),
+            KeyCode::Char('r') if plain => reduce(app, Action::RefreshThreadQueue),
             _ => vec![],
         };
     }
@@ -171,7 +170,7 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
             KeyCode::Esc => reduce(app, Action::CloseTranscriptSearch),
             KeyCode::Char('j') | KeyCode::Down => reduce(app, Action::MoveTranscriptSearch(1)),
             KeyCode::Char('k') | KeyCode::Up => reduce(app, Action::MoveTranscriptSearch(-1)),
-            KeyCode::Enter => reduce(app, Action::OpenTranscriptSearchSelected),
+            KeyCode::Enter if plain => reduce(app, Action::OpenTranscriptSearchSelected),
             _ => vec![],
         };
     }
@@ -188,7 +187,7 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
     if app.input_mode != InputMode::Normal {
         let action = match key.code {
             KeyCode::Esc => Action::CancelInput,
-            KeyCode::Enter => Action::CommitInput,
+            KeyCode::Enter if plain => Action::CommitInput,
             KeyCode::Backspace => Action::InputBackspace,
             KeyCode::Char(character)
                 if !key.modifiers.intersects(
@@ -204,9 +203,7 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
 
     if app.pending_launch_plan.is_some() {
         return match key.code {
-            KeyCode::Char('y') if is_plain_press(key) => {
-                reduce(app, Action::ConfirmPendingOperation)
-            }
+            KeyCode::Char('y') if plain => reduce(app, Action::ConfirmPendingOperation),
             KeyCode::Char('c') | KeyCode::Esc => reduce(app, Action::CancelPendingOperation),
             _ => vec![],
         };
@@ -214,9 +211,7 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
 
     if app.pending_local_batch.is_some() {
         return match key.code {
-            KeyCode::Char('y') if is_plain_press(key) => {
-                reduce(app, Action::ConfirmPendingOperation)
-            }
+            KeyCode::Char('y') if plain => reduce(app, Action::ConfirmPendingOperation),
             KeyCode::Char('c') | KeyCode::Esc => reduce(app, Action::CancelPendingOperation),
             _ => vec![],
         };
@@ -224,9 +219,7 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
 
     if app.pending_forge_operation.is_some() {
         return match key.code {
-            KeyCode::Char('y') if is_plain_press(key) => {
-                reduce(app, Action::ConfirmPendingOperation)
-            }
+            KeyCode::Char('y') if plain => reduce(app, Action::ConfirmPendingOperation),
             KeyCode::Char('c') | KeyCode::Esc => reduce(app, Action::CancelPendingOperation),
             _ => vec![],
         };
@@ -235,21 +228,14 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
     if app.goal_actions_open {
         let action = match key.code {
             KeyCode::Esc => Some(Action::CloseGoalActions),
-            KeyCode::Enter if is_plain_press(key) => Some(Action::BeginGoalObjective),
-            KeyCode::Char('e') if is_plain_press(key) => Some(Action::BeginGoalObjective),
-            KeyCode::Char('p') if is_plain_press(key) => {
-                Some(Action::SetGoalStatus(GoalStatus::Paused))
-            }
-            KeyCode::Char('r') if is_plain_press(key) => {
-                Some(Action::SetGoalStatus(GoalStatus::Active))
-            }
-            KeyCode::Char('c') if is_plain_press(key) => Some(Action::ClearGoal),
+            KeyCode::Enter if plain => Some(Action::BeginGoalObjective),
+            KeyCode::Char('e') if plain => Some(Action::BeginGoalObjective),
+            KeyCode::Char('p') if plain => Some(Action::SetGoalStatus(GoalStatus::Paused)),
+            KeyCode::Char('r') if plain => Some(Action::SetGoalStatus(GoalStatus::Active)),
+            KeyCode::Char('c') if plain => Some(Action::ClearGoal),
             _ => None,
         };
-        if let Some(action) = action {
-            return reduce(app, action);
-        }
-        return vec![];
+        return action.map_or_else(Vec::new, |action| reduce(app, action));
     }
 
     if app.view_kind() == ViewKind::Thread
@@ -257,27 +243,23 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
     {
         let action = match (&request.kind, key.code) {
             (InteractiveRequestKind::UserInput { .. }, KeyCode::Enter | KeyCode::Char('i'))
-                if is_plain_press(key) =>
+                if plain =>
             {
                 Some(Action::BeginUserInput)
             }
-            (InteractiveRequestKind::UserInput { .. }, KeyCode::Char('n'))
-                if is_plain_press(key) =>
-            {
+            (InteractiveRequestKind::UserInput { .. }, KeyCode::Char('n')) if plain => {
                 Some(Action::ResolvePending(InteractiveResolution::Decline))
             }
-            (InteractiveRequestKind::UserInput { .. }, KeyCode::Char('c'))
-                if is_plain_press(key) =>
-            {
+            (InteractiveRequestKind::UserInput { .. }, KeyCode::Char('c')) if plain => {
                 Some(Action::ResolvePending(InteractiveResolution::Cancel))
             }
-            (_, KeyCode::Char('y')) if is_plain_press(key) => {
+            (_, KeyCode::Char('y')) if plain => {
                 Some(Action::ResolvePending(InteractiveResolution::Accept))
             }
-            (_, KeyCode::Char('n')) if is_plain_press(key) => {
+            (_, KeyCode::Char('n')) if plain => {
                 Some(Action::ResolvePending(InteractiveResolution::Decline))
             }
-            (_, KeyCode::Char('c')) if is_plain_press(key) => {
+            (_, KeyCode::Char('c')) if plain => {
                 Some(Action::ResolvePending(InteractiveResolution::Cancel))
             }
             _ => None,
@@ -339,5 +321,7 @@ fn terminal_key_bytes(key: KeyEvent) -> Option<Vec<u8>> {
     Some(bytes)
 }
 
+#[cfg(test)]
+mod overlay_action_tests;
 #[cfg(test)]
 mod request_details_tests;
