@@ -1218,9 +1218,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 state.input_mode = InputMode::Snooze;
             }
         }
-        Action::BeginHotSlotBind => {
-            state.hot_slot_bind_pending = state.selected_local_target();
-        }
+        Action::BeginHotSlotBind => super::shortcuts::begin_bind(state),
         Action::OpenRecentNotification => {
             if !state.recent_alert_controls_available() {
                 // Hidden by an overlay or active editor: do not navigate behind
@@ -1302,6 +1300,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 .find(|hot_slot| hot_slot.slot == slot)
                 .map(|hot_slot| hot_slot.target.clone());
             let Some(target) = target else {
+                super::shortcuts::empty_slot(state, slot);
                 return vec![];
             };
             match target.kind {
@@ -1713,6 +1712,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 return vec![];
             }
             if state.hot_slot_bind_pending.take().is_some() {
+                super::shortcuts::cancelled(state);
                 return vec![];
             }
             if matches!(state.view, View::Scratch(_)) {
@@ -1777,7 +1777,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::MoveHelp(delta) => {
             if state.show_help {
                 state.help_top = ((state.help_top as i32).saturating_add(delta))
-                    .clamp(0, (HELP_ENTRY_COUNT - 1) as i32)
+                    .clamp(0, state.help_max_top.get() as i32)
                     as usize;
             }
         }
