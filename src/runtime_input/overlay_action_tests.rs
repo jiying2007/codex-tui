@@ -5,7 +5,7 @@ use codex_tui::{
     backend::{CodexBackend, FakeBackend},
     command::Command,
     transcript_search::{
-        TranscriptSearchResults, TranscriptSearchSource, ThreadSearchCandidate, thread_level_hit,
+        ThreadSearchCandidate, TranscriptSearchResults, TranscriptSearchSource, thread_level_hit,
     },
 };
 
@@ -147,7 +147,10 @@ fn text_editor_commit_never_uses_modified_or_held_enter() {
         assert_eq!(app.input_buffer, "SCRATCH_DRAFT");
     }
     let result = handle_key(&mut app, press(KeyCode::Enter));
-    assert!(!result.is_empty(), "plain Enter must still commit the local scratch");
+    assert!(
+        !result.is_empty(),
+        "plain Enter must still commit the local scratch"
+    );
     assert_eq!(app.input_mode, InputMode::Normal);
 }
 
@@ -170,5 +173,9 @@ fn transcript_selection_requires_plain_enter_without_redirecting_on_repeat() {
     let effects = handle_key(&mut app, press(KeyCode::Enter));
     assert!(!app.transcript_search_open);
     assert_eq!(app.view, View::Thread(id));
-    assert!(effects.iter().any(|effect| matches!(effect, Effect::LoadConversation(_))));
+    assert!(
+        effects
+            .iter()
+            .any(|effect| matches!(effect, Effect::LoadConversation(_)))
+    );
 }
