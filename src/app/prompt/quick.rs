@@ -2,7 +2,6 @@
 use crate::app::{AppState, Effect, InputMode, View};
 use crate::domain::ThreadId;
 use crate::planning::SourceKind;
-
 pub(in crate::app) fn open(state: &mut AppState) -> Vec<Effect> {
     let id = match &state.view {
         View::Registry => state.selected_thread_id(),
@@ -27,5 +26,6 @@ pub(in crate::app) fn open(state: &mut AppState) -> Vec<Effect> {
     state.prepare_conversation(&id);
     state.view = View::Thread(id.clone());
     state.input_mode = InputMode::Composer;
+    crate::app::composer::open(state, &id);
     vec![Effect::LoadConversation(id)]
 }
