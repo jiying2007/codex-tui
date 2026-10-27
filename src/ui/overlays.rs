@@ -103,16 +103,14 @@ pub(super) fn render_context_actions(frame: &mut Frame<'_>, app: &AppState) {
             "j/k 移动 · Enter 执行 · Esc 关闭",
         ))))
         .collect::<Vec<_>>();
-    let height = u16::try_from(lines.len().saturating_add(2))
-        .unwrap_or(18)
-        .clamp(6, 24);
+    let height = lines.len().saturating_add(2).clamp(6, 24) as u16;
     let area = centered_fixed(64, height, frame.area());
+    let selected = (app.context_selected < choices.len()).then_some(app.context_selected);
     frame.render_widget(Clear, area);
-    frame.render_widget(
-        Paragraph::new(lines)
-            .block(Block::bordered().title(tr(app, " Actions ", " 操作 ")))
-            .wrap(Wrap { trim: false }),
+    frame.render_stateful_widget(
+        List::new(lines).block(Block::bordered().title(tr(app, " Actions ", " 操作 "))),
         area,
+        &mut ListState::default().with_selected(selected),
     );
 }
 
