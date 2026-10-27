@@ -63,6 +63,7 @@ mod reducer;
 mod registry;
 pub(crate) mod request_details;
 mod review;
+mod shortcuts;
 mod state;
 mod thread_navigation;
 mod types;
@@ -78,7 +79,6 @@ pub const HELP_ENTRY_COUNT: usize = 14;
 const REGISTRY_RECENT_LIMIT: usize = 100;
 const CONVERSATION_CACHE_LIMIT: usize = 16;
 const GIT_REVIEW_CACHE_LIMIT: usize = 4;
-
 pub const fn conversation_cache_limit() -> usize {
     CONVERSATION_CACHE_LIMIT
 }
