@@ -151,7 +151,8 @@ fn text_editor_commit_never_uses_modified_or_held_enter() {
         !result.is_empty(),
         "plain Enter must still commit the local scratch"
     );
-    assert_eq!(app.input_mode, InputMode::Normal);
+    // Local edits retain the draft until an authoritative write receipt arrives.
+    assert_eq!(app.input_mode, InputMode::ScratchTitle);
 }
 
 #[test]
