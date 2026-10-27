@@ -237,13 +237,20 @@ fn ctrl_c_is_delivered_to_child_and_shell_remains_usable() {
     ensure_shell_ready(&handle);
 
     #[cfg(windows)]
-    let long_command = "ping.exe -n 30 127.0.0.1 >NUL";
+    let long_command = "ping.exe -n 30 127.0.0.1";
     #[cfg(not(windows))]
     let long_command = "sleep 30";
 
     handle
         .send(PtyCommand::Input(line(long_command)))
         .expect("long command");
+    #[cfg(windows)]
+    {
+        // CMD may echo the command before ping is the foreground process.
+        // A loopback response proves the child has started before Ctrl-C.
+        let _ = wait_output_contains(&handle, "TTL=");
+    }
+    #[cfg(not(windows))]
     thread::sleep(Duration::from_millis(200));
     handle.send(PtyCommand::Input(vec![0x03])).expect("Ctrl-C");
     thread::sleep(Duration::from_millis(100));
