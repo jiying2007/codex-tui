@@ -4,7 +4,9 @@ use codex_tui::{
     app::{ContextChoice, View},
     backend::{CodexBackend, FakeBackend},
     command::Command,
-    transcript_search::{TranscriptSearchResults, TranscriptSearchSource, ThreadSearchCandidate, thread_level_hit},
+    transcript_search::{
+        TranscriptSearchResults, TranscriptSearchSource, ThreadSearchCandidate, thread_level_hit,
+    },
 };
 
 fn fixture() -> AppState {
