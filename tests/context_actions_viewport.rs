@@ -120,7 +120,9 @@ fn resizing_one_terminal_retains_selection_without_mutating_menu_state() {
         let mut terminal = Terminal::new(TestBackend::new(80, 24)).expect("terminal");
         for (width, height) in [(80, 24), (80, 12), (40, 12), (80, 24)] {
             terminal.backend_mut().resize(width, height);
-            terminal.resize(Rect::new(0, 0, width, height)).expect("resize");
+            terminal
+                .resize(Rect::new(0, 0, width, height))
+                .expect("resize");
             assert_selected_visible(&draw(&mut terminal, &app), last);
             assert_eq!(app.context_choice(), selected);
             assert_eq!(app.context_choices(), choices);
