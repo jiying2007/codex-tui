@@ -72,15 +72,23 @@ impl RuntimeNotifications {
     }
 
     pub(crate) fn seed(&mut self, app: &AppState) {
-        if self.mode == NotificationMode::Off {
-            return;
-        }
         let observation =
             NotificationObservation::from_projection(&app.threads, &app.work_cards, &app.goals);
         let _ = self.tracker.advance(observation);
     }
 
     pub(crate) fn observe(&mut self, app: &AppState) -> Result<usize> {
+        let observation =
+            NotificationObservation::from_projection(&app.threads, &app.work_cards, &app.goals);
+        let events = self.tracker.advance(observation);
+        // In-app context must survive silence, backpressure and dispatcher failure.
+        if let Some(event) = events.iter().max_by_key(|event| priority(event.kind)) {
+            self.recent = Some(RecentNotification::new(
+                event.clone(),
+                event_thread_id(app, event),
+                events.len().saturating_sub(1),
+            ));
+        }
         if self.mode == NotificationMode::Off {
             return Ok(0);
         }
@@ -89,14 +97,8 @@ impl RuntimeNotifications {
             "notification dispatcher is unavailable"
         );
         let mut dispatched = self.flush_pending()?;
-        let observation =
-            NotificationObservation::from_projection(&app.threads, &app.work_cards, &app.goals);
-        let events = self.tracker.advance(observation);
-
         let mut overflow = 0usize;
         let mut attempted_extra_flush = false;
-        let mut observed_count = 0_usize;
-        let mut primary: Option<NotificationEvent> = None;
         for event in events {
             // Reclaim available actor capacity once before declaring overload.
             if self.pending.len() == NOTIFICATION_PENDING_CAPACITY && !attempted_extra_flush {
@@ -107,13 +109,6 @@ impl RuntimeNotifications {
                 overflow = overflow.saturating_add(1);
                 continue;
             }
-            observed_count = observed_count.saturating_add(1);
-            if primary
-                .as_ref()
-                .is_none_or(|current| priority(event.kind) > priority(current.kind))
-            {
-                primary = Some(event.clone());
-            }
             let (title, body) = event.text(app.language);
             self.pending.push_back(Delivery {
                 title,
@@ -121,14 +116,6 @@ impl RuntimeNotifications {
                 kind: event.kind,
                 language: app.language,
             });
-        }
-        if let Some(event) = primary {
-            let thread_id = event_thread_id(app, &event);
-            self.recent = Some(RecentNotification::new(
-                event,
-                thread_id,
-                observed_count.saturating_sub(1),
-            ));
         }
         dispatched = dispatched.saturating_add(self.flush_pending()?);
         anyhow::ensure!(
@@ -195,7 +182,10 @@ fn event_thread_id(
 ) -> Option<codex_tui::domain::ThreadId> {
     use codex_tui::{domain::ThreadId, planning::SourceKind};
 
-    if event.kind == NotificationKind::Completion {
+    if matches!(
+        event.kind,
+        NotificationKind::Completion | NotificationKind::ActivityStopped
+    ) {
         let id = ThreadId::new(event.item_id.clone());
         return app.contains_thread_id(&id).then_some(id);
     }
@@ -220,12 +210,14 @@ fn mode_for_session(configured: NotificationMode, ssh: bool) -> NotificationMode
 
 fn priority(kind: NotificationKind) -> u8 {
     match kind {
-        NotificationKind::ApprovalRequired => 6,
-        NotificationKind::UserInputRequired => 5,
-        NotificationKind::PipelineFailed => 4,
-        NotificationKind::GoalBlocked => 3,
-        NotificationKind::ReviewRequested => 2,
-        NotificationKind::Completion => 1,
+        NotificationKind::ApprovalRequired => 8,
+        NotificationKind::UserInputRequired => 7,
+        NotificationKind::SystemError | NotificationKind::PipelineFailed => 6,
+        NotificationKind::UsageLimited | NotificationKind::BudgetLimited => 5,
+        NotificationKind::GoalBlocked => 4,
+        NotificationKind::ReviewRequested => 3,
+        NotificationKind::Completion => 2,
+        NotificationKind::ActivityStopped => 1,
     }
 }
 
@@ -513,6 +505,7 @@ mod tests {
             thread.runtime = RuntimeStatus::Ready;
         }
         assert!(runtime.observe(&app).is_err());
+        assert!(runtime.take_recent().is_some());
         let pending = runtime.pending.len();
         assert!(pending > 0);
         assert!(runtime.try_notice().unwrap().contains("unavailable"));
@@ -594,8 +587,8 @@ mod tests {
             thread.runtime = RuntimeStatus::Ready;
         }
         assert!(runtime.observe(&app).is_ok());
-        let notice = runtime.take_recent().expect("observed completion");
-        assert_eq!(notice.event.kind, NotificationKind::Completion);
+        let notice = runtime.take_recent().expect("observed idle");
+        assert_eq!(notice.event.kind, NotificationKind::ActivityStopped);
         assert!(notice.thread_id.is_some());
         assert_eq!(notice.other_count, app.threads.len() - 1);
         assert!(runtime.take_recent().is_none());
@@ -655,45 +648,47 @@ mod tests {
 }
 
 #[cfg(test)]
-mod disabled_tracking_tests {
+mod silent_tracking_tests {
     use super::*;
     use codex_tui::{
         backend::{CodexBackend, FakeBackend},
         domain::RuntimeStatus,
     };
 
-    fn working() -> AppState {
-        let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+    #[tokio::test]
+    async fn off_keeps_recent_context_without_delivery_or_startup_flood() {
+        let mut runtime = RuntimeNotifications::start(NotificationMode::Off);
+        let mut app = AppState::new(FakeBackend::scaled(160).snapshot().threads);
         for thread in &mut app.threads {
             thread.runtime = RuntimeStatus::Working;
         }
-        app
-    }
-
-    fn assert_untracked(runtime: &mut RuntimeNotifications, mut app: AppState) {
+        runtime.seed(&app);
+        assert!(runtime.take_recent().is_none());
         for thread in &mut app.threads {
             thread.runtime = RuntimeStatus::Ready;
         }
-        let observation = NotificationObservation::from_projection(&app.threads, &[], &app.goals);
-        assert!(
-            runtime.tracker.advance(observation).is_empty(),
-            "disabled mode retained and compared the entire previous registry"
-        );
-    }
-
-    #[tokio::test]
-    async fn off_seed_does_not_retain_registry_projections() {
-        let mut runtime = RuntimeNotifications::start(NotificationMode::Off);
-        let app = working();
-        runtime.seed(&app);
-        assert_untracked(&mut runtime, app);
-    }
-
-    #[tokio::test]
-    async fn off_observe_does_not_retain_registry_projections() {
-        let mut runtime = RuntimeNotifications::start(NotificationMode::Off);
-        let app = working();
         assert_eq!(runtime.observe(&app).unwrap(), 0);
-        assert_untracked(&mut runtime, app);
+        let recent = runtime.take_recent().expect("silent visual alert");
+        assert_eq!(recent.event.kind, NotificationKind::ActivityStopped);
+        assert!(recent.thread_id.is_some());
+        assert_eq!(recent.other_count, 159);
+        assert!(runtime.command_tx.is_none() && runtime.task.is_none());
+        assert!(runtime.pending.is_empty());
+        assert_eq!(runtime.observe(&app).unwrap(), 0);
+        assert!(runtime.take_recent().is_none());
+        assert!(runtime.try_notice().is_none());
+    }
+
+    #[test]
+    fn failures_and_limits_outrank_idle_and_goal_completion() {
+        for kind in [
+            NotificationKind::SystemError,
+            NotificationKind::UsageLimited,
+            NotificationKind::BudgetLimited,
+        ] {
+            assert!(priority(kind) > priority(NotificationKind::Completion));
+            assert!(priority(kind) > priority(NotificationKind::ActivityStopped));
+            assert!(priority(kind) < priority(NotificationKind::ApprovalRequired));
+        }
     }
 }
