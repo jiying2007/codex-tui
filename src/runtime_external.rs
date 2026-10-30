@@ -36,21 +36,8 @@ pub(crate) fn open_external_editor(
     worktree_root: &str,
     relative_path: &str,
 ) -> Result<()> {
-    let editor =
-        std::env::var_os("CODEX_TUI_EDITOR").unwrap_or_else(|| std::ffi::OsString::from("code"));
-    if editor.to_string_lossy().trim().is_empty() {
-        anyhow::bail!("CODEX_TUI_EDITOR is empty");
-    }
     let path = selected_editor_target(cwd, worktree_root, relative_path)?;
-    let mut command = std::process::Command::new(editor);
-    command
-        .arg(path)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null());
-    codex_tui::detached_process::spawn(&mut command)
-        .map(|_| ())
-        .map_err(Into::into)
+    request_handoff("CODEX_TUI_EDITOR", path.as_os_str(), "code", &[])
 }
 
 fn validate_external_url(url: &str) -> Result<()> {
@@ -82,36 +69,48 @@ fn validate_external_url(url: &str) -> Result<()> {
 
 pub(crate) fn open_external_url(url: &str) -> Result<()> {
     validate_external_url(url)?;
-
-    let mut command = if let Some(browser) = std::env::var_os("CODEX_TUI_BROWSER") {
-        anyhow::ensure!(
-            !browser.to_string_lossy().trim().is_empty(),
-            "CODEX_TUI_BROWSER is empty"
-        );
-        let mut command = std::process::Command::new(browser);
-        command.arg(url);
-        command
-    } else if cfg!(target_os = "windows") {
-        let mut command = std::process::Command::new("rundll32.exe");
-        command.args(["url.dll,FileProtocolHandler", url]);
-        command
+    let (program, args): (&str, &[&str]) = if cfg!(target_os = "windows") {
+        ("rundll32.exe", &["url.dll,FileProtocolHandler"])
     } else if cfg!(target_os = "macos") {
-        let mut command = std::process::Command::new("open");
-        command.arg(url);
-        command
+        ("open", &[])
     } else {
-        let mut command = std::process::Command::new("xdg-open");
-        command.arg(url);
+        ("xdg-open", &[])
+    };
+    request_handoff("CODEX_TUI_BROWSER", url.as_ref(), program, args)
+}
+
+fn request_handoff(
+    setting: &str,
+    target: &std::ffi::OsStr,
+    default: &str,
+    default_args: &[&str],
+) -> Result<()> {
+    let configured = std::env::var_os(setting);
+    let ssh = std::env::var_os("SSH_TTY").is_some() || std::env::var_os("SSH_CONNECTION").is_some();
+    let safe_target = codex_tui::text::sanitize_inline(&target.to_string_lossy());
+    anyhow::ensure!(
+        !ssh || configured.is_some(),
+        "SSH: no process started; configure {setting} on the TUI host, or copy this target: {safe_target}"
+    );
+    let mut command = if let Some(program) = configured {
+        anyhow::ensure!(
+            !program.to_string_lossy().trim().is_empty(),
+            "{setting} is empty"
+        );
+        std::process::Command::new(program)
+    } else {
+        let mut command = std::process::Command::new(default);
+        command.args(default_args);
         command
     };
-
     command
+        .arg(target)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
     codex_tui::detached_process::spawn(&mut command)
         .map(|_| ())
-        .map_err(Into::into)
+        .with_context(|| format!("TUI host spawn failed ({setting}); target: {safe_target}"))
 }
 
 #[cfg(test)]
