@@ -96,7 +96,9 @@ pub(crate) async fn take_finished<T>(
     let task = task.take()?;
     Some(match task.await {
         Ok(result) => result,
-        Err(error) => Err(anyhow::anyhow!("App Server connection task failed: {error}")),
+        Err(error) => Err(anyhow::anyhow!(
+            "App Server connection task failed: {error}"
+        )),
     })
 }
 
@@ -110,7 +112,7 @@ mod tests {
 
     fn failed_app() -> AppState {
         let mut app = AppState::new(vec![]);
-        app.backend_status = BackendStatus::starting("startup-test".into());
+        app.backend_status = BackendStatus::starting("startup-test");
         app.backend_status.error = Some("synthetic first-connection failure".into());
         app
     }
@@ -245,17 +247,10 @@ mod tests {
         let mut task = None;
         let mut app = failed_app();
         let counter = starts.clone();
-        let accepted = try_retry_with(
-            &mut app,
-            f5(),
-            Some(&target),
-            false,
-            &mut task,
-            move |_| {
-                counter.fetch_add(1, Ordering::SeqCst);
-                tokio::spawn(async { Err::<(), _>(anyhow::anyhow!("fixture unavailable")) })
-            },
-        );
+        let accepted = try_retry_with(&mut app, f5(), Some(&target), false, &mut task, move |_| {
+            counter.fetch_add(1, Ordering::SeqCst);
+            tokio::spawn(async { Err::<(), _>(anyhow::anyhow!("fixture unavailable")) })
+        });
         assert!(accepted);
         finish(&task).await;
         assert!(take_finished(&mut task).await.unwrap().is_err());
