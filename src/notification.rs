@@ -82,7 +82,9 @@ impl NotificationEvent {
             NotificationKind::PipelineFailed => ("Pipeline failed", "流水线失败"),
             NotificationKind::ReviewRequested => ("Review needs attention", "评审需要处理"),
             NotificationKind::ActivityStopped => ("Now idle; check result", "已空闲；请核对结果"),
-            NotificationKind::SystemError => ("System error; inspect details", "系统错误；请查看详情"),
+            NotificationKind::SystemError => {
+                ("System error; inspect details", "系统错误；请查看详情")
+            }
             NotificationKind::UsageLimited => ("Usage limited", "额度受限"),
             NotificationKind::BudgetLimited => ("Budget limited", "预算受限"),
         };

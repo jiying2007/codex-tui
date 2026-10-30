@@ -48,7 +48,11 @@ fn observation(
 fn idle_after_work_or_waiting_is_not_a_success_receipt() {
     for previous in [RuntimeStatus::Working, RuntimeStatus::WaitingHuman] {
         let mut tracker = NotificationTracker::default();
-        assert!(tracker.advance(observation(previous, &[], false)).is_empty());
+        assert!(
+            tracker
+                .advance(observation(previous, &[], false))
+                .is_empty()
+        );
         let events = tracker.advance(observation(RuntimeStatus::Ready, &[], false));
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].kind, NotificationKind::ActivityStopped);
@@ -85,9 +89,18 @@ fn error_or_inactive_to_ready_does_not_claim_completion() {
 #[test]
 fn errors_and_limits_notify_once_then_again_only_after_recovery() {
     for (attention, kind) in [
-        (PlanningAttention::SystemError, NotificationKind::SystemError),
-        (PlanningAttention::UsageLimited, NotificationKind::UsageLimited),
-        (PlanningAttention::BudgetLimited, NotificationKind::BudgetLimited),
+        (
+            PlanningAttention::SystemError,
+            NotificationKind::SystemError,
+        ),
+        (
+            PlanningAttention::UsageLimited,
+            NotificationKind::UsageLimited,
+        ),
+        (
+            PlanningAttention::BudgetLimited,
+            NotificationKind::BudgetLimited,
+        ),
     ] {
         let mut tracker = NotificationTracker::default();
         tracker.advance(observation(RuntimeStatus::Ready, &[], false));
@@ -139,5 +152,9 @@ fn new_blocking_categories_respect_historical_seeding_and_snooze() {
     );
     let events = tracker.advance(observation(RuntimeStatus::Ready, &attention, false));
     assert_eq!(events.len(), 3);
-    assert!(events.iter().all(|event| event.kind != NotificationKind::Completion));
+    assert!(
+        events
+            .iter()
+            .all(|event| event.kind != NotificationKind::Completion)
+    );
 }
