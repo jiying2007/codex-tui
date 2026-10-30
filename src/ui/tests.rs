@@ -1192,7 +1192,7 @@ fn recent_alert_header_is_sanitized_and_never_covers_an_active_composer() {
         result
     };
     let result = snapshot(&app);
-    assert!(result.contains("Work completed"));
+    assert!(result.contains("Goal completed"));
     assert!(result.contains("2 more updates"));
     assert!(!result.contains('\x1b'));
     app.input_mode = InputMode::Composer;
@@ -1234,7 +1234,7 @@ fn narrow_recent_alert_keeps_the_jump_key_visible_before_a_long_subject() {
     let row = (0..44_u16)
         .map(|x| buffer[(x, 0)].symbol())
         .collect::<String>();
-    assert!(row.starts_with("! open · Work completed:"), "{row}");
+    assert!(row.starts_with("! open · Goal completed:"), "{row}");
     assert!(row.contains("important"), "{row}");
 }
 
