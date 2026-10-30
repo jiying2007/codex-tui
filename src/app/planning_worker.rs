@@ -1,10 +1,12 @@
-//! Metadata-only projection; retired results travel with the next single in-flight input.
+//! Metadata-only projection; idle retirement uses the same single-flight worker.
 use super::*;
 mod clock;
 mod diagnostics;
 pub(crate) use diagnostics::{measure_once, measure_rebase_once};
+mod job;
 mod rebase;
 use clock::ProjectionClock;
+use job::Job;
 use std::sync::mpsc::{self, Receiver, SyncSender, TryRecvError};
 struct Input {
     retired: Option<Output>,
@@ -98,8 +100,8 @@ impl Output {
     }
 }
 pub struct PlanningWorker {
-    send: SyncSender<Input>,
-    receive: Receiver<Output>,
+    send: SyncSender<Job>,
+    receive: Receiver<Option<Output>>,
     retired: Option<Output>,
     in_flight: bool,
     completed: Option<u64>,
@@ -107,13 +109,13 @@ pub struct PlanningWorker {
 }
 impl PlanningWorker {
     pub fn start() -> std::io::Result<Self> {
-        let (send, input) = mpsc::sync_channel::<Input>(1);
+        let (send, input) = mpsc::sync_channel::<Job>(1);
         let (output, receive) = mpsc::sync_channel(1);
         std::thread::Builder::new()
             .name("codex-tui-planning".into())
             .spawn(move || {
                 while let Ok(input) = input.recv() {
-                    if output.send(input.compute()).is_err() {
+                    if output.send(input.execute()).is_err() {
                         break;
                     }
                 }
@@ -134,7 +136,7 @@ impl PlanningWorker {
         }
         let mut applied = false;
         match self.receive.try_recv() {
-            Ok(mut output) => {
+            Ok(Some(mut output)) => {
                 self.in_flight = false;
                 if let Some(clock) = output.apply_at(state, now) {
                     applied = true;
@@ -144,60 +146,38 @@ impl PlanningWorker {
                 debug_assert!(self.retired.is_none());
                 self.retired = Some(output);
             }
+            Ok(None) => self.in_flight = false,
             Err(TryRecvError::Empty) => {}
             Err(TryRecvError::Disconnected) => {
                 return Err("planning worker stopped; previous projection retained".into());
             }
         }
-        if !self.in_flight
-            && (self.completed != Some(state.planning_generation)
-                || self.clock.is_some_and(|clock| clock.expired(now)))
-        {
-            self.send
-                .try_send(Input {
+        if !self.in_flight {
+            let job = if self.completed != Some(state.planning_generation)
+                || self.clock.is_some_and(|clock| clock.expired(now))
+            {
+                Some(Job::Project(Box::new(Input {
                     retired: self.retired.take(),
                     ..Input::capture(state, now)
-                })
-                .map_err(|_| {
+                })))
+            } else {
+                self.retired
+                    .take()
+                    .map(|output| Job::Reclaim(Box::new(output)))
+            };
+            if let Some(job) = job {
+                self.send.try_send(job).map_err(|_| {
                     "planning worker unavailable; previous projection retained".to_string()
                 })?;
-            self.in_flight = true;
+                self.in_flight = true;
+            }
         }
         Ok(applied)
     }
 }
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::backend::{CodexBackend, FakeBackend};
-    #[test]
-    fn background_projection_matches_the_existing_authoritative_reconciler() {
-        let mut live = AppState::new(FakeBackend::scaled(1000).snapshot().threads);
-        let mut expected = live.clone();
-        reduce(&mut expected, Action::ReconcilePlanning { now_unix_ms: 42 });
-        assert!(Input::capture(&live, 42).compute().apply(&mut live));
-        assert_eq!(live.work_cards, expected.work_cards);
-        assert_eq!(live.work_card_by_thread, expected.work_card_by_thread);
-        assert_eq!(
-            live.worktree_collision_counts,
-            expected.worktree_collision_counts
-        );
-    }
-    #[test]
-    fn obsolete_result_cannot_overwrite_newer_operator_or_source_state() {
-        let mut live = AppState::new(FakeBackend::scaled(2).snapshot().threads);
-        let old = Input::capture(&live, 1).compute();
-        let (selected, was_pinned) = (live.selected, live.threads[live.selected].pinned);
-        reduce(&mut live, Action::TogglePin);
-        live.filter = "keep user filter".into();
-        assert!(!old.apply(&mut live));
-        assert!(live.work_cards.is_empty());
-        assert_ne!(live.threads[selected].pinned, was_pinned);
-        assert_eq!(live.filter, "keep user filter");
-        assert!(Input::capture(&live, 2).compute().apply(&mut live));
-        assert_eq!(live.filter, "keep user filter");
-    }
-}
+#[path = "planning_worker/tests.rs"]
+mod tests;
 #[cfg(test)]
 #[path = "planning_worker/live_tests.rs"]
 mod live_tests;
