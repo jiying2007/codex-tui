@@ -148,6 +148,7 @@
     "user-perceived-performance-evidence"
   ],
   "moduleRatchet": {
+    "src/runtime_startup.rs": 276,
     "src/app.rs": 1022,
     "src/ui/composer.rs": 73,
     "src/ui/help_wrapped_tests.rs": 43,
@@ -204,7 +205,6 @@
     "src/ui/thread.rs": 370,
     "src/app/palette.rs": 396,
     "src/app/palette_intent.rs": 113,
-    "src/runtime_palette/intent_tests.rs": 330,
     "src/runtime_commands.rs": 117,
     "src/runtime_palette.rs": 89,
     "src/runtime_doctor.rs": 411,
@@ -350,7 +350,8 @@
     "src/interaction_performance/cli.rs": 28,
     "src/interaction_performance/fixtures.rs": 133,
     "src/ui/board.rs": 400,
-    "src/support_bundle/offline.rs": 97
+    "src/support_bundle/offline.rs": 97,
+    "src/runtime_palette/intent_tests.rs": 330
   },
   "ratchetPolicy": {
     "baseline": "inherit v1.3 Search & Multi-Target ceilings; feature work may only add bounded module-specific ceilings",
@@ -1060,6 +1061,16 @@
         "src/ui/registry.rs"
       ],
       "policy": "Review only changed module-specific ceilings, including focused regressions and extracted modules; lower ceilings of reduced mature modules and leave all unrelated limits unchanged. Prompt navigation stays in the conversation maintenance boundary. Require fresh protected candidate/main CI, security, protocol, terminal and release-preview evidence. No Stable or real-environment qualification."
+    },
+    {
+      "date": "2026-10-30",
+      "kind": "startup-recovery-defect-fix",
+      "scope": "Explicit plain-F5 retry only before any successful registry installation. Preserve the resolved target, single in-flight connection, modal focus, local drafts and no write replay. Register the cohesive startup helper and seven injected-spawn regressions; add an actual-binary isolated PTY fixture.",
+      "modules": [
+        "src/main.rs",
+        "src/runtime_startup.rs"
+      ],
+      "policy": "Only the new helper receives a bounded ceiling; all existing module ceilings remain unchanged. No automatic retry, established-session reconnect, new backend authority, schema, dependency, workflow permission or Stable qualification. Exact-head native CI and fresh-main verification required."
     }
   ]
 }

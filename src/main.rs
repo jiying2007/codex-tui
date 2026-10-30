@@ -31,6 +31,7 @@ mod runtime_notifications;
 mod runtime_palette;
 mod runtime_prompt;
 mod runtime_shutdown;
+mod runtime_startup;
 mod runtime_store;
 mod runtime_store_worker;
 mod runtime_user_response;
@@ -246,6 +247,7 @@ async fn run_app(fake_mode: bool, target_override: Option<&str>) -> Result<()> {
 
     let mut fake_backend = fake_mode.then(FakeBackend::seeded);
     let mut registry: Option<RegistryHandle> = None;
+    let mut startup_connected = false;
     let mut connect_task = None;
 
     let mut app = if let Some(fake) = &fake_backend {
@@ -254,7 +256,10 @@ async fn run_app(fake_mode: bool, target_override: Option<&str>) -> Result<()> {
         app.backend_status = snapshot.status;
         app
     } else {
-        let target = app_server_target.expect("non-fake mode target");
+        let target = app_server_target
+            .as_ref()
+            .expect("non-fake mode target")
+            .clone();
         let status_source = target.status_source();
         connect_task = Some(tokio::spawn(app_server::start_target(target)));
         let mut app = AppState::new(vec![]);
@@ -321,6 +326,17 @@ async fn run_app(fake_mode: bool, target_override: Option<&str>) -> Result<()> {
                 }
                 match event::read()? {
                     Event::Key(key) => {
+                        if runtime_startup::try_retry(
+                            &mut app,
+                            key,
+                            app_server_target.as_ref(),
+                            startup_connected || registry.is_some(),
+                            &mut connect_task,
+                        ) {
+                            needs_render = true;
+                            urgent_render = true;
+                            continue;
+                        }
                         let effects = handle_key(&mut app, key);
                         if !effects.is_empty()
                             || matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat)
@@ -361,40 +377,20 @@ async fn run_app(fake_mode: bool, target_override: Option<&str>) -> Result<()> {
                 needs_render = true;
             }
 
-            if connect_task
-                .as_ref()
-                .is_some_and(tokio::task::JoinHandle::is_finished)
-            {
-                let Some(task) = connect_task.take() else {
-                    continue;
-                };
-                match task.await {
-                    Ok(Ok(started)) => {
+            if let Some(result) = runtime_startup::take_finished(&mut connect_task).await {
+                match result {
+                    Ok(started) => {
+                        startup_connected = true;
                         runtime_connection::install(&mut app, started.initial);
                         registry = Some(started.handle);
                         let effects = reduce(&mut app, Action::RefreshGitProjections);
                         apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
                         planning_dirty = true;
                     }
-                    Ok(Err(error)) => {
-                        reduce(
-                            &mut app,
-                            Action::BackendStatus(backend_error_status(error.to_string())),
-                        );
-                    }
                     Err(error) => {
-                        let language = app.language;
-                        reduce(
-                            &mut app,
-                            Action::BackendStatus(backend_error_status(format!(
-                                "{}: {error}",
-                                runtime_text(
-                                    language,
-                                    "App Server connection task failed",
-                                    "App Server 连接任务失败",
-                                )
-                            ))),
-                        );
+                        let hint = runtime_startup::retry_hint(app.language);
+                        let status = backend_error_status(format!("{hint} · {error}"));
+                        reduce(&mut app, Action::BackendStatus(status));
                     }
                 }
                 needs_render = true;
