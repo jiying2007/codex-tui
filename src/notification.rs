@@ -40,6 +40,10 @@ pub enum NotificationKind {
     Completion,
     PipelineFailed,
     ReviewRequested,
+    ActivityStopped,
+    SystemError,
+    UsageLimited,
+    BudgetLimited,
 }
 
 impl NotificationKind {
@@ -51,6 +55,10 @@ impl NotificationKind {
             Self::Completion => "completion",
             Self::PipelineFailed => "pipeline-failed",
             Self::ReviewRequested => "review-requested",
+            Self::ActivityStopped => "activity-stopped",
+            Self::SystemError => "system-error",
+            Self::UsageLimited => "usage-limited",
+            Self::BudgetLimited => "budget-limited",
         }
     }
 }
@@ -66,20 +74,19 @@ pub struct NotificationEvent {
 impl NotificationEvent {
     pub fn text(&self, language: UiLanguage) -> (String, String) {
         let chinese = language.is_simplified_chinese();
-        let label = match (self.kind, chinese) {
-            (NotificationKind::ApprovalRequired, false) => "Approval required",
-            (NotificationKind::ApprovalRequired, true) => "需要审批",
-            (NotificationKind::UserInputRequired, false) => "Input required",
-            (NotificationKind::UserInputRequired, true) => "需要输入",
-            (NotificationKind::GoalBlocked, false) => "Goal blocked",
-            (NotificationKind::GoalBlocked, true) => "Goal 已阻塞",
-            (NotificationKind::Completion, false) => "Work completed",
-            (NotificationKind::Completion, true) => "工作已完成",
-            (NotificationKind::PipelineFailed, false) => "Pipeline failed",
-            (NotificationKind::PipelineFailed, true) => "流水线失败",
-            (NotificationKind::ReviewRequested, false) => "Review needs attention",
-            (NotificationKind::ReviewRequested, true) => "评审需要处理",
+        let labels = match self.kind {
+            NotificationKind::ApprovalRequired => ("Approval required", "需要审批"),
+            NotificationKind::UserInputRequired => ("Input required", "需要输入"),
+            NotificationKind::GoalBlocked => ("Goal blocked", "Goal 已阻塞"),
+            NotificationKind::Completion => ("Goal completed", "Goal 已完成"),
+            NotificationKind::PipelineFailed => ("Pipeline failed", "流水线失败"),
+            NotificationKind::ReviewRequested => ("Review needs attention", "评审需要处理"),
+            NotificationKind::ActivityStopped => ("Now idle; check result", "已空闲；请核对结果"),
+            NotificationKind::SystemError => ("System error; inspect details", "系统错误；请查看详情"),
+            NotificationKind::UsageLimited => ("Usage limited", "额度受限"),
+            NotificationKind::BudgetLimited => ("Budget limited", "预算受限"),
         };
+        let label = if chinese { labels.1 } else { labels.0 };
         (
             format!("codex-tui · {label}"),
             truncate_display(&self.subject, MAX_NOTIFICATION_SUBJECT_COLUMNS),
@@ -111,8 +118,7 @@ impl RecentNotification {
 
     pub fn display(&self, language: UiLanguage) -> String {
         let (title, subject) = self.event.text(language);
-        // Put the action first: terminal-width clipping must never hide the
-        // only hint for opening the alert's source conversation.
+        // Keep the action before the subject even in narrow SSH terminals.
         let label = title.strip_prefix("codex-tui · ").unwrap_or(&title);
         let action = match (self.thread_id.is_some(), language.is_simplified_chinese()) {
             (true, true) => "! 跳转",
@@ -145,11 +151,7 @@ impl NotificationObservation {
         cards: &[WorkCardProjection],
         goals: &BTreeMap<String, GoalObservation>,
     ) -> Self {
-        let titles = threads
-            .iter()
-            .map(|thread| (thread.id.0.clone(), thread.display_title().to_string()))
-            .collect::<BTreeMap<_, _>>();
-        let runtimes = threads
+        let runtimes: BTreeMap<_, _> = threads
             .iter()
             .map(|thread| {
                 (
@@ -165,33 +167,27 @@ impl NotificationObservation {
                     thread_id.clone(),
                     (
                         goal.status,
-                        titles
+                        runtimes
                             .get(thread_id)
-                            .cloned()
+                            .map(|(_, title)| title.clone())
                             .unwrap_or_else(|| goal.objective.clone()),
                     ),
                 )
             })
             .collect();
-
-        let known_items = cards
-            .iter()
-            .map(|card| card.local_id.clone())
-            .collect::<BTreeSet<_>>();
+        let known_items = cards.iter().map(|card| card.local_id.clone()).collect();
         let mut active = BTreeMap::new();
         for card in cards.iter().filter(|card| !card.snoozed) {
-            let subject = card.title.clone();
             for kind in card_notification_kinds(card) {
                 let event = NotificationEvent {
                     key: format!("{}:{}", kind.label(), card.local_id),
                     item_id: card.local_id.clone(),
                     kind,
-                    subject: subject.clone(),
+                    subject: card.title.clone(),
                 };
                 active.insert(event.key.clone(), event);
             }
         }
-
         Self {
             active,
             known_items,
@@ -202,31 +198,22 @@ impl NotificationObservation {
 }
 
 fn card_notification_kinds(card: &WorkCardProjection) -> BTreeSet<NotificationKind> {
-    let mut kinds = BTreeSet::new();
-    if card
-        .attention
-        .contains(&PlanningAttention::ApprovalRequired)
-    {
-        kinds.insert(NotificationKind::ApprovalRequired);
-    }
-    if card
-        .attention
-        .contains(&PlanningAttention::UserInputRequired)
-    {
-        kinds.insert(NotificationKind::UserInputRequired);
-    }
-    if card.attention.contains(&PlanningAttention::GoalBlocked) {
-        kinds.insert(NotificationKind::GoalBlocked);
-    }
-    if card.attention.contains(&PlanningAttention::PipelineFailed) {
-        kinds.insert(NotificationKind::PipelineFailed);
-    }
-    if card.attention.contains(&PlanningAttention::ReviewUnseen)
-        || card.attention.contains(&PlanningAttention::ChangeRequested)
-    {
-        kinds.insert(NotificationKind::ReviewRequested);
-    }
-    kinds
+    use NotificationKind as N;
+    use PlanningAttention as A;
+    [
+        (A::ApprovalRequired, N::ApprovalRequired),
+        (A::UserInputRequired, N::UserInputRequired),
+        (A::GoalBlocked, N::GoalBlocked),
+        (A::PipelineFailed, N::PipelineFailed),
+        (A::ReviewUnseen, N::ReviewRequested),
+        (A::ChangeRequested, N::ReviewRequested),
+        (A::SystemError, N::SystemError),
+        (A::UsageLimited, N::UsageLimited),
+        (A::BudgetLimited, N::BudgetLimited),
+    ]
+    .into_iter()
+    .filter_map(|(attention, kind)| card.attention.contains(&attention).then_some(kind))
+    .collect()
 }
 
 #[derive(Clone, Debug, Default)]
@@ -248,36 +235,33 @@ impl NotificationTracker {
             self.goals = observation.goals;
             return vec![];
         }
-
         let mut emitted = BTreeMap::<String, NotificationEvent>::new();
-
         for (key, event) in &observation.active {
             if !self.active.contains_key(key) && self.known_items.contains(&event.item_id) {
                 emitted.insert(key.clone(), event.clone());
             }
         }
-
         for (thread_id, (runtime, subject)) in &observation.runtimes {
-            let completed = self.runtimes.get(thread_id).is_some_and(|(previous, _)| {
+            let stopped = self.runtimes.get(thread_id).is_some_and(|(previous, _)| {
                 matches!(
                     previous,
                     RuntimeStatus::Working | RuntimeStatus::WaitingHuman
                 ) && *runtime == RuntimeStatus::Ready
             });
-            if completed {
-                let key = format!("completion:{thread_id}");
+            // Idle does not establish a successful turn, task or delivery.
+            if stopped {
+                let key = format!("activity-stopped:{thread_id}");
                 emitted.insert(
                     key.clone(),
                     NotificationEvent {
                         key,
                         item_id: thread_id.clone(),
-                        kind: NotificationKind::Completion,
+                        kind: NotificationKind::ActivityStopped,
                         subject: subject.clone(),
                     },
                 );
             }
         }
-
         for (thread_id, (status, subject)) in &observation.goals {
             let completed = self
                 .goals
@@ -285,6 +269,7 @@ impl NotificationTracker {
                 .is_some_and(|(previous, _)| *previous != GoalStatus::Complete)
                 && *status == GoalStatus::Complete;
             if completed {
+                emitted.remove(&format!("activity-stopped:{thread_id}"));
                 let key = format!("completion:{thread_id}");
                 emitted.insert(
                     key.clone(),
@@ -297,7 +282,6 @@ impl NotificationTracker {
                 );
             }
         }
-
         self.active = observation.active;
         self.known_items = observation.known_items;
         self.runtimes = observation.runtimes;
