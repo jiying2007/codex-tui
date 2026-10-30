@@ -1,0 +1,54 @@
+name: offline-review-workspace
+
+on:
+  push:
+    branches: [audit/offline-workspace-20261030]
+    paths: [.github/workflows/offline-review-workspace.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
+        with:
+          components: rustfmt, clippy
+      - name: Fetch only public locked Rust dependencies
+        run: cargo fetch --locked
+      - name: Export source and public toolchain only
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="$RUNNER_TEMP/offline-review"
+          mkdir -p "$OUT" "$RUNNER_TEMP/cargo-public/registry"
+          git archive --format=tar HEAD | gzip -n > "$OUT/source.tar.gz"
+          TOOLCHAIN="$(dirname "$(dirname "$(rustup which rustc)")")"
+          tar -C "$TOOLCHAIN" -czf "$OUT/rust-toolchain.tar.gz" bin lib libexec
+          for sub in cache index src; do
+            if [ -d "$CARGO_HOME/registry/$sub" ]; then
+              cp -a "$CARGO_HOME/registry/$sub" "$RUNNER_TEMP/cargo-public/registry/"
+            fi
+          done
+          tar -C "$RUNNER_TEMP/cargo-public" -czf "$OUT/cargo-public.tar.gz" registry
+          {
+            printf 'sourceSha=%s\n' "$GITHUB_SHA"
+            printf 'reviewParent=%s\n' "$(git rev-parse HEAD^)"
+            rustc --version --verbose
+            cargo --version
+            printf 'scope=public-source-public-rust-toolchain-public-crates-only\n'
+            printf 'realCodexQualification=false\nstableReady=false\npublicationAllowed=false\n'
+          } > "$OUT/IDENTITY.txt"
+          (cd "$OUT" && sha256sum *.tar.gz IDENTITY.txt > SHA256SUMS)
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: offline-review-${{ github.sha }}
+          path: ${{ runner.temp }}/offline-review/
+          if-no-files-found: error
+          retention-days: 3
+          compression-level: 0
