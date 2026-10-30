@@ -207,7 +207,7 @@ fn goal_completion_is_edge_triggered_and_deduplicated_by_thread() {
 }
 
 #[test]
-fn working_to_ready_emits_completion_once() {
+fn working_to_ready_emits_idle_not_success_once() {
     let mut tracker = NotificationTracker::default();
     tracker.advance(observation(
         vec![thread("1", RuntimeStatus::Working)],
@@ -218,7 +218,7 @@ fn working_to_ready_emits_completion_once() {
         vec![card("1", &[], false)],
     ));
     assert_eq!(events.len(), 1);
-    assert_eq!(events[0].kind, NotificationKind::Completion);
+    assert_eq!(events[0].kind, NotificationKind::ActivityStopped);
     assert!(
         tracker
             .advance(observation(
@@ -271,11 +271,11 @@ fn recent_notification_uses_existing_safe_subject_and_localized_count() {
     };
     let recent = RecentNotification::new(event, Some(ThreadId::new("id")), 3);
     let zh = recent.display(UiLanguage::SimplifiedChinese);
-    assert!(zh.starts_with("! 跳转 · 工作已完成:"));
+    assert!(zh.starts_with("! 跳转 · Goal 已完成:"));
     assert!(zh.contains("另有 3 项更新"));
     assert!(!zh.contains('\x1b'));
     let en = recent.display(UiLanguage::English);
-    assert!(en.starts_with("! open · Work completed:"));
+    assert!(en.starts_with("! open · Goal completed:"));
     assert!(en.contains("3 more updates"));
     assert!(recent.visible_until > std::time::Instant::now());
 }
@@ -290,7 +290,7 @@ fn narrow_terminal_preserves_the_action_and_task_before_optional_context() {
     };
     let recent = RecentNotification::new(event.clone(), Some(ThreadId::new("one")), 5);
     let narrow = crate::text::truncate_display(&recent.display(UiLanguage::English), 40);
-    assert!(narrow.starts_with("! open · Work completed:"));
+    assert!(narrow.starts_with("! open · Goal completed:"));
     assert!(narrow.contains("important"));
     assert!(crate::text::display_width(&narrow) <= 40);
 
@@ -298,11 +298,11 @@ fn narrow_terminal_preserves_the_action_and_task_before_optional_context() {
     assert!(
         board
             .display(UiLanguage::English)
-            .starts_with("Board · Work completed:")
+            .starts_with("Board · Goal completed:")
     );
     assert!(
         board
             .display(UiLanguage::SimplifiedChinese)
-            .starts_with("看板 · 工作已完成:")
+            .starts_with("看板 · Goal 已完成:")
     );
 }
