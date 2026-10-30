@@ -35,11 +35,13 @@ fn retired_results_do_not_replace_current_authority_or_trigger_idle_work() {
             settle(&mut worker, &mut app);
             assert_eq!(app.work_card_for_thread(&id).unwrap().title, title);
             assert_eq!(app.work_cards.len(), rows);
-            let reconciles = app.planning_reconcile_count();
+            let installed = app.work_cards.as_ptr();
+            let expected = app.work_cards.clone();
             for _ in 0..32 {
                 assert!(!worker.advance(&mut app, false, 100).unwrap());
             }
-            assert_eq!(app.planning_reconcile_count(), reconciles);
+            assert_eq!(app.work_cards.as_ptr(), installed);
+            assert_eq!(app.work_cards, expected);
         }
     }
 }
