@@ -1,5 +1,4 @@
-//! Current-input planning projection with a bounded source-delta catch-up. Only metadata is copied; transcripts,
-//! PTY state, drafts and mutation confirmations never enter this worker.
+//! Metadata-only projection; retired results travel with the next single in-flight input.
 use super::*;
 mod clock;
 mod diagnostics;
@@ -7,8 +6,8 @@ pub(crate) use diagnostics::{measure_once, measure_rebase_once};
 mod rebase;
 use clock::ProjectionClock;
 use std::sync::mpsc::{self, Receiver, SyncSender, TryRecvError};
-
 struct Input {
+    retired: Option<Output>,
     generation: u64,
     intent_generation: u64,
     threads: Vec<ThreadSummary>,
@@ -22,6 +21,7 @@ struct Input {
 impl Input {
     fn capture(state: &AppState, now: u64) -> Self {
         Self {
+            retired: None,
             generation: state.planning_generation,
             intent_generation: state.planning_intent_generation,
             threads: state.threads.clone(),
@@ -34,6 +34,7 @@ impl Input {
         }
     }
     fn compute(self) -> Output {
+        drop(self.retired); // Reclaim the previous result on the planning worker.
         let mut state = AppState::new(self.threads);
         state.git_contexts = self.git;
         state.forge_observations = self.forge;
@@ -74,33 +75,32 @@ struct Output {
 }
 impl Output {
     #[cfg(test)]
-    fn apply(self, state: &mut AppState) -> bool {
+    fn apply(mut self, state: &mut AppState) -> bool {
         let now = self.source.now;
         self.apply_at(state, now).is_some()
     }
-    fn apply_at(mut self, state: &mut AppState, now: u64) -> Option<ProjectionClock> {
+    fn apply_at(&mut self, state: &mut AppState, now: u64) -> Option<ProjectionClock> {
         if self.generation != state.planning_generation && !self.rebase(state) {
             return None;
         }
-        // Include deadlines introduced by a rebased card before installation.
         let clock = self.clock;
         if clock.expired(now) {
             return None;
         }
         let selection = planning_selection::PlanningSelection::capture(state);
         state.planning_reconcile_count = state.planning_reconcile_count.saturating_add(1);
-        state.work_cards = self.cards;
-        state.work_card_by_thread = self.by_thread;
-        state.worktree_collision_counts = self.collisions;
+        std::mem::swap(&mut state.work_cards, &mut self.cards);
+        std::mem::swap(&mut state.work_card_by_thread, &mut self.by_thread);
+        std::mem::swap(&mut state.worktree_collision_counts, &mut self.collisions);
         selection.restore(state);
         ensure_selection_visible(state);
         Some(clock)
     }
 }
-
 pub struct PlanningWorker {
     send: SyncSender<Input>,
     receive: Receiver<Output>,
+    retired: Option<Output>,
     in_flight: bool,
     completed: Option<u64>,
     clock: Option<ProjectionClock>,
@@ -121,27 +121,28 @@ impl PlanningWorker {
         Ok(Self {
             send,
             receive,
+            retired: None,
             in_flight: false,
             completed: None,
             clock: None,
         })
     }
-    /// One job in flight. Changes coalesce without queuing or cloning more snapshots.
-    /// Source drift is patched from current inputs only within a fixed delta budget.
-    /// Operator edits and other authority changes still reject the entire result.
+    /// One in-flight input and one retired result; source/intent/clock admission is unchanged.
     pub fn advance(&mut self, state: &mut AppState, dirty: bool, now: u64) -> Result<bool, String> {
         if dirty {
             state.planning_generation = state.planning_generation.wrapping_add(1);
         }
         let mut applied = false;
         match self.receive.try_recv() {
-            Ok(output) => {
+            Ok(mut output) => {
                 self.in_flight = false;
                 if let Some(clock) = output.apply_at(state, now) {
                     applied = true;
                     self.completed = Some(state.planning_generation);
                     self.clock = Some(clock);
                 }
+                debug_assert!(self.retired.is_none());
+                self.retired = Some(output);
             }
             Err(TryRecvError::Empty) => {}
             Err(TryRecvError::Disconnected) => {
@@ -153,7 +154,10 @@ impl PlanningWorker {
                 || self.clock.is_some_and(|clock| clock.expired(now)))
         {
             self.send
-                .try_send(Input::capture(state, now))
+                .try_send(Input {
+                    retired: self.retired.take(),
+                    ..Input::capture(state, now)
+                })
                 .map_err(|_| {
                     "planning worker unavailable; previous projection retained".to_string()
                 })?;
@@ -162,7 +166,6 @@ impl PlanningWorker {
         Ok(applied)
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -184,8 +187,7 @@ mod tests {
     fn obsolete_result_cannot_overwrite_newer_operator_or_source_state() {
         let mut live = AppState::new(FakeBackend::scaled(2).snapshot().threads);
         let old = Input::capture(&live, 1).compute();
-        let selected = live.selected;
-        let was_pinned = live.threads[selected].pinned;
+        let (selected, was_pinned) = (live.selected, live.threads[live.selected].pinned);
         reduce(&mut live, Action::TogglePin);
         live.filter = "keep user filter".into();
         assert!(!old.apply(&mut live));
@@ -196,11 +198,9 @@ mod tests {
         assert_eq!(live.filter, "keep user filter");
     }
 }
-
 #[cfg(test)]
 #[path = "planning_worker/live_tests.rs"]
 mod live_tests;
-
 #[cfg(test)]
 #[path = "planning_worker/rebase_tests.rs"]
 mod rebase_tests;

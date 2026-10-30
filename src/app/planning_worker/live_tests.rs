@@ -2,7 +2,6 @@ use super::*;
 use crate::backend::{CodexBackend, FakeBackend};
 use crate::planning::{Freshness, LocalNote, WorkCardRecord};
 use std::time::Duration;
-
 fn app() -> AppState {
     let mut state = AppState::new(FakeBackend::scaled(20).snapshot().threads);
     let mut view = builtin_saved_views().remove(0);
@@ -146,6 +145,7 @@ fn a_result_that_expired_in_transit_is_not_installed() {
     let mut worker = PlanningWorker {
         send,
         receive,
+        retired: None,
         in_flight: true,
         completed: None,
         clock: None,
