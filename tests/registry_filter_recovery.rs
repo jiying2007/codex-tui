@@ -55,7 +55,10 @@ fn unmatched_search_explains_recovery_in_narrow_bilingual_windows() {
         assert!(app.visible_indices().is_empty());
         for (width, height) in [(24, 12), (40, 12), (80, 24)] {
             let rendered = screen(&app, width, height);
-            assert!(rendered.contains(hint(language)), "{width}x{height}: {rendered}");
+            assert!(
+                rendered.contains(hint(language)),
+                "{width}x{height}: {rendered}"
+            );
         }
         assert_eq!(app.threads, threads);
         assert_eq!(app.selected, selected);
