@@ -50,6 +50,9 @@ jobs:
           test "$(git rev-parse HEAD)" = "$CODEX_TUI_PTY_SOURCE_SHA"
           python3 -m unittest discover -s scripts/testing -p 'test_terminal_*.py'
           python3 -O -m unittest discover -s scripts/testing -p 'test_terminal_*.py'
+          python3 -m unittest discover -s scripts/testing -p 'test_quiet_visual*.py'
+          python3 -O -m unittest discover -s scripts/testing -p 'test_quiet_visual*.py'
+          python3 -OO -m unittest discover -s scripts/testing -p 'test_quiet_visual*.py'
       - name: Exercise the actual program on a controlling PTY
         env:
           CODEX_TUI_PTY_EVIDENCE_DIR: ${{ runner.temp }}/terminal-regression
@@ -60,6 +63,13 @@ jobs:
           --binary target/debug/codex-tui
           --output "${{ runner.temp }}/terminal-regression/conversation-viewport"
           --source-sha "$CODEX_TUI_PTY_SOURCE_SHA"
+      - name: Verify quiet visual alerts across language, viewport and presentation
+        timeout-minutes: 4
+        run: >-
+          python3 scripts/testing/quiet_visual_matrix.py
+          --binary target/debug/codex-tui
+          --source-sha "$CODEX_TUI_PTY_SOURCE_SHA"
+          --output "${{ runner.temp }}/terminal-regression/quiet-visual-matrix"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: success()
         with:
