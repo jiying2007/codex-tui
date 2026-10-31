@@ -110,7 +110,7 @@ fn idle_polls_do_not_rebuild_an_unexpired_projection() {
     let before = live.planning_reconcile_count();
     for now in 101..200 {
         assert!(!worker.advance(&mut live, false, now).unwrap());
-        assert!(!worker.in_flight);
+        assert_eq!(worker.completed, Some(live.planning_generation));
     }
     assert_eq!(live.planning_reconcile_count(), before);
 }
@@ -141,7 +141,7 @@ fn a_result_that_expired_in_transit_is_not_installed() {
     let output = Input::capture(&live, 100).compute();
     let (send, input) = mpsc::sync_channel(1);
     let (result, receive) = mpsc::sync_channel(1);
-    result.send(output).unwrap();
+    result.send(Some(output)).unwrap();
     let mut worker = PlanningWorker {
         send,
         receive,
@@ -152,7 +152,7 @@ fn a_result_that_expired_in_transit_is_not_installed() {
     };
     assert!(!worker.advance(&mut live, false, 200).unwrap());
     assert!(worker.in_flight);
-    let replacement = input.try_recv().unwrap().compute();
+    let replacement = input.try_recv().unwrap().execute();
     result.send(replacement).unwrap();
     assert!(worker.advance(&mut live, false, 200).unwrap());
     assert!(!live.work_card_for_thread(&id).unwrap().snoozed);

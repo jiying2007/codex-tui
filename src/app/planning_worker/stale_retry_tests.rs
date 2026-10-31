@@ -8,7 +8,7 @@ fn large_stale_projection_is_rejected_and_rescheduled_on_worker() {
     reduce(&mut live, Action::ReplaceThreads(changed));
     let (send, input) = mpsc::sync_channel(1);
     let (output, receive) = mpsc::sync_channel(1);
-    output.send(old_output).expect("stale result queued");
+    output.send(Some(old_output)).expect("stale result queued");
     let mut worker = PlanningWorker {
         send,
         receive,
@@ -19,10 +19,10 @@ fn large_stale_projection_is_rejected_and_rescheduled_on_worker() {
     };
     assert!(!worker.advance(&mut live, false, 101).expect("reject stale"));
     assert!(worker.in_flight && live.work_cards.is_empty());
-    let fresh = input.try_recv().expect("new current snapshot");
+    let fresh = input.try_recv().unwrap().into_projection();
     assert!(fresh.retired.is_some(), "retirement travels to the worker");
     assert_eq!(fresh.threads[0].title, "latest authority");
-    output.send(fresh.compute()).expect("worker result");
+    output.send(Some(fresh.compute())).expect("worker result");
     assert!(worker.advance(&mut live, false, 101).expect("accept fresh"));
     let index = live.work_card_by_thread[&id];
     assert_eq!(live.work_cards[index].title, "latest authority");
