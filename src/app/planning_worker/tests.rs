@@ -101,7 +101,7 @@ fn updates_during_reclamation_coalesce_into_one_current_snapshot() {
     assert!(!worker.advance(&mut live, false, 100).unwrap());
     let input = jobs.try_recv().unwrap().into_projection();
     assert_eq!(input.generation, live.planning_generation);
-    let current = input.threads.iter().find(|thread| thread.id.0 == id).unwrap();
+    let current = input.threads.iter().find(|t| t.id.0 == id).unwrap();
     assert_eq!(current.title, "current-5");
     assert!(input.retired.is_none());
     assert!(matches!(jobs.try_recv(), Err(TryRecvError::Empty)));

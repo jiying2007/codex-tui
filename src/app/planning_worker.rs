@@ -176,11 +176,11 @@ impl PlanningWorker {
     }
 }
 #[cfg(test)]
-#[path = "planning_worker/tests.rs"]
-mod tests;
-#[cfg(test)]
 #[path = "planning_worker/live_tests.rs"]
 mod live_tests;
 #[cfg(test)]
 #[path = "planning_worker/rebase_tests.rs"]
 mod rebase_tests;
+#[cfg(test)]
+#[path = "planning_worker/tests.rs"]
+mod tests;
