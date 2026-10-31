@@ -35,7 +35,7 @@ Mission Control 优先回答：**正在做什么、哪条会话需要我、如�
 
 快捷键以应用内 `?` 帮助为准：`Ctrl+K` 命令面板，`/` 搜索，`j/k` 选择、`Enter` 打开，`b` Board，`t` Drawer，`F6` 或 `Ctrl+]` 返回聚焦（取决于实际终端支持）。详见 [操作指南](docs/zh-CN/guides/operator-guide.md)。
 
-**任务提醒需主动启用：** 在 `codex-tui doctor` 打印的本地配置中设置 `[notifications].mode = "terminal"`，在 Windows Terminal 的 SSH Profile 中可设置 `"bellStyle": "all"` 并从 Ubuntu 用 `printf '\a'` 测试。提醒只在 TUI 运行且连通时产生，是终端响铃/闪烁，不是 Windows Toast 或离线推送。不想有提示音时保持默认 `off`。
+**静音不关闭界面提醒：**默认 `off` 仍显示最近事件并支持 `!` 回跳，只关闭外部声音／桌面投递。要测试 Windows SSH Ubuntu 响铃，可设置 `[notifications].mode = "terminal"`，配置 Windows Terminal 的 `"bellStyle": "all"`，再从 Ubuntu 执行 `printf '\a'`；这不是 Windows Toast 或离线推送。
 
 ## 架构和权威边界
 <!-- docs-section: architecture -->
@@ -74,6 +74,10 @@ cargo build --release --locked
 
 Windows 原生环境可以使用对应 Windows 产物；通过 **Windows SSH 登录 Ubuntu** 时，应在 Ubuntu 内运行 Linux 二进制，应用看到的是服务器侧的终端、Codex 和本地仓库。不要把 Windows 本地的路径或会话文件当成 Ubuntu 本地权威。先用 `doctor codex`、`doctor terminal` 排查。
 
+**首次连接失败：**排除临时后端问题后，在空的 Mission Control 中按无修饰的单次 `F5`；编辑框、帮助、确认框或聚焦的 Terminal Drawer 会保留按键所有权。只重试原先解析的同一目标，同时最多一个连接尝试，没有自动重试定时器；草稿与本地操作状态保留。一旦连接成功安装，即使后来断开，F5 也不重连已建立过的会话，不重放消息、审批、队列修改或 Forge 写入。该入口不重新加载目标配置；配置本身无效时需修正后显式重启。
+
+**SSH 下的外部打开：**编辑器／浏览器命令运行在 TUI 所在主机，不会自动交给 Windows 客户端。检测到 `SSH_TTY` 或 `SSH_CONNECTION` 且未配置显式适配器时，会在创建进程前拒绝默认图形程序启动；可手动使用显示的目标，或将 `CODEX_TUI_EDITOR`／`CODEX_TUI_BROWSER` 配成单个可执行适配器。路径与 URL 校验仍生效。进程启动不证明窗口已打开或最终执行成功；当前没有 Windows 桥接、保证完整长目标的复制窗口或外部程序最终回执。
+
 `--fake`、`--fixture-10k` 为测试/诊断用途，不能代表真实账号或 GitLab 的资格通过。完整命令见 [CLI 参考](docs/zh-CN/guides/cli-reference.md)。
 
 ## 语言、配置、通知
@@ -88,7 +92,7 @@ mouse = false # 未实现鼠标导航前不捕获鼠标事件
 presentation = "normal" # normal | quiet | screen-reader
 
 [notifications]
-mode = "off"           # off | terminal | os
+mode = "off"           # 保留界面提醒；外部投递 off | terminal | os
 
 [app_server]
 active = "local"
@@ -96,7 +100,13 @@ active = "local"
 
 `auto` 依次读取 `LC_ALL`、`LC_MESSAGES`、`LANG`。`zh_CN/zh_SG/zh-Hans` 等简体语言环境选中文；繁体语言环境及未知环境默认英文，不假定简体等价。技术标识和上游错误原样保留以便定位。Quiet 和 Screen-reader 只调整后台刷新节奏；输入/键盘/窗口改变仍即时响应。
 
-如需“完成／审批／阻塞／失败”时提醒，主动把 `[notifications].mode` 改为 `"terminal"`。**Windows SSH Ubuntu** 时，通知由 Ubuntu 进程通过当前 SSH 终端发送 BEL；即使配置 `"os"`，SSH 下也安全回退到 BEL，**不会在 Windows 自动弹出 Toast**。Windows Terminal 的 SSH 配置文件可以设置 `"bellStyle": "all"`（任务栏闪烁／响铃），并在 SSH 窗口运行 `printf '\a'` 验证。最多 75 毫秒的同批事件合并为一条提醒，优先显示审批、输入和失败，其余数量写在提醒中；精确状态仍看 Mission Control。程序退出或 SSH 断开后不继续监听。新收到的完成／审批／失败等事件会在终端空间足够时显示约 20 秒单行最近提醒；提示开头先显示 `! 跳转`，窄 SSH 窗口也能看到快捷键；按 `!` 可直接打开关联的 Codex 会话，按 `Esc` 返回原页面。到期事件即使尚未被 UI 定期清除，也不能再通过快捷键打开。Forge/Scratch 更新若无关联会话，仍要到 Board 查看；不会保存通知历史或保证 Windows 桌面弹窗。快捷槽可在 Registry／Board 选中任务按 `=` 再按 `1–9` 绑定；在 Registry、Board、Thread、Review、Workspace、Managed Worktrees 中按数字即直达该会话，编辑和确认框不会被抢键。
+界面内最近提醒默认保留；`[notifications].mode = "off"` 只关闭外部响铃／桌面投递。终端空间足够时显示约 20 秒的一条内存提示，开头先显示 `! 跳转`；按 `!` 进入关联的活跃 Codex 会话，按 `Esc` 返回原页面。过期提示不能跳转；无关联会话的 Forge/Scratch 更新需到 Board 查看。编辑框、弹层和聚焦 PTY 保留焦点；外部投递失败或拥塞不阻止视觉提示选择。没有通知历史或离线推送。
+
+**空闲不等于成功：**“已空闲；请核对结果”只表示运行状态从工作／等待转为空闲，不证明轮次成功或任务验收完成。“Goal 已完成”要求观测到 Goal 完成状态转换，仍不等于交付验收。提醒还覆盖已观测到的系统错误、额度受限和预算受限；不会虚构上游未报告的结果。
+
+需要外部声音／桌面提醒时，才将模式改为 `"terminal"`／`"os"`。Windows SSH Ubuntu 下，两者通过当前 SSH 终端发送 BEL；`"os"` 不会自动在 Windows 弹出 Toast。Windows Terminal 的 SSH 配置可设 `"bellStyle": "all"`，在 Ubuntu 用 `printf '\a'` 验证。外部投递可按 75 毫秒窗口合并，保留最高优先级及其余事件数量，但不保证送达。首次观察不重放历史，Snooze 抑制待处理提醒路由；精确状态仍看 Mission Control。TUI 必须运行并连接才能观察新的远端事件，退出或断开后不继续监听。
+
+快捷槽可在 Registry／Board 选中任务按 `=` 再按 `1–9` 绑定；在 Registry、Board、Thread、Review、Workspace、Managed Worktrees 中按数字直达该会话，编辑和确认框不会被抢键。
 
 远程 Codex 可在本地 TOML 配置命名的 stdio/WebSocket/Unix Socket 目标，令牌只通过 `auth_token_env` 指定环境变量名；不要提交真实密钥。详见英文 [Remote App Server 技术说明](docs/implementation/v1.3-remote-app-server-targets.md)。
 
