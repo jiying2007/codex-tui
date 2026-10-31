@@ -191,6 +191,10 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
         )
     };
     lines.push(Line::from(summary));
+    if visible.is_empty() && !app.threads.is_empty() {
+        let hint = tr(app, "No matches", "无匹配");
+        lines.push(Line::from(format!("{hint} · / l g ?")));
+    }
 
     for index in visible[viewport.start..viewport.end].iter().copied() {
         let thread = &app.threads[index];
