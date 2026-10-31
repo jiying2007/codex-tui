@@ -72,7 +72,10 @@ fn edge_state_discards_thread_card_and_goal_subjects_after_seeding() {
     assert!(tracker.advance(input).is_empty());
     let state = format!("{tracker:?}");
     for marker in ["old-thread", "old-card", "old-goal"] {
-        assert!(!state.contains(marker), "tracker retained presentation text");
+        assert!(
+            !state.contains(marker),
+            "tracker retained presentation text"
+        );
     }
     // Cloning preserves de-duplication without retaining the old subjects.
     let input = NotificationObservation::from_projection(&threads, &cards, &goals);
