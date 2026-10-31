@@ -220,31 +220,24 @@ fn card_notification_kinds(card: &WorkCardProjection) -> BTreeSet<NotificationKi
 
 #[derive(Clone, Debug, Default)]
 pub struct NotificationTracker {
-    initialized: bool,
-    active: BTreeMap<String, NotificationEvent>,
+    // Only edge identity/state survives a projection; subjects come from the next one.
+    active: BTreeSet<String>,
     known_items: BTreeSet<String>,
-    runtimes: BTreeMap<String, (RuntimeStatus, String)>,
-    goals: BTreeMap<String, (GoalStatus, String)>,
+    runtimes: BTreeMap<String, RuntimeStatus>,
+    goals: BTreeMap<String, GoalStatus>,
 }
 
 impl NotificationTracker {
     pub fn advance(&mut self, observation: NotificationObservation) -> Vec<NotificationEvent> {
-        if !self.initialized {
-            self.initialized = true;
-            self.active = observation.active;
-            self.known_items = observation.known_items;
-            self.runtimes = observation.runtimes;
-            self.goals = observation.goals;
-            return vec![];
-        }
+        // Empty prior maps naturally seed the first observation without history alerts.
         let mut emitted = BTreeMap::<String, NotificationEvent>::new();
         for (key, event) in &observation.active {
-            if !self.active.contains_key(key) && self.known_items.contains(&event.item_id) {
+            if !self.active.contains(key) && self.known_items.contains(&event.item_id) {
                 emitted.insert(key.clone(), event.clone());
             }
         }
         for (thread_id, (runtime, subject)) in &observation.runtimes {
-            let stopped = self.runtimes.get(thread_id).is_some_and(|(previous, _)| {
+            let stopped = self.runtimes.get(thread_id).is_some_and(|previous| {
                 matches!(
                     previous,
                     RuntimeStatus::Working | RuntimeStatus::WaitingHuman
@@ -268,7 +261,7 @@ impl NotificationTracker {
             let completed = self
                 .goals
                 .get(thread_id)
-                .is_some_and(|(previous, _)| *previous != GoalStatus::Complete)
+                .is_some_and(|previous| *previous != GoalStatus::Complete)
                 && *status == GoalStatus::Complete;
             if completed {
                 emitted.remove(&format!("activity-stopped:{thread_id}"));
@@ -284,10 +277,18 @@ impl NotificationTracker {
                 );
             }
         }
-        self.active = observation.active;
+        self.active = observation.active.into_keys().collect();
         self.known_items = observation.known_items;
-        self.runtimes = observation.runtimes;
-        self.goals = observation.goals;
+        self.runtimes = observation
+            .runtimes
+            .into_iter()
+            .map(|(id, (status, _))| (id, status))
+            .collect();
+        self.goals = observation
+            .goals
+            .into_iter()
+            .map(|(id, (status, _))| (id, status))
+            .collect();
         emitted.into_values().collect()
     }
 }
