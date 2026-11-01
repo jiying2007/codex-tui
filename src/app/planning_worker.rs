@@ -176,6 +176,9 @@ impl PlanningWorker {
     }
 }
 #[cfg(test)]
+#[path = "planning_worker/large_rebase_tests.rs"]
+mod large_rebase_tests;
+#[cfg(test)]
 #[path = "planning_worker/live_tests.rs"]
 mod live_tests;
 #[cfg(test)]
@@ -184,6 +187,3 @@ mod rebase_tests;
 #[cfg(test)]
 #[path = "planning_worker/tests.rs"]
 mod tests;
-#[cfg(test)]
-#[path = "planning_worker/large_rebase_tests.rs"]
-mod large_rebase_tests;
