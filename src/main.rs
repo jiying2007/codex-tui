@@ -629,10 +629,9 @@ fn drain_registry(
         return RegistryDrainChanges::default();
     };
     let mut changes = RegistryDrainChanges::default();
-    for _ in 0..32 {
-        let Some(snapshot) = registry.try_recv() else {
-            break;
-        };
+    // The Registry is a latest-value watch, not an event FIFO. Applying only
+    // one full snapshot per UI turn leaves time for input and ordered events.
+    if let Some(snapshot) = registry.try_recv() {
         effects.extend(reduce(app, Action::ReplaceThreads(snapshot.threads)));
         effects.extend(reduce(app, Action::BackendStatus(snapshot.status)));
         changes.any = true;
