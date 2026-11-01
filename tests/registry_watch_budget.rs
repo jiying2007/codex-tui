@@ -12,7 +12,9 @@ fn full_registry_watch_is_polled_once_per_ui_turn() {
         .expect("Registry drain must remain before tests")
         .0;
     let (snapshots, events) = drain
-        .split_once("    for _ in 0..32 {\n        let Some(event) = registry.try_recv_conversation()")
+        .split_once(
+            "    for _ in 0..32 {\n        let Some(event) = registry.try_recv_conversation()",
+        )
         .expect("ordered conversation events retain their bounded drain");
     assert!(snapshots.contains("if let Some(snapshot) = registry.try_recv() {"));
     assert_eq!(snapshots.matches("registry.try_recv()").count(), 1);
