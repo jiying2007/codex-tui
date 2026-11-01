@@ -1,6 +1,6 @@
 #[test]
-fn large_stale_projection_is_rejected_and_rescheduled_on_worker() {
-    let mut live = app(12_000);
+fn beyond_scan_limit_stale_projection_is_rescheduled_on_worker() {
+    let mut live = app(24_001);
     let id = live.threads[0].id.0.clone();
     let old_output = Input::capture(&live, 100).compute();
     let mut changed = live.threads.clone();
