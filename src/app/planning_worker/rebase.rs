@@ -1,7 +1,7 @@
-//! Rebase small source deltas; never install stale authority or operator intent.
-//! Beyond 10k threads defer to a fresh worker pass instead of blocking the UI.
+//! Rebase bounded deltas; never install stale authority or operator intent.
 use super::*;
 const MAX_REBASED_CARDS: usize = 64;
+const MAX_REBASE_THREADS: usize = 24_000;
 
 pub(super) struct Source {
     pub threads: HashMap<String, ThreadSummary>,
@@ -18,7 +18,7 @@ impl Output {
     pub(super) fn rebase(&mut self, state: &AppState) -> bool {
         // Remote capabilities, local overlays and operator intent are not guessed
         // from old cards. A change in these domains needs a fresh full snapshot.
-        if state.threads.len() > 10_000
+        if state.threads.len() > MAX_REBASE_THREADS
             || self.source.intent_generation != state.planning_intent_generation
             || self.source.git != state.git_contexts
             || self.source.forge != state.forge_observations
