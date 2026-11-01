@@ -27,8 +27,8 @@ fn watch_updates_coalesce_without_losing_the_latest_generation() {
         tx.send(generation).expect("live receiver");
     }
     assert_eq!(*rx.borrow_and_update(), 1_000);
-    assert_eq!(rx.has_changed().expect("connected"), false);
+    assert!(!rx.has_changed().expect("connected"));
     tx.send(1_001).expect("another generation");
     assert_eq!(*rx.borrow_and_update(), 1_001);
-    assert_eq!(rx.has_changed().expect("connected"), false);
+    assert!(!rx.has_changed().expect("connected"));
 }
