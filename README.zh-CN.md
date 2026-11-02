@@ -16,7 +16,7 @@ codex-tui 是面向个人开发者、可供团队复用的**本地优先 Mission
 
 v1.4 已冻结新增核心功能，仅接受缺陷、安全、互操作、证据和维护治理修复。v1.2/v1.3 的计划/完成记录是**历史资料**，不再作为 v1.4 的升级兼容约束。首次安装直接创建当前 SQLite v4 状态；不导入未部署版本的 `state-v1.json`，也不迁移旧 SQLite v1–v3。
 
-受保护 `main` 通过的托管 CI、发布预检与产物打包只能证明**自动化工程基线**。真实环境资格与发布授权仍由 [#211](https://github.com/jiying2007/codex-tui/issues/211) 跟踪，详见 [首次部署决策](docs/zh-CN/implementation/v1.4-first-deployment-baseline.md)。
+受保护 `main` 通过的托管 CI、发布预检与产物打包只能证明**自动化工程基线**。已关闭的 [#211](https://github.com/jiying2007/codex-tui/issues/211) 仅作为历史交接记录，**不代表真实环境资格或 Stable 发布已经完成**；实际发布仍须依照 [v1.4 正式资格](release/v1.4-criteria.json) 和 [首次部署决策](docs/zh-CN/implementation/v1.4-first-deployment-baseline.md) 为当前源码采集证据。
 
 ## 核心价值与每日工作
 <!-- docs-section: product -->

@@ -5,7 +5,7 @@
 
 **Language / 语言:** [English](release-qualification.md) · [简体中文](../zh-CN/guides/release-qualification.md)
 
-v1.4 is development-scope-complete, **not** a published Stable version or a proven deployment. Current public GitHub release v1.0.0 is historical and was not adopted in a deployed installation. This page is an operator checklist, not a new release authority. Follow [the canonical criteria](../../release/v1.4-criteria.json) and [handoff #211](https://github.com/jiying2007/codex-tui/issues/211).
+v1.4 is development-scope-complete, **not** a published Stable version or a proven deployment. Current public GitHub release v1.0.0 is historical and was not adopted in a deployed installation. This page is an operator checklist, not a new release authority. Follow [the canonical criteria](../../release/v1.4-criteria.json) for current requirements; [closed handoff #211](https://github.com/jiying2007/codex-tui/issues/211) is a historical record, not evidence of deployment or publication authority.
 
 ## Machine-owned gates
 <!-- docs-section: automated -->
@@ -53,5 +53,5 @@ A reviewed changelog release date, immutable-release/readback and branch-head re
 ## Handoff and historical records
 <!-- docs-section: archive -->
 
-Keep the current [Issue #211](https://github.com/jiying2007/codex-tui/issues/211) open until external/admin evidence is genuinely collected. Do not force-delete divergent historical branches, rewrite v1.0.0 GitHub release history or treat v1.2/v1.3 retained completion files as a currently deployed upgrade path. This is a **first** v1.4 installation, not a compatibility migration.
+[Issue #211](https://github.com/jiying2007/codex-tui/issues/211) closed on 2026-10-31 as a historical handoff record. Its closure does **not** establish external/admin qualification or authorize Stable publication. Collect exact-current-SHA evidence and retain genuine receipts under the existing release qualification process before claiming readiness. Do not force-delete divergent historical branches, rewrite v1.0.0 GitHub release history or treat v1.2/v1.3 retained completion files as a currently deployed upgrade path. This is a **first** v1.4 installation, not a compatibility migration.
 
