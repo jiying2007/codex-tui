@@ -5,7 +5,7 @@
 
 **语言 / Language:** [English](../../guides/ux-qualification.md) · [简体中文](ux-qualification.md)
 
-这是需要现场人员执行的**真实体验对比**，不是代码 CI，也不意味着允许 Stable 发布。必须绑定候选精确源码 SHA 和实际二进制摘要。结果应归档到现有 [#211 外部资格交接](https://github.com/jiying2007/codex-tui/issues/211) 的私有证据位置，不创建第二套任务权威，不把真实任务、内部 GitLab 信息或口令上传公共仓库。
+这是需要现场人员执行的**真实体验对比**，不是代码 CI，也不意味着允许 Stable 发布。必须绑定候选精确源码 SHA 和实际二进制摘要。结果应归档到[设备验收手册](device-validation.md)所述的当前源码私有证据目录；[已关闭的 #211](https://github.com/jiying2007/codex-tui/issues/211) 仅作历史交接记录，不再作为当前证据收集入口。不创建第二套任务权威，不把真实任务、内部 GitLab 信息或口令上传公共仓库。
 
 ## 实验准备
 <!-- docs-section: preparation -->
@@ -50,4 +50,4 @@ T001,B,needs-you,60x24,warm,8400,true,false,na,opaque-note
 
 如果原生 Codex + tmux + Forge 已经同样便捷，codex-tui 只保留跨仓库待处理聚合与交付状态投影；禁止继续叠加内嵌聊天客户端、独立任务调度、第二套 Agent/Queue 或终端管理器。优先删减重复能力，而不是新加功能。
 
-真实 Windows→SSH Ubuntu、已认证 Codex、内网 GitLab、长稳、管理员及独立签核，以及后续 Stable `publish=false` 演练，全部仍由 [#211](https://github.com/jiying2007/codex-tui/issues/211) 控制；本文不改变 `stableReady=false`、`publicationAllowed=false`。
+真实 Windows→SSH Ubuntu、已认证 Codex、内网 GitLab、长稳、管理员及独立签核，以及后续 Stable `publish=false` 演练，仍是[当前发布资格](release-qualification.md)要求的待完成事项；历史 [#211](https://github.com/jiying2007/codex-tui/issues/211) 的关闭不代表这些条件通过。本文不改变 `stableReady=false`、`publicationAllowed=false`。

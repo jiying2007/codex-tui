@@ -5,7 +5,7 @@
 
 **Language / 语言:** [English](ux-qualification.md) · [简体中文](../zh-CN/guides/ux-qualification.md)
 
-This is an **operator-run experiment**, not a software CI gate and not permission for Stable publication. Use the exact current candidate SHA and executable digest. Record results privately under the existing [#211 external qualification](https://github.com/jiying2007/codex-tui/issues/211); do not create a second task authority. No data from real users or internal GitLab should be posted publicly.
+This is an **operator-run experiment**, not a software CI gate and not permission for Stable publication. Use the exact current candidate SHA and executable digest. Record results privately in the source-bound evidence directory described by [device validation](device-validation.md); [closed #211](https://github.com/jiying2007/codex-tui/issues/211) is a historical handoff, not an active collection destination. Do not create a second task authority. No data from real users or internal GitLab should be posted publicly.
 
 ## Preparation
 <!-- docs-section: preparation -->
@@ -50,4 +50,4 @@ Report p50/p95 of end-to-end interaction time, correct-target fraction, onboardi
 
 If canonical Codex + tmux + Forge is as easy and fast as codex-tui, keep only cross-repository attention and delivery projection; do not grow the embedded conversation client, a parallel task scheduler, a duplicate agent runtime or a second terminal manager. Prioritize deletion/simplification over additional features.
 
-Real Windows→SSH Ubuntu, authenticated Codex, internal GitLab, sustained operation, administrator/independent reviewer signoff and subsequent Stable `publish=false` dry-run remain open in [#211](https://github.com/jiying2007/codex-tui/issues/211). This guide does not override `stableReady=false` or `publicationAllowed=false`.
+Real Windows→SSH Ubuntu, authenticated Codex, internal GitLab, sustained operation, administrator/independent reviewer signoff and subsequent Stable `publish=false` dry-run remain outstanding under [current release qualification](release-qualification.md), regardless of the closure of historical [#211](https://github.com/jiying2007/codex-tui/issues/211). This guide does not override `stableReady=false` or `publicationAllowed=false`.
