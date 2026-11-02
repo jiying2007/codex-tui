@@ -5,7 +5,7 @@
 
 **Language / 语言:** [English](../../guides/release-qualification.md) · [简体中文](release-qualification.md)
 
-v1.4 已完成开发范围，**并非**已发布的 Stable，也不是完成真实部署的产品。公开 v1.0.0 只是历史发布记录，未被应用部署。本页是使用指南，不设立新发布权威；以 [正式资格 JSON](../../../release/v1.4-criteria.json) 和 [#211 交接单](https://github.com/jiying2007/codex-tui/issues/211) 为准。
+v1.4 已完成开发范围，**并非**已发布的 Stable，也不是完成真实部署的产品。公开 v1.0.0 只是历史发布记录，未被应用部署。本页是使用指南，不设立新发布权威；当前发布资格以 [正式资格 JSON](../../../release/v1.4-criteria.json) 为准；已关闭的 [#211 交接单](https://github.com/jiying2007/codex-tui/issues/211) 仅保留历史记录，不构成真实部署或发布授权证据。
 
 ## 机器自动化资格
 <!-- docs-section: automated -->
@@ -53,5 +53,5 @@ Stable `publish=false` 与普通 Preview 自检不是同一资格。必须绑定
 ## 交接与历史记录
 <!-- docs-section: archive -->
 
-在真实/管理员证据全部取得之前，保持 [#211](https://github.com/jiying2007/codex-tui/issues/211) 为 Open。不要强删独立分叉的历史分支、重写 v1.0.0 GitHub 发布事实或把 v1.2/v1.3 完成记录当作实际部署后的升级链。本次为 **v1.4 首次安装**，不是历史数据迁移。
+[#211](https://github.com/jiying2007/codex-tui/issues/211) 已于 2026-10-31 作为历史交接记录关闭；关闭 Issue **不代表真实环境／管理员资格通过**，更不等于允许 Stable 发布。真正的首次部署仍须按照现有发布资格流程，为当前精确源码采集证据并保存真实回执。不要强删独立分叉的历史分支、重写 v1.0.0 GitHub 发布事实或把 v1.2/v1.3 完成记录当作实际部署后的升级链。本次为 **v1.4 首次安装**，不是历史数据迁移。
 
