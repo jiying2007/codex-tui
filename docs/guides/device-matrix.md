@@ -32,7 +32,7 @@ Copy privately, never commit credentials or raw tasks. Select development-integr
 | T01 | Drawer Cwd and echo | NOT_RUN | | |
 | T02 | Real width and height resize | NOT_RUN | | |
 | T03 | Ctrl+C then usable shell | NOT_RUN | | |
-| T04 | F6, refocus and uppercase T close | NOT_RUN | | |
+| T04 | Alt+T two-way focus, shell retained, uppercase T close | NOT_RUN | | |
 | T05 | Normal parent-terminal restoration | NOT_RUN | | |
 | T06 | Catchable-signal abnormal exit restoration | NOT_RUN | | |
 | T07 | SSH disconnect/reconnect and separate TTY evidence | NOT_RUN | | |
