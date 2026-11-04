@@ -145,7 +145,7 @@ cd "$ROOT"
 
 窗口 A 先 prepare，再执行已经固定的程序。terminal_smoke 的 stdin／stdout／stderr 必须连接同一控制 TTY，不接管道，不重定向。prepare 可能打印 cargo 命令；仍用已记录的 BINARY，避免意外重建改变验收对象。
 
-选择有效的本地仓库会话。按 t，核对 pwd，执行 `echo CODEX_TUI_DRAWER_SMOKE`；改变窗口宽和高；执行 `sleep 30` 并在期间按 Ctrl+C，再执行 `echo CODEX_TUI_AFTER_CTRL_C`。F6 返回 TUI 焦点，t 重聚焦 Drawer；F6 后大写 T 关闭。检查导航、中文、滚动、窄窗口及正常退出，核对光标、回显、Backspace 和行编辑。Ctrl+] 只是终端支持时的备选，键位以实时 `?` 为准。
+选择有效的本地仓库会话。按 t，核对 pwd，执行 `echo CODEX_TUI_DRAWER_SMOKE`；改变窗口宽和高；执行 `sleep 30` 并在期间按 Ctrl+C，再执行 `echo CODEX_TUI_AFTER_CTRL_C`。Alt+T 双向切换 TUI 与 Drawer 焦点（保持原 Shell，不重建 PTY）；应用聚焦时 t 可重聚焦 Drawer，T 显式关闭。检查导航、中文、滚动、窄窗口及正常退出，核对光标、回显、Backspace 和行编辑。Ctrl+] 只是终端支持时的备选，键位以实时 `?` 为准。
 
 完成规定异常退出范围后才可记录 PASS。prepare 与 record 必须同一 TTY，SSH 重连须另建见证会话。不承诺存在安全 --panic 接口，信号测试不能冒充 panic 测试。
 
