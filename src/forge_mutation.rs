@@ -691,6 +691,11 @@ struct GitLabProjectCheck {
     default_branch: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+struct GitLabServerVersion {
+    version: String,
+}
+
 #[derive(Clone, Debug, Deserialize)]
 struct GitLabMergeRequest {
     iid: u64,
@@ -705,6 +710,8 @@ struct GitLabMergeRequest {
     #[serde(default)]
     draft: bool,
     detailed_merge_status: Option<String>,
+    merge_status: Option<String>,
+    has_conflicts: Option<bool>,
     blocking_discussions_resolved: Option<bool>,
     head_pipeline: Option<GitLabPipelineRef>,
 }
@@ -743,6 +750,8 @@ struct GitLabApprovalUserRef {
 #[derive(Debug, Deserialize)]
 struct GitLabApprovals {
     approvals_left: Option<u64>,
+    approvals_required: Option<u64>,
+    approved: Option<bool>,
     #[serde(default)]
     approved_by: Vec<GitLabApprovalUser>,
 }
@@ -865,7 +874,7 @@ async fn validate_preconditions(plan: &ForgeMutationPlan) -> Result<Preflight> {
                 mr.blocking_discussions_resolved == Some(true),
                 "GitLab merge discussions must be explicitly resolved"
             );
-            require_gitlab_merge_ready(mr.detailed_merge_status.as_deref())?;
+            let legacy_gitlab = require_gitlab_merge_ready_for_mr(plan, &mr).await?;
             if let Some(pipeline) = &mr.head_pipeline {
                 anyhow::ensure!(
                     pipeline.status.eq_ignore_ascii_case("success"),
@@ -873,7 +882,7 @@ async fn validate_preconditions(plan: &ForgeMutationPlan) -> Result<Preflight> {
                     pipeline.status
                 );
             }
-            require_gitlab_approvals(plan, mr.iid).await?;
+            require_gitlab_approvals(plan, mr.iid, legacy_gitlab).await?;
 
             Ok(Preflight {
                 authenticated_user_id: None,
@@ -988,6 +997,46 @@ fn require_gitlab_merge_ready(status: Option<&str>) -> Result<()> {
     Ok(())
 }
 
+// GitLab <15.6 only published the coarse merge_status. Do not use that
+// field if the modern detailed status is present, even if it is blocking.
+fn require_legacy_gitlab_merge_ready(
+    version: &str,
+    status: Option<&str>,
+    conflicts: Option<bool>,
+) -> Result<()> {
+    let parts: Vec<_> = version.trim_start_matches('v').split('.').collect();
+    let major = parts.first().and_then(|value| value.parse::<u64>().ok());
+    let minor = parts.get(1).and_then(|value| value.parse::<u64>().ok());
+    anyhow::ensure!(
+        matches!((major, minor), (Some(14), Some(_)) | (Some(15), Some(0..=5))),
+        "legacy GitLab merge status is unsupported for server {version:?}"
+    );
+    anyhow::ensure!(
+        status == Some("can_be_merged") && conflicts == Some(false),
+        "legacy GitLab merge is not explicitly conflict-free: {status:?}, conflicts={conflicts:?}"
+    );
+    Ok(())
+}
+
+async fn require_gitlab_merge_ready_for_mr(
+    plan: &ForgeMutationPlan,
+    mr: &GitLabMergeRequest,
+) -> Result<bool> {
+    if mr.detailed_merge_status.is_some() {
+        require_gitlab_merge_ready(mr.detailed_merge_status.as_deref())?;
+        return Ok(false);
+    }
+    // Missing modern evidence may only fall back after a live version check.
+    let server: GitLabServerVersion =
+        glab_api_json(&plan.cwd, &plan.host, "/version").await?;
+    require_legacy_gitlab_merge_ready(
+        &server.version,
+        mr.merge_status.as_deref(),
+        mr.has_conflicts,
+    )?;
+    Ok(true)
+}
+
 fn require_gitlab_approval_fallback(approvals: &GitLabApprovals) -> Result<()> {
     let remaining = approvals
         .approvals_left
@@ -996,7 +1045,36 @@ fn require_gitlab_approval_fallback(approvals: &GitLabApprovals) -> Result<()> {
     Ok(())
 }
 
-async fn require_gitlab_approvals(plan: &ForgeMutationPlan, iid: u64) -> Result<()> {
+// On old Community Edition the approvals response has approved=false with
+// no EE-only numeric approval fields, even when no approvals are required.
+// Only accept this exact legacy Free/CE shape when the rules API is explicitly
+// absent (404), the server version was checked, and all other merge gates pass.
+// Any missing/ambiguous field on a modern server still fails closed.
+fn require_legacy_gitlab_approval_fallback(approvals: &GitLabApprovals) -> Result<()> {
+    if approvals.approvals_left.is_some() {
+        return require_gitlab_approval_fallback(approvals);
+    }
+    anyhow::ensure!(
+        approvals.approvals_required.is_none()
+            && approvals.approved == Some(false)
+            && approvals.approved_by.is_empty(),
+        "legacy GitLab approval evidence is ambiguous; merge refused"
+    );
+    Ok(())
+}
+
+fn legacy_gitlab_rules_unavailable(error: &anyhow::Error) -> bool {
+    // Do not turn permission errors (403), malformed JSON, or timeouts into
+    // implicit 'no approval rules'. glab includes the HTTP status in its error.
+    let text = format!("{error:#}").to_ascii_lowercase();
+    text.contains("404") || text.contains("not found")
+}
+
+async fn require_gitlab_approvals(
+    plan: &ForgeMutationPlan,
+    iid: u64,
+    legacy_gitlab: bool,
+) -> Result<()> {
     match approval_state(plan, iid).await {
         Ok(state) => {
             let pending = unsatisfied_required_approval_rules(&state);
@@ -1006,11 +1084,21 @@ async fn require_gitlab_approvals(plan: &ForgeMutationPlan, iid: u64) -> Result<
         // A successful HTTP response with malformed/missing evidence is not
         // an unsupported endpoint. Never hide that integrity failure behind fallback.
         Err(error) if error.downcast_ref::<serde_json::Error>().is_some() => Err(error),
-        Err(_) => {
+        Err(error) => {
+            if legacy_gitlab {
+                anyhow::ensure!(
+                    legacy_gitlab_rules_unavailable(&error),
+                    "legacy GitLab approval state is not proven unsupported: {error:#}"
+                );
+            }
             let fallback = approvals(plan, iid)
                 .await
                 .context("both GitLab approval_state and approvals fallback unavailable")?;
-            require_gitlab_approval_fallback(&fallback)
+            if legacy_gitlab {
+                require_legacy_gitlab_approval_fallback(&fallback)
+            } else {
+                require_gitlab_approval_fallback(&fallback)
+            }
         }
     }
 }
