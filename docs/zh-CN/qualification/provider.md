@@ -62,6 +62,14 @@ python3 "$SOURCE_DIR/scripts/release/capture_forge_capability.py" \
 
 这是**只读能力**的资格采集，不授权 PR 评论、审批、合并等写操作；写操作仍需单独预览、确认和来源 HEAD 校验。
 
+## 旧版 GitLab 合并资格兼容边界
+
+GitLab 14.x 至 15.5 没有 `detailed_merge_status`。在确切服务器版本查询成功且 GitLab 返回 `merge_status=can_be_merged`、`has_conflicts=false` 时，TUI 可采用旧版合并就绪判定；已返回新版 `detailed_merge_status` 的实例**不能**用旧字段覆盖拒绝状态。
+
+审批仍须独立判断：优先检查审批规则 API；明确未满足规则则拒绝。若旧版 API 返回 **404**，只有响应严格符合旧版 Free/CE 无 EE 审批计数字段、`approved=false`、`approved_by=[]` 的已知形态才使用该降级路径。403、请求超时、错误 JSON、缺少冲突判定、Pipeline 失败或未解析讨论仍必须拒绝。不使用 Force / 跳过审批 / 自动重试；执行时重新校验 MR 身份、已确认 HEAD，并交由 GitLab 服务器执行最终合并权限控制。
+
+此兼容逻辑不授予合并或 Stable 资格。它需要在有权限的专用测试仓库完成真实合并、负例及回执验收；旧版 API 无法明确证明的情况保持 `BLOCKED`。
+
 ## 证据结构与隐私
 <!-- docs-section: fixture -->
 
