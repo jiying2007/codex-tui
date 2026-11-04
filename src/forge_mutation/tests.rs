@@ -260,6 +260,8 @@ fn gitlab_approval_fallback_rejects_missing_or_positive_counts() {
         assert!(
             require_gitlab_approval_fallback(&GitLabApprovals {
                 approvals_left: remaining,
+                approvals_required: None,
+                approved: None,
                 approved_by: vec![],
             })
             .is_err()
@@ -268,6 +270,8 @@ fn gitlab_approval_fallback_rejects_missing_or_positive_counts() {
     assert!(
         require_gitlab_approval_fallback(&GitLabApprovals {
             approvals_left: Some(0),
+            approvals_required: None,
+            approved: None,
             approved_by: vec![],
         })
         .is_ok()
@@ -360,4 +364,142 @@ fn gitlab_approval_evidence_requires_explicit_fields_and_types() {
         serde_json::from_str("{\"rules\":[{\"approvals_required\":1,\"approved\":false}]}")
             .unwrap();
     assert_eq!(unsatisfied_required_approval_rules(&pending), 1);
+}
+
+#[test]
+fn gitlab_146_legacy_merge_readiness_is_version_bounded_and_conflict_explicit() {
+    assert!(require_legacy_gitlab_merge_ready(
+        "14.6.1",
+        Some("can_be_merged"),
+        Some(false),
+    )
+    .is_ok());
+    assert!(require_legacy_gitlab_merge_ready(
+        "15.5.9-ee",
+        Some("can_be_merged"),
+        Some(false),
+    )
+    .is_ok());
+
+    for version in ["13.12.0", "15.6.0", "16.0.0", "latest", ""] {
+        assert!(
+            require_legacy_gitlab_merge_ready(
+                version,
+                Some("can_be_merged"),
+                Some(false)
+            )
+            .is_err(),
+            "{version}"
+        );
+    }
+    for status in [None, Some("checking"), Some("cannot_be_merged")] {
+        assert!(
+            require_legacy_gitlab_merge_ready("14.6.1", status, Some(false)).is_err(),
+            "{status:?}"
+        );
+    }
+    for conflict in [None, Some(true)] {
+        assert!(require_legacy_gitlab_merge_ready(
+            "14.6.1",
+            Some("can_be_merged"),
+            conflict
+        )
+        .is_err());
+    }
+
+    // A modern non-mergeable detailed status must never be replaced by the
+    // older, less expressive 'can_be_merged' field.
+    assert!(require_gitlab_merge_ready(Some("not_approved")).is_err());
+}
+
+#[test]
+fn gitlab_legacy_ce_approvals_accept_only_the_documented_free_shape() {
+    let legacy = GitLabApprovals {
+        approvals_left: None,
+        approvals_required: None,
+        approved: Some(false),
+        approved_by: vec![],
+    };
+    assert!(require_legacy_gitlab_approval_fallback(&legacy).is_ok());
+    // Modern fallback cannot infer zero approvals from missing EE fields.
+    assert!(require_gitlab_approval_fallback(&legacy).is_err());
+
+    for invalid in [
+        GitLabApprovals {
+            approved: None,
+            ..legacy.clone()
+        },
+        GitLabApprovals {
+            approved: Some(true),
+            ..legacy.clone()
+        },
+        GitLabApprovals {
+            approvals_required: Some(1),
+            ..legacy.clone()
+        },
+        GitLabApprovals {
+            approvals_left: Some(1),
+            ..legacy.clone()
+        },
+    ] {
+        assert!(require_legacy_gitlab_approval_fallback(&invalid).is_err());
+    }
+    assert!(require_legacy_gitlab_approval_fallback(&GitLabApprovals {
+        approvals_left: Some(0),
+        approvals_required: Some(0),
+        approved: Some(true),
+        approved_by: vec![],
+    })
+    .is_ok());
+}
+
+#[test]
+fn legacy_rules_fallback_rejects_access_denied_and_ambiguous_errors() {
+    assert!(legacy_gitlab_rules_unavailable(&anyhow::anyhow!(
+        "glab api /approval_state failed: 404 Not Found"
+    )));
+    for error in [
+        "glab api failed: 403 Forbidden",
+        "connection timed out",
+        "decode glab api response",
+        "401 Unauthorized",
+    ] {
+        assert!(!legacy_gitlab_rules_unavailable(&anyhow::anyhow!("{error}")));
+    }
+}
+
+#[test]
+fn gitlab_146_response_decodes_without_newer_status_or_ee_approval_fields() {
+    let mr: GitLabMergeRequest = serde_json::from_value(serde_json::json!({
+        "iid": 1,
+        "title": "v1.4 test",
+        "state": "opened",
+        "source_branch": "qualification/tui-v14-device",
+        "target_branch": "master",
+        "source_project_id": 366,
+        "target_project_id": 366,
+        "web_url": "http://gitlab.test/embedded/test/-/merge_requests/1",
+        "sha": "5372e2f6ba57934217b9330cfccec51d680c1ca9",
+        "merge_status": "can_be_merged",
+        "detailed_merge_status": null,
+        "has_conflicts": false,
+        "draft": false,
+        "blocking_discussions_resolved": true,
+        "head_pipeline": null
+    }))
+    .expect("decode legacy MR");
+    assert_eq!(mr.detailed_merge_status, None);
+    require_legacy_gitlab_merge_ready(
+        "14.6.1",
+        mr.merge_status.as_deref(),
+        mr.has_conflicts
+    )
+    .expect("legacy merge readiness");
+
+    let approvals: GitLabApprovals = serde_json::from_value(serde_json::json!({
+        "approved": false,
+        "approved_by": []
+    }))
+    .expect("decode legacy CE approvals");
+    require_legacy_gitlab_approval_fallback(&approvals).expect("legacy CE approvals");
 }
