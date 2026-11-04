@@ -190,7 +190,10 @@ fn f6_toggles_drawer_focus_both_ways_without_restarting_pty() {
         .into_owned();
 
     let opened = handle_key(&mut app, press(KeyCode::F(6)));
-    assert!(matches!(opened.as_slice(), [Effect::OpenTerminalDrawer { .. }]));
+    assert!(matches!(
+        opened.as_slice(),
+        [Effect::OpenTerminalDrawer { .. }]
+    ));
     assert!(app.terminal_drawer_open);
     assert!(app.terminal_focused);
 
@@ -215,15 +218,20 @@ fn f6_toggles_drawer_focus_both_ways_without_restarting_pty() {
 
     // Ordinary Ctrl+C still belongs to the PTY while it is focused.
     assert_eq!(
-        handle_key(&mut app, KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)),
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL)
+        ),
         vec![Effect::TerminalInput(vec![3])]
     );
     // Preserve the existing Ctrl+] escape route.
-    assert!(handle_key(
-        &mut app,
-        KeyEvent::new(KeyCode::Char(']'), KeyModifiers::CONTROL)
-    )
-    .is_empty());
+    assert!(
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char(']'), KeyModifiers::CONTROL)
+        )
+        .is_empty()
+    );
     assert!(!app.terminal_focused);
 
     // Closing the drawer remains an explicit action; focus changes don't kill it.
