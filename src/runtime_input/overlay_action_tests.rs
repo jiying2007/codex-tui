@@ -198,28 +198,15 @@ fn alt_t_toggles_drawer_focus_both_ways_without_restarting_pty() {
     assert!(app.terminal_drawer_open);
     assert!(app.terminal_focused);
 
-    // Repeat is delivered to the shell but cannot bounce terminal focus.
-    assert_eq!(
-        handle_key(
-            &mut app,
-            KeyEvent::new_with_kind(
-                KeyCode::Char('t'),
-                KeyModifiers::ALT,
-                KeyEventKind::Repeat,
-            )
-        ),
-        vec![Effect::TerminalInput(vec![0x1b, b't'])]
-    );
+    // Held Alt+T is swallowed rather than bouncing or leaking input.
+    let repeat =
+        KeyEvent::new_with_kind(KeyCode::Char('t'), KeyModifiers::ALT, KeyEventKind::Repeat);
+    assert!(handle_key(&mut app, repeat).is_empty());
     assert!(app.terminal_focused);
     // Key release has no effect; F6 is no longer a TUI shortcut.
-    assert!(handle_key(
-        &mut app,
-        KeyEvent::new_with_kind(
-            KeyCode::Char('t'),
-            KeyModifiers::ALT,
-            KeyEventKind::Release,
-        )
-    ).is_empty());
+    let release =
+        KeyEvent::new_with_kind(KeyCode::Char('t'), KeyModifiers::ALT, KeyEventKind::Release);
+    assert!(handle_key(&mut app, release).is_empty());
     assert!(handle_key(&mut app, press(KeyCode::F(6))).is_empty());
     assert!(app.terminal_focused);
 
