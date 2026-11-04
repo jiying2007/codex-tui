@@ -30,9 +30,12 @@ fn is_plain_press(key: KeyEvent) -> bool {
     key.kind == KeyEventKind::Press && key.modifiers == KeyModifiers::NONE
 }
 fn is_terminal_release_key(key: KeyEvent) -> bool {
-    matches!(key.code, KeyCode::F(6))
-        || (key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char(']'))
-        || key.code == KeyCode::Char('\u{001d}')
+    // Terminal focus switches only on a fresh unmodified key press: holding F6
+    // must not bounce focus back and forth, and modified keys belong to the PTY.
+    key.kind == KeyEventKind::Press
+        && ((key.code == KeyCode::F(6) && key.modifiers == KeyModifiers::NONE)
+            || (key.code == KeyCode::Char(']') && key.modifiers == KeyModifiers::CONTROL)
+            || (key.code == KeyCode::Char('\u{001d}') && key.modifiers == KeyModifiers::NONE))
 }
 pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
     if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {

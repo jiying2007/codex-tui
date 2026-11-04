@@ -28,6 +28,7 @@ pub const HELP_BINDINGS: &[HelpBinding] = &[
     HelpBinding { surface: "Global", scope: HelpScope::AllViews, token: "Esc", code: KeyCode::Esc, modifiers: KeyModifiers::NONE, command: Command::Back },
     HelpBinding { surface: "Global", scope: HelpScope::AllViews, token: "!", code: KeyCode::Char('!'), modifiers: KeyModifiers::NONE, command: Command::OpenRecentNotification },
     HelpBinding { surface: "Global", scope: HelpScope::AllViews, token: "!", code: KeyCode::Char('1'), modifiers: KeyModifiers::SHIFT, command: Command::OpenRecentNotification },
+    HelpBinding { surface: "Terminal drawer", scope: HelpScope::NonScratch, token: "F6", code: KeyCode::F(6), modifiers: KeyModifiers::NONE, command: Command::TerminalDrawer },
     HelpBinding { surface: "Terminal drawer", scope: HelpScope::NonScratch, token: "t", code: KeyCode::Char('t'), modifiers: KeyModifiers::NONE, command: Command::TerminalDrawer },
     HelpBinding { surface: "Terminal drawer", scope: HelpScope::NonScratch, token: "T", code: KeyCode::Char('T'), modifiers: KeyModifiers::NONE, command: Command::CloseTerminalDrawer },
     HelpBinding { surface: "Global", scope: HelpScope::NonScratch, token: "=", code: KeyCode::Char('='), modifiers: KeyModifiers::NONE, command: Command::BeginHotSlotBind },
@@ -111,6 +112,9 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
     }
 
     match (view, key.code) {
+        (_, KeyCode::F(6)) if is_plain_press(key) && view != ViewKind::Scratch => {
+            Some(Command::TerminalDrawer)
+        }
         (_, KeyCode::Char('?')) => Some(Command::Help),
         (_, KeyCode::Char('/')) => Some(Command::Search),
         (_, KeyCode::Char('.')) => Some(Command::ContextActions),
