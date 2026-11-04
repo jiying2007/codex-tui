@@ -441,7 +441,43 @@ mod tests {
             Some(Command::CloseTerminalDrawer)
         );
         assert_eq!(
+            command_for_key(
+                KeyEvent::new(KeyCode::Char('t'), KeyModifiers::ALT),
+                ViewKind::Workspace
+            ),
+            Some(Command::TerminalDrawer)
+        );
+        assert_eq!(
+            command_for_key(
+                KeyEvent::new(KeyCode::Char('t'), KeyModifiers::CONTROL),
+                ViewKind::Workspace
+            ),
+            None
+        );
+        assert_eq!(
+            command_for_key(
+                KeyEvent::new_with_kind(
+                    KeyCode::Char('t'),
+                    KeyModifiers::ALT,
+                    KeyEventKind::Repeat,
+                ),
+                ViewKind::Workspace
+            ),
+            None
+        );
+        assert_eq!(
+            command_for_key(key(KeyCode::F(6)), ViewKind::Workspace),
+            None
+        );
+        assert_eq!(
             command_for_key(key(KeyCode::Char('t')), ViewKind::Scratch),
+            None
+        );
+        assert_eq!(
+            command_for_key(
+                KeyEvent::new(KeyCode::Char('t'), KeyModifiers::ALT),
+                ViewKind::Scratch
+            ),
             None
         );
     }
