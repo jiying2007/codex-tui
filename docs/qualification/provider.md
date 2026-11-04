@@ -83,6 +83,27 @@ python3 "$SOURCE_DIR/scripts/release/capture_forge_capability.py" \
 
 This qualifies the read-only GitHub provider. It does not introduce GitHub write mutations.
 
+## Legacy GitLab merge compatibility
+
+GitLab 14.x through 15.5 predates `detailed_merge_status`. Only after a
+successful live server version check may the client recognize the legacy
+`merge_status=can_be_merged` together with explicit
+`has_conflicts=false`. A present but blocking modern detailed status
+always wins over the legacy field.
+
+Approvals are checked independently. A supported approval-rules endpoint
+must be satisfied; an explicitly missing (404) endpoint on legacy GitLab
+may use the documented Free/Community Edition response shape
+(`approved=false`, empty `approved_by`, absent EE approval counters).
+403, timeouts, malformed results, nonzero required counts, unresolved
+discussions, and failing pipelines remain fail-closed. Never force-merge,
+skip server protections, or retry an unknown outcome blindly. Revision
+identity is revalidated and the GitLab server remains the merge authority.
+
+This compatibility path is not a release qualification. A representative
+real merge and negative cases must be witnessed separately; absent
+evidence still means BLOCKED.
+
 ## Fixture contract
 <!-- docs-section: fixture -->
 
