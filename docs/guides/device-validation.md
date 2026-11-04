@@ -145,7 +145,7 @@ cd "$ROOT"
 
 In window A, prepare and run the exact pinned executable below. Do not pipe or redirect terminal_smoke: stdin/stdout/stderr must all be on the same controlling TTY. The prepare helper may print a cargo command; use the already recorded BINARY so an unintended rebuild does not change the test object.
 
-Select a valid local repository-backed thread. Press t, verify pwd and `echo CODEX_TUI_DRAWER_SMOKE`; resize both dimensions; run `sleep 30`, press Ctrl+C during it, then run `echo CODEX_TUI_AFTER_CTRL_C`. F6 returns focus to TUI, t refocuses the Drawer; F6 then uppercase T closes it. Check navigation, Chinese text, scrolling, narrow windows and normal exit. Verify cursor, echo, Backspace and line editing. Ctrl+] is only a terminal-dependent alternative. Keys follow live `?` help.
+Select a valid local repository-backed thread. Press t, verify pwd and `echo CODEX_TUI_DRAWER_SMOKE`; resize both dimensions; run `sleep 30`, press Ctrl+C during it, then run `echo CODEX_TUI_AFTER_CTRL_C`. Alt+T toggles focus between the TUI and Drawer without restarting the PTY; t refocuses the Drawer from the app, and uppercase T explicitly closes it. Check navigation, Chinese text, scrolling, narrow windows and normal exit. Verify cursor, echo, Backspace and line editing. Ctrl+] is only a terminal-dependent alternative. Keys follow live `?` help.
 
 Complete the required abnormal-exit scope separately before recording PASS. The same TTY is required for prepare and record; SSH reconnect creates a new witness session. No safe --panic CLI is promised, and a signal test is not a panic test.
 

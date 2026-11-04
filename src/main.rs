@@ -1857,9 +1857,9 @@ mod accessibility_input_tests {
     }
 
     #[test]
-    fn terminal_focus_release_accepts_f6_ctrl_bracket_and_raw_group_separator() {
+    fn terminal_focus_release_accepts_alt_t_ctrl_bracket_and_raw_group_separator() {
         for release_key in [
-            KeyEvent::new(KeyCode::F(6), KeyModifiers::NONE),
+            KeyEvent::new(KeyCode::Char('t'), KeyModifiers::ALT),
             KeyEvent::new(KeyCode::Char(']'), KeyModifiers::CONTROL),
             KeyEvent::new(KeyCode::Char('\u{001d}'), KeyModifiers::NONE),
         ] {

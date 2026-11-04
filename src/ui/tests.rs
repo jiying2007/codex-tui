@@ -313,7 +313,7 @@ fn registry_summary_surfaces_repo_only_mode() {
 fn registry_footer_exposes_terminal_shortcut() {
     let snapshot = render_snapshot(100);
     assert!(
-        snapshot.contains("F6 terminal"),
+        snapshot.contains("Alt+T terminal"),
         "Mission Control must expose the Terminal Drawer shortcut"
     );
 }
@@ -855,7 +855,7 @@ fn terminal_drawer_overlay_renders_status_rows_and_focus_hint() {
     }
     assert!(snapshot.contains("Terminal Drawer"));
     assert!(snapshot.contains("hello from PTY"));
-    assert!(snapshot.contains("F6 app"));
+    assert!(snapshot.contains("Alt+T app"));
 }
 
 #[test]
@@ -925,6 +925,12 @@ fn help_hints_match_locked_keyboard_commands() {
             KeyEvent::new(KeyCode::Char('.'), KeyModifiers::NONE),
             ViewKind::Registry,
             Command::ContextActions,
+        ),
+        (
+            "Alt+T app/terminal focus",
+            KeyEvent::new(KeyCode::Char('t'), KeyModifiers::ALT),
+            ViewKind::Workspace,
+            Command::TerminalDrawer,
         ),
         (
             "t open/focus",

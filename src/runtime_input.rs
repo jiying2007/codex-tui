@@ -30,10 +30,10 @@ fn is_plain_press(key: KeyEvent) -> bool {
     key.kind == KeyEventKind::Press && key.modifiers == KeyModifiers::NONE
 }
 fn is_terminal_release_key(key: KeyEvent) -> bool {
-    // Terminal focus switches only on a fresh unmodified key press: holding F6
-    // must not bounce focus back and forth, and modified keys belong to the PTY.
+    // Switch only on a fresh Alt+T press. Keep Ctrl+] as the one-way fallback;
+    // a held key must never bounce between the app and the same PTY.
     key.kind == KeyEventKind::Press
-        && ((key.code == KeyCode::F(6) && key.modifiers == KeyModifiers::NONE)
+        && ((key.code == KeyCode::Char('t') && key.modifiers == KeyModifiers::ALT)
             || (key.code == KeyCode::Char(']') && key.modifiers == KeyModifiers::CONTROL)
             || (key.code == KeyCode::Char('\u{001d}') && key.modifiers == KeyModifiers::NONE))
 }
@@ -60,6 +60,13 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
     if app.terminal_focused {
         if is_terminal_release_key(key) {
             return reduce(app, Action::SetTerminalFocus(false));
+        }
+        // A held shortcut must neither toggle focus nor leak Alt+T to the shell.
+        if key.code == KeyCode::Char('t')
+            && key.modifiers == KeyModifiers::ALT
+            && key.kind == KeyEventKind::Repeat
+        {
+            return vec![];
         }
         if key.modifiers.contains(KeyModifiers::SHIFT) && key.code == KeyCode::PageUp {
             return reduce(app, Action::TerminalScroll(10));

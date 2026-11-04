@@ -182,14 +182,15 @@ fn transcript_selection_requires_plain_enter_without_redirecting_on_repeat() {
 }
 
 #[test]
-fn f6_toggles_drawer_focus_both_ways_without_restarting_pty() {
+fn alt_t_toggles_drawer_focus_both_ways_without_restarting_pty() {
     let mut app = fixture();
     app.threads[0].metadata.cwd = std::env::current_dir()
         .expect("local cwd")
         .to_string_lossy()
         .into_owned();
 
-    let opened = handle_key(&mut app, press(KeyCode::F(6)));
+    let switch = KeyEvent::new(KeyCode::Char('t'), KeyModifiers::ALT);
+    let opened = handle_key(&mut app, switch);
     assert!(matches!(
         opened.as_slice(),
         [Effect::OpenTerminalDrawer { .. }]
@@ -197,22 +198,24 @@ fn f6_toggles_drawer_focus_both_ways_without_restarting_pty() {
     assert!(app.terminal_drawer_open);
     assert!(app.terminal_focused);
 
-    // Holding the key or using a modified F6 must never steal PTY focus.
-    for key in [
-        KeyEvent::new_with_kind(KeyCode::F(6), KeyModifiers::NONE, KeyEventKind::Repeat),
-        KeyEvent::new_with_kind(KeyCode::F(6), KeyModifiers::NONE, KeyEventKind::Release),
-        KeyEvent::new(KeyCode::F(6), KeyModifiers::SHIFT),
-    ] {
-        assert!(handle_key(&mut app, key).is_empty());
-        assert!(app.terminal_focused);
-    }
-
+    // Held Alt+T is swallowed rather than bouncing or leaking input.
+    let repeat =
+        KeyEvent::new_with_kind(KeyCode::Char('t'), KeyModifiers::ALT, KeyEventKind::Repeat);
+    assert!(handle_key(&mut app, repeat).is_empty());
+    assert!(app.terminal_focused);
+    // Key release has no effect; F6 is no longer a TUI shortcut.
+    let release =
+        KeyEvent::new_with_kind(KeyCode::Char('t'), KeyModifiers::ALT, KeyEventKind::Release);
+    assert!(handle_key(&mut app, release).is_empty());
     assert!(handle_key(&mut app, press(KeyCode::F(6))).is_empty());
+    assert!(app.terminal_focused);
+
+    assert!(handle_key(&mut app, switch).is_empty());
     assert!(app.terminal_drawer_open);
     assert!(!app.terminal_focused);
 
     // Focus the same shell again. No new OpenTerminalDrawer effect is emitted.
-    assert!(handle_key(&mut app, press(KeyCode::F(6))).is_empty());
+    assert!(handle_key(&mut app, switch).is_empty());
     assert!(app.terminal_focused);
     assert!(app.terminal_drawer_open);
 
@@ -243,22 +246,23 @@ fn f6_toggles_drawer_focus_both_ways_without_restarting_pty() {
 }
 
 #[test]
-fn f6_does_not_bypass_modal_or_open_a_drawer_without_a_codex_thread() {
+fn alt_t_does_not_bypass_modal_or_open_a_drawer_without_a_codex_thread() {
     let mut app = fixture();
+    let switch = KeyEvent::new(KeyCode::Char('t'), KeyModifiers::ALT);
     app.view = View::Scratch("scratch:test".into());
-    assert!(handle_key(&mut app, press(KeyCode::F(6))).is_empty());
+    assert!(handle_key(&mut app, switch).is_empty());
     assert!(!app.terminal_drawer_open);
 
     app.view = View::Registry;
     reduce(&mut app, Action::ToggleHelp);
     assert!(app.show_help);
-    assert!(handle_key(&mut app, press(KeyCode::F(6))).is_empty());
+    assert!(handle_key(&mut app, switch).is_empty());
     assert!(app.show_help);
     assert!(!app.terminal_drawer_open);
 
     reduce(&mut app, Action::ToggleHelp);
     reduce(&mut app, Action::BeginScratch);
     assert_eq!(app.input_mode, InputMode::ScratchTitle);
-    assert!(handle_key(&mut app, press(KeyCode::F(6))).is_empty());
+    assert!(handle_key(&mut app, switch).is_empty());
     assert!(!app.terminal_drawer_open);
 }
