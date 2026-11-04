@@ -313,7 +313,7 @@ fn registry_summary_surfaces_repo_only_mode() {
 fn registry_footer_exposes_terminal_shortcut() {
     let snapshot = render_snapshot(100);
     assert!(
-        snapshot.contains("t terminal"),
+        snapshot.contains("F6 terminal"),
         "Mission Control must expose the Terminal Drawer shortcut"
     );
 }
@@ -855,7 +855,7 @@ fn terminal_drawer_overlay_renders_status_rows_and_focus_hint() {
     }
     assert!(snapshot.contains("Terminal Drawer"));
     assert!(snapshot.contains("hello from PTY"));
-    assert!(snapshot.contains("F6 release"));
+    assert!(snapshot.contains("F6 app"));
 }
 
 #[test]
@@ -927,7 +927,7 @@ fn help_hints_match_locked_keyboard_commands() {
             Command::ContextActions,
         ),
         (
-            "Terminal drawer: t open",
+            "t open/focus",
             KeyEvent::new(KeyCode::Char('t'), KeyModifiers::NONE),
             ViewKind::Workspace,
             Command::TerminalDrawer,

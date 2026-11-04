@@ -1377,8 +1377,8 @@ const HELP_LINES: &[&str] = &[
     "Board: h/l stage · j/k item · Space attention · s snooze · = bind · 1–9 hot slot",
     "Board: Tab Saved View · . batch-local/context · Enter open · a Quick Prompt · n Scratch",
     "Scratch: Esc Board",
-    "Terminal drawer: t open · T close",
-    "Terminal focus: keys go to PTY · F6 return to app · Ctrl+] alternate · Shift+PgUp/PgDn scrollback.",
+    "Terminal drawer: F6 app/terminal focus · t open/focus · T close",
+    "Terminal focus: keys go to PTY · F6 app/terminal toggle · Ctrl+] to app · Shift+PgUp/PgDn scrollback.",
     "Authority: Codex/Git/Forge stay canonical; codex-tui stores operator state only.",
 ];
 
@@ -1394,8 +1394,8 @@ const HELP_LINES_ZH: &[&str] = &[
     "看板: h/l 阶段 · j/k 项目 · Space 待处理 · s 稍后提醒 · = 绑定 · 1–9 快捷槽",
     "看板: Tab 已保存视图 · . 本地批量/上下文 · Enter 打开 · a Quick Prompt · n Scratch",
     "Scratch: 仅本地详情 · Esc 返回看板",
-    "终端抽屉: t 打开 · T 关闭（Scratch 除外）",
-    "终端聚焦: 按键发送给 PTY · F6 返回应用 · Ctrl+] 备用 · Shift+PgUp/PgDn 回滚",
+    "终端抽屉: F6 在应用/终端间切换 · t 打开或聚焦 · T 关闭（Scratch 除外）",
+    "终端聚焦: 按键发送给 PTY · F6 双向切换 · Ctrl+] 返回应用 · Shift+PgUp/PgDn 回滚",
     "权限边界: Codex/Git/Forge 保持权威来源；codex-tui 只保存操作员状态。",
 ];
 fn render_help(frame: &mut Frame<'_>, app: &AppState) {

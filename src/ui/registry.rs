@@ -297,18 +297,18 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
 pub(super) fn registry_footer(app: &AppState, width: u16) -> Line<'static> {
     // Keep the most useful actions visible before less-frequent features.
     let hint = if width < 40 {
-        tr(app, "Space b r w ?", "Space b r w ?")
+        tr(app, "Space b r w F6 ?", "Space b r w ?")
     } else if width < 80 {
         tr(
             app,
-            "Space needs-you  1–9 jump  b r w  / search  ? help",
-            "Space 待办  1–9 快切  b r w  / 搜索  ? 帮助",
+            "Space needs-you  F6 terminal  1–9 jump  b r w  ?",
+            "Space 待办  F6 终端  1–9 快切  b r w  ?",
         )
     } else {
         tr(
             app,
-            "Space needs-you 1–9 / search ? b Board r Review w Workspace t terminal l local-only g repo-only",
-            "Space 待办 1–9 / 搜索 ? b 看板 r 评审 w 工作区 t 终端 l 仅本机 g 仅仓库",
+            "Space needs-you 1–9 / search ? b Board r Review w Workspace F6 terminal l local-only g repo-only",
+            "Space 待办 1–9 / 搜索 ? b 看板 r 评审 w 工作区 F6 终端 l 仅本机 g 仅仓库",
         )
     };
     Line::from(truncate_display(hint, usize::from(width)))
