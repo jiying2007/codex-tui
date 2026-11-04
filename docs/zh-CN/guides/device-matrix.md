@@ -32,7 +32,7 @@
 | T01 | Drawer正确Cwd与输入回显 | NOT_RUN | | |
 | T02 | 实际宽高resize | NOT_RUN | | |
 | T03 | sleep期间Ctrl+C后Shell仍可用 | NOT_RUN | | |
-| T04 | F6、重新聚焦、T关闭 | NOT_RUN | | |
+| T04 | Alt+T 双向切换、保留 Shell、T 关闭 | NOT_RUN | | |
 | T05 | 正常退出父终端恢复 | NOT_RUN | | |
 | T06 | 可捕获信号异常退出恢复 | NOT_RUN | | |
 | T07 | 真实SSH断连/重连，独立TTY收据 | NOT_RUN | | |
