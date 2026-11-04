@@ -34,10 +34,8 @@ fn is_terminal_release_key(key: KeyEvent) -> bool {
     // must not bounce focus back and forth, and modified keys belong to the PTY.
     key.kind == KeyEventKind::Press
         && ((key.code == KeyCode::F(6) && key.modifiers == KeyModifiers::NONE)
-            || (key.code == KeyCode::Char(']')
-                && key.modifiers == KeyModifiers::CONTROL)
-            || (key.code == KeyCode::Char('\u{001d}')
-                && key.modifiers == KeyModifiers::NONE))
+            || (key.code == KeyCode::Char(']') && key.modifiers == KeyModifiers::CONTROL)
+            || (key.code == KeyCode::Char('\u{001d}') && key.modifiers == KeyModifiers::NONE))
 }
 pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
     if !matches!(key.kind, KeyEventKind::Press | KeyEventKind::Repeat) {
@@ -272,23 +270,6 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
         if let Some(action) = action {
             return reduce(app, action);
         }
-    }
-
-    // F6 is a symmetric App <-> Drawer focus shortcut. Reuse the existing
-    // shell instead of closing/re-spawning a PTY when returning to it. Editors,
-    // confirmation dialogs and other overlays above retain exclusive input.
-    if key.code == KeyCode::F(6)
-        && key.modifiers == KeyModifiers::NONE
-        && key.kind == KeyEventKind::Press
-        && app.input_mode == InputMode::Normal
-    {
-        if app.terminal_drawer_open {
-            return reduce(app, Action::SetTerminalFocus(true));
-        }
-        if app.view_kind() != ViewKind::Scratch {
-            return reduce(app, Action::ToggleTerminalDrawer);
-        }
-        return vec![];
     }
 
     let Some(command) = command_for_key(key, app.view_kind()) else {
