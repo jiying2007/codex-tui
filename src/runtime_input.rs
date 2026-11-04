@@ -61,6 +61,13 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
         if is_terminal_release_key(key) {
             return reduce(app, Action::SetTerminalFocus(false));
         }
+        // A held shortcut must neither toggle focus nor leak Alt+T to the shell.
+        if key.code == KeyCode::Char('t')
+            && key.modifiers == KeyModifiers::ALT
+            && key.kind == KeyEventKind::Repeat
+        {
+            return vec![];
+        }
         if key.modifiers.contains(KeyModifiers::SHIFT) && key.code == KeyCode::PageUp {
             return reduce(app, Action::TerminalScroll(10));
         }
