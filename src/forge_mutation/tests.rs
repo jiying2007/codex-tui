@@ -451,6 +451,7 @@ fn legacy_rules_fallback_rejects_access_denied_and_ambiguous_errors() {
         "connection timed out",
         "decode glab api response",
         "401 Unauthorized",
+        "resource not found (status not given)",
     ] {
         assert!(!legacy_gitlab_rules_unavailable(&anyhow::anyhow!(
             "{error}"
@@ -464,12 +465,12 @@ fn gitlab_146_response_decodes_without_newer_status_or_ee_approval_fields() {
         "iid": 1,
         "title": "v1.4 test",
         "state": "opened",
-        "source_branch": "qualification/tui-v14-device",
-        "target_branch": "master",
-        "source_project_id": 366,
-        "target_project_id": 366,
-        "web_url": "http://gitlab.test/embedded/test/-/merge_requests/1",
-        "sha": "5372e2f6ba57934217b9330cfccec51d680c1ca9",
+        "source_branch": "feature/legacy-mr",
+        "target_branch": "main",
+        "source_project_id": 42,
+        "target_project_id": 42,
+        "web_url": "https://gitlab.example.invalid/team/repo/-/merge_requests/1",
+        "sha": "0123456789abcdef0123456789abcdef01234567",
         "merge_status": "can_be_merged",
         "detailed_merge_status": null,
         "has_conflicts": false,
