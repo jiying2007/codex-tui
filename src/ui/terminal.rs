@@ -71,14 +71,14 @@ pub(super) fn render_terminal_drawer(frame: &mut Frame<'_>, app: &AppState) {
     let focus = if app.terminal_focused {
         tr(
             app,
-            "FOCUSED · F6 release · Ctrl+] alt",
+            "FOCUSED · F6 app · Ctrl+] alt",
             "已聚焦 · F6 返回应用 · Ctrl+] 备用",
         )
     } else {
         tr(
             app,
-            "unfocused · t focus · T close",
-            "未聚焦 · t 聚焦 · T 关闭",
+            "APP · F6/t terminal · T close",
+            "应用聚焦 · F6/t 返回终端 · T 关闭",
         )
     };
     let title = format!(
