@@ -144,5 +144,5 @@ fn footer_delivery_keys_match_executable_routes() {
         );
         assert!(registry_footer(&app, 100).to_string().contains(label));
     }
-    assert!(render_app(&app, 100).contains("F6 terminal"));
+    assert!(render_app(&app, 100).contains("Alt+T terminal"));
 }
