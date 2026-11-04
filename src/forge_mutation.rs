@@ -737,12 +737,12 @@ struct GitLabUser {
     id: u64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 struct GitLabApprovalUser {
     user: GitLabApprovalUserRef,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 struct GitLabApprovalUserRef {
     id: u64,
 }
@@ -1008,7 +1008,10 @@ fn require_legacy_gitlab_merge_ready(
     let major = parts.first().and_then(|value| value.parse::<u64>().ok());
     let minor = parts.get(1).and_then(|value| value.parse::<u64>().ok());
     anyhow::ensure!(
-        matches!((major, minor), (Some(14), Some(_)) | (Some(15), Some(0..=5))),
+        matches!(
+            (major, minor),
+            (Some(14), Some(_)) | (Some(15), Some(0..=5))
+        ),
         "legacy GitLab merge status is unsupported for server {version:?}"
     );
     anyhow::ensure!(
@@ -1027,8 +1030,7 @@ async fn require_gitlab_merge_ready_for_mr(
         return Ok(false);
     }
     // Missing modern evidence may only fall back after a live version check.
-    let server: GitLabServerVersion =
-        glab_api_json(&plan.cwd, &plan.host, "/version").await?;
+    let server: GitLabServerVersion = glab_api_json(&plan.cwd, &plan.host, "/version").await?;
     require_legacy_gitlab_merge_ready(
         &server.version,
         mr.merge_status.as_deref(),
