@@ -747,7 +747,7 @@ struct GitLabApprovalUserRef {
     id: u64,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 struct GitLabApprovals {
     approvals_left: Option<u64>,
     approvals_required: Option<u64>,
