@@ -116,19 +116,6 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
         .filter(|index| app.thread_needs_attention(**index))
         .count();
     let mut lines = Vec::with_capacity(viewport.row_capacity.saturating_add(1));
-    let (local_count, foreign_count, stale_count, unprobed_count) =
-        visible
-            .iter()
-            .fold((0_usize, 0_usize, 0_usize, 0_usize), |mut counts, index| {
-                match app.cwd_locality_for_display(&app.threads[*index].metadata.cwd) {
-                    Some(CwdLocality::LocalDirectory) => counts.0 += 1,
-                    Some(CwdLocality::ForeignWindows | CwdLocality::ForeignUnix) => counts.1 += 1,
-                    Some(CwdLocality::NativeMissing) => counts.2 += 1,
-                    Some(CwdLocality::Relative | CwdLocality::Empty) => {}
-                    None => counts.3 += 1,
-                }
-                counts
-            });
     let range = if viewport.total == 0 {
         tr(app, "rows 0/0", "行 0/0").to_string()
     } else if app.language.is_simplified_chinese() {
@@ -175,16 +162,18 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
         app.show_all_history,
     );
     let matched = viewport.matched;
+    // Keep default chrome about the next action, not filesystem diagnostics.
+    // Detailed locality and upstream provenance remain in the selected panel/Doctor.
     let summary = if app.language.is_simplified_chinese() {
         format!(
-            "待处理 {attention_count} · 未探测 {unprobed_count} · {scope}{history} · 显示 {}/{} 匹配 · 共 {} · 本机 {local_count} · 外部 {foreign_count} · 失效 {stale_count} · {range}{text_filter}",
+            "待处理 {attention_count} · {scope}{history} · 显示 {}/{} · 共 {} · {range}{text_filter}",
             visible.len(),
             matched,
             app.threads.len()
         )
     } else {
         format!(
-            "{attention_count} need attention · {unprobed_count} unprobed · {scope}{history} {}/{} matched · {} total · {local_count} local · {foreign_count} foreign · {stale_count} stale · {range}{text_filter}",
+            "{attention_count} need attention · {scope}{history} · showing {}/{} · {} total · {range}{text_filter}",
             visible.len(),
             matched,
             app.threads.len()

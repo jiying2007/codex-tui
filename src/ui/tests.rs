@@ -226,7 +226,7 @@ fn ordinary_registry_search_renders_unprobed_native_cwds_without_locality_cache(
         snapshot.push('\n');
     }
 
-    assert!(snapshot.contains("150 unprobed"));
+    assert!(snapshot.contains("150 total"));
     assert_eq!(app.cwd_locality_for_display(&cwd), None);
 }
 
