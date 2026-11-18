@@ -156,7 +156,7 @@
     "src/app_server.rs": 2680,
     "src/main.rs": 2022,
     "src/sqlite_store.rs": 1849,
-    "src/forge.rs": 1157,
+    "src/forge.rs": 1182,
     "src/worktree.rs": 770,
     "src/release.rs": 618,
     "src/runtime_store.rs": 660,
@@ -252,7 +252,7 @@
     "src/command.rs": 136,
     "src/compat.rs": 626,
     "src/domain.rs": 365,
-    "src/forge_github.rs": 546,
+    "src/forge_github.rs": 565,
     "src/git.rs": 831,
     "src/git/review.rs": 60,
     "src/goal.rs": 194,
@@ -362,7 +362,8 @@
     "src/app/planning_worker/tests.rs": 170,
     "src/app_server/queue_mutation.rs": 50,
     "src/app_server/queue_pagination.rs": 83,
-    "src/app_server/queue_priority_tests.rs": 89
+    "src/app_server/queue_priority_tests.rs": 89,
+    "src/forge/current_branch.rs": 44
   },
   "ratchetPolicy": {
     "baseline": "inherit v1.3 Search & Multi-Target ceilings; feature work may only add bounded module-specific ceilings",
