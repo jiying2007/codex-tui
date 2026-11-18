@@ -116,19 +116,6 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
         .filter(|index| app.thread_needs_attention(**index))
         .count();
     let mut lines = Vec::with_capacity(viewport.row_capacity.saturating_add(1));
-    let (local_count, foreign_count, stale_count, unprobed_count) =
-        visible
-            .iter()
-            .fold((0_usize, 0_usize, 0_usize, 0_usize), |mut counts, index| {
-                match app.cwd_locality_for_display(&app.threads[*index].metadata.cwd) {
-                    Some(CwdLocality::LocalDirectory) => counts.0 += 1,
-                    Some(CwdLocality::ForeignWindows | CwdLocality::ForeignUnix) => counts.1 += 1,
-                    Some(CwdLocality::NativeMissing) => counts.2 += 1,
-                    Some(CwdLocality::Relative | CwdLocality::Empty) => {}
-                    None => counts.3 += 1,
-                }
-                counts
-            });
     let range = if viewport.total == 0 {
         tr(app, "rows 0/0", "行 0/0").to_string()
     } else if app.language.is_simplified_chinese() {
@@ -175,16 +162,18 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
         app.show_all_history,
     );
     let matched = viewport.matched;
+    // Keep default chrome about the next action, not filesystem diagnostics.
+    // Detailed locality and upstream provenance remain in the selected panel/Doctor.
     let summary = if app.language.is_simplified_chinese() {
         format!(
-            "待处理 {attention_count} · 未探测 {unprobed_count} · {scope}{history} · 显示 {}/{} 匹配 · 共 {} · 本机 {local_count} · 外部 {foreign_count} · 失效 {stale_count} · {range}{text_filter}",
+            "待处理 {attention_count} · {scope}{history} · 显示 {}/{} · 共 {} · {range}{text_filter}",
             visible.len(),
             matched,
             app.threads.len()
         )
     } else {
         format!(
-            "{attention_count} need attention · {unprobed_count} unprobed · {scope}{history} {}/{} matched · {} total · {local_count} local · {foreign_count} foreign · {stale_count} stale · {range}{text_filter}",
+            "{attention_count} need attention · {scope}{history} · showing {}/{} · {} total · {range}{text_filter}",
             visible.len(),
             matched,
             app.threads.len()
@@ -297,18 +286,18 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
 pub(super) fn registry_footer(app: &AppState, width: u16) -> Line<'static> {
     // Keep the most useful actions visible before less-frequent features.
     let hint = if width < 40 {
-        tr(app, "Space b r w Alt+T ?", "Space b r w ?")
+        tr(app, "Space b r w Alt+T ?", "Space b r w Alt+T ?")
     } else if width < 80 {
         tr(
             app,
-            "Space needs-you  Alt+T terminal  1–9 jump  b r w  ?",
-            "Space 待办  Alt+T 终端  1–9 快切  b r w  ?",
+            "Space needs-you / search 1–9 jump Alt+T b r w ?",
+            "Space 待办 / 搜索 1–9 快切 Alt+T b r w ?",
         )
     } else {
         tr(
             app,
-            "Space needs-you 1–9 / search ? b Board r Review w Workspace Alt+T terminal l local-only g repo-only",
-            "Space 待办 1–9 / 搜索 ? b 看板 r 评审 w 工作区 Alt+T 终端 l 仅本机 g 仅仓库",
+            "Space next / search Enter open b Board r Review w Workspace Alt+T terminal 1–9 jump ?",
+            "Space 待办 / 搜索 Enter 打开 b 看板 r 评审 w 工作区 Alt+T 终端 1–9 快切 ?",
         )
     };
     Line::from(truncate_display(hint, usize::from(width)))

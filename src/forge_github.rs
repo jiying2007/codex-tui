@@ -2,8 +2,8 @@ use crate::domain::ThreadId;
 use crate::forge::{
     CapabilityState, ChangeRequestSummary, ForgeCapability, ForgeFuture, ForgeIdentity,
     ForgeIssueSummary, ForgeObservation, ForgeProvider, ForgeProviderKind, ForgeReviewSummary,
-    ForgeReviewTarget, PipelineSummary, RemoteIdentity, resolve_git_remote, run_command,
-    trim_error,
+    ForgeReviewTarget, PipelineSummary, RemoteIdentity, current_local_branch, needs_exact_branch,
+    resolve_git_remote, run_command, trim_error,
 };
 use crate::operation::now_unix_ms;
 use anyhow::{Context, Result, anyhow, bail};
@@ -225,12 +225,45 @@ pub(crate) async fn probe_github_with_remote(
     let pulls_endpoint = format!("{repo_endpoint}/pulls?state=open&per_page={DEFAULT_PAGE_SIZE}");
     let runs_endpoint = format!("{repo_endpoint}/actions/runs?per_page={DEFAULT_PAGE_SIZE}");
 
-    let (issues_result, pulls_result, runs_result) = tokio::join!(
+    let (issues_result, mut pulls_result, runs_result) = tokio::join!(
         gh_api_json::<Vec<GitHubIssue>>(&cwd, &remote.host, &issues_endpoint),
         gh_api_json::<Vec<GitHubPullRequest>>(&cwd, &remote.host, &pulls_endpoint),
         gh_api_json::<GitHubWorkflowRuns>(&cwd, &remote.host, &runs_endpoint),
     );
 
+    // Preserve the cheap bounded overview, with one exact lookup only when its
+    // first page is full and excludes this repository's current branch.
+    if let Ok(pulls) = pulls_result.as_mut()
+        && pulls.len() >= DEFAULT_PAGE_SIZE
+        && let Some(branch) = current_local_branch(&cwd).await
+        && needs_exact_branch(pulls, &branch, |pull| {
+            pull.head.branch_for_local_projection(repository.id)
+        })
+    {
+        let owner = remote
+            .path_with_namespace
+            .split('/')
+            .next()
+            .unwrap_or_default();
+        let head = crate::forge::percent_encode_component(&format!("{owner}:{branch}"));
+        let endpoint =
+            format!("{repo_endpoint}/pulls?state=open&head={head}&per_page={DEFAULT_PAGE_SIZE}");
+        if let Ok(found) =
+            gh_api_json::<Vec<GitHubPullRequest>>(&cwd, &remote.host, &endpoint).await
+        {
+            let mut known = pulls
+                .iter()
+                .map(|pull| pull.number)
+                .collect::<std::collections::BTreeSet<_>>();
+            for pull in found {
+                if pull.head.branch_for_local_projection(repository.id) == branch
+                    && known.insert(pull.number)
+                {
+                    pulls.push(pull);
+                }
+            }
+        }
+    }
     let (mut capabilities, freshness, error) = crate::forge::core_observation_status(
         ForgeProviderKind::GitHub,
         issues_result.is_ok(),

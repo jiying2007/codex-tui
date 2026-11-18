@@ -226,7 +226,7 @@ fn ordinary_registry_search_renders_unprobed_native_cwds_without_locality_cache(
         snapshot.push('\n');
     }
 
-    assert!(snapshot.contains("150 unprobed"));
+    assert!(snapshot.contains("150 total"));
     assert_eq!(app.cwd_locality_for_display(&cwd), None);
 }
 
@@ -276,7 +276,7 @@ fn registry_summary_surfaces_host_local_mode() {
     }
 
     assert!(snapshot.contains("LOCAL ONLY"));
-    assert!(snapshot.contains("l local-only"));
+    assert!(snapshot.contains("Alt+T terminal"));
 }
 
 #[test]
@@ -301,7 +301,7 @@ fn registry_summary_surfaces_repo_only_mode() {
     }
 
     assert!(snapshot.contains("REPO ONLY"));
-    assert!(snapshot.contains("g repo-only"));
+    assert!(snapshot.contains("Alt+T terminal"));
 }
 
 #[test]

@@ -1,4 +1,5 @@
 use crate::domain::ThreadId;
+mod current_branch;
 mod glab_status;
 use crate::forge_github::{GitHubProvider, probe_github_with_remote};
 pub(crate) use crate::forge_types::default_capabilities;
@@ -10,6 +11,7 @@ pub use crate::forge_types::{
 };
 use crate::latest_read::{ReadEnvelope, ReadFence, ReadScope, next_current};
 use anyhow::{Context, Result, anyhow, bail};
+pub(crate) use current_branch::{current_local_branch, needs_exact_branch};
 pub(crate) use glab_status::{GlabHttpFailure, glab_http_failure};
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -454,11 +456,38 @@ pub(crate) async fn probe_gitlab_with_remote(
     );
     let pipelines_endpoint =
         format!("/projects/{encoded_id}/pipelines?per_page={DEFAULT_PAGE_SIZE}");
-    let (issues_result, merge_requests_result, pipelines_result) = tokio::join!(
+    let (issues_result, mut merge_requests_result, pipelines_result) = tokio::join!(
         glab_api_json::<Vec<GitLabIssue>>(&cwd, &remote.host, &issues_endpoint),
         glab_api_json::<Vec<GitLabMergeRequest>>(&cwd, &remote.host, &merge_requests_endpoint),
         glab_api_json::<Vec<GitLabPipeline>>(&cwd, &remote.host, &pipelines_endpoint),
     );
+    // The latest 20 MRs are an overview, not a complete branch lookup.
+    // Only a saturated page with a missing current-branch MR needs one exact query.
+    if let Ok(changes) = merge_requests_result.as_mut()
+        && changes.len() >= DEFAULT_PAGE_SIZE
+        && let Some(branch) = current_local_branch(&cwd).await
+        && needs_exact_branch(changes, &branch, |mr| {
+            mr.branch_for_local_projection(&project_id)
+        })
+    {
+        let endpoint = format!(
+            "/projects/{encoded_id}/merge_requests?scope=all&state=opened&source_branch={}&per_page={DEFAULT_PAGE_SIZE}",
+            percent_encode_component(&branch)
+        );
+        if let Ok(found) =
+            glab_api_json::<Vec<GitLabMergeRequest>>(&cwd, &remote.host, &endpoint).await
+        {
+            let mut known = changes
+                .iter()
+                .map(|mr| mr.iid)
+                .collect::<std::collections::BTreeSet<_>>();
+            for mr in found {
+                if mr.branch_for_local_projection(&project_id) == branch && known.insert(mr.iid) {
+                    changes.push(mr);
+                }
+            }
+        }
+    }
     let (capabilities, freshness, error) = core_observation_status(
         ForgeProviderKind::GitLab,
         issues_result.is_ok(),

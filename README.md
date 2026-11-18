@@ -54,6 +54,8 @@ external evidence are in `docs/implementation/v1.4-audit-closure.md`.
 
 **First minute:** open Mission Control, press `Space` for the next actionable item, `/` to search, `Enter` to open and `1–9` to switch a bound task. Use `Alt+T` to switch between the workbench and the terminal without F6. Press `?` for full help: `↑/↓` or `j/k` scroll entries, `PgUp/PgDn` jump, `Home/End` go to the first/last entry, and `Esc` closes. In narrow terminals, key hints prioritize these tasks over less frequent commands. No pointer navigation is implemented: the application intentionally does **not** capture mouse clicks or wheel events. The legacy `[ui].mouse` option is parsed but ignored until actual handlers exist.
 
+The main list now shows 20 ordinary recent sessions by default, while keeping pinned, attention-needed and selected sessions visible; search and All History reach older items. Forge uses a single exact current-branch query only when the recent 20 open requests are insufficient, and never assumes that a failed lookup proves absence.
+
 codex-tui answers four questions quickly:
 
 1. What work is in flight?
