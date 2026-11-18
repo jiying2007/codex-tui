@@ -286,12 +286,12 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
 pub(super) fn registry_footer(app: &AppState, width: u16) -> Line<'static> {
     // Keep the most useful actions visible before less-frequent features.
     let hint = if width < 40 {
-        tr(app, "Space / Alt+T ?", "Space / Alt+T ?")
+        tr(app, "Space b r w Alt+T ?", "Space b r w Alt+T ?")
     } else if width < 80 {
         tr(
             app,
-            "Space next / search Enter open Alt+T b r w ?",
-            "Space 待办 / 搜索 Enter 打开 Alt+T b r w ?",
+            "Space needs-you / search 1–9 jump Alt+T b r w ?",
+            "Space 待办 / 搜索 1–9 快切 Alt+T b r w ?",
         )
     } else {
         tr(
