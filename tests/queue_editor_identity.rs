@@ -203,6 +203,12 @@ fn cancel_and_close_do_not_leak_editor_targets() {
             committed: false,
         },
     );
+    // Rejection preserves the draft. Reopen an item only after the operator
+    // deliberately discards it and obtains a fresh authoritative queue.
+    assert_eq!(app.input_mode, InputMode::ThreadQueueAdd);
+    assert_eq!(app.input_buffer, "new");
+    reduce(&mut app, Action::CancelInput);
+    load(&mut app, &id, &[("a", "first"), ("b", "second")]);
     edit(&mut app);
     assert_eq!(
         reduce(&mut app, Action::CloseThreadQueue),
