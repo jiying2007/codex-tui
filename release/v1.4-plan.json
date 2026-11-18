@@ -184,7 +184,7 @@
     "src/forge_github_mutation/tests.rs": 197,
     "src/forge_github_mutation/api.rs": 61,
     "src/conversation.rs": 892,
-    "src/app/lifecycle.rs": 203,
+    "src/app/lifecycle.rs": 268,
     "src/app_server/lifecycle.rs": 221,
     "src/runtime_lifecycle.rs": 67,
     "src/metadata_search.rs": 419,
@@ -1143,6 +1143,15 @@
         "src/app/tests.rs"
       ],
       "policy": "Update only these three reviewed existing source ceilings, preserve complete-source ratchet and exact-head CI/security/PTY; no new backend authority, write retry, approval bypass, menu fallback or Stable qualification. The final rustfmt-reviewed app test module is exactly 3429 LOC."
+    },
+    {
+      "date": "2026-11-19",
+      "kind": "remote-lifecycle-target-location-guard",
+      "scope": "Remote App Server start/fork still used Path::is_dir against the TUI host; a remote session with the same cwd as a real local directory could present start/fork actions even though the remote path was never verified. Hide lifecycle actions for remote transports and fail closed in direct plan_start_thread/plan_fork_thread, preserving local stdio. Add same-spelled remote/local cwd positive-negative regression.",
+      "modules": [
+        "src/app/lifecycle.rs"
+      ],
+      "policy": "No remote execution implementation, implicit path mapping, process spawn, new backend, permission change, scheduled job or Stable qualification. Update only the reviewed lifecycle LOC ceiling; require exact-head Linux/macOS/Windows, Security, PTY and fresh-main checks."
     }
   ]
 }
