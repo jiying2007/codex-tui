@@ -152,7 +152,7 @@ def validate_outcome(rows, trace, mode):
     for write in writes:
         actual = write['fields'].get('commit_id', write['fields'].get('sha'))
         require(actual == SHA_A, 'provider mutation did not bind the confirmed SHA')
-        if '/repos/' in write['endpoint'] and write['endpoint'].endswith('/merge'):
+        if '/repos/' in write.get('endpoint', '') and write.get('endpoint', '').endswith('/merge'):
             require(write['fields'].get('merge_method') == 'merge',
                     'GitHub merge did not preserve the explicitly confirmed strategy')
     wanted = 'failed' if mode=='before' else ('succeeded' if mode in ('control','stale-existing') else 'outcome-unknown')
