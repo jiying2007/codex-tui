@@ -52,9 +52,68 @@ pub(crate) fn glab_http_failure(stderr: &str, fallback: &str) -> GlabHttpFailure
     }
 }
 
+/// Report a bounded, token-free reason from the typed GitLab CLI failure.
+/// Never format the raw stderr or a URL. Keep unrelated provider diagnostics as-is.
+pub(crate) fn safe_forge_failure(error: &anyhow::Error) -> String {
+    let Some(failure) = error
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<GlabHttpFailure>())
+    else {
+        return error.to_string();
+    };
+    let scope = if error.to_string() == "resolve GitLab project" {
+        "GitLab project lookup"
+    } else {
+        "GitLab API"
+    };
+    let message = match failure.status {
+        Some(401) => "authentication rejected (HTTP 401); check glab auth status".into(),
+        Some(403) => "access denied (HTTP 403); check project permissions".into(),
+        Some(404) => "resource not found (HTTP 404); check remote path and GitLab endpoint".into(),
+        Some(status) => format!("request failed (HTTP {status})"),
+        None => failure.to_string(),
+    };
+    format!("{scope}: {message}")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn contextual_gitlab_failures_show_safe_actionable_status() {
+        for (stderr, expected) in [
+            (
+                "glab: 401 Unauthorized Bearer secret-token",
+                "authentication rejected (HTTP 401)",
+            ),
+            (
+                "glab: 403 Forbidden password=secret-token",
+                "access denied (HTTP 403)",
+            ),
+            (
+                "glab: 404 Not Found access_token=secret-token",
+                "resource not found (HTTP 404)",
+            ),
+            ("glab: 502 Bad Gateway", "request failed (HTTP 502)"),
+        ] {
+            let error = anyhow::Error::new(glab_http_failure(stderr, "GitLab API request failed"))
+                .context("resolve GitLab project");
+            let visible = safe_forge_failure(&error);
+            assert!(visible.starts_with("GitLab project lookup: "));
+            assert!(visible.contains(expected), "{visible}");
+            assert!(!visible.contains("secret-token"));
+            assert!(!visible.contains("password="));
+            assert!(!visible.contains("access_token="));
+        }
+        let unknown = anyhow::Error::new(glab_http_failure("unexpected secret-token", "provider"))
+            .context("resolve GitLab project");
+        assert_eq!(
+            safe_forge_failure(&unknown),
+            "GitLab project lookup: provider: error details withheld"
+        );
+        let unrelated = anyhow::anyhow!("ordinary Git error");
+        assert_eq!(safe_forge_failure(&unrelated), "ordinary Git error");
+    }
     #[test]
     fn glab_response_code_is_typed_and_not_inferred_from_path_ids() {
         assert_eq!(glab_http_status("glab: 404 Not Found"), Some(404));
