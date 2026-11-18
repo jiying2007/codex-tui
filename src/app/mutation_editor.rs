@@ -13,7 +13,7 @@ enum Target {
         cwd: String,
         identity: ForgeIdentity,
         branch: String,
-        change: Option<(u64, String, String)>,
+        change: Option<(u64, String, String, Option<String>)>,
     },
     Worktree {
         thread: ThreadId,
@@ -59,9 +59,14 @@ impl AppState {
                     cwd: target.cwd,
                     identity: target.identity,
                     branch: target.branch,
-                    change: target
-                        .change_request
-                        .map(|change| (change.iid, change.source_branch, change.target_branch)),
+                    change: target.change_request.map(|change| {
+                        (
+                            change.iid,
+                            change.source_branch,
+                            change.target_branch,
+                            change.head_sha,
+                        )
+                    }),
                 }
             }
             InputMode::WorktreeCreateBranch | InputMode::WorktreeDeleteBranch => {
