@@ -13,9 +13,7 @@ pub(crate) async fn current_local_branch(cwd: &str) -> Option<String> {
     if !output.success {
         return None;
     }
-    let branch = output
-        .stdout
-        .trim_end_matches(|ch| ch == '\r' || ch == '\n');
+    let branch = output.stdout.trim_end();
     (!branch.is_empty() && !branch.chars().any(|ch| matches!(ch, '\r' | '\n' | '\0')))
         .then(|| branch.to_string())
 }

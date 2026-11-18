@@ -363,7 +363,7 @@
     "src/app_server/queue_mutation.rs": 50,
     "src/app_server/queue_pagination.rs": 83,
     "src/app_server/queue_priority_tests.rs": 89,
-    "src/forge/current_branch.rs": 83
+    "src/forge/current_branch.rs": 81
   },
   "ratchetPolicy": {
     "baseline": "inherit v1.3 Search & Multi-Target ceilings; feature work may only add bounded module-specific ceilings",
