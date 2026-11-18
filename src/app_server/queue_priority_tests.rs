@@ -30,11 +30,11 @@ async fn stalled_queue_page_never_blocks_interrupt_dispatch() {
                 }
                 "thread/list" => {
                     json!({"data":[{"id":"one","name":"test","cwd":"/tmp","status":{"type":"idle"}}],"nextCursor":null})
-                },
+                }
                 "thread/loaded/list" => json!({"data":["one"],"nextCursor":null}),
                 "thread/resume" => {
                     json!({"thread":{"id":"one","name":"test","cwd":"/tmp","status":{"type":"idle"}}})
-                },
+                }
                 "thread/goal/get" => json!({"goal":null}),
                 "thread/queue/list" => {
                     // The server keeps this page indefinitely; the client must
