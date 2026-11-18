@@ -34,6 +34,9 @@ impl AppState {
     pub(super) fn lifecycle_capability_available(&self, capability: &str) -> bool {
         self.backend_status.connected
             && self.backend_status.source != "fake"
+            // No remote cwd validation exists; do not offer start/fork based
+            // on a same-spelled local path supplied by a remote App Server.
+            && !self.app_server_target_is_remote()
             && !self
                 .backend_status
                 .optional_capabilities_missing
@@ -42,6 +45,17 @@ impl AppState {
     }
 
     pub(super) fn plan_start_thread(&mut self) -> Vec<Effect> {
+        if self.app_server_target_is_remote() {
+            self.mutation_notice = Some(
+                local_text(
+                    self.language,
+                    "cannot start Codex thread: remote App Server cwd is not verified on this host",
+                    "无法新建 Codex 会话：远端 App Server cwd 未在本机验证",
+                )
+                .into(),
+            );
+            return vec![];
+        }
         let Some(cwd) = self.lifecycle_cwd() else {
             return vec![];
         };
@@ -68,6 +82,17 @@ impl AppState {
     }
 
     pub(super) fn plan_fork_thread(&mut self) -> Vec<Effect> {
+        if self.app_server_target_is_remote() {
+            self.mutation_notice = Some(
+                local_text(
+                    self.language,
+                    "cannot fork Codex thread: remote App Server source cwd is not verified",
+                    "无法派生 Codex 会话：远端 App Server 源目录未验证",
+                )
+                .into(),
+            );
+            return vec![];
+        }
         let Some(thread_id) = self.lifecycle_thread_id() else {
             return vec![];
         };
@@ -188,6 +213,46 @@ mod tests {
         assert!(matches!(
             effects.as_slice(),
             [Effect::StartThread { cwd }] if cwd == &selected_path.to_string_lossy()
+        ));
+    }
+
+    #[test]
+    fn remote_target_matching_local_directory_cannot_start_or_fork() {
+        let (mut app, _dir) = app_with_local_cwd();
+        let cwd = app.threads[0].metadata.cwd.clone();
+        assert!(std::path::Path::new(&cwd).is_dir());
+        app.backend_status.source =
+            "codex-app-server[target=remote-fixture transport=websocket]".into();
+
+        assert!(!app.lifecycle_capability_available("thread/start"));
+        assert!(!app.lifecycle_capability_available("thread/fork"));
+        assert!(!app.build_context_choices().contains(&super::super::ContextChoice::NewCodexThread));
+        assert!(!app.build_context_choices().contains(&super::super::ContextChoice::ForkCodexThread));
+        assert!(app.plan_start_thread().is_empty());
+        assert!(app
+            .mutation_notice
+            .as_deref()
+            .unwrap_or_default()
+            .contains("remote App Server cwd"));
+        assert!(app.plan_fork_thread().is_empty());
+        assert!(app
+            .mutation_notice
+            .as_deref()
+            .unwrap_or_default()
+            .contains("remote App Server source cwd"));
+
+        // Local stdio remains supported even when the target has a name.
+        app.backend_status.source =
+            "codex-app-server[target=local transport=stdio]".into();
+        assert!(app.lifecycle_capability_available("thread/start"));
+        assert!(app.lifecycle_capability_available("thread/fork"));
+        assert!(matches!(
+            app.plan_start_thread().as_slice(),
+            [Effect::StartThread { cwd: target }] if target == &cwd
+        ));
+        assert!(matches!(
+            app.plan_fork_thread().as_slice(),
+            [Effect::ForkThread { .. }]
         ));
     }
 
