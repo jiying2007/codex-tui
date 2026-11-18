@@ -281,8 +281,8 @@
     "src/app_server_transport/tests.rs": 448,
     "src/forge/gitlab_projection_tests.rs": 164,
     "src/forge/error_redaction_tests.rs": 43,
-    "src/forge/glab_status.rs": 161,
-    "src/forge_mutation/legacy_status_tests.rs": 46,
+    "src/forge/glab_status.rs": 178,
+    "src/forge_mutation/legacy_status_tests.rs": 54,
     "src/app/queue_ack.rs": 133,
     "src/app/target_locality.rs": 87,
     "src/forge/remote_identity_tests.rs": 47,
@@ -1117,8 +1117,21 @@
       "date": "2026-11-18",
       "kind": "gitlab-status-context-fail-closed",
       "scope": "Prevent arbitrary glab stderr suffixes such as 'network failed: 404' from becoming typed HTTP 404 and authorizing the legacy approval fallback. Preserve real response-line and HTTP protocol forms, safe redaction and actual-child Doctor behavior. Add false-positive unit, fallback and fake-glab diagnostic tests without changing the GitLab write pipeline.",
-      "modules": ["src/forge/glab_status.rs", "src/forge_mutation/legacy_status_tests.rs"],
+      "modules": [
+        "src/forge/glab_status.rs",
+        "src/forge_mutation/legacy_status_tests.rs"
+      ],
       "policy": "Only reviewed status parser and negative-test LOC ceilings change; retain complete-source coverage and all required PR/security/PTY checks. No new version adapter, raw stderr disclosure, authorization bypass, or Stable qualification."
+    },
+    {
+      "date": "2026-11-18",
+      "kind": "typed-gitlab-http-prefix-evidence",
+      "scope": "Eliminate legacy approval fallback on a typed 404 accidentally parsed from arbitrary glab diagnostics ending in ': HTTP 404'. Only accept an HTTP status line or URL-bearing request method followed by explicit HTTP or numeric response status; ensure real request-response status 404 still works and error text stays redacted. Verify parser, legacy rules gate and actual fake-glab Doctor.",
+      "modules": [
+        "src/forge/glab_status.rs",
+        "src/forge_mutation/legacy_status_tests.rs"
+      ],
+      "policy": "Only exactly reviewed parser and negative-test ceilings may grow; complete-source and existing CI/security/PTY qualification unchanged. No new version adapter, raw stderr, permission bypass, retries or Stable qualification."
     }
   ]
 }
