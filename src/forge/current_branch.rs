@@ -9,7 +9,7 @@ pub(crate) async fn current_local_branch(cwd: &str) -> Option<String> {
         Some(Path::new(cwd)),
     ).await.ok()?;
     if !output.success { return None; }
-    let branch = output.stdout.trim_end_matches(['\r', '\n']);
+    let branch = output.stdout.trim_end_matches(|ch| ch == '\r' || ch == '\n');
     (!branch.is_empty() && !branch.chars().any(|ch| matches!(ch, '\r' | '\n' | '\0')))
         .then(|| branch.to_string())
 }
