@@ -1,0 +1,47 @@
+name: format-personal-once
+on:
+  push:
+    branches:
+      - feat/personal-workbench-forge-focus-20261118
+permissions:
+  contents: write
+jobs:
+  format:
+    if: "startsWith(github.event.head_commit.message, 'maintenance: format personal workbench and forge lookups')"
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: true
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d
+        with:
+          toolchain: stable
+          components: rustfmt
+      - name: Run rustfmt and align exact source-module sizes
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path("release/v1.4-plan.json")
+          doc = json.loads(path.read_text())
+          for source in (
+              "src/forge.rs",
+              "src/forge_github.rs",
+              "src/forge/current_branch.rs",
+              "src/ui/registry.rs",
+              "src/ui/tests.rs",
+          ):
+              doc["moduleRatchet"][source] = len(Path(source).read_text().splitlines())
+          path.write_text(json.dumps(doc, indent=2, ensure_ascii=False) + "\n")
+          PY
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src release/v1.4-plan.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'style: rustfmt personal workbench and Forge lookups'
+            git push origin HEAD:refs/heads/feat/personal-workbench-forge-focus-20261118
+          fi
