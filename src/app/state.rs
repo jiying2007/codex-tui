@@ -329,44 +329,6 @@ impl AppState {
         }
     }
 
-    pub fn cwd_locality(&self, cwd: &str) -> CwdLocality {
-        self.cwd_localities
-            .get(cwd)
-            .copied()
-            .unwrap_or_else(|| classify_cwd(cwd))
-    }
-
-    pub fn cwd_locality_for_display(&self, cwd: &str) -> Option<CwdLocality> {
-        self.cwd_localities
-            .get(cwd)
-            .copied()
-            .or_else(|| classify_cwd_without_io(cwd))
-    }
-
-    pub(super) fn refresh_cwd_locality(&mut self, cwd: &str) -> CwdLocality {
-        let locality = classify_cwd(cwd);
-        self.cwd_localities.insert(cwd.to_string(), locality);
-        locality
-    }
-
-    pub(super) fn reconcile_cwd_locality_cache(&mut self, fill_missing: bool) {
-        let current_cwds = self
-            .threads
-            .iter()
-            .map(|thread| thread.metadata.cwd.clone())
-            .collect::<BTreeSet<_>>();
-        self.cwd_localities
-            .retain(|cwd, _| current_cwds.contains(cwd));
-
-        if fill_missing {
-            for cwd in current_cwds {
-                self.cwd_localities
-                    .entry(cwd.clone())
-                    .or_insert_with(|| classify_cwd(&cwd));
-            }
-        }
-    }
-
     pub fn selected_thread(&self) -> Option<&ThreadSummary> {
         let thread = self.threads.get(self.selected)?;
         self.thread_visible_in_registry(thread).then_some(thread)
@@ -578,6 +540,13 @@ impl AppState {
     }
 
     pub fn terminal_target_cwd(&self) -> Result<String, String> {
+        if self.app_server_target_is_remote() {
+            return Err(local_text(
+                self.language,
+                "terminal unavailable: this App Server target has no verified local host identity",
+                "终端不可用：当前 App Server 目标没有经过验证的本地主机身份",
+            ).into());
+        }
         let thread_id = match &self.view {
             View::Registry => self.selected_thread_id(),
             View::Thread(id)
@@ -612,7 +581,7 @@ impl AppState {
                 .to_string()
             })?;
         let cwd = thread.metadata.cwd.as_str();
-        match classify_cwd(cwd) {
+        match self.cwd_locality(cwd) {
             CwdLocality::LocalDirectory => Ok(cwd.to_string()),
             CwdLocality::ForeignWindows => Err(
                 local_text(
@@ -658,6 +627,9 @@ impl AppState {
     }
 
     pub(super) fn current_forge_mutation_target(&self) -> Option<ForgeMutationTarget> {
+        if self.app_server_target_is_remote() {
+            return None;
+        }
         let thread_id = match &self.view {
             View::Review(id) | View::Workspace(id) => id,
             _ => return None,

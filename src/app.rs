@@ -8,7 +8,7 @@ use crate::conversation::{
 };
 use crate::domain::{
     AttentionReason, CwdLocality, LocalRepoIdentity, RuntimeStatus, ThreadId, ThreadSummary,
-    ThreadUiState, classify_cwd, classify_cwd_without_io,
+    ThreadUiState,
 };
 use crate::forge::{
     CapabilityState, ChangeRequestSummary, ForgeCapability, ForgeIdentity, ForgeObservation,
@@ -58,6 +58,7 @@ pub mod planning_worker;
 mod prompt;
 mod queue_confirmation;
 mod queue_editor;
+mod queue_ack;
 mod reading_snapshot;
 mod reducer;
 mod registry;
@@ -65,6 +66,7 @@ pub(crate) mod request_details;
 mod review;
 mod shortcuts;
 mod state;
+mod target_locality;
 mod thread_navigation;
 mod types;
 mod user_input;

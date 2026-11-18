@@ -68,7 +68,11 @@ fn queue_open_load_edit_and_close_stay_upstream_authoritative() {
         })] if queued_submission_id == "q1" && text == "updated"
     ));
 
-    app.input_mode = InputMode::Normal;
+    // The draft is cleared only after the authoritative refreshed queue arrives.
+    assert_eq!(app.input_buffer, "updated");
+    reduce(&mut app, Action::ThreadQueueLoaded(snapshot(thread_id.clone())));
+    assert_eq!(app.input_mode, InputMode::Normal);
+    assert!(app.input_buffer.is_empty());
     app.thread_queue_selected = 1;
     reduce(&mut app, Action::BeginThreadQueueEdit);
     assert_eq!(app.input_mode, InputMode::Normal);

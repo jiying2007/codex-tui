@@ -8,8 +8,9 @@ use crate::{
 
 #[derive(Clone, Debug)]
 pub(super) struct QueueEditor {
-    thread_id: ThreadId,
+    pub(super) thread_id: ThreadId,
     original: Option<QueuedSubmission>,
+    pub(super) pending: bool,
 }
 
 impl AppState {
@@ -43,7 +44,7 @@ impl AppState {
     }
 
     pub(super) fn begin_queue_input(&mut self, edit: bool) {
-        if !self.thread_queue_open {
+        if !self.thread_queue_open || self.queue_mutation_pending() {
             return;
         }
         let Some(thread_id) = self
@@ -80,6 +81,7 @@ impl AppState {
         self.thread_queue_editor = Some(QueueEditor {
             thread_id,
             original,
+            pending: false,
         });
         self.input_mode = if edit {
             InputMode::ThreadQueueEdit
@@ -90,6 +92,9 @@ impl AppState {
     }
 
     pub(super) fn commit_queue_input(&mut self) -> Vec<Effect> {
+        if self.thread_queue_loading {
+            return vec![];
+        }
         let text = self.input_buffer.trim().to_string();
         if text.is_empty() {
             return vec![];
@@ -135,9 +140,7 @@ impl AppState {
         };
         match mutation {
             Ok(mutation) => {
-                self.thread_queue_editor = None;
-                self.input_mode = InputMode::Normal;
-                self.input_buffer.clear();
+                self.thread_queue_editor.as_mut().expect("validated editor").pending = true;
                 self.thread_queue_loading = true;
                 self.thread_queue_error = None;
                 vec![Effect::MutateThreadQueue(mutation)]
