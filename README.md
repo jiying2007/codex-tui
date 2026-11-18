@@ -190,7 +190,7 @@ The v1 line remains a single binary with no codex-tui-owned daemon.
 
 Requirements:
 
-- Rust stable (MSRV 1.88)
+- Rust stable (MSRV 1.89; the CI job retains a historical name until the protected check is migrated)
 - a working `codex` executable on `PATH` for live registry mode
 - optional `glab` authenticated to the repository's GitLab host for GitLab integration
 - optional `gh` authenticated to the repository's GitHub host for GitHub projection and explicitly confirmed pull-request mutations

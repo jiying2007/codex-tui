@@ -905,6 +905,9 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                     | ContextChoice::ForgeComment
                     | ContextChoice::ForgeApprove
                     | ContextChoice::ForgeMerge
+                    | ContextChoice::ForgeMergeCommit
+                    | ContextChoice::ForgeSquashMerge
+                    | ContextChoice::ForgeRebaseMerge
             ) {
                 let Some(target) = state.current_forge_mutation_target() else {
                     state.mutation_notice = Some(
@@ -937,7 +940,11 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                         state.input_buffer.clear();
                         state.input_mode = InputMode::ForgeComment;
                     }
-                    ContextChoice::ForgeApprove | ContextChoice::ForgeMerge => {
+                    ContextChoice::ForgeApprove
+                    | ContextChoice::ForgeMerge
+                    | ContextChoice::ForgeMergeCommit
+                    | ContextChoice::ForgeSquashMerge
+                    | ContextChoice::ForgeRebaseMerge => {
                         let Some(change) = target.change_request else {
                             state.mutation_notice = Some(
                                 local_text(
@@ -962,14 +969,29 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                                     planned_at,
                                 )
                             }
-                            ContextChoice::ForgeMerge => ForgeMutationPlan::merge_merge_request(
-                                &target.identity,
-                                target.cwd,
-                                change.iid,
-                                change.source_branch,
-                                change.target_branch,
-                                planned_at,
-                            ),
+                            ContextChoice::ForgeMerge
+                            | ContextChoice::ForgeMergeCommit
+                            | ContextChoice::ForgeSquashMerge
+                            | ContextChoice::ForgeRebaseMerge => {
+                                let plan = ForgeMutationPlan::merge_merge_request(
+                                    &target.identity,
+                                    target.cwd,
+                                    change.iid,
+                                    change.source_branch,
+                                    change.target_branch,
+                                    planned_at,
+                                );
+                                match choice {
+                                    ContextChoice::ForgeMergeCommit => {
+                                        plan.and_then(|plan| plan.bind_github_merge_method("merge"))
+                                    }
+                                    ContextChoice::ForgeSquashMerge => plan
+                                        .and_then(|plan| plan.bind_github_merge_method("squash")),
+                                    ContextChoice::ForgeRebaseMerge => plan
+                                        .and_then(|plan| plan.bind_github_merge_method("rebase")),
+                                    _ => plan,
+                                }
+                            }
                             _ => {
                                 state.mutation_notice = Some(
                                     local_text(
@@ -1106,7 +1128,10 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 | ContextChoice::ForgeCreateMergeRequest
                 | ContextChoice::ForgeComment
                 | ContextChoice::ForgeApprove
-                | ContextChoice::ForgeMerge => {
+                | ContextChoice::ForgeMerge
+                | ContextChoice::ForgeMergeCommit
+                | ContextChoice::ForgeSquashMerge
+                | ContextChoice::ForgeRebaseMerge => {
                     state.mutation_notice = Some(
                         local_text(
                             state.language,

@@ -235,6 +235,32 @@ impl ForgeMutationPlan {
         Ok(self)
     }
 
+    /// Bind the GitHub merge strategy to the exact plan the operator confirms.
+    /// Stored as a precondition so existing receipt/schema handling stays intact.
+    pub fn bind_github_merge_method(mut self, method: &str) -> Result<Self> {
+        anyhow::ensure!(
+            self.provider == ForgeProviderKind::GitHub
+                && self.kind == ForgeMutationKind::MergeMergeRequest,
+            "GitHub merge method applies only to GitHub merge plans"
+        );
+        anyhow::ensure!(
+            matches!(method, "merge" | "squash" | "rebase"),
+            "unknown GitHub merge method"
+        );
+        anyhow::ensure!(
+            !self
+                .preconditions
+                .iter()
+                .any(|item| item.key == "github-merge-method"),
+            "GitHub merge method has already been selected"
+        );
+        self.preconditions
+            .push(precondition("github-merge-method", method));
+        self.expected_side_effect
+            .push_str(&format!(" using GitHub {method} strategy"));
+        Ok(self)
+    }
+
     pub fn project_lock_key(&self) -> String {
         format!(
             "{}:{}:{}",

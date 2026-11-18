@@ -57,6 +57,8 @@ with open(home/'forge.lock', 'a') as lock:
  repo = {'id':123,'full_name':'fixture/isolated','html_url':'https://github.com/fixture/isolated',
          'path_with_namespace':'fixture/isolated','web_url':'https://gitlab.com/fixture/isolated',
          'default_branch':'main'}
+ if provider == 'github':
+  repo.update({'allow_merge_commit':True,'allow_squash_merge':False,'allow_rebase_merge':False})
  review = {'id':80,'state':'APPROVED','user':{'id':7,'login':'fixture-user'},
            'commit_id':('b' if mode == 'wrong-review' or (mode == 'stale-existing' and not state['writes']) else 'a')*40}
  pull = {'number':7,'title':'FIXTURE_CHANGE','state':'closed' if merged else 'open',
@@ -150,6 +152,9 @@ def validate_outcome(rows, trace, mode):
     for write in writes:
         actual = write['fields'].get('commit_id', write['fields'].get('sha'))
         require(actual == SHA_A, 'provider mutation did not bind the confirmed SHA')
+        if '/repos/' in write.get('endpoint', '') and write.get('endpoint', '').endswith('/merge'):
+            require(write['fields'].get('merge_method') == 'merge',
+                    'GitHub merge did not preserve the explicitly confirmed strategy')
     wanted = 'failed' if mode=='before' else ('succeeded' if mode in ('control','stale-existing') else 'outcome-unknown')
     require(row['state'] == wanted, 'expected {}, observed {}'.format(wanted, row['state']))
     require(all(r['supported'] for r in trace), 'unrecognized Forge request contaminated fixture')
@@ -198,7 +203,8 @@ def case(binary, output, home, scenario):
         app.drain(.25)
         app.send(b'w')
         app.send(b'.')
-        label = 'Forge · ' + ('Approve' if operation=='approve' else 'Merge') + ' merge request'
+        label = ('GitHub · Merge commit' if provider == 'github' and operation == 'merge'
+                 else 'Forge · ' + ('Approve' if operation=='approve' else 'Merge') + ' merge request')
         app.wait(lambda: label in app.screen(), 'Forge action not projected')
         for _ in range(25):
             if '> '+label in app.screen(): break

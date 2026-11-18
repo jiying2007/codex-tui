@@ -218,6 +218,9 @@ fn context_choice_label(choice: ContextChoice, language: UiLanguage) -> &'static
         ContextChoice::ForgeComment => "Forge · 评论合并请求…",
         ContextChoice::ForgeApprove => "Forge · 批准合并请求",
         ContextChoice::ForgeMerge => "Forge · 合并合并请求",
+        ContextChoice::ForgeMergeCommit => "GitHub · 创建合并提交",
+        ContextChoice::ForgeSquashMerge => "GitHub · 压缩合并",
+        ContextChoice::ForgeRebaseMerge => "GitHub · 变基合并",
     }
 }
 

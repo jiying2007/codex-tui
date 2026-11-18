@@ -75,14 +75,46 @@ fn repository_path_is_exact_owner_repo() {
 }
 
 #[test]
-fn merge_mutation_builder_has_no_force_or_bypass_fields() {
-    let fields = [("sha", "012345")];
-    assert_eq!(fields, [("sha", "012345")]);
+fn merge_mutation_builder_uses_explicit_strategy_without_force_or_bypass() {
+    let fields = [("sha", "012345"), ("merge_method", "squash")];
     assert!(!fields.iter().any(|(key, _)| {
-        key.eq_ignore_ascii_case("force")
-            || key.eq_ignore_ascii_case("bypass")
-            || key.eq_ignore_ascii_case("merge_method")
+        key.eq_ignore_ascii_case("force") || key.eq_ignore_ascii_case("bypass")
     }));
+    let source = include_str!("../forge_github_mutation.rs");
+    assert!(source.contains(r#"&[("sha", expected_sha), ("merge_method", method)]"#));
+}
+
+#[test]
+fn github_merge_strategy_is_validated_against_repository_permissions() {
+    let repository: GitHubRepository = serde_json::from_value(serde_json::json!({
+        "id": 123,
+        "full_name": "octo/repo",
+        "default_branch": "main",
+        "allow_merge_commit": false,
+        "allow_squash_merge": true,
+        "allow_rebase_merge": false
+    }))
+    .expect("repository");
+    let base = plan(ForgeMutationKind::MergeMergeRequest);
+    assert!(selected_github_merge_method(&base).is_err());
+    assert!(base.clone().bind_github_merge_method("force").is_err());
+    let squash = base.clone().bind_github_merge_method("squash").unwrap();
+    assert_eq!(selected_github_merge_method(&squash).unwrap(), "squash");
+    assert!(require_allowed_github_merge_method(&squash, &repository).is_ok());
+    assert!(squash.bind_github_merge_method("merge").is_err());
+    let merge = base.clone().bind_github_merge_method("merge").unwrap();
+    assert!(require_allowed_github_merge_method(&merge, &repository).is_err());
+    let rebase = base.bind_github_merge_method("rebase").unwrap();
+    assert!(require_allowed_github_merge_method(&rebase, &repository).is_err());
+
+    // A partial/malformed capability response must not authorize a write.
+    let unknown: GitHubRepository = serde_json::from_value(serde_json::json!({
+        "id": 123,
+        "full_name": "octo/repo",
+        "default_branch": "main"
+    }))
+    .expect("unknown permissions");
+    assert!(require_allowed_github_merge_method(&merge, &unknown).is_err());
 }
 
 #[test]

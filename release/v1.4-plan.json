@@ -152,7 +152,7 @@
     "src/app.rs": 1022,
     "src/ui/composer.rs": 73,
     "src/ui/help_wrapped_tests.rs": 43,
-    "src/ui.rs": 1487,
+    "src/ui.rs": 1490,
     "src/app_server.rs": 2680,
     "src/main.rs": 2022,
     "src/sqlite_store.rs": 1849,
@@ -179,9 +179,9 @@
     "src/thread_queue.rs": 350,
     "src/app_server_target.rs": 308,
     "src/app_server_transport.rs": 376,
-    "src/forge_github_mutation.rs": 685,
-    "src/forge_mutation.rs": 1522,
-    "src/forge_github_mutation/tests.rs": 165,
+    "src/forge_github_mutation.rs": 727,
+    "src/forge_mutation.rs": 1546,
+    "src/forge_github_mutation/tests.rs": 197,
     "src/forge_github_mutation/api.rs": 61,
     "src/conversation.rs": 892,
     "src/app/lifecycle.rs": 203,
@@ -245,7 +245,7 @@
     "src/conversation/approval.rs": 23,
     "src/conversation/approval_scope.rs": 92,
     "src/runtime_user_response/approval_tests.rs": 160,
-    "src/app/types.rs": 450,
+    "src/app/types.rs": 456,
     "src/backend.rs": 229,
     "src/batch_local.rs": 208,
     "src/codex_protocol.rs": 374,
@@ -275,7 +275,7 @@
     "src/terminal.rs": 131,
     "src/terminal_drawer.rs": 439,
     "src/text.rs": 165,
-    "src/ui/overlays.rs": 899,
+    "src/ui/overlays.rs": 913,
     "src/ui/terminal.rs": 126,
     "src/forge/tests.rs": 367,
     "src/app_server_transport/tests.rs": 448,
@@ -286,10 +286,10 @@
     "src/app/queue_ack.rs": 133,
     "src/app/target_locality.rs": 87,
     "src/forge/remote_identity_tests.rs": 47,
-    "src/app/reducer.rs": 2638,
+    "src/app/reducer.rs": 2664,
     "src/app/state.rs": 871,
     "src/app/shortcuts.rs": 65,
-    "src/app/tests.rs": 3307,
+    "src/app/tests.rs": 3340,
     "src/app/thread_queue_reducer_tests.rs": 132,
     "src/ui/tests.rs": 1332,
     "src/sqlite_store/tests.rs": 1098,
@@ -1096,6 +1096,22 @@
         "src/app/planning_worker/stale_retry_tests.rs"
       ],
       "policy": "Register only the two extracted/new bounded modules; all existing source ceilings and admission rules remain unchanged. No timer, new thread, backend call, dependency, schema, permission, stale-authority installation or Stable qualification. Native exact-head CI and fresh-main evidence required. This does not claim RSS reduction, terminal SLO, snapshot-copy elimination or continuous-churn convergence."
+    },
+    {
+      "date": "2026-11-18",
+      "kind": "bounded-github-merge-strategy-hardening",
+      "scope": "Require an explicit merge/squash/rebase choice on the current branch's GitHub PR; verify repository allow flags, exact project identity and confirmed HEAD before PUT; retain one-shot write, uncertain-outcome reconciliation, readback and separate GitLab flow. Test allowed/denied/unknown policies; display the strategy at confirmation and document in EN/zh-CN. Precisely register changed existing module ceilings, without disabling the complete-source ratchet.",
+      "modules": [
+        "src/app/reducer.rs",
+        "src/app/tests.rs",
+        "src/app/types.rs",
+        "src/forge_github_mutation.rs",
+        "src/forge_github_mutation/tests.rs",
+        "src/forge_mutation.rs",
+        "src/ui.rs",
+        "src/ui/overlays.rs"
+      ],
+      "policy": "Only these seven existing ceilings may grow to actual reviewed LOC; all other ceilings and complete source coverage are unchanged. Exact-head CI/security/MSRV/terminal/hosted qualification required, followed by fresh-main validation. No force/bypass, fallback merge method, credential changes, schema migration, second execution authority or Stable qualification."
     }
   ]
 }

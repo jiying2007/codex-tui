@@ -73,6 +73,8 @@ codex-tui doctor forge
 
 Maintainers can retain a capability fixture with `scripts/release/capture_forge_capability.py`; capabilities come from the observed environment, not from a guessed server-version matrix.
 
+For GitHub PR merging, open the selected branch's Review/Workspace action menu (`.`), then explicitly choose **Merge commit**, **Squash and merge**, or **Rebase and merge**. The confirmation shows the selected strategy, repository, branches, and exact HEAD. The strategy must be enabled by the live repository policy or the mutation fails closed; there is no fallback to another strategy and no force/bypass option. GitLab continues to use its own standard MR merge action.
+
 ## 5. Daily flow
 <!-- docs-section: daily -->
 

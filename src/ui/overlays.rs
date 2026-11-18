@@ -620,9 +620,24 @@ pub(super) fn render_forge_mutation_confirmation(frame: &mut Frame<'_>, app: &Ap
         );
     }
     if let Some(iid) = plan.change_request_iid {
+        if plan.provider == crate::forge::ForgeProviderKind::GitHub {
+            lines.push(Line::from(format!("Pull request: #{iid}")));
+        } else {
+            lines.push(Line::from(format!(
+                "{}: !{iid}",
+                tr(app, "Merge request", "合并请求")
+            )));
+        }
+    }
+    if let Some(method) = plan
+        .preconditions
+        .iter()
+        .find(|item| item.key == "github-merge-method")
+    {
         lines.push(Line::from(format!(
-            "{}: !{iid}",
-            tr(app, "Merge request", "合并请求")
+            "{}: {}",
+            tr(app, "GitHub merge strategy", "GitHub 合并方式"),
+            sanitize_inline(&method.expected)
         )));
     }
     if plan.source_branch.is_some() || plan.target_branch.is_some() {
@@ -669,7 +684,7 @@ pub(super) fn render_forge_mutation_confirmation(frame: &mut Frame<'_>, app: &Ap
     lines.extend(
         plan.preconditions
             .iter()
-            .filter(|item| item.key != "confirmed-head-sha")
+            .filter(|item| item.key != "confirmed-head-sha" && item.key != "github-merge-method")
             .take(8)
             .map(|item| {
                 Line::from(format!(

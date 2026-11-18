@@ -91,6 +91,9 @@ pub enum ContextChoice {
     ForgeComment,
     ForgeApprove,
     ForgeMerge,
+    ForgeMergeCommit,
+    ForgeSquashMerge,
+    ForgeRebaseMerge,
 }
 
 impl ContextChoice {
@@ -123,6 +126,9 @@ impl ContextChoice {
             Self::ForgeComment => "Forge · Comment on merge request…",
             Self::ForgeApprove => "Forge · Approve merge request",
             Self::ForgeMerge => "Forge · Merge merge request",
+            Self::ForgeMergeCommit => "GitHub · Merge commit",
+            Self::ForgeSquashMerge => "GitHub · Squash and merge",
+            Self::ForgeRebaseMerge => "GitHub · Rebase and merge",
         }
     }
 }
