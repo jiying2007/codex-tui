@@ -53,16 +53,8 @@ pub(super) async fn refresh_owned(
     if history.contains(&id.0) {
         emit_conversation_load(rpc, id.clone(), tx).await;
     }
-    if queue.contains(&id.0) {
-        let event = match load_thread_queue(rpc, id.clone()).await {
-            Ok(snapshot) => ConversationEvent::ThreadQueueLoaded(snapshot),
-            Err(error) => ConversationEvent::ThreadQueueFailed {
-                thread_id: id,
-                error: error.to_string(),
-            },
-        };
-        send_conversation_event(tx, event).await;
-    }
+    // Queue pagination is scheduled cooperatively by the registry actor.
+    let _ = queue;
 }
 
 pub(super) async fn retire_removed_owners(

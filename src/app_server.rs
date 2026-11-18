@@ -960,7 +960,64 @@ async fn run_registry_actor(
     goal_probe.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     goal_probe.tick().await;
 
+    // Only one foreground Queue is read at a time; its complete snapshot is
+    // installed atomically. Pending input/interrupt commands preempt each page.
+    let mut queue_load: Option<QueueLoadState> = None;
+    let mut deferred_command: Option<BackendCommand> = None;
+
     loop {
+        if queue_load.is_some() && !rpc.has_queued_messages() && deferred_command.is_none() {
+            let state = queue_load.as_mut().expect("queue read exists");
+            let mut incoming = None;
+            let mut page = None;
+            tokio::select! {
+                biased;
+                command = command_rx.recv() => incoming = Some(command),
+                _ = history_changes.changed() => {}
+                _ = queue_changes.changed() => {}
+                result = async {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                    state.next_page(&mut rpc).await
+                } => page = Some(result),
+            }
+            if let Some(command) = incoming {
+                let Some(command) = command else { return };
+                deferred_command = Some(command);
+            }
+            if let Some(result) = page {
+                let state = queue_load.as_ref().expect("queue read exists");
+                let thread_id = state.thread_id.clone();
+                let mutation_readback = state.mutation_readback;
+                match result {
+                    Ok(None) => {}
+                    Ok(Some(snapshot)) => {
+                        queue_load = None;
+                        mark_optional_capability(&mut status, "thread/queue/list", true);
+                        send_conversation_event(&conversation_tx, ConversationEvent::ThreadQueueLoaded(snapshot)).await;
+                        if mutation_readback {
+                            send_conversation_event(&conversation_tx, ConversationEvent::QueueMutationOutcome {
+                                thread_id, committed: true
+                            }).await;
+                        }
+                    }
+                    Err(error) => {
+                        queue_load = None;
+                        if is_thread_queue_unsupported(&error) {
+                            mark_optional_capability(&mut status, "thread/queue/list", false);
+                        }
+                        send_conversation_event(&conversation_tx, ConversationEvent::ThreadQueueFailed {
+                            thread_id, error: error.to_string()
+                        }).await;
+                        // Even if the write was accepted, readback failed; draft stays
+                        // pending and will not be replayed without reconciliation.
+                    }
+                }
+            }
+            if queue_load.as_ref().is_some_and(|state| !watched_queue_threads.contains(&state.thread_id.0)) {
+                queue_load = None;
+            }
+            continue;
+        }
         // An awaited RPC can yield on a pending interactive server request.
         // Drain that semantic backlog *before* serving newly queued commands,
         // otherwise the actor can immediately enter another 5-second RPC.
@@ -996,7 +1053,13 @@ async fn run_registry_actor(
                     }
                 }
             }
-            command = command_rx.recv(), if !semantic_backlog => {
+            command = async {
+                if let Some(command) = deferred_command.take() {
+                    Some(command)
+                } else {
+                    command_rx.recv().await
+                }
+            }, if !semantic_backlog => {
                 let Some(command) = command else {
                     return;
                 };
@@ -1276,39 +1339,25 @@ async fn run_registry_actor(
                     }
                     BackendCommand::RefreshThreadQueue(thread_id) => {
                         if !watched_queue_threads.contains(&thread_id.0) { continue; }
-                        match async {
-                            rpc.ensure_subscribed(&thread_id).await?;
-                            load_thread_queue(&mut rpc, thread_id.clone()).await
-                        }.await {
-                            Ok(snapshot) => {
-                                mark_optional_capability(&mut status, "thread/queue/list", true);
-                                send_conversation_event(
-                                    &conversation_tx,
-                                    ConversationEvent::ThreadQueueLoaded(snapshot),
-                                )
-                                .await;
+                        match rpc.ensure_subscribed(&thread_id).await {
+                            Ok(()) => {
+                                // Never replace an in-flight write readback with an
+                                // unrelated refresh that could clear the editor.
+                                if !queue_load.as_ref().is_some_and(|state| state.mutation_readback) {
+                                    queue_load = Some(QueueLoadState::new(thread_id, false));
+                                }
                             }
                             Err(error) => {
-                                if is_thread_queue_unsupported(&error) {
-                                    mark_optional_capability(
-                                        &mut status,
-                                        "thread/queue/list",
-                                        false,
-                                    );
-                                }
-                                send_conversation_event(
-                                    &conversation_tx,
-                                    ConversationEvent::ThreadQueueFailed {
-                                        thread_id,
-                                        error: error.to_string(),
-                                    },
-                                )
-                                .await;
+                                send_conversation_event(&conversation_tx, ConversationEvent::ThreadQueueFailed {
+                                    thread_id, error: error.to_string()
+                                }).await;
                             }
                         }
                     }
                     BackendCommand::MutateThreadQueue(mutation) => {
-                        queue_mutation::dispatch(&mut rpc, &mut status, &conversation_tx, mutation).await;
+                        if let Some(id) = queue_mutation::dispatch(&mut rpc, &mut status, &conversation_tx, mutation).await {
+                            queue_load = Some(QueueLoadState::new(id, true));
+                        }
                     }
                     BackendCommand::StartThread { cwd } => {
                         lifecycle::handle_start_thread(
@@ -1595,6 +1644,23 @@ async fn run_registry_actor(
                         if let Some(reconcile) = reconcile.as_mut() {
                             observe_registry_hydration_message(&mut reconcile.hydration, &message);
                             observe_registry_reconcile_message(reconcile, &message);
+                        }
+                        // Queue change notifications schedule a cancellable read.
+                        // Never synchronously paginate here: a slow backend must
+                        // not block pending stop/approval commands.
+                        if message.get("id").is_none()
+                            && message.get("method").and_then(Value::as_str) == Some("thread/queue/changed")
+                        {
+                            if let Some(id) = message.pointer("/params/threadId").and_then(Value::as_str) {
+                                if watched_queue_threads.contains(id)
+                                    && !queue_load.as_ref().is_some_and(|state| state.mutation_readback)
+                                {
+                                    queue_load = Some(QueueLoadState::new(ThreadId::new(id), false));
+                                }
+                            } else {
+                                status.error = Some("thread/queue/changed missing threadId".into());
+                            }
+                            continue;
                         }
                         let registry_changed = match handle_unsolicited(
                             &mut rpc,
