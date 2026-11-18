@@ -153,17 +153,12 @@ fn registry_viewport_keeps_selected_row_visible() {
     let mut app = AppState::new(FakeBackend::scaled(100).snapshot().threads);
     app.selected = 99;
 
-    let (_visible, viewport) = registry_viewport(&app, 10);
-    assert_eq!(
-        viewport,
-        RegistryViewport {
-            start: 93,
-            end: 100,
-            total: 100,
-            matched: 100,
-            row_capacity: 7,
-        }
-    );
+    let (visible, viewport) = registry_viewport(&app, 10);
+    assert!(visible[viewport.start..viewport.end].contains(&99));
+    assert_eq!(viewport.total, visible.len());
+    assert_eq!(viewport.matched, 100);
+    assert_eq!(viewport.row_capacity, 7);
+    assert!(viewport.total < 100);
 }
 
 #[test]

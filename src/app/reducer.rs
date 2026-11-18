@@ -1385,8 +1385,8 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 .find(|thread| thread.id == thread_id)
                 .map(|thread| thread.metadata.cwd.clone())
                 .unwrap_or_default();
-            if cwd.trim().is_empty() || !state.cwd_locality(&cwd).terminal_usable() {
-                state.mutation_notice = Some("Review requires a verified local repository".into());
+            if cwd.trim().is_empty() || state.app_server_target_is_remote() {
+                state.mutation_notice = Some("Review requires a local App Server target".into());
                 return vec![];
             }
             if !matches!(state.view, View::Review(_)) {
@@ -1421,6 +1421,10 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             let Some(thread_id) = thread_id else {
                 return vec![];
             };
+            if state.app_server_target_is_remote() {
+                state.mutation_notice = Some("Workspace requires a local App Server target".into());
+                return vec![];
+            }
             if !matches!(state.view, View::Workspace(_)) {
                 state.workspace_return_view = Some(state.view.clone());
             }
@@ -1432,9 +1436,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             else {
                 return vec![];
             };
-            if cwd.trim().is_empty() || !state.cwd_locality(&cwd).terminal_usable() {
-                state.mutation_notice =
-                    Some("Workspace requires a verified local repository".into());
+            if cwd.trim().is_empty() {
                 return vec![];
             }
             let needs_probe = state

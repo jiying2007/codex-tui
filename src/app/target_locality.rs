@@ -2,8 +2,7 @@ use super::*;
 use crate::domain::{classify_cwd, classify_cwd_without_io};
 
 impl AppState {
-    // Only a process started over stdio by this TUI has proved its cwd is local.
-    // WebSocket/Unix-socket peers may report a directory with the same spelling.
+    // WebSocket/Unix-socket peers may report a cwd with the same local spelling.
     pub(super) fn app_server_target_is_remote(&self) -> bool {
         let source = &self.backend_status.source;
         source.starts_with("codex-app-server[target=") && !source.ends_with(" transport=stdio]")
@@ -30,7 +29,12 @@ impl AppState {
     }
 
     pub(super) fn refresh_cwd_locality(&mut self, cwd: &str) -> CwdLocality {
-        let locality = self.cwd_locality(cwd);
+        // Re-probe the filesystem: a cached result can outlive the directory.
+        let locality = if self.app_server_target_is_remote() {
+            CwdLocality::ForeignUnix
+        } else {
+            classify_cwd(cwd)
+        };
         self.cwd_localities.insert(cwd.to_string(), locality);
         locality
     }

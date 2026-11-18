@@ -3,7 +3,7 @@ use super::{AppState, Effect, InputMode, local_text};
 use crate::{
     domain::ThreadId,
     operation::now_unix_ms,
-    thread_queue::{QueuedSubmission, ThreadQueueMutation, ThreadQueueSnapshot},
+    thread_queue::{QueuedSubmission, ThreadQueueMutation},
 };
 
 #[derive(Clone, Debug)]

@@ -32,12 +32,10 @@ fn glab_http_status(stderr: &str) -> Option<u16> {
                 .as_bytes()
                 .get(3)
                 .is_none_or(|b| matches!(b, b' ' | b':' | b'\t'))
+            && let Ok(code) = code_text.parse::<u16>()
+            && (400..600).contains(&code)
         {
-            if let Ok(code) = code_text.parse::<u16>()
-                && (400..600).contains(&code)
-            {
-                return Some(code);
-            }
+            return Some(code);
         }
     }
     None

@@ -7,7 +7,7 @@ use tokio::process::Command;
 use tokio::time::timeout;
 
 pub const COMPAT_SCHEMA: &str = "codex-tui/compat/v2";
-pub const RUST_MSRV: &str = "1.88";
+pub const RUST_MSRV: &str = "1.89";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
