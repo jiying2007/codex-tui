@@ -2530,7 +2530,17 @@ fn pin_alias_and_ack_round_trip_through_local_state() {
 #[test]
 fn forge_approval_and_merge_pin_the_projected_revision_at_confirmation() {
     for github in [false, true] {
-        for choice in [ContextChoice::ForgeApprove, ContextChoice::ForgeMerge] {
+        let action_choices: &[ContextChoice] = if github {
+            &[
+                ContextChoice::ForgeApprove,
+                ContextChoice::ForgeMergeCommit,
+                ContextChoice::ForgeSquashMerge,
+                ContextChoice::ForgeRebaseMerge,
+            ]
+        } else {
+            &[ContextChoice::ForgeApprove, ContextChoice::ForgeMerge]
+        };
+        for &choice in action_choices {
             let mut app = app();
             if github {
                 seed_github_mutation_target(&mut app, true);
@@ -2546,6 +2556,17 @@ fn forge_approval_and_merge_pin_the_projected_revision_at_confirmation() {
                 "0123456789abcdef0123456789abcdef01234567"
             );
             assert!(plan.expected_side_effect.contains("reviewed commit"));
+            if github && choice != ContextChoice::ForgeApprove {
+                let expected = match choice {
+                    ContextChoice::ForgeMergeCommit => "merge",
+                    ContextChoice::ForgeSquashMerge => "squash",
+                    ContextChoice::ForgeRebaseMerge => "rebase",
+                    _ => unreachable!("only GitHub merge actions enter this branch"),
+                };
+                assert!(plan.preconditions.iter().any(|item| {
+                    item.key == "github-merge-method" && item.expected == expected
+                }));
+            }
             let effects = reduce(&mut app, Action::ConfirmPendingOperation);
             assert!(matches!(
                 effects.as_slice(),
@@ -2557,7 +2578,12 @@ fn forge_approval_and_merge_pin_the_projected_revision_at_confirmation() {
 
 #[test]
 fn missing_forge_revision_cannot_create_approval_or_merge_plan() {
-    for choice in [ContextChoice::ForgeApprove, ContextChoice::ForgeMerge] {
+    for choice in [
+        ContextChoice::ForgeApprove,
+        ContextChoice::ForgeMergeCommit,
+        ContextChoice::ForgeSquashMerge,
+        ContextChoice::ForgeRebaseMerge,
+    ] {
         let mut app = app();
         let id = seed_github_mutation_target(&mut app, true);
         app.forge_observations
@@ -2736,7 +2762,14 @@ fn github_existing_pull_exposes_comment_approve_and_merge_actions() {
     let choices = app.context_choices();
     assert!(choices.contains(&ContextChoice::ForgeComment));
     assert!(choices.contains(&ContextChoice::ForgeApprove));
-    assert!(choices.contains(&ContextChoice::ForgeMerge));
+    for method in [
+        ContextChoice::ForgeMergeCommit,
+        ContextChoice::ForgeSquashMerge,
+        ContextChoice::ForgeRebaseMerge,
+    ] {
+        assert!(choices.contains(&method));
+    }
+    assert!(!choices.contains(&ContextChoice::ForgeMerge));
     assert!(!choices.contains(&ContextChoice::ForgeCreateMergeRequest));
 }
 
