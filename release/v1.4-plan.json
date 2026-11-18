@@ -193,9 +193,9 @@
     "src/app/queue_editor.rs": 151,
     "src/app/queue_confirmation.rs": 97,
     "src/app_server/queue_wire_tests.rs": 89,
-    "src/app/mutation_editor.rs": 135,
+    "src/app/mutation_editor.rs": 142,
     "src/app/composer.rs": 109,
-    "src/app/context_menu.rs": 93,
+    "src/app/context_menu.rs": 96,
     "src/app/review.rs": 122,
     "src/ui/review.rs": 325,
     "src/runtime_external.rs": 265,
@@ -289,7 +289,7 @@
     "src/app/reducer.rs": 2664,
     "src/app/state.rs": 871,
     "src/app/shortcuts.rs": 65,
-    "src/app/tests.rs": 3340,
+    "src/app/tests.rs": 3426,
     "src/app/thread_queue_reducer_tests.rs": 132,
     "src/ui/tests.rs": 1332,
     "src/sqlite_store/tests.rs": 1098,
@@ -1117,8 +1117,22 @@
       "date": "2026-11-18",
       "kind": "gitlab-status-context-fail-closed",
       "scope": "Prevent arbitrary glab stderr suffixes such as 'network failed: 404' from becoming typed HTTP 404 and authorizing the legacy approval fallback. Preserve real response-line and HTTP protocol forms, safe redaction and actual-child Doctor behavior. Add false-positive unit, fallback and fake-glab diagnostic tests without changing the GitLab write pipeline.",
-      "modules": ["src/forge/glab_status.rs", "src/forge_mutation/legacy_status_tests.rs"],
+      "modules": [
+        "src/forge/glab_status.rs",
+        "src/forge_mutation/legacy_status_tests.rs"
+      ],
       "policy": "Only reviewed status parser and negative-test LOC ceilings change; retain complete-source coverage and all required PR/security/PTY checks. No new version adapter, raw stderr disclosure, authorization bypass, or Stable qualification."
+    },
+    {
+      "date": "2026-11-18",
+      "kind": "forge-menu-exact-target-lease",
+      "scope": "An opened GitHub merge/squash/rebase context menu must bind the same Forge identity, branch, PR IID and source HEAD that it displayed. Include new GitHub choices in the existing mutation editor snapshot guard; extend both GitHub and GitLab Forge menu snapshot identity with the HEAD revision, rejecting any change before planning a write. Cover unchanged and drifted targets with deterministic reducer tests.",
+      "modules": [
+        "src/app/context_menu.rs",
+        "src/app/mutation_editor.rs",
+        "src/app/tests.rs"
+      ],
+      "policy": "Update only these three reviewed existing source ceilings, preserve complete-source ratchet and exact-head CI/security/PTY; no new backend authority, write retry, approval bypass, menu fallback or Stable qualification."
     }
   ]
 }
