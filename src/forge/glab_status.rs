@@ -18,32 +18,32 @@ fn glab_http_status(stderr: &str) -> Option<u16> {
         let raw = raw_line.trim();
         let from_glab = raw.starts_with("glab:");
         let line = raw.strip_prefix("glab:").unwrap_or(raw).trim();
-        let candidate = line
-            .strip_prefix("HTTP ")
-            .or_else(|| line.strip_prefix("HTTP/1.1 "))
-            .or_else(|| line.strip_prefix("HTTP/2 "))
-            .or_else(|| {
-                // A suffix such as ": HTTP 404" is no more trustworthy than
-                // ": 404" unless it follows an explicit URL-bearing request.
-                let (request, status) = line.rsplit_once(": ")?;
-                let request_is_http = ["GET ", "POST ", "PUT ", "PATCH ", "DELETE "]
-                    .iter()
-                    .any(|method| {
-                        request.strip_prefix(method).is_some_and(|url| {
-                            (url.starts_with("https://") || url.starts_with("http://"))
-                                && !url.chars().any(char::is_whitespace)
-                        })
-                    });
-                request_is_http.then(|| {
-                    status
-                        .strip_prefix("HTTP ")
-                        .or_else(|| status.strip_prefix("HTTP/1.1 "))
-                        .or_else(|| status.strip_prefix("HTTP/2 "))
-                        .unwrap_or(status)
+        let candidate =
+            line.strip_prefix("HTTP ")
+                .or_else(|| line.strip_prefix("HTTP/1.1 "))
+                .or_else(|| line.strip_prefix("HTTP/2 "))
+                .or_else(|| {
+                    // A suffix such as ": HTTP 404" is no more trustworthy than
+                    // ": 404" unless it follows an explicit URL-bearing request.
+                    let (request, status) = line.rsplit_once(": ")?;
+                    let request_is_http = ["GET ", "POST ", "PUT ", "PATCH ", "DELETE "]
+                        .iter()
+                        .any(|method| {
+                            request.strip_prefix(method).is_some_and(|url| {
+                                (url.starts_with("https://") || url.starts_with("http://"))
+                                    && !url.chars().any(char::is_whitespace)
+                            })
+                        });
+                    request_is_http.then(|| {
+                        status
+                            .strip_prefix("HTTP ")
+                            .or_else(|| status.strip_prefix("HTTP/1.1 "))
+                            .or_else(|| status.strip_prefix("HTTP/2 "))
+                            .unwrap_or(status)
+                    })
                 })
-            })
-            .or_else(|| from_glab.then_some(line))
-            .unwrap_or("");
+                .or_else(|| from_glab.then_some(line))
+                .unwrap_or("");
         let Some(code_text) = candidate.get(..3) else {
             continue;
         };
