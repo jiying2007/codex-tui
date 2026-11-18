@@ -80,17 +80,19 @@ esac
         assert!(!stderr.contains("secret-from-fake-glab"));
     }
 
-    // A glab diagnostic ending in ": 404" is not an HTTP 404 response.
-    let ambiguous = Command::new(env!("CARGO_BIN_EXE_codex-tui"))
-        .args(["doctor", "forge"])
-        .current_dir(&repo)
-        .env("PATH", &path)
-        .env("MOCK_HTTP_STATUS", "network failed: 404")
-        .env("HOME", dir.path())
-        .output()
-        .expect("doctor forge");
-    let shown = String::from_utf8_lossy(&ambiguous.stdout);
-    assert!(!shown.contains("HTTP 404"), "{shown}");
-    assert!(!shown.contains("secret-from-fake-glab"));
-    assert!(!String::from_utf8_lossy(&ambiguous.stderr).contains("secret-from-fake-glab"));
+    // Neither a bare ": 404" nor a misleading ": HTTP 404" is response proof.
+    for text in ["network failed: 404", "network failed: HTTP 404"] {
+        let ambiguous = Command::new(env!("CARGO_BIN_EXE_codex-tui"))
+            .args(["doctor", "forge"])
+            .current_dir(&repo)
+            .env("PATH", &path)
+            .env("MOCK_HTTP_STATUS", text)
+            .env("HOME", dir.path())
+            .output()
+            .expect("doctor forge");
+        let shown = String::from_utf8_lossy(&ambiguous.stdout);
+        assert!(!shown.contains("HTTP 404"), "{text}: {shown}");
+        assert!(!shown.contains("secret-from-fake-glab"));
+        assert!(!String::from_utf8_lossy(&ambiguous.stderr).contains("secret-from-fake-glab"));
+    }
 }

@@ -11,12 +11,20 @@ fn legacy_rules_fallback_rejects_access_denied_and_ambiguous_errors() {
     )));
     for untrusted in [
         "glab: network request failed: 404 Not Found",
+        "glab: network request failed: HTTP 404 Not Found",
         "glab: response decoding failed: 404",
     ] {
         assert!(!legacy_gitlab_rules_unavailable(&anyhow::Error::new(
             crate::forge::glab_http_failure(untrusted, "provider")
         )));
     }
+    let explicit_http = crate::forge::glab_http_failure(
+        "glab: GET https://gitlab.example/api/v4/projects/42/merge_requests/7/approval_state: HTTP 404 Not Found",
+        "provider",
+    );
+    assert!(legacy_gitlab_rules_unavailable(&anyhow::Error::new(
+        explicit_http
+    )));
     for error in [
         "glab api failed: 403 Forbidden",
         "connection timed out",

@@ -18,27 +18,32 @@ fn glab_http_status(stderr: &str) -> Option<u16> {
         let raw = raw_line.trim();
         let from_glab = raw.starts_with("glab:");
         let line = raw.strip_prefix("glab:").unwrap_or(raw).trim();
-        let candidate = line
-            .strip_prefix("HTTP ")
-            .or_else(|| line.strip_prefix("HTTP/1.1 "))
-            .or_else(|| line.strip_prefix("HTTP/2 "))
-            .or_else(|| line.rsplit_once(": HTTP ").map(|(_, tail)| tail))
-            .or_else(|| {
-                // A bare trailing ": 404" is not proof of an HTTP response.
-                // Accept it only following a URL-bearing CLI request method.
-                let (request, status) = line.rsplit_once(": ")?;
-                ["GET ", "POST ", "PUT ", "PATCH ", "DELETE "]
-                    .iter()
-                    .any(|method| {
-                        request.strip_prefix(method).is_some_and(|url| {
-                            (url.starts_with("https://") || url.starts_with("http://"))
-                                && !url.chars().any(char::is_whitespace)
-                        })
+        let candidate =
+            line.strip_prefix("HTTP ")
+                .or_else(|| line.strip_prefix("HTTP/1.1 "))
+                .or_else(|| line.strip_prefix("HTTP/2 "))
+                .or_else(|| {
+                    // A suffix such as ": HTTP 404" is no more trustworthy than
+                    // ": 404" unless it follows an explicit URL-bearing request.
+                    let (request, status) = line.rsplit_once(": ")?;
+                    let request_is_http = ["GET ", "POST ", "PUT ", "PATCH ", "DELETE "]
+                        .iter()
+                        .any(|method| {
+                            request.strip_prefix(method).is_some_and(|url| {
+                                (url.starts_with("https://") || url.starts_with("http://"))
+                                    && !url.chars().any(char::is_whitespace)
+                            })
+                        });
+                    request_is_http.then(|| {
+                        status
+                            .strip_prefix("HTTP ")
+                            .or_else(|| status.strip_prefix("HTTP/1.1 "))
+                            .or_else(|| status.strip_prefix("HTTP/2 "))
+                            .unwrap_or(status)
                     })
-                    .then_some(status)
-            })
-            .or_else(|| from_glab.then_some(line))
-            .unwrap_or("");
+                })
+                .or_else(|| from_glab.then_some(line))
+                .unwrap_or("");
         let Some(code_text) = candidate.get(..3) else {
             continue;
         };
@@ -148,14 +153,26 @@ mod tests {
         // Arbitrary diagnostic numbers must not grant the legacy 404 fallback.
         for text in [
             "glab: network failed: 404 Not Found",
+            "glab: network failed: HTTP 404 Not Found",
+            "glab: request cancelled: HTTP 404",
             "connection refused: 404",
             "404 Not Found",
             "glab: GET https://gitlab.example/api/v4/projects/42: timeout: 404",
         ] {
             assert_eq!(glab_http_status(text), None, "{text:?}");
         }
-        let failure = glab_http_failure("Bearer secret: HTTP 403 Forbidden", "glab");
+        assert_eq!(
+            glab_http_status(
+                "glab: GET https://gitlab.example/api/v4/projects/42/merge_requests/7/approval_state: HTTP 404 Not Found"
+            ),
+            Some(404)
+        );
+        let failure = glab_http_failure("glab: HTTP/2 403 Forbidden Bearer secret", "glab");
         assert_eq!(failure.status, Some(403));
         assert!(!failure.to_string().contains("secret"));
+        assert_eq!(
+            glab_http_failure("Bearer secret: HTTP 404", "glab").status,
+            None
+        );
     }
 }
