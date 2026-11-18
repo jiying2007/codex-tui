@@ -59,7 +59,7 @@ printf 'Evidence: %s\n' "$EVIDENCE"
 ## 环境、构建与程序身份
 <!-- docs-section: build -->
 
-使用日常运行的同一 Ubuntu 用户、HOME、Codex Home 和配置。确认 UTF-8、真实控制终端与合适 TERM；不能靠设置 TERM 虚构终端能力。现有 x86-64 GNU Linux 包的 ABI 基线为 glibc 2.31；ARM／musl 需独立验收。脚本要求 Python 3.8+，声明的 Rust 最低版本为 1.88。验收中不盲目升级全部工具。
+使用日常运行的同一 Ubuntu 用户、HOME、Codex Home 和配置。确认 UTF-8、真实控制终端与合适 TERM；不能靠设置 TERM 虚构终端能力。现有 x86-64 GNU Linux 包的 ABI 基线为 glibc 2.31；ARM／musl 需独立验收。脚本要求 Python 3.8+，声明的 Rust 最低版本为 1.89。验收中不盲目升级全部工具。
 
 GitHub 使用 `gh`，内部 GitLab 档另检查已认证 `glab`。不得全量打印环境、令牌或凭据。将程序固定到私有副本，不覆盖 PATH 中现有安装；本机构建哈希无需与托管包相同。
 
@@ -84,6 +84,18 @@ for tool in git python3 cargo rustc codex; do command -v "$tool"; done
 } > "$EVIDENCE/preflight/versions.txt" 2>&1
 python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3,8) else 1)'
 cd "$ROOT"
+# Stop before a costly build if this host's Rust toolchain is below Cargo.toml MSRV.
+python3 - <<'CHECK_RUST'
+import pathlib, re, subprocess
+manifest = pathlib.Path("Cargo.toml").read_text(encoding="utf-8")
+required = re.search(r'(?m)^rust-version\s*=\s*"(\d+)\.(\d+)"', manifest)
+if required is None:
+    raise SystemExit("STOP: Cargo MSRV missing")
+actual = re.match(r"rustc (\d+)\.(\d+)", subprocess.check_output(
+    ["rustc", "--version"], text=True))
+if actual is None or tuple(map(int, actual.groups())) < tuple(map(int, required.groups())):
+    raise SystemExit("STOP: rustc below Cargo MSRV")
+CHECK_RUST
 CODEX_TUI_GIT_SHA="$SOURCE_SHA" cargo build --release --locked \
   > "$EVIDENCE/preflight/build.log" 2>&1
 install -m 700 target/release/codex-tui "$BINARY"
