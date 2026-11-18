@@ -52,7 +52,7 @@ external evidence are in `docs/implementation/v1.4-audit-closure.md`.
 ## Product goal
 <!-- docs-section: product -->
 
-**First minute:** open Mission Control, press `Space` for the next actionable item, `/` to search, `Enter` to open and `1–9` to switch a bound task. Press `?` for full help: `↑/↓` or `j/k` scroll entries, `PgUp/PgDn` jump, `Home/End` go to the first/last entry, and `Esc` closes. In narrow terminals, key hints prioritize these tasks over less frequent commands. No pointer navigation is implemented: the application intentionally does **not** capture mouse clicks or wheel events. The legacy `[ui].mouse` option is parsed but ignored until actual handlers exist.
+**First minute:** open Mission Control, press `Space` for the next actionable item, `/` to search, `Enter` to open and `1–9` to switch a bound task. Use `Alt+T` to switch between the workbench and the terminal without F6. Press `?` for full help: `↑/↓` or `j/k` scroll entries, `PgUp/PgDn` jump, `Home/End` go to the first/last entry, and `Esc` closes. In narrow terminals, key hints prioritize these tasks over less frequent commands. No pointer navigation is implemented: the application intentionally does **not** capture mouse clicks or wheel events. The legacy `[ui].mouse` option is parsed but ignored until actual handlers exist.
 
 codex-tui answers four questions quickly:
 

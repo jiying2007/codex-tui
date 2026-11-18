@@ -1,4 +1,5 @@
 use super::*;
+use crate::domain::classify_cwd;
 
 impl AppState {
     pub fn new(threads: Vec<ThreadSummary>) -> Self {
