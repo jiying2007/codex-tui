@@ -154,7 +154,7 @@
     "src/ui/help_wrapped_tests.rs": 43,
     "src/ui.rs": 1487,
     "src/app_server.rs": 2682,
-    "src/main.rs": 2006,
+    "src/main.rs": 2022,
     "src/sqlite_store.rs": 1849,
     "src/forge.rs": 1157,
     "src/worktree.rs": 757,
@@ -245,7 +245,7 @@
     "src/conversation/approval.rs": 23,
     "src/conversation/approval_scope.rs": 92,
     "src/runtime_user_response/approval_tests.rs": 160,
-    "src/app/types.rs": 447,
+    "src/app/types.rs": 450,
     "src/backend.rs": 229,
     "src/batch_local.rs": 208,
     "src/codex_protocol.rs": 374,
@@ -283,7 +283,7 @@
     "src/forge/error_redaction_tests.rs": 43,
     "src/forge/glab_status.rs": 80,
     "src/forge_mutation/legacy_status_tests.rs": 38,
-    "src/app/queue_ack.rs": 121,
+    "src/app/queue_ack.rs": 133,
     "src/app/target_locality.rs": 87,
     "src/forge/remote_identity_tests.rs": 47,
     "src/app/reducer.rs": 2638,
@@ -360,8 +360,8 @@
     "src/runtime_palette/intent_tests.rs": 330,
     "src/app/planning_worker/job.rs": 27,
     "src/app/planning_worker/tests.rs": 170,
-    "src/app_server/queue_mutation.rs": 34,
-    "src/app_server/queue_pagination.rs": 55
+    "src/app_server/queue_mutation.rs": 50,
+    "src/app_server/queue_pagination.rs": 83
   },
   "ratchetPolicy": {
     "baseline": "inherit v1.3 Search & Multi-Target ceilings; feature work may only add bounded module-specific ceilings",
