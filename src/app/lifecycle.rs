@@ -226,24 +226,31 @@ mod tests {
 
         assert!(!app.lifecycle_capability_available("thread/start"));
         assert!(!app.lifecycle_capability_available("thread/fork"));
-        assert!(!app.build_context_choices().contains(&super::super::ContextChoice::NewCodexThread));
-        assert!(!app.build_context_choices().contains(&super::super::ContextChoice::ForkCodexThread));
+        assert!(
+            !app.build_context_choices()
+                .contains(&super::super::ContextChoice::NewCodexThread)
+        );
+        assert!(
+            !app.build_context_choices()
+                .contains(&super::super::ContextChoice::ForkCodexThread)
+        );
         assert!(app.plan_start_thread().is_empty());
-        assert!(app
-            .mutation_notice
-            .as_deref()
-            .unwrap_or_default()
-            .contains("remote App Server cwd"));
+        assert!(
+            app.mutation_notice
+                .as_deref()
+                .unwrap_or_default()
+                .contains("remote App Server cwd")
+        );
         assert!(app.plan_fork_thread().is_empty());
-        assert!(app
-            .mutation_notice
-            .as_deref()
-            .unwrap_or_default()
-            .contains("remote App Server source cwd"));
+        assert!(
+            app.mutation_notice
+                .as_deref()
+                .unwrap_or_default()
+                .contains("remote App Server source cwd")
+        );
 
         // Local stdio remains supported even when the target has a name.
-        app.backend_status.source =
-            "codex-app-server[target=local transport=stdio]".into();
+        app.backend_status.source = "codex-app-server[target=local transport=stdio]".into();
         assert!(app.lifecycle_capability_available("thread/start"));
         assert!(app.lifecycle_capability_available("thread/fork"));
         assert!(matches!(
