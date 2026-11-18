@@ -464,13 +464,10 @@ pub(crate) async fn probe_gitlab_with_remote(
     // The latest 20 MRs are an overview, not a complete branch lookup.
     // Only a saturated page with a missing current-branch MR needs one exact query.
     if let Ok(changes) = merge_requests_result.as_mut()
-        && let Some(branch) = (changes.len() >= DEFAULT_PAGE_SIZE)
-            .then(|| current_local_branch(&cwd))
-            .map(|lookup| lookup)
+        && changes.len() >= DEFAULT_PAGE_SIZE
+        && let Some(branch) = current_local_branch(&cwd).await
+        && needs_exact_branch(changes, &branch, |mr| mr.branch_for_local_projection(&project_id))
     {
-        if let Some(branch) = branch.await
-            && needs_exact_branch(changes, &branch, |mr| mr.branch_for_local_projection(&project_id))
-        {
             let endpoint = format!(
                 "/projects/{encoded_id}/merge_requests?scope=all&state=opened&source_branch={}&per_page={DEFAULT_PAGE_SIZE}",
                 percent_encode_component(&branch)
@@ -483,7 +480,6 @@ pub(crate) async fn probe_gitlab_with_remote(
                     }
                 }
             }
-        }
     }
     let (capabilities, freshness, error) = core_observation_status(
         ForgeProviderKind::GitLab,
