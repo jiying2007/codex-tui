@@ -684,9 +684,7 @@ pub(super) fn render_forge_mutation_confirmation(frame: &mut Frame<'_>, app: &Ap
     lines.extend(
         plan.preconditions
             .iter()
-            .filter(|item| {
-                item.key != "confirmed-head-sha" && item.key != "github-merge-method"
-            })
+            .filter(|item| item.key != "confirmed-head-sha" && item.key != "github-merge-method")
             .take(8)
             .map(|item| {
                 Line::from(format!(
