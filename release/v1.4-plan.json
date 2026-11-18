@@ -289,7 +289,7 @@
     "src/app/reducer.rs": 2664,
     "src/app/state.rs": 871,
     "src/app/shortcuts.rs": 65,
-    "src/app/tests.rs": 3307,
+    "src/app/tests.rs": 3340,
     "src/app/thread_queue_reducer_tests.rs": 132,
     "src/ui/tests.rs": 1332,
     "src/sqlite_store/tests.rs": 1098,
@@ -1103,6 +1103,7 @@
       "scope": "Require an explicit merge/squash/rebase choice on the current branch's GitHub PR; verify repository allow flags, exact project identity and confirmed HEAD before PUT; retain one-shot write, uncertain-outcome reconciliation, readback and separate GitLab flow. Test allowed/denied/unknown policies; display the strategy at confirmation and document in EN/zh-CN. Precisely register changed existing module ceilings, without disabling the complete-source ratchet.",
       "modules": [
         "src/app/reducer.rs",
+        "src/app/tests.rs",
         "src/app/types.rs",
         "src/forge_github_mutation.rs",
         "src/forge_github_mutation/tests.rs",
