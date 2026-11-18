@@ -158,7 +158,9 @@ impl ForgeProvider for GitLabProvider {
         Box::pin(async move {
             match probe_gitlab(thread_id.clone(), cwd.clone()).await {
                 Ok(observation) => observation,
-                Err(error) => ForgeObservation::unavailable(thread_id, cwd, safe_forge_failure(&error)),
+                Err(error) => {
+                    ForgeObservation::unavailable(thread_id, cwd, safe_forge_failure(&error))
+                }
             }
         })
     }

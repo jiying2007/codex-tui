@@ -79,14 +79,21 @@ pub(crate) fn safe_forge_failure(error: &anyhow::Error) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use anyhow::Context;
-
     #[test]
     fn contextual_gitlab_failures_show_safe_actionable_status() {
         for (stderr, expected) in [
-            ("glab: 401 Unauthorized Bearer secret-token", "authentication rejected (HTTP 401)"),
-            ("glab: 403 Forbidden password=secret-token", "access denied (HTTP 403)"),
-            ("glab: 404 Not Found access_token=secret-token", "resource not found (HTTP 404)"),
+            (
+                "glab: 401 Unauthorized Bearer secret-token",
+                "authentication rejected (HTTP 401)",
+            ),
+            (
+                "glab: 403 Forbidden password=secret-token",
+                "access denied (HTTP 403)",
+            ),
+            (
+                "glab: 404 Not Found access_token=secret-token",
+                "resource not found (HTTP 404)",
+            ),
             ("glab: 502 Bad Gateway", "request failed (HTTP 502)"),
         ] {
             let error = anyhow::Error::new(glab_http_failure(stderr, "GitLab API request failed"))
@@ -100,7 +107,10 @@ mod tests {
         }
         let unknown = anyhow::Error::new(glab_http_failure("unexpected secret-token", "provider"))
             .context("resolve GitLab project");
-        assert_eq!(safe_forge_failure(&unknown), "GitLab project lookup: provider: error details withheld");
+        assert_eq!(
+            safe_forge_failure(&unknown),
+            "GitLab project lookup: provider: error details withheld"
+        );
         let unrelated = anyhow::anyhow!("ordinary Git error");
         assert_eq!(safe_forge_failure(&unrelated), "ordinary Git error");
     }
