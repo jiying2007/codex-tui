@@ -25,3 +25,49 @@ impl AppState {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::backend::{CodexBackend, FakeBackend};
+
+    #[test]
+    fn rejected_queue_submission_keeps_draft_and_prevents_duplicate_inflight_send() {
+        let threads = FakeBackend::seeded().snapshot().threads;
+        let thread_id = threads[0].id.clone();
+        let mut app = AppState::new(threads);
+        app.view = View::Thread(thread_id.clone());
+        app.thread_queue_open = true;
+        app.thread_queue_snapshot = Some(ThreadQueueSnapshot {
+            thread_id: thread_id.clone(),
+            submissions: vec![],
+            next_cursor: None,
+        });
+        reduce(&mut app, Action::BeginThreadQueueAdd);
+        app.input_buffer = "recoverable queue draft".into();
+        let first = reduce(&mut app, Action::CommitInput);
+        assert!(matches!(first.as_slice(), [Effect::MutateThreadQueue(_)]));
+        assert!(app.queue_mutation_pending());
+        assert_eq!(app.input_buffer, "recoverable queue draft");
+        assert!(reduce(&mut app, Action::CommitInput).is_empty());
+        assert!(reduce(&mut app, Action::CloseThreadQueue).is_empty());
+        assert!(app.thread_queue_open);
+
+        reduce(&mut app, Action::ThreadQueueFailed {
+            thread_id: thread_id.clone(),
+            error: "upstream rejected".into(),
+        });
+        assert!(!app.queue_mutation_pending());
+        assert_eq!(app.input_mode, InputMode::ThreadQueueAdd);
+        assert_eq!(app.input_buffer, "recoverable queue draft");
+        assert!(matches!(reduce(&mut app, Action::CommitInput).as_slice(),
+            [Effect::MutateThreadQueue(_)]));
+        reduce(&mut app, Action::ThreadQueueLoaded(ThreadQueueSnapshot {
+            thread_id,
+            submissions: vec![],
+            next_cursor: None,
+        }));
+        assert_eq!(app.input_mode, InputMode::Normal);
+        assert!(app.input_buffer.is_empty());
+    }
+}

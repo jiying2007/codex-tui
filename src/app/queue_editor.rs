@@ -12,7 +12,6 @@ pub(super) struct QueueEditor {
     original: Option<QueuedSubmission>,
     pub(super) pending: bool,
 }
-
 impl AppState {
     pub(super) fn install_thread_queue(&mut self, snapshot: ThreadQueueSnapshot) {
         if !self.thread_queue_open
@@ -42,7 +41,6 @@ impl AppState {
         self.thread_queue_loading = false;
         self.thread_queue_error = None;
     }
-
     pub(super) fn begin_queue_input(&mut self, edit: bool) {
         if !self.thread_queue_open || self.queue_mutation_pending() {
             return;
@@ -90,7 +88,6 @@ impl AppState {
         };
         self.thread_queue_error = None;
     }
-
     pub(super) fn commit_queue_input(&mut self) -> Vec<Effect> {
         if self.thread_queue_loading {
             return vec![];
