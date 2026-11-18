@@ -36,6 +36,9 @@ struct GitHubRepository {
     id: u64,
     full_name: String,
     default_branch: String,
+    allow_merge_commit: Option<bool>,
+    allow_squash_merge: Option<bool>,
+    allow_rebase_merge: Option<bool>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -119,6 +122,43 @@ fn require_github_mergeable(mergeable: Option<bool>) -> Result<()> {
     anyhow::ensure!(
         mergeable == Some(true),
         "GitHub pull request mergeability is unknown or not mergeable"
+    );
+    Ok(())
+}
+
+fn selected_github_merge_method(plan: &ForgeMutationPlan) -> Result<&str> {
+    let mut methods = plan
+        .preconditions
+        .iter()
+        .filter(|item| item.key == "github-merge-method");
+    let selected = methods
+        .next()
+        .context("GitHub merge strategy must be selected explicitly")?;
+    anyhow::ensure!(
+        methods.next().is_none(),
+        "GitHub merge strategy is ambiguous"
+    );
+    anyhow::ensure!(
+        matches!(selected.expected.as_str(), "merge" | "squash" | "rebase"),
+        "unknown GitHub merge strategy"
+    );
+    Ok(&selected.expected)
+}
+
+fn require_allowed_github_merge_method(
+    plan: &ForgeMutationPlan,
+    repository: &GitHubRepository,
+) -> Result<()> {
+    let method = selected_github_merge_method(plan)?;
+    let enabled = match method {
+        "merge" => repository.allow_merge_commit,
+        "squash" => repository.allow_squash_merge,
+        "rebase" => repository.allow_rebase_merge,
+        _ => None,
+    };
+    anyhow::ensure!(
+        enabled == Some(true),
+        "GitHub repository does not confirm that {method:?} merge is allowed"
     );
     Ok(())
 }
@@ -213,6 +253,7 @@ pub(crate) async fn validate_preconditions(plan: &ForgeMutationPlan) -> Result<G
             crate::forge_mutation::require_confirmed_head(plan, &sha)?;
             anyhow::ensure!(!pull.draft, "GitHub pull request is still a draft");
             require_github_mergeable(pull.mergeable)?;
+            require_allowed_github_merge_method(plan, &repository)?;
             Ok(GitHubPreflight {
                 user_login: None,
                 head_sha: Some(sha),
@@ -301,12 +342,13 @@ pub(crate) async fn execute_mutation(
                 .as_deref()
                 .context("merge preflight missing exact pull request HEAD sha")?;
             revalidate_head(plan, number, expected_sha).await?;
+            let method = selected_github_merge_method(plan)?;
             let result: GitHubMergeResult = gh_api_mutation_json(
                 &plan.cwd,
                 &plan.host,
                 "PUT",
                 &format!("{}/pulls/{number}/merge", repository_endpoint(plan)?),
-                &[("sha", expected_sha)],
+                &[("sha", expected_sha), ("merge_method", method)],
             )
             .await?;
             anyhow::ensure!(
