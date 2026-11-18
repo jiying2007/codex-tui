@@ -14,10 +14,10 @@ anyhow = "1"
 crossterm = "0.29"
 directories = "6"
 futures-util = "0.3"
-nix = { version = "0.31", default-features = false, features = ["process", "signal"] }
+nix = { version = "0.32", default-features = false, features = ["process", "signal"] }
 portable-pty = "0.9"
 ratatui = "0.30"
-rusqlite = { version = "0.41", features = ["bundled", "backup"] }
+rusqlite = { version = "0.43", features = ["bundled", "backup"] }
 rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
 rustls-native-certs = "0.8"
 serde = { version = "1", features = ["derive"] }
