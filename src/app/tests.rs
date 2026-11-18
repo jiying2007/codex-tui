@@ -2577,6 +2577,92 @@ fn forge_approval_and_merge_pin_the_projected_revision_at_confirmation() {
 }
 
 #[test]
+fn opened_github_merge_menu_starts_only_for_the_same_exact_target_and_head() {
+    for choice in [
+        ContextChoice::ForgeMergeCommit,
+        ContextChoice::ForgeSquashMerge,
+        ContextChoice::ForgeRebaseMerge,
+    ] {
+        let mut unchanged = app();
+        seed_github_mutation_target(&mut unchanged, true);
+        reduce(&mut unchanged, Action::OpenContext);
+        unchanged.context_selected = unchanged
+            .context_choices()
+            .iter()
+            .position(|item| *item == choice)
+            .unwrap();
+        assert!(reduce(&mut unchanged, Action::ExecuteContext).is_empty());
+        let plan = unchanged.pending_forge_operation.as_ref().expect("same target plan");
+        assert_eq!(plan.change_request_iid, Some(9));
+        assert_eq!(
+            crate::forge_mutation::confirmed_head_sha(plan).unwrap(),
+            "0123456789abcdef0123456789abcdef01234567"
+        );
+
+        for changed_field in ["pr", "head"] {
+            let mut drifted = app();
+            let id = seed_github_mutation_target(&mut drifted, true);
+            reduce(&mut drifted, Action::OpenContext);
+            drifted.context_selected = drifted
+                .context_choices()
+                .iter()
+                .position(|item| *item == choice)
+                .unwrap();
+            let change = &mut drifted
+                .forge_observations
+                .get_mut(&id.0)
+                .expect("observation")
+                .change_requests[0];
+            match changed_field {
+                "pr" => change.iid = 10,
+                "head" => change.head_sha = Some("fedcba9876543210fedcba9876543210fedcba98".into()),
+                _ => unreachable!(),
+            }
+            let effects = reduce(&mut drifted, Action::ExecuteContext);
+            assert!(effects.is_empty(), "{choice:?} {changed_field}");
+            assert!(drifted.pending_forge_operation.is_none());
+            assert!(drifted.pending_forge_payload.is_none());
+            assert!(!drifted.context_open);
+            assert!(
+                drifted
+                    .mutation_notice
+                    .as_deref()
+                    .unwrap_or_default()
+                    .contains("context target or action changed"),
+                "{choice:?} {changed_field}"
+            );
+        }
+    }
+}
+
+#[test]
+fn opened_gitlab_approval_and_merge_menu_refuses_same_mr_new_head() {
+    for choice in [ContextChoice::ForgeApprove, ContextChoice::ForgeMerge] {
+        let mut app = app();
+        let id = seed_gitlab_mutation_target(&mut app, true);
+        reduce(&mut app, Action::OpenContext);
+        app.context_selected = app
+            .context_choices()
+            .iter()
+            .position(|item| *item == choice)
+            .unwrap();
+        app.forge_observations
+            .get_mut(&id.0)
+            .expect("observation")
+            .change_requests[0]
+            .head_sha = Some("fedcba9876543210fedcba9876543210fedcba98".into());
+        assert!(reduce(&mut app, Action::ExecuteContext).is_empty());
+        assert!(app.pending_forge_operation.is_none());
+        assert!(
+            app.mutation_notice
+                .as_deref()
+                .unwrap_or_default()
+                .contains("context target or action changed")
+        );
+    }
+}
+
+#[test]
 fn missing_forge_revision_cannot_create_approval_or_merge_plan() {
     for choice in [
         ContextChoice::ForgeApprove,
