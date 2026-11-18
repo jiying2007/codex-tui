@@ -9,6 +9,14 @@ fn legacy_rules_fallback_rejects_access_denied_and_ambiguous_errors() {
     assert!(legacy_gitlab_rules_unavailable(&anyhow::Error::new(
         missing
     )));
+    for untrusted in [
+        "glab: network request failed: 404 Not Found",
+        "glab: response decoding failed: 404",
+    ] {
+        assert!(!legacy_gitlab_rules_unavailable(&anyhow::Error::new(
+            crate::forge::glab_http_failure(untrusted, "provider")
+        )));
+    }
     for error in [
         "glab api failed: 403 Forbidden",
         "connection timed out",

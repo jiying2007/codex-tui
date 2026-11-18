@@ -15,15 +15,30 @@ impl std::error::Error for GlabHttpFailure {}
 // project ID, MR number or error text. Unknown formats fail closed.
 fn glab_http_status(stderr: &str) -> Option<u16> {
     for raw_line in stderr.lines() {
-        let line = raw_line.trim();
-        let line = line.strip_prefix("glab:").unwrap_or(line).trim();
+        let raw = raw_line.trim();
+        let from_glab = raw.starts_with("glab:");
+        let line = raw.strip_prefix("glab:").unwrap_or(raw).trim();
         let candidate = line
             .strip_prefix("HTTP ")
             .or_else(|| line.strip_prefix("HTTP/1.1 "))
             .or_else(|| line.strip_prefix("HTTP/2 "))
             .or_else(|| line.rsplit_once(": HTTP ").map(|(_, tail)| tail))
-            .or_else(|| line.rsplit_once(": ").map(|(_, tail)| tail))
-            .unwrap_or(line);
+            .or_else(|| {
+                // A bare trailing ": 404" is not proof of an HTTP response.
+                // Accept it only following a URL-bearing CLI request method.
+                let (request, status) = line.rsplit_once(": ")?;
+                ["GET ", "POST ", "PUT ", "PATCH ", "DELETE "]
+                    .iter()
+                    .any(|method| {
+                        request.strip_prefix(method).is_some_and(|url| {
+                            (url.starts_with("https://") || url.starts_with("http://"))
+                                && !url.chars().any(char::is_whitespace)
+                        })
+                    })
+                    .then_some(status)
+            })
+            .or_else(|| from_glab.then_some(line))
+            .unwrap_or("");
         let Some(code_text) = candidate.get(..3) else {
             continue;
         };
@@ -130,6 +145,15 @@ mod tests {
             None
         );
         assert_eq!(glab_http_status("glab: HTTP/2 404 Not Found"), Some(404));
+        // Arbitrary diagnostic numbers must not grant the legacy 404 fallback.
+        for text in [
+            "glab: network failed: 404 Not Found",
+            "connection refused: 404",
+            "404 Not Found",
+            "glab: GET https://gitlab.example/api/v4/projects/42: timeout: 404",
+        ] {
+            assert_eq!(glab_http_status(text), None, "{text:?}");
+        }
         let failure = glab_http_failure("Bearer secret: HTTP 403 Forbidden", "glab");
         assert_eq!(failure.status, Some(403));
         assert!(!failure.to_string().contains("secret"));
