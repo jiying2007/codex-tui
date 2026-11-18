@@ -6,7 +6,7 @@ pub(super) async fn dispatch(
     status: &mut BackendStatus,
     tx: &mpsc::Sender<ConversationEvent>,
     mutation: ThreadQueueMutation,
-) {
+) -> Option<ThreadId> {
     let capability = thread_queue_mutation_capability(&mutation);
     let thread_id = thread_queue_mutation_thread_id(&mutation).clone();
     match async {
@@ -15,18 +15,9 @@ pub(super) async fn dispatch(
     }.await {
         Ok(()) => {
             mark_optional_capability(status, capability, true);
-            match load_thread_queue(rpc, thread_id.clone()).await {
-                Ok(snapshot) => {
-                    mark_optional_capability(status, "thread/queue/list", true);
-                    send_conversation_event(tx, ConversationEvent::ThreadQueueLoaded(snapshot)).await;
-                    send_conversation_event(tx, ConversationEvent::QueueMutationOutcome { thread_id, committed: true }).await;
-                }
-                Err(error) => {
-                    send_conversation_event(tx, ConversationEvent::ThreadQueueFailed {
-                        thread_id, error: format!("queue write accepted; readback failed: {error}")
-                    }).await;
-                }
-            }
+            // Read back using the actor's cooperative page scheduler, not this
+            // mutation command. The draft is retained until that read finishes.
+            Some(thread_id)
         }
         Err(error) => {
             if is_thread_queue_unsupported(&error) { mark_optional_capability(status, capability, false); }
@@ -37,6 +28,7 @@ pub(super) async fn dispatch(
             if explicitly_rejected {
                 send_conversation_event(tx, ConversationEvent::QueueMutationOutcome { thread_id, committed: false }).await;
             }
+            None
         }
     }
 }

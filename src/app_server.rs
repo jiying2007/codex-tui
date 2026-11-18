@@ -35,7 +35,9 @@ use tokio::task::{JoinHandle, JoinSet};
 mod history_hit;
 mod lifecycle;
 mod pagination;
+mod queue_pagination;
 mod queue_mutation;
+use queue_pagination::{QueueLoadState, load_thread_queue};
 mod resource_budget;
 mod subscriptions;
 use subscriptions::should_queue_rpc_message;
@@ -2024,53 +2026,6 @@ fn thread_queue_mutation_thread_id(mutation: &ThreadQueueMutation) -> &ThreadId 
         | ThreadQueueMutation::Reorder { thread_id, .. }
         | ThreadQueueMutation::Start { thread_id, .. } => thread_id,
     }
-}
-
-async fn load_thread_queue(
-    rpc: &mut RpcSession,
-    thread_id: ThreadId,
-) -> Result<ThreadQueueSnapshot> {
-    let mut cursor: Option<String> = None;
-    let mut submissions = Vec::new();
-    let mut cursors = BTreeSet::new();
-
-    for page_index in 0..THREAD_QUEUE_MAX_PAGES {
-        let result = rpc
-            .request(
-                "thread/queue/list",
-                json!({
-                    "threadId": thread_id.0,
-                    "cursor": cursor,
-                    "limit": THREAD_QUEUE_PAGE_LIMIT
-                }),
-            )
-            .await
-            .context("list thread queue")?;
-        let page = parse_queue_list(thread_id.clone(), result)?;
-        submissions.extend(page.submissions);
-        cursor = page.next_cursor;
-        if cursor.is_none() {
-            let snapshot = ThreadQueueSnapshot {
-                thread_id,
-                submissions,
-                next_cursor: None,
-            };
-            snapshot.validate_complete()?;
-            return Ok(snapshot);
-        }
-        anyhow::ensure!(
-            cursors.insert(cursor.clone()),
-            "thread queue pagination cursor repeated"
-        );
-        if page_index + 1 == THREAD_QUEUE_MAX_PAGES {
-            anyhow::bail!(
-                "thread queue exceeds bounded pagination limit of {} entries",
-                THREAD_QUEUE_MAX_PAGES * THREAD_QUEUE_PAGE_LIMIT as usize
-            );
-        }
-    }
-
-    unreachable!("bounded queue pagination always returns or errors")
 }
 
 async fn execute_thread_queue_mutation(
