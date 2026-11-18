@@ -12,7 +12,7 @@ pub use crate::forge_types::{
 use crate::latest_read::{ReadEnvelope, ReadFence, ReadScope, next_current};
 use anyhow::{Context, Result, anyhow, bail};
 pub(crate) use current_branch::{current_local_branch, needs_exact_branch};
-pub(crate) use glab_status::{GlabHttpFailure, glab_http_failure};
+pub(crate) use glab_status::{GlabHttpFailure, glab_http_failure, safe_forge_failure};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -134,7 +134,7 @@ impl ForgeProvider for RoutingForgeProvider {
                 }
             };
             result.unwrap_or_else(|error| {
-                ForgeObservation::unavailable(thread_id, cwd, error.to_string())
+                ForgeObservation::unavailable(thread_id, cwd, safe_forge_failure(&error))
             })
         })
     }
@@ -158,7 +158,7 @@ impl ForgeProvider for GitLabProvider {
         Box::pin(async move {
             match probe_gitlab(thread_id.clone(), cwd.clone()).await {
                 Ok(observation) => observation,
-                Err(error) => ForgeObservation::unavailable(thread_id, cwd, error.to_string()),
+                Err(error) => ForgeObservation::unavailable(thread_id, cwd, safe_forge_failure(&error)),
             }
         })
     }
