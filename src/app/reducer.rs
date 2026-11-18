@@ -985,15 +985,13 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                                     ContextChoice::ForgeMergeCommit => {
                                         plan.and_then(|plan| plan.bind_github_merge_method("merge"))
                                     }
-                                    ContextChoice::ForgeSquashMerge => {
-                                        plan.and_then(|plan| plan.bind_github_merge_method("squash"))
-                                    }
-                                    ContextChoice::ForgeRebaseMerge => {
-                                        plan.and_then(|plan| plan.bind_github_merge_method("rebase"))
-                                    }
+                                    ContextChoice::ForgeSquashMerge => plan
+                                        .and_then(|plan| plan.bind_github_merge_method("squash")),
+                                    ContextChoice::ForgeRebaseMerge => plan
+                                        .and_then(|plan| plan.bind_github_merge_method("rebase")),
                                     _ => plan,
                                 }
-                            },
+                            }
                             _ => {
                                 state.mutation_notice = Some(
                                     local_text(
