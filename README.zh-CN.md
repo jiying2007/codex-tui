@@ -61,7 +61,7 @@ Codex App Server ── 会话 / Agent / Queue 权威
 ## 安装、构建与运行
 <!-- docs-section: run -->
 
-需要 **Rust 1.88+**、Git，以及用于真实会话的 `codex` 命令。Forge 集成按目标仓库选择已认证的 `glab`（GitLab）或 `gh`（GitHub）。`glab/gh` 对不使用对应 Forge 的场景不是全局必选项。
+需要 **Rust 1.89+**、Git，以及用于真实会话的 `codex` 命令。Forge 集成按目标仓库选择已认证的 `glab`（GitLab）或 `gh`（GitHub）。`glab/gh` 对不使用对应 Forge 的场景不是全局必选项。
 
 ~~~bash
 git clone https://github.com/jiying2007/codex-tui.git
