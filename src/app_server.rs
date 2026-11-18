@@ -2669,9 +2669,9 @@ impl RpcSession {
 mod tests;
 
 #[cfg(test)]
-mod queue_wire_tests;
-#[cfg(test)]
 mod queue_priority_tests;
+#[cfg(test)]
+mod queue_wire_tests;
 
 #[cfg(test)]
 mod audit_wire_tests;

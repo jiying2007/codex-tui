@@ -25,10 +25,16 @@ async fn stalled_queue_page_never_blocks_interrupt_dispatch() {
                 continue;
             };
             let result = match method {
-                "initialize" => json!({"serverInfo":{"name":"queue-priority-fixture","version":"0.169"}}),
-                "thread/list" => json!({"data":[{"id":"one","name":"test","cwd":"/tmp","status":{"type":"idle"}}],"nextCursor":null}),
+                "initialize" => {
+                    json!({"serverInfo":{"name":"queue-priority-fixture","version":"0.169"}})
+                }
+                "thread/list" => {
+                    json!({"data":[{"id":"one","name":"test","cwd":"/tmp","status":{"type":"idle"}}],"nextCursor":null})
+                },
                 "thread/loaded/list" => json!({"data":["one"],"nextCursor":null}),
-                "thread/resume" => json!({"thread":{"id":"one","name":"test","cwd":"/tmp","status":{"type":"idle"}}}),
+                "thread/resume" => {
+                    json!({"thread":{"id":"one","name":"test","cwd":"/tmp","status":{"type":"idle"}}})
+                },
                 "thread/goal/get" => json!({"goal":null}),
                 "thread/queue/list" => {
                     // The server keeps this page indefinitely; the client must
@@ -46,8 +52,12 @@ async fn stalled_queue_page_never_blocks_interrupt_dispatch() {
                 }
                 _ => json!({}),
             };
-            socket.send(Message::Text(json!({"id":id,"result":result}).to_string().into()))
-                .await.unwrap();
+            socket
+                .send(Message::Text(
+                    json!({"id":id,"result":result}).to_string().into(),
+                ))
+                .await
+                .unwrap();
             if method == "turn/interrupt" {
                 return;
             }
@@ -61,13 +71,19 @@ async fn stalled_queue_page_never_blocks_interrupt_dispatch() {
         },
     };
     let started = tokio::time::timeout(Duration::from_secs(3), start_target(target))
-        .await.unwrap().unwrap();
+        .await
+        .unwrap()
+        .unwrap();
     let id = ThreadId::new("one");
     started.handle.refresh_thread_queue(id.clone()).unwrap();
     tokio::time::timeout(Duration::from_secs(3), queue_rx)
-        .await.expect("queue read not started").unwrap();
+        .await
+        .expect("queue read not started")
+        .unwrap();
     started.handle.interrupt_turn(id, "turn-1".into()).unwrap();
     tokio::time::timeout(Duration::from_millis(800), interrupt_rx)
-        .await.expect("interrupt stuck behind queue page").unwrap();
+        .await
+        .expect("interrupt stuck behind queue page")
+        .unwrap();
     let _ = tokio::time::timeout(Duration::from_secs(1), peer).await;
 }

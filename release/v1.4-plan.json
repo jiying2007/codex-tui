@@ -290,7 +290,7 @@
     "src/app/state.rs": 871,
     "src/app/shortcuts.rs": 65,
     "src/app/tests.rs": 3307,
-    "src/app/thread_queue_reducer_tests.rs": 126,
+    "src/app/thread_queue_reducer_tests.rs": 132,
     "src/ui/tests.rs": 1337,
     "src/sqlite_store/tests.rs": 1098,
     "src/app_server/tests.rs": 993,
@@ -362,7 +362,7 @@
     "src/app/planning_worker/tests.rs": 170,
     "src/app_server/queue_mutation.rs": 50,
     "src/app_server/queue_pagination.rs": 83,
-    "src/app_server/queue_priority_tests.rs": 73
+    "src/app_server/queue_priority_tests.rs": 89
   },
   "ratchetPolicy": {
     "baseline": "inherit v1.3 Search & Multi-Target ceilings; feature work may only add bounded module-specific ceilings",

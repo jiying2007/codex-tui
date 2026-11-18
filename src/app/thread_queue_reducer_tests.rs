@@ -72,7 +72,13 @@ fn queue_open_load_edit_and_close_stay_upstream_authoritative() {
     );
     // A read-only refresh cannot acknowledge an in-flight Queue update.
     assert_eq!(app.input_mode, InputMode::ThreadQueueEdit);
-    reduce(&mut app, Action::QueueMutationOutcome { thread_id: thread_id.clone(), committed: true });
+    reduce(
+        &mut app,
+        Action::QueueMutationOutcome {
+            thread_id: thread_id.clone(),
+            committed: true,
+        },
+    );
     app.thread_queue_selected = 1;
     reduce(&mut app, Action::BeginThreadQueueEdit);
     assert_eq!(app.input_mode, InputMode::Normal);
