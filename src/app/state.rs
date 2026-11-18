@@ -724,11 +724,16 @@ impl AppState {
         }
         if let Some(target) = self.current_forge_mutation_target() {
             if target.change_request.is_some() {
-                choices.extend([
-                    ContextChoice::ForgeComment,
-                    ContextChoice::ForgeApprove,
-                    ContextChoice::ForgeMerge,
-                ]);
+                choices.extend([ContextChoice::ForgeComment, ContextChoice::ForgeApprove]);
+                if target.identity.provider == crate::forge::ForgeProviderKind::GitHub {
+                    choices.extend([
+                        ContextChoice::ForgeMergeCommit,
+                        ContextChoice::ForgeSquashMerge,
+                        ContextChoice::ForgeRebaseMerge,
+                    ]);
+                } else {
+                    choices.push(ContextChoice::ForgeMerge);
+                }
             } else if target
                 .identity
                 .default_branch
