@@ -281,8 +281,8 @@
     "src/app_server_transport/tests.rs": 448,
     "src/forge/gitlab_projection_tests.rs": 164,
     "src/forge/error_redaction_tests.rs": 43,
-    "src/forge/glab_status.rs": 137,
-    "src/forge_mutation/legacy_status_tests.rs": 38,
+    "src/forge/glab_status.rs": 161,
+    "src/forge_mutation/legacy_status_tests.rs": 46,
     "src/app/queue_ack.rs": 133,
     "src/app/target_locality.rs": 87,
     "src/forge/remote_identity_tests.rs": 47,
@@ -1112,6 +1112,13 @@
         "src/ui/overlays.rs"
       ],
       "policy": "Only these seven existing ceilings may grow to actual reviewed LOC; all other ceilings and complete source coverage are unchanged. Exact-head CI/security/MSRV/terminal/hosted qualification required, followed by fresh-main validation. No force/bypass, fallback merge method, credential changes, schema migration, second execution authority or Stable qualification."
+    },
+    {
+      "date": "2026-11-18",
+      "kind": "gitlab-status-context-fail-closed",
+      "scope": "Prevent arbitrary glab stderr suffixes such as 'network failed: 404' from becoming typed HTTP 404 and authorizing the legacy approval fallback. Preserve real response-line and HTTP protocol forms, safe redaction and actual-child Doctor behavior. Add false-positive unit, fallback and fake-glab diagnostic tests without changing the GitLab write pipeline.",
+      "modules": ["src/forge/glab_status.rs", "src/forge_mutation/legacy_status_tests.rs"],
+      "policy": "Only reviewed status parser and negative-test LOC ceilings change; retain complete-source coverage and all required PR/security/PTY checks. No new version adapter, raw stderr disclosure, authorization bypass, or Stable qualification."
     }
   ]
 }

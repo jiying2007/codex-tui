@@ -59,7 +59,7 @@ printf 'Evidence: %s\n' "$EVIDENCE"
 ## Environment, build and executable identity
 <!-- docs-section: build -->
 
-Use the same Ubuntu user, HOME, Codex home and configuration as normal operation. Confirm UTF-8, a real controlling terminal and an appropriate TERM; do not invent terminal capability by setting TERM. The supported packaged x86-64 GNU Linux ABI baseline is glibc 2.31; ARM/musl requires separate qualification. Scripts need Python 3.8+, and the declared Rust minimum is 1.88. Do not upgrade all tools during acceptance.
+Use the same Ubuntu user, HOME, Codex home and configuration as normal operation. Confirm UTF-8, a real controlling terminal and an appropriate TERM; do not invent terminal capability by setting TERM. The supported packaged x86-64 GNU Linux ABI baseline is glibc 2.31; ARM/musl requires separate qualification. Scripts need Python 3.8+, and the declared Rust minimum is 1.89. Do not upgrade all tools during acceptance.
 
 Check `gh` for GitHub and authenticated `glab` for the internal GitLab profile separately. Never dump the entire environment, tokens or credentials. Build into a private pinned copy instead of overwriting a PATH installation. A locally built binary need not hash identically to a hosted package.
 
@@ -84,6 +84,18 @@ for tool in git python3 cargo rustc codex; do command -v "$tool"; done
 } > "$EVIDENCE/preflight/versions.txt" 2>&1
 python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3,8) else 1)'
 cd "$ROOT"
+# Stop before a costly build if this host's Rust toolchain is below Cargo.toml MSRV.
+python3 - <<'CHECK_RUST'
+import pathlib, re, subprocess
+manifest = pathlib.Path("Cargo.toml").read_text(encoding="utf-8")
+required = re.search(r'(?m)^rust-version\s*=\s*"(\d+)\.(\d+)"', manifest)
+if required is None:
+    raise SystemExit("STOP: Cargo MSRV missing")
+actual = re.match(r"rustc (\d+)\.(\d+)", subprocess.check_output(
+    ["rustc", "--version"], text=True))
+if actual is None or tuple(map(int, actual.groups())) < tuple(map(int, required.groups())):
+    raise SystemExit("STOP: rustc below Cargo MSRV")
+CHECK_RUST
 CODEX_TUI_GIT_SHA="$SOURCE_SHA" cargo build --release --locked \
   > "$EVIDENCE/preflight/build.log" 2>&1
 install -m 700 target/release/codex-tui "$BINARY"

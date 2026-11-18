@@ -79,4 +79,18 @@ esac
         assert!(!stdout.contains("secret-from-fake-glab"));
         assert!(!stderr.contains("secret-from-fake-glab"));
     }
+
+    // A glab diagnostic ending in ": 404" is not an HTTP 404 response.
+    let ambiguous = Command::new(env!("CARGO_BIN_EXE_codex-tui"))
+        .args(["doctor", "forge"])
+        .current_dir(&repo)
+        .env("PATH", &path)
+        .env("MOCK_HTTP_STATUS", "network failed: 404")
+        .env("HOME", dir.path())
+        .output()
+        .expect("doctor forge");
+    let shown = String::from_utf8_lossy(&ambiguous.stdout);
+    assert!(!shown.contains("HTTP 404"), "{shown}");
+    assert!(!shown.contains("secret-from-fake-glab"));
+    assert!(!String::from_utf8_lossy(&ambiguous.stderr).contains("secret-from-fake-glab"));
 }
