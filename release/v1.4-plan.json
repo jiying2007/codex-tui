@@ -359,7 +359,8 @@
     "src/support_bundle/offline.rs": 97,
     "src/runtime_palette/intent_tests.rs": 330,
     "src/app/planning_worker/job.rs": 27,
-    "src/app/planning_worker/tests.rs": 170
+    "src/app/planning_worker/tests.rs": 170,
+    "src/app_server/queue_mutation.rs": 42
   },
   "ratchetPolicy": {
     "baseline": "inherit v1.3 Search & Multi-Target ceilings; feature work may only add bounded module-specific ceilings",

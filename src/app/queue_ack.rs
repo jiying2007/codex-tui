@@ -95,6 +95,9 @@ mod tests {
                 error: "upstream rejected".into(),
             },
         );
+        // Only a typed mutation outcome releases a pending draft.
+        assert!(app.queue_mutation_pending());
+        reduce(&mut app, Action::QueueMutationOutcome { thread_id: thread_id.clone(), committed: false });
         assert!(!app.queue_mutation_pending());
         assert_eq!(app.input_mode, InputMode::ThreadQueueAdd);
         assert_eq!(app.input_buffer, "recoverable queue draft");
@@ -105,11 +108,13 @@ mod tests {
         reduce(
             &mut app,
             Action::ThreadQueueLoaded(ThreadQueueSnapshot {
-                thread_id,
+                thread_id: thread_id.clone(),
                 submissions: vec![],
                 next_cursor: None,
             }),
         );
+        assert_eq!(app.input_mode, InputMode::ThreadQueueAdd);
+        reduce(&mut app, Action::QueueMutationOutcome { thread_id, committed: true });
         assert_eq!(app.input_mode, InputMode::Normal);
         assert!(app.input_buffer.is_empty());
     }

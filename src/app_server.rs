@@ -35,6 +35,7 @@ use tokio::task::{JoinHandle, JoinSet};
 mod history_hit;
 mod lifecycle;
 mod pagination;
+mod queue_mutation;
 mod resource_budget;
 mod subscriptions;
 use subscriptions::should_queue_rpc_message;
@@ -311,6 +312,7 @@ pub enum ConversationEvent {
         error: String,
     },
     ThreadQueueLoaded(ThreadQueueSnapshot),
+    QueueMutationOutcome { thread_id: ThreadId, committed: bool },
     ThreadQueueFailed {
         thread_id: ThreadId,
         error: String,
@@ -1304,54 +1306,7 @@ async fn run_registry_actor(
                         }
                     }
                     BackendCommand::MutateThreadQueue(mutation) => {
-                        let capability = thread_queue_mutation_capability(&mutation);
-                        let thread_id = thread_queue_mutation_thread_id(&mutation).clone();
-
-                        match async {
-                            rpc.ensure_subscribed(&thread_id).await?;
-                            execute_thread_queue_mutation(&mut rpc, &mutation).await
-                        }.await {
-                            Ok(()) => {
-                                mark_optional_capability(&mut status, capability, true);
-                                match load_thread_queue(&mut rpc, thread_id.clone()).await {
-                                    Ok(snapshot) => {
-                                        mark_optional_capability(
-                                            &mut status,
-                                            "thread/queue/list",
-                                            true,
-                                        );
-                                        send_conversation_event(
-                                            &conversation_tx,
-                                            ConversationEvent::ThreadQueueLoaded(snapshot),
-                                        )
-                                        .await;
-                                    }
-                                    Err(error) => {
-                                        send_conversation_event(
-                                            &conversation_tx,
-                                            ConversationEvent::ThreadQueueFailed {
-                                                thread_id,
-                                                error: error.to_string(),
-                                            },
-                                        )
-                                        .await;
-                                    }
-                                }
-                            }
-                            Err(error) => {
-                                if is_thread_queue_unsupported(&error) {
-                                    mark_optional_capability(&mut status, capability, false);
-                                }
-                                send_conversation_event(
-                                    &conversation_tx,
-                                    ConversationEvent::ThreadQueueFailed {
-                                        thread_id,
-                                        error: error.to_string(),
-                                    },
-                                )
-                                .await;
-                            }
-                        }
+                        queue_mutation::dispatch(&mut rpc, &mut status, &conversation_tx, mutation).await;
                     }
                     BackendCommand::StartThread { cwd } => {
                         lifecycle::handle_start_thread(

@@ -162,6 +162,7 @@ pub enum Action {
     OpenThreadQueue,
     CloseThreadQueue,
     ThreadQueueLoaded(ThreadQueueSnapshot),
+    QueueMutationOutcome { thread_id: ThreadId, committed: bool },
     ThreadQueueFailed {
         thread_id: ThreadId,
         error: String,

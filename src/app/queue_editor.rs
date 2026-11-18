@@ -61,7 +61,7 @@ impl AppState {
         self.thread_queue_error = None;
     }
     pub(super) fn commit_queue_input(&mut self) -> Vec<Effect> {
-        if self.thread_queue_loading {
+        if self.thread_queue_loading || self.queue_mutation_pending() {
             return vec![];
         }
         let text = self.input_buffer.trim().to_string();

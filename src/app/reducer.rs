@@ -520,10 +520,10 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 return vec![Effect::StopWatchingThreadQueue(thread_id)];
             }
         }
-        Action::ThreadQueueLoaded(snapshot) => {
-            let thread_id = snapshot.thread_id.clone();
-            state.install_thread_queue(snapshot);
-            state.queue_ack_loaded(&thread_id);
+        Action::ThreadQueueLoaded(snapshot) => state.install_thread_queue(snapshot),
+        Action::QueueMutationOutcome { thread_id, committed } => {
+            if committed { state.queue_ack_loaded(&thread_id); }
+            else { state.queue_ack_failed(&thread_id); }
         }
         Action::ThreadQueueFailed { thread_id, error } => {
             if state.thread_queue_open
@@ -533,7 +533,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             {
                 state.thread_queue_loading = false;
                 state.thread_queue_error = Some(error);
-                state.queue_ack_failed(&thread_id);
             }
         }
         Action::MoveThreadQueue(delta) => {
