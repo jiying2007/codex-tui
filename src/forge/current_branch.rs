@@ -7,9 +7,15 @@ pub(crate) async fn current_local_branch(cwd: &str) -> Option<String> {
         "git",
         &["symbolic-ref", "--quiet", "--short", "HEAD"],
         Some(Path::new(cwd)),
-    ).await.ok()?;
-    if !output.success { return None; }
-    let branch = output.stdout.trim_end_matches(|ch| ch == '\r' || ch == '\n');
+    )
+    .await
+    .ok()?;
+    if !output.success {
+        return None;
+    }
+    let branch = output
+        .stdout
+        .trim_end_matches(|ch| ch == '\r' || ch == '\n');
     (!branch.is_empty() && !branch.chars().any(|ch| matches!(ch, '\r' | '\n' | '\0')))
         .then(|| branch.to_string())
 }
@@ -30,7 +36,11 @@ mod tests {
     fn exact_query_is_needed_only_for_a_saturated_unmatched_branch() {
         let recent = vec!["other".to_owned(); DEFAULT_PAGE_SIZE];
         assert!(needs_exact_branch(&recent, "topic", Clone::clone));
-        assert!(!needs_exact_branch(&recent[..DEFAULT_PAGE_SIZE - 1], "topic", Clone::clone));
+        assert!(!needs_exact_branch(
+            &recent[..DEFAULT_PAGE_SIZE - 1],
+            "topic",
+            Clone::clone
+        ));
         let mut matching = recent;
         matching[4] = "topic".into();
         assert!(!needs_exact_branch(&matching, "topic", Clone::clone));
@@ -39,6 +49,10 @@ mod tests {
     #[tokio::test]
     async fn detached_or_missing_git_head_does_not_create_false_branch_identity() {
         let tmp = tempfile::tempdir().unwrap();
-        assert!(current_local_branch(tmp.path().to_str().unwrap()).await.is_none());
+        assert!(
+            current_local_branch(tmp.path().to_str().unwrap())
+                .await
+                .is_none()
+        );
     }
 }
