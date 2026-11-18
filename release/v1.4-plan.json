@@ -1085,6 +1085,19 @@
       "policy": "Only the new helper receives a bounded ceiling; all existing module ceilings remain unchanged. No automatic retry, established-session reconnect, new backend authority, schema, dependency, workflow permission or Stable qualification. Exact-head native CI and fresh-main verification required."
     },
     {
+      "date": "2026-10-30",
+      "kind": "idle-planning-reclamation-defect-fix",
+      "scope": "Return idle retired projections to the existing single worker without waiting for another source update. A reclamation-only job releases memory and acknowledges completion; pending updates coalesce until acknowledgement. Keep one in-flight job and both existing one-slot channels. Move existing unit tests without renaming their test identifiers and add deterministic idle, churn, expiry, disconnect and live-worker regressions.",
+      "modules": [
+        "src/app/planning_worker.rs",
+        "src/app/planning_worker/job.rs",
+        "src/app/planning_worker/tests.rs",
+        "src/app/planning_worker/live_tests.rs",
+        "src/app/planning_worker/stale_retry_tests.rs"
+      ],
+      "policy": "Register only the two extracted/new bounded modules; all existing source ceilings and admission rules remain unchanged. No timer, new thread, backend call, dependency, schema, permission, stale-authority installation or Stable qualification. Native exact-head CI and fresh-main evidence required. This does not claim RSS reduction, terminal SLO, snapshot-copy elimination or continuous-churn convergence."
+    },
+    {
       "date": "2026-11-18",
       "kind": "bounded-github-merge-strategy-hardening",
       "scope": "Require an explicit merge/squash/rebase choice on the current branch's GitHub PR; verify repository allow flags, exact project identity and confirmed HEAD before PUT; retain one-shot write, uncertain-outcome reconciliation, readback and separate GitLab flow. Test allowed/denied/unknown policies; display the strategy at confirmation and document in EN/zh-CN. Precisely register changed existing module ceilings, without disabling the complete-source ratchet.",
@@ -1098,19 +1111,6 @@
         "src/ui/overlays.rs"
       ],
       "policy": "Only these seven existing ceilings may grow to actual reviewed LOC; all other ceilings and complete source coverage are unchanged. Exact-head CI/security/MSRV/terminal/hosted qualification required, followed by fresh-main validation. No force/bypass, fallback merge method, credential changes, schema migration, second execution authority or Stable qualification."
-    },
-    {
-      "date": "2026-10-30",
-      "kind": "idle-planning-reclamation-defect-fix",
-      "scope": "Return idle retired projections to the existing single worker without waiting for another source update. A reclamation-only job releases memory and acknowledges completion; pending updates coalesce until acknowledgement. Keep one in-flight job and both existing one-slot channels. Move existing unit tests without renaming their test identifiers and add deterministic idle, churn, expiry, disconnect and live-worker regressions.",
-      "modules": [
-        "src/app/planning_worker.rs",
-        "src/app/planning_worker/job.rs",
-        "src/app/planning_worker/tests.rs",
-        "src/app/planning_worker/live_tests.rs",
-        "src/app/planning_worker/stale_retry_tests.rs"
-      ],
-      "policy": "Register only the two extracted/new bounded modules; all existing source ceilings and admission rules remain unchanged. No timer, new thread, backend call, dependency, schema, permission, stale-authority installation or Stable qualification. Native exact-head CI and fresh-main evidence required. This does not claim RSS reduction, terminal SLO, snapshot-copy elimination or continuous-churn convergence."
     }
   ]
 }
