@@ -33,7 +33,7 @@ use ratatui::{
     widgets::{Block, Clear, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap},
 };
 #[cfg(test)]
-use registry::{RegistryViewport, registry_history_label, registry_viewport};
+use registry::{registry_history_label, registry_viewport};
 use registry::{registry_footer, render_thread_list};
 use terminal::render_terminal_drawer;
 #[cfg(test)]

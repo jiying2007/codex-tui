@@ -143,9 +143,13 @@ fn unchanged_item_commits_once_and_clears_only_the_editor() {
     assert_eq!(app.to_local_state(), local);
     assert!(matches!(reduce(&mut app, Action::CommitInput).as_slice(),
         [Effect::MutateThreadQueue(ThreadQueueMutation::Update { queued_submission_id, .. })] if queued_submission_id == "b"));
+    // Sending is not success: retain draft until authoritative mutation receipt.
+    assert_eq!(app.input_mode, InputMode::ThreadQueueEdit);
+    assert_eq!(app.input_buffer, "operator draft 中文");
+    assert!(reduce(&mut app, Action::CommitInput).is_empty());
+    load(&mut app, &id, &[("a", "first"), ("b", "operator draft 中文")]);
     assert_eq!(app.input_mode, InputMode::Normal);
     assert!(app.input_buffer.is_empty());
-    assert!(reduce(&mut app, Action::CommitInput).is_empty());
 }
 #[test]
 fn unchanged_add_keeps_upstream_authority() {
@@ -170,6 +174,13 @@ fn cancel_and_close_do_not_leak_editor_targets() {
         [Effect::MutateThreadQueue(ThreadQueueMutation::Add { .. })]
     ));
     load(&mut app, &id, &[("a", "first"), ("b", "second")]);
+    // A pending mutation cannot be silently discarded by closing the queue.
+    assert!(reduce(&mut app, Action::CloseThreadQueue).is_empty());
+    assert!(app.thread_queue_open);
+    reduce(&mut app, Action::ThreadQueueFailed {
+        thread_id: id.clone(),
+        error: "explicit rejection".into(),
+    });
     edit(&mut app);
     assert_eq!(
         reduce(&mut app, Action::CloseThreadQueue),
