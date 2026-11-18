@@ -1,0 +1,32 @@
+name: format-once
+on:
+  push:
+    branches:
+      - fix/personal-workbench-hardening-20261118
+permissions:
+  contents: write
+jobs:
+  format:
+    if: "startsWith(github.event.head_commit.message, 'maintenance: format source for verified queue dispatch')"
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: true
+      - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d
+        with:
+          toolchain: stable
+          components: rustfmt
+      - name: Format current Rust source
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src tests
+          if ! git diff --cached --quiet; then
+            git commit -m 'style: rustfmt queue receipt and cooperative paging'
+            git push origin HEAD:refs/heads/fix/personal-workbench-hardening-20261118
+          fi
