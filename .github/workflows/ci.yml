@@ -14,15 +14,17 @@ concurrency:
 
 jobs:
   msrv:
+    # Required status name is a historical branch-protection alias; the check
+    # validates the declared 1.89 MSRV. Rename after protection is migrated.
     name: rust-1.88-msrv
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: dtolnay/rust-toolchain@89b12181fb390509a0842a86cc55eeb8eb928c1d # stable
         with:
-          toolchain: 1.88.0
+          toolchain: 1.89.0
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-      - name: Check declared Rust 1.88 MSRV
+      - name: Check declared Rust 1.89 MSRV
         run: cargo check --locked --all-targets --all-features
 
   test:
