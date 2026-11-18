@@ -184,7 +184,7 @@
     "src/forge_github_mutation/tests.rs": 197,
     "src/forge_github_mutation/api.rs": 61,
     "src/conversation.rs": 892,
-    "src/app/lifecycle.rs": 268,
+    "src/app/lifecycle.rs": 275,
     "src/app_server/lifecycle.rs": 221,
     "src/runtime_lifecycle.rs": 67,
     "src/metadata_search.rs": 419,
@@ -1151,7 +1151,7 @@
       "modules": [
         "src/app/lifecycle.rs"
       ],
-      "policy": "No remote execution implementation, implicit path mapping, process spawn, new backend, permission change, scheduled job or Stable qualification. Update only the reviewed lifecycle LOC ceiling; require exact-head Linux/macOS/Windows, Security, PTY and fresh-main checks."
+      "policy": "No remote execution implementation, implicit path mapping, process spawn, new backend, permission change, scheduled job or Stable qualification. Update only the reviewed lifecycle LOC ceiling; require exact-head Linux/macOS/Windows, Security, PTY and fresh-main checks. Final rustfmt-reviewed lifecycle source is registered at exactly 275 LOC."
     }
   ]
 }
