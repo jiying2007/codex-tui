@@ -703,8 +703,12 @@ fn drain_registry(
                 Action::TranscriptSearchServerFailed { query, error }
             }
             ConversationEvent::ThreadQueueLoaded(snapshot) => Action::ThreadQueueLoaded(snapshot),
-            ConversationEvent::QueueMutationOutcome { thread_id, committed } => {
-                Action::QueueMutationOutcome { thread_id, committed }
+            ConversationEvent::QueueMutationOutcome {
+                thread_id,
+                committed,
+            } => Action::QueueMutationOutcome {
+                thread_id,
+                committed,
             },
             ConversationEvent::ThreadQueueFailed { thread_id, error } => {
                 Action::ThreadQueueFailed { thread_id, error }
@@ -1484,7 +1488,13 @@ fn apply_effects(
                                 error: error.to_string(),
                             },
                         );
-                        reduce(app, Action::QueueMutationOutcome { thread_id, committed: false });
+                        reduce(
+                            app,
+                            Action::QueueMutationOutcome {
+                                thread_id,
+                                committed: false,
+                            },
+                        );
                     }
                 } else {
                     reduce(
@@ -1499,7 +1509,13 @@ fn apply_effects(
                             .into(),
                         },
                     );
-                    reduce(app, Action::QueueMutationOutcome { thread_id, committed: false });
+                    reduce(
+                        app,
+                        Action::QueueMutationOutcome {
+                            thread_id,
+                            committed: false,
+                        },
+                    );
                 }
             }
             Effect::StartThread { cwd } => {

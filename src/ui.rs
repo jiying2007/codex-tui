@@ -32,9 +32,9 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Clear, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap},
 };
+use registry::{registry_footer, render_thread_list};
 #[cfg(test)]
 use registry::{registry_history_label, registry_viewport};
-use registry::{registry_footer, render_thread_list};
 use terminal::render_terminal_drawer;
 #[cfg(test)]
 use terminal::terminal_process_state_label;

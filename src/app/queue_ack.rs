@@ -97,7 +97,13 @@ mod tests {
         );
         // Only a typed mutation outcome releases a pending draft.
         assert!(app.queue_mutation_pending());
-        reduce(&mut app, Action::QueueMutationOutcome { thread_id: thread_id.clone(), committed: false });
+        reduce(
+            &mut app,
+            Action::QueueMutationOutcome {
+                thread_id: thread_id.clone(),
+                committed: false,
+            },
+        );
         assert!(!app.queue_mutation_pending());
         assert_eq!(app.input_mode, InputMode::ThreadQueueAdd);
         assert_eq!(app.input_buffer, "recoverable queue draft");
@@ -114,7 +120,13 @@ mod tests {
             }),
         );
         assert_eq!(app.input_mode, InputMode::ThreadQueueAdd);
-        reduce(&mut app, Action::QueueMutationOutcome { thread_id, committed: true });
+        reduce(
+            &mut app,
+            Action::QueueMutationOutcome {
+                thread_id,
+                committed: true,
+            },
+        );
         assert_eq!(app.input_mode, InputMode::Normal);
         assert!(app.input_buffer.is_empty());
     }

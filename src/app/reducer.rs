@@ -521,9 +521,15 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
         }
         Action::ThreadQueueLoaded(snapshot) => state.install_thread_queue(snapshot),
-        Action::QueueMutationOutcome { thread_id, committed } => {
-            if committed { state.queue_ack_loaded(&thread_id); }
-            else { state.queue_ack_failed(&thread_id); }
+        Action::QueueMutationOutcome {
+            thread_id,
+            committed,
+        } => {
+            if committed {
+                state.queue_ack_loaded(&thread_id);
+            } else {
+                state.queue_ack_failed(&thread_id);
+            }
         }
         Action::ThreadQueueFailed { thread_id, error } => {
             if state.thread_queue_open

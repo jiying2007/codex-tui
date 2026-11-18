@@ -12,7 +12,9 @@ pub(super) async fn dispatch(
     match async {
         rpc.ensure_subscribed(&thread_id).await?;
         execute_thread_queue_mutation(rpc, &mutation).await
-    }.await {
+    }
+    .await
+    {
         Ok(()) => {
             mark_optional_capability(status, capability, true);
             // Read back using the actor's cooperative page scheduler, not this
@@ -20,13 +22,27 @@ pub(super) async fn dispatch(
             Some(thread_id)
         }
         Err(error) => {
-            if is_thread_queue_unsupported(&error) { mark_optional_capability(status, capability, false); }
+            if is_thread_queue_unsupported(&error) {
+                mark_optional_capability(status, capability, false);
+            }
             let explicitly_rejected = error.downcast_ref::<RpcResponseError>().is_some();
-            send_conversation_event(tx, ConversationEvent::ThreadQueueFailed {
-                thread_id: thread_id.clone(), error: error.to_string()
-            }).await;
+            send_conversation_event(
+                tx,
+                ConversationEvent::ThreadQueueFailed {
+                    thread_id: thread_id.clone(),
+                    error: error.to_string(),
+                },
+            )
+            .await;
             if explicitly_rejected {
-                send_conversation_event(tx, ConversationEvent::QueueMutationOutcome { thread_id, committed: false }).await;
+                send_conversation_event(
+                    tx,
+                    ConversationEvent::QueueMutationOutcome {
+                        thread_id,
+                        committed: false,
+                    },
+                )
+                .await;
             }
             None
         }

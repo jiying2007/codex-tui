@@ -35,8 +35,8 @@ use tokio::task::{JoinHandle, JoinSet};
 mod history_hit;
 mod lifecycle;
 mod pagination;
-mod queue_pagination;
 mod queue_mutation;
+mod queue_pagination;
 use queue_pagination::{QueueLoadState, load_thread_queue};
 mod resource_budget;
 mod subscriptions;
@@ -314,7 +314,10 @@ pub enum ConversationEvent {
         error: String,
     },
     ThreadQueueLoaded(ThreadQueueSnapshot),
-    QueueMutationOutcome { thread_id: ThreadId, committed: bool },
+    QueueMutationOutcome {
+        thread_id: ThreadId,
+        committed: bool,
+    },
     ThreadQueueFailed {
         thread_id: ThreadId,
         error: String,
@@ -993,11 +996,20 @@ async fn run_registry_actor(
                     Ok(Some(snapshot)) => {
                         queue_load = None;
                         mark_optional_capability(&mut status, "thread/queue/list", true);
-                        send_conversation_event(&conversation_tx, ConversationEvent::ThreadQueueLoaded(snapshot)).await;
+                        send_conversation_event(
+                            &conversation_tx,
+                            ConversationEvent::ThreadQueueLoaded(snapshot),
+                        )
+                        .await;
                         if mutation_readback {
-                            send_conversation_event(&conversation_tx, ConversationEvent::QueueMutationOutcome {
-                                thread_id, committed: true
-                            }).await;
+                            send_conversation_event(
+                                &conversation_tx,
+                                ConversationEvent::QueueMutationOutcome {
+                                    thread_id,
+                                    committed: true,
+                                },
+                            )
+                            .await;
                         }
                     }
                     Err(error) => {
@@ -1005,15 +1017,23 @@ async fn run_registry_actor(
                         if is_thread_queue_unsupported(&error) {
                             mark_optional_capability(&mut status, "thread/queue/list", false);
                         }
-                        send_conversation_event(&conversation_tx, ConversationEvent::ThreadQueueFailed {
-                            thread_id, error: error.to_string()
-                        }).await;
+                        send_conversation_event(
+                            &conversation_tx,
+                            ConversationEvent::ThreadQueueFailed {
+                                thread_id,
+                                error: error.to_string(),
+                            },
+                        )
+                        .await;
                         // Even if the write was accepted, readback failed; draft stays
                         // pending and will not be replayed without reconciliation.
                     }
                 }
             }
-            if queue_load.as_ref().is_some_and(|state| !watched_queue_threads.contains(&state.thread_id.0)) {
+            if queue_load
+                .as_ref()
+                .is_some_and(|state| !watched_queue_threads.contains(&state.thread_id.0))
+            {
                 queue_load = None;
             }
             continue;

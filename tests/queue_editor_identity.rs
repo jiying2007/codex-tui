@@ -147,9 +147,19 @@ fn unchanged_item_commits_once_and_clears_only_the_editor() {
     assert_eq!(app.input_mode, InputMode::ThreadQueueEdit);
     assert_eq!(app.input_buffer, "operator draft 中文");
     assert!(reduce(&mut app, Action::CommitInput).is_empty());
-    load(&mut app, &id, &[("a", "first"), ("b", "operator draft 中文")]);
+    load(
+        &mut app,
+        &id,
+        &[("a", "first"), ("b", "operator draft 中文")],
+    );
     assert_eq!(app.input_mode, InputMode::ThreadQueueEdit);
-    reduce(&mut app, Action::QueueMutationOutcome { thread_id: id.clone(), committed: true });
+    reduce(
+        &mut app,
+        Action::QueueMutationOutcome {
+            thread_id: id.clone(),
+            committed: true,
+        },
+    );
     assert_eq!(app.input_mode, InputMode::Normal);
     assert!(app.input_buffer.is_empty());
 }
@@ -179,11 +189,20 @@ fn cancel_and_close_do_not_leak_editor_targets() {
     // A pending mutation cannot be silently discarded by closing the queue.
     assert!(reduce(&mut app, Action::CloseThreadQueue).is_empty());
     assert!(app.thread_queue_open);
-    reduce(&mut app, Action::ThreadQueueFailed {
-        thread_id: id.clone(),
-        error: "explicit rejection".into(),
-    });
-    reduce(&mut app, Action::QueueMutationOutcome { thread_id: id.clone(), committed: false });
+    reduce(
+        &mut app,
+        Action::ThreadQueueFailed {
+            thread_id: id.clone(),
+            error: "explicit rejection".into(),
+        },
+    );
+    reduce(
+        &mut app,
+        Action::QueueMutationOutcome {
+            thread_id: id.clone(),
+            committed: false,
+        },
+    );
     edit(&mut app);
     assert_eq!(
         reduce(&mut app, Action::CloseThreadQueue),
