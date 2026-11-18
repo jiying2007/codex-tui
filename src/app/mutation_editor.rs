@@ -59,16 +59,14 @@ impl AppState {
                     cwd: target.cwd,
                     identity: target.identity,
                     branch: target.branch,
-                    change: target
-                        .change_request
-                        .map(|change| {
-                            (
-                                change.iid,
-                                change.source_branch,
-                                change.target_branch,
-                                change.head_sha,
-                            )
-                        }),
+                    change: target.change_request.map(|change| {
+                        (
+                            change.iid,
+                            change.source_branch,
+                            change.target_branch,
+                            change.head_sha,
+                        )
+                    }),
                 }
             }
             InputMode::WorktreeCreateBranch | InputMode::WorktreeDeleteBranch => {
