@@ -27,6 +27,15 @@ fn nonzero_git_exit_is_reconciled_without_persisting_hook_secrets() {
     }
 }
 
+#[test]
+fn prewrite_age_guard_refuses_expired_destructive_scope() {
+    let expired = Instant::now() - SCOPE_ADMISSION_MAX_AGE - Duration::from_secs(1);
+    for kind in [OperationKind::RemoveWorktree, OperationKind::DeleteBranch] {
+        assert!(ensure_scope_admission_fresh(kind, expired).is_err());
+    }
+    assert!(ensure_scope_admission_fresh(OperationKind::CreateWorktree, expired).is_ok());
+}
+
 #[tokio::test]
 async fn queued_destructive_mutation_requires_fresh_admission_proof() {
     let temp = tempfile::tempdir().expect("tempdir");
