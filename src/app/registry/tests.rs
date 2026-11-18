@@ -172,7 +172,7 @@ fn observed_goal_attention_survives_recent_window_and_acknowledgment() {
     app.planning_snapshot.cards.push(local);
     reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 1 });
     assert!(!app.thread_needs_attention(149));
-    assert!(!app.visible_indices().contains(&149));
+    assert!(app.visible_indices().contains(&149)); // current selection is retained
     reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 100 });
     assert!(app.thread_needs_attention(149));
 }

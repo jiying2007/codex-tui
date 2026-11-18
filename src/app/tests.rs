@@ -503,8 +503,9 @@ fn registry_recent_window_is_bounded_but_search_and_pins_reach_full_history() {
     app.selected = 149;
     let effects = reduce(&mut app, Action::TogglePin);
     assert_eq!(effects, vec![Effect::PersistOperatorState]);
-    assert!(!app.visible_indices().contains(&149));
-    assert_ne!(app.selected, 149);
+    // Preserve the current selection until navigation moves.
+    assert!(app.visible_indices().contains(&149));
+    assert_eq!(app.selected, 149);
 
     app.filter = "Synthetic work item 00149".into();
     assert_eq!(app.visible_indices(), vec![149]);
