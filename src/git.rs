@@ -384,7 +384,6 @@ pub async fn load_review(thread_id: ThreadId, cwd: String) -> Result<GitReview> 
             crate::hardening::safe_external_stderr(&staged.stderr, "git staged diff")
         ));
     }
-
     let unstaged = run_git_capped(
         &cwd,
         ["diff", "--no-ext-diff", "--no-textconv", "--no-color", "--unified=3", "--"],

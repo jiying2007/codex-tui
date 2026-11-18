@@ -13,19 +13,6 @@ fn fixture() -> AppState {
     AppState::new(FakeBackend::seeded().snapshot().threads)
 }
 
-#[test]
-fn terminal_ctrl_right_bracket_raw_control_5_encoding_releases_focus() {
-    let mut app = fixture();
-    app.terminal_drawer_open = true;
-    app.terminal_focused = true;
-    // Unix PTYs encode Ctrl+] as 0x1d; crossterm may decode that as Ctrl+5.
-    assert!(handle_key(
-        &mut app,
-        KeyEvent::new(KeyCode::Char('5'), KeyModifiers::CONTROL)
-    ).is_empty());
-    assert!(!app.terminal_focused);
-}
-
 fn forbidden(code: KeyCode) -> Vec<KeyEvent> {
     let mut keys = [
         KeyModifiers::SHIFT,
@@ -240,15 +227,12 @@ fn alt_t_toggles_drawer_focus_both_ways_without_restarting_pty() {
         ),
         vec![Effect::TerminalInput(vec![3])]
     );
-    // Preserve the existing Ctrl+] escape route.
-    assert!(
-        handle_key(
-            &mut app,
-            KeyEvent::new(KeyCode::Char(']'), KeyModifiers::CONTROL)
-        )
-        .is_empty()
-    );
-    assert!(!app.terminal_focused);
+    // The same raw 0x1d escape may decode as Ctrl+] or Ctrl+5.
+    for code in [KeyCode::Char(']'), KeyCode::Char('5')] {
+        app.terminal_focused = true;
+        assert!(handle_key(&mut app, KeyEvent::new(code, KeyModifiers::CONTROL)).is_empty());
+        assert!(!app.terminal_focused);
+    }
 
     // Closing the drawer remains an explicit action; focus changes don't kill it.
     assert_eq!(

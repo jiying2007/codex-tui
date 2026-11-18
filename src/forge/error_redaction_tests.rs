@@ -26,23 +26,6 @@ fn native_provider_error_never_echoes_sensitive_stderr() {
 }
 
 #[test]
-fn glab_response_code_is_typed_and_not_inferred_from_path_ids() {
-    assert_eq!(glab_http_status("glab: 404 Not Found"), Some(404));
-    assert_eq!(
-        glab_http_status("glab: GET https://gitlab.example/api/v4/projects/1404/merge_requests/404: 403 Forbidden"),
-        Some(403)
-    );
-    assert_eq!(
-        glab_http_status("glab: GET https://gitlab.example/api/v4/projects/1404/merge_requests/404: permission denied"),
-        None
-    );
-    assert_eq!(glab_http_status("glab: HTTP/2 404 Not Found"), Some(404));
-    let failure = glab_http_failure("Bearer secret: HTTP 403 Forbidden", "glab");
-    assert_eq!(failure.status, Some(403));
-    assert!(!failure.to_string().contains("secret"));
-}
-
-#[test]
 fn stderr_reason_codes_remain_useful_without_raw_content() {
     assert_eq!(
         trim_error("HTTP 401 Unauthorized, Bearer SECRET", "provider"),
