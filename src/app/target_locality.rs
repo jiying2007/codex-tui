@@ -6,8 +6,7 @@ impl AppState {
     // WebSocket/Unix-socket peers may report a directory with the same spelling.
     pub(super) fn app_server_target_is_remote(&self) -> bool {
         let source = &self.backend_status.source;
-        source.starts_with("codex-app-server[target=")
-            && !source.ends_with(" transport=stdio]")
+        source.starts_with("codex-app-server[target=") && !source.ends_with(" transport=stdio]")
     }
 
     pub fn cwd_locality(&self, cwd: &str) -> CwdLocality {
@@ -49,12 +48,15 @@ impl AppState {
             let remote = self.app_server_target_is_remote();
             for cwd in current_cwds {
                 self.cwd_localities.entry(cwd.clone()).or_insert_with(|| {
-                    if remote { CwdLocality::ForeignUnix } else { classify_cwd(&cwd) }
+                    if remote {
+                        CwdLocality::ForeignUnix
+                    } else {
+                        classify_cwd(&cwd)
+                    }
                 });
             }
         }
     }
-
 }
 
 #[cfg(test)]
@@ -67,7 +69,10 @@ mod tests {
         let threads = FakeBackend::seeded().snapshot().threads;
         let id = threads[0].id.clone();
         let mut app = AppState::new(threads);
-        let cwd = std::env::current_dir().unwrap().to_string_lossy().into_owned();
+        let cwd = std::env::current_dir()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
         app.threads[0].metadata.cwd = cwd.clone();
         app.view = View::Thread(id);
         app.backend_status.source =

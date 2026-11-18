@@ -1,6 +1,5 @@
 use crate::domain::ThreadId;
 mod glab_status;
-pub(crate) use glab_status::{GlabHttpFailure, glab_http_failure};
 use crate::forge_github::{GitHubProvider, probe_github_with_remote};
 pub(crate) use crate::forge_types::default_capabilities;
 pub use crate::forge_types::{
@@ -11,6 +10,7 @@ pub use crate::forge_types::{
 };
 use crate::latest_read::{ReadEnvelope, ReadFence, ReadScope, next_current};
 use anyhow::{Context, Result, anyhow, bail};
+pub(crate) use glab_status::{GlabHttpFailure, glab_http_failure};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::future::Future;

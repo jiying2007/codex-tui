@@ -138,7 +138,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 state.forge_observations.clear();
             }
             state.backend_status = status;
-        },
+        }
         Action::RefreshGitProjections => {
             return refresh_git_projections(state);
         }
@@ -524,7 +524,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             let thread_id = snapshot.thread_id.clone();
             state.install_thread_queue(snapshot);
             state.queue_ack_loaded(&thread_id);
-        },
+        }
         Action::ThreadQueueFailed { thread_id, error } => {
             if state.thread_queue_open
                 && state
@@ -1433,7 +1433,8 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 return vec![];
             };
             if cwd.trim().is_empty() || !state.cwd_locality(&cwd).terminal_usable() {
-                state.mutation_notice = Some("Workspace requires a verified local repository".into());
+                state.mutation_notice =
+                    Some("Workspace requires a verified local repository".into());
                 return vec![];
             }
             let needs_probe = state
@@ -1481,9 +1482,10 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             };
             let cwd = review.cwd.clone();
             let path = change.path.clone();
-            let live_thread = !state.app_server_target_is_remote() && state
-                .thread_by_id(&thread_id)
-                .is_some_and(|thread| thread.metadata.cwd == cwd);
+            let live_thread = !state.app_server_target_is_remote()
+                && state
+                    .thread_by_id(&thread_id)
+                    .is_some_and(|thread| thread.metadata.cwd == cwd);
             let worktree_root = state
                 .git_context(&thread_id)
                 .filter(|context| {

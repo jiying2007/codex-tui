@@ -54,19 +54,22 @@ pub(crate) fn glab_http_failure(stderr: &str, fallback: &str) -> GlabHttpFailure
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-#[test]
+    #[test]
     fn glab_response_code_is_typed_and_not_inferred_from_path_ids() {
         assert_eq!(glab_http_status("glab: 404 Not Found"), Some(404));
         assert_eq!(
-            glab_http_status("glab: GET https://gitlab.example/api/v4/projects/1404/merge_requests/404: 403 Forbidden"),
+            glab_http_status(
+                "glab: GET https://gitlab.example/api/v4/projects/1404/merge_requests/404: 403 Forbidden"
+            ),
             Some(403)
         );
         assert_eq!(
-            glab_http_status("glab: GET https://gitlab.example/api/v4/projects/1404/merge_requests/404: permission denied"),
+            glab_http_status(
+                "glab: GET https://gitlab.example/api/v4/projects/1404/merge_requests/404: permission denied"
+            ),
             None
         );
         assert_eq!(glab_http_status("glab: HTTP/2 404 Not Found"), Some(404));
@@ -74,6 +77,4 @@ mod tests {
         assert_eq!(failure.status, Some(403));
         assert!(!failure.to_string().contains("secret"));
     }
-    
-    
 }

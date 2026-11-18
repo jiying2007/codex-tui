@@ -3,12 +3,19 @@ use super::*;
 
 impl AppState {
     pub(super) fn queue_mutation_pending(&self) -> bool {
-        self.thread_queue_editor.as_ref().is_some_and(|editor| editor.pending)
+        self.thread_queue_editor
+            .as_ref()
+            .is_some_and(|editor| editor.pending)
     }
 
     pub(super) fn queue_ack_loaded(&mut self, id: &ThreadId) {
-        if self.thread_queue_open && !self.thread_queue_loading && self.thread_queue_error.is_none()
-            && self.thread_queue_editor.as_ref().is_some_and(|editor| editor.pending && &editor.thread_id == id)
+        if self.thread_queue_open
+            && !self.thread_queue_loading
+            && self.thread_queue_error.is_none()
+            && self
+                .thread_queue_editor
+                .as_ref()
+                .is_some_and(|editor| editor.pending && &editor.thread_id == id)
         {
             self.thread_queue_editor = None;
             self.input_mode = InputMode::Normal;
@@ -53,20 +60,28 @@ mod tests {
         assert!(reduce(&mut app, Action::CloseThreadQueue).is_empty());
         assert!(app.thread_queue_open);
 
-        reduce(&mut app, Action::ThreadQueueFailed {
-            thread_id: thread_id.clone(),
-            error: "upstream rejected".into(),
-        });
+        reduce(
+            &mut app,
+            Action::ThreadQueueFailed {
+                thread_id: thread_id.clone(),
+                error: "upstream rejected".into(),
+            },
+        );
         assert!(!app.queue_mutation_pending());
         assert_eq!(app.input_mode, InputMode::ThreadQueueAdd);
         assert_eq!(app.input_buffer, "recoverable queue draft");
-        assert!(matches!(reduce(&mut app, Action::CommitInput).as_slice(),
-            [Effect::MutateThreadQueue(_)]));
-        reduce(&mut app, Action::ThreadQueueLoaded(ThreadQueueSnapshot {
-            thread_id,
-            submissions: vec![],
-            next_cursor: None,
-        }));
+        assert!(matches!(
+            reduce(&mut app, Action::CommitInput).as_slice(),
+            [Effect::MutateThreadQueue(_)]
+        ));
+        reduce(
+            &mut app,
+            Action::ThreadQueueLoaded(ThreadQueueSnapshot {
+                thread_id,
+                submissions: vec![],
+                next_cursor: None,
+            }),
+        );
         assert_eq!(app.input_mode, InputMode::Normal);
         assert!(app.input_buffer.is_empty());
     }

@@ -68,7 +68,10 @@ fn queue_open_load_edit_and_close_stay_upstream_authoritative() {
         })] if queued_submission_id == "q1" && text == "updated"
     ));
 
-    reduce(&mut app, Action::ThreadQueueLoaded(snapshot(thread_id.clone())));
+    reduce(
+        &mut app,
+        Action::ThreadQueueLoaded(snapshot(thread_id.clone())),
+    );
     app.thread_queue_selected = 1;
     reduce(&mut app, Action::BeginThreadQueueEdit);
     assert_eq!(app.input_mode, InputMode::Normal);

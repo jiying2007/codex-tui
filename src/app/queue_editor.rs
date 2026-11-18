@@ -137,7 +137,10 @@ impl AppState {
         };
         match mutation {
             Ok(mutation) => {
-                self.thread_queue_editor.as_mut().expect("validated editor").pending = true;
+                self.thread_queue_editor
+                    .as_mut()
+                    .expect("validated editor")
+                    .pending = true;
                 self.thread_queue_loading = true;
                 self.thread_queue_error = None;
                 vec![Effect::MutateThreadQueue(mutation)]

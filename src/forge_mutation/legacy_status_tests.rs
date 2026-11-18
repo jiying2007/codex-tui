@@ -6,7 +6,9 @@ fn legacy_rules_fallback_rejects_access_denied_and_ambiguous_errors() {
         "glab: GET https://gitlab.example/api/v4/projects/1404/merge_requests/404/approval_state: 404 Not Found",
         "provider",
     );
-    assert!(legacy_gitlab_rules_unavailable(&anyhow::Error::new(missing)));
+    assert!(legacy_gitlab_rules_unavailable(&anyhow::Error::new(
+        missing
+    )));
     for error in [
         "glab api failed: 403 Forbidden",
         "connection timed out",
@@ -20,12 +22,17 @@ fn legacy_rules_fallback_rejects_access_denied_and_ambiguous_errors() {
             "{error}"
         )));
     }
-    for status in ["401 Unauthorized", "403 Forbidden", "500 Internal Server Error"] {
+    for status in [
+        "401 Unauthorized",
+        "403 Forbidden",
+        "500 Internal Server Error",
+    ] {
         let stderr = format!(
             "glab: GET https://gitlab.example/api/v4/projects/1404/merge_requests/404/approval_state: {status}"
         );
         let failure = crate::forge::glab_http_failure(&stderr, "provider");
-        assert!(!legacy_gitlab_rules_unavailable(&anyhow::Error::new(failure)));
+        assert!(!legacy_gitlab_rules_unavailable(&anyhow::Error::new(
+            failure
+        )));
     }
 }
-

@@ -546,7 +546,8 @@ impl AppState {
                 self.language,
                 "terminal unavailable: this App Server target has no verified local host identity",
                 "终端不可用：当前 App Server 目标没有经过验证的本地主机身份",
-            ).into());
+            )
+            .into());
         }
         let thread_id = match &self.view {
             View::Registry => self.selected_thread_id(),
