@@ -2592,7 +2592,10 @@ fn opened_github_merge_menu_starts_only_for_the_same_exact_target_and_head() {
             .position(|item| *item == choice)
             .unwrap();
         assert!(reduce(&mut unchanged, Action::ExecuteContext).is_empty());
-        let plan = unchanged.pending_forge_operation.as_ref().expect("same target plan");
+        let plan = unchanged
+            .pending_forge_operation
+            .as_ref()
+            .expect("same target plan");
         assert_eq!(plan.change_request_iid, Some(9));
         assert_eq!(
             crate::forge_mutation::confirmed_head_sha(plan).unwrap(),
