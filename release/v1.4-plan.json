@@ -281,7 +281,7 @@
     "src/forge/gitlab_projection_tests.rs": 164,
     "src/forge/error_redaction_tests.rs": 43,
     "src/forge/glab_status.rs": 79,
-    "src/forge_mutation/legacy_status_tests.rs": 30,
+    "src/forge_mutation/legacy_status_tests.rs": 31,
     "src/app/queue_ack.rs": 73,
     "src/app/target_locality.rs": 82,
     "src/forge/remote_identity_tests.rs": 47,
