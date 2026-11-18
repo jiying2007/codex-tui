@@ -53,9 +53,9 @@ esac
     std::fs::set_permissions(&glab, permissions).unwrap();
 
     let inherited_path = std::env::var_os("PATH").unwrap_or_default();
-    let path = std::env::join_paths(
-        std::iter::once(bin.as_os_str()).chain(std::env::split_paths(&inherited_path).map(|p| p.into_os_string()).collect::<Vec<_>>().iter().map(|p| p.as_os_str()))
-    ).unwrap();
+    let mut paths = vec![bin.clone()];
+    paths.extend(std::env::split_paths(&inherited_path));
+    let path = std::env::join_paths(paths).unwrap();
 
     for (status, reason) in [
         ("403", "access denied (HTTP 403)"),
