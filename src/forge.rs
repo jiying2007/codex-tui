@@ -1,4 +1,5 @@
 use crate::domain::ThreadId;
+mod glab_status;
 use crate::forge_github::{GitHubProvider, probe_github_with_remote};
 pub(crate) use crate::forge_types::default_capabilities;
 pub use crate::forge_types::{
@@ -9,6 +10,7 @@ pub use crate::forge_types::{
 };
 use crate::latest_read::{ReadEnvelope, ReadFence, ReadScope, next_current};
 use anyhow::{Context, Result, anyhow, bail};
+pub(crate) use glab_status::{GlabHttpFailure, glab_http_failure};
 use serde::Deserialize;
 use std::collections::BTreeMap;
 use std::future::Future;
@@ -964,10 +966,7 @@ where
     .await
     .with_context(|| format!("run glab api {endpoint}"))?;
     if !output.success {
-        bail!(
-            "glab api {endpoint} failed: {}",
-            trim_error(&output.stderr, "unknown glab error")
-        );
+        return Err(glab_http_failure(&output.stderr, "GitLab API request failed").into());
     }
     serde_json::from_str(&output.stdout)
         .with_context(|| format!("decode glab api response for {endpoint}"))

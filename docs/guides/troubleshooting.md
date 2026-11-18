@@ -67,7 +67,7 @@ Same-cwd thread projections and planning snapshots share an immutable file-chang
 ## Drawer focus, Ctrl+C, resize and rendering
 <!-- docs-section: terminal -->
 
-Try the in-app `?` keymap: `t` opens the Drawer and `F6` (or `Ctrl+]`) returns focus if supported. Remote terminal/SSH clients may intercept key combinations. Run `codex-tui doctor terminal` and check TERM, TTY, resizing and direct child exit. Real controlling-TTY focus/resize/Ctrl+C/restore smoke is required for Stable and is not replaced by hosted PTY tests.
+Try the in-app `?` keymap: `t` opens the Drawer and `Alt+T` (or `Ctrl+]`) returns focus if supported. Remote terminal/SSH clients may intercept key combinations. Run `codex-tui doctor terminal` and check TERM, TTY, resizing and direct child exit. Real controlling-TTY focus/resize/Ctrl+C/restore smoke is required for Stable and is not replaced by hosted PTY tests.
 
 PTY children remain owned by a kill-and-reap guard through initialization and the detached actor lifetime. Failure to obtain the reader/writer, publish Ready or start the reader cannot abandon that ownership. Fault-injection tests exercise each startup stage using local children, not real SSH acceptance.
 

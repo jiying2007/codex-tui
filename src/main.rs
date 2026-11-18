@@ -609,6 +609,7 @@ fn conversation_event_changes_planning(event: &ConversationEvent) -> bool {
         | ConversationEvent::TranscriptSearchJumpLoaded { .. }
         | ConversationEvent::TranscriptSearchFailed { .. }
         | ConversationEvent::ThreadQueueLoaded(_)
+        | ConversationEvent::QueueMutationOutcome { .. }
         | ConversationEvent::ThreadQueueFailed { .. }
         | ConversationEvent::InteractiveRequested(_)
         | ConversationEvent::InteractiveResolved { .. }
@@ -702,6 +703,13 @@ fn drain_registry(
                 Action::TranscriptSearchServerFailed { query, error }
             }
             ConversationEvent::ThreadQueueLoaded(snapshot) => Action::ThreadQueueLoaded(snapshot),
+            ConversationEvent::QueueMutationOutcome {
+                thread_id,
+                committed,
+            } => Action::QueueMutationOutcome {
+                thread_id,
+                committed,
+            },
             ConversationEvent::ThreadQueueFailed { thread_id, error } => {
                 Action::ThreadQueueFailed { thread_id, error }
             }
@@ -1476,8 +1484,15 @@ fn apply_effects(
                         reduce(
                             app,
                             Action::ThreadQueueFailed {
-                                thread_id,
+                                thread_id: thread_id.clone(),
                                 error: error.to_string(),
+                            },
+                        );
+                        reduce(
+                            app,
+                            Action::QueueMutationOutcome {
+                                thread_id,
+                                committed: false,
                             },
                         );
                     }
@@ -1485,13 +1500,20 @@ fn apply_effects(
                     reduce(
                         app,
                         Action::ThreadQueueFailed {
-                            thread_id,
+                            thread_id: thread_id.clone(),
                             error: runtime_text(
                                 app.language,
                                 "App Server Thread Queue unavailable",
                                 "App Server 会话队列不可用",
                             )
                             .into(),
+                        },
+                    );
+                    reduce(
+                        app,
+                        Action::QueueMutationOutcome {
+                            thread_id,
+                            committed: false,
                         },
                     );
                 }

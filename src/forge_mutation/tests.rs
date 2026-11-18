@@ -441,23 +441,8 @@ fn gitlab_legacy_ce_approvals_accept_only_the_documented_free_shape() {
     );
 }
 
-#[test]
-fn legacy_rules_fallback_rejects_access_denied_and_ambiguous_errors() {
-    assert!(legacy_gitlab_rules_unavailable(&anyhow::anyhow!(
-        "glab api /approval_state failed: 404 Not Found"
-    )));
-    for error in [
-        "glab api failed: 403 Forbidden",
-        "connection timed out",
-        "decode glab api response",
-        "401 Unauthorized",
-        "resource not found (status not given)",
-    ] {
-        assert!(!legacy_gitlab_rules_unavailable(&anyhow::anyhow!(
-            "{error}"
-        )));
-    }
-}
+#[path = "legacy_status_tests.rs"]
+mod legacy_status_tests;
 
 #[test]
 fn gitlab_146_response_decodes_without_newer_status_or_ee_approval_fields() {

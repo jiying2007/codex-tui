@@ -131,7 +131,14 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.reconcile_cwd_locality_cache(state.host_local_only || state.repo_backed_only);
             restore_selection(state, selected_id);
         }
-        Action::BackendStatus(status) => state.backend_status = status,
+        Action::BackendStatus(status) => {
+            if state.backend_status.source != status.source {
+                state.cwd_localities.clear();
+                state.git_contexts.clear();
+                state.forge_observations.clear();
+            }
+            state.backend_status = status;
+        }
         Action::RefreshGitProjections => {
             return refresh_git_projections(state);
         }
@@ -142,6 +149,9 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             return refresh_forge_projections(state);
         }
         Action::GitContextLoaded(context) => {
+            if state.app_server_target_is_remote() {
+                return vec![];
+            }
             state.worktree_collision_counts.clear();
             if context.observed_at_unix_ms > 0 && context.error.is_none() {
                 state
@@ -152,6 +162,9 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             ensure_selection_visible(state);
         }
         Action::ForgeObservationLoaded(observation) => {
+            if state.app_server_target_is_remote() {
+                return vec![];
+            }
             propagate_forge_observation(state, observation);
         }
         Action::ForgeReviewLoaded(result) => super::forge_review::install(state, *result),
@@ -487,6 +500,10 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             return vec![Effect::RefreshThreadQueue(thread_id)];
         }
         Action::CloseThreadQueue => {
+            if state.queue_mutation_pending() {
+                state.thread_queue_error = Some("Queue submission pending; draft retained".into());
+                return vec![];
+            }
             state.thread_queue_editor = None;
             let thread_id = state
                 .thread_queue_snapshot
@@ -504,6 +521,16 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
         }
         Action::ThreadQueueLoaded(snapshot) => state.install_thread_queue(snapshot),
+        Action::QueueMutationOutcome {
+            thread_id,
+            committed,
+        } => {
+            if committed {
+                state.queue_ack_loaded(&thread_id);
+            } else {
+                state.queue_ack_failed(&thread_id);
+            }
+        }
         Action::ThreadQueueFailed { thread_id, error } => {
             if state.thread_queue_open
                 && state
@@ -1363,7 +1390,8 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 .find(|thread| thread.id == thread_id)
                 .map(|thread| thread.metadata.cwd.clone())
                 .unwrap_or_default();
-            if cwd.trim().is_empty() {
+            if cwd.trim().is_empty() || state.app_server_target_is_remote() {
+                state.mutation_notice = Some("Review requires a local App Server target".into());
                 return vec![];
             }
             if !matches!(state.view, View::Review(_)) {
@@ -1398,6 +1426,10 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             let Some(thread_id) = thread_id else {
                 return vec![];
             };
+            if state.app_server_target_is_remote() {
+                state.mutation_notice = Some("Workspace requires a local App Server target".into());
+                return vec![];
+            }
             if !matches!(state.view, View::Workspace(_)) {
                 state.workspace_return_view = Some(state.view.clone());
             }
@@ -1457,9 +1489,10 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             };
             let cwd = review.cwd.clone();
             let path = change.path.clone();
-            let live_thread = state
-                .thread_by_id(&thread_id)
-                .is_some_and(|thread| thread.metadata.cwd == cwd);
+            let live_thread = !state.app_server_target_is_remote()
+                && state
+                    .thread_by_id(&thread_id)
+                    .is_some_and(|thread| thread.metadata.cwd == cwd);
             let worktree_root = state
                 .git_context(&thread_id)
                 .filter(|context| {
@@ -1940,6 +1973,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
         }
         Action::InputChar(character) => match state.input_mode {
             InputMode::Normal => {}
+            _ if state.queue_mutation_pending() => {}
             InputMode::Composer => {
                 if super::composer::insert(state, &character.to_string()) {
                     return vec![Effect::PersistOperatorStateDeferred];
@@ -1977,7 +2011,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
         },
         Action::InputText(text) => {
-            if text.is_empty() {
+            if text.is_empty() || state.queue_mutation_pending() {
                 return vec![];
             }
             let text = normalize_pasted_input(state.input_mode, &text);
@@ -2025,6 +2059,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
         }
         Action::InputBackspace => match state.input_mode {
             InputMode::Normal => {}
+            _ if state.queue_mutation_pending() => {}
             InputMode::Composer => {
                 if super::composer::backspace(state) {
                     return vec![Effect::PersistOperatorStateDeferred];
@@ -2502,6 +2537,9 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
         }
         Action::CancelInput => {
+            if state.queue_mutation_pending() {
+                return vec![];
+            }
             state.mutation_editor = None;
             state.thread_queue_editor = None;
             state.alias_target = None;

@@ -3,47 +3,18 @@ use super::{AppState, Effect, InputMode, local_text};
 use crate::{
     domain::ThreadId,
     operation::now_unix_ms,
-    thread_queue::{QueuedSubmission, ThreadQueueMutation, ThreadQueueSnapshot},
+    thread_queue::{QueuedSubmission, ThreadQueueMutation},
 };
 
 #[derive(Clone, Debug)]
 pub(super) struct QueueEditor {
-    thread_id: ThreadId,
+    pub(super) thread_id: ThreadId,
     original: Option<QueuedSubmission>,
+    pub(super) pending: bool,
 }
-
 impl AppState {
-    pub(super) fn install_thread_queue(&mut self, snapshot: ThreadQueueSnapshot) {
-        if !self.thread_queue_open
-            || self.current_thread_id() != Some(&snapshot.thread_id)
-            || self.thread_by_id(&snapshot.thread_id).is_none()
-        {
-            return;
-        }
-        if let Err(error) = snapshot.validate_complete() {
-            self.thread_queue_loading = false;
-            self.thread_queue_error = Some(error.to_string());
-            return;
-        }
-        let selected = self
-            .thread_queue_snapshot
-            .as_ref()
-            .filter(|old| old.thread_id == snapshot.thread_id)
-            .and_then(|old| old.submissions.get(self.thread_queue_selected))
-            .map(|item| item.id.as_str());
-        self.thread_queue_selected = selected
-            .and_then(|id| snapshot.submissions.iter().position(|item| item.id == id))
-            .unwrap_or_else(|| {
-                self.thread_queue_selected
-                    .min(snapshot.submissions.len().saturating_sub(1))
-            });
-        self.thread_queue_snapshot = Some(snapshot);
-        self.thread_queue_loading = false;
-        self.thread_queue_error = None;
-    }
-
     pub(super) fn begin_queue_input(&mut self, edit: bool) {
-        if !self.thread_queue_open {
+        if !self.thread_queue_open || self.queue_mutation_pending() {
             return;
         }
         let Some(thread_id) = self
@@ -80,6 +51,7 @@ impl AppState {
         self.thread_queue_editor = Some(QueueEditor {
             thread_id,
             original,
+            pending: false,
         });
         self.input_mode = if edit {
             InputMode::ThreadQueueEdit
@@ -88,8 +60,10 @@ impl AppState {
         };
         self.thread_queue_error = None;
     }
-
     pub(super) fn commit_queue_input(&mut self) -> Vec<Effect> {
+        if self.thread_queue_loading || self.queue_mutation_pending() {
+            return vec![];
+        }
         let text = self.input_buffer.trim().to_string();
         if text.is_empty() {
             return vec![];
@@ -135,9 +109,10 @@ impl AppState {
         };
         match mutation {
             Ok(mutation) => {
-                self.thread_queue_editor = None;
-                self.input_mode = InputMode::Normal;
-                self.input_buffer.clear();
+                self.thread_queue_editor
+                    .as_mut()
+                    .expect("validated editor")
+                    .pending = true;
                 self.thread_queue_loading = true;
                 self.thread_queue_error = None;
                 vec![Effect::MutateThreadQueue(mutation)]

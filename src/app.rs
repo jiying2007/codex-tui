@@ -8,7 +8,7 @@ use crate::conversation::{
 };
 use crate::domain::{
     AttentionReason, CwdLocality, LocalRepoIdentity, RuntimeStatus, ThreadId, ThreadSummary,
-    ThreadUiState, classify_cwd, classify_cwd_without_io,
+    ThreadUiState,
 };
 use crate::forge::{
     CapabilityState, ChangeRequestSummary, ForgeCapability, ForgeIdentity, ForgeObservation,
@@ -56,6 +56,7 @@ mod palette_intent;
 mod planning_selection;
 pub mod planning_worker;
 mod prompt;
+mod queue_ack;
 mod queue_confirmation;
 mod queue_editor;
 mod reading_snapshot;
@@ -65,6 +66,7 @@ pub(crate) mod request_details;
 mod review;
 mod shortcuts;
 mod state;
+mod target_locality;
 mod thread_navigation;
 mod types;
 mod user_input;
@@ -76,17 +78,15 @@ use registry::{ensure_selection_visible, restore_selection};
 pub use types::{Action, ContextChoice, Effect, InputMode, View, ViewKind};
 // Executable help entries in src/ui.rs; keep the two arrays in lockstep.
 pub const HELP_ENTRY_COUNT: usize = 14;
-const REGISTRY_RECENT_LIMIT: usize = 100;
+const REGISTRY_RECENT_LIMIT: usize = 20;
 const CONVERSATION_CACHE_LIMIT: usize = 16;
 const GIT_REVIEW_CACHE_LIMIT: usize = 4;
 pub const fn conversation_cache_limit() -> usize {
     CONVERSATION_CACHE_LIMIT
 }
-
 pub const fn git_review_cache_limit() -> usize {
     GIT_REVIEW_CACHE_LIMIT
 }
-
 fn local_text(
     language: UiLanguage,
     english: &'static str,

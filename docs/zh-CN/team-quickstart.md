@@ -71,7 +71,7 @@ codex-tui doctor forge
 
 通知默认为 `off`，只有主动设置本地 `[notifications].mode = "terminal"` 才会发送 SSH 终端响铃；Windows Terminal 可在 SSH Profile 设置 `"bellStyle": "all"`，Ubuntu 通过 `printf '\a'` 验证。它依赖 TUI 持续运行与连接，不是 Windows Toast、后台监控或保证送达的消息服务。
 
-`Ctrl+K` 打开面板，`/` 搜索，`j/k` 导航并 `Enter` 进入；`b` 查看 Board，`h/l` 切换列，`t` 打开 Terminal Drawer；按 `F6`（或终端支持时 `Ctrl+]`）将控制权返回 codex-tui。`?` 为键盘说明的权威来源，若按键与终端冲突，以实时帮助和 `doctor terminal` 为准。
+`Ctrl+K` 打开面板，`/` 搜索，`j/k` 导航并 `Enter` 进入；`b` 查看 Board，`h/l` 切换列，`t` 打开 Terminal Drawer；按 `Alt+T`（或终端支持时 `Ctrl+]`）将控制权返回 codex-tui。`?` 为键盘说明的权威来源，若按键与终端冲突，以实时帮助和 `doctor terminal` 为准。
 
 先检查 Needs You 的人工确认，再观察 Working/Ready；对 MR/PR 的写操作始终逐项预览并确认。
 

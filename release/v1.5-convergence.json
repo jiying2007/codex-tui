@@ -95,7 +95,8 @@
       "modules": [
         "src/thread_queue.rs",
         "src/app/queue_confirmation.rs",
-        "src/app/queue_editor.rs"
+        "src/app/queue_editor.rs",
+        "src/app/queue_ack.rs"
       ]
     },
     "embedded-terminal": {

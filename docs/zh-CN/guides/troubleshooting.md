@@ -67,7 +67,7 @@ Git 路径身份保留尾随空格、制表符和内嵌换行，只移除一条�
 ## Drawer 聚焦、Ctrl+C、窗口重绘异常
 <!-- docs-section: terminal -->
 
-使用应用内 `?` 查看实际键位：`t` 打开 Drawer，`F6`（或支持时 `Ctrl+]`）返回聚焦。远程终端或 SSH 客户端可能截获快捷键。运行 `codex-tui doctor terminal`，确认 TERM、TTY、窗口调整和子进程退出。Stable 必须拥有真实控制 TTY 的 Focus/Resize/Ctrl+C/Restore 记录，托管 PTY 不代替。
+使用应用内 `?` 查看实际键位：`t` 打开 Drawer，`Alt+T`（或支持时 `Ctrl+]`）返回聚焦。远程终端或 SSH 客户端可能截获快捷键。运行 `codex-tui doctor terminal`，确认 TERM、TTY、窗口调整和子进程退出。Stable 必须拥有真实控制 TTY 的 Focus/Resize/Ctrl+C/Restore 记录，托管 PTY 不代替。
 
 PTY 子进程从创建、初始化到分离 actor 退出始终由终止与回收守卫持有。取得 reader/writer、发布 Ready 或启动读取线程失败，不能放弃回收责任。故障注入使用本地子进程覆盖各启动阶段，不代替真实 SSH 验收。
 

@@ -312,6 +312,14 @@ async fn execute_request(
         return Ok(receipt);
     }
 
+    // Re-check after all asynchronous preflight Git probes, immediately
+    // before the destructive command. This is still not a cross-process lease.
+    if let Err(error) = ensure_scope_admission_fresh(receipt.plan.kind, request.admitted_at) {
+        receipt.fail(now_unix_ms(), error.to_string());
+        store.save_operation_receipt(&receipt)?;
+        return Ok(receipt);
+    }
+
     let command = run_git_mutation(&receipt.plan.cwd, &receipt.plan.argv).await;
     match command {
         Ok(output) if output.success => match verify_success(store, &receipt.plan).await {
@@ -358,14 +366,9 @@ fn record_nonzero_mutation(
     );
 }
 
-async fn check_preconditions(
-    store: &SqliteStore,
-    plan: &OperationPlan,
-    active_scopes: &[MutationScope],
-    admitted_at: Instant,
-) -> Result<()> {
+fn ensure_scope_admission_fresh(kind: OperationKind, admitted_at: Instant) -> Result<()> {
     if matches!(
-        plan.kind,
+        kind,
         OperationKind::RemoveWorktree | OperationKind::DeleteBranch
     ) {
         anyhow::ensure!(
@@ -373,6 +376,16 @@ async fn check_preconditions(
             "active operation scope snapshot expired; review and confirm again"
         );
     }
+    Ok(())
+}
+
+async fn check_preconditions(
+    store: &SqliteStore,
+    plan: &OperationPlan,
+    active_scopes: &[MutationScope],
+    admitted_at: Instant,
+) -> Result<()> {
+    ensure_scope_admission_fresh(plan.kind, admitted_at)?;
     match plan.kind {
         OperationKind::CreateWorktree => {
             if let Some(commit) = plan.expected_start_commit() {

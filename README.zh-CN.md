@@ -33,7 +33,7 @@ Mission Control 优先回答：**正在做什么、哪条会话需要我、如�
 
 `b` 打开 Board，`Tab` 切换 Needs You / Needs Review；`r` 进入所选会话的 Review，`w` 查看 Workspace。Headless 的 Codex 投影视图使用配置中的活动目标或 `--target NAME`，每次只读取一个目标，并明确标记跨目标共享的本地元数据范围。详见[操作指南](docs/zh-CN/guides/operator-guide.md)与 [CLI 参考](docs/zh-CN/guides/cli-reference.md)。
 
-快捷键以应用内 `?` 帮助为准：`Ctrl+K` 命令面板，`/` 搜索，`j/k` 选择、`Enter` 打开，`b` Board，`t` Drawer，`F6` 或 `Ctrl+]` 返回聚焦（取决于实际终端支持）。详见 [操作指南](docs/zh-CN/guides/operator-guide.md)。
+快捷键以应用内 `?` 帮助为准：`Ctrl+K` 命令面板，`/` 搜索，`j/k` 选择、`Enter` 打开，`b` Board，`t` Drawer，`Alt+T` 或 `Ctrl+]` 返回聚焦（取决于实际终端支持）。详见 [操作指南](docs/zh-CN/guides/operator-guide.md)。
 
 **静音不关闭界面提醒：**默认 `off` 仍显示最近事件并支持 `!` 回跳，只关闭外部声音／桌面投递。要测试 Windows SSH Ubuntu 响铃，可设置 `[notifications].mode = "terminal"`，配置 Windows Terminal 的 `"bellStyle": "all"`，再从 Ubuntu 执行 `printf '\a'`；这不是 Windows Toast 或离线推送。
 

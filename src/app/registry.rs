@@ -22,13 +22,13 @@ impl AppState {
                 || matched_position < REGISTRY_RECENT_LIMIT
                 || thread.pinned
                 || self.thread_needs_attention(index)
+                || index == self.selected
             {
                 visible.push(index);
             }
         }
 
-        // Bound the recent window in source order before changing its presentation.
-        // Cache attention keys once rather than redoing projection lookups per comparison.
+        // Bound the source window before sorting; preserve the selected row.
         visible.sort_by_cached_key(|&index| {
             let thread = &self.threads[index];
             (
