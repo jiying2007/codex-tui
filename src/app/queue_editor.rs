@@ -13,34 +13,6 @@ pub(super) struct QueueEditor {
     pub(super) pending: bool,
 }
 impl AppState {
-    pub(super) fn install_thread_queue(&mut self, snapshot: ThreadQueueSnapshot) {
-        if !self.thread_queue_open
-            || self.current_thread_id() != Some(&snapshot.thread_id)
-            || self.thread_by_id(&snapshot.thread_id).is_none()
-        {
-            return;
-        }
-        if let Err(error) = snapshot.validate_complete() {
-            self.thread_queue_loading = false;
-            self.thread_queue_error = Some(error.to_string());
-            return;
-        }
-        let selected = self
-            .thread_queue_snapshot
-            .as_ref()
-            .filter(|old| old.thread_id == snapshot.thread_id)
-            .and_then(|old| old.submissions.get(self.thread_queue_selected))
-            .map(|item| item.id.as_str());
-        self.thread_queue_selected = selected
-            .and_then(|id| snapshot.submissions.iter().position(|item| item.id == id))
-            .unwrap_or_else(|| {
-                self.thread_queue_selected
-                    .min(snapshot.submissions.len().saturating_sub(1))
-            });
-        self.thread_queue_snapshot = Some(snapshot);
-        self.thread_queue_loading = false;
-        self.thread_queue_error = None;
-    }
     pub(super) fn begin_queue_input(&mut self, edit: bool) {
         if !self.thread_queue_open || self.queue_mutation_pending() {
             return;
