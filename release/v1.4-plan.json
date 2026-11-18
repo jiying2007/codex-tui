@@ -289,7 +289,7 @@
     "src/app/reducer.rs": 2664,
     "src/app/state.rs": 871,
     "src/app/shortcuts.rs": 65,
-    "src/app/tests.rs": 3426,
+    "src/app/tests.rs": 3429,
     "src/app/thread_queue_reducer_tests.rs": 132,
     "src/ui/tests.rs": 1332,
     "src/sqlite_store/tests.rs": 1098,
@@ -1132,7 +1132,7 @@
         "src/app/mutation_editor.rs",
         "src/app/tests.rs"
       ],
-      "policy": "Update only these three reviewed existing source ceilings, preserve complete-source ratchet and exact-head CI/security/PTY; no new backend authority, write retry, approval bypass, menu fallback or Stable qualification."
+      "policy": "Update only these three reviewed existing source ceilings, preserve complete-source ratchet and exact-head CI/security/PTY; no new backend authority, write retry, approval bypass, menu fallback or Stable qualification. The final rustfmt-reviewed app test module is exactly 3429 LOC."
     }
   ]
 }
