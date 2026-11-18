@@ -46,14 +46,12 @@ fn queue_open_load_edit_and_close_stay_upstream_authoritative() {
     );
     assert!(app.thread_queue_open);
     assert!(app.thread_queue_loading);
-
     reduce(
         &mut app,
         Action::ThreadQueueLoaded(snapshot(thread_id.clone())),
     );
     assert!(!app.thread_queue_loading);
     assert_eq!(app.selected_thread_queue_submission().unwrap().id, "q1");
-
     reduce(&mut app, Action::BeginThreadQueueEdit);
     assert_eq!(app.input_mode, InputMode::ThreadQueueEdit);
     assert_eq!(app.input_buffer, "first");
@@ -68,7 +66,10 @@ fn queue_open_load_edit_and_close_stay_upstream_authoritative() {
         })] if queued_submission_id == "q1" && text == "updated"
     ));
 
-    reduce(&mut app, Action::ThreadQueueLoaded(snapshot(thread_id.clone())));
+    reduce(
+        &mut app,
+        Action::ThreadQueueLoaded(snapshot(thread_id.clone())),
+    );
     app.thread_queue_selected = 1;
     reduce(&mut app, Action::BeginThreadQueueEdit);
     assert_eq!(app.input_mode, InputMode::Normal);
@@ -84,7 +85,6 @@ fn queue_reorder_and_destructive_actions_follow_confirmation_contract() {
     let (mut app, thread_id) = queue_app();
     app.thread_queue_open = true;
     app.thread_queue_snapshot = Some(snapshot(thread_id.clone()));
-
     let effects = reduce(&mut app, Action::ReorderThreadQueue(1));
     assert_eq!(app.thread_queue_selected, 0);
     assert_eq!(app.selected_thread_queue_submission().unwrap().id, "q1");
