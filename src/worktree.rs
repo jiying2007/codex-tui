@@ -367,7 +367,10 @@ fn record_nonzero_mutation(
 }
 
 fn ensure_scope_admission_fresh(kind: OperationKind, admitted_at: Instant) -> Result<()> {
-    if matches!(kind, OperationKind::RemoveWorktree | OperationKind::DeleteBranch) {
+    if matches!(
+        kind,
+        OperationKind::RemoveWorktree | OperationKind::DeleteBranch
+    ) {
         anyhow::ensure!(
             admitted_at.elapsed() <= SCOPE_ADMISSION_MAX_AGE,
             "active operation scope snapshot expired; review and confirm again"

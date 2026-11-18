@@ -157,7 +157,7 @@
     "src/main.rs": 2022,
     "src/sqlite_store.rs": 1849,
     "src/forge.rs": 1157,
-    "src/worktree.rs": 767,
+    "src/worktree.rs": 770,
     "src/release.rs": 618,
     "src/runtime_store.rs": 660,
     "src/runtime_input/composer_keys.rs": 39,
