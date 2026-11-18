@@ -61,7 +61,10 @@ impl AppState {
                             ContextChoice::ForgeCreateMergeRequest
                             | ContextChoice::ForgeComment
                             | ContextChoice::ForgeApprove
-                            | ContextChoice::ForgeMerge => {
+                            | ContextChoice::ForgeMerge
+                            | ContextChoice::ForgeMergeCommit
+                            | ContextChoice::ForgeSquashMerge
+                            | ContextChoice::ForgeRebaseMerge => {
                                 menu.forge.is_some()
                                     && menu.forge
                                         == self.editor_snapshot(super::InputMode::ForgeComment)
