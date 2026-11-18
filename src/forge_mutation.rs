@@ -1066,12 +1066,10 @@ fn require_legacy_gitlab_approval_fallback(approvals: &GitLabApprovals) -> Resul
 }
 
 fn legacy_gitlab_rules_unavailable(error: &anyhow::Error) -> bool {
-    // Do not turn permission errors (403), malformed JSON, or timeouts into
-    // implicit 'no approval rules'. glab includes the HTTP status in its error.
-    let text = format!("{error:#}").to_ascii_lowercase();
-    // The error must carry an actual HTTP 404 status; wording alone is not
-    // evidence that the server does not support approval-state.
-    text.contains("404")
+    // Never use an HTTP code embedded in a project/MR path or display message.
+    error
+        .downcast_ref::<crate::forge::GlabHttpFailure>()
+        .is_some_and(|failure| failure.status == Some(404))
 }
 
 async fn require_gitlab_approvals(

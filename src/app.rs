@@ -76,7 +76,7 @@ use registry::{ensure_selection_visible, restore_selection};
 pub use types::{Action, ContextChoice, Effect, InputMode, View, ViewKind};
 // Executable help entries in src/ui.rs; keep the two arrays in lockstep.
 pub const HELP_ENTRY_COUNT: usize = 14;
-const REGISTRY_RECENT_LIMIT: usize = 100;
+const REGISTRY_RECENT_LIMIT: usize = 20;
 const CONVERSATION_CACHE_LIMIT: usize = 16;
 const GIT_REVIEW_CACHE_LIMIT: usize = 4;
 pub const fn conversation_cache_limit() -> usize {

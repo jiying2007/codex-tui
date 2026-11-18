@@ -370,6 +370,7 @@ pub async fn load_review(thread_id: ThreadId, cwd: String) -> Result<GitReview> 
             "diff",
             "--cached",
             "--no-ext-diff",
+            "--no-textconv",
             "--no-color",
             "--unified=3",
             "--",
@@ -386,7 +387,7 @@ pub async fn load_review(thread_id: ThreadId, cwd: String) -> Result<GitReview> 
 
     let unstaged = run_git_capped(
         &cwd,
-        ["diff", "--no-ext-diff", "--no-color", "--unified=3", "--"],
+        ["diff", "--no-ext-diff", "--no-textconv", "--no-color", "--unified=3", "--"],
         MAX_REVIEW_DIFF_BYTES,
     )
     .await?;

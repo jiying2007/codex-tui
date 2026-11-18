@@ -13,6 +13,19 @@ fn fixture() -> AppState {
     AppState::new(FakeBackend::seeded().snapshot().threads)
 }
 
+#[test]
+fn terminal_ctrl_right_bracket_raw_control_5_encoding_releases_focus() {
+    let mut app = fixture();
+    app.terminal_drawer_open = true;
+    app.terminal_focused = true;
+    // Unix PTYs encode Ctrl+] as 0x1d; crossterm may decode that as Ctrl+5.
+    assert!(handle_key(
+        &mut app,
+        KeyEvent::new(KeyCode::Char('5'), KeyModifiers::CONTROL)
+    ).is_empty());
+    assert!(!app.terminal_focused);
+}
+
 fn forbidden(code: KeyCode) -> Vec<KeyEvent> {
     let mut keys = [
         KeyModifiers::SHIFT,

@@ -34,7 +34,8 @@ fn is_terminal_release_key(key: KeyEvent) -> bool {
     // a held key must never bounce between the app and the same PTY.
     key.kind == KeyEventKind::Press
         && ((key.code == KeyCode::Char('t') && key.modifiers == KeyModifiers::ALT)
-            || (key.code == KeyCode::Char(']') && key.modifiers == KeyModifiers::CONTROL)
+            || (matches!(key.code, KeyCode::Char(']') | KeyCode::Char('5'))
+                && key.modifiers == KeyModifiers::CONTROL)
             || (key.code == KeyCode::Char('\u{001d}') && key.modifiers == KeyModifiers::NONE))
 }
 pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
