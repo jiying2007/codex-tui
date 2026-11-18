@@ -276,7 +276,7 @@ fn registry_summary_surfaces_host_local_mode() {
     }
 
     assert!(snapshot.contains("LOCAL ONLY"));
-    assert!(snapshot.contains("l local-only"));
+    assert!(snapshot.contains("Alt+T terminal"));
 }
 
 #[test]
@@ -301,7 +301,7 @@ fn registry_summary_surfaces_repo_only_mode() {
     }
 
     assert!(snapshot.contains("REPO ONLY"));
-    assert!(snapshot.contains("g repo-only"));
+    assert!(snapshot.contains("Alt+T terminal"));
 }
 
 #[test]
