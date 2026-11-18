@@ -5,6 +5,7 @@ import hashlib
 import io
 import json
 import os
+import re
 from pathlib import Path
 import sqlite3
 import subprocess
@@ -20,6 +21,24 @@ import sample_device_process as sampler
 
 SHA, DIGEST = 'a'*40, 'b'*64
 ROOT = Path(runner.__file__).resolve().parents[2]
+
+
+class DeviceDocsContract(unittest.TestCase):
+
+    def test_real_device_manuals_match_cargo_msrv_and_check_before_build(self):
+        manifest = (ROOT / "Cargo.toml").read_text(encoding="utf-8")
+        declared = re.search(r'^rust-version\s*=\s*"([0-9]+\.[0-9]+)"', manifest, re.M)
+        self.assertIsNotNone(declared)
+        version = declared.group(1)
+        for path, label in (
+            ("docs/guides/device-validation.md", "declared Rust minimum is "),
+            ("docs/zh-CN/guides/device-validation.md", "声明的 Rust 最低版本为 "),
+        ):
+            with self.subTest(path=path):
+                guide = (ROOT / path).read_text(encoding="utf-8")
+                self.assertIn(label + version, guide)
+                self.assertEqual(guide.count("STOP: rustc below Cargo MSRV"), 1)
+                self.assertLess(guide.index("CHECK_RUST"), guide.index('cargo build --release --locked'))
 
 
 class FixtureValidation(unittest.TestCase):
