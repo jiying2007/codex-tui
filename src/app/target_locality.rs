@@ -62,7 +62,6 @@ impl AppState {
         }
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -73,10 +72,7 @@ mod tests {
         let threads = FakeBackend::seeded().snapshot().threads;
         let id = threads[0].id.clone();
         let mut app = AppState::new(threads);
-        let cwd = std::env::current_dir()
-            .unwrap()
-            .to_string_lossy()
-            .into_owned();
+        let cwd = std::env::current_dir().unwrap().display().to_string();
         app.threads[0].metadata.cwd = cwd.clone();
         app.view = View::Thread(id);
         app.backend_status.source =
