@@ -47,6 +47,31 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn local_branch_name_is_read_without_commit_or_full_history() {
+        let tmp = tempfile::tempdir().unwrap();
+        let status = std::process::Command::new("git")
+            .arg("init")
+            .arg("-q")
+            .arg(tmp.path())
+            .status()
+            .unwrap();
+        assert!(status.success());
+        let status = std::process::Command::new("git")
+            .arg("-C")
+            .arg(tmp.path())
+            .args(["symbolic-ref", "HEAD", "refs/heads/feature/example"])
+            .status()
+            .unwrap();
+        assert!(status.success());
+        assert_eq!(
+            current_local_branch(tmp.path().to_str().unwrap())
+                .await
+                .as_deref(),
+            Some("feature/example")
+        );
+    }
+
+    #[tokio::test]
     async fn detached_or_missing_git_head_does_not_create_false_branch_identity() {
         let tmp = tempfile::tempdir().unwrap();
         assert!(
