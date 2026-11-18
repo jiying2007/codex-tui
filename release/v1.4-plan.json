@@ -153,7 +153,7 @@
     "src/ui/composer.rs": 73,
     "src/ui/help_wrapped_tests.rs": 43,
     "src/ui.rs": 1487,
-    "src/app_server.rs": 2682,
+    "src/app_server.rs": 2680,
     "src/main.rs": 2022,
     "src/sqlite_store.rs": 1849,
     "src/forge.rs": 1157,
@@ -361,7 +361,8 @@
     "src/app/planning_worker/job.rs": 27,
     "src/app/planning_worker/tests.rs": 170,
     "src/app_server/queue_mutation.rs": 50,
-    "src/app_server/queue_pagination.rs": 83
+    "src/app_server/queue_pagination.rs": 83,
+    "src/app_server/queue_priority_tests.rs": 73
   },
   "ratchetPolicy": {
     "baseline": "inherit v1.3 Search & Multi-Target ceilings; feature work may only add bounded module-specific ceilings",
