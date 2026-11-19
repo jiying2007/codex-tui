@@ -12,6 +12,8 @@ A local-first Mission Control for multiple Codex projects, repositories, targets
 
 **License:** Apache-2.0 · **Stable release:** v1.0.0 · **Parked v1.1 candidate:** `release/v1.1-parked` · **Current development line:** v1.4.0 · **Tier 1:** Linux.
 
+**Next-phase product design (not shipped):** [codex-tui Lite L1.3 unified final plan](docs/design/codex-tui-lite-L1.3-unified-final-20261119.md) (Chinese). It consolidates real multi-host Codex session evidence, Feishu Project/TAPD work-item links, parent/child thread grouping and G0–G4 qualification. This planning document does not change v1.4 runtime behavior or grant Stable publication.
+
 ## Development status
 <!-- docs-section: status -->
 
