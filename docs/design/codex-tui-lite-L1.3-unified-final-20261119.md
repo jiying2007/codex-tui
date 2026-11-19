@@ -27,13 +27,13 @@
 
 ### 2.1 私有会话档案的全量目录规模
 
-对 `jiying2007/sessions` 2026/04—11 目录递归枚举：**2,170 个 Git blob 文件对象、200 个有记录日期目录、累计 8,274,174,477 bytes**。分类：普通 `.jsonl` 1,875 个、独立 `.jsonl.zst` 291 个、压缩分卷 4 个（两组），**归并后 2,168 份候选 rollout 档案**；至少一个普通文件为零字节。
+对 `jiying2007/sessions` 2026/04—11 目录递归枚举：**2,170 个 Git blob 文件对象、200 个有记录日期目录、累计 8,274,174,477 bytes**。分类：普通 `.jsonl` 1,875 个、独立 `.jsonl.zst` 291 个、压缩分卷 4 个（两组），**归并后 2,168 份候选 rollout 档案**；**2 个零字节 JSONL**（2026-08-18、2026-09-02），其相同 Git Blob SHA 不能证明有效会话重复。全体文件名日期与所在目录一致；249 个不小于 8MB 的文件占总字节约 72.2%。
 
 **这不是 2,168 个有效且互不重复的 Thread，更不是账号全部对话的证明**：一些会话有父子 Agent、压缩分卷或缺损，另有未上传主机/时间窗口的可能。Git 仓库 size 与 blob 累加量属于不同口径，不混写。
 
-L1.2 已对 112 份非压缩档案抽取 `session_meta`，并对 6 份不同月份的长会话做事件分析。样本确证 VS Code、CLI、`codex_exec`、子 Agent、自动 Guardian、Windows/POSIX 路径、长 Turn 与 compact 等模式确实存在；样本按日期和大小选取，**比例不得推广到全仓**。本版仍未声称对 8.27 GB 进行完整语义审阅。
+L1.2 已对 112 份非压缩档案抽取 `session_meta`，并对 6 份不同月份的长会话做事件分析；追加审查又完整解析了跨 4—11 月的 8 份不同 JSONL 小文件，样本统计不代表全仓。样本确证 VS Code、CLI、`codex_exec`、子 Agent、自动 Guardian、Windows/POSIX 路径、长 Turn 与 compact 等模式确实存在；样本按日期和大小选取，**比例不得推广到全仓**。本版仍未声称对 8.27 GB 进行完整语义审阅。
 
-要获得全量去重、失败类型、子 Agent 树和历史主机归属，使用可信本地环境**一次性离线流式审计**（附带的私有 `codex_sessions_offline_audit.py`），报告解析错误、零字节、压缩/分卷、缺失元数据和不能判断的主机；禁止上传原文到本公开代码仓库。该审计**不应成为 TUI 开机或持续轮询依赖**。
+要获得全量有效 Thread 去重、父子关系和缺损分布，必须在有权读取原始字节的可信本地环境执行**一次性离线流式审计**（独立审计工具；不属于 TUI 运行时）。报告解析失败、零字节、压缩/分卷、缺失元数据、重复 ID 与无法确认的主机；不能从路径或 `session_meta.session_id` 直接推定当前 App Server 的会话树或设备身份。禁止上传原文到公开代码仓库，不使用私有 GitHub Actions。该审计**不应成为 TUI 开机或持续轮询依赖**。
 
 ### 2.2 已证实的产品需求
 
@@ -54,7 +54,7 @@ L1.2 已对 112 份非压缩档案抽取 `session_meta`，并对 6 份不同月�
 - [Thread 查询协议](https://github.com/openai/codex/blob/main/codex-rs/app-server-protocol/src/protocol/v2/thread.rs)
 - [App Server README](https://github.com/openai/codex/blob/main/codex-rs/app-server/README.md)
 
-**上游 `main` 能力 ≠ 用户已安装的 Codex 版本有该能力**。协议 adapter 需要在实际 Target 运行时探测、容错、降级；实验字段不能作为通用必需字段。优先复用原生搜索/已读状态/子 Agent 列表，只有证明缺失或不可靠时才做小范围本地派生投影。`currentAccountOnly` 也不等于所有历史记录都可严格按账号隔离，不能代替本地访问控制。
+**上游 `main` 能力 ≠ 用户已安装的 Codex 版本有该能力**。协议 adapter 需要在实际 Target 运行时探测、容错、降级；实验字段不能作为通用必需字段。优先复用原生搜索/已读状态/子 Agent 列表，只有证明缺失或不可靠时才做小范围本地派生投影。`currentAccountOnly` 也不等于所有历史记录都可严格按账号隔离，不能代替本地访问控制。尤其需实测：`thread/list` 默认 `sourceKinds` 仅覆盖 CLI/VS Code；`archived=false` 默认忽略归档；部分协议版本省略 `modelProviders` 时按当前 Provider 过滤。若不显式扩展且完成分页，不能声称用户会话全覆盖。
 
 ## 3. 终态操作界面（仅一个 Mission Control）
 
@@ -78,15 +78,15 @@ Needs You  2  | Working  3 | Recent 20 | Target: ubuntu-A
 
 **窄终端：** 60×24、80×24 和 100×30 必须能看到状态、理由和选中行；详情可折叠；Terminal Drawer 不得遮挡滚动条/选中行。Windows Terminal 经 SSH 无法当然弹出 Windows 上的 VS Code；优先显示可复制的准确路径、目标和原生打开方法。终端能力差异按检测结果提供替代，不以某个按键必然穿透 SSH 为前提。
 
-**检索规则：** 首页只查当前活动且可达的 Target；`/` 优先利用原生搜索和已有有界索引；“全部已配置目标”必须由用户主动选择、分目标有界查询并展示 Partial；历史档案只在明确切到“历史引用”范围时加入。默认不在启动时扫描 8GB，也不把归档命中当作在线可恢复 Thread。
+**检索规则：** 首页只查当前活动且可达的 Target；`/` 优先利用原生搜索和已有有界索引，按能力选择 `recency_at` 等最近活动排序（不把默认 created_at 误作最近工作），无法取得准确活动顺序时标注依据；“全部已配置目标”必须由用户主动选择、分目标有界查询并展示 Partial；历史档案只在明确切到“历史引用”范围时加入。默认不在启动时扫描 8GB，也不把归档命中当作在线可恢复 Thread。
 
 ## 4. 身份、来源和状态：三者必须分离
 
-**SessionKey = 已验证的 TargetIdentity + canonical ThreadId**。单独的线程 ID、窗口标题、仓库 URL、CWD、机器别名或 SSH 隧道名都不够。TargetIdentity 包含用户配置目标、可信连接端身份/作用域和可观察的能力信息；未能验证时拒绝高风险操作。连接别名用于展示，不是主机真实性证明。
+**SessionKey = 已验证的 TargetIdentity + canonical ThreadId**。单独的线程 ID、窗口标题、仓库 URL、CWD、机器别名或 SSH 隧道名都不够。TargetIdentity 包含用户配置目标、可信连接端身份/作用域、`CODEX_HOME` 所在存储作用域、当前账号/Provider 边界（若可验证）和能力信息；这些均应以最小脱敏 fingerprint 表示，不保存凭据。未能验证时拒绝高风险操作。连接别名用于展示，不是主机真实性证明。
 
-**GroupKey** 优先取同 Target 下的 `sessionId`，其次用经确认的 `parentThreadId` 父子关系；字段缺失则不猜测。区分 `forkedFromId`（分叉沿革）与 `parentThreadId`（子 Agent 所属）；跨 Target 相同 `sessionId` 也不可盲合。子 Agent 仅是导航分组，不产生新任务权威。
+**GroupKey 只用于明确的父子 Agent 折叠**：优先由同 Target 下可核实的 `parentThreadId`（及版本支持时的直接附属关系）构建树；字段缺失则不猜测。`sessionId` 是关联的会话树标识，**Fork 可能共享 `sessionId` 但仍是独立可执行工作**，仅作为相关会话导航，不能据此合并工作/审批；`forkedFromId` 只是分叉沿革。跨 Target 同 ID 一律不自动合并，孤立子 Agent 的待办仍须可达。
 
-**RepoRef** 分开记录 Git 仓库身份、工作树根、原始 CWD、平台路径类型、可达性和观察时间；非 Git 项目会话合法。跨主机同名目录绝不能映射为同一写入地点。
+**RepoRef** 分开记录 Git 仓库身份、工作树根、原始 CWD、平台路径类型、可达性和观察时间；跨仓/子模块协议还要引用对应 submodule gitlink SHA 与双端提交，不能凭同名分支认定接口一致。非 Git 项目会话合法。跨主机同名目录绝不能映射为同一写入地点。
 
 **来源字段：** `source` 表示来源种类，`originator` 可能是创建时记录的发起客户端，`threadSource`/角色用于更细分的自动子线程/Guard；这些字段都不等于“当前正在由谁操作”。不认识的枚举保留为 Unknown，并显示原值的安全摘要，而非丢弃记录或把 JSON 原样堆在列表。
 
@@ -101,9 +101,9 @@ Needs You  2  | Working  3 | Recent 20 | Target: ubuntu-A
 
 ## 5. 实时发现、原生接力、归档检索：三条链路
 
-**Discover（实时）：** 复用既有 `app_server_target.rs` 的 stdio/WebSocket/Unix Socket 目标配置，优先一个活动目标。多目标按需串行/有界并发取只读摘要，结果保留 target 标签、抓取时间和完整性；某目标失败不得拖垮本地首页，也不能暗示该目标无待办。不增加常驻团队服务或后台轮询。若要远端安全连接，沿用现有 TLS/Loopback SSH Tunnel 和认证边界。
+**Discover（实时）：** 复用既有 `app_server_target.rs` 的 stdio/WebSocket/Unix Socket 目标配置，优先一个活动目标。对目标版本能力探测后明确区分交互、Exec、App Server、子 Agent、自动 Review 等来源；分页必须到结束游标，Provider/归档范围按用户确认展开，未覆盖范围标为 Partial。多目标按需串行/有界并发取只读摘要，结果保留 target 标签、抓取时间和完整性；某目标失败不得拖垮本地首页，也不能暗示该目标无待办。不增加常驻团队服务或后台轮询。若要远端安全连接，沿用现有 TLS/Loopback SSH Tunnel 和认证边界。
 
-**Resume/Locate（接力）：** 选择 Thread 后重查目标可达性、Thread 身份、当前工作目录与原生接管能力；优先返回原生 Codex CLI 的准确会话或可复制的恢复/定位指令。不能保证 VS Code ↔ CLI 直接接管时，显示“仅定位/需在原客户端继续”，不能启动另一条同名会话冒充成功。若保留内嵌最小回复/审批/中断，则只限真实验证不可靠的接力场景，沿用既有审计与请求身份安全检查。
+**Resume/Locate（接力）：** 选择 Thread 后重查目标可达性、Thread 身份、当前工作目录、原保存 Provider 与原生接管能力；版本支持时优先 `thread/resume` 的 `excludeTurns: true` 和 turns/items 有界分页，不加载整段历史；出现 `modelProviderMismatch` 明确提示仅可读历史/需返回原 Provider，**不得自动 fork 冒充接续**；优先返回原生 Codex CLI 的准确会话或可复制的恢复/定位指令。不能保证 VS Code ↔ CLI 直接接管时，显示“仅定位/需在原客户端继续”，不能启动另一条同名会话冒充成功。若保留内嵌最小回复/审批/中断，则只限真实验证不可靠的接力场景，沿用既有审计与请求身份安全检查。
 
 **Archive（历史）：** 一次性离线读取用户明确提供的私有档案，生成有界脱敏元数据，默认不保存正文、完整 Prompt、凭据或私有设备日志。查询结果明确为“ArchiveOnly，记录来源/完整性/最后观察时间”，不自动更新 Live 的会话状态。零字节、残缺、分卷或缺少终止事件均标不完整；无正式身份验证不得把跨主机同 Thread ID 的档案合并。
 
@@ -113,7 +113,7 @@ Needs You  2  | Working  3 | Recent 20 | Target: ubuntu-A
 
 待处理来源按**真实审批/输入请求、明确系统/测试阻塞、用户待核对结果**优先；工作中与完成后无待操作的后台 Worker 不刷屏。子 Agent 需要用户确认时，父组必须展示聚合提醒，同时能一键定位**真实子 Thread/Request**；不能在父 Thread 上错误回复，也不能因为折叠吞掉它。
 
-**发现完整性前提：** 官方 `thread/list` 在省略 `sourceKinds` 时可能只返回交互来源，不能据默认分页就声称已覆盖子 Agent/Guardian。adapter 必须在 Target 版本支持时显式查询相关来源或由已加载子会话索引补足；不支持时标注“子会话覆盖 Partial”，不得把未检索到的审批当作零待办。
+**发现完整性前提：** 官方 `thread/list` 默认可能只列 CLI/VS Code 且忽略 archived/其他 modelProvider；不能据默认分页就声称已覆盖 Exec、子 Agent、Guardian 或全部归档。adapter 必须在 Target 版本支持时显式查询相关来源或由已加载子会话索引补足；不支持时标注“子会话覆盖 Partial”，不得把未检索到的审批当作零待办。
 
 - 每条 Attention 带 `target + ThreadId + Request/TurnId + observed_at + reason`，过期必须重验。
 - 只有确实送达的事件可标“已通知”；BEL、Windows Toast、视觉提示的语义分别记录。静音不隐藏页面待办。
@@ -131,8 +131,8 @@ Needs You  2  | Working  3 | Recent 20 | Target: ubuntu-A
 |---|---|
 | `SessionRef` | 已确认的 TargetIdentity、ThreadId、父子/SessionId、来源、可达性观察时间 |
 | `WorkItemRef` | provider（Feishu Project / TAPD / LocalDraft）、space/workspace、type、ID、原始 URL、可选只读缓存修订 |
-| `Link` | 一条事项对应 1–4 条 SessionRef、职责/角色；不复制外部任务状态权威 |
-| `ContractRef` | repo + path + 完整 Git SHA + 协议版本/接口约束；旧 SHA 被修改后标“待核对” |
+| `Link` | 一条事项默认突出展示 1–4 条 SessionRef；更多折叠检索（不作硬性总数限制），每条含职责/角色；不复制外部任务状态权威 |
+| `ContractRef` | repo + path + 完整 Git SHA +（适用时）submodule gitlink SHA、协议版本/接口约束；旧 SHA 被修改后标“待核对” |
 | `EvidenceRef / Handoff` | 提交/测试/设备版本/时间/结论来源；交接摘要、目标、显式确认及结果 Unknown 回执 |
 
 **MVP 事项接入：** 用户从实际飞书项目/TAPD 复制原始工作项 URL/ID，人工选择平台与类型，准确关联已有会话；不要求管理员 API 凭证，不根据标题猜工单 ID，也不从普通飞书 Wiki URL 假装解析出飞书项目工单。若双方实际使用两平台，分别试用手动引用；API 只读 adapter 在真实节省时间、获管理员授权且接口字段得到确认后再加。平台更新、评论和状态流转在原系统完成。
@@ -151,7 +151,7 @@ Needs You  2  | Working  3 | Recent 20 | Target: ubuntu-A
 
 ### S3 双仓 UART 联调（P1 的最小验收样本）
 
-一个真实外部事项 → 关联 SoC 应用主会话与 MCU 主会话 → 选定唯一**协议契约 repo/path/full SHA**（帧格式、命令、字节序、校验、时序、错误/重试）→ 双方各自实现与单测 → 生成**可复制、有人确认的定向交接摘要** → 共同测试向量 → 模拟联调 → 真实 UART 收发/回归记录 → 双端完整固件/代码版本和人工结论。
+一个真实外部事项 → 关联 SoC 应用主会话与 MCU 主会话 → 选定唯一**协议契约 repo/path/full SHA（若在子模块还需 gitlink SHA）**（帧格式、命令、字节序、校验、时序、错误/重试）→ 双方各自实现与单测 → 生成**可复制、有人确认的定向交接摘要** → 共同测试向量 → 模拟联调 → 真实 UART 收发/回归记录 → 双端完整固件/代码版本和人工结论。
 
 交接 v0 只“生成、复制、人工粘贴”，复制不自动等于送达；未来若允许直接投递，需目标/权限校验、一次性提交、回执与 OutcomeUnknown 不自动重试。**不做无界 Agent 间聊天或自动打断工作中的 Turn。**
 
@@ -206,7 +206,7 @@ Needs You  2  | Working  3 | Recent 20 | Target: ubuntu-A
 | 关口 | 交付内容 | 必须取得的客观证据 | 失败时 |
 |---|---|---|---|
 | **G0 首次真实可用** | 可信包、Windows Terminal→SSH Ubuntu、真实 Codex、两个不同仓库、正确 CWD、终端退出和原生接力 | 真实操作录屏/脱敏记录、精确二进制摘要、错误/恢复原因 | 暂停 Lite 破坏性删码，先修基本体验 |
-| **G1 会话定位/Attention** | 主/子分组、Target、最近 20+置顶+待处理、搜索、最近进展、未知状态、80×24 导航 | 用实际会话和合成大规模元数据验证无错目标、无请求漏显、无焦点丢失；不同版本/来源覆盖 | 不开 G2 扩展，不把模糊状态当成功 |
+| **G1 会话定位/Attention** | 主/子分组、Target、最近 20+置顶+待处理、搜索、最近进展、未知状态、80×24 导航 | 用真实会话和合成大规模元数据验证无错目标、无请求漏显、无焦点丢失；覆盖 Exec、Guardian、Fork、不同 Provider、两个不同 `CODEX_HOME`/Target 身份及默认过滤缺口 | 不开 G2 扩展，不把模糊状态当成功 |
 | **G2 真实需求/Bug** | 手工精确关联飞书项目/TAPD 原事项、提交和测试证据 | 真实产品需求 1 项、测试缺陷 1 项；若两平台均在使用则各测入口，验收由原责任人完成 | 保持手动入口，不提前做平台 API |
 | **G3 跨仓联调** | SoC+MCU 两个独立会话、契约 SHA、人工交接、联合测试引用 | 双端版本 + 模拟/真实 UART 收发 + 人工确认；再以 KWS/OTA 抽样复用 | 不允许双方单测 PASS 冒充联合 PASS |
 | **G4 删除冗余/发布判断** | 废弃写入、Planning、重复 Queue/Board 与轮询；完善回执、迁移、Doc、Gate | 精确源码/测试结果、数据备份恢复、真实体验优于原生 CLI+VS Code；另核 Stable 资格 | 若效益不成立，只保留最薄会话定位或停止扩张 |
@@ -249,7 +249,7 @@ Needs You  2  | Working  3 | Recent 20 | Target: ubuntu-A
 |---|---|
 | 会话仓库目录级枚举与 L1.2 证据归档 | 已完成（仅档案中现有 2026/04—11 内容） |
 | L1.3 单一方案的产品、架构、工作流和门禁定义 | 本文件为目标交付 |
-| 2,168 份档案逐条内容级统计与多主机全覆盖证明 | **未完成**；仅本地一次性审计可补充，不能凭现有数字推断 |
+| 2,168 份档案逐条内容级统计与多主机全覆盖证明 | **未完成**；已确认 2 个零字节档案和 249 个 ≥8MB 对象。需要可信本地运行完整流式审计；即使文件全读完，也不能凭归档证明所有主机/未上传会话均覆盖 |
 | Lite 主路径代码重构与旧服务清理 | **未完成** |
 | 真实 Windows SSH、Codex 登录与设备/内部 GitLab 验收 | **未完成** |
 | Stable 发布许可 | **未获得**，保持 `stableReady=false` / `publicationAllowed=false` 的既有安全结论，直至准确代码基线重新核验 |
