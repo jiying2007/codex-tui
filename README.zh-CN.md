@@ -9,6 +9,8 @@ codex-tui 是面向个人开发者、可供团队复用的**本地优先 Mission
 
 **当前状态：** GitHub 曾发布 v1.0.0，但维护者确认 v1.0 和 v1.4 都尚未实际部署。`v1.4.0` 是开发范围完成、等待首次生产验收的候选基线，**不是已发布的 v1.4 Stable**。`stableReady=false`、`publicationAllowed=false`。任何 CI PASS 都不能代替真实 Linux 控制终端、账号和内部 GitLab 资格。
 
+**下一阶段方案（设计，不是当前功能）：** [codex-tui Lite L1.3 统一终版](docs/design/codex-tui-lite-L1.3-unified-final-20261119.md)。它整合真实跨主机 Codex 会话证据、飞书项目/TAPD 业务入口、主/子 Agent 聚合及 G0–G4 实施；旧功能是否删除必须先通过真实使用验证。
+
 从 [中文文档导航](docs/README.zh-CN.md)、[团队快速入门](docs/zh-CN/team-quickstart.md) 或 [安装说明](docs/zh-CN/release/install-upgrade.md) 开始；完整英文研究、历史设计和证据保存在原路径。
 
 ## 开发阶段与发布状态
