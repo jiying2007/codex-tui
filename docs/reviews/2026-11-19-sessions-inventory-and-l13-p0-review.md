@@ -37,7 +37,7 @@
 
 1. **`sessionId` 不应成为主子折叠的直接 GroupKey。** 根线程与 forked Thread 可能共享会话树 `sessionId`，但 fork 是独立工作，子 Agent 折叠需可核实的 `parentThreadId`/直接附属关系。`forkedFromId` 只表示分叉沿革。
 2. **`thread/list` 默认不是所有会话。** 不带 `sourceKinds` 时偏向 CLI/VS Code 交互来源；`archived=false` 不列归档；部分版本默认只列当前 Provider。必须按目标能力列出实际覆盖范围、逐页取到游标结束。Exec/Sub Agent/Review/Guardian 不可仅凭默认页显示“零待办”。
-3. **会话操作的身份必须可证。** Target、`CODEX_HOME` 的存储/用户作用域、Provider/账号权限、ThreadId 共同决定定位和写入许可。别名、CWD 字面值、hostname 或同名 Git repo 不足以跨主机重用身份；本地存脱敏稳定指纹，不存凭据。
+3. **会话操作的身份必须可证。** Target、`CODEX_HOME` 的存储/用户作用域、Provider/账号权限、ThreadId 共同决定定位和写入许可。别名、CWD 字面值、hostname 或同名 Git repo 不足以跨主机重用身份；本地存脱敏稳定指纹，不存凭据。现有 `status_from_initialize` 已解析 `codexHome`，可以复用，但该字符串自身不能充当主机认证。
 4. **继续 Thread 不等于能读取历史。** 支持时用 `thread/resume` 的 `excludeTurns: true` 与 turns/items 分页；遇到 `modelProviderMismatch` 需清楚地区分原 Provider 可续、当前只可读、未知，禁止静默 Fork。
 5. **Attention 必须与完整性分开。** 源列表 Partial、子 Agent 未枚举、远程断联、队列未读完都不等于没有人工请求。待回复关联正确 Target+Thread+Request；先替换目前的 Planning/WorkCard 派生依赖，再退役旧模块。
 
@@ -45,7 +45,7 @@
 
 ## 4. 其他应保留的实际使用约束
 
-- 列表为 NeedsYou→Pinned→Working→最近20条；“最近”优先实际 `recencyAt` 而非创建时间（按上游目标能力降级）；子 Agent 默认折叠但请求不能丢失。
+- 列表为 NeedsYou→Pinned→Working→最近20条；当前 `src/app_server.rs` 已优先请求 `sortKey=recency_at` 并提供旧协议分页降级，**保留且验证**这一实现，不重复建设排序；子 Agent 默认折叠但请求不能丢失。
 - Windows Terminal→SSH 的终端恢复与滚动、`Alt+T` 替代按键要在真实 60×24 / 80×24 验证；**不用 F6**，不能认为 `Ctrl+]` 必然穿透。
 - Feishu Project/TAPD 仍是产品与 QA 的实际需求/缺陷权威；GitHub/GitLab 管理代码、MR/PR、CI；不回退到把 GitHub Issue 强制设为需求主入口。
 - SoC↔MCU UART、Boot/OTA、Audio/KWS 等联调的契约应记录文件 SHA、两端提交及适用时 `submodule gitlink SHA`；同名分支并不证明协议一致。
