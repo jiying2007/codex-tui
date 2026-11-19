@@ -113,6 +113,8 @@ Needs You  2  | Working  3 | Recent 20 | Target: ubuntu-A
 
 待处理来源按**真实审批/输入请求、明确系统/测试阻塞、用户待核对结果**优先；工作中与完成后无待操作的后台 Worker 不刷屏。子 Agent 需要用户确认时，父组必须展示聚合提醒，同时能一键定位**真实子 Thread/Request**；不能在父 Thread 上错误回复，也不能因为折叠吞掉它。
 
+**发现完整性前提：** 官方 `thread/list` 在省略 `sourceKinds` 时可能只返回交互来源，不能据默认分页就声称已覆盖子 Agent/Guardian。adapter 必须在 Target 版本支持时显式查询相关来源或由已加载子会话索引补足；不支持时标注“子会话覆盖 Partial”，不得把未检索到的审批当作零待办。
+
 - 每条 Attention 带 `target + ThreadId + Request/TurnId + observed_at + reason`，过期必须重验。
 - 只有确实送达的事件可标“已通知”；BEL、Windows Toast、视觉提示的语义分别记录。静音不隐藏页面待办。
 - 连接丢失、历史不完整和限额不可判断时显示 Partial/Unknown；不能把“没查到”变成“无待办”。
