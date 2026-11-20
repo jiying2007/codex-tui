@@ -1414,7 +1414,9 @@ fn apply_effects(
             Effect::JumpToTranscriptHit(hit) => {
                 let thread_id = hit.thread_id.clone();
                 if let Some(registry) = registry {
-                    if let Err(error) = registry.jump_to_transcript_hit_checked(&app.backend_status, hit) {
+                    if let Err(error) =
+                        registry.jump_to_transcript_hit_checked(&app.backend_status, hit)
+                    {
                         reduce(
                             app,
                             Action::ConversationFailed {
@@ -1440,7 +1442,9 @@ fn apply_effects(
             }
             Effect::RefreshThreadQueue(thread_id) => {
                 if let Some(registry) = registry {
-                    if let Err(error) = registry.refresh_thread_queue_checked(&app.backend_status, thread_id.clone()) {
+                    if let Err(error) = registry
+                        .refresh_thread_queue_checked(&app.backend_status, thread_id.clone())
+                    {
                         reduce(
                             app,
                             Action::ThreadQueueFailed {
@@ -1648,11 +1652,9 @@ fn now_unix_ms() -> u64 {
         .try_into()
         .unwrap_or(u64::MAX)
 }
-
 #[cfg(test)]
 mod app_server_target_cli_tests {
     use super::*;
-
     #[test]
     fn target_flag_is_removed_and_preserves_other_arguments() {
         let mut args = vec![
@@ -1667,12 +1669,10 @@ mod app_server_target_cli_tests {
         );
         assert_eq!(args, vec!["doctor", "codex"]);
     }
-
     #[test]
     fn target_flag_requires_exactly_one_non_empty_value() {
         let mut missing = vec!["--target".to_string()];
         assert!(take_value_flag(&mut missing, "--target").is_err());
-
         let mut duplicate = vec![
             "--target".to_string(),
             "one".to_string(),
