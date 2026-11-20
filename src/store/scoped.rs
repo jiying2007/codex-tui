@@ -42,7 +42,11 @@ pub fn operator_scope_key(target: &str, home: Option<&str>) -> String {
     let home_text = home.unwrap_or("");
     format!(
         "scope-v1:{}:{}:{}:{}:{}",
-        target.len(), target, u8::from(home.is_some()), home_text.len(), home_text,
+        target.len(),
+        target,
+        u8::from(home.is_some()),
+        home_text.len(),
+        home_text,
     )
 }
 
@@ -65,9 +69,18 @@ mod tests {
         let bk = target_instance_identity(&b);
         assert!(!bk.contains("secret"));
         assert!(!bk.contains("never-serialize"));
-        assert_ne!(operator_scope_key(&ak, Some("/same/.codex")), operator_scope_key(&bk, Some("/same/.codex")));
-        assert_ne!(operator_scope_key(&ak, Some("/one")), operator_scope_key(&ak, Some("/two")));
-        assert_ne!(operator_scope_key(&ak, None), operator_scope_key(&ak, Some("")));
+        assert_ne!(
+            operator_scope_key(&ak, Some("/same/.codex")),
+            operator_scope_key(&bk, Some("/same/.codex"))
+        );
+        assert_ne!(
+            operator_scope_key(&ak, Some("/one")),
+            operator_scope_key(&ak, Some("/two"))
+        );
+        assert_ne!(
+            operator_scope_key(&ak, None),
+            operator_scope_key(&ak, Some(""))
+        );
     }
 
     #[test]

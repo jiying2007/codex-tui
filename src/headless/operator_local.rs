@@ -15,7 +15,8 @@ pub(super) fn apply_local_operator_state(
             .as_deref()
             .filter(|_| source.connected)
             .and_then(|identity| {
-                local.scopes
+                local
+                    .scopes
                     .get(&operator_scope_key(identity, source.codex_home.as_deref()))
             })
             .cloned()
@@ -24,7 +25,9 @@ pub(super) fn apply_local_operator_state(
     for thread in threads {
         thread.pinned = overlay.pins.contains(&thread.id.0);
         thread.alias = overlay.aliases.get(&thread.id.0).cloned();
-        thread.attention.retain(|reason| *reason != AttentionReason::MarkedUnread);
+        thread
+            .attention
+            .retain(|reason| *reason != AttentionReason::MarkedUnread);
         if overlay.marked_unread.contains(&thread.id.0) {
             thread.attention.push(AttentionReason::MarkedUnread);
         }

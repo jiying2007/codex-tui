@@ -78,7 +78,9 @@ impl AppState {
         for thread in &mut self.threads {
             thread.pinned = self.local_pins.contains(&thread.id.0);
             thread.alias = self.local_aliases.get(&thread.id.0).cloned();
-            thread.attention.retain(|reason| *reason != AttentionReason::MarkedUnread);
+            thread
+                .attention
+                .retain(|reason| *reason != AttentionReason::MarkedUnread);
             if self.local_marked_unread.contains(&thread.id.0) {
                 thread.attention.push(AttentionReason::MarkedUnread);
             }
@@ -148,7 +150,9 @@ mod tests {
         assert!(!first.threads[0].pinned);
         assert!(first.threads[0].alias.is_none());
         first.local_pins.insert(thread_id.clone());
-        first.local_aliases.insert(thread_id.clone(), "only A".into());
+        first
+            .local_aliases
+            .insert(thread_id.clone(), "only A".into());
         first.local_marked_unread.insert(thread_id.clone());
         first.thread_ui.entry(thread_id.clone()).or_default().draft = "draft A".into();
         first.acknowledged_attention.insert(thread_id.clone());
@@ -180,12 +184,20 @@ mod tests {
         app.apply_local_state(&LocalStateV1::default());
         app.backend_status = status(&a, Some("/home/one"));
         app.bind_operator_status();
-        app.local_aliases.insert(thread_id.clone(), "home one".into());
+        app.local_aliases
+            .insert(thread_id.clone(), "home one".into());
         app.backend_status.codex_home = Some("/home/two".into());
         app.bind_operator_status();
         assert!(app.local_aliases.is_empty());
         let saved = app.to_local_state();
         assert_eq!(saved.scopes.len(), 2);
-        assert_eq!(saved.scopes.values().filter(|s| s.aliases.contains_key(&thread_id)).count(), 1);
+        assert_eq!(
+            saved
+                .scopes
+                .values()
+                .filter(|s| s.aliases.contains_key(&thread_id))
+                .count(),
+            1
+        );
     }
 }

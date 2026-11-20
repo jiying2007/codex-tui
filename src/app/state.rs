@@ -811,6 +811,4 @@ impl AppState {
     pub(crate) fn planning_reconcile_count(&self) -> usize {
         self.planning_reconcile_count
     }
-
-
 }
