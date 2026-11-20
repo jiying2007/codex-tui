@@ -2,9 +2,11 @@
 #![cfg(target_os = "linux")]
 
 use codex_tui::{
-    sqlite_store::SqliteStore,
-    store::{LocalStateV1, LocalStore, ScopedOperatorState, target_instance_identity, operator_scope_key},
     app_server_target::{ResolvedAppServerEndpoint, ResolvedAppServerTarget},
+    sqlite_store::SqliteStore,
+    store::{
+        LocalStateV1, LocalStore, ScopedOperatorState, operator_scope_key, target_instance_identity,
+    },
 };
 use serde_json::{Value, json};
 use std::{
@@ -323,7 +325,9 @@ fn same_id_target_scopes_apply_only_to_matching_endpoint() {
     let seed = home.path().join("seed");
     let store = SqliteStore::at(&seed);
     let mut local = LocalStateV1::default();
-    local.aliases.insert("shared-id".into(), "unscoped legacy".into());
+    local
+        .aliases
+        .insert("shared-id".into(), "unscoped legacy".into());
     local.pins.insert("shared-id".into());
     let mut own = ScopedOperatorState::default();
     own.aliases.insert("shared-id".into(), "Only first".into());
@@ -337,11 +341,18 @@ fn same_id_target_scopes_apply_only_to_matching_endpoint() {
     std::fs::create_dir_all(home.path().join("data")).unwrap();
     std::fs::rename(seed.join("state"), home.path().join("data/codex-tui")).unwrap();
 
-    let a = report(&home, &["headless", "work", "--target", "first", "--json"], 0);
-    let b = report(&home, &["headless", "work", "--target", "second", "--json"], 0);
+    let a = report(
+        &home,
+        &["headless", "work", "--target", "first", "--json"],
+        0,
+    );
+    let b = report(
+        &home,
+        &["headless", "work", "--target", "second", "--json"],
+        0,
+    );
     assert_eq!(a["work"][0]["title"], "Only first");
     assert_eq!(b["work"][0]["title"], "Second");
     assert_eq!(a["source"]["targetId"], "first");
     assert_eq!(b["source"]["targetId"], "second");
-
 }
