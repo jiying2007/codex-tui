@@ -39,6 +39,7 @@ mod pagination;
 use observed_scope::ObservedScope;
 mod queue_mutation;
 mod registry_sources;
+mod resume_guard;
 use registry_sources::{
     RegistrySourceScope, apply_registry_source_coverage, load_registry_page,
     load_registry_with_page_limit,
@@ -370,7 +371,7 @@ impl RegistryHandle {
         self.conversation_rx.try_recv().ok()
     }
 
-    pub fn load_conversation(&self, thread_id: ThreadId) -> Result<()> {
+    pub(crate) fn load_conversation(&self, thread_id: ThreadId) -> Result<()> {
         self.send_command(BackendCommand::LoadConversation(thread_id))
     }
 

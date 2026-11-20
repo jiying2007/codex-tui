@@ -1526,7 +1526,9 @@ fn apply_effects(
             }
             Effect::LoadConversation(thread_id) => {
                 if let Some(registry) = registry {
-                    if let Err(error) = registry.load_conversation(thread_id.clone()) {
+                    if let Err(error) =
+                        registry.load_conversation_checked(&app.backend_status, thread_id.clone())
+                    {
                         reduce(
                             app,
                             Action::ConversationFailed {
@@ -1621,13 +1623,11 @@ fn apply_effects(
     }
     Ok(())
 }
-
 fn submit_planning(app: &mut AppState, result: Result<(), String>) {
     if let Err(error) = result {
         reduce(app, Action::PlanningStoreDegraded(Some(error)));
     }
 }
-
 fn apply_planning_store_result(app: &mut AppState, result: Result<PlanningSnapshot, String>) {
     match result {
         Ok(snapshot) => {
