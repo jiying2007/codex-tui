@@ -148,6 +148,8 @@
     "user-perceived-performance-evidence"
   ],
   "moduleRatchet": {
+    "src/app/registry/groups.rs": 236,
+    "src/ui/registry/groups.rs": 24,
     "src/domain/identity_tests.rs": 93,
     "src/codex_protocol/tests.rs": 157,
     "src/domain/thread_lineage.rs": 19,

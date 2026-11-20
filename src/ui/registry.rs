@@ -1,6 +1,8 @@
 use super::*;
 mod coverage;
+mod groups;
 use coverage::registry_inventory_label;
+use groups::display_group_title;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct RegistryViewport {
@@ -113,6 +115,7 @@ pub(super) fn render_thread_list(frame: &mut Frame<'_>, app: &AppState, area: Re
 
 fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewport) {
     let (visible, viewport) = registry_viewport(app, area.height);
+    let group_info = app.registry_group_projection();
     let attention_count = visible
         .iter()
         .filter(|index| app.thread_needs_attention(**index))
@@ -256,14 +259,14 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
                     8,
                 ),
                 fit_display(&thread.workspace, 11),
-                sanitize_inline(thread.display_title())
+                display_group_title(app, index, &group_info)
             ),
             LayoutMode::Standard | LayoutMode::Wide => format!(
                 "{prefix}{pin}{collision}{locality} {} {} {} {}",
                 fit_display(runtime_status_label(&thread.runtime, app.language), 8),
                 fit_display(&thread.workspace, 18),
                 fit_display(&attention, 10),
-                sanitize_inline(thread.display_title())
+                display_group_title(app, index, &group_info)
             ),
         };
         let style = if selected {
