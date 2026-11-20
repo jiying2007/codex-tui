@@ -364,7 +364,7 @@
     "src/headless/tests.rs": 162,
     "src/planning/saved_views.rs": 169,
     "src/ui/registry.rs": 316,
-    "src/ui/registry/tests.rs": 187,
+    "src/ui/registry/tests.rs": 188,
     "src/app/forge_review.rs": 155,
     "src/app/planning_worker/diagnostics.rs": 34,
     "src/app/prompt/quick.rs": 31,
