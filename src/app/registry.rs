@@ -63,9 +63,7 @@ impl AppState {
             .work_card_by_thread
             .get(&thread.id.0)
             .and_then(|index| self.work_cards.get(*index));
-        if card.is_some_and(|card| card.snoozed) {
-            return false;
-        }
+        let snoozed = card.is_some_and(|card| card.snoozed);
         let actionable = thread.attention.iter().any(|reason| {
             matches!(
                 reason,
@@ -75,6 +73,13 @@ impl AppState {
             )
         });
         let interactive = self.pending_request_threads.contains(&thread.id.0);
+        // Snooze mutes notifications, not live approvals/user-input requests.
+        if actionable || interactive {
+            return true;
+        }
+        if snoozed {
+            return false;
+        }
         let derived_actionable = card.is_some_and(|card| {
             card.attention.iter().any(|reason| {
                 matches!(

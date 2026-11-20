@@ -53,6 +53,24 @@ use pagination::{
 use resource_budget::{admit_pending_request, enqueue_rpc_message, json_cost};
 
 const PAGE_SIZE: u32 = 200;
+/// Omitting sourceKinds (or sending []) returns only interactive threads upstream.
+const REGISTRY_SOURCE_KINDS: &[&str] = &[
+    "cli", "vscode", "exec", "appServer", "subAgent", "subAgentReview",
+    "subAgentCompact", "subAgentThreadSpawn", "subAgentOther", "unknown",
+];
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum RegistrySourceScope {
+    RequestedKnownKinds,
+    InteractiveFallback,
+}
+
+impl RegistrySourceScope {
+    fn known_kinds_requested(self) -> bool {
+        matches!(self, Self::RequestedKnownKinds)
+    }
+}
+
 const STARTUP_REGISTRY_PAGE_LIMIT: usize = 1;
 const REGISTRY_HYDRATION_YIELD_INTERVAL: Duration = Duration::from_millis(10);
 const REGISTRY_HYDRATION_PUBLISH_PAGE_INTERVAL: usize = 10;
@@ -115,6 +133,35 @@ fn mark_optional_capability(status: &mut BackendStatus, capability: &str, suppor
                 .optional_capabilities_missing
                 .push(capability.to_string());
         }
+    }
+}
+
+fn is_registry_source_filter_unsupported(error: &anyhow::Error) -> bool {
+    let Some(source) = error.downcast_ref::<RpcResponseError>() else {
+        return false;
+    };
+    if source.method != "thread/list" || !matches!(source.code, Some(-32600 | -32602)) {
+        return false;
+    }
+    let message = source.message.to_ascii_lowercase();
+    [
+        "sourcekinds", "source kinds", "source kind",
+        "modelproviders", "model providers",
+        "unknown variant", "invalid variant",
+        "unknown field", "unexpected field",
+    ]
+    .into_iter()
+    .any(|part| message.contains(part))
+}
+
+fn apply_registry_source_coverage(status: &mut BackendStatus, scope: RegistrySourceScope) {
+    let requested = scope.known_kinds_requested();
+    mark_optional_capability(status, "thread/list:known-source-kinds", requested);
+    if !requested {
+        status.registry_complete = false;
+        status.error.get_or_insert_with(|| {
+            "Registry source coverage partial: target rejected explicit sourceKinds; only interactive threads are visible".into()
+        });
     }
 }
 
@@ -517,6 +564,7 @@ struct RegistryHydration {
     budget: PageBudget,
     use_state_db_only: bool,
     optimized_query: bool,
+    source_scope: RegistrySourceScope,
     tombstones: BTreeSet<String>,
     pages_since_publish: usize,
 }
@@ -533,6 +581,7 @@ struct RegistryLoad {
     threads: Vec<ThreadSummary>,
     error: Option<String>,
     registry_complete: bool,
+    source_scope: RegistrySourceScope,
     hydration: Option<RegistryHydration>,
 }
 
@@ -549,6 +598,7 @@ struct RegistryPage {
     threads: Vec<ThreadSummary>,
     next_cursor: Option<String>,
     optimized_query: bool,
+    source_scope: RegistrySourceScope,
 }
 
 async fn bootstrap_registry(
@@ -563,6 +613,7 @@ async fn bootstrap_registry(
     status.connected = !rpc.is_quarantined();
     status.registry_complete = load.registry_complete;
     status.error = load.error;
+    apply_registry_source_coverage(&mut status, load.source_scope);
     status.last_refresh_unix_ms = Some(now_unix_ms());
     Ok((load.threads, status, load.hydration))
 }
@@ -740,11 +791,13 @@ fn apply_full_registry_refresh(
     fresh: Vec<ThreadSummary>,
     threads: &mut BTreeMap<String, ThreadSummary>,
     status: &mut BackendStatus,
+    source_scope: RegistrySourceScope,
 ) {
     *threads = by_id(fresh);
     status.connected = true;
     status.registry_complete = true;
     status.error = None;
+    apply_registry_source_coverage(status, source_scope);
     status.last_refresh_unix_ms = Some(now_unix_ms());
 }
 
@@ -910,7 +963,12 @@ fn finish_registry_reconcile(
                 .insert(thread_id.clone(), thread.clone());
         }
     }
-    apply_full_registry_refresh(reconcile.candidate.into_values().collect(), threads, status);
+    apply_full_registry_refresh(
+        reconcile.candidate.into_values().collect(),
+        threads,
+        status,
+        reconcile.hydration.source_scope,
+    );
 }
 
 async fn run_registry_actor(
@@ -1412,6 +1470,7 @@ async fn run_registry_actor(
                         Some(state.cursor.clone()),
                         state.use_state_db_only,
                         state.optimized_query,
+                        state.source_scope,
                         &mut state.budget,
                     )
                     .await
@@ -1419,6 +1478,7 @@ async fn run_registry_actor(
                         Ok(page) => {
                             let next_cursor = page.next_cursor;
                             state.optimized_query = page.optimized_query;
+                            state.source_scope = page.source_scope;
                             merge_registry_hydration_page(
                                 &mut threads,
                                 page.threads,
@@ -1440,8 +1500,10 @@ async fn run_registry_actor(
                                     state.pages_since_publish = 0;
                                 }
                             } else {
+                                let scope = state.source_scope;
                                 hydration = None;
                                 status.registry_complete = true;
+                                apply_registry_source_coverage(&mut status, scope);
                                 if goal_supported != Some(false) {
                                     reset_eager_goal_queue(
                                         &threads,
@@ -1468,6 +1530,7 @@ async fn run_registry_actor(
                         Some(state.cursor.clone()),
                         state.use_state_db_only,
                         state.optimized_query,
+                        state.source_scope,
                         &mut state.budget,
                     )
                     .await
@@ -1475,6 +1538,7 @@ async fn run_registry_actor(
                         Ok(page) => {
                             let next_cursor = page.next_cursor;
                             state.optimized_query = page.optimized_query;
+                            state.source_scope = page.source_scope;
                             merge_registry_hydration_page(
                                 &mut reconcile_state.candidate,
                                 page.threads,
@@ -1572,7 +1636,12 @@ async fn run_registry_actor(
                 authoritative_refresh_queued = false;
                 match load_registry_with_page_limit(&mut rpc, true, Some(1)).await {
                     Ok(load) if load.registry_complete => {
-                        apply_full_registry_refresh(load.threads, &mut threads, &mut status);
+                        apply_full_registry_refresh(
+                            load.threads,
+                            &mut threads,
+                            &mut status,
+                            load.source_scope,
+                        );
                         loaded_hydration = Some(LoadedIdHydration::default());
                         hydration_tick.reset();
                         if goal_supported != Some(false) {
@@ -1792,35 +1861,57 @@ fn status_from_initialize(result: &Value) -> BackendStatus {
     }
 }
 
+fn registry_query_params(
+    cursor: Option<&str>,
+    use_state_db_only: bool,
+    optimized: bool,
+    source_scope: RegistrySourceScope,
+) -> Value {
+    let mut params = json!({"cursor": cursor, "limit": PAGE_SIZE});
+    if optimized {
+        params["sortKey"] = json!("recency_at");
+        params["sortDirection"] = json!("desc");
+        params["useStateDbOnly"] = json!(use_state_db_only);
+    }
+    if source_scope.known_kinds_requested() {
+        params["sourceKinds"] = json!(REGISTRY_SOURCE_KINDS);
+        // Upstream [] means every provider; unlike sourceKinds, omission is also unrestricted.
+        params["modelProviders"] = json!([]);
+    }
+    params
+}
+
 async fn load_registry_page(
     rpc: &mut RpcSession,
     cursor: Option<String>,
     use_state_db_only: bool,
     mut optimized_query: bool,
+    mut source_scope: RegistrySourceScope,
 ) -> Result<RegistryPage> {
-    let optimized_params = json!({
-        "cursor": cursor,
-        "limit": PAGE_SIZE,
-        "sortKey": "recency_at",
-        "sortDirection": "desc",
-        "useStateDbOnly": use_state_db_only
-    });
-    let legacy_params = json!({
-        "cursor": cursor,
-        "limit": PAGE_SIZE
-    });
-
-    let result = if optimized_query {
-        match rpc.request("thread/list", optimized_params).await {
-            Ok(result) => result,
-            Err(error) if is_registry_query_optimization_unsupported(&error) => {
+    // Downgrade only on the FIRST page: changing filter semantics mid-cursor
+    // would fabricate a complete inventory from incompatible result sets.
+    let result = loop {
+        let params = registry_query_params(
+            cursor.as_deref(),
+            use_state_db_only,
+            optimized_query,
+            source_scope,
+        );
+        match rpc.request("thread/list", params).await {
+            Ok(result) => break result,
+            Err(error) if optimized_query && is_registry_query_optimization_unsupported(&error) => {
                 optimized_query = false;
-                rpc.request("thread/list", legacy_params).await?
+            }
+            Err(error)
+                if cursor.is_none()
+                    && source_scope.known_kinds_requested()
+                    && is_registry_source_filter_unsupported(&error) =>
+            {
+                source_scope = RegistrySourceScope::InteractiveFallback;
+                optimized_query = false;
             }
             Err(error) => return Err(error),
         }
-    } else {
-        rpc.request("thread/list", legacy_params).await?
     };
 
     let page = parse_thread_list(result)?;
@@ -1832,6 +1923,7 @@ async fn load_registry_page(
             .collect(),
         next_cursor: page.next_cursor,
         optimized_query,
+        source_scope,
     })
 }
 

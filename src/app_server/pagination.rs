@@ -110,11 +110,12 @@ pub(super) async fn guarded_registry_page(
     cursor: Option<String>,
     use_state_db_only: bool,
     optimized_query: bool,
+    source_scope: RegistrySourceScope,
     budget: &mut PageBudget,
 ) -> Result<RegistryPage> {
     let page = tokio::time::timeout(
         budget.remaining()?,
-        load_registry_page(rpc, cursor, use_state_db_only, optimized_query),
+        load_registry_page(rpc, cursor, use_state_db_only, optimized_query, source_scope),
     )
     .await
     .context("Registry pagination total deadline exceeded")??;
@@ -137,6 +138,7 @@ pub(super) async fn load_registry_with_page_limit(
     let mut cursor = None;
     let mut threads = BTreeMap::new();
     let mut optimized_query = true;
+    let mut source_scope = RegistrySourceScope::RequestedKnownKinds;
     let mut budget = PageBudget::default();
     loop {
         let page = match guarded_registry_page(
@@ -144,6 +146,7 @@ pub(super) async fn load_registry_with_page_limit(
             cursor,
             use_state_db_only,
             optimized_query,
+            source_scope,
             &mut budget,
         )
         .await
@@ -154,12 +157,14 @@ pub(super) async fn load_registry_with_page_limit(
                     threads: threads.into_values().collect(),
                     error: Some(format!("Registry inventory incomplete: {error}")),
                     registry_complete: false,
+                    source_scope,
                     hydration: None,
                 });
             }
             Err(error) => return Err(error),
         };
         optimized_query = page.optimized_query;
+        source_scope = page.source_scope;
         for thread in page.threads {
             threads.insert(thread.id.0.clone(), thread);
         }
@@ -168,6 +173,7 @@ pub(super) async fn load_registry_with_page_limit(
                 threads: threads.into_values().collect(),
                 error: None,
                 registry_complete: true,
+                source_scope,
                 hydration: None,
             });
         };
@@ -176,11 +182,13 @@ pub(super) async fn load_registry_with_page_limit(
                 threads: threads.into_values().collect(),
                 error: None,
                 registry_complete: false,
+                source_scope,
                 hydration: Some(RegistryHydration {
                     cursor: next,
                     budget,
                     use_state_db_only,
                     optimized_query,
+                    source_scope,
                     tombstones: BTreeSet::new(),
                     pages_since_publish: 0,
                 }),
