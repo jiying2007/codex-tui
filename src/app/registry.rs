@@ -15,6 +15,14 @@ impl AppState {
         self.visible_indices_with_match_count().0
     }
 
+    /// Live requests lacking an authoritative thread are visible but not navigable.
+    pub fn unlocated_pending_request_count(&self) -> usize {
+        self.pending_requests
+            .iter()
+            .filter(|request| !self.thread_index_by_id.contains_key(&request.thread_id.0))
+            .count()
+    }
+
     pub fn thread_needs_attention(&self, index: usize) -> bool {
         let Some(thread) = self.threads.get(index) else {
             return false;

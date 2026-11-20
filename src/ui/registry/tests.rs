@@ -3,6 +3,7 @@ use crate::app::{Action, ViewKind, reduce};
 use crate::backend::{CodexBackend, FakeBackend};
 use crate::command::Command;
 use crate::conversation::{InteractiveRequestKind, RpcRequestId};
+use crate::domain::ThreadId;
 use crate::keymap::command_for_key;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Terminal, backend::TestBackend};
@@ -68,6 +69,45 @@ fn compact_attention_and_delivery_hints_survive_drawer_in_both_languages() {
             }));
         }
     }
+}
+
+#[test]
+fn unlocated_request_is_visible_in_both_languages_without_a_fake_thread_row() {
+    let mut app = app();
+    let original_count = app.threads.len();
+    let unknown = ThreadId::new("not-on-current-target");
+    reduce(
+        &mut app,
+        Action::InteractiveRequested(crate::conversation::InteractiveRequest {
+            request_id: RpcRequestId::String("pending-remote".into()),
+            thread_id: unknown.clone(),
+            turn_id: "turn".into(),
+            item_id: "item".into(),
+            kind: InteractiveRequestKind::UserInput { questions: vec![] },
+        }),
+    );
+    for language in [UiLanguage::English, UiLanguage::SimplifiedChinese] {
+        app.language = language;
+        for width in [60, 80] {
+            let screen = render_app(&app, width);
+            let label = if language.is_simplified_chinese() {
+                "!1 请求待定位"
+            } else {
+                "!1 request unlocated"
+            };
+            assert!(screen.contains(label), "width={width}: {screen}");
+            assert_eq!(app.threads.len(), original_count);
+            assert!(!app.threads.iter().any(|thread| thread.id == unknown));
+        }
+    }
+    reduce(
+        &mut app,
+        Action::InteractiveResolved {
+            request_id: RpcRequestId::String("pending-remote".into()),
+        },
+    );
+    assert_eq!(app.unlocated_pending_request_count(), 0);
+    assert!(!render_app(&app, 80).contains("request unlocated"));
 }
 
 #[test]

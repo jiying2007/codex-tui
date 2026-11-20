@@ -357,14 +357,14 @@
     "src/ui/thread/request_details.rs": 37,
     "src/ui/thread/request_details_tests.rs": 120,
     "src/app/registry.rs": 117,
-    "src/app/registry/tests.rs": 210,
+    "src/app/registry/tests.rs": 257,
     "src/headless/options.rs": 74,
     "src/headless/source.rs": 132,
     "src/headless/surfaces/presentation.rs": 139,
     "src/headless/tests.rs": 162,
     "src/planning/saved_views.rs": 169,
-    "src/ui/registry.rs": 307,
-    "src/ui/registry/tests.rs": 148,
+    "src/ui/registry.rs": 316,
+    "src/ui/registry/tests.rs": 188,
     "src/app/forge_review.rs": 155,
     "src/app/planning_worker/diagnostics.rs": 34,
     "src/app/prompt/quick.rs": 31,
@@ -1191,6 +1191,18 @@
         "src/runtime_notifications.rs"
       ],
       "policy": "Bounded explicit development-stage ratchet revision for G1 safety/attention correctness; no new scheduler, model invocation, persistence, task authority or Stable readiness. Exact-head canonical CI, terminal, security and development qualification required."
+    },
+    {
+      "date": "2026-11-20",
+      "kind": "g1-unlocated-live-request-visibility",
+      "scope": "Show exact live pending request count when their ThreadIds are absent from the observed active Target registry, ahead of history/status labels at 60/80-wide SSH sizes. Keep original source/request identity and no synthetic rows, false resume, auto-approval, or imported historical state. Count collapses upon exact discovery or request resolution; bilingual render and reducer regression tests.",
+      "modules": [
+        "src/app/registry.rs",
+        "src/app/registry/tests.rs",
+        "src/ui/registry.rs",
+        "src/ui/registry/tests.rs"
+      ],
+      "policy": "Single G1 presentation-only safety extension using existing AppState and Registry: no new service, local authority, protocol, model call, polling or persistence; exact-HEAD CI/PTy/security/development gates and no Stable claim."
     }
   ]
 }
