@@ -116,6 +116,76 @@ fn g2_bug_requirement_and_g3_two_target_cross_repo_handoff_roundtrip() {
             "firmware",
         ],
     );
+    // A shared ThreadId does not authorize a link on the wrong Target/Home.
+    let found_soc: serde_json::Value = serde_json::from_str(&succeeds(
+        &home,
+        &[
+            "workref",
+            "find",
+            "--target",
+            "ubuntu-A",
+            "--home",
+            "/home/a/.codex",
+            "--thread",
+            "same-thread-id",
+            "--json",
+        ],
+    ))
+    .unwrap();
+    assert_eq!(found_soc.as_array().unwrap().len(), 1);
+    assert_eq!(found_soc[0]["key"], "BUG17");
+    assert_eq!(found_soc[0]["alias"], "soc");
+    assert_eq!(found_soc[0]["manualUnverified"], true);
+    let found_mcu: serde_json::Value = serde_json::from_str(&succeeds(
+        &home,
+        &[
+            "workref",
+            "find",
+            "--target",
+            "windows-B",
+            "--home",
+            "C:\\Users\\b\\.codex",
+            "--thread",
+            "same-thread-id",
+            "--json",
+        ],
+    ))
+    .unwrap();
+    assert_eq!(found_mcu.as_array().unwrap().len(), 1);
+    assert_eq!(found_mcu[0]["alias"], "mcu");
+    let wrong_home: serde_json::Value = serde_json::from_str(&succeeds(
+        &home,
+        &[
+            "workref",
+            "find",
+            "--target",
+            "ubuntu-A",
+            "--home",
+            "C:\\Users\\b\\.codex",
+            "--thread",
+            "same-thread-id",
+            "--json",
+        ],
+    ))
+    .unwrap();
+    assert!(wrong_home.as_array().unwrap().is_empty());
+    assert!(
+        succeeds(
+            &home,
+            &[
+                "workref",
+                "find",
+                "--target",
+                "ubuntu-A",
+                "--home",
+                "/home/a/.codex",
+                "--thread",
+                "missing-thread",
+            ],
+        )
+        .contains("No matching local manual reference")
+    );
+
     succeeds(
         &home,
         &[
@@ -192,6 +262,17 @@ fn g2_bug_requirement_and_g3_two_target_cross_repo_handoff_roundtrip() {
         &["workref", "handoff-text", "--key", "BUG17", "--index", "0"],
     );
     assert!(handoff.contains("HANDOFF STATUS: prepared"));
+    assert!(handoff.contains("FROM: soc · repo robot-app"));
+    assert!(handoff.contains("TO: mcu · repo mcu-fw"));
+    assert!(handoff.contains("TARGET: ubuntu-A"));
+    assert!(handoff.contains("TARGET: windows-B"));
+    assert!(handoff.contains("THREAD: same-thread-id"));
+    assert!(handoff.contains("CONTRACT: protocol"));
+    assert!(handoff.contains("EVIDENCE: unit"));
+    assert!(handoff.contains("EVIDENCE: integration"));
+    assert!(handoff.contains("result=passed"));
+    assert!(handoff.contains("result=unknown"));
+    assert!(handoff.contains("manual copy is not delivery"));
     let json: serde_json::Value =
         serde_json::from_str(&succeeds(&home, &["workref", "list", "--json"])).unwrap();
     assert_eq!(
@@ -256,6 +337,19 @@ fn invalid_or_conflicting_cli_operations_never_replace_saved_authority() {
         ],
     );
     assert_eq!(invalid.status.code(), Some(2));
+    let invalid_find = invoke(
+        &home,
+        &[
+            "workref",
+            "find",
+            "--target",
+            "ubuntu-A",
+            "--thread",
+            "same-thread-id",
+            "--json",
+        ],
+    );
+    assert_eq!(invalid_find.status.code(), Some(2));
     assert_eq!(std::fs::read_dir(home.path()).unwrap().count(), 0);
     succeeds(
         &home,

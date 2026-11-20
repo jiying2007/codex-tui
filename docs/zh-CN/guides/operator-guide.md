@@ -116,6 +116,8 @@ codex-tui workref contract --key BUG17 --kind protocol --source robot-app/docs/p
 codex-tui workref evidence --key BUG17 --kind integration --source "$JOINT_TEST_REPORT" --revision combo-3 --result unknown --environment bench
 codex-tui workref handoff --key BUG17 --from soc --to mcu --summary "Review protocol revision r3"
 codex-tui workref handoff-text --key BUG17 --index 0
+# 只按完整 Target + CODEX_HOME + ThreadId 反查本地关联；不自动接续会话。
+codex-tui workref find --target "$SOC_TARGET_ID" --home "$SOC_CODEX_HOME" --thread "$SOC_THREAD_ID" --json
 # 只有收到接收方实际确认后，才能标记回执：
 codex-tui workref ack --key BUG17 --index 0 --receipt "$RECIPIENT_ACK_REFERENCE"
 codex-tui workref show --key BUG17

@@ -13,6 +13,7 @@ const COMMANDS: &[&str] = &[
     "ack",
     "list",
     "show",
+    "find",
     "handoff-text",
 ];
 
@@ -51,6 +52,12 @@ enum Command {
     Show {
         key: String,
     },
+    Find {
+        target: String,
+        home: String,
+        thread: String,
+        json: bool,
+    },
     HandoffText {
         key: String,
         index: usize,
@@ -61,7 +68,7 @@ impl Command {
     fn write(&self) -> bool {
         !matches!(
             self,
-            Self::List { .. } | Self::Show { .. } | Self::HandoffText { .. }
+            Self::List { .. } | Self::Show { .. } | Self::Find { .. } | Self::HandoffText { .. }
         )
     }
 }
@@ -238,6 +245,26 @@ fn parse(args: &[String]) -> Result<Command, String> {
                 key: take(&m, "--key"),
             }
         }
+        "find" => {
+            // Exact three-part manual identity. A ThreadId alone is never a target.
+            let (m, json) = fields(args, &["--target", "--home", "--thread"], &[], true)?;
+            let target = take(&m, "--target");
+            let home = take(&m, "--home");
+            let thread = take(&m, "--thread");
+            for (name, value, limit) in [
+                ("Target identity", target.as_str(), 256),
+                ("Codex home", home.as_str(), 512),
+                ("ThreadId", thread.as_str(), 160),
+            ] {
+                bounded(name, value, limit).map_err(|e| e.to_string())?;
+            }
+            Command::Find {
+                target,
+                home,
+                thread,
+                json,
+            }
+        }
         "handoff-text" => {
             let (m, _) = fields(args, &["--key", "--index"], &[], false)?;
             let index = take(&m, "--index")
@@ -259,7 +286,7 @@ fn parse(args: &[String]) -> Result<Command, String> {
         | Command::Ack { key, .. }
         | Command::Show { key }
         | Command::HandoffText { key, .. } => Some(key.as_str()),
-        Command::List { .. } => None,
+        Command::List { .. } | Command::Find { .. } => None,
     };
     if let Some(key) = key {
         key_valid(key).map_err(|e| e.to_string())?;
@@ -313,6 +340,62 @@ pub fn run_cli(args: &[String]) -> Result<i32> {
             }
             return Ok(0);
         }
+        Command::Find {
+            target,
+            home,
+            thread,
+            json,
+        } => {
+            // Same ThreadId on two Targets or homes must never collide.
+            // These links were entered manually; no live identity proof is implied.
+            let mut matches = Vec::new();
+            for (key, item) in &ledger.items {
+                for (alias, session) in &item.sessions {
+                    if session.target_identity == target
+                        && session.codex_home == home
+                        && session.thread_id == thread
+                    {
+                        matches.push((key, alias, item, session));
+                    }
+                }
+            }
+            if json {
+                let rows = matches
+                    .iter()
+                    .map(|(key, alias, item, session)| {
+                        serde_json::json!({
+                            "key": key,
+                            "alias": alias,
+                            "provider": item.provider,
+                            "space": item.space,
+                            "kind": item.kind,
+                            "externalId": item.external_id,
+                            "url": item.url,
+                            "repository": session.repository,
+                            "role": session.role,
+                            "manualUnverified": true
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                println!("{}", serde_json::to_string_pretty(&rows)?);
+            } else if matches.is_empty() {
+                println!("No matching local manual reference; remote authority not queried.");
+            } else {
+                for (key, alias, item, session) in matches {
+                    println!(
+                        "{} [{}] {}:{}:{} · {} ({}) · manual/unverified",
+                        crate::text::sanitize_inline(key),
+                        crate::text::sanitize_inline(alias),
+                        item.provider,
+                        crate::text::sanitize_inline(&item.space),
+                        crate::text::sanitize_inline(&item.external_id),
+                        crate::text::sanitize_inline(&session.repository),
+                        crate::text::sanitize_inline(&session.role),
+                    );
+                }
+            }
+            return Ok(0);
+        }
         Command::Show { key } => {
             let item = ledger
                 .items
@@ -331,14 +414,46 @@ pub fn run_cli(args: &[String]) -> Result<i32> {
                 .get(index)
                 .ok_or_else(|| anyhow::anyhow!("unknown handoff index"))?;
             println!(
-                "WORKREF: {} · {} / {}",
-                item.provider, item.space, item.external_id
+                "WORKREF: {} · {} / {} [{}] · MANUAL/UNVERIFIED",
+                item.provider,
+                crate::text::sanitize_inline(&item.space),
+                crate::text::sanitize_inline(&item.external_id),
+                item.kind
             );
-            println!("SOURCE: {} -> {}", handoff.from_alias, handoff.to_alias);
+            if let Some(url) = &item.url {
+                println!("ORIGINAL ITEM: {}", crate::text::sanitize_inline(url));
+            }
+            for (direction, alias) in [("FROM", &handoff.from_alias), ("TO", &handoff.to_alias)] {
+                let session = item
+                    .sessions
+                    .get(alias)
+                    .ok_or_else(|| anyhow::anyhow!("handoff session alias missing"))?;
+                println!(
+                    "{direction}: {} · repo {} · role {}",
+                    crate::text::sanitize_inline(alias),
+                    crate::text::sanitize_inline(&session.repository),
+                    crate::text::sanitize_inline(&session.role)
+                );
+                println!(
+                    "  TARGET: {}",
+                    crate::text::sanitize_inline(&session.target_identity)
+                );
+                println!(
+                    "  CODEX_HOME: {}",
+                    crate::text::sanitize_inline(&session.codex_home)
+                );
+                println!(
+                    "  THREAD: {}",
+                    crate::text::sanitize_inline(&session.thread_id)
+                );
+            }
             println!(
                 "SUMMARY: {}",
                 crate::text::sanitize_inline(&handoff.summary)
             );
+            if item.contracts.is_empty() {
+                println!("CONTRACT: none recorded (unverified)");
+            }
             for contract in &item.contracts {
                 println!(
                     "CONTRACT: {} {} @ {}{}",
@@ -352,8 +467,21 @@ pub fn run_cli(args: &[String]) -> Result<i32> {
                         .unwrap_or_default()
                 );
             }
+            if item.evidence.is_empty() {
+                println!("EVIDENCE: none recorded (not proof of passing)");
+            }
+            for evidence in &item.evidence {
+                println!(
+                    "EVIDENCE: {} {} @ {} · result={} · environment={} (as recorded)",
+                    evidence.kind,
+                    crate::text::sanitize_inline(&evidence.source),
+                    crate::text::sanitize_inline(&evidence.revision),
+                    evidence.result,
+                    crate::text::sanitize_inline(&evidence.environment)
+                );
+            }
             println!(
-                "HANDOFF STATUS: {} (manual copy is not delivery)",
+                "HANDOFF STATUS: {} (manual copy is not delivery; evidence is not independently verified)",
                 handoff.status
             );
             return Ok(0);

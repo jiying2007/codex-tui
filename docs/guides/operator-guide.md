@@ -116,6 +116,8 @@ codex-tui workref contract --key BUG17 --kind protocol --source robot-app/docs/p
 codex-tui workref evidence --key BUG17 --kind integration --source "$JOINT_TEST_REPORT" --revision combo-3 --result unknown --environment bench
 codex-tui workref handoff --key BUG17 --from soc --to mcu --summary "Review protocol revision r3"
 codex-tui workref handoff-text --key BUG17 --index 0
+# Reverse lookup uses the exact Target + CODEX_HOME + ThreadId tuple; no auto-resume.
+codex-tui workref find --target "$SOC_TARGET_ID" --home "$SOC_CODEX_HOME" --thread "$SOC_THREAD_ID" --json
 # Only after an actual acknowledgment from the destination:
 codex-tui workref ack --key BUG17 --index 0 --receipt "$RECIPIENT_ACK_REFERENCE"
 codex-tui workref show --key BUG17

@@ -12,7 +12,7 @@ const HELP: &str = "Usage: codex-tui [--fake | --target NAME]
        codex-tui status | thread list | attention list | board list | forge status | worktree list
        codex-tui release <verify|benchmark|render-benchmark|interaction-benchmark|scale|failure-matrix> [OPTIONS]
        codex-tui soak [--rows N] [--cycles N] [--duration-seconds N] [--json]
-       codex-tui workref <add|session|contract|evidence|handoff|ack|show|list|handoff-text> [OPTIONS]
+       codex-tui workref <add|session|contract|evidence|handoff|ack|find|show|list|handoff-text> [OPTIONS]
 
 Use --help after a command for its options. Doctor codex accepts --target NAME.
 Exit codes: 0 success, 1 unexpected runtime error, 2 invalid usage, 3 degraded/blocked.
@@ -43,6 +43,7 @@ const WORKREF_HELP: &str = "Usage: codex-tui workref add --key KEY --provider fe
        codex-tui workref evidence --key KEY --kind KIND --source EVIDENCE_REF --revision VERSION --result passed|failed|partial|unknown --environment ENV
        codex-tui workref handoff --key KEY --from SESSION_ALIAS --to SESSION_ALIAS --summary TEXT
        codex-tui workref ack --key KEY --index N --receipt EXPLICIT_RECEIPT
+       codex-tui workref find --target EXACT_TARGET_ID --home CODEX_HOME --thread THREAD_ID [--json]
        codex-tui workref list [--json] | show --key KEY [--json] | handoff-text --key KEY --index N
 
 All refs are MANUAL/UNVERIFIED until checked against their authoritative source.
