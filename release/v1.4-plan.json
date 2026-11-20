@@ -225,7 +225,7 @@
     "src/runtime_palette.rs": 89,
     "src/runtime_doctor.rs": 411,
     "src/render_performance.rs": 323,
-    "src/runtime_cli.rs": 252,
+    "src/runtime_cli.rs": 253,
     "src/runtime_store_worker.rs": 340,
     "src/app/planning_worker.rs": 206,
     "src/sqlite_backup.rs": 81,
@@ -381,7 +381,7 @@
     "src/app_server/queue_priority_tests.rs": 89,
     "src/forge/current_branch.rs": 81,
     "src/workref.rs": 415,
-    "src/workref/cli.rs": 481,
+    "src/workref/cli.rs": 609,
     "src/workref/tests.rs": 188,
     "src/sqlite_store/workref.rs": 112
   },
@@ -1246,6 +1246,16 @@
         "src/workref/cli.rs"
       ],
       "policy": "Fail-closed local writes with exact-SHA protected tests; retain independent Stable qualification."
+    },
+    {
+      "date": "2026-11-20",
+      "kind": "g23-exact-session-reverse-lookup-and-evidence-handoff",
+      "scope": "G2/G3 add local read-only reverse lookup by the complete user-supplied TargetIdentity + CODEX_HOME + ThreadId tuple; same ThreadId on different targets or homes never matches. Prepared handoff output includes both exact session anchors, contract revision/SHA and separately recorded CI/unit/integration/device/acceptance outcomes, without asserting delivery, verification or business completion. Provide regression for same-ID collision, unknown result and invalid preflight before side effects.",
+      "modules": [
+        "src/workref/cli.rs",
+        "src/runtime_cli.rs"
+      ],
+      "policy": "Explicitly review these two bounded source-growth ceilings; no new authority, model calls, external API, TTY execution, writer, scheduler, data migration, hardware operation or Stable qualification. Exact-SHA CI, format, security, terminal and release qualification retained."
     }
   ]
 }
