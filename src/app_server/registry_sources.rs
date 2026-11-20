@@ -3,8 +3,16 @@ use super::*;
 
 /// Omitting sourceKinds (or sending []) returns only interactive threads upstream.
 const REGISTRY_SOURCE_KINDS: &[&str] = &[
-    "cli", "vscode", "exec", "appServer", "subAgent", "subAgentReview",
-    "subAgentCompact", "subAgentThreadSpawn", "subAgentOther", "unknown",
+    "cli",
+    "vscode",
+    "exec",
+    "appServer",
+    "subAgent",
+    "subAgentReview",
+    "subAgentCompact",
+    "subAgentThreadSpawn",
+    "subAgentOther",
+    "unknown",
 ];
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -28,16 +36,24 @@ fn is_registry_source_filter_unsupported(error: &anyhow::Error) -> bool {
     }
     let message = source.message.to_ascii_lowercase();
     [
-        "sourcekinds", "source kinds", "source kind",
-        "modelproviders", "model providers",
-        "unknown variant", "invalid variant",
-        "unknown field", "unexpected field",
+        "sourcekinds",
+        "source kinds",
+        "source kind",
+        "modelproviders",
+        "model providers",
+        "unknown variant",
+        "invalid variant",
+        "unknown field",
+        "unexpected field",
     ]
     .into_iter()
     .any(|part| message.contains(part))
 }
 
-pub(super) fn apply_registry_source_coverage(status: &mut BackendStatus, scope: RegistrySourceScope) {
+pub(super) fn apply_registry_source_coverage(
+    status: &mut BackendStatus,
+    scope: RegistrySourceScope,
+) {
     let requested = scope.known_kinds_requested();
     mark_optional_capability(status, "thread/list:known-source-kinds", requested);
     if !requested {
@@ -188,15 +204,25 @@ mod tests {
 
     #[test]
     fn registry_explicitly_requests_all_known_sources_and_degrades_honestly() {
-        let params = registry_query_params(
-            None, true, true, RegistrySourceScope::RequestedKnownKinds,
+        let params =
+            registry_query_params(None, true, true, RegistrySourceScope::RequestedKnownKinds);
+        assert!(
+            params["sourceKinds"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|s| s == "exec")
         );
-        assert!(params["sourceKinds"].as_array().unwrap().iter().any(|s| s == "exec"));
-        assert!(params["sourceKinds"].as_array().unwrap().iter().any(|s| s == "subAgentReview"));
+        assert!(
+            params["sourceKinds"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|s| s == "subAgentReview")
+        );
         assert_eq!(params["modelProviders"], json!([]));
-        let fallback = registry_query_params(
-            None, false, false, RegistrySourceScope::InteractiveFallback,
-        );
+        let fallback =
+            registry_query_params(None, false, false, RegistrySourceScope::InteractiveFallback);
         assert!(fallback.get("sourceKinds").is_none());
         assert!(fallback.get("modelProviders").is_none());
 
@@ -216,7 +242,17 @@ mod tests {
         let mut status = BackendStatus::fake();
         apply_registry_source_coverage(&mut status, RegistrySourceScope::InteractiveFallback);
         assert!(!status.registry_complete);
-        assert!(status.error.as_deref().unwrap().contains("only interactive"));
-        assert!(status.optional_capabilities_missing.contains(&"thread/list:known-source-kinds".into()));
+        assert!(
+            status
+                .error
+                .as_deref()
+                .unwrap()
+                .contains("only interactive")
+        );
+        assert!(
+            status
+                .optional_capabilities_missing
+                .contains(&"thread/list:known-source-kinds".into())
+        );
     }
 }

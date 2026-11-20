@@ -115,7 +115,13 @@ pub(super) async fn guarded_registry_page(
 ) -> Result<RegistryPage> {
     let page = tokio::time::timeout(
         budget.remaining()?,
-        load_registry_page(rpc, cursor, use_state_db_only, optimized_query, source_scope),
+        load_registry_page(
+            rpc,
+            cursor,
+            use_state_db_only,
+            optimized_query,
+            source_scope,
+        ),
     )
     .await
     .context("Registry pagination total deadline exceeded")??;

@@ -35,8 +35,8 @@ use tokio::task::{JoinHandle, JoinSet};
 mod history_hit;
 mod lifecycle;
 mod pagination;
-mod registry_sources;
 mod queue_mutation;
+mod registry_sources;
 use registry_sources::{
     RegistrySourceScope, apply_registry_source_coverage, load_registry_page,
     load_registry_with_page_limit,
@@ -51,9 +51,7 @@ mod watch_set;
 use watch_set::{WatchSet, WatchSetGuard};
 mod user_response;
 use history_hit::load_transcript_hit;
-use pagination::{
-    PageBudget, guarded_loaded_page, guarded_registry_page, load_all_loaded_ids,
-};
+use pagination::{PageBudget, guarded_loaded_page, guarded_registry_page, load_all_loaded_ids};
 use resource_budget::{admit_pending_request, enqueue_rpc_message, json_cost};
 
 const PAGE_SIZE: u32 = 200;

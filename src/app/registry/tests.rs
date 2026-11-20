@@ -85,7 +85,7 @@ fn acknowledgment_preserves_actionable_and_pending_requests_while_snooze_keeps_p
     local.overlay.snooze_until_unix_ms = Some(10_000);
     app.planning_snapshot.cards.push(local);
     reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 1 });
-    assert!(app.thread_needs_attention(2), "snooze must never hide a live approval");
+    assert!(app.thread_needs_attention(2));
     assert!(app.threads[2].pinned);
     assert_eq!(app.visible_indices()[..3], [2, 3, 4]);
 }
