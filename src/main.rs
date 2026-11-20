@@ -653,9 +653,8 @@ fn drain_registry(
     for _ in 0..32 {
         let Some(event) = registry.try_recv_conversation() else {
             if registry.response_actor_finished() {
-                let settled = app.settle_stopped_actor(effects);
-                changes.any |= settled;
-                changes.notification |= settled;
+                changes.any |= app.settle_stopped_actor(effects);
+                changes.notification |= changes.any;
             }
             break;
         };
