@@ -1,9 +1,9 @@
 //! Read-only, provenance-aware identity hints for one selected Codex thread.
 use crate::app::AppState;
 use crate::domain::ThreadSummary;
-use ratatui::text::Line;
 use crate::i18n::UiLanguage;
 use crate::text::sanitize_inline;
+use ratatui::text::Line;
 
 pub(super) fn model_provider_label(thread: &ThreadSummary, language: UiLanguage) -> String {
     let unknown = if language.is_simplified_chinese() {
@@ -39,9 +39,15 @@ pub(super) fn manual_workref_heading(app: &AppState, thread_id: &str) -> Option<
         String::new()
     };
     let text = if app.language.is_simplified_chinese() {
-        format!("关联（手工未核验）: {key} {}#{}{tail}", item.provider, item.external_id)
+        format!(
+            "关联（手工未核验）: {key} {}#{}{tail}",
+            item.provider, item.external_id
+        )
     } else {
-        format!("Linked (manual/unverified): {key} {}#{}{tail}", item.provider, item.external_id)
+        format!(
+            "Linked (manual/unverified): {key} {}#{}{tail}",
+            item.provider, item.external_id
+        )
     };
     Some(sanitize_inline(&text))
 }
@@ -50,13 +56,11 @@ pub(super) fn manual_workref_heading(app: &AppState, thread_id: &str) -> Option<
 /// state are only copied from the manual ledger; none imply upstream approval.
 pub(super) fn manual_workref_lines(app: &AppState, thread_id: &str) -> Vec<Line<'static>> {
     if app.workref_unavailable {
-        return vec![Line::from(
-            if app.language.is_simplified_chinese() {
-                "G2/G3 本地关联不可用 · 不视作没有事项"
-            } else {
-                "G2/G3 links UNAVAILABLE · not an empty result"
-            },
-        )];
+        return vec![Line::from(if app.language.is_simplified_chinese() {
+            "G2/G3 本地关联不可用 · 不视作没有事项"
+        } else {
+            "G2/G3 links UNAVAILABLE · not an empty result"
+        })];
     }
     let links = app.manual_workrefs_for_thread(thread_id);
     if links.is_empty() {
@@ -84,7 +88,11 @@ pub(super) fn manual_workref_lines(app: &AppState, thread_id: &str) -> Vec<Line<
             .take(3)
             .map(|e| format!("{}={}", e.kind, e.result))
             .collect::<Vec<_>>();
-        let prepared = item.handoffs.iter().filter(|handoff| handoff.status == "prepared").count();
+        let prepared = item
+            .handoffs
+            .iter()
+            .filter(|handoff| handoff.status == "prepared")
+            .count();
         let acknowledged = item
             .handoffs
             .iter()
