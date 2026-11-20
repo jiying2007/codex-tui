@@ -85,7 +85,10 @@ impl RegistryHandle {
     fn verify_observed_thread(&self, observed: &BackendStatus, id: &ThreadId) -> Result<()> {
         // Preserve the old visible closed-actor error instead of disguising it as
         // a target mismatch; never enqueue into an already closed actor.
-        ensure!(!self.command_tx.is_closed(), "App Server actor is not available");
+        ensure!(
+            !self.command_tx.is_closed(),
+            "App Server actor is not available"
+        );
         self.scope.verify(observed)?;
         let snapshot = self.rx.borrow();
         let searched = self
@@ -111,8 +114,7 @@ fn verify_observed_thread(
     );
     ensure!(
         !id.0.trim().is_empty()
-            && (snapshot.threads.iter().any(|thread| thread.id == *id)
-                || searched.contains(&id.0)),
+            && (snapshot.threads.iter().any(|thread| thread.id == *id) || searched.contains(&id.0)),
         "selected ThreadId has no registry or native-search witness on this Target; locate again"
     );
     Ok(())
@@ -142,7 +144,13 @@ mod tests {
         other.codex_home = Some("/home/b/.codex".into());
         assert!(verify_observed_thread(&current, &other, &id, &BTreeSet::new()).is_err());
         assert!(
-            verify_observed_thread(&current, &current.status, &ThreadId::new("missing"), &BTreeSet::new()).is_err()
+            verify_observed_thread(
+                &current,
+                &current.status,
+                &ThreadId::new("missing"),
+                &BTreeSet::new()
+            )
+            .is_err()
         );
     }
 
@@ -160,6 +168,7 @@ mod tests {
         current.threads.clear();
         assert!(verify_observed_thread(&current, &observed, &id, &BTreeSet::new()).is_err());
     }
+
     #[test]
     fn search_witness_allows_unlisted_history_only_on_observed_target() {
         let current = snapshot();
@@ -185,5 +194,4 @@ mod tests {
         other.connected = false;
         assert!(verify_observed_thread(&current, &other, &ghost, &searched).is_err());
     }
-
 }

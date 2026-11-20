@@ -371,7 +371,6 @@ impl RegistryHandle {
         try_recv_latest_snapshot(&mut self.rx)
     }
 
-
     pub(crate) fn load_conversation(&self, thread_id: ThreadId) -> Result<()> {
         self.send_command(BackendCommand::LoadConversation(thread_id))
     }
@@ -435,7 +434,6 @@ impl RegistryHandle {
     pub fn clear_goal(&self, thread_id: ThreadId) -> Result<()> {
         self.send_command(BackendCommand::ClearGoal(thread_id))
     }
-
 
     pub(crate) fn jump_to_transcript_hit(
         &self,
