@@ -41,6 +41,136 @@ fn app() -> AppState {
     app
 }
 
+fn linked_app() -> AppState {
+    use crate::app_server_target::ResolvedAppServerTarget;
+    use crate::workref::{ContractRef, EvidenceRef, SessionRef, WorkItem, WorkRefLedger};
+    let mut app = app();
+    let target = ResolvedAppServerTarget::implicit_local(None);
+    app.configure_operator_target(&target);
+    let mut status = crate::backend::BackendStatus::starting(target.status_source());
+    status.connected = true;
+    status.codex_home = Some("/home/codex/.codex".into());
+    app.backend_status = status;
+    app.apply_local_state(&crate::store::LocalStateV1::default());
+    let mut ledger = WorkRefLedger::default();
+    ledger
+        .add_item(
+            "BUG17".into(),
+            WorkItem::new(
+                "tapd".into(),
+                "robot".into(),
+                "bug".into(),
+                "17".into(),
+                Some("https://www.tapd.cn/".into()),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    let thread = app.threads[0].id.0.clone();
+    ledger
+        .add_session(
+            "BUG17",
+            "soc".into(),
+            SessionRef {
+                target_identity: crate::store::target_instance_identity(&target),
+                codex_home: "/home/codex/.codex".into(),
+                thread_id: thread.clone(),
+                repository: "robot-app".into(),
+                role: "implementation".into(),
+            },
+        )
+        .unwrap();
+    ledger
+        .add_session(
+            "BUG17",
+            "mcu".into(),
+            SessionRef {
+                target_identity: "different-target-identity".into(),
+                codex_home: "/home/codex/.codex".into(),
+                thread_id: thread,
+                repository: "mcu-fw".into(),
+                role: "firmware".into(),
+            },
+        )
+        .unwrap();
+    ledger
+        .add_contract(
+            "BUG17",
+            ContractRef {
+                kind: "protocol".into(),
+                source: "docs/protocol.md".into(),
+                revision: "rev-3".into(),
+                git_sha: Some("a".repeat(40)),
+            },
+        )
+        .unwrap();
+    for (kind, result) in [("unit", "passed"), ("integration", "unknown")] {
+        ledger
+            .add_evidence(
+                "BUG17",
+                EvidenceRef {
+                    kind: kind.into(),
+                    source: format!("test/{kind}"),
+                    revision: "appA+fwB".into(),
+                    result: result.into(),
+                    environment: "bench".into(),
+                },
+            )
+            .unwrap();
+    }
+    ledger
+        .prepare_handoff("BUG17", "soc".into(), "mcu".into(), "Review rev-3".into())
+        .unwrap();
+    app.install_workrefs(Some(ledger));
+    app
+}
+
+#[test]
+fn g23_manual_links_appear_in_wide_mission_control_and_80_column_thread() {
+    let mut app = linked_app();
+    let thread_id = app.threads[0].id.0.clone();
+    for language in [UiLanguage::English, UiLanguage::SimplifiedChinese] {
+        app.language = language;
+        let lines = super::super::provenance::manual_workref_lines(&app, &thread_id)
+            .into_iter()
+            .map(|line| line.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(lines.contains("BUG17"), "{language:?}: {lines}");
+        assert!(lines.contains("unit=passed"), "{lines}");
+        assert!(lines.contains("integration=unknown"), "{lines}");
+        assert!(lines.contains("prepared=1 ack=0"), "{lines}");
+        assert!(!lines.contains("integration=passed"));
+        let wide = render_app(&app, 140);
+        assert!(wide.contains("BUG17"), "{language:?}: {wide}");
+        app.view = crate::app::View::Thread(app.threads[0].id.clone());
+        let narrow = render_app(&app, 80);
+        let label = if language.is_simplified_chinese() {
+            "关联（手工未核验）"
+        } else {
+            "Linked (manual/unverified)"
+        };
+        assert!(narrow.contains(label), "{language:?}: {narrow}");
+        assert!(narrow.contains("BUG17"), "{narrow}");
+        app.view = crate::app::View::Registry;
+    }
+}
+
+#[test]
+fn g23_unverified_identity_or_broken_local_data_never_exposes_links() {
+    let mut app = linked_app();
+    let thread_id = app.threads[0].id.0.clone();
+    app.backend_status.codex_home = Some("/wrong-home".into());
+    assert!(app.manual_workrefs_for_thread(&thread_id).is_empty());
+    assert!(!render_app(&app, 140).contains("BUG17"));
+    app.backend_status.connected = false;
+    assert!(app.manual_workrefs_for_thread(&thread_id).is_empty());
+    app.install_workrefs(None);
+    let missing = render_app(&app, 140);
+    assert!(missing.contains("UNAVAILABLE"), "{missing}");
+    assert!(!missing.contains("BUG17"));
+}
+
 #[test]
 fn compact_attention_and_delivery_hints_survive_drawer_in_both_languages() {
     for language in [UiLanguage::English, UiLanguage::SimplifiedChinese] {
