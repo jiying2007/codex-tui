@@ -1,4 +1,4 @@
-use super::super::source::print_source;
+use super::super::locator::print_source;
 use super::*;
 
 pub(super) fn print_status(snapshot: &StatusSnapshot, format: OutputFormat) -> Result<()> {
