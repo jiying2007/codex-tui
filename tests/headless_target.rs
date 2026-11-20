@@ -330,6 +330,9 @@ fn same_id_target_scopes_apply_only_to_matching_endpoint() {
     own.pins.insert("shared-id".into());
     local.scopes.insert(key, own);
     store.save_state(&local).unwrap();
+    let stored = store.load_state().unwrap();
+    assert_eq!(stored.aliases["shared-id"], "unscoped legacy");
+    assert_eq!(stored.scopes.len(), 1);
     drop(store);
     std::fs::create_dir_all(home.path().join("data")).unwrap();
     std::fs::rename(seed.join("state"), home.path().join("data/codex-tui")).unwrap();
@@ -341,8 +344,4 @@ fn same_id_target_scopes_apply_only_to_matching_endpoint() {
     assert_eq!(a["source"]["targetId"], "first");
     assert_eq!(b["source"]["targetId"], "second");
 
-    let raw = SqliteStore::at(home.path().join("data/codex-tui"));
-    let stored = raw.load_state().unwrap();
-    assert_eq!(stored.aliases["shared-id"], "unscoped legacy");
-    assert_eq!(stored.scopes.len(), 1);
 }
