@@ -380,7 +380,7 @@ impl RegistryHandle {
         Ok(())
     }
 
-    pub fn load_older_conversation(
+    pub(crate) fn load_older_conversation(
         &self,
         thread_id: ThreadId,
         turn_cursor: Option<String>,
@@ -439,14 +439,14 @@ impl RegistryHandle {
         self.send_command(BackendCommand::SearchTranscript(query))
     }
 
-    pub fn jump_to_transcript_hit(
+    pub(crate) fn jump_to_transcript_hit(
         &self,
         hit: crate::transcript_search::TranscriptSearchHit,
     ) -> Result<()> {
         self.send_command(BackendCommand::JumpToTranscriptHit(hit))
     }
 
-    pub fn refresh_thread_queue(&self, thread_id: ThreadId) -> Result<()> {
+    pub(crate) fn refresh_thread_queue(&self, thread_id: ThreadId) -> Result<()> {
         self.send_command(BackendCommand::RefreshThreadQueue(thread_id))
     }
 

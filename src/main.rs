@@ -1414,7 +1414,7 @@ fn apply_effects(
             Effect::JumpToTranscriptHit(hit) => {
                 let thread_id = hit.thread_id.clone();
                 if let Some(registry) = registry {
-                    if let Err(error) = registry.jump_to_transcript_hit(hit) {
+                    if let Err(error) = registry.jump_to_transcript_hit_checked(&app.backend_status, hit) {
                         reduce(
                             app,
                             Action::ConversationFailed {
@@ -1440,7 +1440,7 @@ fn apply_effects(
             }
             Effect::RefreshThreadQueue(thread_id) => {
                 if let Some(registry) = registry {
-                    if let Err(error) = registry.refresh_thread_queue(thread_id.clone()) {
+                    if let Err(error) = registry.refresh_thread_queue_checked(&app.backend_status, thread_id.clone()) {
                         reduce(
                             app,
                             Action::ThreadQueueFailed {
@@ -1575,7 +1575,8 @@ fn apply_effects(
                 item_cursor,
             } => {
                 if let Some(registry) = registry
-                    && let Err(error) = registry.load_older_conversation(
+                    && let Err(error) = registry.load_older_conversation_checked(
+                        &app.backend_status,
                         thread_id.clone(),
                         turn_cursor.clone(),
                         item_cursor.clone(),
@@ -1639,7 +1640,6 @@ fn apply_planning_store_result(app: &mut AppState, result: Result<PlanningSnapsh
         }
     }
 }
-
 fn now_unix_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)

@@ -10,12 +10,45 @@ impl RegistryHandle {
         observed: &BackendStatus,
         thread_id: ThreadId,
     ) -> Result<()> {
-        self.scope.verify(observed)?;
-        {
-            let snapshot = self.rx.borrow();
-            verify_observed_thread(&snapshot, observed, &thread_id)?;
-        }
+        self.verify_observed_thread(observed, &thread_id)?;
         self.load_conversation(thread_id)
+    }
+}
+
+impl RegistryHandle {
+    pub fn load_older_conversation_checked(
+        &self,
+        observed: &BackendStatus,
+        thread_id: ThreadId,
+        turn_cursor: Option<String>,
+        item_cursor: Option<String>,
+    ) -> Result<()> {
+        self.verify_observed_thread(observed, &thread_id)?;
+        self.load_older_conversation(thread_id, turn_cursor, item_cursor)
+    }
+
+    pub fn refresh_thread_queue_checked(
+        &self,
+        observed: &BackendStatus,
+        thread_id: ThreadId,
+    ) -> Result<()> {
+        self.verify_observed_thread(observed, &thread_id)?;
+        self.refresh_thread_queue(thread_id)
+    }
+
+    pub fn jump_to_transcript_hit_checked(
+        &self,
+        observed: &BackendStatus,
+        hit: crate::transcript_search::TranscriptSearchHit,
+    ) -> Result<()> {
+        self.verify_observed_thread(observed, &hit.thread_id)?;
+        self.jump_to_transcript_hit(hit)
+    }
+
+    fn verify_observed_thread(&self, observed: &BackendStatus, id: &ThreadId) -> Result<()> {
+        self.scope.verify(observed)?;
+        let snapshot = self.rx.borrow();
+        verify_observed_thread(&snapshot, observed, id)
     }
 }
 
