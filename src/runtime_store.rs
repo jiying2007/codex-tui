@@ -566,6 +566,28 @@ mod tests {
     }
 
     #[test]
+    fn corrupt_workref_envelope_is_unavailable_not_a_false_empty_success() {
+        let root = tempfile::tempdir().unwrap();
+        let sqlite = SqliteStore::at(root.path());
+        sqlite.load_config().unwrap();
+        sqlite.health().unwrap();
+        let conn = rusqlite::Connection::open(sqlite.db_path()).unwrap();
+        conn.execute(
+            "INSERT INTO operator_state(key, value_json, updated_at_unix_ms)
+             VALUES('g23-workrefs-v1', '{broken-json', 1)",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+        let original = std::fs::read(sqlite.db_path()).unwrap();
+        let (runtime, bootstrap) = RuntimeStore::bootstrap(sqlite).unwrap();
+        assert!(bootstrap.workrefs.is_none());
+        assert!(runtime.writable);
+        assert!(runtime.sqlite.load_workref_ledger().is_err());
+        assert_eq!(std::fs::read(runtime.sqlite.db_path()).unwrap(), original);
+    }
+
+    #[test]
     fn startup_planning_decode_failure_blocks_shared_store_workers() {
         let root = tempfile::tempdir().unwrap();
         let sqlite = SqliteStore::at(root.path());
