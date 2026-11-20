@@ -66,6 +66,8 @@ impl SnapshotSource {
                 let mut source = SourceStatus::unavailable(Some(target.name.clone()));
                 source.source = target.status_source();
                 source.transport = Some(target.endpoint.transport_label().into());
+                source.operator_target_key =
+                    Some(crate::store::target_instance_identity(&target));
                 (app_server::probe_target(target).await, source)
             }
         };
@@ -89,6 +91,7 @@ impl SourceStatus {
             target_id,
             transport: None,
             scope: "single-target",
+            operator_target_key: None,
             connected: false,
             version: None,
             platform: None,
