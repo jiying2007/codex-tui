@@ -14,6 +14,53 @@ fn threads(count: usize) -> Vec<ThreadSummary> {
 }
 
 #[test]
+fn unlocated_request_count_tracks_actual_requests_without_creating_threads() {
+    let mut app = AppState::new(threads(1));
+    let known = app.threads[0].id.clone();
+    let unknown = ThreadId::new("not-in-current-target-registry");
+    for id in [41, 42] {
+        reduce(
+            &mut app,
+            Action::InteractiveRequested(InteractiveRequest {
+                request_id: RpcRequestId::Integer(id),
+                thread_id: unknown.clone(),
+                turn_id: "turn".into(),
+                item_id: format!("input-{id}"),
+                kind: InteractiveRequestKind::UserInput { questions: vec![] },
+            }),
+        );
+    }
+    assert_eq!(app.unlocated_pending_request_count(), 2);
+    assert_eq!(app.threads.len(), 1);
+    reduce(
+        &mut app,
+        Action::InteractiveRequested(InteractiveRequest {
+            request_id: RpcRequestId::Integer(43),
+            thread_id: known,
+            turn_id: "turn".into(),
+            item_id: "known-input".into(),
+            kind: InteractiveRequestKind::UserInput { questions: vec![] },
+        }),
+    );
+    assert_eq!(app.unlocated_pending_request_count(), 2);
+    reduce(
+        &mut app,
+        Action::InteractiveResolved {
+            request_id: RpcRequestId::Integer(41),
+        },
+    );
+    assert_eq!(app.unlocated_pending_request_count(), 1);
+    let mut discovered = app.threads.clone();
+    let mut actual = discovered[0].clone();
+    actual.id = unknown;
+    discovered.push(actual);
+    reduce(&mut app, Action::ReplaceThreads(discovered));
+    assert_eq!(app.unlocated_pending_request_count(), 0);
+    assert_eq!(app.threads.len(), 2);
+    assert!(app.thread_needs_attention(1));
+}
+
+#[test]
 fn attention_then_pins_then_recency_only_reorders_the_display() {
     let mut source = threads(5);
     source[0].metadata.updated_at = 100;

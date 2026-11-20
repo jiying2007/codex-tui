@@ -120,6 +120,15 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
         .iter()
         .filter(|index| app.thread_needs_attention(**index))
         .count();
+    let unlocated = app.unlocated_pending_request_count();
+    // Show unresolved live requests before the recent/history scope even on SSH.
+    // They are NOT synthetic thread rows and cannot authorize a resume/approval.
+    let unlocated_label = match (unlocated, app.language.is_simplified_chinese()) {
+        (0, _) => String::new(),
+        (count, true) => format!("!{count} 请求待定位 · "),
+        (1, false) => "!1 request unlocated · ".into(),
+        (count, false) => format!("!{count} requests unlocated · "),
+    };
     let mut lines = Vec::with_capacity(viewport.row_capacity.saturating_add(1));
     let range = if viewport.total == 0 {
         tr(app, "rows 0/0", "行 0/0").to_string()
@@ -166,14 +175,14 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
     // Detailed locality and upstream provenance remain in the selected panel/Doctor.
     let summary = if app.language.is_simplified_chinese() {
         format!(
-            "待处理 {attention_count} · {scope}{history} · 显示 {}/{} · 共 {} · {range}{text_filter}",
+            "{unlocated_label}待处理 {attention_count} · {scope}{history} · 显示 {}/{} · 共 {} · {range}{text_filter}",
             visible.len(),
             matched,
             app.threads.len()
         )
     } else {
         format!(
-            "{attention_count} need attention · {scope}{history} · showing {}/{} · {} total · {range}{text_filter}",
+            "{unlocated_label}{attention_count} need attention · {scope}{history} · showing {}/{} · {} total · {range}{text_filter}",
             visible.len(),
             matched,
             app.threads.len()
