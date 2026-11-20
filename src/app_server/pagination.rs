@@ -12,7 +12,7 @@ const TOTAL_DEADLINE: Duration = Duration::from_secs(120);
 pub(super) struct PageBudget {
     started: Option<std::time::Instant>,
     deadline: Duration,
-    pages: usize,
+    pub(super) pages: usize,
     identity_bytes: usize,
     stalled: usize,
     cursors: BTreeSet<String>,
