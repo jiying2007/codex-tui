@@ -87,7 +87,10 @@ impl NotificationObservation {
             // Track individual requests without storing approval/command payloads.
             let key = format!(
                 "native-request:{}:{:?}:{:?}:{:?}:{:?}",
-                kind.label(), request.thread_id.0, request.turn_id, request.item_id,
+                kind.label(),
+                request.thread_id.0,
+                request.turn_id,
+                request.item_id,
                 request.request_id
             );
             result.active.insert(
@@ -191,9 +194,17 @@ mod tests {
         assert_eq!(second[0].kind, NotificationKind::UserInputRequired);
         assert_ne!(first_key, second[0].key);
         assert_eq!(second[0].item_id, app.threads[1].id.0);
-        assert!(tracker.advance(NotificationObservation::from_app(&app)).is_empty());
+        assert!(
+            tracker
+                .advance(NotificationObservation::from_app(&app))
+                .is_empty()
+        );
         app.pending_requests.clear();
-        assert!(tracker.advance(NotificationObservation::from_app(&app)).is_empty());
+        assert!(
+            tracker
+                .advance(NotificationObservation::from_app(&app))
+                .is_empty()
+        );
     }
 
     #[test]

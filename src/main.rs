@@ -794,10 +794,12 @@ mod registry_drain_classification_tests {
             assert!(!conversation_event_changes_planning(&event));
             assert!(conversation_event_changes_notification(&event));
         }
-        assert!(!conversation_event_changes_notification(&ConversationEvent::Failed {
-            thread_id: codex_tui::domain::ThreadId::new("thread"),
-            error: "read failed".into(),
-        }));
+        assert!(!conversation_event_changes_notification(
+            &ConversationEvent::Failed {
+                thread_id: codex_tui::domain::ThreadId::new("thread"),
+                error: "read failed".into(),
+            }
+        ));
     }
 
     #[test]
