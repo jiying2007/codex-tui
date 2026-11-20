@@ -101,6 +101,31 @@ Terminal Drawer 的 PTY 输出改为协作式排空：每次主循环最多处�
 
 通过 Windows SSH 客户端控制 Ubuntu 时，codex-tui **在 Ubuntu 运行**；终端设备、文件路径、Codex、配置、Shell 子进程都应以 Ubuntu 为准。`Alt+T` 在 Mission Control／当前应用页与 Terminal Drawer 之间**双向切换焦点**（无须使用功能键）（保持同一个 Shell，不重建 PTY）；`t` 打开或重新聚焦 Drawer，`T` 关闭 Drawer。终端聚焦时 `Ctrl+]` 仍可返回应用作为备用；弹窗、编辑框和确认界面继续优先处理自己的按键。若 Windows/SSH 抢占按键，先查 `?` 与 `doctor terminal`；Resize、Focus、Ctrl+C、退出与终端恢复必须在**真实控制 TTY** 验证。托管 PTY 回归不是该证明。界面会对不可信的会话消息、Git diff 正文、仓库路径及平台状态中的控制字符、Unicode 双向覆盖符，以及软连字符、零宽空格和词连接符等视觉不可见格式字符做安全替换；选中会话详情和离线状态栏也会对会话 ID、模型名、Git 分支/错误和 App Server 来源字符串执行同样的仅显示端净化；受管 Worktree 的计划/确认界面及 Board 的变更请求状态，同样净化来自 Git/Forge 的不可信字符串；仅处理显示文本，不跳过显式操作确认。Forge 变更、启动预设和本地批量操作的确认窗口，以及本地文本编辑和命令面板查询也过滤不可信显示文本；变更请求与外部进程 argv 的原始值保持不变。Mission Control/Board 页脚输入、自定义 Saved View 标题/分组及 Scratch ID 同样进行显示层防护；原始搜索、状态和本地元数据不改变。仅改变显示内容，不改动 Codex/Git 权威原始数据。Terminal Drawer 是独立的 PTY 终端模拟器，不属于安全过滤后的预览。
 
+## G2/G3 手工需求、缺陷和跨仓引用
+<!-- docs-section: workref -->
+
+`codex-tui workref` 为**按需使用的本地引用命令**。真实飞书项目/TAPD 事项的创建、处理与验收仍由原平台负责，无需企业 API 权限。URL、Target 身份、协议版本与测试结果均由操作者**手工录入、尚未在线核实**；它们不是远程 Codex 接续凭证，也不能用于自动判断任务完成。
+
+~~~bash
+# 从原平台复制真实事项 ID、空间和 HTTPS URL。
+codex-tui workref add --key BUG17 --provider tapd --space robot --type bug --id 17 --url "$ORIGINAL_TAPD_URL"
+# 没有产品事项的纯技术协作可使用 --provider local-draft --type technical。
+codex-tui workref session --key BUG17 --alias soc --target "$SOC_TARGET_ID" --home "$SOC_CODEX_HOME" --thread "$SOC_THREAD_ID" --repo robot-app --role implementation
+codex-tui workref session --key BUG17 --alias mcu --target "$MCU_TARGET_ID" --home "$MCU_CODEX_HOME" --thread "$MCU_THREAD_ID" --repo motor-fw --role firmware
+codex-tui workref contract --key BUG17 --kind protocol --source robot-app/docs/protocol.md --revision r3 --git-sha "$FULL_40_CHAR_COMMIT"
+codex-tui workref evidence --key BUG17 --kind integration --source "$JOINT_TEST_REPORT" --revision combo-3 --result unknown --environment bench
+codex-tui workref handoff --key BUG17 --from soc --to mcu --summary "Review protocol revision r3"
+codex-tui workref handoff-text --key BUG17 --index 0
+# 只有收到接收方实际确认后，才能标记回执：
+codex-tui workref ack --key BUG17 --index 0 --receipt "$RECIPIENT_ACK_REFERENCE"
+codex-tui workref show --key BUG17
+codex-tui workref list --json
+~~~
+
+契约类型为 `protocol/api/abi/schema/config/data/model/other`。Git 管理的契约须提供完整 40 位十六进制 Commit SHA（必要时另外记录子模块 gitlink 版本）。证据类型为 `commit/ci/unit/integration/device/acceptance/other`，结果需明确为 `passed/failed/partial/unknown`，并附环境信息。**分仓单测 PASS 不等于联合 PASS，CI PASS 不等于上电设备或产品验收通过；交接“已准备”不等于“已送达”。** 两个会话别名可以区分不同 Target 上相同的 ThreadId；手工 Target/Home 字段不构成在线身份认证。
+
+不要把客户资料、会话原文、设备日志或凭据写入命令行历史和 JSON 导出。CLI 写入复用 TUI 私有 SQLite 和独占写锁：交互进程已持有锁时宁可报错，也不得静默覆盖。当前没有中央同步、Agent 消息总线或自动写回飞书/TAPD。真实需求一项、真实缺陷一项、至少两类跨仓场景的人工使用与整机联调，**后续集中安排一次验收**；当前自动化测试只证明本地 CLI/存储契约，不代表 Stable 已获许可。
+
 ## 证据与数据安全
 <!-- docs-section: safety -->
 

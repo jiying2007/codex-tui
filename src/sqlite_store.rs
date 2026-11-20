@@ -23,6 +23,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tempfile::NamedTempFile;
 
 mod recovery;
+mod workref;
 use recovery::{preserve_sqlite_image, restore_preserved_sqlite_image, validate_recovery_database};
 
 const OPERATOR_STATE_KEY: &str = "operator-state-v1";

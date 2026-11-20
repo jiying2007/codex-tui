@@ -101,6 +101,31 @@ Terminal Drawer output draining is cooperative: at most 16 queued PTY events are
 
 When using a Windows SSH client to operate an Ubuntu host, the TUI runs on **Ubuntu**; the target tty, filesystem, Codex CLI, config and spawned shell must all be resolved there. `Alt+T` switches focus **both ways** (no function-row key) between the app (including Mission Control) and Terminal Drawer without restarting the shell/PTY. `t` opens or focuses the Drawer, `T` closes it, and `Ctrl+]` remains the fallback to return from a focused terminal. Modals, editors and confirmation dialogs retain their keyboard ownership. If keys are intercepted by Windows/SSH, use `?` and `doctor terminal`; validate resize, focus, Ctrl+C, exit and terminal restoration on a **real controlling TTY**. Hosted PTY regression is not that proof. The UI neutralizes control characters, Unicode direction overrides and visually ignorable formatting (soft hyphen, zero-width space and word joiner) in untrusted conversation items, Git diff text, repository paths and provider labels. The selected-thread detail and offline footer apply the same display-only protection to thread IDs, model labels, Git branches/errors and App Server source. Managed Worktrees plan/confirmation and Board change-request status apply the same protection to external Git/Forge values without bypassing explicit confirmation. Forge mutation, Launch Preset and local batch confirmation overlays, typed local editors and Command Palette search also neutralize untrusted text; all original mutation payloads and external launch argv are preserved. Mission Control and Board footer input, custom Saved View titles/groups and Scratch IDs use the same rendering protection, without altering queries or saved metadata. Only the display projection is modified; canonical Codex/Git data remains unchanged. The Terminal Drawer is a separate PTY emulator, not a sanitized preview.
 
+## G2/G3 manual requirement, bug and cross-repository references
+<!-- docs-section: workref -->
+
+The opt-in `codex-tui workref` CLI records **local references only**. An original Feishu Project or TAPD item stays authoritative in its own platform. No enterprise API credentials are needed. Every imported URL, Target identity, contract and test result is **manually supplied and unverified**, not a live connection, a completion decision or a remote Codex resume permit.
+
+~~~bash
+# Copy the exact item ID, space and HTTPS URL from its real source.
+codex-tui workref add --key BUG17 --provider tapd --space robot --type bug --id 17 --url "$ORIGINAL_TAPD_URL"
+# For internal design work without an external ticket: --provider local-draft --type technical
+codex-tui workref session --key BUG17 --alias soc --target "$SOC_TARGET_ID" --home "$SOC_CODEX_HOME" --thread "$SOC_THREAD_ID" --repo robot-app --role implementation
+codex-tui workref session --key BUG17 --alias mcu --target "$MCU_TARGET_ID" --home "$MCU_CODEX_HOME" --thread "$MCU_THREAD_ID" --repo motor-fw --role firmware
+codex-tui workref contract --key BUG17 --kind protocol --source robot-app/docs/protocol.md --revision r3 --git-sha "$FULL_40_CHAR_COMMIT"
+codex-tui workref evidence --key BUG17 --kind integration --source "$JOINT_TEST_REPORT" --revision combo-3 --result unknown --environment bench
+codex-tui workref handoff --key BUG17 --from soc --to mcu --summary "Review protocol revision r3"
+codex-tui workref handoff-text --key BUG17 --index 0
+# Only after an actual acknowledgment from the destination:
+codex-tui workref ack --key BUG17 --index 0 --receipt "$RECIPIENT_ACK_REFERENCE"
+codex-tui workref show --key BUG17
+codex-tui workref list --json
+~~~
+
+Choose contract kind from `protocol/api/abi/schema/config/data/model/other`. A Git-managed contract must be accompanied by its full 40-hex commit SHA (and a separate revision/gateway reference if appropriate). Evidence kind can be `commit/ci/unit/integration/device/acceptance/other`, with an explicit `passed/failed/partial/unknown` result and environment. **Unit PASS does not imply integration PASS, CI PASS does not imply physical-device or product acceptance, and a prepared handoff is not delivered.** The two session aliases distinguish identical ThreadIds on different Targets; all target/home values are references, not authentication.
+
+Keep customer details, raw prompts, logs and credentials out of CLI history, command arguments and any exported JSON. CLI writes use the same private SQLite and exclusive writer lock as the TUI; an active interactive instance may block another writer rather than silently overwrite it. No central sync, Agent message bus or automatic platform status update exists. Real requirements, bugs and at least two cross-repository scenarios—including device/software/data combinations—are reserved for a **single later real-use qualification**. Automated tests establish only the local CLI/storage contract; v1.4 Stable status is unchanged.
+
 ## Evidence and state safety
 <!-- docs-section: safety -->
 

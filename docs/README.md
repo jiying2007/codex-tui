@@ -7,7 +7,7 @@
 
 The **current operator and governance documentation** is available in English and Simplified Chinese. The existing implementation, research, release checkpoint, and ADR archives remain reviewable in their original language. Historical files are evidence, **not permission to publish** or promises that a feature is in use.
 
-**Next-phase design (not yet implemented):** [codex-tui Lite L1.3 unified final plan](design/codex-tui-lite-L1.3-unified-final-20261119.md) (Chinese). This is the single next-phase scope and acceptance plan for cross-target session discovery, work-item links and integration evidence. L1.1/L1.2 remain historical inputs; the document does not imply these features are shipped or Stable-qualified.
+**Next-phase design (G2/G3 manual references implemented in development, not user-qualified):** [codex-tui Lite L1.3 unified final plan](design/codex-tui-lite-L1.3-unified-final-20261119.md) (Chinese). This is the single next-phase scope and acceptance plan for cross-target session discovery, work-item links and integration evidence. L1.1/L1.2 remain historical inputs; the document does not imply these features are shipped or Stable-qualified.
 
 ## Start here
 <!-- docs-section: start -->
