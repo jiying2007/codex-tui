@@ -120,8 +120,15 @@ fn g2_bug_requirement_and_g3_two_target_cross_repo_handoff_roundtrip() {
     let found_soc: serde_json::Value = serde_json::from_str(&succeeds(
         &home,
         &[
-            "workref", "find", "--target", "ubuntu-A",
-            "--home", "/home/a/.codex", "--thread", "same-thread-id", "--json",
+            "workref",
+            "find",
+            "--target",
+            "ubuntu-A",
+            "--home",
+            "/home/a/.codex",
+            "--thread",
+            "same-thread-id",
+            "--json",
         ],
     ))
     .unwrap();
@@ -132,8 +139,15 @@ fn g2_bug_requirement_and_g3_two_target_cross_repo_handoff_roundtrip() {
     let found_mcu: serde_json::Value = serde_json::from_str(&succeeds(
         &home,
         &[
-            "workref", "find", "--target", "windows-B",
-            "--home", "C:\\Users\\b\\.codex", "--thread", "same-thread-id", "--json",
+            "workref",
+            "find",
+            "--target",
+            "windows-B",
+            "--home",
+            "C:\\Users\\b\\.codex",
+            "--thread",
+            "same-thread-id",
+            "--json",
         ],
     ))
     .unwrap();
@@ -142,19 +156,35 @@ fn g2_bug_requirement_and_g3_two_target_cross_repo_handoff_roundtrip() {
     let wrong_home: serde_json::Value = serde_json::from_str(&succeeds(
         &home,
         &[
-            "workref", "find", "--target", "ubuntu-A",
-            "--home", "C:\\Users\\b\\.codex", "--thread", "same-thread-id", "--json",
+            "workref",
+            "find",
+            "--target",
+            "ubuntu-A",
+            "--home",
+            "C:\\Users\\b\\.codex",
+            "--thread",
+            "same-thread-id",
+            "--json",
         ],
     ))
     .unwrap();
     assert!(wrong_home.as_array().unwrap().is_empty());
-    assert!(succeeds(
-        &home,
-        &[
-            "workref", "find", "--target", "ubuntu-A",
-            "--home", "/home/a/.codex", "--thread", "missing-thread",
-        ],
-    ).contains("No matching local manual reference"));
+    assert!(
+        succeeds(
+            &home,
+            &[
+                "workref",
+                "find",
+                "--target",
+                "ubuntu-A",
+                "--home",
+                "/home/a/.codex",
+                "--thread",
+                "missing-thread",
+            ],
+        )
+        .contains("No matching local manual reference")
+    );
 
     succeeds(
         &home,
@@ -310,8 +340,13 @@ fn invalid_or_conflicting_cli_operations_never_replace_saved_authority() {
     let invalid_find = invoke(
         &home,
         &[
-            "workref", "find", "--target", "ubuntu-A",
-            "--thread", "same-thread-id", "--json",
+            "workref",
+            "find",
+            "--target",
+            "ubuntu-A",
+            "--thread",
+            "same-thread-id",
+            "--json",
         ],
     );
     assert_eq!(invalid_find.status.code(), Some(2));
