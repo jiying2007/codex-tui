@@ -1,7 +1,6 @@
 use super::*;
 use crate::app_server_wire::decode_wire_line;
 use crate::backend::{CodexBackend, FakeBackend};
-
 #[test]
 fn app_server_channels_are_bounded_in_production() {
     let source = include_str!("../app_server.rs");
@@ -13,7 +12,6 @@ fn app_server_channels_are_bounded_in_production() {
     assert!(!production.contains("UnboundedSender"));
     assert!(!production.contains("UnboundedReceiver"));
 }
-
 #[test]
 fn app_server_command_queue_reports_backpressure() {
     let (tx, _rx) = mpsc::channel(1);
@@ -570,7 +568,7 @@ fn bootstrap_registry_completeness_follows_actual_pagination_exhaustion() {
         .expect("production source");
     assert!(production.contains("status.registry_complete = load.registry_complete;"));
     assert!(
-        include_str!("pagination.rs")
+        include_str!("registry_sources.rs")
             .split("#[cfg(test)]")
             .next()
             .unwrap()
@@ -672,6 +670,7 @@ fn hydration_tombstones_follow_archive_and_reappearance_notifications() {
         cursor: "next".into(),
         use_state_db_only: false,
         optimized_query: true,
+        source_scope: RegistrySourceScope::RequestedKnownKinds,
         tombstones: BTreeSet::new(),
         pages_since_publish: 0,
         budget: PageBudget::default(),
@@ -834,40 +833,6 @@ fn registry_query_optimization_falls_back_only_for_invalid_thread_list_params() 
         message: "unknown field".into(),
     });
     assert!(!is_registry_query_optimization_unsupported(&other_method));
-}
-
-#[test]
-fn registry_explicitly_requests_all_known_sources_and_degrades_honestly() {
-    let params = registry_query_params(
-        None, true, true, RegistrySourceScope::RequestedKnownKinds,
-    );
-    assert!(params["sourceKinds"].as_array().unwrap().iter().any(|s| s == "exec"));
-    assert!(params["sourceKinds"].as_array().unwrap().iter().any(|s| s == "subAgentReview"));
-    assert_eq!(params["modelProviders"], json!([]));
-    let fallback = registry_query_params(
-        None, false, false, RegistrySourceScope::InteractiveFallback,
-    );
-    assert!(fallback.get("sourceKinds").is_none());
-    assert!(fallback.get("modelProviders").is_none());
-
-    let error = anyhow::Error::new(RpcResponseError {
-        method: "thread/list".into(),
-        code: Some(-32602),
-        message: "unknown variant subAgentReview".into(),
-    });
-    assert!(is_registry_source_filter_unsupported(&error));
-    let wrong_method = anyhow::Error::new(RpcResponseError {
-        method: "thread/read".into(),
-        code: Some(-32602),
-        message: "unknown variant subAgentReview".into(),
-    });
-    assert!(!is_registry_source_filter_unsupported(&wrong_method));
-
-    let mut status = BackendStatus::fake();
-    apply_registry_source_coverage(&mut status, RegistrySourceScope::InteractiveFallback);
-    assert!(!status.registry_complete);
-    assert!(status.error.as_deref().unwrap().contains("only interactive"));
-    assert!(status.optional_capabilities_missing.contains(&"thread/list:known-source-kinds".into()));
 }
 
 #[test]

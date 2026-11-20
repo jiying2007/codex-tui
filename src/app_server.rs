@@ -35,7 +35,12 @@ use tokio::task::{JoinHandle, JoinSet};
 mod history_hit;
 mod lifecycle;
 mod pagination;
+mod registry_sources;
 mod queue_mutation;
+use registry_sources::{
+    RegistrySourceScope, apply_registry_source_coverage, load_registry_page,
+    load_registry_with_page_limit,
+};
 mod queue_pagination;
 use queue_pagination::{QueueLoadState, load_thread_queue};
 mod resource_budget;
@@ -48,29 +53,10 @@ mod user_response;
 use history_hit::load_transcript_hit;
 use pagination::{
     PageBudget, guarded_loaded_page, guarded_registry_page, load_all_loaded_ids,
-    load_registry_with_page_limit,
 };
 use resource_budget::{admit_pending_request, enqueue_rpc_message, json_cost};
 
 const PAGE_SIZE: u32 = 200;
-/// Omitting sourceKinds (or sending []) returns only interactive threads upstream.
-const REGISTRY_SOURCE_KINDS: &[&str] = &[
-    "cli", "vscode", "exec", "appServer", "subAgent", "subAgentReview",
-    "subAgentCompact", "subAgentThreadSpawn", "subAgentOther", "unknown",
-];
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum RegistrySourceScope {
-    RequestedKnownKinds,
-    InteractiveFallback,
-}
-
-impl RegistrySourceScope {
-    fn known_kinds_requested(self) -> bool {
-        matches!(self, Self::RequestedKnownKinds)
-    }
-}
-
 const STARTUP_REGISTRY_PAGE_LIMIT: usize = 1;
 const REGISTRY_HYDRATION_YIELD_INTERVAL: Duration = Duration::from_millis(10);
 const REGISTRY_HYDRATION_PUBLISH_PAGE_INTERVAL: usize = 10;
@@ -133,35 +119,6 @@ fn mark_optional_capability(status: &mut BackendStatus, capability: &str, suppor
                 .optional_capabilities_missing
                 .push(capability.to_string());
         }
-    }
-}
-
-fn is_registry_source_filter_unsupported(error: &anyhow::Error) -> bool {
-    let Some(source) = error.downcast_ref::<RpcResponseError>() else {
-        return false;
-    };
-    if source.method != "thread/list" || !matches!(source.code, Some(-32600 | -32602)) {
-        return false;
-    }
-    let message = source.message.to_ascii_lowercase();
-    [
-        "sourcekinds", "source kinds", "source kind",
-        "modelproviders", "model providers",
-        "unknown variant", "invalid variant",
-        "unknown field", "unexpected field",
-    ]
-    .into_iter()
-    .any(|part| message.contains(part))
-}
-
-fn apply_registry_source_coverage(status: &mut BackendStatus, scope: RegistrySourceScope) {
-    let requested = scope.known_kinds_requested();
-    mark_optional_capability(status, "thread/list:known-source-kinds", requested);
-    if !requested {
-        status.registry_complete = false;
-        status.error.get_or_insert_with(|| {
-            "Registry source coverage partial: target rejected explicit sourceKinds; only interactive threads are visible".into()
-        });
     }
 }
 
@@ -1859,72 +1816,6 @@ fn status_from_initialize(result: &Value) -> BackendStatus {
         last_refresh_unix_ms: None,
         error: None,
     }
-}
-
-fn registry_query_params(
-    cursor: Option<&str>,
-    use_state_db_only: bool,
-    optimized: bool,
-    source_scope: RegistrySourceScope,
-) -> Value {
-    let mut params = json!({"cursor": cursor, "limit": PAGE_SIZE});
-    if optimized {
-        params["sortKey"] = json!("recency_at");
-        params["sortDirection"] = json!("desc");
-        params["useStateDbOnly"] = json!(use_state_db_only);
-    }
-    if source_scope.known_kinds_requested() {
-        params["sourceKinds"] = json!(REGISTRY_SOURCE_KINDS);
-        // Upstream [] means every provider; unlike sourceKinds, omission is also unrestricted.
-        params["modelProviders"] = json!([]);
-    }
-    params
-}
-
-async fn load_registry_page(
-    rpc: &mut RpcSession,
-    cursor: Option<String>,
-    use_state_db_only: bool,
-    mut optimized_query: bool,
-    mut source_scope: RegistrySourceScope,
-) -> Result<RegistryPage> {
-    // Downgrade only on the FIRST page: changing filter semantics mid-cursor
-    // would fabricate a complete inventory from incompatible result sets.
-    let result = loop {
-        let params = registry_query_params(
-            cursor.as_deref(),
-            use_state_db_only,
-            optimized_query,
-            source_scope,
-        );
-        match rpc.request("thread/list", params).await {
-            Ok(result) => break result,
-            Err(error) if optimized_query && is_registry_query_optimization_unsupported(&error) => {
-                optimized_query = false;
-            }
-            Err(error)
-                if cursor.is_none()
-                    && source_scope.known_kinds_requested()
-                    && is_registry_source_filter_unsupported(&error) =>
-            {
-                source_scope = RegistrySourceScope::InteractiveFallback;
-                optimized_query = false;
-            }
-            Err(error) => return Err(error),
-        }
-    };
-
-    let page = parse_thread_list(result)?;
-    Ok(RegistryPage {
-        threads: page
-            .data
-            .into_iter()
-            .map(|thread| normalize_thread(thread, None))
-            .collect(),
-        next_cursor: page.next_cursor,
-        optimized_query,
-        source_scope,
-    })
 }
 
 async fn load_goal(rpc: &mut RpcSession, thread_id: ThreadId) -> Result<Option<GoalObservation>> {

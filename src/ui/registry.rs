@@ -1,4 +1,6 @@
 use super::*;
+mod coverage;
+use coverage::registry_inventory_label;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct RegistryViewport {
@@ -155,32 +157,20 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
     } else {
         format!(" · filter: {}", app.filter)
     };
-    let sources_partial = app.backend_status.optional_capabilities_missing.iter()
-        .any(|capability| capability == "thread/list:known-source-kinds");
-    let history = registry_history_label(
-        app.language,
-        app.backend_status.connected && !app.backend_status.registry_complete && !sources_partial,
-        !app.filter.is_empty(),
-        app.show_all_history,
-    );
-    let source_coverage = if sources_partial {
-        if app.language.is_simplified_chinese() { " · 来源不全" } else { " · SOURCES PARTIAL" }
-    } else {
-        ""
-    };
+    let history = registry_inventory_label(app);
     let matched = viewport.matched;
     // Keep default chrome about the next action, not filesystem diagnostics.
     // Detailed locality and upstream provenance remain in the selected panel/Doctor.
     let summary = if app.language.is_simplified_chinese() {
         format!(
-            "待处理 {attention_count} · {scope}{history}{source_coverage} · 显示 {}/{} · 共 {} · {range}{text_filter}",
+            "待处理 {attention_count} · {scope}{history} · 显示 {}/{} · 共 {} · {range}{text_filter}",
             visible.len(),
             matched,
             app.threads.len()
         )
     } else {
         format!(
-            "{attention_count} need attention · {scope}{history}{source_coverage} · showing {}/{} · {} total · {range}{text_filter}",
+            "{attention_count} need attention · {scope}{history} · showing {}/{} · {} total · {range}{text_filter}",
             visible.len(),
             matched,
             app.threads.len()

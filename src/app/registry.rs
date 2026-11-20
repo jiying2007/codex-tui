@@ -73,13 +73,6 @@ impl AppState {
             )
         });
         let interactive = self.pending_request_threads.contains(&thread.id.0);
-        // Snooze mutes notifications, not live approvals/user-input requests.
-        if actionable || interactive {
-            return true;
-        }
-        if snoozed {
-            return false;
-        }
         let derived_actionable = card.is_some_and(|card| {
             card.attention.iter().any(|reason| {
                 matches!(
@@ -95,10 +88,8 @@ impl AppState {
         });
         let unseen = !thread.attention.is_empty()
             || card.is_some_and(|card| card.attention.contains(&PlanningAttention::ReviewUnseen));
-        actionable
-            || interactive
-            || derived_actionable
-            || (unseen && !self.acknowledged_attention.contains(&thread.id.0))
+        actionable || interactive || (!snoozed && (derived_actionable
+            || (unseen && !self.acknowledged_attention.contains(&thread.id.0))))
     }
 }
 
