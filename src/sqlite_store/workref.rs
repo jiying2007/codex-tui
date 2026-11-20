@@ -91,8 +91,10 @@ mod tests {
         let root = tempdir().unwrap();
         let store = SqliteStore::at(root.path());
         let _guard = store.acquire_local_writer().unwrap();
-        let mut ledger = WorkRefLedger::default();
-        ledger.schema_version = 2;
+        let ledger = WorkRefLedger {
+            schema_version: 2,
+            ..WorkRefLedger::default()
+        };
         assert!(store.save_workref_ledger(&ledger).is_err());
         let conn = store.open_ready().unwrap();
         conn.execute(

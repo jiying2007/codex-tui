@@ -180,7 +180,9 @@ fn contract_versions_and_integration_outcomes_fail_closed() {
         environment: "joint bench".into(),
     };
     assert!(invalid.validate().is_err());
-    let mut ledger = WorkRefLedger::default();
-    ledger.schema_version = 2;
+    let ledger = WorkRefLedger {
+        schema_version: 2,
+        ..WorkRefLedger::default()
+    };
     assert!(ledger.validate().is_err());
 }
