@@ -45,6 +45,12 @@ pub(crate) async fn doctor(scope: Option<&str>, target_override: Option<&str>) -
     }
     doctor_println!("app-server-target: {}", target.name);
     doctor_println!("app-server-endpoint: {}", target.diagnostic_endpoint());
+    // Copy this exact, credential-free identity into workref --target.
+    // A display name alone must never be treated as a verified remote host.
+    doctor_println!(
+        "app-server-target-identity: {}",
+        codex_tui::store::target_instance_identity(&target)
+    );
     doctor_println!(
         "presentation: {} · background-redraw-min={}ms",
         config.ui.presentation.label(),

@@ -8,6 +8,7 @@ use codex_tui::{
     sqlite_store::{LocalWriterGuard, SqliteStore},
     store::{AppConfig, LocalStateV1, LocalStore},
     transcript_search::TranscriptSearchResults,
+    workref::WorkRefLedger,
 };
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -23,6 +24,8 @@ pub(crate) struct StoreBootstrap {
     pub(crate) config: AppConfig,
     pub(crate) local: LocalStateV1,
     pub(crate) planning: PlanningSnapshot,
+    /// A corrupt optional manual-link ledger never masquerades as an empty result.
+    pub(crate) workrefs: Option<WorkRefLedger>,
 }
 
 impl RuntimeStore {
@@ -76,6 +79,14 @@ impl RuntimeStore {
         } else {
             PlanningSnapshot::default()
         };
+        // The G2/G3 envelope is optional and independent of the legacy
+        // planning store. Decode failures are visible as unavailable, never
+        // silently converted to an empty set or permitted to drive a Resume.
+        let workrefs = if error.is_none() {
+            sqlite.load_workref_ledger().ok()
+        } else {
+            None
+        };
         if error.is_none() {
             let maintenance = if index_transcripts {
                 sqlite.prune_transcript_index()
@@ -108,6 +119,7 @@ impl RuntimeStore {
                 config,
                 local,
                 planning,
+                workrefs,
             },
         ))
     }
@@ -551,6 +563,35 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn corrupt_workref_envelope_is_unavailable_not_a_false_empty_success() {
+        let root = tempfile::tempdir().unwrap();
+        let sqlite = SqliteStore::at(root.path());
+        sqlite.load_config().unwrap();
+        sqlite.health().unwrap();
+        let conn = rusqlite::Connection::open(sqlite.db_path()).unwrap();
+        conn.execute(
+            "INSERT INTO operator_state(key, value_json, updated_at_unix_ms)
+             VALUES('g23-workrefs-v1', '{broken-json', 1)",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+        let (runtime, bootstrap) = RuntimeStore::bootstrap(sqlite).unwrap();
+        assert!(bootstrap.workrefs.is_none());
+        assert!(runtime.writable);
+        assert!(runtime.sqlite.load_workref_ledger().is_err());
+        let conn = rusqlite::Connection::open(runtime.sqlite.db_path()).unwrap();
+        let envelope: String = conn
+            .query_row(
+                "SELECT value_json FROM operator_state WHERE key='g23-workrefs-v1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(envelope, "{broken-json");
     }
 
     #[test]

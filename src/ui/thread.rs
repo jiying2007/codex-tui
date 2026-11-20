@@ -1,4 +1,4 @@
-use super::{goal_status_label, goal_summary, interactive_request_lines, tr};
+use super::{goal_status_label, goal_summary, interactive_request_lines, provenance, tr};
 use crate::app::{AppState, InputMode};
 use crate::domain::ThreadSummary;
 use ratatui::{
@@ -42,8 +42,12 @@ pub(super) fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
         request_details::render(frame, app, area);
         return;
     }
+    let workref_hint = provenance::manual_workref_heading(app, thread_id);
+    // One extra header row only when there is an actual manual link/error
+    // and the real terminal has space; no new navigation mode or hotkey.
+    let show_workref = area.height >= 16 && workref_hint.is_some();
     let (header_height, composer_height) = if area.height >= 14 {
-        (5, 4)
+        (if show_workref { 6 } else { 5 }, 4)
     } else if area.height >= 9 {
         (3, 2)
     } else {
@@ -62,9 +66,20 @@ pub(super) fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
     let title = thread
         .map(ThreadSummary::display_title)
         .unwrap_or_else(|| tr(app, "Unknown thread", "未知会话"));
+    let hint_line = if show_workref {
+        format!(
+            "\n{}",
+            crate::text::truncate_display(
+                workref_hint.as_deref().unwrap_or_default(),
+                usize::from(chunks[0].width.saturating_sub(4)),
+            )
+        )
+    } else {
+        String::new()
+    };
     frame.render_widget(
         Paragraph::new(format!(
-            "{title}\n{thread_id}\n{}: {}",
+            "{title}\n{thread_id}\n{}: {}{hint_line}",
             tr(app, "Goal", "目标"),
             goal_summary(app, thread_id)
         ))

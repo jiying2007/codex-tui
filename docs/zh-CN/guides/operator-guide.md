@@ -106,6 +106,10 @@ Terminal Drawer 的 PTY 输出改为协作式排空：每次主循环最多处�
 
 `codex-tui workref` 为**按需使用的本地引用命令**。真实飞书项目/TAPD 事项的创建、处理与验收仍由原平台负责，无需企业 API 权限。URL、Target 身份、协议版本与测试结果均由操作者**手工录入、尚未在线核实**；它们不是远程 Codex 接续凭证，也不能用于自动判断任务完成。
 
+要让 Mission Control 精确匹配，`--target` 必须填写目标主机/配置的 `codex-tui doctor store` 输出的**无凭据** `app-server-target-identity`，不能仅填写显示名称或主机名；若要核对另一个已配置目标，可使用 `codex-tui doctor codex --target NAME`。同时从该目标 `codex-tui status --json` 获取真实 `codexHome`，并填写准确的原生 ThreadId。这些是手工引用，不代表远程主机身份认证。
+
+TUI 启动时仅读取现有 SQLite `workref` 快照一次。**宽屏 Mission Control 已选会话详情**显示完整 Target/CODEX_HOME/Thread 匹配的前两项本地引用、契约版本、各类独立证据结果和交接数量；**80 列终端**可进入 Thread 查看关联提示。记录损坏显示 **UNAVAILABLE/不可用**，不得伪装“没有关联”。本功能不影响 Codex 原生权限、Attention 或飞书/TAPD 状态。CLI 写入与 TUI 共享独占锁，修改引用前退出 TUI，修改后重新启动以更新快照；不做进程间实时刷新或自动交接。
+
 ~~~bash
 # 从原平台复制真实事项 ID、空间和 HTTPS URL。
 codex-tui workref add --key BUG17 --provider tapd --space robot --type bug --id 17 --url "$ORIGINAL_TAPD_URL"
