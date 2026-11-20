@@ -36,7 +36,10 @@ pub(super) fn print_source(source: &SourceStatus) {
         headless_field(source.transport.as_deref().unwrap_or("none")),
         source.scope
     );
-    println!("codex-home: {}", headless_field(source.codex_home.as_deref().unwrap_or("<unknown>")));
+    println!(
+        "codex-home: {}",
+        headless_field(source.codex_home.as_deref().unwrap_or("<unknown>"))
+    );
     println!("registry-complete: {}", source.registry_complete);
     if let Some(error) = &source.error {
         println!("source-error: {}", headless_field(error));
@@ -74,5 +77,4 @@ mod tests {
         assert!(value.get("modelProvider").is_none());
         assert!(value.get("sessionId").is_none());
     }
-
 }

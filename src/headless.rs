@@ -15,9 +15,9 @@ pub(crate) mod projection;
 mod source;
 mod surfaces;
 
+use locator::{print_source, thread_row};
 use options::HeadlessOptions;
 pub use options::validate_options;
-use locator::{print_source, thread_row};
 use source::SnapshotSource;
 
 fn headless_field(value: &str) -> String {

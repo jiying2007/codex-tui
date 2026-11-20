@@ -117,4 +117,3 @@ impl SourceStatus {
         self.error = status.error.clone();
     }
 }
-
