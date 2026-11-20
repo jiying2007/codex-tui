@@ -1,46 +1,8 @@
 use super::*;
 use crate::planning::PlanningAttention;
+mod groups;
 
 impl AppState {
-    pub fn visible_indices_with_match_count(&self) -> (Vec<usize>, usize) {
-        let query = self.filter.trim().to_lowercase();
-        let show_all_matches = self.show_all_history || !query.is_empty();
-        let mut visible = Vec::with_capacity(if show_all_matches {
-            self.threads.len()
-        } else {
-            REGISTRY_RECENT_LIMIT.min(self.threads.len())
-        });
-        let mut matched_count = 0_usize;
-
-        for (index, thread) in self.threads.iter().enumerate() {
-            if !self.thread_visible_in_registry_with_query(thread, &query) {
-                continue;
-            }
-            let matched_position = matched_count;
-            matched_count = matched_count.saturating_add(1);
-            if show_all_matches
-                || matched_position < REGISTRY_RECENT_LIMIT
-                || thread.pinned
-                || self.thread_needs_attention(index)
-                || index == self.selected
-            {
-                visible.push(index);
-            }
-        }
-
-        // Bound the source window before sorting; preserve the selected row.
-        visible.sort_by_cached_key(|&index| {
-            let thread = &self.threads[index];
-            (
-                std::cmp::Reverse(self.thread_needs_attention(index)),
-                std::cmp::Reverse(thread.pinned),
-                std::cmp::Reverse(thread.metadata.updated_at),
-                &thread.id.0,
-            )
-        });
-        (visible, matched_count)
-    }
-
     pub fn registry_match_count(&self) -> usize {
         let query = self.filter.trim().to_lowercase();
         self.threads
