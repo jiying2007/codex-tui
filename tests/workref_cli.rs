@@ -20,6 +20,12 @@ fn invoke(home: &TempDir, args: &[&str]) -> Output {
 }
 
 fn succeeds(home: &TempDir, args: &[&str]) -> String {
+    // Windows Known Folder APIs require these target directories to exist.
+    // The pure invalid-usage test invokes without this setup and stays side-effect free.
+    #[cfg(windows)]
+    for path in ["AppData/Roaming", "AppData/Local"] {
+        std::fs::create_dir_all(home.path().join(path)).unwrap();
+    }
     let output = invoke(home, args);
     assert!(output.status.success(), "{args:?}: {output:?}");
     String::from_utf8(output.stdout).unwrap()
