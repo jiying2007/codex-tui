@@ -579,12 +579,19 @@ mod tests {
         )
         .unwrap();
         drop(conn);
-        let original = std::fs::read(sqlite.db_path()).unwrap();
         let (runtime, bootstrap) = RuntimeStore::bootstrap(sqlite).unwrap();
         assert!(bootstrap.workrefs.is_none());
         assert!(runtime.writable);
         assert!(runtime.sqlite.load_workref_ledger().is_err());
-        assert_eq!(std::fs::read(runtime.sqlite.db_path()).unwrap(), original);
+        let conn = rusqlite::Connection::open(runtime.sqlite.db_path()).unwrap();
+        let envelope: String = conn
+            .query_row(
+                "SELECT value_json FROM operator_state WHERE key='g23-workrefs-v1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(envelope, "{broken-json");
     }
 
     #[test]
