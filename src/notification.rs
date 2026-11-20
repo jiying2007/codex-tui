@@ -247,7 +247,7 @@ impl NotificationTracker {
         // after the request is resolved but the status update is delayed.
         let redundant: Vec<_> = emitted
             .values()
-            .filter(|event| event.key.starts_with("native-request:"))
+            .filter(|event| event.key.starts_with("native:request:"))
             .map(|event| format!("native:{}:{}", event.kind.label(), event.item_id))
             .collect();
         for key in redundant {

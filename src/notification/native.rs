@@ -86,7 +86,7 @@ impl NotificationObservation {
             };
             // Track individual requests without storing approval/command payloads.
             let key = format!(
-                "native-request:{}:{:?}:{:?}:{:?}:{:?}",
+                "native:request:{}:{:?}:{:?}:{:?}:{:?}",
                 kind.label(),
                 request.thread_id.0,
                 request.turn_id,
@@ -180,7 +180,7 @@ mod tests {
         let events = tracker.advance(NotificationObservation::from_app(&app));
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].kind, NotificationKind::UserInputRequired);
-        assert!(events[0].key.starts_with("native-request:"));
+        assert!(events[0].key.starts_with("native:request:"));
         let first_key = events[0].key.clone();
         app.threads[1]
             .attention
