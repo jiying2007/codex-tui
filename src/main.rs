@@ -277,6 +277,7 @@ async fn run_app(fake_mode: bool, target_override: Option<&str>) -> Result<()> {
         app.configure_operator_target(target);
     }
     app.apply_local_state(&local);
+    app.install_workrefs(bootstrap.workrefs);
     reduce(&mut app, Action::PlanningSnapshotLoaded(bootstrap.planning));
     reduce(&mut app, Action::PlanningStoreDegraded(store.error()));
     let mut planning_worker = codex_tui::app::planning_worker::PlanningWorker::start()?;
