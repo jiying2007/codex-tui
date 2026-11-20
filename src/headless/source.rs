@@ -1,4 +1,4 @@
-use super::{SourceStatus, headless_field, options::HeadlessOptions};
+use super::{SourceStatus, options::HeadlessOptions};
 use crate::{
     app_server,
     app_server_target::ResolvedAppServerTarget,
@@ -92,6 +92,8 @@ impl SourceStatus {
             connected: false,
             version: None,
             platform: None,
+            codex_home: None,
+            registry_complete: false,
             capabilities: vec![],
             optional_capabilities_missing: vec![],
             last_refresh_unix_ms: None,
@@ -106,27 +108,13 @@ impl SourceStatus {
         self.connected = status.connected;
         self.version = status.version.clone();
         self.platform = status.platform.clone();
+        self.codex_home = status.codex_home.clone();
+        self.registry_complete = status.registry_complete;
         self.capabilities = status.capabilities.clone();
         self.optional_capabilities_missing = status.optional_capabilities_missing.clone();
         self.last_refresh_unix_ms = status.last_refresh_unix_ms;
-        self.degraded = !status.connected || status.error.is_some();
+        self.degraded = !status.connected || !status.registry_complete || status.error.is_some();
         self.error = status.error.clone();
     }
 }
 
-pub(super) fn print_source(source: &SourceStatus) {
-    println!(
-        "source: {} connected={}",
-        headless_field(&source.source),
-        source.connected
-    );
-    println!(
-        "target: {} transport={} scope={}",
-        headless_field(source.target_id.as_deref().unwrap_or("none")),
-        headless_field(source.transport.as_deref().unwrap_or("none")),
-        source.scope
-    );
-    if let Some(error) = &source.error {
-        println!("source-error: {}", headless_field(error));
-    }
-}

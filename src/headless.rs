@@ -9,6 +9,7 @@ use anyhow::Result;
 use serde::Serialize;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+mod locator;
 mod options;
 pub(crate) mod projection;
 mod source;
@@ -16,7 +17,8 @@ mod surfaces;
 
 use options::HeadlessOptions;
 pub use options::validate_options;
-use source::{SnapshotSource, print_source};
+use locator::{print_source, thread_row};
+use source::SnapshotSource;
 
 fn headless_field(value: &str) -> String {
     crate::text::sanitize_inline(value)
@@ -42,6 +44,8 @@ struct SourceStatus {
     connected: bool,
     version: Option<String>,
     platform: Option<String>,
+    codex_home: Option<String>,
+    registry_complete: bool,
     capabilities: Vec<String>,
     optional_capabilities_missing: Vec<String>,
     last_refresh_unix_ms: Option<u64>,
@@ -53,6 +57,15 @@ struct SourceStatus {
 #[serde(rename_all = "camelCase")]
 struct ThreadRow {
     id: String,
+    source_kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    model_provider: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    session_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    parent_thread_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    forked_from_id: Option<String>,
     workspace: String,
     title: String,
     runtime: String,
@@ -279,24 +292,6 @@ fn apply_local_operator_state(threads: &mut [ThreadSummary], local: &LocalStateV
         {
             thread.attention.push(AttentionReason::MarkedUnread);
         }
-    }
-}
-
-fn thread_row(thread: &ThreadSummary) -> ThreadRow {
-    let mut attention = thread
-        .attention
-        .iter()
-        .map(|reason| reason.label().to_string())
-        .collect::<Vec<_>>();
-    attention.sort();
-    attention.dedup();
-    ThreadRow {
-        id: thread.id.0.clone(),
-        workspace: thread.workspace.clone(),
-        title: thread.display_title().to_string(),
-        runtime: thread.runtime.label().to_ascii_lowercase(),
-        attention,
-        pinned: thread.pinned,
     }
 }
 
