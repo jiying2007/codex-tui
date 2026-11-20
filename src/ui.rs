@@ -649,6 +649,9 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
                 truncate_display(&sanitize_inline(note), 54)
             )));
         }
+        // Place the native-thread-bound work reference above Git/Forge so
+        // it remains visible on a typical 120x30 SSH terminal.
+        lines.extend(provenance::manual_workref_lines(app, &thread.id.0));
         lines
     } else {
         vec![Line::from(tr(app, "No thread selected", "未选择会话"))]
