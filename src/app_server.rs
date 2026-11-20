@@ -28,6 +28,7 @@ use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::ffi::OsString;
 use std::fmt;
+use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::{mpsc, watch};
 use tokio::task::{JoinHandle, JoinSet};
@@ -346,6 +347,9 @@ pub struct RegistryHandle {
     rx: watch::Receiver<BackendSnapshot>,
     conversation_rx: mpsc::Receiver<ConversationEvent>,
     command_tx: mpsc::Sender<BackendCommand>,
+    // Only IDs actually returned by this handle's native thread/search are
+    // eligible to open before their registry page is hydrated. Never persisted.
+    search_threads: Mutex<BTreeSet<String>>,
     history_watches: WatchSet,
     queue_watches: WatchSet,
     task: JoinHandle<()>,
@@ -368,7 +372,30 @@ impl RegistryHandle {
     }
 
     pub fn try_recv_conversation(&mut self) -> Option<ConversationEvent> {
-        self.conversation_rx.try_recv().ok()
+        let event = self.conversation_rx.try_recv().ok()?;
+        match &event {
+            ConversationEvent::TranscriptSearchLoaded(results)
+                if results.source == TranscriptSearchSource::AppServer =>
+            {
+                // The actor's own search response is a bounded, target-local
+                // identity witness even if thread/list does not contain the
+                // historical hit yet. Do not trust local FTS as an actor witness.
+                if let Ok(mut witnessed) = self.search_threads.lock() {
+                    *witnessed = results
+                        .hits
+                        .iter()
+                        .map(|hit| hit.thread_id.0.clone())
+                        .collect();
+                }
+            }
+            ConversationEvent::TranscriptSearchFailed { .. } => {
+                if let Ok(mut witnessed) = self.search_threads.lock() {
+                    witnessed.clear();
+                }
+            }
+            _ => {}
+        }
+        Some(event)
     }
 
     pub(crate) fn load_conversation(&self, thread_id: ThreadId) -> Result<()> {
@@ -436,6 +463,10 @@ impl RegistryHandle {
     }
 
     pub fn search_transcript(&self, query: String) -> Result<()> {
+        self.search_threads
+            .lock()
+            .map_err(|_| anyhow!("search-hit identity witness unavailable"))?
+            .clear();
         self.send_command(BackendCommand::SearchTranscript(query))
     }
 
@@ -625,6 +656,7 @@ pub async fn start_target(target: ResolvedAppServerTarget) -> Result<StartedRegi
             rx,
             conversation_rx,
             command_tx,
+            search_threads: Mutex::new(BTreeSet::new()),
             history_watches,
             queue_watches,
             task,
