@@ -154,7 +154,7 @@
     "src/app/operator_scope.rs": 203,
     "src/headless/locator.rs": 80,
     "src/app_server/observed_scope.rs": 67,
-    "src/notification/native.rs": 214,
+    "src/notification/native.rs": 251,
     "src/ui/provenance.rs": 47,
     "src/codex_protocol/status_tests.rs": 34,
     "src/app/registry/groups.rs": 236,
@@ -170,7 +170,7 @@
     "src/ui/help_wrapped_tests.rs": 43,
     "src/ui.rs": 1490,
     "src/app_server.rs": 2680,
-    "src/main.rs": 2022,
+    "src/main.rs": 2067,
     "src/sqlite_store.rs": 1849,
     "src/forge.rs": 1187,
     "src/worktree.rs": 770,
@@ -186,8 +186,8 @@
     "src/forge_types.rs": 453,
     "src/headless.rs": 433,
     "src/headless/surfaces.rs": 394,
-    "src/notification.rs": 310,
-    "src/runtime_notifications.rs": 699,
+    "src/notification.rs": 314,
+    "src/runtime_notifications.rs": 707,
     "src/syntax_highlight.rs": 336,
     "src/bin/syntax-asset-notices.rs": 11,
     "src/presentation.rs": 66,
@@ -1179,6 +1179,18 @@
         "src/app_server/tests.rs"
       ],
       "policy": "One-time bounded new-module ceiling aligned with extracted logic; src/app_server.rs ceiling stays 2680; requires exact-SHA canonical CI, protocol, PTY, security and development qualification; no G0 requalification or Stable claim."
+    },
+    {
+      "date": "2026-11-20",
+      "kind": "g1-native-attention-event-delivery",
+      "scope": "Decouple live registry and interactive-request notification observations from legacy Planning reconciliation; preserve one observation per UI turn, exact native request identity and repeated same-kind requests, avoid duplicate status+request edges, and preserve existing target/CODEX_HOME and bounded dispatch safety. Native request alert keys remain prefixed `native:` so the in-app jump routes to the observed exact Thread, and an explicit runtime regression checks this identity-only route.",
+      "modules": [
+        "src/main.rs",
+        "src/notification.rs",
+        "src/notification/native.rs",
+        "src/runtime_notifications.rs"
+      ],
+      "policy": "Bounded explicit development-stage ratchet revision for G1 safety/attention correctness; no new scheduler, model invocation, persistence, task authority or Stable readiness. Exact-head canonical CI, terminal, security and development qualification required."
     }
   ]
 }

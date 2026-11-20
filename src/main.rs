@@ -486,7 +486,7 @@ async fn run_app(fake_mode: bool, target_override: Option<&str>) -> Result<()> {
                         false
                     }
                 };
-            if planning_applied {
+            if planning_applied || registry_changes.notification {
                 needs_render = true;
                 if let Err(error) = services.notifications.observe(&app) {
                     reduce(
@@ -594,6 +594,7 @@ struct RegistryDrainChanges {
     any: bool,
     registry_projection: bool,
     planning: bool,
+    notification: bool,
 }
 
 fn conversation_event_changes_planning(event: &ConversationEvent) -> bool {
@@ -620,6 +621,15 @@ fn conversation_event_changes_planning(event: &ConversationEvent) -> bool {
     }
 }
 
+fn conversation_event_changes_notification(event: &ConversationEvent) -> bool {
+    matches!(
+        event,
+        ConversationEvent::InteractiveRequested(_)
+            | ConversationEvent::InteractiveResolved { .. }
+            | ConversationEvent::UserResponse { .. }
+    )
+}
+
 fn drain_registry(
     app: &mut AppState,
     registry: Option<&mut RegistryHandle>,
@@ -638,15 +648,18 @@ fn drain_registry(
         changes.any = true;
         changes.registry_projection = true;
         changes.planning = true;
+        changes.notification = true;
     }
     for _ in 0..32 {
         let Some(event) = registry.try_recv_conversation() else {
             if registry.response_actor_finished() {
                 changes.any |= app.settle_stopped_actor(effects);
+                changes.notification |= changes.any;
             }
             break;
         };
         changes.planning |= conversation_event_changes_planning(&event);
+        changes.notification |= conversation_event_changes_notification(&event);
         changes.any = true;
         let action = match event {
             ConversationEvent::ThreadCreated {
@@ -756,6 +769,37 @@ fn drain_registry(
 #[cfg(test)]
 mod registry_drain_classification_tests {
     use super::*;
+
+    #[test]
+    fn native_request_events_observe_without_planning() {
+        use codex_tui::conversation::{InteractiveRequest, InteractiveRequestKind, RpcRequestId};
+        let request = InteractiveRequest {
+            request_id: RpcRequestId::Integer(71),
+            thread_id: codex_tui::domain::ThreadId::new("thread"),
+            turn_id: "turn".into(),
+            item_id: "item".into(),
+            kind: InteractiveRequestKind::UserInput { questions: vec![] },
+        };
+        for event in [
+            ConversationEvent::InteractiveRequested(request),
+            ConversationEvent::InteractiveResolved {
+                request_id: RpcRequestId::Integer(71),
+            },
+            ConversationEvent::UserResponse {
+                ticket: 1,
+                outcome: codex_tui::user_response::UserResponseOutcome::Written,
+            },
+        ] {
+            assert!(!conversation_event_changes_planning(&event));
+            assert!(conversation_event_changes_notification(&event));
+        }
+        assert!(!conversation_event_changes_notification(
+            &ConversationEvent::Failed {
+                thread_id: codex_tui::domain::ThreadId::new("thread"),
+                error: "read failed".into(),
+            }
+        ));
+    }
 
     #[test]
     fn only_goal_conversation_events_require_planning_reconcile() {

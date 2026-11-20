@@ -611,6 +611,14 @@ mod tests {
             subject: "stale".into(),
         };
         assert!(event_thread_id(&app, &missing).is_none());
+        let known = app.threads[0].id.clone();
+        let request = NotificationEvent {
+            key: "native:request:approval-required:opaque-identity".into(),
+            item_id: known.0.clone(),
+            kind: NotificationKind::ApprovalRequired,
+            subject: "active request".into(),
+        };
+        assert_eq!(event_thread_id(&app, &request), Some(known));
         let card_only = NotificationEvent {
             key: "pipeline:issue".into(),
             item_id: "unlinked-issue".into(),

@@ -12,10 +12,14 @@ impl NotificationObservation {
             app.backend_status.source.clone(),
             app.backend_status.codex_home.clone(),
         ));
-        let known: BTreeSet<_> = app.threads.iter().map(|t| t.id.0.as_str()).collect();
+        let known: BTreeMap<_, _> = app
+            .threads
+            .iter()
+            .map(|thread| (thread.id.0.as_str(), thread))
+            .collect();
         result
             .known_items
-            .extend(known.iter().map(|id| (*id).to_owned()));
+            .extend(known.keys().map(|id| (*id).to_owned()));
         let mut muted = BTreeSet::new();
         for card in &app.work_cards {
             if card.anchor.kind != SourceKind::CodexThread {
@@ -50,16 +54,6 @@ impl NotificationObservation {
                 }
             }
         }
-        for request in &app.pending_requests {
-            if !known.contains(request.thread_id.0.as_str()) {
-                continue;
-            }
-            let kind = match &request.kind {
-                InteractiveRequestKind::UserInput { .. } => NotificationKind::UserInputRequired,
-                _ => NotificationKind::ApprovalRequired,
-            };
-            native.entry(&request.thread_id.0).or_default().insert(kind);
-        }
         for thread in &app.threads {
             if muted.contains(thread.id.0.as_str()) {
                 continue;
@@ -78,6 +72,36 @@ impl NotificationObservation {
                     );
                 }
             }
+        }
+        for request in &app.pending_requests {
+            let Some(thread) = known.get(request.thread_id.0.as_str()) else {
+                continue;
+            };
+            if muted.contains(request.thread_id.0.as_str()) {
+                continue;
+            }
+            let kind = match &request.kind {
+                InteractiveRequestKind::UserInput { .. } => NotificationKind::UserInputRequired,
+                _ => NotificationKind::ApprovalRequired,
+            };
+            // Track individual requests without storing approval/command payloads.
+            let key = format!(
+                "native:request:{}:{:?}:{:?}:{:?}:{:?}",
+                kind.label(),
+                request.thread_id.0,
+                request.turn_id,
+                request.item_id,
+                request.request_id
+            );
+            result.active.insert(
+                key.clone(),
+                NotificationEvent {
+                    key,
+                    item_id: thread.id.0.clone(),
+                    kind,
+                    subject: thread.display_title().into(),
+                },
+            );
         }
         result
     }
@@ -140,7 +164,7 @@ mod tests {
     }
 
     #[test]
-    fn real_request_triggers_without_flag_and_deduplicates() {
+    fn real_request_identity_triggers_each_new_request_without_duplicates() {
         let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
         app.threads[1].attention.clear();
         let mut tracker = NotificationTracker::default();
@@ -156,6 +180,8 @@ mod tests {
         let events = tracker.advance(NotificationObservation::from_app(&app));
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].kind, NotificationKind::UserInputRequired);
+        assert!(events[0].key.starts_with("native:request:"));
+        let first_key = events[0].key.clone();
         app.threads[1]
             .attention
             .push(AttentionReason::UserInputRequired);
@@ -163,6 +189,17 @@ mod tests {
             request_id: RpcRequestId::Integer(32),
             ..request
         });
+        let second = tracker.advance(NotificationObservation::from_app(&app));
+        assert_eq!(second.len(), 1, "second real request must not be hidden");
+        assert_eq!(second[0].kind, NotificationKind::UserInputRequired);
+        assert_ne!(first_key, second[0].key);
+        assert_eq!(second[0].item_id, app.threads[1].id.0);
+        assert!(
+            tracker
+                .advance(NotificationObservation::from_app(&app))
+                .is_empty()
+        );
+        app.pending_requests.clear();
         assert!(
             tracker
                 .advance(NotificationObservation::from_app(&app))
