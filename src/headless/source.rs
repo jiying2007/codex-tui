@@ -84,7 +84,7 @@ impl SnapshotSource {
 }
 
 impl SourceStatus {
-    fn unavailable(target_id: Option<String>) -> Self {
+    pub(super) fn unavailable(target_id: Option<String>) -> Self {
         Self {
             source: "codex-app-server".into(),
             target_id,

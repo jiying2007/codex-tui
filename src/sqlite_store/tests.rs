@@ -1078,13 +1078,13 @@ fn failed_quick_check_blocks_store_clones_before_any_schema_or_derivative_write(
         .create_scratch("after validated restore", None, None, None)
         .unwrap();
 }
-
 #[test]
 fn default_state_round_trips_through_sqlite() {
     let root = tempdir().expect("tempdir");
     let store = SqliteStore::at(root.path());
     let state = LocalStateV1 {
         schema_version: 1,
+        scopes: BTreeMap::new(),
         thread_ui: BTreeMap::new(),
         pins: BTreeSet::new(),
         aliases: BTreeMap::new(),

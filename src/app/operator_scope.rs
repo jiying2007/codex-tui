@@ -136,7 +136,7 @@ mod tests {
 
     #[test]
     fn same_thread_id_in_other_target_cannot_inherit_operator_state() {
-        let thread_id = FakeBackend::seeded().snapshot().threads[0].id.0;
+        let thread_id = FakeBackend::seeded().snapshot().threads[0].id.0.clone();
         let a = target("A");
         let b = target("B");
         let mut old = LocalStateV1::default();
@@ -178,7 +178,7 @@ mod tests {
     #[test]
     fn home_change_flushes_previous_scope_and_resets_current_preferences() {
         let a = target("local");
-        let thread_id = FakeBackend::seeded().snapshot().threads[0].id.0;
+        let thread_id = FakeBackend::seeded().snapshot().threads[0].id.0.clone();
         let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
         app.configure_operator_target(&a);
         app.apply_local_state(&LocalStateV1::default());
