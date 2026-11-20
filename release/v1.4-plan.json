@@ -170,8 +170,8 @@
     "src/ui/help_wrapped_tests.rs": 43,
     "src/ui.rs": 1490,
     "src/app_server.rs": 2680,
-    "src/main.rs": 2067,
-    "src/sqlite_store.rs": 1849,
+    "src/main.rs": 2074,
+    "src/sqlite_store.rs": 1850,
     "src/forge.rs": 1187,
     "src/worktree.rs": 770,
     "src/release.rs": 618,
@@ -225,7 +225,7 @@
     "src/runtime_palette.rs": 89,
     "src/runtime_doctor.rs": 411,
     "src/render_performance.rs": 323,
-    "src/runtime_cli.rs": 228,
+    "src/runtime_cli.rs": 252,
     "src/runtime_store_worker.rs": 340,
     "src/app/planning_worker.rs": 206,
     "src/sqlite_backup.rs": 81,
@@ -276,7 +276,7 @@
     "src/i18n.rs": 222,
     "src/keymap.rs": 567,
     "src/launch.rs": 309,
-    "src/lib.rs": 58,
+    "src/lib.rs": 59,
     "src/notification/tests.rs": 308,
     "src/operation.rs": 473,
     "src/planning.rs": 1035,
@@ -379,7 +379,11 @@
     "src/app_server/queue_mutation.rs": 50,
     "src/app_server/queue_pagination.rs": 83,
     "src/app_server/queue_priority_tests.rs": 89,
-    "src/forge/current_branch.rs": 81
+    "src/forge/current_branch.rs": 81,
+    "src/workref.rs": 353,
+    "src/workref/cli.rs": 300,
+    "src/workref/tests.rs": 127,
+    "src/sqlite_store/workref.rs": 99
   },
   "ratchetPolicy": {
     "baseline": "inherit v1.3 Search & Multi-Target ceilings; feature work may only add bounded module-specific ceilings",
@@ -1203,6 +1207,22 @@
         "src/ui/registry/tests.rs"
       ],
       "policy": "Single G1 presentation-only safety extension using existing AppState and Registry: no new service, local authority, protocol, model call, polling or persistence; exact-HEAD CI/PTy/security/development gates and no Stable claim."
+    },
+    {
+      "date": "2026-11-20",
+      "kind": "g23-manual-source-authority-links",
+      "scope": "G2/G3 manual reference ledger for original Feishu Project/TAPD requirements, bugs and technical links; target/home/thread/repository keyed sessions; versioned API/ABI/protocol/data/model contracts; separately sourced code/CI/joint/device/business evidence; directed handoff prepared locally and acknowledged only by explicit receipt. Uses private existing SQLite operator_state key and cross-process writer guard without schema version migration. Includes validation-first noninteractive CLI and regression tests; user acceptance and real cross-device integration deferred to one centralized field validation after implementation.",
+      "modules": [
+        "src/workref.rs",
+        "src/workref/cli.rs",
+        "src/workref/tests.rs",
+        "src/sqlite_store/workref.rs",
+        "src/sqlite_store.rs",
+        "src/runtime_cli.rs",
+        "src/main.rs",
+        "src/lib.rs"
+      ],
+      "policy": "G2/G3 bounded additive implementation; no new external API, model invocation, Git mutation, daemon, auto-delivery, or authorization; all exact-SHA CI/security/PTY/release qualifications remain active; StableReady stays false."
     }
   ]
 }

@@ -12,6 +12,7 @@ const HELP: &str = "Usage: codex-tui [--fake | --target NAME]
        codex-tui status | thread list | attention list | board list | forge status | worktree list
        codex-tui release <verify|benchmark|render-benchmark|interaction-benchmark|scale|failure-matrix> [OPTIONS]
        codex-tui soak [--rows N] [--cycles N] [--duration-seconds N] [--json]
+       codex-tui workref <add|session|contract|evidence|handoff|ack|show|list|handoff-text> [OPTIONS]
 
 Use --help after a command for its options. Doctor codex accepts --target NAME.
 Exit codes: 0 success, 1 unexpected runtime error, 2 invalid usage, 3 degraded/blocked.
@@ -36,6 +37,17 @@ Reports do not grant stable publication authority.";
 const SOAK_HELP: &str =
     "Usage: codex-tui soak [--rows N] [--cycles N] [--duration-seconds N] [--json]
 Deterministic structural churn, not a real-environment duration soak certificate.";
+const WORKREF_HELP: &str = "Usage: codex-tui workref add --key KEY --provider feishu-project|tapd|local-draft --space SPACE --type requirement|bug|technical --id EXTERNAL_ID [--url ORIGINAL_HTTPS_URL]
+       codex-tui workref session --key KEY --alias NAME --target EXACT_TARGET_ID --home CODEX_HOME --thread THREAD_ID --repo REPOSITORY --role ROLE
+       codex-tui workref contract --key KEY --kind KIND --source AUTHORITY --revision VERSION [--git-sha FULL_40_HEX_SHA]
+       codex-tui workref evidence --key KEY --kind KIND --source EVIDENCE_REF --revision VERSION --result passed|failed|partial|unknown --environment ENV
+       codex-tui workref handoff --key KEY --from SESSION_ALIAS --to SESSION_ALIAS --summary TEXT
+       codex-tui workref ack --key KEY --index N --receipt EXPLICIT_RECEIPT
+       codex-tui workref list [--json] | show --key KEY [--json] | handoff-text --key KEY --index N
+
+All refs are MANUAL/UNVERIFIED until checked against their authoritative source.
+No upstream API, automatic delivery, Codex call or external workflow change.
+A handoff is only prepared; copy it manually, and only record an acknowledgement when received.";
 
 /// Returns help text or a validated invocation to dispatch through existing handlers.
 pub(crate) fn preflight(args: &[String]) -> Result<Option<&'static str>, String> {
@@ -54,6 +66,7 @@ pub(crate) fn preflight(args: &[String]) -> Result<Option<&'static str>, String>
         }
         Some("release") => RELEASE_HELP,
         Some("soak") => SOAK_HELP,
+        Some("workref") => WORKREF_HELP,
         _ => HELP,
     };
     // Help is permitted only in a syntactically valid route, not as an option value.
@@ -168,6 +181,17 @@ fn validate(words: &[&str], help: bool) -> Result<(), String> {
             &["--json"],
             &["--rows", "--cycles", "--duration-seconds"],
         ),
+        Some("workref") => {
+            if words.len() <= 2 && help {
+                return Ok(());
+            }
+            codex_tui::workref::cli::validate_cli(
+                &words[1..]
+                    .iter()
+                    .map(|word| (*word).to_string())
+                    .collect::<Vec<_>>(),
+            )
+        },
         Some(word) if word.starts_with('-') => {
             options(words, &["--fake"], &["--target"])?;
             if words.contains(&"--fake") && words.contains(&"--target") {

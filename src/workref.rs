@@ -343,7 +343,7 @@ impl WorkRefLedger {
         bounded("manual acknowledgment receipt", &receipt, 2048)?;
         ensure!(
             handoff.status == "prepared"
-                || (handoff.status == "acknowledged" && handoff.receipt.as_deref() == Some(&receipt)),
+                || (handoff.status == "acknowledged" && handoff.receipt.as_deref() == Some(receipt.as_str())),
             "cannot overwrite a finalized handoff receipt"
         );
         handoff.status = "acknowledged".into();

@@ -33,6 +33,8 @@ fn help_is_side_effect_free_without_a_tty_or_backend() {
         vec!["thread", "list", "--help"],
         vec!["release", "verify", "--help"],
         vec!["soak", "--help"],
+        vec!["workref", "--help"],
+        vec!["workref", "add", "--help"],
     ] {
         let home = TempDir::new().unwrap();
         let output = invoke(&args, &home);
@@ -74,6 +76,11 @@ fn invalid_usage_is_side_effect_free_and_exits_two() {
         vec!["release", "scale", "--rows", "100001"],
         vec!["doctor", "bad", "--help"],
         vec!["version", "extra"],
+        vec!["workref", "unknown"],
+        vec!["workref", "add", "--key", "X"],
+        vec!["workref", "add", "--key", "X", "--provider", "tapd", "--space", "a", "--type", "bug", "--id", "1"],
+        vec!["workref", "list", "--target", "not-allowed"],
+        vec!["workref", "show", "--json"],
     ] {
         let home = TempDir::new().unwrap();
         let output = invoke(&args, &home);

@@ -55,4 +55,5 @@ pub mod transcript_search;
 pub mod ui;
 pub mod user_response;
 pub mod worktree;
+pub mod workref;
 pub(crate) mod worktree_git;
