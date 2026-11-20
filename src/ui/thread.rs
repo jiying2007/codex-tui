@@ -68,7 +68,7 @@ pub(super) fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
         .unwrap_or_else(|| tr(app, "Unknown thread", "未知会话"));
     let hint_line = if show_workref {
         format!(
-            "\\n{}",
+            "\n{}",
             crate::text::truncate_display(
                 workref_hint.as_deref().unwrap_or_default(),
                 usize::from(chunks[0].width.saturating_sub(4)),
