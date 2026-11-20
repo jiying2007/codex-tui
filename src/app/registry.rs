@@ -63,9 +63,7 @@ impl AppState {
             .work_card_by_thread
             .get(&thread.id.0)
             .and_then(|index| self.work_cards.get(*index));
-        if card.is_some_and(|card| card.snoozed) {
-            return false;
-        }
+        let snoozed = card.is_some_and(|card| card.snoozed);
         let actionable = thread.attention.iter().any(|reason| {
             matches!(
                 reason,
@@ -92,8 +90,9 @@ impl AppState {
             || card.is_some_and(|card| card.attention.contains(&PlanningAttention::ReviewUnseen));
         actionable
             || interactive
-            || derived_actionable
-            || (unseen && !self.acknowledged_attention.contains(&thread.id.0))
+            || (!snoozed
+                && (derived_actionable
+                    || (unseen && !self.acknowledged_attention.contains(&thread.id.0))))
     }
 }
 

@@ -1,7 +1,6 @@
 use super::*;
 use crate::app_server_wire::decode_wire_line;
 use crate::backend::{CodexBackend, FakeBackend};
-
 #[test]
 fn app_server_channels_are_bounded_in_production() {
     let source = include_str!("../app_server.rs");
@@ -13,7 +12,6 @@ fn app_server_channels_are_bounded_in_production() {
     assert!(!production.contains("UnboundedSender"));
     assert!(!production.contains("UnboundedReceiver"));
 }
-
 #[test]
 fn app_server_command_queue_reports_backpressure() {
     let (tx, _rx) = mpsc::channel(1);
@@ -570,13 +568,13 @@ fn bootstrap_registry_completeness_follows_actual_pagination_exhaustion() {
         .expect("production source");
     assert!(production.contains("status.registry_complete = load.registry_complete;"));
     assert!(
-        include_str!("pagination.rs")
+        include_str!("registry_sources.rs")
             .split("#[cfg(test)]")
             .next()
             .unwrap()
             .contains("registry_complete: true")
     );
-    assert!(production.contains("status.registry_complete = true;"));
+    assert!(production.contains("apply_registry_source_coverage(&mut status, scope);"));
 }
 
 #[test]
@@ -672,6 +670,7 @@ fn hydration_tombstones_follow_archive_and_reappearance_notifications() {
         cursor: "next".into(),
         use_state_db_only: false,
         optimized_query: true,
+        source_scope: RegistrySourceScope::RequestedKnownKinds,
         tombstones: BTreeSet::new(),
         pages_since_publish: 0,
         budget: PageBudget::default(),
@@ -766,6 +765,7 @@ fn reconcile_finalization_preserves_live_overrides_and_removals() {
             cursor: "done".into(),
             use_state_db_only: true,
             optimized_query: true,
+            source_scope: RegistrySourceScope::RequestedKnownKinds,
             tombstones: BTreeSet::from(["removed".to_string()]),
             pages_since_publish: 0,
             budget: PageBudget::default(),

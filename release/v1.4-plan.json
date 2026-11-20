@@ -148,6 +148,8 @@
     "user-perceived-performance-evidence"
   ],
   "moduleRatchet": {
+    "src/app_server/registry_sources.rs": 258,
+    "src/ui/registry/coverage.rs": 26,
     "src/runtime_startup.rs": 276,
     "src/app.rs": 1022,
     "src/ui/composer.rs": 73,

@@ -12,7 +12,7 @@ const TOTAL_DEADLINE: Duration = Duration::from_secs(120);
 pub(super) struct PageBudget {
     started: Option<std::time::Instant>,
     deadline: Duration,
-    pages: usize,
+    pub(super) pages: usize,
     identity_bytes: usize,
     stalled: usize,
     cursors: BTreeSet<String>,
@@ -110,11 +110,18 @@ pub(super) async fn guarded_registry_page(
     cursor: Option<String>,
     use_state_db_only: bool,
     optimized_query: bool,
+    source_scope: RegistrySourceScope,
     budget: &mut PageBudget,
 ) -> Result<RegistryPage> {
     let page = tokio::time::timeout(
         budget.remaining()?,
-        load_registry_page(rpc, cursor, use_state_db_only, optimized_query),
+        load_registry_page(
+            rpc,
+            cursor,
+            use_state_db_only,
+            optimized_query,
+            source_scope,
+        ),
     )
     .await
     .context("Registry pagination total deadline exceeded")??;
@@ -127,67 +134,6 @@ pub(super) async fn guarded_registry_page(
         page.threads.iter().map(|thread| thread.id.0.as_str()),
     )?;
     Ok(page)
-}
-
-pub(super) async fn load_registry_with_page_limit(
-    rpc: &mut RpcSession,
-    use_state_db_only: bool,
-    max_pages: Option<usize>,
-) -> Result<RegistryLoad> {
-    let mut cursor = None;
-    let mut threads = BTreeMap::new();
-    let mut optimized_query = true;
-    let mut budget = PageBudget::default();
-    loop {
-        let page = match guarded_registry_page(
-            rpc,
-            cursor,
-            use_state_db_only,
-            optimized_query,
-            &mut budget,
-        )
-        .await
-        {
-            Ok(page) => page,
-            Err(error) if !threads.is_empty() => {
-                return Ok(RegistryLoad {
-                    threads: threads.into_values().collect(),
-                    error: Some(format!("Registry inventory incomplete: {error}")),
-                    registry_complete: false,
-                    hydration: None,
-                });
-            }
-            Err(error) => return Err(error),
-        };
-        optimized_query = page.optimized_query;
-        for thread in page.threads {
-            threads.insert(thread.id.0.clone(), thread);
-        }
-        let Some(next) = page.next_cursor else {
-            return Ok(RegistryLoad {
-                threads: threads.into_values().collect(),
-                error: None,
-                registry_complete: true,
-                hydration: None,
-            });
-        };
-        if max_pages.is_some_and(|limit| budget.pages >= limit) {
-            return Ok(RegistryLoad {
-                threads: threads.into_values().collect(),
-                error: None,
-                registry_complete: false,
-                hydration: Some(RegistryHydration {
-                    cursor: next,
-                    budget,
-                    use_state_db_only,
-                    optimized_query,
-                    tombstones: BTreeSet::new(),
-                    pages_since_publish: 0,
-                }),
-            });
-        }
-        cursor = Some(next);
-    }
 }
 
 pub(super) async fn guarded_loaded_page(

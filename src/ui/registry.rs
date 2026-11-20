@@ -1,4 +1,6 @@
 use super::*;
+mod coverage;
+use coverage::registry_inventory_label;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct RegistryViewport {
@@ -155,12 +157,7 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
     } else {
         format!(" · filter: {}", app.filter)
     };
-    let history = registry_history_label(
-        app.language,
-        app.backend_status.connected && !app.backend_status.registry_complete,
-        !app.filter.is_empty(),
-        app.show_all_history,
-    );
+    let history = registry_inventory_label(app);
     let matched = viewport.matched;
     // Keep default chrome about the next action, not filesystem diagnostics.
     // Detailed locality and upstream provenance remain in the selected panel/Doctor.

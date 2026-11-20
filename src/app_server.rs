@@ -36,6 +36,11 @@ mod history_hit;
 mod lifecycle;
 mod pagination;
 mod queue_mutation;
+mod registry_sources;
+use registry_sources::{
+    RegistrySourceScope, apply_registry_source_coverage, load_registry_page,
+    load_registry_with_page_limit,
+};
 mod queue_pagination;
 use queue_pagination::{QueueLoadState, load_thread_queue};
 mod resource_budget;
@@ -46,10 +51,7 @@ mod watch_set;
 use watch_set::{WatchSet, WatchSetGuard};
 mod user_response;
 use history_hit::load_transcript_hit;
-use pagination::{
-    PageBudget, guarded_loaded_page, guarded_registry_page, load_all_loaded_ids,
-    load_registry_with_page_limit,
-};
+use pagination::{PageBudget, guarded_loaded_page, guarded_registry_page, load_all_loaded_ids};
 use resource_budget::{admit_pending_request, enqueue_rpc_message, json_cost};
 
 const PAGE_SIZE: u32 = 200;
@@ -517,6 +519,7 @@ struct RegistryHydration {
     budget: PageBudget,
     use_state_db_only: bool,
     optimized_query: bool,
+    source_scope: RegistrySourceScope,
     tombstones: BTreeSet<String>,
     pages_since_publish: usize,
 }
@@ -533,6 +536,7 @@ struct RegistryLoad {
     threads: Vec<ThreadSummary>,
     error: Option<String>,
     registry_complete: bool,
+    source_scope: RegistrySourceScope,
     hydration: Option<RegistryHydration>,
 }
 
@@ -549,6 +553,7 @@ struct RegistryPage {
     threads: Vec<ThreadSummary>,
     next_cursor: Option<String>,
     optimized_query: bool,
+    source_scope: RegistrySourceScope,
 }
 
 async fn bootstrap_registry(
@@ -563,6 +568,7 @@ async fn bootstrap_registry(
     status.connected = !rpc.is_quarantined();
     status.registry_complete = load.registry_complete;
     status.error = load.error;
+    apply_registry_source_coverage(&mut status, load.source_scope);
     status.last_refresh_unix_ms = Some(now_unix_ms());
     Ok((load.threads, status, load.hydration))
 }
@@ -740,11 +746,13 @@ fn apply_full_registry_refresh(
     fresh: Vec<ThreadSummary>,
     threads: &mut BTreeMap<String, ThreadSummary>,
     status: &mut BackendStatus,
+    source_scope: RegistrySourceScope,
 ) {
     *threads = by_id(fresh);
     status.connected = true;
     status.registry_complete = true;
     status.error = None;
+    apply_registry_source_coverage(status, source_scope);
     status.last_refresh_unix_ms = Some(now_unix_ms());
 }
 
@@ -910,7 +918,12 @@ fn finish_registry_reconcile(
                 .insert(thread_id.clone(), thread.clone());
         }
     }
-    apply_full_registry_refresh(reconcile.candidate.into_values().collect(), threads, status);
+    apply_full_registry_refresh(
+        reconcile.candidate.into_values().collect(),
+        threads,
+        status,
+        reconcile.hydration.source_scope,
+    );
 }
 
 async fn run_registry_actor(
@@ -1412,6 +1425,7 @@ async fn run_registry_actor(
                         Some(state.cursor.clone()),
                         state.use_state_db_only,
                         state.optimized_query,
+                        state.source_scope,
                         &mut state.budget,
                     )
                     .await
@@ -1419,6 +1433,7 @@ async fn run_registry_actor(
                         Ok(page) => {
                             let next_cursor = page.next_cursor;
                             state.optimized_query = page.optimized_query;
+                            state.source_scope = page.source_scope;
                             merge_registry_hydration_page(
                                 &mut threads,
                                 page.threads,
@@ -1440,8 +1455,10 @@ async fn run_registry_actor(
                                     state.pages_since_publish = 0;
                                 }
                             } else {
+                                let scope = state.source_scope;
                                 hydration = None;
                                 status.registry_complete = true;
+                                apply_registry_source_coverage(&mut status, scope);
                                 if goal_supported != Some(false) {
                                     reset_eager_goal_queue(
                                         &threads,
@@ -1468,6 +1485,7 @@ async fn run_registry_actor(
                         Some(state.cursor.clone()),
                         state.use_state_db_only,
                         state.optimized_query,
+                        state.source_scope,
                         &mut state.budget,
                     )
                     .await
@@ -1475,6 +1493,7 @@ async fn run_registry_actor(
                         Ok(page) => {
                             let next_cursor = page.next_cursor;
                             state.optimized_query = page.optimized_query;
+                            state.source_scope = page.source_scope;
                             merge_registry_hydration_page(
                                 &mut reconcile_state.candidate,
                                 page.threads,
@@ -1572,7 +1591,12 @@ async fn run_registry_actor(
                 authoritative_refresh_queued = false;
                 match load_registry_with_page_limit(&mut rpc, true, Some(1)).await {
                     Ok(load) if load.registry_complete => {
-                        apply_full_registry_refresh(load.threads, &mut threads, &mut status);
+                        apply_full_registry_refresh(
+                            load.threads,
+                            &mut threads,
+                            &mut status,
+                            load.source_scope,
+                        );
                         loaded_hydration = Some(LoadedIdHydration::default());
                         hydration_tick.reset();
                         if goal_supported != Some(false) {
@@ -1790,49 +1814,6 @@ fn status_from_initialize(result: &Value) -> BackendStatus {
         last_refresh_unix_ms: None,
         error: None,
     }
-}
-
-async fn load_registry_page(
-    rpc: &mut RpcSession,
-    cursor: Option<String>,
-    use_state_db_only: bool,
-    mut optimized_query: bool,
-) -> Result<RegistryPage> {
-    let optimized_params = json!({
-        "cursor": cursor,
-        "limit": PAGE_SIZE,
-        "sortKey": "recency_at",
-        "sortDirection": "desc",
-        "useStateDbOnly": use_state_db_only
-    });
-    let legacy_params = json!({
-        "cursor": cursor,
-        "limit": PAGE_SIZE
-    });
-
-    let result = if optimized_query {
-        match rpc.request("thread/list", optimized_params).await {
-            Ok(result) => result,
-            Err(error) if is_registry_query_optimization_unsupported(&error) => {
-                optimized_query = false;
-                rpc.request("thread/list", legacy_params).await?
-            }
-            Err(error) => return Err(error),
-        }
-    } else {
-        rpc.request("thread/list", legacy_params).await?
-    };
-
-    let page = parse_thread_list(result)?;
-    Ok(RegistryPage {
-        threads: page
-            .data
-            .into_iter()
-            .map(|thread| normalize_thread(thread, None))
-            .collect(),
-        next_cursor: page.next_cursor,
-        optimized_query,
-    })
 }
 
 async fn load_goal(rpc: &mut RpcSession, thread_id: ThreadId) -> Result<Option<GoalObservation>> {

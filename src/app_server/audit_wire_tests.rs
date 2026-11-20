@@ -47,7 +47,6 @@ async fn peer(replies: Vec<(&'static str, Value)>) -> (RpcSession, JoinHandle<Ve
     .unwrap();
     (rpc, server)
 }
-
 #[tokio::test]
 async fn repeating_registry_cursor_preserves_partial_rows_without_authority() {
     let (mut rpc, server) = peer(vec![
@@ -96,6 +95,7 @@ async fn hydration_carries_bootstrap_cursor_history_and_loaded_scan_also_stops()
             Some(hydration.cursor),
             false,
             true,
+            hydration.source_scope,
             &mut hydration.budget
         )
         .await
