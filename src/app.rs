@@ -38,11 +38,12 @@ use crate::store::LocalStateV1;
 use crate::terminal_drawer::TerminalSnapshot;
 use crate::text::sanitize_inline;
 use crate::thread_queue::{QueuedSubmission, ThreadQueueMutation, ThreadQueueSnapshot};
+use crate::workref::WorkRefLedger;
 use crate::transcript_search::{
     TranscriptSearchHit, TranscriptSearchResults, TranscriptSearchSource,
 };
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
-use std::time::Instant;
+use std::{sync::Arc, time::Instant};
 mod composer;
 mod context_menu;
 mod forge_review;
@@ -155,6 +156,10 @@ pub struct AppState {
     local_aliases: BTreeMap<String, String>,
     local_marked_unread: BTreeSet<String>,
     operator_local: operator_scope::OperatorLocal,
+    /// Startup-only local manual references; never authorizes cross-Target actions.
+    pub(crate) workref_ledger: Arc<WorkRefLedger>,
+    /// Invalid/undecodable local G2/G3 state must not render as 'no links'.
+    pub workref_unavailable: bool,
     pub conversations: BTreeMap<String, ConversationState>,
     conversation_cache_order: VecDeque<String>,
     pub git_contexts: BTreeMap<String, GitContext>,
