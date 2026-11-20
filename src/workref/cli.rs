@@ -384,7 +384,7 @@ pub fn run_cli(args: &[String]) -> Result<i32> {
     if let Some(index) = prepared_handoff {
         // Print only after the transaction committed. Re-running an existing
         // handoff must not downgrade its separately recorded acknowledgment.
-        println!("Handoff #{index} saved; no delivery attempted. Use workref handoff-text to copy manually.");
+        println!("Handoff #{index} saved; no delivery attempted.");
     }
     println!("Local reference stored; manual/unverified. No external workflow updated.");
     Ok(0)
