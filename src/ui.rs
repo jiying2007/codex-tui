@@ -10,6 +10,7 @@ use crate::text::{fit_display, sanitize_inline, truncate_display};
 mod board;
 mod composer;
 mod overlays;
+mod provenance;
 use board::render_board;
 #[cfg(test)]
 use board::{BoardViewport, board_viewport, planning_card_field};
@@ -76,6 +77,7 @@ fn runtime_status_label(status: &RuntimeStatus, language: UiLanguage) -> &'stati
         (RuntimeStatus::Ready, UiLanguage::SimplifiedChinese) => "就绪",
         (RuntimeStatus::SystemError, UiLanguage::SimplifiedChinese) => "错误",
         (RuntimeStatus::Inactive, UiLanguage::SimplifiedChinese) => "空闲",
+        (RuntimeStatus::Unknown, UiLanguage::SimplifiedChinese) => "未知",
         _ => status.label(),
     }
 }
@@ -248,7 +250,6 @@ fn saved_view_layout_label(layout: SavedViewLayout, language: UiLanguage) -> &'s
 
 pub fn render(frame: &mut Frame<'_>, app: &AppState) {
     let primary_area = primary_view_rect(frame.area(), app.terminal_drawer_open);
-    // Brief in-memory source events yield to active editors and focused PTYs.
     let recent = app.recent_notification.as_ref().filter(|recent| {
         recent.visible_until > std::time::Instant::now()
             && primary_area.height >= 8
@@ -587,13 +588,7 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
             .map(|card| workflow_stage_label(card.stage, app.language))
             .unwrap_or_else(|| tr(app, "<unprojected>", "<未投影>"));
         let thread_label = sanitize_inline(&thread.id.0);
-        let model_label = sanitize_inline(
-            thread
-                .metadata
-                .model
-                .as_deref()
-                .unwrap_or_else(|| tr(app, "unknown", "未知")),
-        );
+        let model_label = provenance::model_provider_label(thread, app.language);
         let mut lines = if app.language.is_simplified_chinese() {
             vec![
                 Line::from(format!("会话: {thread_label}")),
@@ -602,7 +597,7 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
                     "运行状态: {} · 待处理: {attention}",
                     runtime_status_label(&thread.runtime, app.language)
                 )),
-                Line::from(format!("模型: {model_label}")),
+                Line::from(format!("模型/提供方: {model_label}")),
                 Line::from(format!(
                     "Cwd [{}]: {}",
                     cwd_locality_display_label(
@@ -626,7 +621,7 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
                     "Runtime: {} · attention: {attention}",
                     runtime_status_label(&thread.runtime, app.language)
                 )),
-                Line::from(format!("Model: {model_label}")),
+                Line::from(format!("Model/Provider: {model_label}")),
                 Line::from(format!(
                     "Cwd [{}]: {}",
                     cwd_locality_display_label(

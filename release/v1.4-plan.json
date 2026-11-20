@@ -148,6 +148,8 @@
     "user-perceived-performance-evidence"
   ],
   "moduleRatchet": {
+    "src/ui/provenance.rs": 47,
+    "src/codex_protocol/status_tests.rs": 34,
     "src/app/registry/groups.rs": 236,
     "src/ui/registry/groups.rs": 24,
     "src/domain/identity_tests.rs": 93,
