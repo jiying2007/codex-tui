@@ -7,8 +7,8 @@ use codex_tui::{
     saved_view_editor::validate_saved_view,
     sqlite_store::{LocalWriterGuard, SqliteStore},
     store::{AppConfig, LocalStateV1, LocalStore},
-    workref::WorkRefLedger,
     transcript_search::TranscriptSearchResults,
+    workref::WorkRefLedger,
 };
 use std::time::{SystemTime, UNIX_EPOCH};
 
