@@ -122,6 +122,9 @@ fn linked_app() -> AppState {
         .prepare_handoff("BUG17", "soc".into(), "mcu".into(), "Review rev-3".into())
         .unwrap();
     app.install_workrefs(Some(ledger));
+    // The fixture's native approval moves registry selection to row 2.
+    // Select the actually linked row before asserting its detail.
+    app.selected = 0;
     app
 }
 
