@@ -34,8 +34,8 @@ use tokio::task::{JoinHandle, JoinSet};
 
 mod history_hit;
 mod lifecycle;
-mod pagination;
 mod observed_scope;
+mod pagination;
 use observed_scope::ObservedScope;
 mod queue_mutation;
 mod registry_sources;

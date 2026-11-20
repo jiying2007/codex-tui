@@ -40,6 +40,6 @@ fn submit_with(
     }
 }
 #[cfg(test)]
-mod tests;
-#[cfg(test)]
 mod approval_tests;
+#[cfg(test)]
+mod tests;

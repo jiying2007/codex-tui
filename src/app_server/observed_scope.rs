@@ -41,7 +41,11 @@ mod tests {
     #[test]
     fn target_and_home_mismatch_reject_even_same_thread_id() {
         let guard = ObservedScope::capture(&source("target=A", Some("/home/a/.codex")));
-        assert!(guard.verify(&source("target=A", Some("/home/a/.codex"))).is_ok());
+        assert!(
+            guard
+                .verify(&source("target=A", Some("/home/a/.codex")))
+                .is_ok()
+        );
         for other in [
             source("target=B", Some("/home/a/.codex")),
             source("target=A", Some("/home/b/.codex")),
