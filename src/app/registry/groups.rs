@@ -224,8 +224,8 @@ mod tests {
     #[test]
     fn ten_thousand_descendants_are_linear_and_do_not_recurse() {
         let mut threads = FakeBackend::scaled(10_000).snapshot().threads;
-        for index in 1..threads.len() {
-            threads[index].metadata.lineage.parent_thread_id =
+        for (index, thread) in threads.iter_mut().enumerate().skip(1) {
+            thread.metadata.lineage.parent_thread_id =
                 Some(format!("thread-scale-{:05}", index - 1));
         }
         let app = AppState::new(threads);
