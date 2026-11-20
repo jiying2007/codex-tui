@@ -174,6 +174,7 @@ pub enum RuntimeStatus {
     Ready,
     SystemError,
     Inactive,
+    Unknown,
 }
 
 impl RuntimeStatus {
@@ -184,6 +185,7 @@ impl RuntimeStatus {
             Self::Ready => "READY",
             Self::SystemError => "ERROR",
             Self::Inactive => "IDLE",
+            Self::Unknown => "UNKNOWN",
         }
     }
 }

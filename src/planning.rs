@@ -994,9 +994,9 @@ fn derive_stage(
         RuntimeStatus::Inactive if overlay.manual_ready => {
             (WorkflowStage::Ready, "selected locally as ready".into())
         }
-        RuntimeStatus::Inactive => (
+        RuntimeStatus::Inactive | RuntimeStatus::Unknown => (
             WorkflowStage::Inbox,
-            "inactive thread has not been selected as ready".into(),
+            "Codex runtime does not establish readiness".into(),
         ),
     }
 }

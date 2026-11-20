@@ -113,7 +113,7 @@ fn normalize_status(status: &Value) -> (RuntimeStatus, Vec<AttentionReason>) {
     let kind = status
         .get("type")
         .and_then(Value::as_str)
-        .unwrap_or("notLoaded");
+        .unwrap_or("unknown");
     match kind {
         "active" => {
             let flags = status
@@ -142,7 +142,8 @@ fn normalize_status(status: &Value) -> (RuntimeStatus, Vec<AttentionReason>) {
             RuntimeStatus::SystemError,
             vec![AttentionReason::SystemError],
         ),
-        _ => (RuntimeStatus::Inactive, vec![]),
+        "notLoaded" => (RuntimeStatus::Inactive, vec![]),
+        _ => (RuntimeStatus::Unknown, vec![]),
     }
 }
 
@@ -254,5 +255,7 @@ fn first_nonempty_line(value: &str) -> Option<String> {
         .map(ToOwned::to_owned)
 }
 
+#[cfg(test)]
+mod status_tests;
 #[cfg(test)]
 mod tests;

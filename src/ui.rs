@@ -76,6 +76,7 @@ fn runtime_status_label(status: &RuntimeStatus, language: UiLanguage) -> &'stati
         (RuntimeStatus::Ready, UiLanguage::SimplifiedChinese) => "就绪",
         (RuntimeStatus::SystemError, UiLanguage::SimplifiedChinese) => "错误",
         (RuntimeStatus::Inactive, UiLanguage::SimplifiedChinese) => "空闲",
+        (RuntimeStatus::Unknown, UiLanguage::SimplifiedChinese) => "未知",
         _ => status.label(),
     }
 }
@@ -248,7 +249,6 @@ fn saved_view_layout_label(layout: SavedViewLayout, language: UiLanguage) -> &'s
 
 pub fn render(frame: &mut Frame<'_>, app: &AppState) {
     let primary_area = primary_view_rect(frame.area(), app.terminal_drawer_open);
-    // Brief in-memory source events yield to active editors and focused PTYs.
     let recent = app.recent_notification.as_ref().filter(|recent| {
         recent.visible_until > std::time::Instant::now()
             && primary_area.height >= 8
