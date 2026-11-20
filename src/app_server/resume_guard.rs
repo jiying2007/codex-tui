@@ -3,6 +3,43 @@ use super::*;
 use anyhow::ensure;
 
 impl RegistryHandle {
+    pub fn try_recv_conversation(&mut self) -> Option<ConversationEvent> {
+        let event = self.conversation_rx.try_recv().ok()?;
+        match &event {
+            ConversationEvent::TranscriptSearchLoaded(results)
+                if results.source == TranscriptSearchSource::AppServer =>
+            {
+                // The actor's own search response is a bounded, target-local
+                // identity witness even if thread/list does not contain the
+                // historical hit yet. Do not trust local FTS as an actor witness.
+                if let Ok(mut witnessed) = self.search_threads.lock() {
+                    *witnessed = results
+                        .hits
+                        .iter()
+                        .map(|hit| hit.thread_id.0.clone())
+                        .collect();
+                }
+            }
+            ConversationEvent::TranscriptSearchFailed { .. } => {
+                if let Ok(mut witnessed) = self.search_threads.lock() {
+                    witnessed.clear();
+                }
+            }
+            _ => {}
+        }
+        Some(event)
+    }
+
+    pub fn search_transcript(&self, query: String) -> Result<()> {
+        self.search_threads
+            .lock()
+            .map_err(|_| anyhow!("search-hit identity witness unavailable"))?
+            .clear();
+        self.send_command(BackendCommand::SearchTranscript(query))
+    }
+}
+
+impl RegistryHandle {
     /// Admission only: Ok means the read/subscribe request was queued, not resumed.
     /// A later exact-ID thread/resume acknowledgement establishes subscription.
     pub fn load_conversation_checked(

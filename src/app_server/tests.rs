@@ -323,7 +323,7 @@ async fn isolated_search_does_not_block_live_app_server_transport() {
     let task_target = target.clone();
     let search =
         tokio::spawn(
-            async move { isolated_transcript_search(&task_target, "needle".into()).await },
+            async move { isolated_transcript_search(&task_target, "needle".into(), None).await },
         );
     live.write_json(&json!({"id":77,"method":"fixture/heartbeat","params":{}}))
         .await
