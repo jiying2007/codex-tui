@@ -381,7 +381,7 @@
     "src/app_server/queue_priority_tests.rs": 89,
     "src/forge/current_branch.rs": 81,
     "src/workref.rs": 415,
-    "src/workref/cli.rs": 476,
+    "src/workref/cli.rs": 481,
     "src/workref/tests.rs": 188,
     "src/sqlite_store/workref.rs": 112
   },
@@ -1237,6 +1237,15 @@
         "src/runtime_cli.rs"
       ],
       "policy": "Retain one G2/G3 bounded source ratchet with all exact-SHA gates on."
+    },
+    {
+      "date": "2026-11-20",
+      "kind": "g23-write-ownership-and-observation-correctness",
+      "scope": "Acquire exclusive writer lock before SQLite health/schema initialization, matching interactive RuntimeStore; only announce saved manual handoff after successful commit, never claim successful delivery.",
+      "modules": [
+        "src/workref/cli.rs"
+      ],
+      "policy": "Fail-closed local writes with exact-SHA protected tests; retain independent Stable qualification."
     }
   ]
 }
