@@ -51,6 +51,7 @@ mod history_cache;
 mod lifecycle;
 mod local_edit;
 mod mutation_editor;
+mod operator_scope;
 pub(crate) mod palette;
 mod palette_intent;
 mod planning_selection;
@@ -153,6 +154,7 @@ pub struct AppState {
     local_pins: BTreeSet<String>,
     local_aliases: BTreeMap<String, String>,
     local_marked_unread: BTreeSet<String>,
+    operator_local: operator_scope::OperatorLocal,
     pub conversations: BTreeMap<String, ConversationState>,
     conversation_cache_order: VecDeque<String>,
     pub git_contexts: BTreeMap<String, GitContext>,
@@ -252,7 +254,6 @@ pub struct AppState {
     mutation_editor: Option<mutation_editor::MutationEditor>,
     search_return_view: Option<View>,
 }
-
 #[derive(Clone, Debug)]
 struct ForgeMutationTarget {
     cwd: String,
@@ -260,7 +261,6 @@ struct ForgeMutationTarget {
     identity: ForgeIdentity,
     change_request: Option<ChangeRequestSummary>,
 }
-
 fn parse_snooze_duration(value: &str) -> Option<u64> {
     let value = value.trim().to_ascii_lowercase();
     if value.len() < 2 {

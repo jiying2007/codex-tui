@@ -47,6 +47,7 @@ impl AppState {
             local_pins,
             local_aliases,
             local_marked_unread,
+            operator_local: Default::default(),
             conversations: BTreeMap::new(),
             conversation_cache_order: VecDeque::new(),
             git_contexts: BTreeMap::new(),
@@ -809,42 +810,5 @@ impl AppState {
 
     pub(crate) fn planning_reconcile_count(&self) -> usize {
         self.planning_reconcile_count
-    }
-
-    pub fn apply_local_state(&mut self, local: &LocalStateV1) {
-        self.thread_ui = local.thread_ui.clone();
-        self.local_pins = local.pins.clone();
-        self.local_aliases = local.aliases.clone();
-        self.local_marked_unread = local.marked_unread.clone();
-        self.acknowledged_attention = local.acknowledged_attention.clone();
-        self.host_local_only = local.host_local_only;
-        self.repo_backed_only = local.repo_backed_only;
-        if self.host_local_only || self.repo_backed_only {
-            self.reconcile_cwd_locality_cache(true);
-        }
-        for thread in &mut self.threads {
-            thread.pinned = self.local_pins.contains(&thread.id.0);
-            thread.alias = self.local_aliases.get(&thread.id.0).cloned();
-            thread
-                .attention
-                .retain(|reason| *reason != AttentionReason::MarkedUnread);
-            if self.local_marked_unread.contains(&thread.id.0) {
-                thread.attention.push(AttentionReason::MarkedUnread);
-            }
-        }
-        ensure_selection_visible(self);
-    }
-
-    pub fn to_local_state(&self) -> LocalStateV1 {
-        LocalStateV1 {
-            schema_version: 1,
-            thread_ui: self.thread_ui.clone(),
-            pins: self.local_pins.clone(),
-            aliases: self.local_aliases.clone(),
-            marked_unread: self.local_marked_unread.clone(),
-            acknowledged_attention: self.acknowledged_attention.clone(),
-            host_local_only: self.host_local_only,
-            repo_backed_only: self.repo_backed_only,
-        }
     }
 }

@@ -10,12 +10,14 @@ use serde::Serialize;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 mod locator;
+mod operator_local;
 mod options;
 pub(crate) mod projection;
 mod source;
 mod surfaces;
 
 use locator::{print_source, thread_row};
+use operator_local::apply_local_operator_state;
 use options::HeadlessOptions;
 pub use options::validate_options;
 use source::SnapshotSource;
@@ -41,6 +43,8 @@ struct SourceStatus {
     target_id: Option<String>,
     transport: Option<String>,
     scope: &'static str,
+    #[serde(skip_serializing)]
+    operator_target_key: Option<String>,
     connected: bool,
     version: Option<String>,
     platform: Option<String>,
@@ -254,7 +258,7 @@ async fn build_work_snapshot(options: &HeadlessOptions) -> WorkSnapshot {
 
     let (mut threads, source) = source.load().await;
 
-    apply_local_operator_state(&mut threads, &local);
+    apply_local_operator_state(&mut threads, &local, &source);
 
     let projections = projection::reconcile_work(
         &threads,
@@ -280,18 +284,6 @@ async fn build_work_snapshot(options: &HeadlessOptions) -> WorkSnapshot {
         },
         local_store_error,
         work,
-    }
-}
-
-fn apply_local_operator_state(threads: &mut [ThreadSummary], local: &LocalStateV1) {
-    for thread in threads {
-        thread.pinned = local.pins.contains(&thread.id.0);
-        thread.alias = local.aliases.get(&thread.id.0).cloned();
-        if local.marked_unread.contains(&thread.id.0)
-            && !thread.attention.contains(&AttentionReason::MarkedUnread)
-        {
-            thread.attention.push(AttentionReason::MarkedUnread);
-        }
     }
 }
 

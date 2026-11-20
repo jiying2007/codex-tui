@@ -148,6 +148,9 @@
     "user-perceived-performance-evidence"
   ],
   "moduleRatchet": {
+    "src/headless/operator_local.rs": 71,
+    "src/store/scoped.rs": 97,
+    "src/app/operator_scope.rs": 203,
     "src/headless/locator.rs": 80,
     "src/app_server/observed_scope.rs": 67,
     "src/notification/native.rs": 214,

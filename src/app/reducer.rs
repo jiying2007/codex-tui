@@ -138,6 +138,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 state.forge_observations.clear();
             }
             state.backend_status = status;
+            state.bind_operator_status();
         }
         Action::RefreshGitProjections => {
             return refresh_git_projections(state);
