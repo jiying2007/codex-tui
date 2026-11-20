@@ -242,6 +242,17 @@ impl NotificationTracker {
                 emitted.insert(key.clone(), event.clone());
             }
         }
+        // If a status flag and its actual request appear together, emit only
+        // the request edge. Retain the flag as active to avoid false re-alerts
+        // after the request is resolved but the status update is delayed.
+        let redundant: Vec<_> = emitted
+            .values()
+            .filter(|event| event.key.starts_with("native-request:"))
+            .map(|event| format!("native:{}:{}", event.kind.label(), event.item_id))
+            .collect();
+        for key in redundant {
+            emitted.remove(&key);
+        }
         for (thread_id, (runtime, subject)) in &observation.runtimes {
             let stopped = self.runtimes.get(thread_id).is_some_and(|previous| {
                 matches!(
