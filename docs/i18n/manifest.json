@@ -163,6 +163,7 @@
         "forge",
         "language",
         "ssh",
+        "workref",
         "safety"
       ]
     },
