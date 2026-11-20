@@ -3,7 +3,8 @@
 
 use codex_tui::{
     sqlite_store::SqliteStore,
-    store::{LocalStateV1, LocalStore},
+    store::{LocalStateV1, LocalStore, ScopedOperatorState, target_instance_identity, operator_scope_key},
+    app_server_target::{ResolvedAppServerEndpoint, ResolvedAppServerTarget},
 };
 use serde_json::{Value, json};
 use std::{
@@ -268,7 +269,7 @@ fn every_codex_work_surface_preserves_target_and_shared_local_scope() {
 }
 
 #[test]
-fn same_id_targets_truthfully_share_existing_aliases_without_inventory_overlay() {
+fn same_id_targets_quarantine_legacy_aliases_without_inventory_overlay() {
     let home = TempDir::new().unwrap();
     let first = Target::new("shared-id", "First");
     let second = Target::new("shared-id", "Second");
@@ -284,7 +285,7 @@ fn same_id_targets_truthfully_share_existing_aliases_without_inventory_overlay()
     drop(store);
     std::fs::create_dir_all(home.path().join("data")).unwrap();
     std::fs::rename(seed.join("state"), home.path().join("data/codex-tui")).unwrap();
-    for target in ["first", "second"] {
+    for (target, title) in [("first", "First"), ("second", "Second")] {
         let work = report(
             &home,
             &["headless", "work", "--target", target, "--json"],
@@ -292,7 +293,7 @@ fn same_id_targets_truthfully_share_existing_aliases_without_inventory_overlay()
         );
         source(&work, target);
         assert_eq!(work["localStoreScope"], "shared-across-targets");
-        assert_eq!(work["work"][0]["title"], "Shared local alias");
+        assert_eq!(work["work"][0]["title"], title);
     }
     let inventory = report(
         &home,
@@ -302,4 +303,46 @@ fn same_id_targets_truthfully_share_existing_aliases_without_inventory_overlay()
     assert_eq!(inventory["threads"][0]["title"], "Second");
     assert_eq!(inventory["threads"][0]["pinned"], false);
     assert!(inventory.get("localStoreScope").is_none());
+}
+
+#[test]
+fn same_id_target_scopes_apply_only_to_matching_endpoint() {
+    let home = TempDir::new().unwrap();
+    let first = Target::new("shared-id", "First");
+    let second = Target::new("shared-id", "Second");
+    config(&home, "first", &first, &second);
+
+    let target = ResolvedAppServerTarget {
+        name: "first".into(),
+        endpoint: ResolvedAppServerEndpoint::WebSocket {
+            url: format!("ws://{}", first.address),
+            auth_token: None,
+        },
+    };
+    let key = operator_scope_key(&target_instance_identity(&target), None);
+    let seed = home.path().join("seed");
+    let store = SqliteStore::at(&seed);
+    let mut local = LocalStateV1::default();
+    local.aliases.insert("shared-id".into(), "unscoped legacy".into());
+    local.pins.insert("shared-id".into());
+    let mut own = ScopedOperatorState::default();
+    own.aliases.insert("shared-id".into(), "Only first".into());
+    own.pins.insert("shared-id".into());
+    local.scopes.insert(key, own);
+    store.save_state(&local).unwrap();
+    drop(store);
+    std::fs::create_dir_all(home.path().join("data")).unwrap();
+    std::fs::rename(seed.join("state"), home.path().join("data/codex-tui")).unwrap();
+
+    let a = report(&home, &["headless", "work", "--target", "first", "--json"], 0);
+    let b = report(&home, &["headless", "work", "--target", "second", "--json"], 0);
+    assert_eq!(a["work"][0]["title"], "Only first");
+    assert_eq!(b["work"][0]["title"], "Second");
+    assert_eq!(a["source"]["targetId"], "first");
+    assert_eq!(b["source"]["targetId"], "second");
+
+    let raw = SqliteStore::at(home.path().join("data/codex-tui"));
+    let stored = raw.load_state().unwrap();
+    assert_eq!(stored.aliases["shared-id"], "unscoped legacy");
+    assert_eq!(stored.scopes.len(), 1);
 }
