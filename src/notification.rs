@@ -6,6 +6,8 @@ use crate::{
     text::truncate_display,
 };
 
+mod native;
+
 const MAX_NOTIFICATION_SUBJECT_COLUMNS: usize = 160;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -141,6 +143,7 @@ impl RecentNotification {
 
 #[derive(Clone, Debug, Default)]
 pub struct NotificationObservation {
+    scope: Option<(String, Option<String>)>,
     active: BTreeMap<String, NotificationEvent>,
     known_items: BTreeSet<String>,
     runtimes: BTreeMap<String, (RuntimeStatus, String)>,
@@ -191,6 +194,7 @@ impl NotificationObservation {
             }
         }
         Self {
+            scope: None,
             active,
             known_items,
             runtimes,
@@ -220,6 +224,7 @@ fn card_notification_kinds(card: &WorkCardProjection) -> BTreeSet<NotificationKi
 
 #[derive(Clone, Debug, Default)]
 pub struct NotificationTracker {
+    scope: Option<(String, Option<String>)>,
     // Only edge identity/state survives a projection; subjects come from the next one.
     active: BTreeSet<String>,
     known_items: BTreeSet<String>,
@@ -229,6 +234,7 @@ pub struct NotificationTracker {
 
 impl NotificationTracker {
     pub fn advance(&mut self, observation: NotificationObservation) -> Vec<NotificationEvent> {
+        self.prepare_scope(&observation);
         // Empty prior maps naturally seed the first observation without history alerts.
         let mut emitted = BTreeMap::<String, NotificationEvent>::new();
         for (key, event) in &observation.active {
