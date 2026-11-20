@@ -48,6 +48,8 @@ impl AppState {
             local_aliases,
             local_marked_unread,
             operator_local: Default::default(),
+            workref_ledger: Arc::new(WorkRefLedger::default()),
+            workref_unavailable: false,
             conversations: BTreeMap::new(),
             conversation_cache_order: VecDeque::new(),
             git_contexts: BTreeMap::new(),
