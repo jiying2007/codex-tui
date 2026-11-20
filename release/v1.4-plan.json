@@ -380,10 +380,10 @@
     "src/app_server/queue_pagination.rs": 83,
     "src/app_server/queue_priority_tests.rs": 89,
     "src/forge/current_branch.rs": 81,
-    "src/workref.rs": 353,
-    "src/workref/cli.rs": 300,
-    "src/workref/tests.rs": 127,
-    "src/sqlite_store/workref.rs": 99
+    "src/workref.rs": 415,
+    "src/workref/cli.rs": 476,
+    "src/workref/tests.rs": 186,
+    "src/sqlite_store/workref.rs": 110
   },
   "ratchetPolicy": {
     "baseline": "inherit v1.3 Search & Multi-Target ceilings; feature work may only add bounded module-specific ceilings",
@@ -1223,6 +1223,20 @@
         "src/lib.rs"
       ],
       "policy": "G2/G3 bounded additive implementation; no new external API, model invocation, Git mutation, daemon, auto-delivery, or authorization; all exact-SHA CI/security/PTY/release qualifications remain active; StableReady stays false."
+    },
+    {
+      "date": "2026-11-20",
+      "kind": "g23-canonical-rustfmt",
+      "scope": "Apply exact cargo fmt --check transformations from the protected Linux CI without disabling format or other checks; no intentional semantic change.",
+      "modules": [
+        "src/lib.rs",
+        "src/sqlite_store/workref.rs",
+        "src/workref/cli.rs",
+        "src/workref/tests.rs",
+        "src/workref.rs",
+        "src/runtime_cli.rs"
+      ],
+      "policy": "Retain one G2/G3 bounded source ratchet with all exact-SHA gates on."
     }
   ]
 }

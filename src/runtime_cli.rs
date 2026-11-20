@@ -191,7 +191,7 @@ fn validate(words: &[&str], help: bool) -> Result<(), String> {
                     .map(|word| (*word).to_string())
                     .collect::<Vec<_>>(),
             )
-        },
+        }
         Some(word) if word.starts_with('-') => {
             options(words, &["--fake"], &["--target"])?;
             if words.contains(&"--fake") && words.contains(&"--target") {

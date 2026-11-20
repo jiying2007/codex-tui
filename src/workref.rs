@@ -87,16 +87,18 @@ pub struct HandoffRef {
 
 fn bounded(label: &str, value: &str, limit: usize) -> Result<()> {
     ensure!(
-        !value.trim().is_empty()
-            && value.len() <= limit
-            && !value.chars().any(char::is_control),
+        !value.trim().is_empty() && value.len() <= limit && !value.chars().any(char::is_control),
         "{label} must be a nonempty single-line value within {limit} bytes"
     );
     Ok(())
 }
 
 fn one_of(label: &str, value: &str, allowed: &[&str]) -> Result<()> {
-    ensure!(allowed.contains(&value), "unsupported {label}: use one of {}", allowed.join(", "));
+    ensure!(
+        allowed.contains(&value),
+        "unsupported {label}: use one of {}",
+        allowed.join(", ")
+    );
     Ok(())
 }
 
@@ -151,8 +153,16 @@ impl WorkItem {
     }
 
     fn validate(&self) -> Result<()> {
-        one_of("item provider", &self.provider, &["feishu-project", "tapd", "local-draft"])?;
-        one_of("item kind", &self.kind, &["requirement", "bug", "technical"])?;
+        one_of(
+            "item provider",
+            &self.provider,
+            &["feishu-project", "tapd", "local-draft"],
+        )?;
+        one_of(
+            "item kind",
+            &self.kind,
+            &["requirement", "bug", "technical"],
+        )?;
         bounded("workspace/space", &self.space, 160)?;
         bounded("external ID", &self.external_id, 160)?;
         if self.provider != "local-draft" {
@@ -206,12 +216,17 @@ impl ContractRef {
         one_of(
             "contract kind",
             &self.kind,
-            &["protocol", "api", "abi", "schema", "config", "data", "model", "other"],
+            &[
+                "protocol", "api", "abi", "schema", "config", "data", "model", "other",
+            ],
         )?;
         bounded("contract authority/source", &self.source, 2048)?;
         bounded("contract revision", &self.revision, 160)?;
         if let Some(sha) = self.git_sha.as_deref() {
-            ensure!(git_sha_valid(sha), "Git contract commit must be an exact 40-character SHA");
+            ensure!(
+                git_sha_valid(sha),
+                "Git contract commit must be an exact 40-character SHA"
+            );
         }
         Ok(())
     }
@@ -222,9 +237,21 @@ impl EvidenceRef {
         one_of(
             "evidence kind",
             &self.kind,
-            &["commit", "ci", "unit", "integration", "device", "acceptance", "other"],
+            &[
+                "commit",
+                "ci",
+                "unit",
+                "integration",
+                "device",
+                "acceptance",
+                "other",
+            ],
         )?;
-        one_of("evidence result", &self.result, &["passed", "failed", "partial", "unknown"])?;
+        one_of(
+            "evidence result",
+            &self.result,
+            &["passed", "failed", "partial", "unknown"],
+        )?;
         bounded("evidence source", &self.source, 2048)?;
         bounded("evidence revision", &self.revision, 160)?;
         bounded("evidence environment", &self.environment, 256)?;
@@ -241,11 +268,22 @@ impl HandoffRef {
             "handoff requires two distinct, previously linked session aliases"
         );
         bounded("handoff summary", &self.summary, 800)?;
-        one_of("handoff status", &self.status, &["prepared", "acknowledged", "unknown"])?;
+        one_of(
+            "handoff status",
+            &self.status,
+            &["prepared", "acknowledged", "unknown"],
+        )?;
         if self.status == "acknowledged" {
-            bounded("manual acknowledgment receipt", self.receipt.as_deref().unwrap_or(""), 2048)?;
+            bounded(
+                "manual acknowledgment receipt",
+                self.receipt.as_deref().unwrap_or(""),
+                2048,
+            )?;
         } else {
-            ensure!(self.receipt.is_none(), "receipt only valid for an acknowledged handoff");
+            ensure!(
+                self.receipt.is_none(),
+                "receipt only valid for an acknowledged handoff"
+            );
         }
         Ok(())
     }
@@ -253,7 +291,10 @@ impl HandoffRef {
 
 impl WorkRefLedger {
     pub fn validate(&self) -> Result<()> {
-        ensure!(self.schema_version == 1, "unsupported work reference schema version");
+        ensure!(
+            self.schema_version == 1,
+            "unsupported work reference schema version"
+        );
         ensure!(self.items.len() <= MAX_ITEMS, "too many linked work items");
         for (key, item) in &self.items {
             key_valid(key)?;
@@ -266,12 +307,14 @@ impl WorkRefLedger {
         key_valid(&key)?;
         item.validate()?;
         if let Some(existing) = self.items.get(&key) {
-            ensure!(existing.provider == item.provider
-                && existing.space == item.space
-                && existing.kind == item.kind
-                && existing.external_id == item.external_id
-                && existing.url == item.url,
-                "item key already belongs to another external authority");
+            ensure!(
+                existing.provider == item.provider
+                    && existing.space == item.space
+                    && existing.kind == item.kind
+                    && existing.external_id == item.external_id
+                    && existing.url == item.url,
+                "item key already belongs to another external authority"
+            );
             return Ok(());
         }
         ensure!(self.items.len() < MAX_ITEMS, "too many linked work items");
@@ -280,9 +323,9 @@ impl WorkRefLedger {
     }
 
     pub fn item_mut(&mut self, key: &str) -> Result<&mut WorkItem> {
-        self.items.get_mut(key).ok_or_else(|| anyhow::anyhow!(
-            "work item does not exist; add its exact external reference first"
-        ))
+        self.items.get_mut(key).ok_or_else(|| {
+            anyhow::anyhow!("work item does not exist; add its exact external reference first")
+        })
     }
 
     pub fn add_session(&mut self, key: &str, alias: String, session: SessionRef) -> Result<()> {
@@ -290,7 +333,10 @@ impl WorkRefLedger {
         session.validate()?;
         let item = self.item_mut(key)?;
         if let Some(existing) = item.sessions.get(&alias) {
-            ensure!(existing == &session, "session alias already refers to another Target/Thread");
+            ensure!(
+                existing == &session,
+                "session alias already refers to another Target/Thread"
+            );
             return Ok(());
         }
         ensure!(item.sessions.len() < MAX_REFS, "too many sessions");
@@ -312,13 +358,22 @@ impl WorkRefLedger {
         evidence.validate()?;
         let item = self.item_mut(key)?;
         if !item.evidence.contains(&evidence) {
-            ensure!(item.evidence.len() < MAX_REFS, "too many evidence references");
+            ensure!(
+                item.evidence.len() < MAX_REFS,
+                "too many evidence references"
+            );
             item.evidence.push(evidence);
         }
         Ok(())
     }
 
-    pub fn prepare_handoff(&mut self, key: &str, from_alias: String, to_alias: String, summary: String) -> Result<usize> {
+    pub fn prepare_handoff(
+        &mut self,
+        key: &str,
+        from_alias: String,
+        to_alias: String,
+        summary: String,
+    ) -> Result<usize> {
         let item = self.item_mut(key)?;
         let candidate = HandoffRef {
             from_alias,
@@ -328,8 +383,11 @@ impl WorkRefLedger {
             receipt: None,
         };
         candidate.validate(&item.sessions)?;
-        if let Some(index) = item.handoffs.iter().position(|h| h.from_alias == candidate.from_alias
-            && h.to_alias == candidate.to_alias && h.summary == candidate.summary) {
+        if let Some(index) = item.handoffs.iter().position(|h| {
+            h.from_alias == candidate.from_alias
+                && h.to_alias == candidate.to_alias
+                && h.summary == candidate.summary
+        }) {
             return Ok(index);
         }
         ensure!(item.handoffs.len() < MAX_REFS, "too many handoffs");
@@ -339,11 +397,15 @@ impl WorkRefLedger {
 
     pub fn acknowledge_handoff(&mut self, key: &str, index: usize, receipt: String) -> Result<()> {
         let item = self.item_mut(key)?;
-        let handoff = item.handoffs.get_mut(index).ok_or_else(|| anyhow::anyhow!("handoff index not found"))?;
+        let handoff = item
+            .handoffs
+            .get_mut(index)
+            .ok_or_else(|| anyhow::anyhow!("handoff index not found"))?;
         bounded("manual acknowledgment receipt", &receipt, 2048)?;
         ensure!(
             handoff.status == "prepared"
-                || (handoff.status == "acknowledged" && handoff.receipt.as_deref() == Some(receipt.as_str())),
+                || (handoff.status == "acknowledged"
+                    && handoff.receipt.as_deref() == Some(receipt.as_str())),
             "cannot overwrite a finalized handoff receipt"
         );
         handoff.status = "acknowledged".into();

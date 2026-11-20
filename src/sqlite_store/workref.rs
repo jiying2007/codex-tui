@@ -18,7 +18,10 @@ impl SqliteStore {
         let Some(json) = json else {
             return Ok(WorkRefLedger::default());
         };
-        anyhow::ensure!(json.len() <= MAX_LEDGER_BYTES, "work reference ledger too large");
+        anyhow::ensure!(
+            json.len() <= MAX_LEDGER_BYTES,
+            "work reference ledger too large"
+        );
         let ledger: WorkRefLedger =
             serde_json::from_str(&json).context("decode work reference ledger")?;
         ledger.validate()?;
@@ -29,7 +32,10 @@ impl SqliteStore {
     pub fn save_workref_ledger(&self, ledger: &WorkRefLedger) -> Result<()> {
         ledger.validate()?;
         let json = serde_json::to_string(ledger).context("encode work reference ledger")?;
-        anyhow::ensure!(json.len() <= MAX_LEDGER_BYTES, "work reference ledger too large");
+        anyhow::ensure!(
+            json.len() <= MAX_LEDGER_BYTES,
+            "work reference ledger too large"
+        );
         let mut conn = self.open_ready()?;
         let tx = conn.transaction()?;
         tx.execute(
@@ -60,17 +66,19 @@ mod tests {
         operator.aliases.insert("thread".into(), "retain".into());
         store.save_state(&operator).unwrap();
         let mut ledger = WorkRefLedger::default();
-        ledger.add_item(
-            "bug-11".into(),
-            WorkItem::new(
-                "tapd".into(),
-                "project".into(),
-                "bug".into(),
-                "11".into(),
-                Some("https://www.tapd.cn/".into()),
+        ledger
+            .add_item(
+                "bug-11".into(),
+                WorkItem::new(
+                    "tapd".into(),
+                    "project".into(),
+                    "bug".into(),
+                    "11".into(),
+                    Some("https://www.tapd.cn/".into()),
+                )
+                .unwrap(),
             )
-            .unwrap(),
-        ).unwrap();
+            .unwrap();
         store.save_workref_ledger(&ledger).unwrap();
         assert_eq!(store.load_state().unwrap(), operator);
         assert_eq!(store.load_workref_ledger().unwrap(), ledger);
@@ -91,8 +99,12 @@ mod tests {
             "INSERT INTO operator_state(key, value_json, updated_at_unix_ms)
              VALUES(?1, ?2, 0)",
             params![WORKREF_KEY, "{invalid"],
-        ).unwrap();
+        )
+        .unwrap();
         assert!(store.load_workref_ledger().is_err());
-        assert!(store.load_state().is_ok(), "operator preferences remain intact");
+        assert!(
+            store.load_state().is_ok(),
+            "operator preferences remain intact"
+        );
     }
 }
