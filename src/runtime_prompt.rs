@@ -15,9 +15,9 @@ pub(crate) fn submit(
     active_turn_id: Option<String>,
 ) {
     let result = match registry {
-        Some(registry) => {
-            registry.submit_prompt(thread_id.clone(), request_id, text, active_turn_id)
-        }
+        Some(registry) => registry.submit_prompt(
+            &app.backend_status, thread_id.clone(), request_id, text, active_turn_id,
+        ),
         None => Err(anyhow::anyhow!(pick(
             app.language,
             "conversation backend unavailable",

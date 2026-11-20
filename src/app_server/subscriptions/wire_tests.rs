@@ -6,7 +6,6 @@ fn approval(id: i64, thread: &str) -> Value {
         "threadId":thread,"turnId":"turn-1","itemId":"item-1","command":"fixture","cwd":"/fixture"
     }})
 }
-
 #[tokio::test]
 async fn loaded_threads_need_this_connections_resume_and_release_only_after_last_owner() {
     let peer = Peer::start().await;
@@ -35,9 +34,10 @@ async fn loaded_threads_need_this_connections_resume_and_release_only_after_last
         matches!(e, ConversationEvent::ThreadQueueLoaded(_))
     })
     .await;
+    let observed = &started.initial.status;
     started
         .handle
-        .submit_prompt(id.clone(), 1, "fixture prompt".into(), None)
+        .submit_prompt(observed, id.clone(), 1, "fixture prompt".into(), None)
         .unwrap();
     event(&mut started.handle, |e| {
         matches!(e, ConversationEvent::PromptSubmitted { .. })
