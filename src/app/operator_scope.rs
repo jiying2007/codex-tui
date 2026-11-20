@@ -220,6 +220,67 @@ mod tests {
     }
 
     #[test]
+    fn workref_projection_never_reuses_same_thread_across_target_or_home() {
+        use crate::workref::{SessionRef, WorkItem};
+        let a = target("host-A");
+        let b = target("host-B");
+        let thread_id = FakeBackend::seeded().snapshot().threads[0].id.0.clone();
+        let mut ledger = WorkRefLedger::default();
+        ledger
+            .add_item(
+                "BUG17".into(),
+                WorkItem::new(
+                    "tapd".into(),
+                    "robot".into(),
+                    "bug".into(),
+                    "17".into(),
+                    Some("https://www.tapd.cn/".into()),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        for (alias, host) in [("soc", &a), ("mcu", &b)] {
+            ledger
+                .add_session(
+                    "BUG17",
+                    alias.into(),
+                    SessionRef {
+                        target_identity: target_instance_identity(host),
+                        codex_home: "/same/.codex".into(),
+                        thread_id: thread_id.clone(),
+                        repository: format!("repo-{alias}"),
+                        role: alias.into(),
+                    },
+                )
+                .unwrap();
+        }
+        let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+        app.configure_operator_target(&a);
+        app.apply_local_state(&LocalStateV1::default());
+        app.install_workrefs(Some(ledger));
+        app.backend_status = status(&a, Some("/same/.codex"));
+        app.bind_operator_status();
+        let links = app.manual_workrefs_for_thread(&thread_id);
+        assert_eq!(links.len(), 1);
+        assert_eq!(links[0].1, "soc");
+        // A same-spelled ThreadId on a different home is not a match.
+        app.backend_status.codex_home = Some("/other/.codex".into());
+        assert!(app.manual_workrefs_for_thread(&thread_id).is_empty());
+        app.backend_status = status(&a, Some("/same/.codex"));
+        app.bind_operator_status();
+        assert_eq!(app.manual_workrefs_for_thread(&thread_id).len(), 1);
+        // A disconnected or source-drifted target cannot claim the old links.
+        app.backend_status.connected = false;
+        assert!(app.manual_workrefs_for_thread(&thread_id).is_empty());
+        app.backend_status = status(&b, Some("/same/.codex"));
+        assert!(app.manual_workrefs_for_thread(&thread_id).is_empty());
+        app.install_workrefs(None);
+        assert!(app.workref_unavailable);
+        assert!(app.manual_workrefs_for_thread(&thread_id).is_empty());
+        assert!(app.manual_workrefs_for_thread("archive-only").is_empty());
+    }
+
+    #[test]
     fn home_change_flushes_previous_scope_and_resets_current_preferences() {
         let a = target("local");
         let thread_id = FakeBackend::seeded().snapshot().threads[0].id.0.clone();
