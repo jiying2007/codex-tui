@@ -187,7 +187,7 @@
     "src/headless.rs": 433,
     "src/headless/surfaces.rs": 394,
     "src/notification.rs": 314,
-    "src/runtime_notifications.rs": 699,
+    "src/runtime_notifications.rs": 707,
     "src/syntax_highlight.rs": 336,
     "src/bin/syntax-asset-notices.rs": 11,
     "src/presentation.rs": 66,
@@ -1183,11 +1183,12 @@
     {
       "date": "2026-11-20",
       "kind": "g1-native-attention-event-delivery",
-      "scope": "Decouple live registry and interactive-request notification observations from legacy Planning reconciliation; preserve one observation per UI turn, exact native request identity and repeated same-kind requests, avoid duplicate status+request edges, and preserve existing target/CODEX_HOME and bounded dispatch safety.",
+      "scope": "Decouple live registry and interactive-request notification observations from legacy Planning reconciliation; preserve one observation per UI turn, exact native request identity and repeated same-kind requests, avoid duplicate status+request edges, and preserve existing target/CODEX_HOME and bounded dispatch safety. Native request alert keys remain prefixed `native:` so the in-app jump routes to the observed exact Thread, and an explicit runtime regression checks this identity-only route.",
       "modules": [
         "src/main.rs",
         "src/notification.rs",
-        "src/notification/native.rs"
+        "src/notification/native.rs",
+        "src/runtime_notifications.rs"
       ],
       "policy": "Bounded explicit development-stage ratchet revision for G1 safety/attention correctness; no new scheduler, model invocation, persistence, task authority or Stable readiness. Exact-head canonical CI, terminal, security and development qualification required."
     }
