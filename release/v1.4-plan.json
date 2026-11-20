@@ -148,6 +148,7 @@
     "user-perceived-performance-evidence"
   ],
   "moduleRatchet": {
+    "src/app_server/resume_guard.rs": 197,
     "src/headless/operator_local.rs": 71,
     "src/store/scoped.rs": 97,
     "src/app/operator_scope.rs": 203,
@@ -1167,6 +1168,17 @@
         "src/app/lifecycle.rs"
       ],
       "policy": "No remote execution implementation, implicit path mapping, process spawn, new backend, permission change, scheduled job or Stable qualification. Update only the reviewed lifecycle LOC ceiling; require exact-head Linux/macOS/Windows, Security, PTY and fresh-main checks. Final rustfmt-reviewed lifecycle source is registered at exactly 275 LOC."
+    },
+    {
+      "date": "2026-11-20",
+      "kind": "g1-native-search-resume-correctness",
+      "scope": "G1 target-scoped safe Resume admission: extract native-search witness handling from root App Server, retain root no-growth cap, permit only exact observed live registry or actor-owned bounded native search IDs, fail closed on Target/CODEX_HOME drift, stale/closed actors, and unmatched ThreadId; repair Linux PTY and protocol regression without relaxing security gates.",
+      "modules": [
+        "src/app_server.rs",
+        "src/app_server/resume_guard.rs",
+        "src/app_server/tests.rs"
+      ],
+      "policy": "One-time bounded new-module ceiling aligned with extracted logic; src/app_server.rs ceiling stays 2680; requires exact-SHA canonical CI, protocol, PTY, security and development qualification; no G0 requalification or Stable claim."
     }
   ]
 }

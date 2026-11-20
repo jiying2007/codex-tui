@@ -1414,7 +1414,9 @@ fn apply_effects(
             Effect::JumpToTranscriptHit(hit) => {
                 let thread_id = hit.thread_id.clone();
                 if let Some(registry) = registry {
-                    if let Err(error) = registry.jump_to_transcript_hit(hit) {
+                    if let Err(error) =
+                        registry.jump_to_transcript_hit_checked(&app.backend_status, hit)
+                    {
                         reduce(
                             app,
                             Action::ConversationFailed {
@@ -1440,7 +1442,9 @@ fn apply_effects(
             }
             Effect::RefreshThreadQueue(thread_id) => {
                 if let Some(registry) = registry {
-                    if let Err(error) = registry.refresh_thread_queue(thread_id.clone()) {
+                    if let Err(error) = registry
+                        .refresh_thread_queue_checked(&app.backend_status, thread_id.clone())
+                    {
                         reduce(
                             app,
                             Action::ThreadQueueFailed {
@@ -1526,7 +1530,9 @@ fn apply_effects(
             }
             Effect::LoadConversation(thread_id) => {
                 if let Some(registry) = registry {
-                    if let Err(error) = registry.load_conversation(thread_id.clone()) {
+                    if let Err(error) =
+                        registry.load_conversation_checked(&app.backend_status, thread_id.clone())
+                    {
                         reduce(
                             app,
                             Action::ConversationFailed {
@@ -1573,7 +1579,8 @@ fn apply_effects(
                 item_cursor,
             } => {
                 if let Some(registry) = registry
-                    && let Err(error) = registry.load_older_conversation(
+                    && let Err(error) = registry.load_older_conversation_checked(
+                        &app.backend_status,
                         thread_id.clone(),
                         turn_cursor.clone(),
                         item_cursor.clone(),
@@ -1621,13 +1628,11 @@ fn apply_effects(
     }
     Ok(())
 }
-
 fn submit_planning(app: &mut AppState, result: Result<(), String>) {
     if let Err(error) = result {
         reduce(app, Action::PlanningStoreDegraded(Some(error)));
     }
 }
-
 fn apply_planning_store_result(app: &mut AppState, result: Result<PlanningSnapshot, String>) {
     match result {
         Ok(snapshot) => {
@@ -1639,7 +1644,6 @@ fn apply_planning_store_result(app: &mut AppState, result: Result<PlanningSnapsh
         }
     }
 }
-
 fn now_unix_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -1648,11 +1652,9 @@ fn now_unix_ms() -> u64 {
         .try_into()
         .unwrap_or(u64::MAX)
 }
-
 #[cfg(test)]
 mod app_server_target_cli_tests {
     use super::*;
-
     #[test]
     fn target_flag_is_removed_and_preserves_other_arguments() {
         let mut args = vec![
@@ -1667,12 +1669,10 @@ mod app_server_target_cli_tests {
         );
         assert_eq!(args, vec!["doctor", "codex"]);
     }
-
     #[test]
     fn target_flag_requires_exactly_one_non_empty_value() {
         let mut missing = vec!["--target".to_string()];
         assert!(take_value_flag(&mut missing, "--target").is_err());
-
         let mut duplicate = vec![
             "--target".to_string(),
             "one".to_string(),

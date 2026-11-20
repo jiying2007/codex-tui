@@ -28,6 +28,7 @@ use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::ffi::OsString;
 use std::fmt;
+use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::{mpsc, watch};
 use tokio::task::{JoinHandle, JoinSet};
@@ -39,6 +40,7 @@ mod pagination;
 use observed_scope::ObservedScope;
 mod queue_mutation;
 mod registry_sources;
+mod resume_guard;
 use registry_sources::{
     RegistrySourceScope, apply_registry_source_coverage, load_registry_page,
     load_registry_with_page_limit,
@@ -345,6 +347,9 @@ pub struct RegistryHandle {
     rx: watch::Receiver<BackendSnapshot>,
     conversation_rx: mpsc::Receiver<ConversationEvent>,
     command_tx: mpsc::Sender<BackendCommand>,
+    // Only IDs actually returned by this handle's native thread/search are
+    // eligible to open before their registry page is hydrated. Never persisted.
+    search_threads: Mutex<BTreeSet<String>>,
     history_watches: WatchSet,
     queue_watches: WatchSet,
     task: JoinHandle<()>,
@@ -366,11 +371,7 @@ impl RegistryHandle {
         try_recv_latest_snapshot(&mut self.rx)
     }
 
-    pub fn try_recv_conversation(&mut self) -> Option<ConversationEvent> {
-        self.conversation_rx.try_recv().ok()
-    }
-
-    pub fn load_conversation(&self, thread_id: ThreadId) -> Result<()> {
+    pub(crate) fn load_conversation(&self, thread_id: ThreadId) -> Result<()> {
         self.send_command(BackendCommand::LoadConversation(thread_id))
     }
 
@@ -379,7 +380,7 @@ impl RegistryHandle {
         Ok(())
     }
 
-    pub fn load_older_conversation(
+    pub(crate) fn load_older_conversation(
         &self,
         thread_id: ThreadId,
         turn_cursor: Option<String>,
@@ -434,18 +435,14 @@ impl RegistryHandle {
         self.send_command(BackendCommand::ClearGoal(thread_id))
     }
 
-    pub fn search_transcript(&self, query: String) -> Result<()> {
-        self.send_command(BackendCommand::SearchTranscript(query))
-    }
-
-    pub fn jump_to_transcript_hit(
+    pub(crate) fn jump_to_transcript_hit(
         &self,
         hit: crate::transcript_search::TranscriptSearchHit,
     ) -> Result<()> {
         self.send_command(BackendCommand::JumpToTranscriptHit(hit))
     }
 
-    pub fn refresh_thread_queue(&self, thread_id: ThreadId) -> Result<()> {
+    pub(crate) fn refresh_thread_queue(&self, thread_id: ThreadId) -> Result<()> {
         self.send_command(BackendCommand::RefreshThreadQueue(thread_id))
     }
 
@@ -624,6 +621,7 @@ pub async fn start_target(target: ResolvedAppServerTarget) -> Result<StartedRegi
             rx,
             conversation_rx,
             command_tx,
+            search_threads: Mutex::new(BTreeSet::new()),
             history_watches,
             queue_watches,
             task,
@@ -1336,10 +1334,11 @@ async fn run_registry_actor(
                         let generation = search_generation;
                         active_search_query = query.clone();
                         let search_target = target.clone();
+                        let expected_home = status.codex_home.clone();
                         search_tasks.spawn(async move {
                             let result = tokio::time::timeout(
                                 SEARCH_TOTAL_TIMEOUT,
-                                isolated_transcript_search(&search_target, query.clone()),
+                                isolated_transcript_search(&search_target, query.clone(), expected_home.as_deref()),
                             )
                             .await
                             .unwrap_or_else(|_| Err(anyhow!(
@@ -2198,9 +2197,17 @@ fn transcript_results_complete(
 async fn isolated_transcript_search(
     target: &ResolvedAppServerTarget,
     query: String,
+    expected_home: Option<&str>,
 ) -> Result<TranscriptSearchResults> {
     let mut isolated_rpc = RpcSession::connect(target).await?;
-    initialize(&mut isolated_rpc).await?;
+    let initialized = initialize(&mut isolated_rpc).await?;
+    // A named Target may be reused by a different Codex home. Search hits
+    // cannot become read authority on the primary actor after that drift.
+    let actual_home = status_from_initialize(&initialized).codex_home;
+    anyhow::ensure!(
+        actual_home.as_deref() == expected_home,
+        "isolated transcript search Target/Codex home changed; discard search results"
+    );
     search_transcript(&mut isolated_rpc, query).await
 }
 
