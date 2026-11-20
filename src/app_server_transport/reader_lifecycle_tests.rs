@@ -19,8 +19,10 @@ impl Drop for HelperGuard {
 fn fixture(dir: &Path, mode: &str) -> (ResolvedAppServerTarget, PathBuf) {
     let receipt = dir.join(format!("{mode}.json"));
     let script = dir.join(format!("codex-{mode}"));
+    // Publish only after all writers are closed; Linux exec must never race a writer.
+    let staged = script.with_extension("part");
     std::fs::write(
-        &script,
+        &staged,
         format!(
             r#"#!/usr/bin/env python3
 import json, os, pathlib, subprocess, sys
@@ -44,7 +46,8 @@ for line in sys.stdin:
         ),
     )
     .unwrap();
-    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o700)).unwrap();
+    std::fs::set_permissions(&staged, std::fs::Permissions::from_mode(0o700)).unwrap();
+    std::fs::rename(staged, &script).unwrap();
     (
         ResolvedAppServerTarget::implicit_local(Some(script.into_os_string())),
         receipt,
@@ -90,7 +93,6 @@ async fn released(pipe: &str, helper: &HelperGuard) {
         "writer exited before cleanup assertion"
     );
 }
-
 #[tokio::test]
 async fn repeated_successful_connections_release_their_owned_stderr_readers() {
     let mut held = Vec::new();
@@ -110,7 +112,6 @@ async fn repeated_successful_connections_release_their_owned_stderr_readers() {
     }
     assert!(held.iter().all(|(_, pipe)| !owns_pipe(pipe)));
 }
-
 #[tokio::test]
 async fn malformed_initial_response_drop_reclaims_stderr() {
     let temp = tempfile::tempdir().unwrap();
@@ -122,7 +123,6 @@ async fn malformed_initial_response_drop_reclaims_stderr() {
     drop(transport);
     released(&pipe, &helper).await;
 }
-
 #[tokio::test]
 async fn cancelled_transport_owner_does_not_detach_stderr_reader() {
     let temp = tempfile::tempdir().unwrap();
