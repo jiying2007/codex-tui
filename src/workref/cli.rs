@@ -275,9 +275,8 @@ pub fn validate_cli(args: &[String]) -> Result<(), String> {
 pub fn run_cli(args: &[String]) -> Result<i32> {
     let command = parse(args).map_err(anyhow::Error::msg)?;
     let store = SqliteStore::discover()?;
-    store
-        .health()
-        .context("check local SQLite before G2/G3 reference operation")?;
+    // Follow RuntimeStore's order: a write owner is established before
+    // any schema/health initialization, not after it.
     let _writer = if command.write() {
         Some(
             store
@@ -287,7 +286,11 @@ pub fn run_cli(args: &[String]) -> Result<i32> {
     } else {
         None
     };
+    store
+        .health()
+        .context("check local SQLite before G2/G3 reference operation")?;
     let mut ledger = store.load_workref_ledger()?;
+    let mut prepared_handoff = None;
     match command {
         Command::List { json } => {
             if json {
@@ -369,10 +372,7 @@ pub fn run_cli(args: &[String]) -> Result<i32> {
             to,
             summary,
         } => {
-            let index = ledger.prepare_handoff(&key, from, to, summary)?;
-            println!(
-                "Prepared handoff #{index}; manually copy with workref handoff-text. NOT delivered."
-            );
+            prepared_handoff = Some(ledger.prepare_handoff(&key, from, to, summary)?);
         }
         Command::Ack {
             key,
@@ -381,6 +381,11 @@ pub fn run_cli(args: &[String]) -> Result<i32> {
         } => ledger.acknowledge_handoff(&key, index, receipt)?,
     }
     store.save_workref_ledger(&ledger)?;
+    if let Some(index) = prepared_handoff {
+        // Print only after the transaction committed. Re-running an existing
+        // handoff must not downgrade its separately recorded acknowledgment.
+        println!("Handoff #{index} saved; no delivery attempted. Use workref handoff-text to copy manually.");
+    }
     println!("Local reference stored; manual/unverified. No external workflow updated.");
     Ok(0)
 }

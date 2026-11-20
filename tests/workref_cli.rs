@@ -186,7 +186,7 @@ fn g2_bug_requirement_and_g3_two_target_cross_repo_handoff_roundtrip() {
             "Check the shared protocol",
         ],
     );
-    assert!(prepared.contains("NOT delivered"));
+    assert!(prepared.contains("no delivery attempted"));
     let handoff = succeeds(
         &home,
         &["workref", "handoff-text", "--key", "BUG17", "--index", "0"],
