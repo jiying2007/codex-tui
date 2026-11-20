@@ -3,6 +3,7 @@ use crate::app::{Action, ViewKind, reduce};
 use crate::backend::{CodexBackend, FakeBackend};
 use crate::command::Command;
 use crate::conversation::{InteractiveRequestKind, RpcRequestId};
+use crate::domain::ThreadId;
 use crate::keymap::command_for_key;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{Terminal, backend::TestBackend};
