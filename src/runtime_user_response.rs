@@ -11,10 +11,11 @@ pub(crate) fn submit(
     id: &RpcRequestId,
     resolution: &InteractiveResolution,
 ) {
+    let observed = app.backend_status.clone();
     submit_with(app, id, resolution, |submission| {
         registry
             .ok_or_else(|| "App Server unavailable; response not enqueued".to_string())?
-            .submit_user_response(submission)
+            .submit_user_response(&observed, submission)
             .map_err(|error| error.to_string())
     });
 }
@@ -39,7 +40,6 @@ fn submit_with(
     }
 }
 #[cfg(test)]
-mod tests;
-
-#[cfg(test)]
 mod approval_tests;
+#[cfg(test)]
+mod tests;

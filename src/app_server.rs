@@ -34,7 +34,9 @@ use tokio::task::{JoinHandle, JoinSet};
 
 mod history_hit;
 mod lifecycle;
+mod observed_scope;
 mod pagination;
+use observed_scope::ObservedScope;
 mod queue_mutation;
 mod registry_sources;
 use registry_sources::{
@@ -339,6 +341,7 @@ pub enum ConversationEvent {
 }
 
 pub struct RegistryHandle {
+    scope: ObservedScope,
     rx: watch::Receiver<BackendSnapshot>,
     conversation_rx: mpsc::Receiver<ConversationEvent>,
     command_tx: mpsc::Sender<BackendCommand>,
@@ -353,8 +356,10 @@ impl RegistryHandle {
     }
     pub fn submit_user_response(
         &self,
+        observed: &BackendStatus,
         submission: crate::user_response::UserResponseSubmission,
     ) -> Result<()> {
+        self.scope.verify(observed)?;
         self.send_command(BackendCommand::SubmitUserResponse(submission))
     }
     pub fn try_recv(&mut self) -> Option<BackendSnapshot> {
@@ -389,11 +394,13 @@ impl RegistryHandle {
 
     pub fn submit_prompt(
         &self,
+        observed: &BackendStatus,
         thread_id: ThreadId,
         request_id: u64,
         text: String,
         active_turn_id: Option<String>,
     ) -> Result<()> {
+        self.scope.verify(observed)?;
         self.send_command(BackendCommand::SubmitPrompt {
             thread_id,
             request_id,
@@ -609,9 +616,11 @@ pub async fn start_target(target: ResolvedAppServerTarget) -> Result<StartedRegi
         ),
     ));
 
+    let observed_scope = ObservedScope::capture(&initial.status);
     Ok(StartedRegistry {
         initial,
         handle: RegistryHandle {
+            scope: observed_scope,
             rx,
             conversation_rx,
             command_tx,
