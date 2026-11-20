@@ -69,6 +69,50 @@ impl AppState {
         self.install_local_overlay(view);
     }
 
+    /// Install a bounded, checked startup snapshot. CLI workref writes cannot
+    /// race with a running TUI because both share the same exclusive writer.
+    pub fn install_workrefs(&mut self, workrefs: Option<WorkRefLedger>) {
+        self.workref_unavailable = workrefs.is_none();
+        self.workref_ledger = Arc::new(workrefs.unwrap_or_default());
+    }
+
+    /// Local, manual-only links for an actually observed thread. Never match
+    /// on a bare ThreadId, target name, path spelling, or historical archive.
+    pub fn manual_workrefs_for_thread(
+        &self,
+        thread_id: &str,
+    ) -> Vec<(&str, &str, &crate::workref::WorkItem)> {
+        let Some(target) = self.operator_local.target_identity.as_deref() else {
+            return Vec::new();
+        };
+        let Some(home) = self.backend_status.codex_home.as_deref() else {
+            return Vec::new();
+        };
+        if self.workref_unavailable
+            || !self.backend_status.connected
+            || home.trim().is_empty()
+            || self.operator_local.expected_source.as_deref()
+                != Some(self.backend_status.source.as_str())
+            || self.operator_local.active_scope.as_deref()
+                != Some(operator_scope_key(target, Some(home)).as_str())
+            || !self.threads.iter().any(|thread| thread.id.0 == thread_id)
+        {
+            return Vec::new();
+        }
+        let mut matched = Vec::new();
+        for (key, item) in &self.workref_ledger.items {
+            for (alias, reference) in &item.sessions {
+                if reference.target_identity == target
+                    && reference.codex_home == home
+                    && reference.thread_id == thread_id
+                {
+                    matched.push((key.as_str(), alias.as_str(), item));
+                }
+            }
+        }
+        matched
+    }
+
     fn install_local_overlay(&mut self, local: ScopedOperatorState) {
         self.thread_ui = local.thread_ui;
         self.local_pins = local.pins;
