@@ -251,9 +251,7 @@ fn normalize_source(source: &Value) -> String {
         {
             value.clone()
         }
-        Value::Object(map) if map.len() == 1 && map.contains_key("subAgent") => {
-            "subAgent".into()
-        }
+        Value::Object(map) if map.len() == 1 && map.contains_key("subAgent") => "subAgent".into(),
         Value::Object(map) if map.len() == 1 && map.contains_key("custom") => "custom".into(),
         _ => "unknown".into(),
     }
@@ -281,7 +279,10 @@ mod safe_source_tests {
         let label = normalize_source(&source);
         assert_eq!(label, "subAgent");
         assert!(!label.contains("redact"));
-        assert_eq!(normalize_source(&json!({"custom":"private value"})), "custom");
+        assert_eq!(
+            normalize_source(&json!({"custom":"private value"})),
+            "custom"
+        );
         assert_eq!(
             normalize_source(&json!({"subAgent":"review", "extra":"secret"})),
             "unknown"
