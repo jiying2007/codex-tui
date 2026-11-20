@@ -240,10 +240,53 @@ fn path_label(path: &str) -> Option<String> {
 }
 
 fn normalize_source(source: &Value) -> String {
+    // Source is a provenance category, not a safe place to echo arbitrary
+    // nested JSON (sub-agent metadata and custom extensions may be private).
     match source {
-        Value::String(value) => value.clone(),
-        Value::Null => "unknown".into(),
-        value => value.to_string(),
+        Value::String(value)
+            if matches!(
+                value.as_str(),
+                "cli" | "vscode" | "exec" | "appServer" | "mcp" | "unknown"
+            ) =>
+        {
+            value.clone()
+        }
+        Value::Object(map) if map.len() == 1 && map.contains_key("subAgent") => {
+            "subAgent".into()
+        }
+        Value::Object(map) if map.len() == 1 && map.contains_key("custom") => "custom".into(),
+        _ => "unknown".into(),
+    }
+}
+
+#[cfg(test)]
+mod safe_source_tests {
+    use super::normalize_source;
+    use serde_json::json;
+
+    #[test]
+    fn only_known_source_categories_are_displayed() {
+        for kind in ["cli", "vscode", "exec", "appServer", "mcp", "unknown"] {
+            assert_eq!(normalize_source(&json!(kind)), kind);
+        }
+        assert_eq!(normalize_source(&json!("unexpected_new_kind")), "unknown");
+        assert_eq!(normalize_source(&json!("credential\u{001b}[2J")), "unknown");
+    }
+
+    #[test]
+    fn nested_subagent_or_custom_payload_is_not_echoed_as_json() {
+        let source = json!({
+            "subAgent": {"threadSpawn": {"parentThreadId": "root", "private": "redact"}}
+        });
+        let label = normalize_source(&source);
+        assert_eq!(label, "subAgent");
+        assert!(!label.contains("redact"));
+        assert_eq!(normalize_source(&json!({"custom":"private value"})), "custom");
+        assert_eq!(
+            normalize_source(&json!({"subAgent":"review", "extra":"secret"})),
+            "unknown"
+        );
+        assert_eq!(normalize_source(&json!(null)), "unknown");
     }
 }
 

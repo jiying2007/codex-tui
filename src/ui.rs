@@ -10,6 +10,7 @@ use crate::text::{fit_display, sanitize_inline, truncate_display};
 mod board;
 mod composer;
 mod overlays;
+mod provenance;
 use board::render_board;
 #[cfg(test)]
 use board::{BoardViewport, board_viewport, planning_card_field};
@@ -587,13 +588,7 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
             .map(|card| workflow_stage_label(card.stage, app.language))
             .unwrap_or_else(|| tr(app, "<unprojected>", "<未投影>"));
         let thread_label = sanitize_inline(&thread.id.0);
-        let model_label = sanitize_inline(
-            thread
-                .metadata
-                .model
-                .as_deref()
-                .unwrap_or_else(|| tr(app, "unknown", "未知")),
-        );
+        let model_label = provenance::model_provider_label(thread, app.language);
         let mut lines = if app.language.is_simplified_chinese() {
             vec![
                 Line::from(format!("会话: {thread_label}")),
@@ -602,7 +597,7 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
                     "运行状态: {} · 待处理: {attention}",
                     runtime_status_label(&thread.runtime, app.language)
                 )),
-                Line::from(format!("模型: {model_label}")),
+                Line::from(format!("模型/提供方: {model_label}")),
                 Line::from(format!(
                     "Cwd [{}]: {}",
                     cwd_locality_display_label(
@@ -626,7 +621,7 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
                     "Runtime: {} · attention: {attention}",
                     runtime_status_label(&thread.runtime, app.language)
                 )),
-                Line::from(format!("Model: {model_label}")),
+                Line::from(format!("Model/Provider: {model_label}")),
                 Line::from(format!(
                     "Cwd [{}]: {}",
                     cwd_locality_display_label(
