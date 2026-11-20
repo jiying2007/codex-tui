@@ -244,12 +244,10 @@ async fn run_app(fake_mode: bool, target_override: Option<&str>) -> Result<()> {
     };
     let notification_mode = config.notifications.mode;
     let presentation_mode = config.ui.presentation;
-
     let mut fake_backend = fake_mode.then(FakeBackend::seeded);
     let mut registry: Option<RegistryHandle> = None;
     let mut startup_connected = false;
     let mut connect_task = None;
-
     let mut app = if let Some(fake) = &fake_backend {
         let snapshot = fake.snapshot();
         let mut app = AppState::new(snapshot.threads);
@@ -267,11 +265,13 @@ async fn run_app(fake_mode: bool, target_override: Option<&str>) -> Result<()> {
         app
     };
     app.language = config.ui.language.resolve();
+    if let Some(target) = app_server_target.as_ref() {
+        app.configure_operator_target(target);
+    }
     app.apply_local_state(&local);
     reduce(&mut app, Action::PlanningSnapshotLoaded(bootstrap.planning));
     reduce(&mut app, Action::PlanningStoreDegraded(store.error()));
     let mut planning_worker = codex_tui::app::planning_worker::PlanningWorker::start()?;
-
     let mut services = RuntimeServices::new(store, notification_mode);
     let language = app.language;
     if let Err(error) = services.mutations.recover() {

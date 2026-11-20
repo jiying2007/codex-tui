@@ -6,6 +6,8 @@ use crate::{
 use anyhow::{Context, Result};
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
+mod scoped;
+pub use scoped::{ScopedOperatorState, operator_scope_key, target_instance_identity};
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::Write;
@@ -63,6 +65,9 @@ pub struct AppConfig {
 #[serde(rename_all = "camelCase")]
 pub struct LocalStateV1 {
     pub schema_version: u32,
+    /// Previous unscoped entries are preserved, not copied into arbitrary Targets.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub scopes: BTreeMap<String, ScopedOperatorState>,
     #[serde(default)]
     pub thread_ui: BTreeMap<String, ThreadUiState>,
     #[serde(default)]
@@ -83,6 +88,7 @@ impl Default for LocalStateV1 {
     fn default() -> Self {
         Self {
             schema_version: 1,
+            scopes: BTreeMap::new(),
             thread_ui: BTreeMap::new(),
             pins: BTreeSet::new(),
             aliases: BTreeMap::new(),
