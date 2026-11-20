@@ -76,8 +76,7 @@ fn workspace_fallback_prefers_project_then_git_then_cwd() {
 #[test]
 fn git_origins_are_identity_equivalent_and_strip_credential_suffices() {
     let plain = "https://github.com/Team/Repo.git";
-    let credentialed =
-        "https://user:secret@github.com/Team/Repo.git?token=supersecret#fragment";
+    let credentialed = "https://user:secret@github.com/Team/Repo.git?token=supersecret#fragment";
     let scp = "git@github.com:Team/Repo.git";
     let expected = Some("github.com/team/repo".to_string());
     assert_eq!(normalize_git_origin(plain), expected);
