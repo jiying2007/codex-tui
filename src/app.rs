@@ -38,10 +38,10 @@ use crate::store::LocalStateV1;
 use crate::terminal_drawer::TerminalSnapshot;
 use crate::text::sanitize_inline;
 use crate::thread_queue::{QueuedSubmission, ThreadQueueMutation, ThreadQueueSnapshot};
-use crate::workref::WorkRefLedger;
 use crate::transcript_search::{
     TranscriptSearchHit, TranscriptSearchResults, TranscriptSearchSource,
 };
+use crate::workref::WorkRefLedger;
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 use std::{sync::Arc, time::Instant};
 mod composer;
