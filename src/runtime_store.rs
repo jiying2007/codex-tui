@@ -7,6 +7,7 @@ use codex_tui::{
     saved_view_editor::validate_saved_view,
     sqlite_store::{LocalWriterGuard, SqliteStore},
     store::{AppConfig, LocalStateV1, LocalStore},
+    workref::WorkRefLedger,
     transcript_search::TranscriptSearchResults,
 };
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -23,6 +24,8 @@ pub(crate) struct StoreBootstrap {
     pub(crate) config: AppConfig,
     pub(crate) local: LocalStateV1,
     pub(crate) planning: PlanningSnapshot,
+    /// A corrupt optional manual-link ledger never masquerades as an empty result.
+    pub(crate) workrefs: Option<WorkRefLedger>,
 }
 
 impl RuntimeStore {
@@ -76,6 +79,14 @@ impl RuntimeStore {
         } else {
             PlanningSnapshot::default()
         };
+        // The G2/G3 envelope is optional and independent of the legacy
+        // planning store. Decode failures are visible as unavailable, never
+        // silently converted to an empty set or permitted to drive a Resume.
+        let workrefs = if error.is_none() {
+            sqlite.load_workref_ledger().ok()
+        } else {
+            None
+        };
         if error.is_none() {
             let maintenance = if index_transcripts {
                 sqlite.prune_transcript_index()
@@ -108,6 +119,7 @@ impl RuntimeStore {
                 config,
                 local,
                 planning,
+                workrefs,
             },
         ))
     }
