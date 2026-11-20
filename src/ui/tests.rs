@@ -415,7 +415,7 @@ fn registry_selected_detail_and_offline_footer_neutralize_untrusted_labels() {
     let live = render_detail(&app);
     for visible in [
         "Thread: thread\u{fffd}spoof",
-        "Model: model\u{fffd}spoof",
+        "Model/Provider: model\u{fffd}spoof / unknown",
         "Git: feature\u{fffd}spoof",
         "backend\u{fffd}spoof",
     ] {
