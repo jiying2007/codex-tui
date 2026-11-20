@@ -46,9 +46,16 @@ impl RegistryHandle {
     }
 
     fn verify_observed_thread(&self, observed: &BackendStatus, id: &ThreadId) -> Result<()> {
+        // Preserve the old visible closed-actor error instead of disguising it as
+        // a target mismatch; never enqueue into an already closed actor.
+        ensure!(!self.command_tx.is_closed(), "App Server actor is not available");
         self.scope.verify(observed)?;
         let snapshot = self.rx.borrow();
-        verify_observed_thread(&snapshot, observed, id)
+        let searched = self
+            .search_threads
+            .lock()
+            .map_err(|_| anyhow!("search-hit identity witness unavailable"))?;
+        verify_observed_thread(&snapshot, observed, id, &searched)
     }
 }
 
@@ -56,6 +63,7 @@ fn verify_observed_thread(
     snapshot: &BackendSnapshot,
     observed: &BackendStatus,
     id: &ThreadId,
+    searched: &BTreeSet<String>,
 ) -> Result<()> {
     ensure!(
         observed.connected
@@ -65,8 +73,10 @@ fn verify_observed_thread(
         "Codex Target/home observation changed; locate again before resuming"
     );
     ensure!(
-        !id.0.trim().is_empty() && snapshot.threads.iter().any(|thread| thread.id == *id),
-        "selected ThreadId not in the observed Target registry; locate again"
+        !id.0.trim().is_empty()
+            && (snapshot.threads.iter().any(|thread| thread.id == *id)
+                || searched.contains(&id.0)),
+        "selected ThreadId has no registry or native-search witness on this Target; locate again"
     );
     Ok(())
 }
@@ -87,15 +97,15 @@ mod tests {
     fn equal_thread_id_on_other_target_or_home_has_no_resume_admission() {
         let current = snapshot();
         let id = current.threads[0].id.clone();
-        assert!(verify_observed_thread(&current, &current.status, &id).is_ok());
+        assert!(verify_observed_thread(&current, &current.status, &id, &BTreeSet::new()).is_ok());
         let mut other = current.status.clone();
         other.source = "codex-app-server[target=B transport=stdio]".into();
-        assert!(verify_observed_thread(&current, &other, &id).is_err());
+        assert!(verify_observed_thread(&current, &other, &id, &BTreeSet::new()).is_err());
         other.source = current.status.source.clone();
         other.codex_home = Some("/home/b/.codex".into());
-        assert!(verify_observed_thread(&current, &other, &id).is_err());
+        assert!(verify_observed_thread(&current, &other, &id, &BTreeSet::new()).is_err());
         assert!(
-            verify_observed_thread(&current, &current.status, &ThreadId::new("missing")).is_err()
+            verify_observed_thread(&current, &current.status, &ThreadId::new("missing"), &BTreeSet::new()).is_err()
         );
     }
 
@@ -105,12 +115,38 @@ mod tests {
         let id = current.threads[0].id.clone();
         let mut observed = current.status.clone();
         observed.connected = false;
-        assert!(verify_observed_thread(&current, &observed, &id).is_err());
+        assert!(verify_observed_thread(&current, &observed, &id, &BTreeSet::new()).is_err());
         observed.connected = true;
         current.status.connected = false;
-        assert!(verify_observed_thread(&current, &observed, &id).is_err());
+        assert!(verify_observed_thread(&current, &observed, &id, &BTreeSet::new()).is_err());
         current.status.connected = true;
         current.threads.clear();
-        assert!(verify_observed_thread(&current, &observed, &id).is_err());
+        assert!(verify_observed_thread(&current, &observed, &id, &BTreeSet::new()).is_err());
     }
+    #[test]
+    fn search_witness_allows_unlisted_history_only_on_observed_target() {
+        let current = snapshot();
+        let ghost = ThreadId::new("search-only-thread");
+        let searched = BTreeSet::from([ghost.0.clone()]);
+        assert!(verify_observed_thread(&current, &current.status, &ghost, &searched).is_ok());
+        assert!(
+            verify_observed_thread(
+                &current,
+                &current.status,
+                &ThreadId::new("unwitnessed-thread"),
+                &searched,
+            )
+            .is_err()
+        );
+        let mut other = current.status.clone();
+        other.source = "codex-app-server[target=B transport=stdio]".into();
+        assert!(verify_observed_thread(&current, &other, &ghost, &searched).is_err());
+        other.source = current.status.source.clone();
+        other.codex_home = Some("/home/b/.codex".into());
+        assert!(verify_observed_thread(&current, &other, &ghost, &searched).is_err());
+        other.codex_home = current.status.codex_home.clone();
+        other.connected = false;
+        assert!(verify_observed_thread(&current, &other, &ghost, &searched).is_err());
+    }
+
 }
