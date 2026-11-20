@@ -382,8 +382,8 @@
     "src/forge/current_branch.rs": 81,
     "src/workref.rs": 415,
     "src/workref/cli.rs": 476,
-    "src/workref/tests.rs": 186,
-    "src/sqlite_store/workref.rs": 110
+    "src/workref/tests.rs": 188,
+    "src/sqlite_store/workref.rs": 112
   },
   "ratchetPolicy": {
     "baseline": "inherit v1.3 Search & Multi-Target ceilings; feature work may only add bounded module-specific ceilings",
