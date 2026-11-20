@@ -148,6 +148,9 @@
     "user-perceived-performance-evidence"
   ],
   "moduleRatchet": {
+    "src/domain/identity_tests.rs": 93,
+    "src/codex_protocol/tests.rs": 143,
+    "src/domain/thread_lineage.rs": 19,
     "src/app_server/registry_sources.rs": 258,
     "src/ui/registry/coverage.rs": 26,
     "src/runtime_startup.rs": 276,
