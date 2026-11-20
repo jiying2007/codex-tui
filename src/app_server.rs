@@ -1369,10 +1369,11 @@ async fn run_registry_actor(
                         let generation = search_generation;
                         active_search_query = query.clone();
                         let search_target = target.clone();
+                        let expected_home = status.codex_home.clone();
                         search_tasks.spawn(async move {
                             let result = tokio::time::timeout(
                                 SEARCH_TOTAL_TIMEOUT,
-                                isolated_transcript_search(&search_target, query.clone()),
+                                isolated_transcript_search(&search_target, query.clone(), expected_home.as_deref()),
                             )
                             .await
                             .unwrap_or_else(|_| Err(anyhow!(
@@ -2231,9 +2232,17 @@ fn transcript_results_complete(
 async fn isolated_transcript_search(
     target: &ResolvedAppServerTarget,
     query: String,
+    expected_home: Option<&str>,
 ) -> Result<TranscriptSearchResults> {
     let mut isolated_rpc = RpcSession::connect(target).await?;
-    initialize(&mut isolated_rpc).await?;
+    let initialized = initialize(&mut isolated_rpc).await?;
+    // A named Target may be reused by a different Codex home. Search hits
+    // cannot become read authority on the primary actor after that drift.
+    let actual_home = status_from_initialize(&initialized).codex_home;
+    anyhow::ensure!(
+        actual_home.as_deref() == expected_home,
+        "isolated transcript search Target/Codex home changed; discard search results"
+    );
     search_transcript(&mut isolated_rpc, query).await
 }
 
