@@ -106,6 +106,10 @@ When using a Windows SSH client to operate an Ubuntu host, the TUI runs on **Ubu
 
 The opt-in `codex-tui workref` CLI records **local references only**. An original Feishu Project or TAPD item stays authoritative in its own platform. No enterprise API credentials are needed. Every imported URL, Target identity, contract and test result is **manually supplied and unverified**, not a live connection, a completion decision or a remote Codex resume permit.
 
+For a match in Mission Control, `--target` must be the **exact credential-free** `app-server-target-identity` printed by `codex-tui doctor store` on the respective target/config, **not** its display name or hostname; use `codex-tui doctor codex --target NAME` when selecting another configured target. Pair it with the actual `codexHome` reported by `codex-tui status --json` on that Target and the exact native ThreadId. Both values are references, **not** remote-host authentication.
+
+At startup the TUI reads the existing private SQLite workref envelope once. The **wide Mission Control selected-thread panel** shows the first two exact Target/CODEX_HOME/Thread matches with their manually recorded contracts, independently recorded evidence results and handoff counts. At **80-column** width, open the Thread to see the local linked-work hint. Invalid workref data is labeled **UNAVAILABLE**, not silently treated as zero links. The view never changes native Codex permissions, Attention or external issue status. CLI writes share TUI's exclusive lock; exit the TUI before editing workrefs, then restart to refresh the snapshot. There is no live cross-process refresh or automatic delivery.
+
 ~~~bash
 # Copy the exact item ID, space and HTTPS URL from its real source.
 codex-tui workref add --key BUG17 --provider tapd --space robot --type bug --id 17 --url "$ORIGINAL_TAPD_URL"
