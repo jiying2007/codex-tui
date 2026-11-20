@@ -148,6 +148,7 @@
     "user-perceived-performance-evidence"
   ],
   "moduleRatchet": {
+    "src/notification/native.rs": 214,
     "src/ui/provenance.rs": 47,
     "src/codex_protocol/status_tests.rs": 34,
     "src/app/registry/groups.rs": 236,

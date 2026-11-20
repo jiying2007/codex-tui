@@ -72,14 +72,15 @@ impl RuntimeNotifications {
     }
 
     pub(crate) fn seed(&mut self, app: &AppState) {
-        let observation =
-            NotificationObservation::from_projection(&app.threads, &app.work_cards, &app.goals);
+        let observation = NotificationObservation::from_app(app);
         let _ = self.tracker.advance(observation);
     }
 
     pub(crate) fn observe(&mut self, app: &AppState) -> Result<usize> {
-        let observation =
-            NotificationObservation::from_projection(&app.threads, &app.work_cards, &app.goals);
+        let observation = NotificationObservation::from_app(app);
+        if self.tracker.scope_changed(&observation) {
+            self.recent = None;
+        }
         let events = self.tracker.advance(observation);
         // In-app context must survive silence, backpressure and dispatcher failure.
         if let Some(event) = events.iter().max_by_key(|event| priority(event.kind)) {
@@ -181,6 +182,10 @@ fn event_thread_id(
     event: &NotificationEvent,
 ) -> Option<codex_tui::domain::ThreadId> {
     use codex_tui::{domain::ThreadId, planning::SourceKind};
+    if event.key.starts_with("native:") {
+        let id = ThreadId::new(event.item_id.clone());
+        return app.contains_thread_id(&id).then_some(id);
+    }
 
     if matches!(
         event.kind,
