@@ -231,6 +231,7 @@ fn pending_editor_can_be_closed_without_cancelling_the_committed_write() {
 fn committed_workref_receipt_refreshes_the_tui_snapshot_only_after_commit() {
     use codex_tui::workref::{WorkItem, WorkRefLedger};
     let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+    app.install_workrefs(None);
     let mut ledger = WorkRefLedger::default();
     ledger
         .add_item(
