@@ -156,7 +156,7 @@ impl AppState {
         self.input_buffer.clear();
     }
 
-    pub(super) fn workref_link_items(&self) -> impl Iterator<Item = (&str, &crate::workref::WorkItem)> {
+    pub(crate) fn workref_link_items(&self) -> impl Iterator<Item = (&str, &crate::workref::WorkItem)> {
         self.workref_ledger
             .items
             .iter()
@@ -172,6 +172,7 @@ mod tests {
         app_server_target::ResolvedAppServerTarget,
         backend::{CodexBackend, FakeBackend},
         store::LocalStateV1,
+        command::Command,
     };
 
     fn configured() -> AppState {
@@ -210,10 +211,12 @@ mod tests {
         let expected = app.workref_link_snapshot().expect("exact binding");
         assert_eq!(expected.session.codex_home, "/home/test/.codex");
         assert_eq!(expected.session.role, "development");
-        app.begin_workref_link();
+        reduce(&mut app, Action::BeginWorkrefLink);
         assert_eq!(app.input_mode, InputMode::WorkrefLink);
         app.input_buffer = "BUG17".into();
-        let effect = app.commit_workref_link().expect("link effect");
+        let effect = reduce(&mut app, Action::CommitInput)
+            .pop()
+            .expect("link effect");
         assert!(matches!(
             effect,
             Effect::LinkWorkrefSession { key, session }
@@ -225,19 +228,35 @@ mod tests {
     #[test]
     fn workref_link_refuses_home_drift_and_unknown_keys_without_writing() {
         let mut app = configured();
-        app.begin_workref_link();
+        reduce(&mut app, Action::BeginWorkrefLink);
         app.input_buffer = "BUG17".into();
         app.backend_status.codex_home = Some("/home/other/.codex".into());
-        assert!(app.commit_workref_link().is_none());
+        assert!(reduce(&mut app, Action::CommitInput).is_empty());
         assert_eq!(app.input_mode, InputMode::Normal);
         assert!(app.mutation_notice.as_deref().unwrap_or_default().contains("changed"));
 
         let mut app = configured();
-        app.begin_workref_link();
+        reduce(&mut app, Action::BeginWorkrefLink);
         app.input_buffer = "MISSING".into();
-        assert!(app.commit_workref_link().is_none());
+        assert!(reduce(&mut app, Action::CommitInput).is_empty());
         assert_eq!(app.input_mode, InputMode::WorkrefLink);
         assert!(app.mutation_notice.as_deref().unwrap_or_default().contains("unknown"));
+    }
+
+    #[test]
+    fn palette_and_context_menu_offer_link_only_for_exact_existing_local_workrefs() {
+        let mut app = configured();
+        reduce(&mut app, Action::OpenCommandPalette);
+        app.command_palette_query = "link".into();
+        assert_eq!(app.command_palette_choice(), Some(Command::LinkWorkItem));
+        app.backend_status.codex_home = Some("/home/other/.codex".into());
+        assert!(app.take_command_palette_choice().is_none());
+        assert!(app.command_palette_open);
+
+        let mut app = configured();
+        assert!(app.context_choices().contains(&crate::app::ContextChoice::LinkWorkItem));
+        app.install_workrefs(Some(crate::workref::WorkRefLedger::default()));
+        assert!(!app.context_choices().contains(&crate::app::ContextChoice::LinkWorkItem));
     }
 
     #[test]
