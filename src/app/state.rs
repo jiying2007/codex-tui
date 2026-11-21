@@ -48,6 +48,7 @@ impl AppState {
             local_aliases,
             local_marked_unread,
             operator_local: Default::default(),
+            workref_link_intent: None,
             workref_ledger: Arc::new(WorkRefLedger::default()),
             workref_unavailable: false,
             conversations: BTreeMap::new(),
