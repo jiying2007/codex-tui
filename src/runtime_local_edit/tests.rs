@@ -270,6 +270,8 @@ fn committed_workref_receipt_refreshes_the_tui_snapshot_only_after_commit() {
         },
     );
     assert!(app.planning_store_error.is_some());
+    assert!(app.workref_unavailable);
+    assert!(app.workref_ledger.items.is_empty());
 }
 
 #[test]
