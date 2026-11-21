@@ -60,6 +60,7 @@ pub enum InputMode {
     WorktreeDeleteBranch,
     ForgeMergeRequestTitle,
     ForgeComment,
+    WorkrefLink,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -214,6 +215,7 @@ pub enum Action {
     OpenPlanningSelected,
     BeginScratch,
     BeginSnooze,
+    BeginWorkrefLink,
     OpenCommandPalette,
     CloseCommandPalette,
     MoveCommandPalette(i32),
@@ -421,6 +423,10 @@ pub enum Effect {
     },
     OpenExternalUrl {
         url: String,
+    },
+    LinkWorkrefSession {
+        key: String,
+        session: crate::workref::SessionRef,
     },
     StartThread {
         cwd: String,
