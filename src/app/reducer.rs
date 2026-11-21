@@ -2078,7 +2078,8 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 | InputMode::WorktreeCreateStartPoint
                 | InputMode::WorktreeDeleteBranch
                 | InputMode::ForgeMergeRequestTitle
-                | InputMode::ForgeComment => {
+                | InputMode::ForgeComment
+                | InputMode::WorkrefLink => {
                     state.input_buffer.push_str(&text);
                     if state.input_mode == InputMode::Search {
                         state.filter.clone_from(&state.input_buffer);
@@ -2118,7 +2119,8 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::WorktreeCreateStartPoint
             | InputMode::WorktreeDeleteBranch
             | InputMode::ForgeMergeRequestTitle
-            | InputMode::ForgeComment => {
+            | InputMode::ForgeComment
+                | InputMode::WorkrefLink => {
                 state.input_buffer.pop();
                 if state.input_mode == InputMode::Search {
                     state.filter.clone_from(&state.input_buffer);
