@@ -76,18 +76,11 @@ impl AppState {
         self.workref_ledger = Arc::new(workrefs.unwrap_or_default());
     }
 
-    /// Local, manual-only links for an actually observed thread. Never match
-    /// on a bare ThreadId, target name, path spelling, or historical archive.
-    pub fn manual_workrefs_for_thread(
-        &self,
-        thread_id: &str,
-    ) -> Vec<(&str, &str, &crate::workref::WorkItem)> {
-        let Some(target) = self.operator_local.target_identity.as_deref() else {
-            return Vec::new();
-        };
-        let Some(home) = self.backend_status.codex_home.as_deref() else {
-            return Vec::new();
-        };
+    /// Exact connected Target/CODEX_HOME scope for local work references.
+    /// This is a manually configured connection identity, not host attestation.
+    pub(super) fn workref_scope_identity(&self) -> Option<(String, String)> {
+        let target = self.operator_local.target_identity.as_deref()?;
+        let home = self.backend_status.codex_home.as_deref()?;
         if self.workref_unavailable
             || !self.backend_status.connected
             || home.trim().is_empty()
@@ -95,8 +88,22 @@ impl AppState {
                 != Some(self.backend_status.source.as_str())
             || self.operator_local.active_scope.as_deref()
                 != Some(operator_scope_key(target, Some(home)).as_str())
-            || !self.threads.iter().any(|thread| thread.id.0 == thread_id)
         {
+            return None;
+        }
+        Some((target.to_string(), home.to_string()))
+    }
+
+    /// Local, manual-only links for an actually observed thread. Never match
+    /// on a bare ThreadId, target name, path spelling, or historical archive.
+    pub fn manual_workrefs_for_thread(
+        &self,
+        thread_id: &str,
+    ) -> Vec<(&str, &str, &crate::workref::WorkItem)> {
+        let Some((target, home)) = self.workref_scope_identity() else {
+            return Vec::new();
+        };
+        if !self.threads.iter().any(|thread| thread.id.0 == thread_id) {
             return Vec::new();
         }
         let mut matched = Vec::new();
