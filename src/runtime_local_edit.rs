@@ -66,7 +66,14 @@ pub(crate) fn apply_event(app: &mut AppState, event: StoreEvent) -> bool {
                 };
                 reduce(app, Action::MutationNotice(notice));
             }
-            Err(error) => reduce(app, Action::MutationNotice(error)),
+            Err(error) => {
+                let storage_failure = error.starts_with("SQLite workref read failed:")
+                    || error.starts_with("SQLite workref write failed:");
+                reduce(app, Action::MutationNotice(error.clone()));
+                if storage_failure {
+                    reduce(app, Action::PlanningStoreDegraded(Some(error)));
+                }
+            }
         },
         StoreEvent::Search(Err(error)) | StoreEvent::Notice(Some(error)) => {
             reduce(app, Action::MutationNotice(error));
