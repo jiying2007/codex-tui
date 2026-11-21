@@ -71,6 +71,9 @@ pub(crate) fn apply_event(app: &mut AppState, event: StoreEvent) -> bool {
                     || error.starts_with("SQLite workref write failed:");
                 reduce(app, Action::MutationNotice(error.clone()));
                 if storage_failure {
+                    // Never keep rendering a previously successful snapshot after
+                    // the authoritative local read/write path has failed.
+                    app.install_workrefs(None);
                     reduce(app, Action::PlanningStoreDegraded(Some(error)));
                 }
             }
