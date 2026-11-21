@@ -728,6 +728,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 _ => {}
             }
         }
+        Action::BeginWorkrefLink => state.begin_workref_link(),
         Action::BeginScratch => {
             state.new_scratch_workspace = match &state.view {
                 View::Registry => state
@@ -2030,7 +2031,8 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::WorktreeCreateStartPoint
             | InputMode::WorktreeDeleteBranch
             | InputMode::ForgeMergeRequestTitle
-            | InputMode::ForgeComment => {
+            | InputMode::ForgeComment
+            | InputMode::WorkrefLink => {
                 state.input_buffer.push(character);
                 if state.input_mode == InputMode::Search {
                     state.filter.clone_from(&state.input_buffer);
@@ -2137,6 +2139,9 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
             if matches!(mode, InputMode::ThreadQueueAdd | InputMode::ThreadQueueEdit) {
                 return state.commit_queue_input();
+            }
+            if mode == InputMode::WorkrefLink {
+                return state.commit_workref_link().into_iter().collect();
             }
             if mode == InputMode::TranscriptSearch {
                 let query = state.input_buffer.trim().to_string();
@@ -2581,6 +2586,10 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             ) {
                 state.input_mode = InputMode::Normal;
                 state.input_buffer.clear();
+                return vec![];
+            }
+            if state.input_mode == InputMode::WorkrefLink {
+                state.cancel_workref_link();
                 return vec![];
             }
             if state.input_mode == InputMode::TranscriptSearch {
