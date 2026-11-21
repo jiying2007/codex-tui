@@ -213,7 +213,7 @@ mod tests {
         assert_eq!(expected.session.role, "development");
         reduce(&mut app, Action::BeginWorkrefLink);
         assert_eq!(app.input_mode, InputMode::WorkrefLink);
-        app.input_buffer = "BUG17".into();
+        assert!(reduce(&mut app, Action::InputText("BUG17".into())).is_empty());
         let effect = reduce(&mut app, Action::CommitInput)
             .pop()
             .expect("link effect");
