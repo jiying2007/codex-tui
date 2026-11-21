@@ -7,6 +7,7 @@ struct Scope {
     view: View,
     target: Option<SourceRef>,
     saved_view: Option<String>,
+    workref_scope: Option<(String, String)>,
 }
 
 #[derive(Clone, Debug)]
@@ -23,6 +24,7 @@ impl AppState {
             view: self.view.clone(),
             target: self.selected_local_target(),
             saved_view: matches!(self.view, View::Board).then(|| self.active_saved_view().id),
+            workref_scope: self.workref_scope_identity(),
         }
     }
 
