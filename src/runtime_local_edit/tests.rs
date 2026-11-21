@@ -228,6 +228,50 @@ fn pending_editor_can_be_closed_without_cancelling_the_committed_write() {
     assert_eq!(app.input_mode, InputMode::Normal);
 }
 #[test]
+fn committed_workref_receipt_refreshes_the_tui_snapshot_only_after_commit() {
+    use codex_tui::workref::{WorkItem, WorkRefLedger};
+    let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+    let mut ledger = WorkRefLedger::default();
+    ledger
+        .add_item(
+            "BUG17".into(),
+            WorkItem::new(
+                "local-draft".into(),
+                "robot".into(),
+                "technical".into(),
+                "BUG17".into(),
+                None,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    assert!(app.workref_unavailable);
+    apply_event(
+        &mut app,
+        StoreEvent::WorkrefLinked {
+            key: "BUG17".into(),
+            result: Ok((ledger, "robot-app".into())),
+        },
+    );
+    assert!(!app.workref_unavailable);
+    assert!(app.workref_ledger.items.contains_key("BUG17"));
+    assert!(app
+        .mutation_notice
+        .as_deref()
+        .unwrap_or_default()
+        .contains("robot-app"));
+
+    apply_event(
+        &mut app,
+        StoreEvent::WorkrefLinked {
+            key: "BUG17".into(),
+            result: Err("SQLite workref write failed: injected".into()),
+        },
+    );
+    assert!(app.planning_store_error.is_some());
+}
+
+#[test]
 fn unrelated_planning_receipt_does_not_retire_local_editor() {
     let (mut app, effects) = draft();
     let ticket = app.local_edit_ticket_for(&effects[0]).unwrap();
