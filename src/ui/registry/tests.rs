@@ -160,6 +160,27 @@ fn g23_manual_links_appear_in_wide_mission_control_and_80_column_thread() {
 }
 
 #[test]
+fn g23_workref_link_editor_lists_existing_items_in_both_languages() {
+    for language in [UiLanguage::English, UiLanguage::SimplifiedChinese] {
+        let mut app = linked_app();
+        app.language = language;
+        reduce(&mut app, Action::BeginWorkrefLink);
+        assert_eq!(app.input_mode, crate::app::InputMode::WorkrefLink);
+        app.input_buffer = "BUG17".into();
+        let screen = render_app(&app, 80);
+        assert!(screen.contains("BUG17"), "{language:?}: {screen}");
+        assert!(screen.contains("tapd"), "{language:?}: {screen}");
+        assert!(screen.contains(if language.is_simplified_chinese() {
+            "将会话关联到已有事项"
+        } else {
+            "Link session to existing work item"
+        }), "{language:?}: {screen}");
+        reduce(&mut app, Action::CancelInput);
+        assert_eq!(app.input_mode, crate::app::InputMode::Normal);
+    }
+}
+
+#[test]
 fn g23_unverified_identity_or_broken_local_data_never_exposes_links() {
     let mut app = linked_app();
     let thread_id = app.threads[0].id.0.clone();
