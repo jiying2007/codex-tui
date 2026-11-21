@@ -110,6 +110,8 @@ Terminal Drawer 的 PTY 输出改为协作式排空：每次主循环最多处�
 
 TUI 启动时仅读取现有 SQLite `workref` 快照一次。**宽屏 Mission Control 已选会话详情**显示完整 Target/CODEX_HOME/Thread 匹配的前两项本地引用、契约版本、各类独立证据结果和交接数量；**80 列终端**可进入 Thread 查看关联提示。记录损坏显示 **UNAVAILABLE/不可用**，不得伪装“没有关联”。本功能不影响 Codex 原生权限、Attention 或飞书/TAPD 状态。CLI 写入与 TUI 共享独占锁，修改引用前退出 TUI，修改后重新启动以更新快照；不做进程间实时刷新或自动交接。
 
+要把**当前选中的有效 Codex 会话**关联到已有事项，无需手工输入 Target/Home/Thread：按 `.` → **关联当前会话到已有事项…**，或按 `Ctrl+K` 搜索 **关联当前会话到事项**。编辑框列出最多五个已有本地事项 Key，输入从权威飞书/TAPD 事项复制的准确 Key。TUI 在打开时捕获当前连接的精确 Target、已观测 CODEX_HOME 和原生 ThreadId，并在按 Enter 时再次校验视图与身份未变化。会话别名按仓库名自动生成；发生冲突时追加 `-2`、`-3` 等后缀，角色记录为 `development`。此操作不会创建事项或发送消息。SQLite 提交成功后会立即更新当前 TUI 的内存引用快照；CLI 写入仍需先退出 TUI，因为交互实例持有现有独占写锁。
+
 ~~~bash
 # 从原平台复制真实事项 ID、空间和 HTTPS URL。
 codex-tui workref add --key BUG17 --provider tapd --space robot --type bug --id 17 --url "$ORIGINAL_TAPD_URL"
