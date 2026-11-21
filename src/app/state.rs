@@ -676,6 +676,9 @@ impl AppState {
                 ContextChoice::EditNote,
                 ContextChoice::Bookmark,
             ]);
+            if target.kind == SourceKind::CodexThread && self.workref_link_snapshot().is_some() {
+                choices.push(ContextChoice::LinkWorkItem);
+            }
             if target.kind == SourceKind::ScratchWork {
                 choices.extend([
                     ContextChoice::ScratchInbox,
