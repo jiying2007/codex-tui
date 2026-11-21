@@ -319,6 +319,7 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
             | InputMode::ThreadQueueAdd
             | InputMode::ThreadQueueEdit
             | InputMode::Note
+            | InputMode::WorkrefLink
             | InputMode::Snooze
             | InputMode::SavedViewField
             | InputMode::BatchAddTag
