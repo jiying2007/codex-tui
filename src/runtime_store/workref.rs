@@ -1,9 +1,8 @@
 use super::RuntimeStore;
-use anyhow::Context;
 use codex_tui::workref::{SessionRef, WorkRefLedger};
 
 fn alias_base(repository: &str) -> String {
-    let normalized = repository.replace('\\\\', "/");
+    let normalized = repository.replace('\\', "/");
     let leaf = normalized
         .trim_end_matches('/')
         .rsplit('/')
