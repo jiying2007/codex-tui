@@ -272,6 +272,31 @@ mod tests {
     }
 
     #[test]
+    fn workref_link_refuses_target_thread_and_view_drift_before_emitting_effect() {
+        let mut app = configured();
+        reduce(&mut app, Action::BeginWorkrefLink);
+        app.input_buffer = "BUG17".into();
+        app.view = View::Thread(app.threads[1].id.clone());
+        assert!(reduce(&mut app, Action::CommitInput).is_empty());
+        assert_eq!(app.input_mode, InputMode::Normal);
+        assert!(app.mutation_notice.as_deref().unwrap_or_default().contains("changed"));
+
+        let mut app = configured();
+        reduce(&mut app, Action::BeginWorkrefLink);
+        app.input_buffer = "BUG17".into();
+        let target = ResolvedAppServerTarget {
+            name: "other-target".into(),
+            endpoint: crate::app_server_target::ResolvedAppServerEndpoint::Stdio {
+                codex_bin: None,
+            },
+        };
+        app.configure_operator_target(&target);
+        assert!(reduce(&mut app, Action::CommitInput).is_empty());
+        assert_eq!(app.input_mode, InputMode::Normal);
+        assert!(app.mutation_notice.as_deref().unwrap_or_default().contains("changed"));
+    }
+
+    #[test]
     fn workref_link_is_unavailable_without_connected_scope_or_existing_items() {
         let mut app = configured();
         app.backend_status.connected = false;
