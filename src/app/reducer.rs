@@ -868,6 +868,11 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 return vec![];
             }
 
+            if choice == ContextChoice::LinkWorkItem {
+                state.begin_workref_link();
+                return vec![];
+            }
+
             if choice == ContextChoice::LaunchPreset {
                 let Some(thread_id) = state.current_thread_id().cloned() else {
                     return vec![];
