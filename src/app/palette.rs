@@ -212,6 +212,7 @@ impl AppState {
                                 | Command::TogglePin
                                 | Command::Snooze
                                 | Command::ContextActions
+                                | Command::LinkWorkItem
                                 | Command::Help
                         )
                 })
