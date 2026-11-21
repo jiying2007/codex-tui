@@ -401,6 +401,12 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
             display_input,
             tr(app, "Enter save · Esc cancel", "Enter 保存 · Esc 取消")
         )),
+        InputMode::WorkrefLink => Line::from(format!(
+            "{}> {}  · {}",
+            tr(app, "link work item", "关联事项"),
+            display_input,
+            tr(app, "Enter link · Esc cancel", "Enter 关联 · Esc 取消")
+        )),
         InputMode::Composer => Line::from(tr(
             app,
             "composer active in Thread view",
