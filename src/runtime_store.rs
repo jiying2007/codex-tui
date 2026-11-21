@@ -10,6 +10,8 @@ use codex_tui::{
     transcript_search::TranscriptSearchResults,
     workref::WorkRefLedger,
 };
+mod workref;
+
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub(crate) struct RuntimeStore {
