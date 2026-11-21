@@ -247,6 +247,7 @@ mod tests {
     fn palette_and_context_menu_offer_link_only_for_exact_existing_local_workrefs() {
         let mut app = configured();
         reduce(&mut app, Action::OpenCommandPalette);
+        assert!(app.command_palette_choices().contains(&Command::LinkWorkItem));
         app.command_palette_query = "link".into();
         assert_eq!(app.command_palette_choice(), Some(Command::LinkWorkItem));
         app.backend_status.codex_home = Some("/home/other/.codex".into());
@@ -254,9 +255,20 @@ mod tests {
         assert!(!app.command_palette_open);
 
         let mut app = configured();
-        assert!(app.context_choices().contains(&crate::app::ContextChoice::LinkWorkItem));
+        let choice = crate::app::ContextChoice::LinkWorkItem;
+        assert!(app.context_choices().contains(&choice));
+        reduce(&mut app, Action::OpenContext);
+        app.context_selected = app
+            .context_choices()
+            .iter()
+            .position(|candidate| *candidate == choice)
+            .expect("link action in context menu");
+        reduce(&mut app, Action::ExecuteContext);
+        assert_eq!(app.input_mode, InputMode::WorkrefLink);
+
+        let mut app = configured();
         app.install_workrefs(Some(crate::workref::WorkRefLedger::default()));
-        assert!(!app.context_choices().contains(&crate::app::ContextChoice::LinkWorkItem));
+        assert!(!app.context_choices().contains(&choice));
     }
 
     #[test]
