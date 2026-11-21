@@ -6,6 +6,7 @@ use anyhow::{Context, Result};
 use codex_tui::{
     planning::PlanningSnapshot, sqlite_store::SqliteStore, store::LocalStateV1,
     transcript_search::TranscriptSearchResults,
+    workref::WorkRefLedger,
 };
 use std::{
     sync::mpsc::{self, Receiver, SyncSender, TryRecvError, TrySendError},
@@ -24,6 +25,10 @@ pub(crate) enum StoreEvent {
     Stopped,
     Search(std::result::Result<TranscriptSearchResults, String>),
     Notice(Option<String>),
+    WorkrefLinked {
+        key: String,
+        result: std::result::Result<(WorkRefLedger, String), String>,
+    },
 }
 enum Request {
     Job(Job),
@@ -166,8 +171,11 @@ impl StoreWorker {
         }
         match self.events.try_recv() {
             Ok(event) => {
-                if let StoreEvent::Operator(Some(error)) | StoreEvent::Planning(Err(error), _, _) =
-                    &event
+                if let StoreEvent::Operator(Some(error))
+                | StoreEvent::Planning(Err(error), _, _)
+                | StoreEvent::WorkrefLinked {
+                    result: Err(error), ..
+                } = &event
                 {
                     self.error = Some(error.clone());
                 }
@@ -183,8 +191,11 @@ impl StoreWorker {
     }
     fn drain_exit_events(&self, failure: &mut Option<String>) {
         while let Ok(event) = self.events.try_recv() {
-            if let StoreEvent::Operator(Some(error)) | StoreEvent::Planning(Err(error), _, _) =
-                event
+            if let StoreEvent::Operator(Some(error))
+            | StoreEvent::Planning(Err(error), _, _)
+            | StoreEvent::WorkrefLinked {
+                result: Err(error), ..
+            } = event
             {
                 failure.get_or_insert(error);
             }
