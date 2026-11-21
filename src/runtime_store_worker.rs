@@ -323,6 +323,34 @@ mod tests {
 mod shutdown_tests {
     use super::*;
     #[test]
+    fn final_flush_tracks_only_workref_storage_failures_not_rejected_keys() {
+        let root = tempfile::tempdir().unwrap();
+        let mut rejected = StoreWorker::start(StoreBackend::at_for_test(root.path())).unwrap();
+        rejected
+            .submit(|_| StoreEvent::WorkrefLinked {
+                key: "MISSING".into(),
+                result: Err("unknown work-item key".into()),
+            })
+            .unwrap();
+        rejected
+            .flush_operator_state_on_exit(&LocalStateV1::default())
+            .expect("a rejected key is not a failed SQLite commit");
+
+        let root = tempfile::tempdir().unwrap();
+        let mut failed = StoreWorker::start(StoreBackend::at_for_test(root.path())).unwrap();
+        failed
+            .submit(|_| StoreEvent::WorkrefLinked {
+                key: "BUG17".into(),
+                result: Err("SQLite workref write failed: injected".into()),
+            })
+            .unwrap();
+        let error = failed
+            .flush_operator_state_on_exit(&LocalStateV1::default())
+            .unwrap_err();
+        assert!(error.to_string().contains("SQLite workref write failed"));
+    }
+
+    #[test]
     fn final_flush_does_not_hide_an_unobserved_accepted_mutation_failure() {
         let root = tempfile::tempdir().unwrap();
         let mut worker = StoreWorker::start(StoreBackend::at_for_test(root.path())).unwrap();
