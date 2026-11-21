@@ -56,6 +56,18 @@ pub(crate) fn apply_event(app: &mut AppState, event: StoreEvent) -> bool {
         StoreEvent::Search(Ok(results)) => {
             reduce(app, Action::TranscriptSearchLoaded(results));
         }
+        StoreEvent::WorkrefLinked { key, result } => match result {
+            Ok((ledger, alias)) => {
+                app.install_workrefs(Some(ledger));
+                let notice = if app.language.is_simplified_chinese() {
+                    format!("已关联事项 {key} · 会话别名 {alias} · 手工/未核验；未修改飞书/TAPD")
+                } else {
+                    format!("Linked {key} · session alias {alias} · manual/unverified; Feishu/TAPD unchanged")
+                };
+                reduce(app, Action::MutationNotice(notice));
+            }
+            Err(error) => reduce(app, Action::MutationNotice(error)),
+        },
         StoreEvent::Search(Err(error)) | StoreEvent::Notice(Some(error)) => {
             reduce(app, Action::MutationNotice(error));
         }
