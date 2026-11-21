@@ -18,7 +18,7 @@ impl AppState {
     /// A picker is offered only for a live native Thread in a connected,
     /// already-bound Target/Home scope and a valid non-empty local ledger.
     pub(super) fn workref_link_snapshot(&self) -> Option<WorkrefLinkIntent> {
-        if self.workref_ledger.items.is_empty() {
+        if self.workref_ledger.items.is_empty() || self.planning_store_error.is_some() {
             return None;
         }
         let (target_identity, codex_home) = self.workref_scope_identity()?;
@@ -251,7 +251,7 @@ mod tests {
         assert_eq!(app.command_palette_choice(), Some(Command::LinkWorkItem));
         app.backend_status.codex_home = Some("/home/other/.codex".into());
         assert!(app.take_command_palette_choice().is_none());
-        assert!(app.command_palette_open);
+        assert!(!app.command_palette_open);
 
         let mut app = configured();
         assert!(app.context_choices().contains(&crate::app::ContextChoice::LinkWorkItem));
