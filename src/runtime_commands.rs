@@ -79,6 +79,7 @@ pub(crate) fn action_for_command(app: &AppState, command: Command) -> Option<Act
         Command::CancelOperation => Action::CancelPendingOperation,
         Command::New => Action::BeginScratch,
         Command::Snooze => Action::BeginSnooze,
+        Command::LinkWorkItem => Action::BeginWorkrefLink,
         Command::BeginHotSlotBind => Action::BeginHotSlotBind,
         Command::PageUp => {
             if app.view_kind() == ViewKind::Review {
