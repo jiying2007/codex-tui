@@ -171,13 +171,16 @@ impl StoreWorker {
         }
         match self.events.try_recv() {
             Ok(event) => {
-                if let StoreEvent::Operator(Some(error))
-                | StoreEvent::Planning(Err(error), _, _)
-                | StoreEvent::WorkrefLinked {
-                    result: Err(error), ..
-                } = &event
-                {
-                    self.error = Some(error.clone());
+                match &event {
+                    StoreEvent::Operator(Some(error)) | StoreEvent::Planning(Err(error), _, _) => {
+                        self.error = Some(error.clone());
+                    }
+                    StoreEvent::WorkrefLinked { result: Err(error), .. }
+                        if error.starts_with("SQLite workref") =>
+                    {
+                        self.error = Some(error.clone());
+                    }
+                    _ => {}
                 }
                 Some(event)
             }
@@ -191,13 +194,16 @@ impl StoreWorker {
     }
     fn drain_exit_events(&self, failure: &mut Option<String>) {
         while let Ok(event) = self.events.try_recv() {
-            if let StoreEvent::Operator(Some(error))
-            | StoreEvent::Planning(Err(error), _, _)
-            | StoreEvent::WorkrefLinked {
-                result: Err(error), ..
-            } = event
-            {
-                failure.get_or_insert(error);
+            match event {
+                StoreEvent::Operator(Some(error)) | StoreEvent::Planning(Err(error), _, _) => {
+                    failure.get_or_insert(error);
+                }
+                StoreEvent::WorkrefLinked { result: Err(error), .. }
+                    if error.starts_with("SQLite workref") =>
+                {
+                    failure.get_or_insert(error);
+                }
+                _ => {}
             }
         }
     }
