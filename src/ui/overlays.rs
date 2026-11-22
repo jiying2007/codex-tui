@@ -145,7 +145,11 @@ pub(super) fn render_local_input_overlay(frame: &mut Frame<'_>, app: &AppState) 
             tr(app, "Enter save · Esc cancel", "Enter 保存 · Esc 取消"),
         ),
         InputMode::WorkrefLink => (
-            tr(app, " Link session to existing work item ", " 将会话关联到已有事项 "),
+            tr(
+                app,
+                " Link session to existing work item ",
+                " 将会话关联到已有事项 ",
+            ),
             if app.workref_link_pending {
                 tr(
                     app,
