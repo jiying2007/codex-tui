@@ -255,7 +255,7 @@ fn committed_workref_receipt_refreshes_the_tui_snapshot_only_after_commit() {
         },
     );
     assert!(!app.workref_unavailable);
-    assert!(app.workref_ledger.items.contains_key("BUG17"));
+    assert!(app.workref_ledger().items.contains_key("BUG17"));
     assert!(app
         .mutation_notice
         .as_deref()
@@ -276,7 +276,7 @@ fn committed_workref_receipt_refreshes_the_tui_snapshot_only_after_commit() {
 
 #[test]
 fn actual_store_worker_returns_receipt_only_after_existing_item_link_is_committed() {
-    use codex_tui::workref::{SessionRef, WorkItem, WorkRefLedger};
+    use codex_tui::{store::LocalStore, workref::{SessionRef, WorkItem, WorkRefLedger}};
     let root = tempfile::tempdir().unwrap();
     let sqlite = codex_tui::sqlite_store::SqliteStore::at(root.path());
     sqlite.load_config().unwrap();
@@ -337,7 +337,7 @@ fn actual_store_worker_returns_receipt_only_after_existing_item_link_is_committe
         "thread-a"
     );
     let persisted = worker.sqlite_clone().load_workref_ledger().unwrap();
-    assert_eq!(persisted, *app.workref_ledger);
+    assert_eq!(persisted, app.workref_ledger());
     worker
         .flush_operator_state_on_exit(&LocalStateV1::default())
         .unwrap();
@@ -350,6 +350,7 @@ fn workref_queue_admission_rejection_retains_key_then_retry_commits_once() {
         app_server_target::ResolvedAppServerTarget,
         backend::BackendStatus,
         sqlite_store::SqliteStore,
+        store::LocalStore,
         workref::{SessionRef, WorkItem, WorkRefLedger},
     };
     let root = tempfile::tempdir().unwrap();
@@ -380,8 +381,7 @@ fn workref_queue_admission_rejection_retains_key_then_retry_commits_once() {
     let mut status = BackendStatus::starting(target.status_source());
     status.connected = true;
     status.codex_home = Some("/home/test/.codex".into());
-    app.backend_status = status;
-    app.bind_operator_status();
+    reduce(&mut app, Action::BackendStatus(status));
     app.view = View::Thread(app.threads[0].id.clone());
     app.install_workrefs(Some(ledger));
 
