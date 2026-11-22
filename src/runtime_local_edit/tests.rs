@@ -271,7 +271,7 @@ fn committed_workref_receipt_refreshes_the_tui_snapshot_only_after_commit() {
     );
     assert!(app.planning_store_error.is_some());
     assert!(app.workref_unavailable);
-    assert!(app.workref_ledger.items.is_empty());
+    assert!(app.workref_ledger().items.is_empty());
 }
 
 #[test]
@@ -333,7 +333,7 @@ fn actual_store_worker_returns_receipt_only_after_existing_item_link_is_committe
     assert_eq!(app.input_mode, InputMode::Normal);
     assert!(!app.workref_unavailable);
     assert_eq!(
-        app.workref_ledger.items["BUG17"].sessions["robot-app"].thread_id,
+        app.workref_ledger().items["BUG17"].sessions["robot-app"].thread_id,
         "thread-a"
     );
     let persisted = worker.sqlite_clone().load_workref_ledger().unwrap();
@@ -449,7 +449,7 @@ fn workref_queue_admission_rejection_retains_key_then_retry_commits_once() {
         std::thread::sleep(Duration::from_millis(1));
     }
     assert_eq!(app.input_mode, InputMode::Normal);
-    assert_eq!(app.workref_ledger.items["BUG17"].sessions.len(), 1);
+    assert_eq!(app.workref_ledger().items["BUG17"].sessions.len(), 1);
     assert_eq!(
         worker
             .sqlite_clone()
