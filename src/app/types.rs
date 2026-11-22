@@ -218,6 +218,7 @@ pub enum Action {
     BeginScratch,
     BeginSnooze,
     BeginWorkrefLink,
+    WorkrefLinkSubmissionRejected(String),
     OpenCommandPalette,
     CloseCommandPalette,
     MoveCommandPalette(i32),
