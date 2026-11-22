@@ -206,7 +206,10 @@ fn reference_urls_reject_credential_parameters_but_keep_normal_item_selectors() 
             revision: "rev-17".into(),
             git_sha: None,
         };
-        assert!(contract.validate().is_err(), "contract source accepted {url}");
+        assert!(
+            contract.validate().is_err(),
+            "contract source accepted {url}"
+        );
 
         let evidence = EvidenceRef {
             kind: "ci".into(),
@@ -215,7 +218,10 @@ fn reference_urls_reject_credential_parameters_but_keep_normal_item_selectors() 
             result: "passed".into(),
             environment: "linux".into(),
         };
-        assert!(evidence.validate().is_err(), "evidence source accepted {url}");
+        assert!(
+            evidence.validate().is_err(),
+            "evidence source accepted {url}"
+        );
     }
 
     let safe = WorkItem::new(
