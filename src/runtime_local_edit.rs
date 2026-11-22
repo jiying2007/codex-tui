@@ -87,3 +87,7 @@ mod tests;
 #[cfg(test)]
 #[path = "runtime_local_edit/route_tests.rs"]
 mod route_tests;
+
+#[cfg(test)]
+#[path = "runtime_local_edit/workref_tests.rs"]
+mod workref_tests;
