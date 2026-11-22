@@ -245,7 +245,7 @@
     "src/git/read_order_tests.rs": 85,
     "src/app/local_edit.rs": 208,
     "src/runtime_local_edit.rs": 92,
-    "src/runtime_local_edit/tests.rs": 418,
+    "src/runtime_local_edit/tests.rs": 540,
     "src/runtime_local_edit/route_tests.rs": 164,
     "src/app/user_input.rs": 145,
     "src/conversation/user_input.rs": 32,
