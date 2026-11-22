@@ -380,9 +380,9 @@
     "src/app_server/queue_pagination.rs": 83,
     "src/app_server/queue_priority_tests.rs": 89,
     "src/forge/current_branch.rs": 81,
-    "src/workref.rs": 415,
+    "src/workref.rs": 467,
     "src/workref/cli.rs": 609,
-    "src/workref/tests.rs": 188,
+    "src/workref/tests.rs": 229,
     "src/sqlite_store/workref.rs": 112,
     "src/app/workref_link.rs": 254,
     "src/runtime_store/workref.rs": 169,
@@ -1316,6 +1316,16 @@
         "Cargo.lock"
       ],
       "policy": "Resolve advisories by upgrading to patched upstream releases; do not suppress or ignore either advisory. Existing bincode unmaintained-only warning remains the separately documented allowed exception."
+    },
+    {
+      "date": "2026-11-22",
+      "kind": "g23-reference-url-credential-guard",
+      "scope": "Reject credential-like query and fragment parameters in manually stored Feishu/TAPD item, contract, evidence and acknowledgment URLs. Preserve benign item selectors and the original canonical URL; never strip or silently rewrite user input.",
+      "modules": [
+        "src/workref.rs",
+        "src/workref/tests.rs"
+      ],
+      "policy": "Bounded local validation only; no URL fetching, external API, token storage, auto-delivery or schema migration. Update only these two exact reviewed source ceilings; all exact-SHA CI, security, PTY, scale, development and release gates remain active."
     }
   ]
 }
