@@ -30,11 +30,14 @@ fn alias_base(repository: &str) -> String {
 }
 
 fn next_alias(ledger: &WorkRefLedger, key: &str, session: &SessionRef) -> Result<String, String> {
-    let item = ledger
-        .items
-        .get(key)
-        .ok_or_else(|| format!("unknown work-item key {key}; add its authoritative Feishu/TAPD reference first"))?;
-    if let Some((alias, _)) = item.sessions.iter().find(|(_, existing)| *existing == session) {
+    let item = ledger.items.get(key).ok_or_else(|| {
+        format!("unknown work-item key {key}; add its authoritative Feishu/TAPD reference first")
+    })?;
+    if let Some((alias, _)) = item
+        .sessions
+        .iter()
+        .find(|(_, existing)| *existing == session)
+    {
         return Ok(alias.clone());
     }
     let base = alias_base(&session.repository);
@@ -155,10 +158,12 @@ mod tests {
         assert_eq!(alias_b, "robot-app-2");
         assert_eq!(first.items["BUG17"].sessions.len(), 1);
         assert_eq!(second.items["BUG17"].sessions.len(), 2);
-        assert!(store
-            .link_workref_session("MISSING", session("target-C", "thread-C"))
-            .unwrap_err()
-            .contains("unknown work-item key"));
+        assert!(
+            store
+                .link_workref_session("MISSING", session("target-C", "thread-C"))
+                .unwrap_err()
+                .contains("unknown work-item key")
+        );
         assert_eq!(store.sqlite.load_workref_ledger().unwrap(), second);
     }
 }
