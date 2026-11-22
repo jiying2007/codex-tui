@@ -380,9 +380,9 @@
     "src/app_server/queue_pagination.rs": 83,
     "src/app_server/queue_priority_tests.rs": 89,
     "src/forge/current_branch.rs": 81,
-    "src/workref.rs": 467,
+    "src/workref.rs": 470,
     "src/workref/cli.rs": 609,
-    "src/workref/tests.rs": 229,
+    "src/workref/tests.rs": 230,
     "src/sqlite_store/workref.rs": 112,
     "src/app/workref_link.rs": 254,
     "src/runtime_store/workref.rs": 169,
@@ -1320,7 +1320,7 @@
     {
       "date": "2026-11-22",
       "kind": "g23-reference-url-credential-guard",
-      "scope": "Reject credential-like query and fragment parameters in manually stored Feishu/TAPD item, contract, evidence and acknowledgment URLs. Preserve benign item selectors and the original canonical URL; never strip or silently rewrite user input.",
+      "scope": "Reject credential-like query and fragment parameters in manually stored Feishu/TAPD item, contract, evidence and acknowledgment URLs, including snake_case, camelCase and percent-encoded parameter names. Preserve benign item selectors and the original canonical URL; never strip or silently rewrite user input.",
       "modules": [
         "src/workref.rs",
         "src/workref/tests.rs"
