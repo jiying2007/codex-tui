@@ -159,7 +159,12 @@ fn accepted_link_with_unknown_worker_outcome_is_not_retryable_or_claimed_failed(
     assert!(!app.workref_link_pending);
     assert_eq!(app.input_mode, InputMode::Normal);
     assert!(app.workref_unavailable);
-    assert!(app.mutation_notice.as_deref().unwrap_or_default().contains("unknown"));
+    assert!(
+        app.mutation_notice
+            .as_deref()
+            .unwrap_or_default()
+            .contains("unknown")
+    );
 }
 
 #[test]
@@ -170,21 +175,29 @@ fn workref_link_refuses_target_thread_and_view_drift_before_emitting_effect() {
     app.view = View::Thread(app.threads[1].id.clone());
     assert!(reduce(&mut app, Action::CommitInput).is_empty());
     assert_eq!(app.input_mode, InputMode::Normal);
-    assert!(app.mutation_notice.as_deref().unwrap_or_default().contains("changed"));
+    assert!(
+        app.mutation_notice
+            .as_deref()
+            .unwrap_or_default()
+            .contains("changed")
+    );
 
     let mut app = configured();
     reduce(&mut app, Action::BeginWorkrefLink);
     app.input_buffer = "BUG17".into();
     let target = ResolvedAppServerTarget {
         name: "other-target".into(),
-        endpoint: crate::app_server_target::ResolvedAppServerEndpoint::Stdio {
-            codex_bin: None,
-        },
+        endpoint: crate::app_server_target::ResolvedAppServerEndpoint::Stdio { codex_bin: None },
     };
     app.configure_operator_target(&target);
     assert!(reduce(&mut app, Action::CommitInput).is_empty());
     assert_eq!(app.input_mode, InputMode::Normal);
-    assert!(app.mutation_notice.as_deref().unwrap_or_default().contains("changed"));
+    assert!(
+        app.mutation_notice
+            .as_deref()
+            .unwrap_or_default()
+            .contains("changed")
+    );
 }
 
 #[test]
