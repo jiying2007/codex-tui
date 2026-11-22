@@ -302,7 +302,7 @@
     "src/app/queue_ack.rs": 133,
     "src/app/target_locality.rs": 87,
     "src/forge/remote_identity_tests.rs": 47,
-    "src/app/reducer.rs": 2687,
+    "src/app/reducer.rs": 2688,
     "src/app/state.rs": 871,
     "src/app/shortcuts.rs": 65,
     "src/app/tests.rs": 3429,
@@ -384,7 +384,7 @@
     "src/workref/cli.rs": 609,
     "src/workref/tests.rs": 188,
     "src/sqlite_store/workref.rs": 112,
-    "src/app/workref_link.rs": 420,
+    "src/app/workref_link.rs": 425,
     "src/runtime_store/workref.rs": 164
   },
   "ratchetPolicy": {
