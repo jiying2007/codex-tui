@@ -48,6 +48,9 @@ pub(crate) fn apply_event(app: &mut AppState, event: StoreEvent) -> bool {
         }
         StoreEvent::Stopped => {
             let error = "local state worker stopped; write outcome is unconfirmed".to_string();
+            if app.workref_link_pending {
+                app.workref_link_outcome_unknown(error.clone());
+            }
             if let Some(ticket) = app.pending_local_edit_ticket() {
                 app.finish_local_edit_write(ticket, Err(error.clone()));
             }
@@ -58,22 +61,13 @@ pub(crate) fn apply_event(app: &mut AppState, event: StoreEvent) -> bool {
         }
         StoreEvent::WorkrefLinked { key, result } => match result {
             Ok((ledger, alias)) => {
-                app.install_workrefs(Some(ledger));
-                let notice = if app.language.is_simplified_chinese() {
-                    format!("已关联事项 {key} · 会话别名 {alias} · 手工/未核验；未修改飞书/TAPD")
-                } else {
-                    format!("Linked {key} · session alias {alias} · manual/unverified; Feishu/TAPD unchanged")
-                };
-                reduce(app, Action::MutationNotice(notice));
+                app.finish_workref_link_success(key, ledger, alias);
             }
             Err(error) => {
                 let storage_failure = error.starts_with("SQLite workref read failed:")
                     || error.starts_with("SQLite workref write failed:");
-                reduce(app, Action::MutationNotice(error.clone()));
+                app.finish_workref_link_failure(error.clone());
                 if storage_failure {
-                    // Never keep rendering a previously successful snapshot after
-                    // the authoritative local read/write path has failed.
-                    app.install_workrefs(None);
                     reduce(app, Action::PlanningStoreDegraded(Some(error)));
                 }
             }
