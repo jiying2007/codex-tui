@@ -256,11 +256,12 @@ fn committed_workref_receipt_refreshes_the_tui_snapshot_only_after_commit() {
     );
     assert!(!app.workref_unavailable);
     assert!(app.workref_ledger().items.contains_key("BUG17"));
-    assert!(app
-        .mutation_notice
-        .as_deref()
-        .unwrap_or_default()
-        .contains("robot-app"));
+    assert!(
+        app.mutation_notice
+            .as_deref()
+            .unwrap_or_default()
+            .contains("robot-app")
+    );
 
     apply_event(
         &mut app,
@@ -276,7 +277,10 @@ fn committed_workref_receipt_refreshes_the_tui_snapshot_only_after_commit() {
 
 #[test]
 fn actual_store_worker_returns_receipt_only_after_existing_item_link_is_committed() {
-    use codex_tui::{store::LocalStore, workref::{SessionRef, WorkItem, WorkRefLedger}};
+    use codex_tui::{
+        store::LocalStore,
+        workref::{SessionRef, WorkItem, WorkRefLedger},
+    };
     let root = tempfile::tempdir().unwrap();
     let sqlite = codex_tui::sqlite_store::SqliteStore::at(root.path());
     sqlite.load_config().unwrap();
@@ -451,11 +455,7 @@ fn workref_queue_admission_rejection_retains_key_then_retry_commits_once() {
     assert_eq!(app.input_mode, InputMode::Normal);
     assert_eq!(app.workref_ledger().items["BUG17"].sessions.len(), 1);
     assert_eq!(
-        worker
-            .sqlite_clone()
-            .load_workref_ledger()
-            .unwrap()
-            .items["BUG17"]
+        worker.sqlite_clone().load_workref_ledger().unwrap().items["BUG17"]
             .sessions
             .len(),
         1
@@ -476,7 +476,12 @@ fn stopped_store_worker_marks_accepted_workref_write_as_unknown() {
     assert_eq!(app.input_mode, InputMode::Normal);
     assert!(app.workref_unavailable);
     assert!(app.planning_store_error.is_some());
-    assert!(app.mutation_notice.as_deref().unwrap_or_default().contains("unknown"));
+    assert!(
+        app.mutation_notice
+            .as_deref()
+            .unwrap_or_default()
+            .contains("unknown")
+    );
 }
 
 #[test]
