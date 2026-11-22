@@ -289,7 +289,36 @@ mod tests {
             Effect::LinkWorkrefSession { key, session }
                 if key == "BUG17" && session == expected.session
         ));
+        assert_eq!(app.input_mode, InputMode::WorkrefLink);
+        assert!(app.workref_link_pending);
+        assert_eq!(app.input_buffer, "BUG17");
+
+        // Once accepted by the app, the editor is frozen until the worker
+        // confirms commit or explicitly reports rejection.
+        reduce(&mut app, Action::InputText("X".into()));
+        reduce(&mut app, Action::InputBackspace);
+        reduce(&mut app, Action::CancelInput);
+        assert!(reduce(&mut app, Action::CommitInput).is_empty());
+        assert_eq!(app.input_buffer, "BUG17");
+        assert!(app.workref_link_pending);
+
+        app.workref_link_submission_rejected("worker queue full".into());
+        assert!(!app.workref_link_pending);
+        assert_eq!(app.input_mode, InputMode::WorkrefLink);
+        assert_eq!(app.input_buffer, "BUG17");
+        let retry = reduce(&mut app, Action::CommitInput);
+        assert!(matches!(
+            retry.as_slice(),
+            [Effect::LinkWorkrefSession { key, session }]
+                if key == "BUG17" && session == expected.session
+        ));
+        assert!(app.workref_link_pending);
+
+        let committed = (*app.workref_ledger).clone();
+        app.finish_workref_link_success("BUG17".into(), committed, "robot-app".into());
         assert_eq!(app.input_mode, InputMode::Normal);
+        assert!(!app.workref_link_pending);
+        assert!(app.input_buffer.is_empty());
     }
 
     #[test]
@@ -336,6 +365,20 @@ mod tests {
         let mut app = configured();
         app.install_workrefs(Some(crate::workref::WorkRefLedger::default()));
         assert!(!app.context_choices().contains(&choice));
+    }
+
+    #[test]
+    fn accepted_link_with_unknown_worker_outcome_is_not_retryable_or_claimed_failed() {
+        let mut app = configured();
+        reduce(&mut app, Action::BeginWorkrefLink);
+        app.input_buffer = "BUG17".into();
+        assert_eq!(reduce(&mut app, Action::CommitInput).len(), 1);
+        assert!(app.workref_link_pending);
+        app.workref_link_outcome_unknown("local state worker stopped".into());
+        assert!(!app.workref_link_pending);
+        assert_eq!(app.input_mode, InputMode::Normal);
+        assert!(app.workref_unavailable);
+        assert!(app.mutation_notice.as_deref().unwrap_or_default().contains("unknown"));
     }
 
     #[test]
