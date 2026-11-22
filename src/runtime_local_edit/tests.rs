@@ -275,6 +275,20 @@ fn committed_workref_receipt_refreshes_the_tui_snapshot_only_after_commit() {
 }
 
 #[test]
+fn stopped_store_worker_marks_accepted_workref_write_as_unknown() {
+    let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+    app.input_mode = InputMode::WorkrefLink;
+    app.input_buffer = "BUG17".into();
+    app.workref_link_pending = true;
+    apply_event(&mut app, StoreEvent::Stopped);
+    assert!(!app.workref_link_pending);
+    assert_eq!(app.input_mode, InputMode::Normal);
+    assert!(app.workref_unavailable);
+    assert!(app.planning_store_error.is_some());
+    assert!(app.mutation_notice.as_deref().unwrap_or_default().contains("unknown"));
+}
+
+#[test]
 fn unrelated_planning_receipt_does_not_retire_local_editor() {
     let (mut app, effects) = draft();
     let ticket = app.local_edit_ticket_for(&effects[0]).unwrap();
