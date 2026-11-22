@@ -192,6 +192,7 @@ fn reference_urls_reject_credential_parameters_but_keep_normal_item_selectors() 
     let secret_urls = [
         "https://www.tapd.cn/BUG17?access_token=secret",
         "https://www.tapd.cn/BUG17?auth%5Ftoken=secret",
+        "https://www.tapd.cn/BUG17?accessToken=secret",
         "https://www.tapd.cn/BUG17/#/issue/17?session_id=secret",
     ];
     for url in secret_urls {
