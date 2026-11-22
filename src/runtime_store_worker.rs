@@ -5,8 +5,7 @@ use crate::runtime_store::{RuntimeStore as StoreBackend, StoreBootstrap};
 use anyhow::{Context, Result};
 use codex_tui::{
     planning::PlanningSnapshot, sqlite_store::SqliteStore, store::LocalStateV1,
-    transcript_search::TranscriptSearchResults,
-    workref::WorkRefLedger,
+    transcript_search::TranscriptSearchResults, workref::WorkRefLedger,
 };
 use std::{
     sync::mpsc::{self, Receiver, SyncSender, TryRecvError, TrySendError},
@@ -175,9 +174,9 @@ impl StoreWorker {
                     StoreEvent::Operator(Some(error)) | StoreEvent::Planning(Err(error), _, _) => {
                         self.error = Some(error.clone());
                     }
-                    StoreEvent::WorkrefLinked { result: Err(error), .. }
-                        if error.starts_with("SQLite workref") =>
-                    {
+                    StoreEvent::WorkrefLinked {
+                        result: Err(error), ..
+                    } if error.starts_with("SQLite workref") => {
                         self.error = Some(error.clone());
                     }
                     _ => {}
@@ -198,9 +197,9 @@ impl StoreWorker {
                 StoreEvent::Operator(Some(error)) | StoreEvent::Planning(Err(error), _, _) => {
                     failure.get_or_insert(error);
                 }
-                StoreEvent::WorkrefLinked { result: Err(error), .. }
-                    if error.starts_with("SQLite workref") =>
-                {
+                StoreEvent::WorkrefLinked {
+                    result: Err(error), ..
+                } if error.starts_with("SQLite workref") => {
                     failure.get_or_insert(error);
                 }
                 _ => {}
