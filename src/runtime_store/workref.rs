@@ -91,7 +91,7 @@ impl RuntimeStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use codex_tui::workref::WorkItem;
+    use codex_tui::{store::LocalStore, workref::WorkItem};
 
     fn session(target: &str, thread: &str) -> SessionRef {
         SessionRef {
