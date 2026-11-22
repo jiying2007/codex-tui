@@ -158,7 +158,7 @@ pub struct AppState {
     local_marked_unread: BTreeSet<String>,
     operator_local: operator_scope::OperatorLocal,
     workref_link_intent: Option<workref_link::WorkrefLinkIntent>,
-    pub(crate) workref_link_pending: bool,
+    pub workref_link_pending: bool,
     /// Startup-only local manual references; never authorizes cross-Target actions.
     pub(crate) workref_ledger: Arc<WorkRefLedger>,
     /// Invalid/undecodable local G2/G3 state must not render as 'no links'.
