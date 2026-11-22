@@ -1434,7 +1434,7 @@ fn apply_effects(
                     let result = store.link_workref_session(&key, session);
                     StoreEvent::WorkrefLinked { key, result }
                 }) {
-                    reduce(app, Action::MutationNotice(error));
+                    reduce(app, Action::WorkrefLinkSubmissionRejected(error));
                 }
             }
             Effect::SearchTranscript { query } => {
