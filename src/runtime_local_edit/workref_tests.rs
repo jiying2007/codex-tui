@@ -1,4 +1,4 @@
-use super::{apply_event, StoreEvent, StoreWorker};
+use super::{StoreEvent, StoreWorker, apply_event};
 use codex_tui::{
     app::{Action, AppState, Effect, InputMode, View, reduce},
     app_server_target::ResolvedAppServerTarget,
