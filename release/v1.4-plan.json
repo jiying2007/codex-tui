@@ -386,7 +386,7 @@
     "src/sqlite_store/workref.rs": 112,
     "src/app/workref_link.rs": 254,
     "src/runtime_store/workref.rs": 169,
-    "src/app/workref_link/tests.rs": 200,
+    "src/app/workref_link/tests.rs": 213,
     "src/runtime_local_edit/workref_tests.rs": 257
   },
   "ratchetPolicy": {
@@ -1307,6 +1307,15 @@
         "src/runtime_local_edit/workref_tests.rs"
       ],
       "policy": "Bounded local linking to existing records only; no issue creation, Feishu/TAPD API, automatic external delivery, agent messaging, Git mutation, background polling, second database, schema migration, remote resume or hardware action. Exact-SHA format, Linux/macOS/Windows, security, PTY, scale, development and release qualification remain required; real business acceptance stays centralized."
+    },
+    {
+      "date": "2026-11-22",
+      "kind": "dependency-security-advisory-fixes",
+      "scope": "Update the locked url crate from 2.5.8 to patched 2.5.9 for RUSTSEC-2026-0592 and rustix from 1.1.5 to patched 1.1.6 for RUSTSEC-2026-0486. Manifest semver constraints already admit the patched url release; no application API or runtime behavior change is intended. Verify the exact Cargo.lock graph with locked cross-platform CI, cargo audit and cargo deny.",
+      "modules": [
+        "Cargo.lock"
+      ],
+      "policy": "Resolve advisories by upgrading to patched upstream releases; do not suppress or ignore either advisory. Existing bincode unmaintained-only warning remains the separately documented allowed exception."
     }
   ]
 }
