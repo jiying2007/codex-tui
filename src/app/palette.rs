@@ -139,6 +139,9 @@ impl AppState {
         if thread_id.is_some() {
             choices.push(Command::QuickPrompt);
         }
+        if self.workref_link_snapshot().is_some() {
+            choices.push(Command::LinkWorkItem);
+        }
         if !matches!(self.view, View::Board) {
             choices.push(Command::Board);
         }
@@ -209,6 +212,7 @@ impl AppState {
                                 | Command::TogglePin
                                 | Command::Snooze
                                 | Command::ContextActions
+                                | Command::LinkWorkItem
                                 | Command::Help
                         )
                 })

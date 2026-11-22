@@ -728,6 +728,10 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 _ => {}
             }
         }
+        Action::BeginWorkrefLink => state.begin_workref_link(),
+        Action::WorkrefLinkSubmissionRejected(error) => {
+            state.workref_link_submission_rejected(error);
+        }
         Action::BeginScratch => {
             state.new_scratch_workspace = match &state.view {
                 View::Registry => state
@@ -1066,6 +1070,9 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                     state.note_target = Some(target);
                     state.input_buffer = existing.unwrap_or_default();
                     state.input_mode = InputMode::Note;
+                }
+                ContextChoice::LinkWorkItem => {
+                    state.begin_workref_link();
                 }
                 ContextChoice::Bookmark => {
                     let label = state
@@ -1999,7 +2006,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
         }
         Action::InputChar(character) => match state.input_mode {
             InputMode::Normal => {}
-            _ if state.queue_mutation_pending() => {}
+            _ if state.queue_mutation_pending() || state.workref_link_pending => {}
             InputMode::Composer => {
                 if super::composer::insert(state, &character.to_string()) {
                     return vec![Effect::PersistOperatorStateDeferred];
@@ -2025,7 +2032,8 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::WorktreeCreateStartPoint
             | InputMode::WorktreeDeleteBranch
             | InputMode::ForgeMergeRequestTitle
-            | InputMode::ForgeComment => {
+            | InputMode::ForgeComment
+            | InputMode::WorkrefLink => {
                 state.input_buffer.push(character);
                 if state.input_mode == InputMode::Search {
                     state.filter.clone_from(&state.input_buffer);
@@ -2037,7 +2045,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
         },
         Action::InputText(text) => {
-            if text.is_empty() || state.queue_mutation_pending() {
+            if text.is_empty() || state.queue_mutation_pending() || state.workref_link_pending {
                 return vec![];
             }
             let text = normalize_pasted_input(state.input_mode, &text);
@@ -2071,7 +2079,8 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 | InputMode::WorktreeCreateStartPoint
                 | InputMode::WorktreeDeleteBranch
                 | InputMode::ForgeMergeRequestTitle
-                | InputMode::ForgeComment => {
+                | InputMode::ForgeComment
+                | InputMode::WorkrefLink => {
                     state.input_buffer.push_str(&text);
                     if state.input_mode == InputMode::Search {
                         state.filter.clone_from(&state.input_buffer);
@@ -2085,7 +2094,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
         }
         Action::InputBackspace => match state.input_mode {
             InputMode::Normal => {}
-            _ if state.queue_mutation_pending() => {}
+            _ if state.queue_mutation_pending() || state.workref_link_pending => {}
             InputMode::Composer => {
                 if super::composer::backspace(state) {
                     return vec![Effect::PersistOperatorStateDeferred];
@@ -2111,7 +2120,8 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::WorktreeCreateStartPoint
             | InputMode::WorktreeDeleteBranch
             | InputMode::ForgeMergeRequestTitle
-            | InputMode::ForgeComment => {
+            | InputMode::ForgeComment
+            | InputMode::WorkrefLink => {
                 state.input_buffer.pop();
                 if state.input_mode == InputMode::Search {
                     state.filter.clone_from(&state.input_buffer);
@@ -2126,12 +2136,18 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::ComposerCursorBoundary(end) => super::composer::boundary(state, end),
         Action::ComposerViewScroll(delta) => super::composer::scroll(state, delta),
         Action::CommitInput => {
+            if state.workref_link_pending {
+                return vec![];
+            }
             let mode = state.input_mode;
             if !state.guard_mutation_editor(mode) {
                 return vec![];
             }
             if matches!(mode, InputMode::ThreadQueueAdd | InputMode::ThreadQueueEdit) {
                 return state.commit_queue_input();
+            }
+            if mode == InputMode::WorkrefLink {
+                return state.commit_workref_link().into_iter().collect();
             }
             if mode == InputMode::TranscriptSearch {
                 let query = state.input_buffer.trim().to_string();
@@ -2576,6 +2592,14 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             ) {
                 state.input_mode = InputMode::Normal;
                 state.input_buffer.clear();
+                return vec![];
+            }
+            if state.input_mode == InputMode::WorkrefLink {
+                if state.workref_link_pending {
+                    state.workref_link_cancel_refused();
+                    return vec![];
+                }
+                state.cancel_workref_link();
                 return vec![];
             }
             if state.input_mode == InputMode::TranscriptSearch {

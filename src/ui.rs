@@ -196,6 +196,7 @@ fn context_choice_label(choice: ContextChoice, language: UiLanguage) -> &'static
         ContextChoice::Snooze => "稍后提醒…",
         ContextChoice::EditNote => "编辑本地备注…",
         ContextChoice::Bookmark => "添加书签",
+        ContextChoice::LinkWorkItem => "关联当前会话到已有事项…",
         ContextChoice::ScratchInbox => "Scratch → 收件箱",
         ContextChoice::ScratchReady => "Scratch → 就绪",
         ContextChoice::ScratchDone => "Scratch → 完成",
@@ -318,6 +319,7 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
             | InputMode::ThreadQueueAdd
             | InputMode::ThreadQueueEdit
             | InputMode::Note
+            | InputMode::WorkrefLink
             | InputMode::Snooze
             | InputMode::SavedViewField
             | InputMode::BatchAddTag
@@ -399,6 +401,12 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
             "alias> {}  · {}",
             display_input,
             tr(app, "Enter save · Esc cancel", "Enter 保存 · Esc 取消")
+        )),
+        InputMode::WorkrefLink => Line::from(format!(
+            "{}> {}  · {}",
+            tr(app, "link work item", "关联事项"),
+            display_input,
+            tr(app, "Enter link · Esc cancel", "Enter 关联 · Esc 取消")
         )),
         InputMode::Composer => Line::from(tr(
             app,

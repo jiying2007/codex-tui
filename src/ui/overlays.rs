@@ -144,6 +144,26 @@ pub(super) fn render_local_input_overlay(frame: &mut Frame<'_>, app: &AppState) 
             tr(app, " Local note ", " 本地备注 "),
             tr(app, "Enter save · Esc cancel", "Enter 保存 · Esc 取消"),
         ),
+        InputMode::WorkrefLink => (
+            tr(
+                app,
+                " Link session to existing work item ",
+                " 将会话关联到已有事项 ",
+            ),
+            if app.workref_link_pending {
+                tr(
+                    app,
+                    "SQLite write accepted · waiting for commit receipt; cannot cancel",
+                    "SQLite 写入已接收 · 等待提交回执；当前不能取消",
+                )
+            } else {
+                tr(
+                    app,
+                    "Enter an existing local key · alias is derived from repository · Esc cancel",
+                    "输入已有事项 Key · 会话别名按仓库自动生成 · Esc 取消",
+                )
+            },
+        ),
         InputMode::Snooze => (
             tr(app, " Snooze ", " 稍后提醒 "),
             tr(
@@ -234,16 +254,33 @@ pub(super) fn render_local_input_overlay(frame: &mut Frame<'_>, app: &AppState) 
         ),
         _ => return,
     };
-    let area = centered_fixed(64, 7, frame.area());
+    let mut lines = vec![
+        Line::from(sanitize_inline(&app.input_buffer)),
+        Line::from(""),
+        Line::from(hint),
+    ];
+    if app.input_mode == InputMode::WorkrefLink {
+        for (key, item) in app.workref_link_items() {
+            lines.push(Line::from(sanitize_inline(&format!(
+                "{} · {} · {} / {}",
+                key, item.provider, item.space, item.external_id
+            ))));
+        }
+        if app.workref_ledger.items.len() > 5 {
+            lines.push(Line::from(tr(
+                app,
+                "… enter the exact key to select another item",
+                "… 其他事项请输入准确 Key",
+            )));
+        }
+    }
+    let height = lines.len().saturating_add(2).clamp(7, 14) as u16;
+    let area = centered_fixed(72, height, frame.area());
     frame.render_widget(Clear, area);
     frame.render_widget(
-        Paragraph::new(vec![
-            Line::from(sanitize_inline(&app.input_buffer)),
-            Line::from(""),
-            Line::from(hint),
-        ])
-        .block(Block::bordered().title(title))
-        .wrap(Wrap { trim: false }),
+        Paragraph::new(lines)
+            .block(Block::bordered().title(title))
+            .wrap(Wrap { trim: false }),
         area,
     );
 }

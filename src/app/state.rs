@@ -48,6 +48,8 @@ impl AppState {
             local_aliases,
             local_marked_unread,
             operator_local: Default::default(),
+            workref_link_intent: None,
+            workref_link_pending: false,
             workref_ledger: Arc::new(WorkRefLedger::default()),
             workref_unavailable: false,
             conversations: BTreeMap::new(),
@@ -675,6 +677,9 @@ impl AppState {
                 ContextChoice::EditNote,
                 ContextChoice::Bookmark,
             ]);
+            if target.kind == SourceKind::CodexThread && self.workref_link_snapshot().is_some() {
+                choices.push(ContextChoice::LinkWorkItem);
+            }
             if target.kind == SourceKind::ScratchWork {
                 choices.extend([
                     ContextChoice::ScratchInbox,

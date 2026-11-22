@@ -60,6 +60,7 @@ pub enum InputMode {
     WorktreeDeleteBranch,
     ForgeMergeRequestTitle,
     ForgeComment,
+    WorkrefLink,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -67,6 +68,7 @@ pub enum ContextChoice {
     Snooze,
     EditNote,
     Bookmark,
+    LinkWorkItem,
     NewCodexThread,
     ForkCodexThread,
     ScratchInbox,
@@ -102,6 +104,7 @@ impl ContextChoice {
             Self::Snooze => "Snooze attention…",
             Self::EditNote => "Edit local note…",
             Self::Bookmark => "Add local bookmark",
+            Self::LinkWorkItem => "Link current session to existing work item…",
             Self::NewCodexThread => "Codex · New thread here",
             Self::ForkCodexThread => "Codex · Fork selected thread",
             Self::ScratchInbox => "Scratch → Inbox",
@@ -214,6 +217,8 @@ pub enum Action {
     OpenPlanningSelected,
     BeginScratch,
     BeginSnooze,
+    BeginWorkrefLink,
+    WorkrefLinkSubmissionRejected(String),
     OpenCommandPalette,
     CloseCommandPalette,
     MoveCommandPalette(i32),
@@ -421,6 +426,10 @@ pub enum Effect {
     },
     OpenExternalUrl {
         url: String,
+    },
+    LinkWorkrefSession {
+        key: String,
+        session: crate::workref::SessionRef,
     },
     StartThread {
         cwd: String,

@@ -74,6 +74,7 @@ mod types;
 mod user_input;
 mod user_response;
 mod watch;
+mod workref_link;
 pub use queue_confirmation::QueueConfirmation;
 pub use reducer::reduce;
 use registry::{ensure_selection_visible, restore_selection};
@@ -156,6 +157,8 @@ pub struct AppState {
     local_aliases: BTreeMap<String, String>,
     local_marked_unread: BTreeSet<String>,
     operator_local: operator_scope::OperatorLocal,
+    workref_link_intent: Option<workref_link::WorkrefLinkIntent>,
+    pub workref_link_pending: bool,
     /// Startup-only local manual references; never authorizes cross-Target actions.
     pub(crate) workref_ledger: Arc<WorkRefLedger>,
     /// Invalid/undecodable local G2/G3 state must not render as 'no links'.

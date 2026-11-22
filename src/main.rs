@@ -1429,6 +1429,14 @@ fn apply_effects(
                     );
                 }
             }
+            Effect::LinkWorkrefSession { key, session } => {
+                if let Err(error) = store.submit(move |store| {
+                    let result = store.link_workref_session(&key, session);
+                    StoreEvent::WorkrefLinked { key, result }
+                }) {
+                    reduce(app, Action::WorkrefLinkSubmissionRejected(error));
+                }
+            }
             Effect::SearchTranscript { query } => {
                 let local_query = query.clone();
                 if let Err(error) = store.submit(move |store| {

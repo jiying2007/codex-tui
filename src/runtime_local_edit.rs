@@ -48,6 +48,9 @@ pub(crate) fn apply_event(app: &mut AppState, event: StoreEvent) -> bool {
         }
         StoreEvent::Stopped => {
             let error = "local state worker stopped; write outcome is unconfirmed".to_string();
+            if app.workref_link_pending {
+                app.workref_link_outcome_unknown(error.clone());
+            }
             if let Some(ticket) = app.pending_local_edit_ticket() {
                 app.finish_local_edit_write(ticket, Err(error.clone()));
             }
@@ -56,6 +59,19 @@ pub(crate) fn apply_event(app: &mut AppState, event: StoreEvent) -> bool {
         StoreEvent::Search(Ok(results)) => {
             reduce(app, Action::TranscriptSearchLoaded(results));
         }
+        StoreEvent::WorkrefLinked { key, result } => match result {
+            Ok((ledger, alias)) => {
+                app.finish_workref_link_success(key, ledger, alias);
+            }
+            Err(error) => {
+                let storage_failure = error.starts_with("SQLite workref read failed:")
+                    || error.starts_with("SQLite workref write failed:");
+                app.finish_workref_link_failure(error.clone());
+                if storage_failure {
+                    reduce(app, Action::PlanningStoreDegraded(Some(error)));
+                }
+            }
+        },
         StoreEvent::Search(Err(error)) | StoreEvent::Notice(Some(error)) => {
             reduce(app, Action::MutationNotice(error));
         }
@@ -71,3 +87,7 @@ mod tests;
 #[cfg(test)]
 #[path = "runtime_local_edit/route_tests.rs"]
 mod route_tests;
+
+#[cfg(test)]
+#[path = "runtime_local_edit/workref_tests.rs"]
+mod workref_tests;

@@ -5,7 +5,7 @@ use crate::runtime_store::{RuntimeStore as StoreBackend, StoreBootstrap};
 use anyhow::{Context, Result};
 use codex_tui::{
     planning::PlanningSnapshot, sqlite_store::SqliteStore, store::LocalStateV1,
-    transcript_search::TranscriptSearchResults,
+    transcript_search::TranscriptSearchResults, workref::WorkRefLedger,
 };
 use std::{
     sync::mpsc::{self, Receiver, SyncSender, TryRecvError, TrySendError},
@@ -24,6 +24,10 @@ pub(crate) enum StoreEvent {
     Stopped,
     Search(std::result::Result<TranscriptSearchResults, String>),
     Notice(Option<String>),
+    WorkrefLinked {
+        key: String,
+        result: std::result::Result<(WorkRefLedger, String), String>,
+    },
 }
 enum Request {
     Job(Job),
@@ -166,10 +170,16 @@ impl StoreWorker {
         }
         match self.events.try_recv() {
             Ok(event) => {
-                if let StoreEvent::Operator(Some(error)) | StoreEvent::Planning(Err(error), _, _) =
-                    &event
-                {
-                    self.error = Some(error.clone());
+                match &event {
+                    StoreEvent::Operator(Some(error)) | StoreEvent::Planning(Err(error), _, _) => {
+                        self.error = Some(error.clone());
+                    }
+                    StoreEvent::WorkrefLinked {
+                        result: Err(error), ..
+                    } if error.starts_with("SQLite workref") => {
+                        self.error = Some(error.clone());
+                    }
+                    _ => {}
                 }
                 Some(event)
             }
@@ -183,10 +193,16 @@ impl StoreWorker {
     }
     fn drain_exit_events(&self, failure: &mut Option<String>) {
         while let Ok(event) = self.events.try_recv() {
-            if let StoreEvent::Operator(Some(error)) | StoreEvent::Planning(Err(error), _, _) =
-                event
-            {
-                failure.get_or_insert(error);
+            match event {
+                StoreEvent::Operator(Some(error)) | StoreEvent::Planning(Err(error), _, _) => {
+                    failure.get_or_insert(error);
+                }
+                StoreEvent::WorkrefLinked {
+                    result: Err(error), ..
+                } if error.starts_with("SQLite workref") => {
+                    failure.get_or_insert(error);
+                }
+                _ => {}
             }
         }
     }
@@ -305,6 +321,34 @@ mod tests {
 #[cfg(test)]
 mod shutdown_tests {
     use super::*;
+    #[test]
+    fn final_flush_tracks_only_workref_storage_failures_not_rejected_keys() {
+        let root = tempfile::tempdir().unwrap();
+        let mut rejected = StoreWorker::start(StoreBackend::at_for_test(root.path())).unwrap();
+        rejected
+            .submit(|_| StoreEvent::WorkrefLinked {
+                key: "MISSING".into(),
+                result: Err("unknown work-item key".into()),
+            })
+            .unwrap();
+        rejected
+            .flush_operator_state_on_exit(&LocalStateV1::default())
+            .expect("a rejected key is not a failed SQLite commit");
+
+        let root = tempfile::tempdir().unwrap();
+        let mut failed = StoreWorker::start(StoreBackend::at_for_test(root.path())).unwrap();
+        failed
+            .submit(|_| StoreEvent::WorkrefLinked {
+                key: "BUG17".into(),
+                result: Err("SQLite workref write failed: injected".into()),
+            })
+            .unwrap();
+        let error = failed
+            .flush_operator_state_on_exit(&LocalStateV1::default())
+            .unwrap_err();
+        assert!(error.to_string().contains("SQLite workref write failed"));
+    }
+
     #[test]
     fn final_flush_does_not_hide_an_unobserved_accepted_mutation_failure() {
         let root = tempfile::tempdir().unwrap();

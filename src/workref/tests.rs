@@ -186,3 +186,51 @@ fn contract_versions_and_integration_outcomes_fail_closed() {
     };
     assert!(ledger.validate().is_err());
 }
+
+#[test]
+fn reference_urls_reject_credential_parameters_but_keep_normal_item_selectors() {
+    let secret_urls = [
+        "https://www.tapd.cn/BUG17?access_token=secret",
+        "https://www.tapd.cn/BUG17?auth%5Ftoken=secret",
+        "https://www.tapd.cn/BUG17?accessToken=secret",
+        "https://www.tapd.cn/BUG17/#/issue/17?session_id=secret",
+    ];
+    for url in secret_urls {
+        let mut item = item("tapd", "bug");
+        item.url = Some(url.into());
+        assert!(item.validate().is_err(), "work item URL accepted {url}");
+
+        let contract = ContractRef {
+            kind: "protocol".into(),
+            source: url.into(),
+            revision: "rev-17".into(),
+            git_sha: None,
+        };
+        assert!(
+            contract.validate().is_err(),
+            "contract source accepted {url}"
+        );
+
+        let evidence = EvidenceRef {
+            kind: "ci".into(),
+            source: url.into(),
+            revision: "run-17".into(),
+            result: "passed".into(),
+            environment: "linux".into(),
+        };
+        assert!(
+            evidence.validate().is_err(),
+            "evidence source accepted {url}"
+        );
+    }
+
+    let safe = WorkItem::new(
+        "tapd".into(),
+        "robot-project".into(),
+        "bug".into(),
+        "17".into(),
+        Some("https://www.tapd.cn/BUG17?from=project&id=17".into()),
+    )
+    .unwrap();
+    assert!(safe.url.is_some());
+}
