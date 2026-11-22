@@ -1,6 +1,6 @@
-use super::*;
+use super::{apply_event, StoreEvent, StoreWorker};
 use codex_tui::{
-    app::{Action, Effect, InputMode, View, reduce},
+    app::{Action, AppState, Effect, InputMode, View, reduce},
     app_server_target::ResolvedAppServerTarget,
     backend::{BackendStatus, CodexBackend, FakeBackend},
     sqlite_store::SqliteStore,
@@ -14,7 +14,6 @@ use std::{
 
 #[test]
 fn committed_workref_receipt_refreshes_the_tui_snapshot_only_after_commit() {
-    use codex_tui::workref::{WorkItem, WorkRefLedger};
     let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
     app.install_workrefs(None);
     let mut ledger = WorkRefLedger::default();
@@ -62,10 +61,6 @@ fn committed_workref_receipt_refreshes_the_tui_snapshot_only_after_commit() {
 
 #[test]
 fn actual_store_worker_returns_receipt_only_after_existing_item_link_is_committed() {
-    use codex_tui::{
-        store::LocalStore,
-        workref::{SessionRef, WorkItem, WorkRefLedger},
-    };
     let root = tempfile::tempdir().unwrap();
     let sqlite = codex_tui::sqlite_store::SqliteStore::at(root.path());
     sqlite.load_config().unwrap();
@@ -134,14 +129,6 @@ fn actual_store_worker_returns_receipt_only_after_existing_item_link_is_committe
 
 #[test]
 fn workref_queue_admission_rejection_retains_key_then_retry_commits_once() {
-    use codex_tui::{
-        app::{Action, Effect, View, reduce},
-        app_server_target::ResolvedAppServerTarget,
-        backend::BackendStatus,
-        sqlite_store::SqliteStore,
-        store::LocalStore,
-        workref::{WorkItem, WorkRefLedger},
-    };
     let root = tempfile::tempdir().unwrap();
     let sqlite = SqliteStore::at(root.path());
     sqlite.load_config().unwrap();
