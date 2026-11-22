@@ -302,7 +302,7 @@ mod tests {
         assert_eq!(app.input_buffer, "BUG17");
         assert!(app.workref_link_pending);
 
-        app.workref_link_submission_rejected("worker queue full".into());
+        reduce(&mut app, Action::WorkrefLinkSubmissionRejected("worker queue full".into()));
         assert!(!app.workref_link_pending);
         assert_eq!(app.input_mode, InputMode::WorkrefLink);
         assert_eq!(app.input_buffer, "BUG17");
