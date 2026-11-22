@@ -236,6 +236,7 @@ impl AppState {
 mod tests {
     use super::*;
     use crate::{
+        app::{Action, reduce},
         app_server_target::ResolvedAppServerTarget,
         backend::{CodexBackend, FakeBackend},
         store::LocalStateV1,
