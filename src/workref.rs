@@ -134,13 +134,12 @@ fn credential_parameter(key: &str) -> bool {
 }
 
 fn has_credential_parameter(url: &url::Url) -> bool {
-    let query = url
-        .query_pairs()
-        .any(|(key, _)| credential_parameter(&key));
+    let query = url.query_pairs().any(|(key, _)| credential_parameter(&key));
     let fragment = url.fragment().is_some_and(|fragment| {
-        let query = fragment.rsplit_once('?').map_or(fragment, |(_, query)| query);
-        url::form_urlencoded::parse(query.as_bytes())
-            .any(|(key, _)| credential_parameter(&key))
+        let query = fragment
+            .rsplit_once('?')
+            .map_or(fragment, |(_, query)| query);
+        url::form_urlencoded::parse(query.as_bytes()).any(|(key, _)| credential_parameter(&key))
     });
     query || fragment
 }
@@ -221,9 +220,13 @@ impl WorkItem {
         bounded("workspace/space", &self.space, 160)?;
         bounded("external ID", &self.external_id, 160)?;
         if self.provider != "local-draft" {
-            https_reference("external item URL", self.url.as_deref().ok_or_else(|| {
-                anyhow::anyhow!("Feishu Project/TAPD require an explicit original HTTPS URL")
-            })?, 2048)?;
+            https_reference(
+                "external item URL",
+                self.url.as_deref().ok_or_else(|| {
+                    anyhow::anyhow!("Feishu Project/TAPD require an explicit original HTTPS URL")
+                })?,
+                2048,
+            )?;
         } else if let Some(url) = self.url.as_deref() {
             https_reference("external item URL", url, 2048)?;
         }
