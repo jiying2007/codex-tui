@@ -146,11 +146,19 @@ pub(super) fn render_local_input_overlay(frame: &mut Frame<'_>, app: &AppState) 
         ),
         InputMode::WorkrefLink => (
             tr(app, " Link session to existing work item ", " 将会话关联到已有事项 "),
-            tr(
-                app,
-                "Enter an existing local key · alias is derived from repository · Esc cancel",
-                "输入已有事项 Key · 会话别名按仓库自动生成 · Esc 取消",
-            ),
+            if app.workref_link_pending {
+                tr(
+                    app,
+                    "SQLite write accepted · waiting for commit receipt; cannot cancel",
+                    "SQLite 写入已接收 · 等待提交回执；当前不能取消",
+                )
+            } else {
+                tr(
+                    app,
+                    "Enter an existing local key · alias is derived from repository · Esc cancel",
+                    "输入已有事项 Key · 会话别名按仓库自动生成 · Esc 取消",
+                )
+            },
         ),
         InputMode::Snooze => (
             tr(app, " Snooze ", " 稍后提醒 "),
