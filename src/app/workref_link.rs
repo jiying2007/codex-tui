@@ -18,7 +18,10 @@ impl AppState {
     /// A picker is offered only for a live native Thread in a connected,
     /// already-bound Target/Home scope and a valid non-empty local ledger.
     pub(super) fn workref_link_snapshot(&self) -> Option<WorkrefLinkIntent> {
-        if self.workref_ledger.items.is_empty() || self.planning_store_error.is_some() {
+        if self.workref_link_pending
+            || self.workref_ledger.items.is_empty()
+            || self.planning_store_error.is_some()
+        {
             return None;
         }
         let (target_identity, codex_home) = self.workref_scope_identity()?;
@@ -79,6 +82,7 @@ impl AppState {
             return;
         };
         self.workref_link_intent = Some(intent);
+        self.workref_link_pending = false;
         self.input_mode = InputMode::WorkrefLink;
         self.input_buffer.clear();
         self.mutation_notice = None;
@@ -87,6 +91,9 @@ impl AppState {
     /// Return a write effect only while the exact view, thread, Target and Home
     /// still match the snapshot captured when the editor was opened.
     pub(super) fn commit_workref_link(&mut self) -> Option<Effect> {
+        if self.workref_link_pending {
+            return None;
+        }
         let key = self.input_buffer.trim().to_string();
         if key.is_empty() {
             self.mutation_notice = Some(
@@ -141,14 +148,74 @@ impl AppState {
             );
             return None;
         }
-        self.cancel_workref_link();
+        // Keep the editor and exact input alive until the ordered SQLite worker
+        // returns a durable commit receipt. Admission rejection must be retryable.
+        self.workref_link_pending = true;
         Some(Effect::LinkWorkrefSession {
             key,
             session: intent.session,
         })
     }
 
+    pub(crate) fn workref_link_submission_rejected(&mut self, error: String) {
+        self.workref_link_pending = false;
+        self.mutation_notice = Some(error);
+    }
+
+    pub(crate) fn workref_link_cancel_refused(&mut self) {
+        self.mutation_notice = Some(local_text(
+            self.language,
+            "the SQLite write was already accepted; wait for its commit receipt",
+            "SQLite 写入已被接收；请等待提交回执",
+        ).into());
+    }
+
+    pub(crate) fn finish_workref_link_success(
+        &mut self,
+        key: String,
+        ledger: crate::workref::WorkRefLedger,
+        alias: String,
+    ) {
+        self.workref_link_pending = false;
+        self.install_workrefs(Some(ledger));
+        self.cancel_workref_link();
+        let notice = if self.language.is_simplified_chinese() {
+            format!("已关联事项 {key} · 会话别名 {alias} · 手工/未核验；未修改飞书/TAPD")
+        } else {
+            format!("Linked {key} · session alias {alias} · manual/unverified; Feishu/TAPD unchanged")
+        };
+        self.mutation_notice = Some(notice);
+    }
+
+    pub(crate) fn finish_workref_link_failure(&mut self, error: String) {
+        self.workref_link_pending = false;
+        self.mutation_notice = Some(error.clone());
+        if error.starts_with("SQLite workref read failed:")
+            || error.starts_with("SQLite workref write failed:")
+        {
+            self.install_workrefs(None);
+            self.planning_store_error = Some(error);
+            self.cancel_workref_link();
+        }
+    }
+
+    pub(crate) fn workref_link_outcome_unknown(&mut self, error: String) {
+        if !self.workref_link_pending {
+            return;
+        }
+        self.workref_link_pending = false;
+        self.install_workrefs(None);
+        self.planning_store_error = Some(error.clone());
+        self.cancel_workref_link();
+        self.mutation_notice = Some(local_text(
+            self.language,
+            "work-item link outcome is unknown because the local worker stopped; inspect SQLite before retrying",
+            "本地写入工作线程已停止，事项关联结果未知；请先检查 SQLite，再决定是否重试",
+        ).into());
+    }
+
     pub(super) fn cancel_workref_link(&mut self) {
+        self.workref_link_pending = false;
         self.workref_link_intent = None;
         if self.input_mode == InputMode::WorkrefLink {
             self.input_mode = InputMode::Normal;
