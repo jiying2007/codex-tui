@@ -2096,6 +2096,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::InputBackspace => match state.input_mode {
             InputMode::Normal => {}
             _ if state.queue_mutation_pending() => {}
+            _ if state.workref_link_pending => {}
             InputMode::Composer => {
                 if super::composer::backspace(state) {
                     return vec![Effect::PersistOperatorStateDeferred];
