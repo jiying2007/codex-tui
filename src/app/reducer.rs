@@ -2122,7 +2122,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::WorktreeDeleteBranch
             | InputMode::ForgeMergeRequestTitle
             | InputMode::ForgeComment
-                | InputMode::WorkrefLink => {
+            | InputMode::WorkrefLink => {
                 state.input_buffer.pop();
                 if state.input_mode == InputMode::Search {
                     state.filter.clone_from(&state.input_buffer);
