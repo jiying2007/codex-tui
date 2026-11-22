@@ -244,8 +244,8 @@
     "src/forge/read_order_tests.rs": 84,
     "src/git/read_order_tests.rs": 85,
     "src/app/local_edit.rs": 208,
-    "src/runtime_local_edit.rs": 92,
-    "src/runtime_local_edit/tests.rs": 540,
+    "src/runtime_local_edit.rs": 93,
+    "src/runtime_local_edit/tests.rs": 288,
     "src/runtime_local_edit/route_tests.rs": 164,
     "src/app/user_input.rs": 145,
     "src/conversation/user_input.rs": 32,
@@ -291,7 +291,7 @@
     "src/terminal.rs": 131,
     "src/terminal_drawer.rs": 439,
     "src/text.rs": 165,
-    "src/ui/overlays.rs": 944,
+    "src/ui/overlays.rs": 948,
     "src/ui/terminal.rs": 126,
     "src/forge/tests.rs": 367,
     "src/app_server_transport/tests.rs": 448,
@@ -364,7 +364,7 @@
     "src/headless/tests.rs": 162,
     "src/planning/saved_views.rs": 169,
     "src/ui/registry.rs": 316,
-    "src/ui/registry/tests.rs": 342,
+    "src/ui/registry/tests.rs": 345,
     "src/app/forge_review.rs": 155,
     "src/app/planning_worker/diagnostics.rs": 34,
     "src/app/prompt/quick.rs": 31,
@@ -384,8 +384,10 @@
     "src/workref/cli.rs": 609,
     "src/workref/tests.rs": 188,
     "src/sqlite_store/workref.rs": 112,
-    "src/app/workref_link.rs": 425,
-    "src/runtime_store/workref.rs": 164
+    "src/app/workref_link.rs": 254,
+    "src/runtime_store/workref.rs": 169,
+    "src/app/workref_link/tests.rs": 200,
+    "src/runtime_local_edit/workref_tests.rs": 257
   },
   "ratchetPolicy": {
     "baseline": "inherit v1.3 Search & Multi-Target ceilings; feature work may only add bounded module-specific ceilings",
@@ -1278,9 +1280,9 @@
       "policy": "One bounded read-only G2/G3 presentation slice using existing SQLite, state and Target identity; no external platform API, task authority, model usage, background polling, G4 deletion, auto-delivery, new mutation route, remote resume, hardware action or Stable claim. Preserve exact-HEAD CI/security/PTY/scale/development/release checks and independent human field qualification."
     },
     {
-      "date": "2026-11-21",
+      "date": "2026-11-22",
       "kind": "g23-direct-tui-existing-work-item-link",
-      "scope": "Add a direct TUI action through the existing context menu and command palette to associate the currently selected live native Codex Thread with an already-recorded local Feishu/TAPD/technical work item. Capture exact connected Target instance identity, observed CODEX_HOME, ThreadId, view and repository/CWD at editor open; revalidate the same scope at Enter; derive a bounded repository alias with collision suffixes; write only the existing SQLite workref envelope through the ordered worker and refresh the in-memory snapshot only after commit. If queue admission is rejected, retain the typed key and permit retry; once accepted, freeze the editor until a durable commit receipt. On worker stop without a receipt, report outcome unknown, invalidate the stale projection and require SQLite inspection before retry. Reject unknown keys, unavailable ledgers, stale selection/home/Target and disconnected scopes. Test the actual worker-to-SQLite commit/receipt path and accepted-write shutdown outcomes.",
+      "scope": "Add a direct TUI action through the existing context menu and command palette to associate the currently selected live native Codex Thread with an already-recorded local Feishu/TAPD/technical work item. Capture exact connected Target instance identity, observed CODEX_HOME, ThreadId, view and repository/CWD at editor open; revalidate the same scope at Enter; derive a bounded repository alias with collision suffixes; write only the existing SQLite workref envelope through the ordered worker and refresh the in-memory snapshot only after commit. If queue admission is rejected, retain the typed key and permit retry; once accepted, freeze the editor until a durable commit receipt. On worker stop without a receipt, report outcome unknown, invalidate the stale projection and require SQLite inspection before retry. Reject unknown keys, unavailable ledgers, stale selection/home/Target and disconnected scopes. Test the actual worker-to-SQLite commit/receipt path and accepted-write shutdown outcomes. Split the app state-machine tests and SQLite worker integration tests into focused submodules so production and existing test modules remain within their source-size budgets.",
       "modules": [
         "src/app/workref_link.rs",
         "src/runtime_store/workref.rs",
@@ -1300,7 +1302,9 @@
         "src/main.rs",
         "src/ui.rs",
         "src/ui/overlays.rs",
-        "src/ui/registry/tests.rs"
+        "src/ui/registry/tests.rs",
+        "src/app/workref_link/tests.rs",
+        "src/runtime_local_edit/workref_tests.rs"
       ],
       "policy": "Bounded local linking to existing records only; no issue creation, Feishu/TAPD API, automatic external delivery, agent messaging, Git mutation, background polling, second database, schema migration, remote resume or hardware action. Exact-SHA format, Linux/macOS/Windows, security, PTY, scale, development and release qualification remain required; real business acceptance stays centralized."
     }
