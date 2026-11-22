@@ -2006,6 +2006,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::InputChar(character) => match state.input_mode {
             InputMode::Normal => {}
             _ if state.queue_mutation_pending() => {}
+            _ if state.workref_link_pending => {}
             InputMode::Composer => {
                 if super::composer::insert(state, &character.to_string()) {
                     return vec![Effect::PersistOperatorStateDeferred];
@@ -2044,7 +2045,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
         },
         Action::InputText(text) => {
-            if text.is_empty() || state.queue_mutation_pending() {
+            if text.is_empty() || state.queue_mutation_pending() || state.workref_link_pending {
                 return vec![];
             }
             let text = normalize_pasted_input(state.input_mode, &text);
@@ -2135,6 +2136,9 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::ComposerCursorBoundary(end) => super::composer::boundary(state, end),
         Action::ComposerViewScroll(delta) => super::composer::scroll(state, delta),
         Action::CommitInput => {
+            if state.workref_link_pending {
+                return vec![];
+            }
             let mode = state.input_mode;
             if !state.guard_mutation_editor(mode) {
                 return vec![];
@@ -2591,6 +2595,10 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 return vec![];
             }
             if state.input_mode == InputMode::WorkrefLink {
+                if state.workref_link_pending {
+                    state.workref_link_cancel_refused();
+                    return vec![];
+                }
                 state.cancel_workref_link();
                 return vec![];
             }
