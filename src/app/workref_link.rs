@@ -39,9 +39,7 @@ impl AppState {
             })
             .and_then(|context| context.repo.as_ref())
             .map(|repo| repo.primary_root.clone())
-            .or_else(|| {
-                (!thread.workspace.trim().is_empty()).then(|| thread.workspace.clone())
-            })
+            .or_else(|| (!thread.workspace.trim().is_empty()).then(|| thread.workspace.clone()))
             .or_else(|| (!cwd.trim().is_empty()).then(|| cwd.clone()))?;
         Some(WorkrefLinkIntent {
             view: self.view.clone(),
@@ -97,15 +95,19 @@ impl AppState {
         let key = self.input_buffer.trim().to_string();
         if key.is_empty() {
             self.mutation_notice = Some(
-                local_text(self.language, "enter an existing work-item key", "请输入已有事项的 Key")
-                    .into(),
+                local_text(
+                    self.language,
+                    "enter an existing work-item key",
+                    "请输入已有事项的 Key",
+                )
+                .into(),
             );
             return None;
         }
         if key.len() > 64
-            || !key
-                .chars()
-                .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | ':'))
+            || !key.chars().all(|character| {
+                character.is_ascii_alphanumeric() || matches!(character, '-' | '_' | ':')
+            })
         {
             self.mutation_notice = Some(
                 local_text(
@@ -120,8 +122,12 @@ impl AppState {
         let Some(intent) = self.workref_link_intent.clone() else {
             self.cancel_workref_link();
             self.mutation_notice = Some(
-                local_text(self.language, "link editor expired; reopen it", "关联编辑已失效，请重新打开")
-                    .into(),
+                local_text(
+                    self.language,
+                    "link editor expired; reopen it",
+                    "关联编辑已失效，请重新打开",
+                )
+                .into(),
             );
             return None;
         };
@@ -163,11 +169,14 @@ impl AppState {
     }
 
     pub(crate) fn workref_link_cancel_refused(&mut self) {
-        self.mutation_notice = Some(local_text(
-            self.language,
-            "the SQLite write was already accepted; wait for its commit receipt",
-            "SQLite 写入已被接收；请等待提交回执",
-        ).into());
+        self.mutation_notice = Some(
+            local_text(
+                self.language,
+                "the SQLite write was already accepted; wait for its commit receipt",
+                "SQLite 写入已被接收；请等待提交回执",
+            )
+            .into(),
+        );
     }
 
     pub fn finish_workref_link_success(
@@ -182,7 +191,9 @@ impl AppState {
         let notice = if self.language.is_simplified_chinese() {
             format!("已关联事项 {key} · 会话别名 {alias} · 手工/未核验；未修改飞书/TAPD")
         } else {
-            format!("Linked {key} · session alias {alias} · manual/unverified; Feishu/TAPD unchanged")
+            format!(
+                "Linked {key} · session alias {alias} · manual/unverified; Feishu/TAPD unchanged"
+            )
         };
         self.mutation_notice = Some(notice);
     }
@@ -227,7 +238,9 @@ impl AppState {
         &self.workref_ledger
     }
 
-    pub(crate) fn workref_link_items(&self) -> impl Iterator<Item = (&str, &crate::workref::WorkItem)> {
+    pub(crate) fn workref_link_items(
+        &self,
+    ) -> impl Iterator<Item = (&str, &crate::workref::WorkItem)> {
         self.workref_ledger
             .items
             .iter()
@@ -243,8 +256,8 @@ mod tests {
         app::{Action, reduce},
         app_server_target::ResolvedAppServerTarget,
         backend::{CodexBackend, FakeBackend},
-        store::LocalStateV1,
         command::Command,
+        store::LocalStateV1,
     };
 
     fn configured() -> AppState {
@@ -307,7 +320,10 @@ mod tests {
         assert_eq!(app.input_buffer, "BUG17");
         assert!(app.workref_link_pending);
 
-        reduce(&mut app, Action::WorkrefLinkSubmissionRejected("worker queue full".into()));
+        reduce(
+            &mut app,
+            Action::WorkrefLinkSubmissionRejected("worker queue full".into()),
+        );
         assert!(!app.workref_link_pending);
         assert_eq!(app.input_mode, InputMode::WorkrefLink);
         assert_eq!(app.input_buffer, "BUG17");
@@ -334,21 +350,34 @@ mod tests {
         app.backend_status.codex_home = Some("/home/other/.codex".into());
         assert!(reduce(&mut app, Action::CommitInput).is_empty());
         assert_eq!(app.input_mode, InputMode::Normal);
-        assert!(app.mutation_notice.as_deref().unwrap_or_default().contains("changed"));
+        assert!(
+            app.mutation_notice
+                .as_deref()
+                .unwrap_or_default()
+                .contains("changed")
+        );
 
         let mut app = configured();
         reduce(&mut app, Action::BeginWorkrefLink);
         app.input_buffer = "MISSING".into();
         assert!(reduce(&mut app, Action::CommitInput).is_empty());
         assert_eq!(app.input_mode, InputMode::WorkrefLink);
-        assert!(app.mutation_notice.as_deref().unwrap_or_default().contains("unknown"));
+        assert!(
+            app.mutation_notice
+                .as_deref()
+                .unwrap_or_default()
+                .contains("unknown")
+        );
     }
 
     #[test]
     fn palette_and_context_menu_offer_link_only_for_exact_existing_local_workrefs() {
         let mut app = configured();
         reduce(&mut app, Action::OpenCommandPalette);
-        assert!(app.command_palette_choices().contains(&Command::LinkWorkItem));
+        assert!(
+            app.command_palette_choices()
+                .contains(&Command::LinkWorkItem)
+        );
         app.command_palette_query = "link".into();
         assert_eq!(app.command_palette_choice(), Some(Command::LinkWorkItem));
         app.backend_status.codex_home = Some("/home/other/.codex".into());
