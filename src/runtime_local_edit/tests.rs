@@ -275,6 +275,75 @@ fn committed_workref_receipt_refreshes_the_tui_snapshot_only_after_commit() {
 }
 
 #[test]
+fn actual_store_worker_returns_receipt_only_after_existing_item_link_is_committed() {
+    use codex_tui::workref::{SessionRef, WorkItem, WorkRefLedger};
+    let root = tempfile::tempdir().unwrap();
+    let sqlite = codex_tui::sqlite_store::SqliteStore::at(root.path());
+    sqlite.load_config().unwrap();
+    sqlite.health().unwrap();
+    let mut initial = WorkRefLedger::default();
+    initial
+        .add_item(
+            "BUG17".into(),
+            WorkItem::new(
+                "local-draft".into(),
+                "robot".into(),
+                "technical".into(),
+                "BUG17".into(),
+                None,
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    sqlite.save_workref_ledger(&initial).unwrap();
+    drop(sqlite);
+
+    let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+    app.install_workrefs(Some(initial));
+    app.input_mode = InputMode::WorkrefLink;
+    app.input_buffer = "BUG17".into();
+    app.workref_link_pending = true;
+
+    let mut worker = StoreWorker::at_for_test(root.path());
+    worker
+        .submit(|store| {
+            let session = SessionRef {
+                target_identity: "target-A".into(),
+                codex_home: "/home/a/.codex".into(),
+                thread_id: "thread-a".into(),
+                repository: "/workspace/robot-app".into(),
+                role: "development".into(),
+            };
+            let result = store.link_workref_session("BUG17", session);
+            StoreEvent::WorkrefLinked {
+                key: "BUG17".into(),
+                result,
+            }
+        })
+        .unwrap();
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while app.workref_link_pending {
+        if let Some(event) = worker.try_event() {
+            apply_event(&mut app, event);
+        }
+        assert!(Instant::now() < deadline, "missing workref commit receipt");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    assert_eq!(app.input_mode, InputMode::Normal);
+    assert!(!app.workref_unavailable);
+    assert_eq!(
+        app.workref_ledger.items["BUG17"].sessions["robot-app"].thread_id,
+        "thread-a"
+    );
+    let persisted = worker.sqlite_clone().load_workref_ledger().unwrap();
+    assert_eq!(persisted, *app.workref_ledger);
+    worker
+        .flush_operator_state_on_exit(&LocalStateV1::default())
+        .unwrap();
+}
+
+#[test]
 fn stopped_store_worker_marks_accepted_workref_write_as_unknown() {
     let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
     app.input_mode = InputMode::WorkrefLink;
