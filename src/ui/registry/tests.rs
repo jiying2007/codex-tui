@@ -170,11 +170,14 @@ fn g23_workref_link_editor_lists_existing_items_in_both_languages() {
         let screen = render_app(&app, 80);
         assert!(screen.contains("BUG17"), "{language:?}: {screen}");
         assert!(screen.contains("tapd"), "{language:?}: {screen}");
-        assert!(screen.contains(if language.is_simplified_chinese() {
-            "将会话关联到已有事项"
-        } else {
-            "Link session to existing work item"
-        }), "{language:?}: {screen}");
+        assert!(
+            screen.contains(if language.is_simplified_chinese() {
+                "将会话关联到已有事项"
+            } else {
+                "Link session to existing work item"
+            }),
+            "{language:?}: {screen}"
+        );
         reduce(&mut app, Action::CancelInput);
         assert_eq!(app.input_mode, crate::app::InputMode::Normal);
     }
