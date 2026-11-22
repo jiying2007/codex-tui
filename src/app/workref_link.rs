@@ -157,7 +157,7 @@ impl AppState {
         })
     }
 
-    pub(crate) fn workref_link_submission_rejected(&mut self, error: String) {
+    pub fn workref_link_submission_rejected(&mut self, error: String) {
         self.workref_link_pending = false;
         self.mutation_notice = Some(error);
     }
@@ -170,7 +170,7 @@ impl AppState {
         ).into());
     }
 
-    pub(crate) fn finish_workref_link_success(
+    pub fn finish_workref_link_success(
         &mut self,
         key: String,
         ledger: crate::workref::WorkRefLedger,
@@ -187,7 +187,7 @@ impl AppState {
         self.mutation_notice = Some(notice);
     }
 
-    pub(crate) fn finish_workref_link_failure(&mut self, error: String) {
+    pub fn finish_workref_link_failure(&mut self, error: String) {
         self.workref_link_pending = false;
         self.mutation_notice = Some(error.clone());
         if error.starts_with("SQLite workref read failed:")
@@ -199,7 +199,7 @@ impl AppState {
         }
     }
 
-    pub(crate) fn workref_link_outcome_unknown(&mut self, error: String) {
+    pub fn workref_link_outcome_unknown(&mut self, error: String) {
         if !self.workref_link_pending {
             return;
         }
@@ -221,6 +221,10 @@ impl AppState {
             self.input_mode = InputMode::Normal;
         }
         self.input_buffer.clear();
+    }
+
+    pub fn workref_ledger(&self) -> &crate::workref::WorkRefLedger {
+        &self.workref_ledger
     }
 
     pub(crate) fn workref_link_items(&self) -> impl Iterator<Item = (&str, &crate::workref::WorkItem)> {
@@ -311,7 +315,7 @@ mod tests {
         assert!(matches!(
             retry.as_slice(),
             [Effect::LinkWorkrefSession { key, session }]
-                if key == "BUG17" && session == expected.session
+                if key == "BUG17" && *session == expected.session
         ));
         assert!(app.workref_link_pending);
 
