@@ -729,6 +729,9 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
         }
         Action::BeginWorkrefLink => state.begin_workref_link(),
+        Action::WorkrefLinkSubmissionRejected(error) => {
+            state.workref_link_submission_rejected(error);
+        }
         Action::BeginScratch => {
             state.new_scratch_workspace = match &state.view {
                 View::Registry => state
@@ -866,11 +869,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                         return vec![];
                     }
                 }
-                return vec![];
-            }
-
-            if choice == ContextChoice::LinkWorkItem {
-                state.begin_workref_link();
                 return vec![];
             }
 
@@ -1072,6 +1070,9 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                     state.note_target = Some(target);
                     state.input_buffer = existing.unwrap_or_default();
                     state.input_mode = InputMode::Note;
+                }
+                ContextChoice::LinkWorkItem => {
+                    state.begin_workref_link();
                 }
                 ContextChoice::Bookmark => {
                     let label = state
