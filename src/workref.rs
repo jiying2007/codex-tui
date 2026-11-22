@@ -103,19 +103,23 @@ fn one_of(label: &str, value: &str, allowed: &[&str]) -> Result<()> {
 }
 
 fn credential_parameter(key: &str) -> bool {
+    let key = key
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .map(|character| character.to_ascii_lowercase())
+        .collect::<String>();
     matches!(
-        key.to_ascii_lowercase().replace('_', "-").as_str(),
+        key.as_str(),
         "token"
-            | "access-token"
-            | "refresh-token"
-            | "id-token"
-            | "auth-token"
+            | "accesstoken"
+            | "refreshtoken"
+            | "idtoken"
+            | "authtoken"
             | "authorization"
-            | "client-secret"
+            | "clientsecret"
             | "secret"
             | "password"
             | "session"
-            | "session-id"
             | "sessionid"
             | "sid"
             | "cookie"
@@ -125,7 +129,6 @@ fn credential_parameter(key: &str) -> bool {
             | "credential"
             | "code"
             | "ticket"
-            | "api-key"
             | "apikey"
     )
 }
