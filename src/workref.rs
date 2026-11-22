@@ -102,16 +102,68 @@ fn one_of(label: &str, value: &str, allowed: &[&str]) -> Result<()> {
     Ok(())
 }
 
-fn https_reference(url: &str) -> Result<()> {
-    bounded("URL", url, 2048)?;
-    let url = url::Url::parse(url)?;
+fn credential_parameter(key: &str) -> bool {
+    matches!(
+        key.to_ascii_lowercase().replace('_', "-").as_str(),
+        "token"
+            | "access-token"
+            | "refresh-token"
+            | "id-token"
+            | "auth-token"
+            | "authorization"
+            | "client-secret"
+            | "secret"
+            | "password"
+            | "session"
+            | "session-id"
+            | "sessionid"
+            | "sid"
+            | "cookie"
+            | "signature"
+            | "sig"
+            | "jwt"
+            | "credential"
+            | "code"
+            | "ticket"
+            | "api-key"
+            | "apikey"
+    )
+}
+
+fn has_credential_parameter(url: &url::Url) -> bool {
+    let query = url
+        .query_pairs()
+        .any(|(key, _)| credential_parameter(&key));
+    let fragment = url.fragment().is_some_and(|fragment| {
+        let query = fragment.rsplit_once('?').map_or(fragment, |(_, query)| query);
+        url::form_urlencoded::parse(query.as_bytes())
+            .any(|(key, _)| credential_parameter(&key))
+    });
+    query || fragment
+}
+
+fn https_reference(label: &str, value: &str, limit: usize) -> Result<()> {
+    bounded(label, value, limit)?;
+    let url = url::Url::parse(value)?;
     ensure!(
         url.scheme() == "https"
             && url.host_str().is_some()
             && url.username().is_empty()
             && url.password().is_none(),
-        "external item URL must be HTTPS without embedded credentials"
+        "{label} URL must be HTTPS without embedded credentials"
     );
+    ensure!(
+        !has_credential_parameter(&url),
+        "{label} URL must not contain credential-like query or fragment parameters"
+    );
+    Ok(())
+}
+
+fn safe_reference(label: &str, value: &str, limit: usize) -> Result<()> {
+    bounded(label, value, limit)?;
+    if value.contains("://") {
+        https_reference(label, value, limit)?;
+    }
     Ok(())
 }
 
@@ -166,11 +218,11 @@ impl WorkItem {
         bounded("workspace/space", &self.space, 160)?;
         bounded("external ID", &self.external_id, 160)?;
         if self.provider != "local-draft" {
-            https_reference(self.url.as_deref().ok_or_else(|| {
+            https_reference("external item URL", self.url.as_deref().ok_or_else(|| {
                 anyhow::anyhow!("Feishu Project/TAPD require an explicit original HTTPS URL")
-            })?)?;
+            })?, 2048)?;
         } else if let Some(url) = self.url.as_deref() {
-            https_reference(url)?;
+            https_reference("external item URL", url, 2048)?;
         }
         ensure!(
             self.sessions.len() <= MAX_REFS
@@ -220,7 +272,7 @@ impl ContractRef {
                 "protocol", "api", "abi", "schema", "config", "data", "model", "other",
             ],
         )?;
-        bounded("contract authority/source", &self.source, 2048)?;
+        safe_reference("contract authority/source", &self.source, 2048)?;
         bounded("contract revision", &self.revision, 160)?;
         if let Some(sha) = self.git_sha.as_deref() {
             ensure!(
@@ -252,7 +304,7 @@ impl EvidenceRef {
             &self.result,
             &["passed", "failed", "partial", "unknown"],
         )?;
-        bounded("evidence source", &self.source, 2048)?;
+        safe_reference("evidence source", &self.source, 2048)?;
         bounded("evidence revision", &self.revision, 160)?;
         bounded("evidence environment", &self.environment, 256)?;
         Ok(())
@@ -274,7 +326,7 @@ impl HandoffRef {
             &["prepared", "acknowledged", "unknown"],
         )?;
         if self.status == "acknowledged" {
-            bounded(
+            safe_reference(
                 "manual acknowledgment receipt",
                 self.receipt.as_deref().unwrap_or(""),
                 2048,
@@ -401,7 +453,7 @@ impl WorkRefLedger {
             .handoffs
             .get_mut(index)
             .ok_or_else(|| anyhow::anyhow!("handoff index not found"))?;
-        bounded("manual acknowledgment receipt", &receipt, 2048)?;
+        safe_reference("manual acknowledgment receipt", &receipt, 2048)?;
         ensure!(
             handoff.status == "prepared"
                 || (handoff.status == "acknowledged"
