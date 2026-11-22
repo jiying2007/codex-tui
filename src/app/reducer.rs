@@ -2006,8 +2006,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
         }
         Action::InputChar(character) => match state.input_mode {
             InputMode::Normal => {}
-            _ if state.queue_mutation_pending() => {}
-            _ if state.workref_link_pending => {}
+            _ if state.queue_mutation_pending() || state.workref_link_pending => {}
             InputMode::Composer => {
                 if super::composer::insert(state, &character.to_string()) {
                     return vec![Effect::PersistOperatorStateDeferred];
