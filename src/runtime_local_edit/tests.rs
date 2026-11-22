@@ -337,7 +337,7 @@ fn actual_store_worker_returns_receipt_only_after_existing_item_link_is_committe
         "thread-a"
     );
     let persisted = worker.sqlite_clone().load_workref_ledger().unwrap();
-    assert_eq!(persisted, app.workref_ledger());
+    assert_eq!(persisted, app.workref_ledger().clone());
     worker
         .flush_operator_state_on_exit(&LocalStateV1::default())
         .unwrap();
@@ -351,7 +351,7 @@ fn workref_queue_admission_rejection_retains_key_then_retry_commits_once() {
         backend::BackendStatus,
         sqlite_store::SqliteStore,
         store::LocalStore,
-        workref::{SessionRef, WorkItem, WorkRefLedger},
+        workref::{WorkItem, WorkRefLedger},
     };
     let root = tempfile::tempdir().unwrap();
     let sqlite = SqliteStore::at(root.path());
