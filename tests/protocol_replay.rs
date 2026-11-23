@@ -201,14 +201,15 @@ fn stable_0_171_0_thread_list_distinguishes_parent_attachment_and_fork() {
         threads[3].metadata.lineage.forked_from_id.as_deref(),
         Some("stable-0171-parent")
     );
-    assert_eq!(
-        threads[3].metadata.lineage.attached_to_thread_id,
-        None
-    );
+    assert_eq!(threads[3].metadata.lineage.attached_to_thread_id, None);
 
     let app = AppState::new(threads);
     let groups = app.registry_group_projection();
-    assert_eq!(groups[1].0, Some(0), "parentThreadId is a direct parent edge");
+    assert_eq!(
+        groups[1].0,
+        Some(0),
+        "parentThreadId is a direct parent edge"
+    );
     assert_eq!(
         groups[2].0,
         Some(0),
@@ -226,8 +227,8 @@ fn stable_0_171_0_attached_thread_read_and_item_extensions_remain_compatible() {
         "fixtures/protocol/stable-0.171.0/thread-read.json"
     ))
     .expect("pinned 0.171.0 thread/read fixture");
-    let wire: ThreadWire = serde_json::from_value(value["thread"].clone())
-        .expect("attached-thread metadata decodes");
+    let wire: ThreadWire =
+        serde_json::from_value(value["thread"].clone()).expect("attached-thread metadata decodes");
     let summary = normalize_thread(wire, None);
     assert_eq!(
         summary.metadata.lineage.attached_to_thread_id.as_deref(),
@@ -242,10 +243,8 @@ fn stable_0_171_0_attached_thread_read_and_item_extensions_remain_compatible() {
     assert_eq!(page.title.as_deref(), Some("Attached session"));
     assert_eq!(page.items.len(), 2);
 
-    let value = serde_json::from_str(include_str!(
-        "fixtures/protocol/stable-0.171.0/items.json"
-    ))
-    .expect("pinned 0.171.0 items fixture");
+    let value = serde_json::from_str(include_str!("fixtures/protocol/stable-0.171.0/items.json"))
+        .expect("pinned 0.171.0 items fixture");
     let (items, cursor) = parse_items_page(value).expect("additive image-generation metadata");
     assert_eq!(cursor, None);
     assert_eq!(items.len(), 2);
