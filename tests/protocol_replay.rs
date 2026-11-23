@@ -199,7 +199,11 @@ fn stable_0_171_0_default_thread_list_keeps_attached_threads_hidden() {
 
     let app = AppState::new(threads);
     let groups = app.registry_group_projection();
-    assert_eq!(groups[1].0, Some(0), "parentThreadId is a direct subagent edge");
+    assert_eq!(
+        groups[1].0,
+        Some(0),
+        "parentThreadId is a direct subagent edge"
+    );
     assert_eq!(groups[2].0, None, "forkedFromId alone is not a parent edge");
     assert_eq!(groups[0].1, 1);
 }
