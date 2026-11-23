@@ -69,6 +69,8 @@ struct ThreadRow {
     #[serde(skip_serializing_if = "Option::is_none")]
     parent_thread_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    attached_to_thread_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     forked_from_id: Option<String>,
     workspace: String,
     title: String,
