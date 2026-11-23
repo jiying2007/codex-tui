@@ -65,7 +65,10 @@ mod tests {
         assert_eq!(row.source_kind, "exec");
         assert_eq!(row.session_id.as_deref(), Some("family"));
         assert_eq!(row.parent_thread_id.as_deref(), Some("actual-parent"));
-        assert_eq!(row.attached_to_thread_id.as_deref(), Some("attached-parent"));
+        assert_eq!(
+            row.attached_to_thread_id.as_deref(),
+            Some("attached-parent")
+        );
         assert_eq!(row.forked_from_id.as_deref(), Some("fork-source"));
         let json = serde_json::to_value(&row).unwrap();
         assert_eq!(json["modelProvider"], "provider");
