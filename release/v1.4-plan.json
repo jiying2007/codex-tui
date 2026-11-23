@@ -152,7 +152,7 @@
     "src/headless/operator_local.rs": 71,
     "src/store/scoped.rs": 97,
     "src/app/operator_scope.rs": 315,
-    "src/headless/locator.rs": 80,
+    "src/headless/locator.rs": 88,
     "src/app_server/observed_scope.rs": 67,
     "src/notification/native.rs": 251,
     "src/ui/provenance.rs": 150,
@@ -1326,6 +1326,15 @@
         "src/workref/tests.rs"
       ],
       "policy": "Bounded local validation only; no URL fetching, external API, token storage, auto-delivery or schema migration. Update only these two exact reviewed source ceilings; all exact-SHA CI, security, PTY, scale, development and release gates remain active."
+    },
+    {
+      "date": "2026-11-23",
+      "kind": "g1-headless-attached-thread-lineage",
+      "scope": "Expose the exact optional attachedToThreadId relation in read-only headless thread snapshots alongside parentThreadId and forkedFromId. Preserve the three relations as distinct values, omit unavailable metadata, and verify both the in-memory row and serialized camelCase JSON key for present and absent values. No new Resume or write authority.",
+      "modules": [
+        "src/headless/locator.rs"
+      ],
+      "policy": "One bounded G1 protocol-completeness fix for the new 0.171.0 attached-thread relation. Update only the exact headless locator source ceiling; keep all other ceilings, complete source coverage, target scoping and release gates unchanged. No new service, scan, migration, polling or Stable/L3 claim."
     }
   ]
 }

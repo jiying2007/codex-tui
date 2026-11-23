@@ -171,6 +171,56 @@ class UpstreamConvergenceGuardTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("maintenance-only capability set drifted", result.stderr)
 
+    def test_current_upstream_snapshot_is_required_and_exact(self):
+        snapshot = self.manifest["upstreamSnapshot"]
+        self.assertEqual(snapshot["repository"], "openai/codex")
+        self.assertEqual(snapshot["releaseTag"], "rust-v" + snapshot["cliVersion"])
+        self.assertEqual(snapshot["appServerStatus"], "experimental-not-l3-qualified")
+        result = self.check()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        del self.manifest["upstreamSnapshot"]["releaseCommit"]
+        result = self.check()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("releaseCommit", result.stderr)
+
+    def test_upstream_overlap_signals_cannot_be_silently_removed(self):
+        self.manifest["upstreamSnapshot"]["overlapSignals"].remove("codex-queue-stable")
+        result = self.check()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("upstream overlap evidence set drifted", result.stderr)
+
+    def test_upstream_app_server_must_remain_unqualified(self):
+        self.manifest["upstreamSnapshot"]["appServerStatus"] = "stable"
+        result = self.check()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("must not be claimed as L3-qualified", result.stderr)
+
+    def test_default_registry_does_not_scan_persisted_attached_threads(self):
+        source = (ROOT / "src/app_server/registry_sources.rs").read_text(
+            encoding="utf-8"
+        )
+        start = source.index("fn registry_query_params(")
+        end = source.index("pub(super) async fn load_registry_page(", start)
+        params = source[start:end]
+        self.assertNotIn('"attachedToThreadId"', params)
+        self.assertNotIn('"includeAttachedThreads"', params)
+
+        assessment = json.loads(
+            (
+                ROOT
+                / "tests/fixtures/protocol/stable-0.171.0/assessment.json"
+            ).read_text(encoding="utf-8")
+        )
+        decision = next(
+            row["decision"]
+            for row in assessment["decisions"]
+            if row["surface"]
+            == "thread/list.includeAttachedThreads and thread/list.attachedToThreadId"
+        )
+        self.assertIn("Do not broaden the default Mission Control inventory", decision)
+        self.assertIn("separate attached-thread-list fixture", decision)
+
     def test_every_qualification_path_enforces_the_guard(self):
         for path in (
             ".github/workflows/ci.yml",
