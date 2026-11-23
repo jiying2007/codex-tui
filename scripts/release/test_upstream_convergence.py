@@ -196,6 +196,31 @@ class UpstreamConvergenceGuardTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("must not be claimed as L3-qualified", result.stderr)
 
+    def test_default_registry_does_not_scan_persisted_attached_threads(self):
+        source = (ROOT / "src/app_server/registry_sources.rs").read_text(
+            encoding="utf-8"
+        )
+        start = source.index("fn registry_query_params(")
+        end = source.index("pub(super) async fn load_registry_page(", start)
+        params = source[start:end]
+        self.assertNotIn('"attachedToThreadId"', params)
+        self.assertNotIn('"includeAttachedThreads"', params)
+
+        assessment = json.loads(
+            (
+                ROOT
+                / "tests/fixtures/protocol/stable-0.171.0/assessment.json"
+            ).read_text(encoding="utf-8")
+        )
+        decision = next(
+            row["decision"]
+            for row in assessment["decisions"]
+            if row["surface"]
+            == "thread/list.includeAttachedThreads and thread/list.attachedToThreadId"
+        )
+        self.assertIn("Do not broaden the default Mission Control inventory", decision)
+        self.assertIn("separate attached-thread-list fixture", decision)
+
     def test_every_qualification_path_enforces_the_guard(self):
         for path in (
             ".github/workflows/ci.yml",
