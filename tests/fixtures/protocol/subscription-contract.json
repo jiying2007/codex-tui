@@ -134,6 +134,33 @@
         "ThreadResumeParams",
         "ThreadUnsubscribeStatus"
       ]
+    },
+    {
+      "path": "codex-rs/app-server/tests/suite/v2/thread_resume.rs",
+      "gitBlobs": {
+        "rust-v0.171.0": "cd090af5fd538aaf5e1a0c931f85bd9d403709e8"
+      },
+      "urls": [
+        "https://github.com/openai/codex/blob/ccf9be8cc458bd6b8336fe84d68d8893f2691a5e/codex-rs/app-server/tests/suite/v2/thread_resume.rs"
+      ],
+      "symbols": [
+        "independent_cold_resumes_overlap",
+        "thread_resume_running_thread_uses_cached_instruction_sources"
+      ]
+    },
+    {
+      "path": "codex-rs/app-server/tests/suite/v2/thread_unsubscribe.rs",
+      "gitBlobs": {
+        "rust-v0.171.0": "f12de0067429c56e5a7d6d72bfd652b39b0eb02a"
+      },
+      "urls": [
+        "https://github.com/openai/codex/blob/ccf9be8cc458bd6b8336fe84d68d8893f2691a5e/codex-rs/app-server/tests/suite/v2/thread_unsubscribe.rs"
+      ],
+      "symbols": [
+        "thread_unsubscribe_keeps_thread_loaded_until_idle_timeout",
+        "thread_unsubscribe_during_turn_keeps_turn_running",
+        "thread_unsubscribe_reports_not_subscribed_before_idle_unload"
+      ]
     }
   ],
   "testEntryPoints": [
