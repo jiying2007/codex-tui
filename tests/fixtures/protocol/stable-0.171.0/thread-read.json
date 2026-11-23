@@ -1,0 +1,34 @@
+{
+  "thread": {
+    "id": "stable-0171-attached",
+    "name": "Attached session",
+    "preview": "Persistent side conversation",
+    "sessionId": "stable-0171-session",
+    "forkedFromId": "stable-0171-parent",
+    "attachedToThreadId": "stable-0171-parent",
+    "parentThreadId": null,
+    "updatedAt": 3,
+    "status": {"type": "idle"},
+    "cwd": "/fixtures/repo",
+    "source": "cli",
+    "turns": [
+      {
+        "id": "stable-0171-turn",
+        "status": "completed",
+        "items": [
+          {
+            "type": "userMessage",
+            "id": "stable-0171-user",
+            "content": [{"type": "text", "text": "Continue the attached session"}]
+          },
+          {
+            "type": "agentMessage",
+            "id": "stable-0171-agent",
+            "text": "Attached session response"
+          }
+        ]
+      }
+    ]
+  },
+  "readState": null
+}
