@@ -171,6 +171,31 @@ class UpstreamConvergenceGuardTests(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("maintenance-only capability set drifted", result.stderr)
 
+    def test_current_upstream_snapshot_is_required_and_exact(self):
+        snapshot = self.manifest["upstreamSnapshot"]
+        self.assertEqual(snapshot["repository"], "openai/codex")
+        self.assertEqual(snapshot["releaseTag"], "rust-v" + snapshot["cliVersion"])
+        self.assertEqual(snapshot["appServerStatus"], "experimental-not-l3-qualified")
+        result = self.check()
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+        del self.manifest["upstreamSnapshot"]["releaseCommit"]
+        result = self.check()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("releaseCommit", result.stderr)
+
+    def test_upstream_overlap_signals_cannot_be_silently_removed(self):
+        self.manifest["upstreamSnapshot"]["overlapSignals"].remove("codex-queue-stable")
+        result = self.check()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("upstream overlap evidence set drifted", result.stderr)
+
+    def test_upstream_app_server_must_remain_unqualified(self):
+        self.manifest["upstreamSnapshot"]["appServerStatus"] = "stable"
+        result = self.check()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("must not be claimed as L3-qualified", result.stderr)
+
     def test_every_qualification_path_enforces_the_guard(self):
         for path in (
             ".github/workflows/ci.yml",
