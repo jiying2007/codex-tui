@@ -21,7 +21,7 @@
     {
       "surface": "thread/list.includeAttachedThreads and thread/list.attachedToThreadId",
       "change": "The latest protocol adds explicit controls for attached-thread inclusion and lookup. Attached threads remain hidden from ordinary listings unless explicitly requested; includeAttachedThreads is constrained to title search.",
-      "decision": "Do not broaden the default Mission Control inventory or add a background attached-thread scan. Keep the current all-known-source request. Project an attached relation only when the authoritative target response actually contains that thread."
+      "decision": "Do not broaden the default Mission Control inventory or add a background attached-thread scan. Keep the current all-known-source request. The retained default thread/list fixture contains no attached rows; a separate attached-thread-list fixture represents an explicit attachedToThreadId lookup. Project an attached relation only when the authoritative target response actually contains that thread."
     },
     {
       "surface": "thread/list sourceKinds",
@@ -105,7 +105,9 @@
     "tests/protocol_replay.rs",
     "src/app/registry/groups.rs",
     "src/app_server/registry_sources.rs",
-    "scripts/release/test_upstream_codex_release_watch.py"
+    "scripts/release/test_upstream_codex_release_watch.py",
+    "tests/fixtures/protocol/stable-0.171.0/attached-thread-list.json",
+    "tests/fixtures/protocol/stable-0.171.0/lineage-negative.json"
   ],
   "remainingQualification": "Authenticated real App Server L3, real multi-Target use, and the centralized G1/G2/G3 field acceptance remain NOT QUALIFIED. G4 retirement remains blocked until that acceptance is completed."
 }
