@@ -1,0 +1,29 @@
+{
+  "data": [
+    {
+      "turnId": "stable-0171-turn",
+      "item": {
+        "type": "imageGeneration",
+        "id": "stable-0171-image",
+        "status": "completed",
+        "revisedPrompt": null,
+        "failure": null,
+        "generationId": "stable-0171-generation",
+        "fileId": "synthetic-stable-0171-file",
+        "inputImages": [],
+        "startedAtMs": 1000,
+        "completedAtMs": 2000
+      }
+    },
+    {
+      "turnId": "stable-0171-turn",
+      "item": {
+        "type": "agentMessage",
+        "id": "stable-0171-agent-after-image",
+        "text": "Text remains visible after the image item"
+      }
+    }
+  ],
+  "nextCursor": null,
+  "backwardsCursor": null
+}
