@@ -69,6 +69,7 @@ mod tests {
         assert_eq!(row.forked_from_id.as_deref(), Some("fork-source"));
         let json = serde_json::to_value(&row).unwrap();
         assert_eq!(json["modelProvider"], "provider");
+        assert_eq!(json["attachedToThreadId"], "attached-parent");
         assert!(json.get("resumeVerified").is_none());
     }
     #[test]
