@@ -1,7 +1,7 @@
 use codex_tui::{
     app::{Action, AppState, reduce},
     backend::CodexBackend,
-    codex_protocol::{normalize_thread, parse_thread_list},
+    codex_protocol::{ThreadWire, normalize_thread, parse_thread_list},
     conversation::{ConversationItemKind, parse_items_page, parse_legacy_thread_read},
     domain::{AttentionReason, RuntimeStatus, ThreadId},
     replay_backend::ReplayBackend,
@@ -132,6 +132,126 @@ fn stable_0_164_0_image_result_variants_keep_neighboring_history_and_pagination(
     }
     assert_eq!(items[2].kind, ConversationItemKind::Assistant);
     assert_eq!(items[2].text, "Text after images");
+}
+
+#[test]
+fn stable_0_171_0_registry_replays_parent_and_subagent_lineage() {
+    let mut replay = ReplayBackend::from_jsonl(include_str!(
+        "fixtures/protocol/stable-0.171.0/registry.jsonl"
+    ))
+    .expect("pinned 0.171.0 registry fixture");
+
+    let parent = replay.tick();
+    assert_eq!(parent.threads.len(), 1);
+    assert_eq!(parent.threads[0].id.0, "stable-0171-parent");
+
+    let child = replay.tick();
+    assert_eq!(child.threads.len(), 2);
+    let child = child
+        .threads
+        .iter()
+        .find(|thread| thread.id.0 == "stable-0171-subagent")
+        .expect("spawned subagent");
+    assert_eq!(
+        child.metadata.lineage.parent_thread_id.as_deref(),
+        Some("stable-0171-parent")
+    );
+    assert_eq!(
+        child.metadata.lineage.session_id.as_deref(),
+        Some("stable-0171-session")
+    );
+
+    let waiting = replay.tick();
+    let child = waiting
+        .threads
+        .iter()
+        .find(|thread| thread.id.0 == "stable-0171-subagent")
+        .expect("spawned subagent remains present");
+    assert_eq!(child.runtime, RuntimeStatus::WaitingHuman);
+    assert!(child.attention.contains(&AttentionReason::ApprovalRequired));
+}
+
+#[test]
+fn stable_0_171_0_thread_list_distinguishes_parent_attachment_and_fork() {
+    let value = serde_json::from_str(include_str!(
+        "fixtures/protocol/stable-0.171.0/thread-list.json"
+    ))
+    .expect("pinned 0.171.0 thread/list fixture");
+    let page = parse_thread_list(value).expect("additive attached-thread metadata");
+    assert_eq!(page.data.len(), 6);
+
+    let threads = page
+        .data
+        .into_iter()
+        .map(|thread| normalize_thread(thread, None))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        threads[1].metadata.lineage.parent_thread_id.as_deref(),
+        Some("stable-0171-parent")
+    );
+    assert_eq!(
+        threads[2].metadata.lineage.attached_to_thread_id.as_deref(),
+        Some("stable-0171-parent")
+    );
+    assert_eq!(
+        threads[2].metadata.lineage.forked_from_id.as_deref(),
+        Some("stable-0171-parent")
+    );
+    assert_eq!(
+        threads[3].metadata.lineage.forked_from_id.as_deref(),
+        Some("stable-0171-parent")
+    );
+    assert_eq!(
+        threads[3].metadata.lineage.attached_to_thread_id,
+        None
+    );
+
+    let app = AppState::new(threads);
+    let groups = app.registry_group_projection();
+    assert_eq!(groups[1].0, Some(0), "parentThreadId is a direct parent edge");
+    assert_eq!(
+        groups[2].0,
+        Some(0),
+        "attachedToThreadId is a distinct authoritative attachment edge"
+    );
+    assert_eq!(groups[3].0, None, "forkedFromId alone is not a parent edge");
+    assert_eq!(groups[4].0, None, "orphan parent must not be invented");
+    assert_eq!(groups[5].0, None, "conflicting relation fields fail closed");
+    assert_eq!(groups[0].1, 2);
+}
+
+#[test]
+fn stable_0_171_0_attached_thread_read_and_item_extensions_remain_compatible() {
+    let value: serde_json::Value = serde_json::from_str(include_str!(
+        "fixtures/protocol/stable-0.171.0/thread-read.json"
+    ))
+    .expect("pinned 0.171.0 thread/read fixture");
+    let wire: ThreadWire = serde_json::from_value(value["thread"].clone())
+        .expect("attached-thread metadata decodes");
+    let summary = normalize_thread(wire, None);
+    assert_eq!(
+        summary.metadata.lineage.attached_to_thread_id.as_deref(),
+        Some("stable-0171-parent")
+    );
+    assert_eq!(
+        summary.metadata.lineage.forked_from_id.as_deref(),
+        Some("stable-0171-parent")
+    );
+    let page = parse_legacy_thread_read(value, ThreadId::new("stable-0171-attached"))
+        .expect("additive attached-thread read response");
+    assert_eq!(page.title.as_deref(), Some("Attached session"));
+    assert_eq!(page.items.len(), 2);
+
+    let value = serde_json::from_str(include_str!(
+        "fixtures/protocol/stable-0.171.0/items.json"
+    ))
+    .expect("pinned 0.171.0 items fixture");
+    let (items, cursor) = parse_items_page(value).expect("additive image-generation metadata");
+    assert_eq!(cursor, None);
+    assert_eq!(items.len(), 2);
+    assert_eq!(items[0].kind, ConversationItemKind::Other);
+    assert_eq!(items[1].kind, ConversationItemKind::Assistant);
+    assert_eq!(items[1].text, "Text remains visible after the image item");
 }
 
 #[test]
