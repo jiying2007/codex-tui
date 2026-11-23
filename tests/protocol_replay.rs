@@ -172,53 +172,124 @@ fn stable_0_171_0_registry_replays_parent_and_subagent_lineage() {
 }
 
 #[test]
-fn stable_0_171_0_thread_list_distinguishes_parent_attachment_and_fork() {
+fn stable_0_171_0_default_thread_list_keeps_attached_threads_hidden() {
     let value = serde_json::from_str(include_str!(
         "fixtures/protocol/stable-0.171.0/thread-list.json"
     ))
-    .expect("pinned 0.171.0 thread/list fixture");
-    let page = parse_thread_list(value).expect("additive attached-thread metadata");
-    assert_eq!(page.data.len(), 6);
+    .expect("pinned 0.171.0 ordinary thread/list response");
+    let page = parse_thread_list(value).expect("ordinary registry response");
+    assert_eq!(page.data.len(), 3);
 
     let threads = page
         .data
         .into_iter()
         .map(|thread| normalize_thread(thread, None))
         .collect::<Vec<_>>();
+    assert_eq!(threads[0].id.0, "stable-0171-parent");
     assert_eq!(
         threads[1].metadata.lineage.parent_thread_id.as_deref(),
-        Some("stable-0171-parent")
-    );
-    assert_eq!(
-        threads[2].metadata.lineage.attached_to_thread_id.as_deref(),
         Some("stable-0171-parent")
     );
     assert_eq!(
         threads[2].metadata.lineage.forked_from_id.as_deref(),
         Some("stable-0171-parent")
     );
-    assert_eq!(
-        threads[3].metadata.lineage.forked_from_id.as_deref(),
-        Some("stable-0171-parent")
-    );
-    assert_eq!(threads[3].metadata.lineage.attached_to_thread_id, None);
+    assert_eq!(threads[2].metadata.lineage.parent_thread_id, None);
+    assert_eq!(threads[2].metadata.lineage.attached_to_thread_id, None);
 
     let app = AppState::new(threads);
     let groups = app.registry_group_projection();
+    assert_eq!(groups[1].0, Some(0), "parentThreadId is a direct subagent edge");
+    assert_eq!(groups[2].0, None, "forkedFromId alone is not a parent edge");
+    assert_eq!(groups[0].1, 1);
+}
+
+#[test]
+fn stable_0_171_0_explicit_attached_thread_lookup_preserves_distinct_relation() {
+    let default_value = serde_json::from_str(include_str!(
+        "fixtures/protocol/stable-0.171.0/thread-list.json"
+    ))
+    .expect("ordinary thread/list response");
+    let default_page = parse_thread_list(default_value).expect("ordinary registry response");
+    assert!(
+        default_page
+            .data
+            .iter()
+            .all(|thread| thread.id != "stable-0171-attached"),
+        "ordinary listing must keep persisted attached threads hidden"
+    );
+    let parent = normalize_thread(
+        default_page
+            .data
+            .into_iter()
+            .find(|thread| thread.id == "stable-0171-parent")
+            .expect("parent row"),
+        None,
+    );
+
+    // This response represents an explicit attachedToThreadId lookup. It is not
+    // merged into or implied by the default registry request.
+    let attached_value = serde_json::from_str(include_str!(
+        "fixtures/protocol/stable-0.171.0/attached-thread-list.json"
+    ))
+    .expect("explicit attached-thread lookup response");
+    let attached_page = parse_thread_list(attached_value).expect("attached-thread lookup response");
+    assert_eq!(attached_page.data.len(), 1);
+    let attached = normalize_thread(attached_page.data.into_iter().next().unwrap(), None);
     assert_eq!(
-        groups[1].0,
-        Some(0),
-        "parentThreadId is a direct parent edge"
+        attached.metadata.lineage.attached_to_thread_id.as_deref(),
+        Some("stable-0171-parent")
     );
     assert_eq!(
-        groups[2].0,
-        Some(0),
-        "attachedToThreadId is a distinct authoritative attachment edge"
+        attached.metadata.lineage.forked_from_id.as_deref(),
+        Some("stable-0171-parent")
     );
-    assert_eq!(groups[3].0, None, "forkedFromId alone is not a parent edge");
-    assert_eq!(groups[4].0, None, "orphan parent must not be invented");
-    assert_eq!(groups[5].0, None, "conflicting relation fields fail closed");
-    assert_eq!(groups[0].1, 2);
+    assert_eq!(attached.metadata.lineage.parent_thread_id, None);
+
+    // The pure projection can fold an explicitly observed attached row when a
+    // caller supplies it; this test does not enable a background/default scan.
+    let app = AppState::new(vec![parent, attached]);
+    let groups = app.registry_group_projection();
+    assert_eq!(groups[1].0, Some(0));
+    assert_eq!(groups[0].1, 1);
+}
+
+#[test]
+fn stable_0_171_0_orphan_and_conflicting_lineage_fail_closed() {
+    let default_value = serde_json::from_str(include_str!(
+        "fixtures/protocol/stable-0.171.0/thread-list.json"
+    ))
+    .expect("ordinary thread/list response");
+    let default_page = parse_thread_list(default_value).expect("ordinary registry response");
+    let parent = normalize_thread(
+        default_page
+            .data
+            .into_iter()
+            .find(|thread| thread.id == "stable-0171-parent")
+            .expect("parent row"),
+        None,
+    );
+
+    let negative_value = serde_json::from_str(include_str!(
+        "fixtures/protocol/stable-0.171.0/lineage-negative.json"
+    ))
+    .expect("synthetic negative lineage cases");
+    let negative_page = parse_thread_list(negative_value).expect("negative lineage response");
+    let mut threads = vec![parent];
+    threads.extend(
+        negative_page
+            .data
+            .into_iter()
+            .map(|thread| normalize_thread(thread, None)),
+    );
+    let app = AppState::new(threads);
+    let groups = app.registry_group_projection();
+    assert_eq!(groups[1].0, None, "missing parent must not be invented");
+    assert_eq!(
+        groups[2].0, None,
+        "conflicting parentThreadId and attachedToThreadId must fail closed"
+    );
+    assert_eq!(groups[0].1, 0);
 }
 
 #[test]
