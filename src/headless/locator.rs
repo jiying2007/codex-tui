@@ -15,6 +15,7 @@ pub(super) fn thread_row(thread: &ThreadSummary) -> ThreadRow {
         model_provider: thread.metadata.lineage.model_provider.clone(),
         session_id: thread.metadata.lineage.session_id.clone(),
         parent_thread_id: thread.metadata.lineage.parent_thread_id.clone(),
+        attached_to_thread_id: thread.metadata.lineage.attached_to_thread_id.clone(),
         forked_from_id: thread.metadata.lineage.forked_from_id.clone(),
         workspace: thread.workspace.clone(),
         title: thread.display_title().to_string(),
@@ -57,12 +58,14 @@ mod tests {
         thread.metadata.source = "exec".into();
         thread.metadata.lineage.session_id = Some("family".into());
         thread.metadata.lineage.parent_thread_id = Some("actual-parent".into());
+        thread.metadata.lineage.attached_to_thread_id = Some("attached-parent".into());
         thread.metadata.lineage.forked_from_id = Some("fork-source".into());
         thread.metadata.lineage.model_provider = Some("provider".into());
         let row = thread_row(&thread);
         assert_eq!(row.source_kind, "exec");
         assert_eq!(row.session_id.as_deref(), Some("family"));
         assert_eq!(row.parent_thread_id.as_deref(), Some("actual-parent"));
+        assert_eq!(row.attached_to_thread_id.as_deref(), Some("attached-parent"));
         assert_eq!(row.forked_from_id.as_deref(), Some("fork-source"));
         let json = serde_json::to_value(&row).unwrap();
         assert_eq!(json["modelProvider"], "provider");
@@ -73,6 +76,7 @@ mod tests {
         let thread = FakeBackend::seeded().snapshot().threads.remove(0);
         let value = serde_json::to_value(thread_row(&thread)).unwrap();
         assert!(value.get("parentThreadId").is_none());
+        assert!(value.get("attachedToThreadId").is_none());
         assert!(value.get("forkedFromId").is_none());
         assert!(value.get("modelProvider").is_none());
         assert!(value.get("sessionId").is_none());
