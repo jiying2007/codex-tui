@@ -152,7 +152,7 @@
     "src/headless/operator_local.rs": 71,
     "src/store/scoped.rs": 97,
     "src/app/operator_scope.rs": 315,
-    "src/headless/locator.rs": 84,
+    "src/headless/locator.rs": 85,
     "src/app_server/observed_scope.rs": 67,
     "src/notification/native.rs": 251,
     "src/ui/provenance.rs": 150,
@@ -1330,7 +1330,7 @@
     {
       "date": "2026-11-23",
       "kind": "g1-headless-attached-thread-lineage",
-      "scope": "Expose the exact optional attachedToThreadId relation in read-only headless thread snapshots alongside parentThreadId and forkedFromId. Preserve the three relations as distinct values, omit unavailable metadata, and add serialization regressions for present and absent values. No new Resume or write authority.",
+      "scope": "Expose the exact optional attachedToThreadId relation in read-only headless thread snapshots alongside parentThreadId and forkedFromId. Preserve the three relations as distinct values, omit unavailable metadata, and verify both the in-memory row and serialized camelCase JSON key for present and absent values. No new Resume or write authority.",
       "modules": [
         "src/headless/locator.rs"
       ],
