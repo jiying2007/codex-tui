@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 import sys
 
 from check_module_ratchet import inspect_plan
@@ -85,6 +86,63 @@ REQUIRED_CHANGE_POLICY = {
     "sourceOfTruth": "never-create-second-authority",
 }
 
+UPSTREAM_SNAPSHOT_SCHEMA = "codex-tui/upstream-snapshot/v1"
+REQUIRED_UPSTREAM_REPOSITORY = "openai/codex"
+REQUIRED_UPSTREAM_APP_SERVER_STATUS = "experimental-not-l3-qualified"
+REQUIRED_UPSTREAM_SIGNALS = {
+    "tui-workspace-default",
+    "native-subagent-transcripts",
+    "native-document-image-previews",
+    "codex-agents-stable",
+    "codex-queue-stable",
+    "attached-thread-relations",
+    "remote-cli-operations",
+}
+REQUIRED_UPSTREAM_DECISION = (
+    "mission-control-only; no duplicated conversation, agent, queue or terminal authority"
+)
+
+
+def validate_upstream_snapshot(manifest, failures):
+    snapshot = manifest.get("upstreamSnapshot")
+    if not isinstance(snapshot, dict):
+        failures.append("upstreamSnapshot must pin the current Codex CLI/App Server review")
+        return
+    if snapshot.get("schema") != UPSTREAM_SNAPSHOT_SCHEMA:
+        failures.append("upstreamSnapshot schema drifted")
+    if snapshot.get("repository") != REQUIRED_UPSTREAM_REPOSITORY:
+        failures.append("upstreamSnapshot repository must remain openai/codex")
+    version = snapshot.get("cliVersion")
+    if not isinstance(version, str) or not re.fullmatch(r"0\\.[0-9]+\\.[0-9]+", version):
+        failures.append("upstreamSnapshot cliVersion must be an exact stable 0.x.y version")
+    elif snapshot.get("releaseTag") != "rust-v" + version:
+        failures.append("upstreamSnapshot releaseTag must match the exact CLI version")
+    if not isinstance(snapshot.get("releaseDate"), str) or not re.fullmatch(
+        r"20[0-9]{2}-[0-9]{2}-[0-9]{2}", snapshot.get("releaseDate", "")
+    ):
+        failures.append("upstreamSnapshot releaseDate must be an ISO date")
+    if not isinstance(snapshot.get("releaseCommit"), str) or not re.fullmatch(
+        r"[0-9a-f]{40}", snapshot.get("releaseCommit", "")
+    ):
+        failures.append("upstreamSnapshot releaseCommit must be an exact lowercase Git SHA")
+    if (
+        not isinstance(snapshot.get("protocolAssessmentPath"), str)
+        or not snapshot["protocolAssessmentPath"].startswith("tests/fixtures/protocol/")
+        or not snapshot["protocolAssessmentPath"].endswith("/assessment.json")
+    ):
+        failures.append("upstreamSnapshot must point to a retained protocol assessment")
+    if snapshot.get("appServerStatus") != REQUIRED_UPSTREAM_APP_SERVER_STATUS:
+        failures.append("upstream App Server must not be claimed as L3-qualified")
+    signals = snapshot.get("overlapSignals")
+    if (
+        not isinstance(signals, list)
+        or len(signals) != len(set(signals))
+        or set(signals) != REQUIRED_UPSTREAM_SIGNALS
+    ):
+        failures.append("upstream overlap evidence set drifted")
+    if snapshot.get("productDecision") != REQUIRED_UPSTREAM_DECISION:
+        failures.append("upstream product decision must preserve Mission Control-only authority")
+
 
 def matches_prefix(path: str, prefix: str) -> bool:
     return (
@@ -111,6 +169,7 @@ def main() -> int:
         failures.append("Mission Control must remain the default product surface")
     if manifest.get("upstreamFirst") is not True:
         failures.append("upstreamFirst must remain true")
+    validate_upstream_snapshot(manifest, failures)
     if manifest.get("authorities") != REQUIRED_AUTHORITIES:
         failures.append("upstream authorities drifted; do not establish competing local state")
     if manifest.get("moduleRatchetAuthority") != RATCHET_AUTHORITY:
