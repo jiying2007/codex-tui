@@ -89,6 +89,11 @@
       "path": "codex-rs/app-server/tests/suite/v2/thread_unsubscribe.rs",
       "gitBlob": "f12de0067429c56e5a7d6d72bfd652b39b0eb02a",
       "url": "https://github.com/openai/codex/blob/ccf9be8cc458bd6b8336fe84d68d8893f2691a5e/codex-rs/app-server/tests/suite/v2/thread_unsubscribe.rs"
+    },
+    {
+      "path": "codex-rs/app-server-protocol/schema/json/v2/ThreadListResponse.json",
+      "gitBlob": "9cd75945f0050cdf7f8288f7b4e15a6330f61065",
+      "url": "https://github.com/openai/codex/blob/ccf9be8cc458bd6b8336fe84d68d8893f2691a5e/codex-rs/app-server-protocol/schema/json/v2/ThreadListResponse.json"
     }
   ],
   "references": [
