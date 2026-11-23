@@ -1,0 +1,85 @@
+{
+  "data": [
+    {
+      "id": "stable-0171-parent",
+      "name": "Parent session",
+      "preview": "Cross-repo implementation",
+      "sessionId": "stable-0171-session",
+      "forkedFromId": null,
+      "attachedToThreadId": null,
+      "parentThreadId": null,
+      "updatedAt": 1,
+      "status": {"type": "idle"},
+      "cwd": "/fixtures/repo",
+      "source": "cli"
+    },
+    {
+      "id": "stable-0171-subagent",
+      "name": "Subagent",
+      "preview": "Inspect MCU interface",
+      "sessionId": "stable-0171-session",
+      "forkedFromId": null,
+      "attachedToThreadId": null,
+      "parentThreadId": "stable-0171-parent",
+      "updatedAt": 2,
+      "status": {"type": "idle"},
+      "cwd": "/fixtures/repo",
+      "source": {"subAgent": {"thread_spawn": {"parent_thread_id": "stable-0171-parent", "depth": 1, "agent_role": "developer"}}}
+    },
+    {
+      "id": "stable-0171-attached",
+      "name": "Attached session",
+      "preview": "Persistent side conversation",
+      "sessionId": "stable-0171-session",
+      "forkedFromId": "stable-0171-parent",
+      "attachedToThreadId": "stable-0171-parent",
+      "parentThreadId": null,
+      "updatedAt": 3,
+      "status": {"type": "idle"},
+      "cwd": "/fixtures/repo",
+      "source": "cli"
+    },
+    {
+      "id": "stable-0171-fork-only",
+      "name": "Independent fork",
+      "preview": "Forked but not attached",
+      "sessionId": "stable-0171-session",
+      "forkedFromId": "stable-0171-parent",
+      "attachedToThreadId": null,
+      "parentThreadId": null,
+      "updatedAt": 4,
+      "status": {"type": "idle"},
+      "cwd": "/fixtures/repo",
+      "source": "cli"
+    },
+    {
+      "id": "stable-0171-orphan",
+      "name": "Orphan subagent",
+      "preview": "Parent is absent",
+      "sessionId": "stable-0171-session",
+      "forkedFromId": null,
+      "attachedToThreadId": null,
+      "parentThreadId": "missing-parent",
+      "updatedAt": 5,
+      "status": {"type": "idle"},
+      "cwd": "/fixtures/repo",
+      "source": {"subAgent": {"thread_spawn": {"parent_thread_id": "missing-parent", "depth": 1}}}
+    },
+    {
+      "id": "stable-0171-conflict",
+      "name": "Conflicting relation",
+      "preview": "Conflicting parent and attachment",
+      "sessionId": "stable-0171-session",
+      "forkedFromId": null,
+      "attachedToThreadId": "another-parent",
+      "parentThreadId": "stable-0171-parent",
+      "updatedAt": 6,
+      "status": {"type": "idle"},
+      "cwd": "/fixtures/repo",
+      "source": "cli"
+    }
+  ],
+  "readStates": null,
+  "nextCursor": null,
+  "backwardsCursor": null
+}
