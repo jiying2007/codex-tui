@@ -147,5 +147,25 @@
     "upstreamOverlap": "prefer-delete-reduce-or-project",
     "sourceOfTruth": "never-create-second-authority"
   },
-  "moduleRatchetAuthority": "release/v1.4-plan.json"
+  "moduleRatchetAuthority": "release/v1.4-plan.json",
+  "upstreamSnapshot": {
+    "schema": "codex-tui/upstream-snapshot/v1",
+    "repository": "openai/codex",
+    "cliVersion": "0.171.0",
+    "releaseTag": "rust-v0.171.0",
+    "releaseDate": "2026-11-20",
+    "releaseCommit": "ccf9be8cc458bd6b8336fe84d68d8893f2691a5e",
+    "protocolAssessmentPath": "tests/fixtures/protocol/stable-0.171.0/assessment.json",
+    "appServerStatus": "experimental-not-l3-qualified",
+    "overlapSignals": [
+      "tui-workspace-default",
+      "native-subagent-transcripts",
+      "native-document-image-previews",
+      "codex-agents-stable",
+      "codex-queue-stable",
+      "attached-thread-relations",
+      "remote-cli-operations"
+    ],
+    "productDecision": "mission-control-only; no duplicated conversation, agent, queue or terminal authority"
+  }
 }
