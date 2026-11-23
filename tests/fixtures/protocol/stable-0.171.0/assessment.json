@@ -1,0 +1,96 @@
+{
+  "schema": "codex-tui/upstream-protocol-review/v1",
+  "reviewedOn": "2026-11-23",
+  "repository": "openai/codex",
+  "fromTag": "rust-v0.164.0",
+  "releaseTag": "rust-v0.171.0",
+  "releaseCommit": "ccf9be8cc458bd6b8336fe84d68d8893f2691a5e",
+  "releaseDate": "2026-11-20",
+  "tagSignatureVerified": false,
+  "authority": "pinned public release tag and commit-specific source review with synthetic production-parser replay; the tag is unsigned",
+  "realAccountQualified": false,
+  "l3Qualified": false,
+  "stableQualified": false,
+  "scope": "Review App Server Thread lineage, attached-thread list semantics, thread listener/resume/unsubscribe lifecycle, and Codex CLI overlap. This is not a complete upstream implementation audit or a live interoperability claim.",
+  "decisions": [
+    {
+      "surface": "Thread.sessionId, parentThreadId, attachedToThreadId, forkedFromId",
+      "change": "Thread now exposes attachedToThreadId as an independent persisted-attachment relation. parentThreadId remains the direct subagent parent; forkedFromId remains the fork source. The three relations have distinct semantics.",
+      "decision": "Preserve all fields. Group only by an exact observed parentThreadId or attachedToThreadId edge in the same active Target and consistent session tree. Never infer a parent from sessionId or forkedFromId. Orphan, conflicting, cyclic and cross-session edges remain ungrouped."
+    },
+    {
+      "surface": "thread/list.includeAttachedThreads and thread/list.attachedToThreadId",
+      "change": "The latest protocol adds explicit controls for attached-thread inclusion and lookup. Attached threads remain hidden from ordinary listings unless explicitly requested; includeAttachedThreads is constrained to title search.",
+      "decision": "Do not broaden the default Mission Control inventory or add a background attached-thread scan. Keep the current all-known-source request. Project an attached relation only when the authoritative target response actually contains that thread."
+    },
+    {
+      "surface": "thread/list sourceKinds",
+      "change": "The known source-kind set remains cli, vscode, exec, appServer, subAgent, subAgentReview, subAgentCompact, subAgentThreadSpawn, subAgentOther and unknown.",
+      "decision": "The existing registry request already includes every known kind and degrades to an explicitly PARTIAL inventory when a target rejects the filter. No source-kind implementation change is required."
+    },
+    {
+      "surface": "thread/resume, thread/unsubscribe and listener lifecycle",
+      "change": "The server adds stronger synchronization between cold resume, listener startup, unload and terminal unsubscribe cleanup. thread/unsubscribe retains notLoaded, notSubscribed and unsubscribed statuses.",
+      "decision": "Keep explicit per-connection resume, exact request/Thread routing, release cleanup after uncertain outcomes and no automatic reconnect. Treat the internal listener changes as upstream-owned; do not copy their lifecycle implementation."
+    },
+    {
+      "surface": "Codex CLI native workspace and agent surfaces",
+      "change": "Codex CLI 0.171.0 makes the TUI Workspace the default and adds native document/image previews and subagent transcripts; codex agents and codex queue are documented as Stable.",
+      "decision": "Keep the local conversation client, Queue UI and embedded terminal maintenance-only. Mission Control remains differentiated by cross-repository/cross-Target discovery, Attention, Forge and derived WorkCard projections; do not recreate native conversation or agent orchestration."
+    },
+    {
+      "surface": "App Server qualification",
+      "change": "The official App Server remains Experimental.",
+      "decision": "Pinned schema/source review and synthetic replay are protocol-shape evidence only. Authenticated real-target L3 and user field acceptance remain NOT QUALIFIED."
+    }
+  ],
+  "sources": [
+    {
+      "path": "codex-rs/app-server-protocol/src/protocol/v2/thread_data.rs",
+      "gitBlob": "33aa92edd35f2269056fa2338053c1679033945d",
+      "url": "https://github.com/openai/codex/blob/ccf9be8cc458bd6b8336fe84d68d8893f2691a5e/codex-rs/app-server-protocol/src/protocol/v2/thread_data.rs"
+    },
+    {
+      "path": "codex-rs/app-server-protocol/src/protocol/v2/thread.rs",
+      "gitBlob": "0f2bb10f5e73662c8b7286989f3bfa5265e79274",
+      "url": "https://github.com/openai/codex/blob/ccf9be8cc458bd6b8336fe84d68d8893f2691a5e/codex-rs/app-server-protocol/src/protocol/v2/thread.rs"
+    },
+    {
+      "path": "codex-rs/app-server/src/request_processors/thread_lifecycle.rs",
+      "gitBlob": "f95d09f8cc474c8cbeb412c2c08604e27ac46505",
+      "url": "https://github.com/openai/codex/blob/ccf9be8cc458bd6b8336fe84d68d8893f2691a5e/codex-rs/app-server/src/request_processors/thread_lifecycle.rs"
+    },
+    {
+      "path": "codex-rs/app-server/src/request_processors/thread_processor.rs",
+      "gitBlob": "333c1c70bcdadafd0be25db74493f752dab62319",
+      "url": "https://github.com/openai/codex/blob/ccf9be8cc458bd6b8336fe84d68d8893f2691a5e/codex-rs/app-server/src/request_processors/thread_processor.rs"
+    },
+    {
+      "path": "codex-rs/app-server/tests/suite/v2/attached_thread_tests.rs",
+      "gitBlob": "dba370070291fba09aefd7eb30728c09852f9280",
+      "url": "https://github.com/openai/codex/blob/ccf9be8cc458bd6b8336fe84d68d8893f2691a5e/codex-rs/app-server/tests/suite/v2/attached_thread_tests.rs"
+    },
+    {
+      "path": "codex-rs/tui/src/app/agents_overview_discovery.rs",
+      "gitBlob": "5be6dcc594cda4f6d11ae59af70e26f027bc5730",
+      "url": "https://github.com/openai/codex/blob/ccf9be8cc458bd6b8336fe84d68d8893f2691a5e/codex-rs/tui/src/app/agents_overview_discovery.rs"
+    },
+    {
+      "path": "codex-rs/app-server-protocol/schema/json/v2/ThreadListParams.json",
+      "gitBlob": "44e5c75f96f4db2910de431c368ff4583c8e8ad6",
+      "url": "https://github.com/openai/codex/blob/ccf9be8cc458bd6b8336fe84d68d8893f2691a5e/codex-rs/app-server-protocol/schema/json/v2/ThreadListParams.json"
+    }
+  ],
+  "references": [
+    "https://developers.openai.com/codex/changelog",
+    "https://developers.openai.com/codex/cli/reference",
+    "https://developers.openai.com/codex/app-server"
+  ],
+  "testEntryPoints": [
+    "tests/protocol_replay.rs",
+    "src/app/registry/groups.rs",
+    "src/app_server/registry_sources.rs",
+    "scripts/release/test_upstream_codex_release_watch.py"
+  ],
+  "remainingQualification": "Authenticated real App Server L3, real multi-Target use, and the centralized G1/G2/G3 field acceptance remain NOT QUALIFIED. G4 retirement remains blocked until that acceptance is completed."
+}
