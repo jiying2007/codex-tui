@@ -66,6 +66,16 @@
       "id": "stable-0.171.0-items",
       "path": "tests/fixtures/protocol/stable-0.171.0/items.json",
       "expectation": "pass"
+    },
+    {
+      "id": "stable-0.171.0-explicit-attached-thread-list",
+      "path": "tests/fixtures/protocol/stable-0.171.0/attached-thread-list.json",
+      "expectation": "pass"
+    },
+    {
+      "id": "stable-0.171.0-lineage-negative",
+      "path": "tests/fixtures/protocol/stable-0.171.0/lineage-negative.json",
+      "expectation": "synthetic-fail-closed"
     }
   ],
   "upstreamBaseline": {
