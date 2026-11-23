@@ -113,7 +113,7 @@ def validate_upstream_snapshot(manifest, failures):
     if snapshot.get("repository") != REQUIRED_UPSTREAM_REPOSITORY:
         failures.append("upstreamSnapshot repository must remain openai/codex")
     version = snapshot.get("cliVersion")
-    if not isinstance(version, str) or not re.fullmatch(r"0\\.[0-9]+\\.[0-9]+", version):
+    if not isinstance(version, str) or not re.fullmatch(r"0\.[0-9]+\.[0-9]+", version):
         failures.append("upstreamSnapshot cliVersion must be an exact stable 0.x.y version")
     elif snapshot.get("releaseTag") != "rust-v" + version:
         failures.append("upstreamSnapshot releaseTag must match the exact CLI version")
@@ -136,6 +136,7 @@ def validate_upstream_snapshot(manifest, failures):
     signals = snapshot.get("overlapSignals")
     if (
         not isinstance(signals, list)
+        or any(not isinstance(signal, str) for signal in signals)
         or len(signals) != len(set(signals))
         or set(signals) != REQUIRED_UPSTREAM_SIGNALS
     ):
