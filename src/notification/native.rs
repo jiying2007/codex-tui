@@ -1,8 +1,6 @@
 //! Native session notification edges; non-session legacy cards remain separate.
 use super::*;
-use crate::{
-    app::AppState, conversation::InteractiveRequestKind, planning::SourceKind,
-};
+use crate::{app::AppState, conversation::InteractiveRequestKind, planning::SourceKind};
 
 impl NotificationObservation {
     pub fn from_app(app: &AppState) -> Self {
@@ -144,9 +142,17 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].kind, NotificationKind::BudgetLimited);
         assert_eq!(events[0].item_id, id.0);
-        assert!(tracker.advance(NotificationObservation::from_app(&app)).is_empty());
+        assert!(
+            tracker
+                .advance(NotificationObservation::from_app(&app))
+                .is_empty()
+        );
         app.goals.clear();
-        assert!(tracker.advance(NotificationObservation::from_app(&app)).is_empty());
+        assert!(
+            tracker
+                .advance(NotificationObservation::from_app(&app))
+                .is_empty()
+        );
     }
 
     #[test]

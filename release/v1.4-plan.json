@@ -148,7 +148,7 @@
     "user-perceived-performance-evidence"
   ],
   "moduleRatchet": {
-    "src/app/session_attention.rs": 130,
+    "src/app/session_attention.rs": 132,
     "src/session_attention.rs": 113,
     "src/ui/target_lookup.rs": 153,
     "src/runtime_target_lookup.rs": 194,
@@ -160,7 +160,7 @@
     "src/headless/multi_target.rs": 365,
     "src/headless/locator.rs": 88,
     "src/app_server/observed_scope.rs": 67,
-    "src/notification/native.rs": 269,
+    "src/notification/native.rs": 275,
     "src/ui/provenance.rs": 150,
     "src/codex_protocol/status_tests.rs": 34,
     "src/app/registry/groups.rs": 337,
@@ -311,7 +311,7 @@
     "src/app/reducer.rs": 2692,
     "src/app/state.rs": 871,
     "src/app/shortcuts.rs": 65,
-    "src/app/tests.rs": 3429,
+    "src/app/tests.rs": 3439,
     "src/app/thread_queue_reducer_tests.rs": 132,
     "src/ui/tests.rs": 1332,
     "src/sqlite_store/tests.rs": 1098,
@@ -363,7 +363,7 @@
     "src/ui/thread/request_details.rs": 37,
     "src/ui/thread/request_details_tests.rs": 120,
     "src/app/registry.rs": 117,
-    "src/app/registry/tests.rs": 278,
+    "src/app/registry/tests.rs": 284,
     "src/headless/options.rs": 101,
     "src/headless/source.rs": 132,
     "src/headless/surfaces/presentation.rs": 139,
@@ -1418,6 +1418,7 @@
       "kind": "g4-native-session-attention",
       "scope": "Derive native session attention and notifications from original observations rather than WorkCard projections; index existing local preference facts without a new persisted state.",
       "modules": [
+        "src/app/tests.rs",
         "src/lib.rs",
         "src/planning.rs",
         "src/app.rs",

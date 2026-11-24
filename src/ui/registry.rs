@@ -205,8 +205,8 @@ fn thread_list(app: &AppState, area: Rect) -> (Paragraph<'static>, RegistryViewp
             .any(|request| request.thread_id == thread.id);
         let needs_attention = app.thread_needs_attention(index);
         let observed = app.session_attention_reasons(thread);
-        let snoozed_attention = (!observed.is_empty() || pending_interactive)
-            && app.session_attention_snoozed(thread);
+        let snoozed_attention =
+            (!observed.is_empty() || pending_interactive) && app.session_attention_snoozed(thread);
         let attention = if needs_attention {
             let mut reasons = thread
                 .attention

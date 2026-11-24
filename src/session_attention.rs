@@ -77,10 +77,10 @@ pub(crate) fn observed_reasons(
         _ => {}
     }
     let branch = git.and_then(|git| git.branch.as_deref());
-    let change_request = branch
-        .and_then(|branch| forge.and_then(|forge| forge.change_request_for_branch(branch)));
-    let pipeline = branch
-        .and_then(|branch| forge.and_then(|forge| forge.pipeline_for_branch(branch)));
+    let change_request =
+        branch.and_then(|branch| forge.and_then(|forge| forge.change_request_for_branch(branch)));
+    let pipeline =
+        branch.and_then(|branch| forge.and_then(|forge| forge.pipeline_for_branch(branch)));
     if pipeline.is_some_and(|pipeline| pipeline.status.eq_ignore_ascii_case("failed")) {
         reasons.insert(R::PipelineFailed);
     }

@@ -40,7 +40,9 @@ impl AppState {
             let until = card.overlay.snooze_until_unix_ms;
             let done = card.overlay.done_at_unix_ms.is_some();
             if until.is_some() || done {
-                policy.overlays.insert(card.anchor.value.clone(), (until, done));
+                policy
+                    .overlays
+                    .insert(card.anchor.value.clone(), (until, done));
                 if let Some(until) = until {
                     policy.deadlines.insert(until);
                 }

@@ -187,7 +187,10 @@ fn observed_goal_attention_survives_recent_window_and_acknowledgment() {
         GoalStatus::BudgetLimited,
     ] {
         observe_goal(&mut app, 149, status);
-        assert!(app.thread_needs_attention(149), "live goal before Board projection");
+        assert!(
+            app.thread_needs_attention(149),
+            "live goal before Board projection"
+        );
         reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 1 });
         assert!(app.thread_needs_attention(149), "{status:?}");
         assert_eq!(app.visible_indices()[0], 149);
@@ -269,7 +272,10 @@ fn observed_failures_do_not_depend_on_work_cards_or_stale_projections() {
     );
     reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 1 });
     app.forge_observations.clear();
-    assert!(!app.thread_needs_attention(0), "stale Board failure is not authority");
+    assert!(
+        !app.thread_needs_attention(0),
+        "stale Board failure is not authority"
+    );
 
     observe_goal(&mut app, 0, GoalStatus::BudgetLimited);
     assert!(app.thread_needs_attention(0));

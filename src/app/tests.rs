@@ -2345,6 +2345,8 @@ fn collision_is_derived_from_active_threads_sharing_one_worktree() {
     let mut app = app();
     app.threads[0].runtime = RuntimeStatus::Working;
     app.threads[1].runtime = RuntimeStatus::WaitingHuman;
+    app.threads[0].metadata.cwd = "/repo".into();
+    app.threads[1].metadata.cwd = "/repo".into();
 
     let repo = crate::domain::LocalRepoIdentity {
         git_common_dir: "/repo/.git".into(),
@@ -2363,9 +2365,17 @@ fn collision_is_derived_from_active_threads_sharing_one_worktree() {
         app.git_contexts.insert(thread_id.into(), context);
     }
 
-    assert_eq!(
-        app.worktree_collision_count(&ThreadId::new("thread-impl")),
-        1
+    let id = ThreadId::new("thread-impl");
+    assert_eq!(app.worktree_collision_count(&id), 1);
+    app.refresh_session_collisions();
+    assert_eq!(app.worktree_collision_count(&id), 1);
+    let mut threads = app.threads.clone();
+    threads[1].metadata.cwd = "/other".into();
+    reduce(&mut app, Action::ReplaceThreads(threads));
+    assert_eq!(app.worktree_collision_count(&id), 0);
+    assert!(
+        !app.session_attention_reasons(&app.threads[0])
+            .contains(&crate::session_attention::SessionAttentionReason::ConflictRisk)
     );
 }
 
