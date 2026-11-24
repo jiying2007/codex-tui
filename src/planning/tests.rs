@@ -1,5 +1,6 @@
 use super::*;
 use crate::backend::{CodexBackend, FakeBackend};
+use crate::domain::AttentionReason;
 
 fn first_thread() -> ThreadSummary {
     FakeBackend::seeded().snapshot().threads.remove(0)

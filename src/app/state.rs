@@ -782,24 +782,32 @@ impl AppState {
         let Some(context) = self.git_context(thread_id) else {
             return 0;
         };
+        if context.error.is_some()
+            || self
+                .thread_by_id(thread_id)
+                .is_none_or(|thread| thread.metadata.cwd != context.cwd)
+        {
+            return 0;
+        }
         let Some(worktree) = context.worktree.as_ref() else {
             return 0;
         };
-        self.threads
-            .iter()
-            .filter(|thread| {
-                thread.id != *thread_id
-                    && matches!(
-                        thread.runtime,
-                        RuntimeStatus::Working | RuntimeStatus::WaitingHuman
-                    )
-                    && self
-                        .git_context(&thread.id)
-                        .and_then(|other| other.worktree.as_ref())
-                        .is_some_and(|other| {
-                            other.canonical_path == worktree.canonical_path
-                                && other.repo == worktree.repo
-                        })
+        self.git_contexts
+            .values()
+            .filter(|other| {
+                other.thread_id != *thread_id
+                    && other.error.is_none()
+                    && self.thread_by_id(&other.thread_id).is_some_and(|thread| {
+                        thread.metadata.cwd == other.cwd
+                            && matches!(
+                                thread.runtime,
+                                RuntimeStatus::Working | RuntimeStatus::WaitingHuman
+                            )
+                    })
+                    && other.worktree.as_ref().is_some_and(|other| {
+                        other.canonical_path == worktree.canonical_path
+                            && other.repo == worktree.repo
+                    })
             })
             .count()
     }

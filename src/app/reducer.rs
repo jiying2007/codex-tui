@@ -128,6 +128,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
             state.threads = threads;
             state.rebuild_thread_indexes();
+            state.refresh_session_collisions();
             state.reconcile_cwd_locality_cache(state.host_local_only || state.repo_backed_only);
             restore_selection(state, selected_id);
         }
@@ -161,6 +162,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                     .insert(context.cwd.clone(), CwdLocality::LocalDirectory);
             }
             propagate_git_context(state, context);
+            state.refresh_session_collisions();
             ensure_selection_visible(state);
         }
         Action::ForgeObservationLoaded(observation) => {

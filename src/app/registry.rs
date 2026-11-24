@@ -21,8 +21,6 @@ impl AppState {
             .filter(|request| !self.thread_index_by_id.contains_key(&request.thread_id.0))
             .count()
     }
-
-
 }
 
 pub(super) fn ensure_selection_visible(state: &mut AppState) {

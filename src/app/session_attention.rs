@@ -14,6 +14,21 @@ pub(super) struct LegacyAttentionPolicy {
 }
 
 impl AppState {
+    // Keep collision facts current on registry/Git events, even if the Board
+    // worker is stopped or an old projection is still awaiting admission.
+    pub(super) fn refresh_session_collisions(&mut self) {
+        let active = super::active_worktree_counts(self);
+        self.worktree_collision_counts = self
+            .git_contexts
+            .keys()
+            .filter_map(|id| {
+                let thread = self.thread_by_id(&super::ThreadId::new(id.clone()))?;
+                let count = super::collision_count_from_active_worktrees(self, thread, &active);
+                Some((id.clone(), count))
+            })
+            .collect();
+    }
+
     pub(super) fn refresh_session_attention_policy(&mut self) {
         let policy = &mut self.session_attention_policy;
         policy.overlays.clear();

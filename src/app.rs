@@ -705,6 +705,7 @@ fn active_worktree_counts(state: &AppState) -> BTreeMap<(LocalRepoIdentity, Stri
             continue;
         };
         if context.cwd != thread.metadata.cwd
+            || context.error.is_some()
             || !matches!(
                 thread.runtime,
                 RuntimeStatus::Working | RuntimeStatus::WaitingHuman
@@ -729,6 +730,7 @@ fn collision_count_from_active_worktrees(
 ) -> usize {
     let Some(worktree) = state
         .git_context(&thread.id)
+        .filter(|context| context.cwd == thread.metadata.cwd && context.error.is_none())
         .and_then(|context| context.worktree.as_ref())
     else {
         return 0;
