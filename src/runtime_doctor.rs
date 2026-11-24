@@ -22,12 +22,15 @@ macro_rules! doctor_println {
 
 /// Count all unresolved receipts, including ones outside the recent display.
 fn unresolved_counts(states: impl Iterator<Item = OperationState>) -> (usize, usize, usize) {
-    states.fold((0, 0, 0), |(planned, executing, unknown), state| match state {
-        OperationState::Planned => (planned + 1, executing, unknown),
-        OperationState::Executing => (planned, executing + 1, unknown),
-        OperationState::OutcomeUnknown => (planned, executing, unknown + 1),
-        OperationState::Succeeded | OperationState::Failed => (planned, executing, unknown),
-    })
+    states.fold(
+        (0, 0, 0),
+        |(planned, executing, unknown), state| match state {
+            OperationState::Planned => (planned + 1, executing, unknown),
+            OperationState::Executing => (planned, executing + 1, unknown),
+            OperationState::OutcomeUnknown => (planned, executing, unknown + 1),
+            OperationState::Succeeded | OperationState::Failed => (planned, executing, unknown),
+        },
+    )
 }
 
 pub(crate) async fn doctor(scope: Option<&str>, target_override: Option<&str>) -> Result<i32> {
@@ -133,9 +136,7 @@ pub(crate) async fn doctor(scope: Option<&str>, target_override: Option<&str>) -
                     }
                     Err(error) => {
                         degraded = true;
-                        doctor_println!(
-                            "unresolved-forge-mutation-receipts: DEGRADED · {error:#}"
-                        );
+                        doctor_println!("unresolved-forge-mutation-receipts: DEGRADED · {error:#}");
                     }
                 }
                 match store.load_recent_operation_receipts(10) {

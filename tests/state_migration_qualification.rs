@@ -436,7 +436,9 @@ fn retirement_backup_retains_all_historical_receipts_and_manual_references() {
         for receipt in &operations {
             assert!(unresolved.contains(receipt));
         }
-        let unresolved = candidate.load_recoverable_forge_mutation_receipts().unwrap();
+        let unresolved = candidate
+            .load_recoverable_forge_mutation_receipts()
+            .unwrap();
         assert_eq!(unresolved.len(), forge.len());
         for receipt in &forge {
             assert!(unresolved.contains(receipt));
