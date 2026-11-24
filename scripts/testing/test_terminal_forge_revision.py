@@ -1,14 +1,16 @@
-"""Fail-closed contract tests for the actual-program Forge observer, including -O."""
+"""Fail-closed checks for the retired Forge routes, including Python -O."""
 import copy
-import json
 import unittest
-from forge_revision_regression import CASES, SHA_A, SHA_B, registry_visible, validate_outcome
+from forge_revision_regression import CASES, registry_visible, validate_read_only
 
 
 class ForgeAssertions(unittest.TestCase):
     def test_exact_unique_case_coverage(self):
-        self.assertEqual(len(CASES), 22)
-        self.assertEqual(len(set(CASES)), 22)
+        self.assertEqual(set(CASES), {
+            'github-approve-control', 'github-approve-missing',
+            'gitlab-approve-control', 'gitlab-approve-missing',
+        })
+        self.assertEqual(len(CASES), 4)
 
     def test_exit_requires_the_observed_single_thread_registry(self):
         self.assertTrue(registry_visible('Mission Control\n0 need attention · 1 total · rows 1-1/1'))
@@ -18,36 +20,41 @@ class ForgeAssertions(unittest.TestCase):
             with self.subTest(screen=screen):
                 self.assertFalse(registry_visible(screen))
 
-    def fixture(self, state='succeeded'):
-        rows = [{'state':state, 'plan_json':json.dumps({'preconditions':[
-            {'key':'confirmed-head-sha', 'expected':SHA_A}]})}]
-        trace = [{'method':'POST','fields':{'commit_id':SHA_A},'supported':True}]
-        return rows, trace
+    def fixture(self, provider='github'):
+        endpoint = ('/repos/fixture/isolated/pulls?per_page=100' if provider == 'github'
+                    else '/projects/123/merge_requests?per_page=100')
+        trace = [{'method':'GET', 'endpoint':endpoint, 'supported':True}]
+        return [], trace, [['--version'], ['api', '--method', 'GET', endpoint]]
 
-    def test_healthy_and_unknown_controls(self):
-        rows, trace = self.fixture()
-        self.assertEqual(validate_outcome(rows,trace,'control')['writeCount'],1)
-        rows[0]['state']='outcome-unknown'
-        validate_outcome(rows,trace,'after')
-        rows[0]['state']='failed'
-        validate_outcome(rows,[],'before')
+    def test_read_only_controls(self):
+        for provider in ('github', 'gitlab'):
+            rows, trace, calls = self.fixture(provider)
+            self.assertEqual(validate_read_only(rows, trace, calls, provider),
+                             {'writeCount':0, 'receiptCount':0, 'readCount':1})
 
-    def test_unknown_outcome_cannot_be_reported_as_success(self):
-        rows, trace = self.fixture()
-        for mode in ('after','uncertain','wrong-review'):
-            with self.subTest(mode=mode), self.assertRaises(RuntimeError):
-                validate_outcome(rows,trace,mode)
+    def test_missing_read_or_new_receipt_is_not_success(self):
+        rows, trace, calls = self.fixture()
+        for bad_rows, bad_trace, bad_calls in (
+                ([{'state':'pending'}], trace, calls),
+                (rows, [], calls), (rows, trace, [])):
+            with self.subTest(rows=bad_rows, trace=bad_trace, calls=bad_calls):
+                with self.assertRaises(RuntimeError):
+                    validate_read_only(bad_rows, bad_trace, bad_calls, 'github')
+        with self.assertRaises(RuntimeError):
+            validate_read_only(rows, trace, calls, 'gitlab')
 
-    def test_retarget_missing_plan_replay_and_unsupported_shims_are_rejected(self):
-        rows, trace = self.fixture()
-        variants = [(rows,[]), (rows,trace*2), ([],trace), (rows*2,trace)]
-        moved = copy.deepcopy(trace); moved[0]['fields']['commit_id']=SHA_B
-        unknown = copy.deepcopy(trace); unknown[0]['supported']=False
-        missing = copy.deepcopy(rows); missing[0]['plan_json']='{"preconditions":[]}'
-        variants.extend([(rows,moved),(rows,unknown),(missing,trace)])
-        for bad_rows, bad_trace in variants:
-            with self.subTest(rows=bad_rows,trace=bad_trace), self.assertRaises(RuntimeError):
-                validate_outcome(bad_rows,bad_trace,'control')
+    def test_write_unsupported_request_and_unlogged_mutation_are_rejected(self):
+        rows, trace, calls = self.fixture()
+        for method, supported in (('POST', True), ('PUT', True), ('GET', False)):
+            altered = copy.deepcopy(trace)
+            altered[0].update(method=method, supported=supported)
+            with self.assertRaises(RuntimeError):
+                validate_read_only(rows, altered, calls, 'github')
+        for command in (['pr', 'merge', '7'], ['api', '-XPOST', '/write'],
+                        ['api', '--method=PUT', '/write'], ['api', '--method', 'DELETE', '/write'],
+                        ['api', '--method']):
+            with self.subTest(command=command), self.assertRaises(RuntimeError):
+                validate_read_only(rows, trace, calls+[command], 'github')
 
 
 if __name__ == '__main__': unittest.main()

@@ -306,7 +306,7 @@ fn cross_view_watch_effects_reach_the_actual_backend() {
 }
 
 #[test]
-fn forge_confirmation_and_readback_remain_bound_to_the_reviewed_revision() {
+fn retired_forge_actions_preserve_read_only_review_and_external_handoff() {
     let temporary = tempfile::tempdir().unwrap();
     let retained = std::env::var_os("CODEX_TUI_PTY_EVIDENCE_DIR");
     let root = retained
@@ -358,35 +358,24 @@ fn forge_confirmation_and_readback_remain_bound_to_the_reviewed_revision() {
         serde_json::from_slice(&std::fs::read(output.join("receipt.json")).unwrap()).unwrap();
     assert_eq!(receipt["status"], "passed");
     assert_eq!(receipt["sourceSha"], source);
+    assert_eq!(receipt["schema"], "codex-tui/forge-readonly-retirement/v1");
     let expected = [
         "github-approve-control",
         "github-approve-missing",
-        "github-approve-before",
-        "github-approve-after",
-        "github-approve-uncertain",
-        "github-merge-control",
-        "github-merge-missing",
-        "github-merge-before",
-        "github-merge-after",
-        "github-merge-uncertain",
         "gitlab-approve-control",
         "gitlab-approve-missing",
-        "gitlab-approve-before",
-        "gitlab-approve-after",
-        "gitlab-approve-uncertain",
-        "gitlab-merge-control",
-        "gitlab-merge-missing",
-        "gitlab-merge-before",
-        "gitlab-merge-after",
-        "gitlab-merge-uncertain",
-        "github-approve-wrong-review",
-        "github-approve-stale-existing",
     ];
     let checks = receipt["checks"].as_array().unwrap();
     assert_eq!(checks.len(), expected.len());
     for (check, name) in checks.iter().zip(expected) {
         assert_eq!(check["mode"], name);
         assert_eq!(check["passed"], true);
+        assert_eq!(check["writeCount"], 0);
+        assert_eq!(check["receiptCount"], 0);
+        assert_eq!(check["restart"]["writeCount"], 0);
+        assert_eq!(check["restart"]["receiptCount"], 0);
+        assert_eq!(check["registryReturnObserved"], true);
+        assert_eq!(check["restartRegistryObserved"], true);
     }
     assert_eq!(receipt["realForgeQualification"], false);
     assert_eq!(receipt["realCodexQualification"], false);

@@ -268,7 +268,7 @@ fn quick_prompt_palette_opens_visible_composer_and_restores_its_origin() {
         assert_eq!(app.view, View::Thread(id.clone()));
         assert_eq!(app.thread_ui[&id.0].draft, "VISIBLE_DRAFT");
         crate::runtime_input::handle_key(&mut app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
-        let expected = if origin == 5 {
+        let expected = if matches!(&original, View::Thread(_)) {
             View::Registry
         } else {
             original.clone()
@@ -295,7 +295,7 @@ fn quick_prompt_palette_opens_visible_composer_and_restores_its_origin() {
             Effect::SubmitPrompt { thread_id, text, .. } if *thread_id == id && text == "VISIBLE_DRAFT"
         )), "{original:?}");
         crate::runtime_input::handle_key(&mut app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
-        let expected = if origin == 5 {
+        let expected = if matches!(&original, View::Thread(_)) {
             View::Registry
         } else {
             original
