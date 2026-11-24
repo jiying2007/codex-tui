@@ -14,13 +14,7 @@ async fn archive_and_delete_retire_history_without_a_registry_row() {
     for method in ["thread/archived", "thread/deleted"] {
         let history = owners(&["provisional", "other"]);
         let (tx, mut rx) = mpsc::channel(2);
-        retire_removed_watches(
-            method,
-            &json!({"threadId":"provisional"}),
-            &history,
-            &tx,
-        )
-        .await;
+        retire_removed_watches(method, &json!({"threadId":"provisional"}), &history, &tx).await;
         assert!(!history.contains("provisional"));
         assert!(history.contains("other"));
         let ConversationEvent::Failed { thread_id, .. } = rx.try_recv().unwrap() else {

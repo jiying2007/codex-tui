@@ -90,9 +90,7 @@ async fn a_close_after_a_queued_resume_ack_cannot_be_undone_when_the_ack_is_drai
         .await
         .unwrap();
         assert!(!rpc.subscriptions.confirmed("one"));
-        let next = rpc
-            .subscriptions
-            .next_action(&desired(&history, &requests));
+        let next = rpc.subscriptions.next_action(&desired(&history, &requests));
         if matches!(method, "thread/archived" | "thread/deleted") {
             assert!(next.is_none(), "removed owners cannot reacquire");
             assert!(matches!(

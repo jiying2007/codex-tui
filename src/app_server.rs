@@ -2092,13 +2092,7 @@ async fn handle_unsolicited(
 ) -> Result<bool> {
     if let Some(result) = rpc.subscription_response(&message) {
         if let Some(thread_id) = result? {
-            subscriptions::refresh_owned(
-                rpc,
-                thread_id,
-                watched_threads,
-                conversation_tx,
-            )
-            .await;
+            subscriptions::refresh_owned(rpc, thread_id, watched_threads, conversation_tx).await;
         }
         return Ok(false);
     }
