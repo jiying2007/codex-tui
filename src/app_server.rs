@@ -43,7 +43,7 @@ mod registry_sources;
 mod resume_guard;
 use registry_sources::{
     RegistrySourceScope, apply_registry_source_coverage, load_registry_page,
-    load_registry_with_page_limit,
+    load_registry_with_deadline, load_registry_with_page_limit,
 };
 mod queue_pagination;
 use queue_pagination::{QueueLoadState, load_thread_queue};
@@ -564,9 +564,22 @@ async fn bootstrap_registry(
     rpc: &mut RpcSession,
     max_pages: Option<usize>,
 ) -> Result<(Vec<ThreadSummary>, BackendStatus, Option<RegistryHydration>)> {
-    let init = initialize(rpc).await?;
+    bootstrap_registry_with_deadline(rpc, max_pages, None).await
+}
+
+async fn bootstrap_registry_with_deadline(
+    rpc: &mut RpcSession,
+    max_pages: Option<usize>,
+    deadline: Option<tokio::time::Instant>,
+) -> Result<(Vec<ThreadSummary>, BackendStatus, Option<RegistryHydration>)> {
+    let init = match deadline {
+        Some(deadline) => tokio::time::timeout_at(deadline, initialize(rpc))
+            .await
+            .context("target search deadline exceeded during initialization")??,
+        None => initialize(rpc).await?,
+    };
     let mut status = status_from_initialize(&init);
-    let load = load_registry_with_page_limit(rpc, false, max_pages).await?;
+    let load = load_registry_with_deadline(rpc, false, max_pages, deadline).await?;
     status.capabilities.push("thread/list".into());
     status.capabilities.push("thread/status/changed".into());
     status.connected = !rpc.is_quarantined();
@@ -658,6 +671,27 @@ pub async fn probe_target(target: ResolvedAppServerTarget) -> Result<BackendSnap
     }
     status.connected = !rpc.is_quarantined();
 
+    Ok(BackendSnapshot {
+        generation: 0,
+        threads,
+        status,
+    })
+}
+
+/// Read only ordinary registry metadata; loaded-state RPCs are not needed to locate a thread.
+pub(crate) async fn probe_metadata_target(
+    target: ResolvedAppServerTarget,
+    timeout: Duration,
+) -> Result<BackendSnapshot> {
+    let deadline = tokio::time::Instant::now() + timeout;
+    let source = target.status_source();
+    let mut rpc = tokio::time::timeout_at(deadline, RpcSession::connect(&target))
+        .await
+        .context("target search deadline exceeded during connection")??;
+    let (threads, mut status, hydration) =
+        bootstrap_registry_with_deadline(&mut rpc, None, Some(deadline)).await?;
+    status.source = source;
+    debug_assert!(hydration.is_none());
     Ok(BackendSnapshot {
         generation: 0,
         threads,

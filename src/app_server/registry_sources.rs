@@ -135,22 +135,38 @@ pub(super) async fn load_registry_with_page_limit(
     use_state_db_only: bool,
     max_pages: Option<usize>,
 ) -> Result<RegistryLoad> {
+    load_registry_with_deadline(rpc, use_state_db_only, max_pages, None).await
+}
+
+pub(super) async fn load_registry_with_deadline(
+    rpc: &mut RpcSession,
+    use_state_db_only: bool,
+    max_pages: Option<usize>,
+    deadline: Option<tokio::time::Instant>,
+) -> Result<RegistryLoad> {
     let mut cursor = None;
     let mut threads = BTreeMap::new();
     let mut optimized_query = true;
     let mut source_scope = RegistrySourceScope::RequestedKnownKinds;
     let mut budget = PageBudget::default();
     loop {
-        let page = match guarded_registry_page(
+        let page = guarded_registry_page(
             rpc,
             cursor,
             use_state_db_only,
             optimized_query,
             source_scope,
             &mut budget,
-        )
-        .await
-        {
+        );
+        // Bound each page by the same absolute deadline, not the whole future:
+        // on timeout the already admitted pages remain available as Partial.
+        let result = match deadline {
+            Some(deadline) => tokio::time::timeout_at(deadline, page)
+                .await
+                .unwrap_or_else(|_| Err(anyhow!("target search deadline exceeded"))),
+            None => page.await,
+        };
+        let page = match result {
             Ok(page) => page,
             Err(error) if !threads.is_empty() => {
                 return Ok(RegistryLoad {
