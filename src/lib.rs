@@ -40,6 +40,7 @@ pub mod replay_backend;
 pub mod runtime_lifecycle;
 pub mod saved_view_editor;
 pub mod scale_evidence;
+pub mod session_attention;
 pub mod soak;
 pub(crate) mod sqlite_backup;
 pub(crate) mod sqlite_schema;

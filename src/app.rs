@@ -66,6 +66,7 @@ mod reducer;
 mod registry;
 pub(crate) mod request_details;
 mod review;
+mod session_attention;
 mod shortcuts;
 mod state;
 mod target_locality;
@@ -174,6 +175,7 @@ pub struct AppState {
     git_review_cache_order: VecDeque<String>,
     pub planning_snapshot: PlanningSnapshot,
     pub work_cards: Vec<WorkCardProjection>,
+    session_attention_policy: session_attention::LegacyAttentionPolicy,
     work_card_by_thread: BTreeMap<String, usize>,
     worktree_collision_counts: BTreeMap<String, usize>,
     pub goals: BTreeMap<String, GoalObservation>,
@@ -703,6 +705,7 @@ fn active_worktree_counts(state: &AppState) -> BTreeMap<(LocalRepoIdentity, Stri
             continue;
         };
         if context.cwd != thread.metadata.cwd
+            || context.error.is_some()
             || !matches!(
                 thread.runtime,
                 RuntimeStatus::Working | RuntimeStatus::WaitingHuman
@@ -727,6 +730,7 @@ fn collision_count_from_active_worktrees(
 ) -> usize {
     let Some(worktree) = state
         .git_context(&thread.id)
+        .filter(|context| context.cwd == thread.metadata.cwd && context.error.is_none())
         .and_then(|context| context.worktree.as_ref())
     else {
         return 0;
@@ -779,6 +783,8 @@ fn planning_phase_elapsed<const PROFILE: bool>(started: Option<Instant>) -> f64 
 }
 
 fn rebuild_planning(state: &mut AppState, now_unix_ms: u64) {
+    state.refresh_session_attention_policy();
+    state.advance_session_attention_clock(now_unix_ms);
     let _ = rebuild_planning_inner::<false>(state, now_unix_ms);
 }
 
