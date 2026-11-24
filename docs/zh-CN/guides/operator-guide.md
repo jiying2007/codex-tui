@@ -64,7 +64,7 @@ Headless 的 `threads`、`work`、`status`、`attention`、`board` 使用配置�
 
 使用原生 Codex CLI 创建、编辑、暂停、恢复或清除 Goal。Thread 中的 `g`（或命令面板中的“刷新 Goal 观测”）仅只读获取当前会话 Goal，已观测到的额度受限、阻塞和完成仍用于 Attention；codex-tui 不再发出 Goal 写操作。
 
-Lite 候选退役看板交互式批量编辑、Scratch 新建/修改/状态/删除，以及 Saved View 新建/编辑/删除。历史 Scratch 详情与 Saved View 导航保持只读，仍可按 Tab 浏览已有视图。真实研发事项回原平台维护，并关联原生会话；保留会话备注、稍后提醒和书签入口。本次退役不删除或改写现有 SQLite 记录。
+Lite 候选退役看板交互式批量编辑、Scratch 新建/修改/状态/删除，以及 Saved View 新建/编辑/删除。历史 Scratch 详情与 Saved View 导航保持只读，仍可按 Tab 浏览已有视图。旧投影 Worker 只在显式进入 Board 时启动，离开该视图后不再推进；正常原生会话导航与提醒不依赖它。这是分阶段退役期间的历史查阅入口，不是永久规划服务。真实研发事项回原平台维护，并关联原生会话；保留会话备注、稍后提醒和书签入口。本次退役不删除或改写现有 SQLite 记录。
 
 任务中心搜索、会话详情、书签名称和原生提醒路由均不依赖看板卡片。`/` 匹配会话元数据、当前工作树/Forge 观测及保留的本地备注；限定字段为 `thread:`、`cwd:`、`project:`、`goal:`、`forge:`、`branch:`、`worktree:`、`runtime:`、`note:`。原 `card:`、`work:`、`link:`、`related:`、`stage:`、`tag:` 已退役，真实事项关联使用原平台或 `workref`。历史数据保留，不将旧规划状态冒充原生当前状态。
 
