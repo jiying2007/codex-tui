@@ -136,6 +136,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 state.cwd_localities.clear();
                 state.git_contexts.clear();
                 state.forge_observations.clear();
+                state.worktree_collision_counts.clear();
             }
             state.backend_status = status;
             state.bind_operator_status();
@@ -173,6 +174,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::PlanningSnapshotLoaded(snapshot) => {
             let selection = planning_selection::PlanningSelection::capture(state);
             state.planning_snapshot = snapshot;
+            state.refresh_session_attention_policy();
             selection.restore(state);
         }
         Action::PlanningStoreDegraded(error) => {

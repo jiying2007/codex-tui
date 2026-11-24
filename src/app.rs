@@ -67,6 +67,7 @@ mod registry;
 pub(crate) mod request_details;
 mod review;
 mod shortcuts;
+mod session_attention;
 mod state;
 mod target_locality;
 mod target_lookup;
@@ -174,6 +175,7 @@ pub struct AppState {
     git_review_cache_order: VecDeque<String>,
     pub planning_snapshot: PlanningSnapshot,
     pub work_cards: Vec<WorkCardProjection>,
+    session_attention_policy: session_attention::LegacyAttentionPolicy,
     work_card_by_thread: BTreeMap<String, usize>,
     worktree_collision_counts: BTreeMap<String, usize>,
     pub goals: BTreeMap<String, GoalObservation>,
@@ -779,6 +781,8 @@ fn planning_phase_elapsed<const PROFILE: bool>(started: Option<Instant>) -> f64 
 }
 
 fn rebuild_planning(state: &mut AppState, now_unix_ms: u64) {
+    state.refresh_session_attention_policy();
+    state.advance_session_attention_clock(now_unix_ms);
     let _ = rebuild_planning_inner::<false>(state, now_unix_ms);
 }
 

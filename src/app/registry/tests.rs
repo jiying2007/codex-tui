@@ -187,6 +187,7 @@ fn observed_goal_attention_survives_recent_window_and_acknowledgment() {
         GoalStatus::BudgetLimited,
     ] {
         observe_goal(&mut app, 149, status);
+        assert!(app.thread_needs_attention(149), "live goal before Board projection");
         reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 1 });
         assert!(app.thread_needs_attention(149), "{status:?}");
         assert_eq!(app.visible_indices()[0], 149);
@@ -240,18 +241,38 @@ fn informational_goal_completion_respects_acknowledgment() {
 }
 
 #[test]
-fn forge_and_conflict_actionables_are_not_silenced_by_acknowledgment() {
+fn observed_failures_do_not_depend_on_work_cards_or_stale_projections() {
+    use crate::forge::{ForgeObservation, PipelineSummary};
+    use crate::planning::PlanningAttention;
     let mut app = AppState::new(threads(1));
-    reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 1 });
+    app.threads[0].metadata.cwd = "/fixture/repo".into();
+    let id = app.threads[0].id.clone();
+    let mut git = GitContext::pending(id.clone(), "/fixture/repo");
+    git.is_repository = true;
+    git.branch = Some("main".into());
+    app.git_contexts.insert(id.0.clone(), git);
+    let mut forge = ForgeObservation::pending(id.clone(), "/fixture/repo".into());
+    forge.pipelines.push(PipelineSummary {
+        id: 1,
+        status: "failed".into(),
+        reference: "main".into(),
+        web_url: "https://example.invalid/pipeline/1".into(),
+        updated_at: None,
+    });
+    app.forge_observations.insert(id.0.clone(), forge);
     reduce(&mut app, Action::AcknowledgeAttention);
-    let card_index = app.work_card_by_thread[&app.threads[0].id.0];
-    for reason in [
-        PlanningAttention::ConflictRisk,
-        PlanningAttention::PipelineFailed,
-        PlanningAttention::ChangeRequested,
-    ] {
-        app.work_cards[card_index].attention.clear();
-        app.work_cards[card_index].attention.insert(reason.clone());
-        assert!(app.thread_needs_attention(0), "{reason:?}");
-    }
+    assert!(app.work_cards.is_empty());
+    assert!(app.thread_needs_attention(0));
+    assert!(
+        app.session_attention_reasons(&app.threads[0])
+            .contains(&PlanningAttention::PipelineFailed)
+    );
+    reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 1 });
+    app.forge_observations.clear();
+    assert!(!app.thread_needs_attention(0), "stale Board failure is not authority");
+
+    observe_goal(&mut app, 0, GoalStatus::BudgetLimited);
+    assert!(app.thread_needs_attention(0));
+    reduce(&mut app, Action::GoalCleared(id));
+    assert!(!app.thread_needs_attention(0));
 }

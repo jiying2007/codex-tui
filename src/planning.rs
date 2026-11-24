@@ -1,7 +1,9 @@
-use crate::domain::{AttentionReason, RuntimeStatus, ThreadId, ThreadSummary};
+use crate::domain::{RuntimeStatus, ThreadId, ThreadSummary};
 use crate::forge::{ForgeFreshness, ForgeIssueSummary, ForgeObservation, ForgeProviderKind};
 use crate::git::GitContext;
 use crate::goal::{GoalObservation, GoalStatus};
+pub use crate::session_attention::SessionAttentionReason as PlanningAttention;
+use crate::session_attention::observed_reasons;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -141,39 +143,6 @@ impl WorkCardRecord {
             anchor: SourceRef::codex_thread(thread_id),
             links: vec![],
             overlay: WorkCardOverlay::default(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub enum PlanningAttention {
-    ApprovalRequired,
-    UserInputRequired,
-    SystemError,
-    MarkedUnread,
-    ConflictRisk,
-    GoalBlocked,
-    UsageLimited,
-    BudgetLimited,
-    ReviewUnseen,
-    PipelineFailed,
-    ChangeRequested,
-}
-
-impl PlanningAttention {
-    pub const fn label(&self) -> &'static str {
-        match self {
-            Self::ApprovalRequired => "approval",
-            Self::UserInputRequired => "input",
-            Self::SystemError => "error",
-            Self::MarkedUnread => "unread",
-            Self::ConflictRisk => "conflict",
-            Self::GoalBlocked => "goal-blocked",
-            Self::UsageLimited => "usage-limited",
-            Self::BudgetLimited => "budget-limited",
-            Self::ReviewUnseen => "review",
-            Self::PipelineFailed => "pipeline-failed",
-            Self::ChangeRequested => "change-requested",
         }
     }
 }
@@ -602,9 +571,6 @@ pub fn reconcile_thread_card_with_goal_and_forge(
     let change_request = branch.and_then(|branch| {
         forge.and_then(|observation| observation.change_request_for_branch(branch))
     });
-    let pipeline = branch
-        .and_then(|branch| forge.and_then(|observation| observation.pipeline_for_branch(branch)));
-
     if change_request.is_some()
         && matches!(stage, WorkflowStage::Inbox | WorkflowStage::Ready)
         && local.overlay.done_at_unix_ms.is_none()
@@ -613,47 +579,14 @@ pub fn reconcile_thread_card_with_goal_and_forge(
         stage_reason = "open forge change request awaits review/delivery".into();
     }
 
-    let mut attention = thread
-        .attention
-        .iter()
-        .filter_map(map_attention)
-        .collect::<BTreeSet<_>>();
-    if input.collision_count > 0 {
-        attention.insert(PlanningAttention::ConflictRisk);
-    }
-    if let Some(goal) = goal {
-        match goal.status {
-            GoalStatus::Blocked => {
-                attention.insert(PlanningAttention::GoalBlocked);
-            }
-            GoalStatus::UsageLimited => {
-                attention.insert(PlanningAttention::UsageLimited);
-            }
-            GoalStatus::BudgetLimited => {
-                attention.insert(PlanningAttention::BudgetLimited);
-            }
-            GoalStatus::Complete => {
-                if local.overlay.done_at_unix_ms.is_none() {
-                    attention.insert(PlanningAttention::ReviewUnseen);
-                }
-            }
-            GoalStatus::Active | GoalStatus::Paused => {}
-        }
-    }
-    if pipeline.is_some_and(|pipeline| pipeline.status.eq_ignore_ascii_case("failed")) {
-        attention.insert(PlanningAttention::PipelineFailed);
-    }
-    if forge
-        .and_then(|observation| observation.review.as_ref())
-        .is_some_and(|review| {
-            review.unresolved_discussions > 0 || review.changes_requested_by_count > 0
-        })
-    {
-        attention.insert(PlanningAttention::ChangeRequested);
-    }
-    if stage == WorkflowStage::Review && local.overlay.done_at_unix_ms.is_none() {
-        attention.insert(PlanningAttention::ReviewUnseen);
-    }
+    let attention = observed_reasons(
+        thread,
+        input.git,
+        input.collision_count,
+        goal,
+        forge,
+        local.overlay.done_at_unix_ms.is_some(),
+    );
 
     let snoozed = local
         .overlay
@@ -998,16 +931,6 @@ fn derive_stage(
             WorkflowStage::Inbox,
             "Codex runtime does not establish readiness".into(),
         ),
-    }
-}
-
-fn map_attention(reason: &AttentionReason) -> Option<PlanningAttention> {
-    match reason {
-        AttentionReason::ApprovalRequired => Some(PlanningAttention::ApprovalRequired),
-        AttentionReason::UserInputRequired => Some(PlanningAttention::UserInputRequired),
-        AttentionReason::SystemError => Some(PlanningAttention::SystemError),
-        AttentionReason::MarkedUnread => Some(PlanningAttention::MarkedUnread),
-        AttentionReason::ReadyForReview => Some(PlanningAttention::ReviewUnseen),
     }
 }
 

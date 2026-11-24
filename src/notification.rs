@@ -204,22 +204,26 @@ impl NotificationObservation {
 }
 
 fn card_notification_kinds(card: &WorkCardProjection) -> BTreeSet<NotificationKind> {
+    card.attention
+        .iter()
+        .filter_map(attention_notification_kind)
+        .collect()
+}
+
+fn attention_notification_kind(reason: &PlanningAttention) -> Option<NotificationKind> {
     use NotificationKind as N;
     use PlanningAttention as A;
-    [
-        (A::ApprovalRequired, N::ApprovalRequired),
-        (A::UserInputRequired, N::UserInputRequired),
-        (A::GoalBlocked, N::GoalBlocked),
-        (A::PipelineFailed, N::PipelineFailed),
-        (A::ReviewUnseen, N::ReviewRequested),
-        (A::ChangeRequested, N::ReviewRequested),
-        (A::SystemError, N::SystemError),
-        (A::UsageLimited, N::UsageLimited),
-        (A::BudgetLimited, N::BudgetLimited),
-    ]
-    .into_iter()
-    .filter_map(|(attention, kind)| card.attention.contains(&attention).then_some(kind))
-    .collect()
+    match reason {
+        A::ApprovalRequired => Some(N::ApprovalRequired),
+        A::UserInputRequired => Some(N::UserInputRequired),
+        A::GoalBlocked => Some(N::GoalBlocked),
+        A::PipelineFailed => Some(N::PipelineFailed),
+        A::ReviewUnseen | A::ChangeRequested => Some(N::ReviewRequested),
+        A::SystemError => Some(N::SystemError),
+        A::UsageLimited => Some(N::UsageLimited),
+        A::BudgetLimited => Some(N::BudgetLimited),
+        A::ConflictRisk | A::MarkedUnread => None,
+    }
 }
 
 #[derive(Clone, Debug, Default)]

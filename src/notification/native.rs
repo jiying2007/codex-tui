@@ -1,13 +1,12 @@
-//! Native request notification edges; WorkCards remain only for derived signals.
+//! Native session notification edges; non-session legacy cards remain separate.
 use super::*;
 use crate::{
-    app::AppState, conversation::InteractiveRequestKind, domain::AttentionReason,
-    planning::SourceKind,
+    app::AppState, conversation::InteractiveRequestKind, planning::SourceKind,
 };
 
 impl NotificationObservation {
     pub fn from_app(app: &AppState) -> Self {
-        let mut result = Self::from_projection(&app.threads, &app.work_cards, &app.goals);
+        let mut result = Self::from_projection(&app.threads, &[], &app.goals);
         result.scope = Some((
             app.backend_status.source.clone(),
             app.backend_status.codex_home.clone(),
@@ -20,64 +19,54 @@ impl NotificationObservation {
         result
             .known_items
             .extend(known.keys().map(|id| (*id).to_owned()));
-        let mut muted = BTreeSet::new();
+        // Only non-session legacy cards use the old Board projection.
         for card in &app.work_cards {
-            if card.anchor.kind != SourceKind::CodexThread {
+            if card.anchor.kind == SourceKind::CodexThread {
                 continue;
             }
+            result.known_items.insert(card.local_id.clone());
             if card.snoozed {
-                muted.insert(card.anchor.value.as_str());
-            }
-            // The native thread/request is the sole authority for these events.
-            for kind in [
-                NotificationKind::ApprovalRequired,
-                NotificationKind::UserInputRequired,
-                NotificationKind::SystemError,
-            ] {
-                result
-                    .active
-                    .remove(&format!("{}:{}", kind.label(), card.local_id));
-            }
-        }
-        let mut native: BTreeMap<&str, BTreeSet<NotificationKind>> = BTreeMap::new();
-        for thread in &app.threads {
-            let kinds = native.entry(&thread.id.0).or_default();
-            for reason in &thread.attention {
-                let kind = match reason {
-                    AttentionReason::ApprovalRequired => Some(NotificationKind::ApprovalRequired),
-                    AttentionReason::UserInputRequired => Some(NotificationKind::UserInputRequired),
-                    AttentionReason::SystemError => Some(NotificationKind::SystemError),
-                    _ => None,
-                };
-                if let Some(kind) = kind {
-                    kinds.insert(kind);
-                }
-            }
-        }
-        for thread in &app.threads {
-            if muted.contains(thread.id.0.as_str()) {
                 continue;
             }
-            if let Some(kinds) = native.get(thread.id.0.as_str()) {
-                for &kind in kinds {
-                    let key = format!("native:{}:{}", kind.label(), thread.id.0);
-                    result.active.insert(
-                        key.clone(),
-                        NotificationEvent {
-                            key,
-                            item_id: thread.id.0.clone(),
-                            kind,
-                            subject: thread.display_title().into(),
-                        },
-                    );
-                }
+            for kind in card_notification_kinds(card) {
+                let key = format!("{}:{}", kind.label(), card.local_id);
+                result.active.insert(
+                    key.clone(),
+                    NotificationEvent {
+                        key,
+                        item_id: card.local_id.clone(),
+                        kind,
+                        subject: card.title.clone(),
+                    },
+                );
+            }
+        }
+        for thread in &app.threads {
+            if app.session_attention_snoozed(thread) {
+                continue;
+            }
+            for kind in app
+                .session_attention_reasons(thread)
+                .iter()
+                .filter_map(attention_notification_kind)
+            {
+                let key = format!("native:{}:{}", kind.label(), thread.id.0);
+                result.active.insert(
+                    key.clone(),
+                    NotificationEvent {
+                        key,
+                        item_id: thread.id.0.clone(),
+                        kind,
+                        subject: thread.display_title().into(),
+                    },
+                );
             }
         }
         for request in &app.pending_requests {
             let Some(thread) = known.get(request.thread_id.0.as_str()) else {
                 continue;
             };
-            if muted.contains(request.thread_id.0.as_str()) {
+            if app.session_attention_snoozed(thread) {
                 continue;
             }
             let kind = match &request.kind {
@@ -129,7 +118,36 @@ mod tests {
     use crate::{
         backend::{CodexBackend, FakeBackend},
         conversation::{InteractiveRequest, RpcRequestId},
+        domain::AttentionReason,
     };
+
+    #[test]
+    fn live_goal_limit_edges_do_not_wait_for_board() {
+        let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+        let mut tracker = NotificationTracker::default();
+        tracker.advance(NotificationObservation::from_app(&app));
+        let id = app.threads[0].id.clone();
+        let observation = crate::goal::GoalObservation {
+            thread_id: id.clone(),
+            objective: "fixture".into(),
+            status: GoalStatus::BudgetLimited,
+            token_budget: Some(10),
+            tokens_used: 10,
+            time_used_seconds: 1,
+            created_at: 1,
+            updated_at: 1,
+            observed_at_unix_ms: 1,
+        };
+        app.goals.insert(id.0.clone(), observation);
+        assert!(app.work_cards.is_empty());
+        let events = tracker.advance(NotificationObservation::from_app(&app));
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].kind, NotificationKind::BudgetLimited);
+        assert_eq!(events[0].item_id, id.0);
+        assert!(tracker.advance(NotificationObservation::from_app(&app)).is_empty());
+        app.goals.clear();
+        assert!(tracker.advance(NotificationObservation::from_app(&app)).is_empty());
+    }
 
     #[test]
     fn native_approval_without_planning_is_edge_triggered() {

@@ -495,15 +495,21 @@ async fn run_app(fake_mode: bool, target_override: Option<&str>) -> Result<()> {
                 needs_render = true;
             }
 
+            let attention_now = now_unix_ms();
+            let attention_clock_changed = app.advance_session_attention_clock(attention_now);
             let planning_applied =
-                match planning_worker.advance(&mut app, planning_dirty, now_unix_ms()) {
+                match planning_worker.advance(&mut app, planning_dirty, attention_now) {
                     Ok(applied) => applied,
                     Err(error) => {
                         reduce(&mut app, Action::MutationNotice(error));
                         false
                     }
                 };
-            if planning_applied || registry_changes.notification {
+            if planning_applied
+                || planning_dirty
+                || registry_changes.notification
+                || attention_clock_changed
+            {
                 needs_render = true;
                 if let Err(error) = services.notifications.observe(&app) {
                     reduce(
@@ -644,6 +650,8 @@ fn conversation_event_changes_notification(event: &ConversationEvent) -> bool {
         ConversationEvent::InteractiveRequested(_)
             | ConversationEvent::InteractiveResolved { .. }
             | ConversationEvent::UserResponse { .. }
+            | ConversationEvent::GoalObserved(_)
+            | ConversationEvent::GoalCleared(_)
     )
 }
 

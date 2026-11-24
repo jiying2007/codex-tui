@@ -61,6 +61,7 @@ impl AppState {
             git_review_cache_order: VecDeque::new(),
             planning_snapshot: PlanningSnapshot::default(),
             work_cards: vec![],
+            session_attention_policy: Default::default(),
             work_card_by_thread: BTreeMap::new(),
             worktree_collision_counts: BTreeMap::new(),
             goals: BTreeMap::new(),
