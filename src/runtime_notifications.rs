@@ -176,31 +176,21 @@ impl Drop for RuntimeNotifications {
     }
 }
 
-/// Notification card IDs are local projections, not necessarily thread IDs.
+/// Only native session events may resolve a live Codex thread.
 fn event_thread_id(
     app: &AppState,
     event: &NotificationEvent,
 ) -> Option<codex_tui::domain::ThreadId> {
-    use codex_tui::{domain::ThreadId, planning::SourceKind};
-    if event.key.starts_with("native:") {
-        let id = ThreadId::new(event.item_id.clone());
+    if event.key.starts_with("native:")
+        || matches!(
+            event.kind,
+            NotificationKind::Completion | NotificationKind::ActivityStopped
+        )
+    {
+        let id = codex_tui::domain::ThreadId::new(event.item_id.clone());
         return app.contains_thread_id(&id).then_some(id);
     }
-
-    if matches!(
-        event.kind,
-        NotificationKind::Completion | NotificationKind::ActivityStopped
-    ) {
-        let id = ThreadId::new(event.item_id.clone());
-        return app.contains_thread_id(&id).then_some(id);
-    }
-    let card = app
-        .work_cards
-        .iter()
-        .find(|card| card.local_id == event.item_id)?;
-    (card.anchor.kind == SourceKind::CodexThread)
-        .then(|| ThreadId::new(card.anchor.value.clone()))
-        .filter(|id| app.contains_thread_id(id))
+    None
 }
 
 fn mode_for_session(configured: NotificationMode, ssh: bool) -> NotificationMode {

@@ -2160,6 +2160,31 @@ fn per_thread_draft_scroll_and_follow_are_independent() {
 }
 
 #[test]
+fn registry_search_and_note_read_without_planning_projection() {
+    let mut app = app();
+    let id = app.threads[0].id.clone();
+    let cwd = app.threads[0].metadata.cwd.clone();
+    let mut snapshot = app.planning_snapshot.clone();
+    snapshot.notes.push(crate::planning::LocalNote {
+        owner: SourceRef::codex_thread(&id),
+        text: "retained session note".into(),
+        updated_at_unix_ms: 1,
+    });
+    reduce(&mut app, Action::PlanningSnapshotLoaded(snapshot));
+    let mut git = GitContext::pending(id.clone(), cwd);
+    git.is_repository = true;
+    git.observed_at_unix_ms = 1;
+    git.branch = Some("native-search-branch".into());
+    reduce(&mut app, Action::GitContextLoaded(git));
+    assert!(app.work_cards.is_empty());
+    assert_eq!(app.session_note(&id), Some("retained session note"));
+    app.filter = "branch:native-search note:retained".into();
+    assert_eq!(app.visible_indices(), vec![0]);
+    app.threads[0].metadata.cwd = "/different-checkout".into();
+    assert!(app.visible_indices().is_empty());
+}
+
+#[test]
 fn fuzzy_metadata_filter_keeps_selection_inside_visible_rows() {
     let mut app = app();
     reduce(&mut app, Action::BeginSearch);

@@ -1,6 +1,6 @@
-//! Native session notification edges; non-session legacy cards remain separate.
+//! Native session notification edges; no Board projection dependency.
 use super::*;
-use crate::{app::AppState, conversation::InteractiveRequestKind, planning::SourceKind};
+use crate::{app::AppState, conversation::InteractiveRequestKind};
 
 impl NotificationObservation {
     pub fn from_app(app: &AppState) -> Self {
@@ -17,28 +17,6 @@ impl NotificationObservation {
         result
             .known_items
             .extend(known.keys().map(|id| (*id).to_owned()));
-        // Only non-session legacy cards use the old Board projection.
-        for card in &app.work_cards {
-            if card.anchor.kind == SourceKind::CodexThread {
-                continue;
-            }
-            result.known_items.insert(card.local_id.clone());
-            if card.snoozed {
-                continue;
-            }
-            for kind in card_notification_kinds(card) {
-                let key = format!("{}:{}", kind.label(), card.local_id);
-                result.active.insert(
-                    key.clone(),
-                    NotificationEvent {
-                        key,
-                        item_id: card.local_id.clone(),
-                        kind,
-                        subject: card.title.clone(),
-                    },
-                );
-            }
-        }
         for thread in &app.threads {
             if app.session_attention_snoozed(thread) {
                 continue;

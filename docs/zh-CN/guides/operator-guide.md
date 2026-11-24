@@ -66,6 +66,8 @@ Headless 的 `threads`、`work`、`status`、`attention`、`board` 使用配置�
 
 Lite 候选退役看板交互式批量编辑、Scratch 新建/修改/状态/删除，以及 Saved View 新建/编辑/删除。历史 Scratch 详情与 Saved View 导航保持只读，仍可按 Tab 浏览已有视图。真实研发事项回原平台维护，并关联原生会话；保留会话备注、稍后提醒和书签入口。本次退役不删除或改写现有 SQLite 记录。
 
+任务中心搜索、会话详情、书签名称和原生提醒路由均不依赖看板卡片。`/` 匹配会话元数据、当前工作树/Forge 观测及保留的本地备注；限定字段为 `thread:`、`cwd:`、`project:`、`goal:`、`forge:`、`branch:`、`worktree:`、`runtime:`、`note:`。原 `card:`、`work:`、`link:`、`related:`、`stage:`、`tag:` 已退役，真实事项关联使用原平台或 `workref`。历史数据保留，不将旧规划状态冒充原生当前状态。
+
 任务中心与原生会话提醒直接使用当前 Codex Goal、Git 和 Forge 观测，不再等待看板卡片投影。迁移期间只读索引原有稍后提醒及完成确认偏好；这些偏好不授予写入权限，也不会在任务中心隐藏待处理审批。
 
 搜索与 Saved View 仅管理个人工作流；未知上游历史不会被虚构。全文搜索使用短生命周期独立 Codex App Server 连接，不占用主审批/会话 Actor；只允许一个搜索，新请求取消旧请求，总体 12 秒超时会明确提示。单 Thread 匹配项分页未耗尽时不得标记全部完成。若等待中的 RPC 收到服务端审批请求，主 Actor 会优先分派已排队的审批事件，再处理其他命令或周期探测；被中断的 RPC 结果仍为未知，不自动重放。本地索引的短查询会将 `%`、`_` 和反斜杠按字面字符搜索，而不是 SQLite 通配符。要区分 Windows 路径残影与 Ubuntu 本机会话，应检查仓库 cwd 和 Codex Home。上游清除项目归属或标题后，先用安全的 cwd/会话 ID 临时显示并触发合并后的权威重读；解归档也通过既有有界刷新恢复，不凭通知虚构会话。App Server 的 Git Origin 仅保留剔除凭证、查询和片段后的 host/repository 身份，无法安全解析时退回 cwd，不将原始 URL 带入搜索、Headless 或界面。每周仅查询公开 Codex 稳定版元数据并对新版提示复核，不能替代真实账号 L3 验收。

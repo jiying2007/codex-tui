@@ -10,6 +10,7 @@ pub(super) struct LegacyAttentionPolicy {
     // No second task state or persisted schema is introduced.
     overlays: BTreeMap<String, (Option<u64>, bool)>,
     deadlines: BTreeSet<u64>,
+    notes: BTreeMap<String, String>,
     now: u64,
 }
 
@@ -33,9 +34,13 @@ impl AppState {
         let policy = &mut self.session_attention_policy;
         policy.overlays.clear();
         policy.deadlines.clear();
+        policy.notes.clear();
         for card in &self.planning_snapshot.cards {
             if card.anchor.kind != SourceKind::CodexThread {
                 continue;
+            }
+            if let Some(note) = &card.overlay.note {
+                policy.notes.insert(card.anchor.value.clone(), note.clone());
             }
             let until = card.overlay.snooze_until_unix_ms;
             let done = card.overlay.done_at_unix_ms.is_some();
@@ -50,6 +55,17 @@ impl AppState {
                 policy.overlays.remove(&card.anchor.value);
             }
         }
+        // Explicit notes take precedence over historical card overlays, just
+        // as before retirement. Only the persisted snapshot rebuilds this index.
+        for note in &self.planning_snapshot.notes {
+            if note.owner.kind == SourceKind::CodexThread {
+                policy.notes.insert(note.owner.value.clone(), note.text.clone());
+            }
+        }
+    }
+
+    pub fn session_note(&self, thread_id: &super::ThreadId) -> Option<&str> {
+        self.session_attention_policy.notes.get(&thread_id.0).map(String::as_str)
     }
 
     /// Use the existing event loop's clock; no new timer or worker.

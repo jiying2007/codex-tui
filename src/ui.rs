@@ -475,10 +475,6 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
                 .collect::<Vec<_>>()
                 .join(", ")
         };
-        let planning = app
-            .work_card_for_thread(&thread.id)
-            .map(|card| workflow_stage_label(card.stage, app.language))
-            .unwrap_or_else(|| tr(app, "<unprojected>", "<未投影>"));
         let thread_label = sanitize_inline(&thread.id.0);
         let model_label = provenance::model_provider_label(thread, app.language);
         let mut lines = if app.language.is_simplified_chinese() {
@@ -498,7 +494,6 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
                     ),
                     sanitize_inline(display_cwd(&thread.metadata.cwd))
                 )),
-                Line::from(format!("计划状态: {planning}")),
                 Line::from(format!(
                     "{}: {}",
                     tr(app, "Goal", "目标"),
@@ -522,7 +517,6 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
                     ),
                     sanitize_inline(display_cwd(&thread.metadata.cwd))
                 )),
-                Line::from(format!("Planning: {planning}")),
                 Line::from(format!(
                     "{}: {}",
                     tr(app, "Goal", "目标"),
@@ -531,8 +525,7 @@ fn detail_panel(app: &AppState) -> Paragraph<'static> {
             ]
         };
         if let Some(note) = app
-            .work_card_for_thread(&thread.id)
-            .and_then(|card| card.overlay.note.as_deref())
+            .session_note(&thread.id)
             .filter(|note| !note.trim().is_empty())
         {
             lines.push(Line::from(format!(
