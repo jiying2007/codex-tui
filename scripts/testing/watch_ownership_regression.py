@@ -180,7 +180,19 @@ def case(binary, output, home, mode):
             app.send(b'/')
             if mode=='workspace-cancel':
                 app.send(b'\x1b')
+                app.wait(lambda:'Workspace · Git + Forge' in app.screen()
+                         and 'Thread: watch-a' in app.screen(),
+                         'search cancel did not restore the same Workspace')
+                # Workspace intentionally renders thread ID, not the mutable title.
+                # Expose the Registry notification fence without releasing the
+                # nested Workspace/Thread watch, then verify both return surfaces.
+                app.send(b'/')
+                app.wait(lambda:'Mission Control' in app.screen(), 'search did not expose Registry')
                 boundary(1, 1)
+                app.send(b'\x1b')
+                app.wait(lambda:'Workspace · Git + Forge' in app.screen()
+                         and 'Thread: watch-a' in app.screen(),
+                         'second search cancel did not restore Workspace')
                 app.send(b'\x1b')
                 app.wait(lambda:'BODY_1' in app.screen(), 'Workspace return lost live history')
                 app.send(b'\x1b')
