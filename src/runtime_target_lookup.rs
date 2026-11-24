@@ -50,8 +50,8 @@ impl LookupWorker {
 
     pub(crate) async fn advance(&mut self, app: &mut AppState) -> bool {
         if let Some(active) = &mut self.task {
-            let current = app.target_lookup.as_ref().map(|panel| panel.generation)
-                == Some(active.generation);
+            let current =
+                app.target_lookup.as_ref().map(|panel| panel.generation) == Some(active.generation);
             if !current {
                 active.task.abort();
             }

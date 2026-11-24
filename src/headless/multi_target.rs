@@ -184,7 +184,11 @@ fn report_pages(
 ) -> Vec<String> {
     use crate::i18n::pick;
     let status = if report.targets.len() < total {
-        pick(language, "Partial / query in progress", "部分结果 / 检索进行中")
+        pick(
+            language,
+            "Partial / query in progress",
+            "部分结果 / 检索进行中",
+        )
     } else if report.degraded {
         pick(language, "Partial / unavailable", "部分结果 / 不可用")
     } else {

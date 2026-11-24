@@ -43,7 +43,11 @@ pub(super) fn render(frame: &mut Frame<'_>, app: &AppState) {
         LookupPhase::Running(pages) => format!(
             "{} {}/{}",
             tr(app, "Searching / Partial", "检索中 / 部分结果"),
-            if pages.is_empty() { 0 } else { panel.selected + 1 },
+            if pages.is_empty() {
+                0
+            } else {
+                panel.selected + 1
+            },
             pages.len(),
         ),
         LookupPhase::Results(pages) => format!(
