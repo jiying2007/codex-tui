@@ -41,10 +41,7 @@ use runtime_notifications::RuntimeNotifications;
 use runtime_store_worker::{StoreEvent, StoreWorker as RuntimeStore};
 
 #[cfg(test)]
-use codex_tui::{
-    app::InputMode,
-    command::Command,
-};
+use codex_tui::{app::InputMode, command::Command};
 #[cfg(test)]
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 #[cfg(test)]
@@ -540,13 +537,37 @@ fn advance_legacy_board(
     }
     if worker.is_none() {
         *worker = Some(
-            PlanningWorker::start().map_err(|error| format!("legacy Board unavailable: {error}"))?,
+            PlanningWorker::start()
+                .map_err(|error| format!("legacy Board unavailable: {error}"))?,
         );
     }
     worker
         .as_mut()
         .expect("legacy Board worker initialized")
         .advance(app, std::mem::take(dirty), now)
+}
+
+fn runtime_text(
+    language: UiLanguage,
+    english: &'static str,
+    simplified_chinese: &'static str,
+) -> &'static str {
+    pick(language, english, simplified_chinese)
+}
+
+fn backend_error_status(error: String) -> BackendStatus {
+    BackendStatus {
+        source: "codex-app-server".into(),
+        connected: false,
+        version: None,
+        platform: None,
+        codex_home: None,
+        capabilities: vec![],
+        optional_capabilities_missing: vec![],
+        registry_complete: false,
+        last_refresh_unix_ms: None,
+        error: Some(error),
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
