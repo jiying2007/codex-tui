@@ -3,6 +3,8 @@
 //! queue pressure. Shutdown is a barrier and runs after terminal restoration.
 use crate::runtime_store::{RuntimeStore as StoreBackend, StoreBootstrap};
 use anyhow::{Context, Result};
+#[cfg(test)]
+use codex_tui::sqlite_store::SqliteStore;
 use codex_tui::{
     planning::PlanningSnapshot, store::LocalStateV1, transcript_search::TranscriptSearchResults,
     workref::WorkRefLedger,
@@ -39,6 +41,8 @@ enum Request {
 }
 
 pub(crate) struct StoreWorker {
+    #[cfg(test)]
+    sqlite: SqliteStore,
     requests: SyncSender<Request>,
     events: Receiver<StoreEvent>,
     pending_operator: Option<Box<LocalStateV1>>,
@@ -53,6 +57,8 @@ impl StoreWorker {
         Ok((Self::start(backend)?, bootstrap))
     }
     fn start(mut backend: StoreBackend) -> Result<Self> {
+        #[cfg(test)]
+        let sqlite = backend.sqlite_clone();
         let error = backend.error();
         let (requests, incoming) = mpsc::sync_channel::<Request>(CAPACITY);
         let (outgoing, events) = mpsc::sync_channel(CAPACITY);
@@ -80,6 +86,8 @@ impl StoreWorker {
             })
             .context("start local state worker")?;
         Ok(Self {
+            #[cfg(test)]
+            sqlite,
             requests,
             events,
             pending_operator: None,
@@ -90,6 +98,10 @@ impl StoreWorker {
     }
     pub(crate) fn error(&self) -> Option<String> {
         self.error.clone()
+    }
+    #[cfg(test)]
+    pub(crate) fn sqlite_clone(&self) -> SqliteStore {
+        self.sqlite.clone()
     }
     pub(crate) fn defer_operator_state(&mut self) {
         self.dirty_since.get_or_insert_with(Instant::now);

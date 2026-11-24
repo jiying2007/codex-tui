@@ -228,7 +228,7 @@
     "src/runtime_doctor.rs": 379,
     "src/render_performance.rs": 323,
     "src/runtime_cli.rs": 253,
-    "src/runtime_store_worker.rs": 383,
+    "src/runtime_store_worker.rs": 395,
     "src/app/planning_worker.rs": 206,
     "src/sqlite_backup.rs": 81,
     "src/interaction_performance.rs": 180,
