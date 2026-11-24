@@ -1020,10 +1020,8 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
             state.notice_changed_user_input();
             state.rebuild_pending_request_threads();
-            if is_current_thread {
-                if state.input_mode == InputMode::Composer {
-                    state.input_mode = InputMode::Normal;
-                }
+            if is_current_thread && state.input_mode == InputMode::Composer {
+                state.input_mode = InputMode::Normal;
             }
         }
         Action::InteractiveResolved { request_id } => {
