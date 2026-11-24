@@ -28,6 +28,7 @@ pub(crate) fn action_for_command(app: &AppState, command: Command) -> Option<Act
         Command::Back => Action::Back,
         Command::Help => Action::ToggleHelp,
         Command::Search => Action::BeginSearch,
+        Command::TargetLookup => Action::TargetLookup(codex_tui::app::TargetLookupAction::Open),
         Command::TranscriptSearch => Action::BeginTranscriptSearch,
         Command::ThreadQueue => Action::OpenThreadQueue,
         Command::ToggleHostLocalFilter => Action::ToggleHostLocalFilter,

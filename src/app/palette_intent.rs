@@ -71,6 +71,7 @@ impl AppState {
                         choice,
                         Command::Help
                             | Command::Search
+                            | Command::TargetLookup
                             | Command::TranscriptSearch
                             | Command::Board
                             | Command::CloseTerminalDrawer

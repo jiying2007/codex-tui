@@ -66,6 +66,8 @@ codex-tui worktree list
 
 跨目标检索只读取已配置目标及活动目标，最多 8 个，逐一查询，每个目标限时 20 秒、最多展示 100 条匹配结果。匹配会话 ID、标题、工作区、CWD 和来源元数据，不读取对话正文、归档或附属会话专用列表，不加载本地事项库，也不查询可选的已加载会话清单；目标超时前已完整取得的分页结果保留，并标为 Partial。结果按 Target 独立保留原始 ThreadId、CWD、来源状态和已观察匹配数；同 ID 不跨目标合并。任一目标不可用、清单不完整或结果被截断，整体返回 `3`，保留其他目标的结果。JSON 使用独立的 `codex-tui/headless-multi-target-threads/v1` schema。该入口不授予 Resume、审批或写入权限；在对应目标中重新定位和核验后再操作。不能与 `--target` 或 fixture 混用。
 
+在任务中心使用 `Ctrl+K` → **搜索全部目标**，输入元数据关键词并按 Enter。Esc 取消；↑/↓ 切换目标摘要或匹配会话，PgUp/PgDn 滚动详情。检索独立于活动 Registry，只用于定位，不切换目标或恢复会话。模拟模式不会连接已配置目标。
+
 | 输出字段 | 范围 |
 | --- | --- |
 | Codex 视图的 `source.targetId`、`source.transport`、`source.scope` | 所选目标和传输；真实读取为 `single-target`，合成数据为 `fixture` |

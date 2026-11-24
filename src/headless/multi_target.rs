@@ -121,36 +121,130 @@ async fn search_target(config: &AppServerConfig, name: String, query: &str) -> T
     }
 }
 
-pub(super) async fn run(options: &HeadlessOptions) -> Result<i32> {
-    let mut report = SearchReport {
+fn empty_report() -> SearchReport {
+    SearchReport {
         schema: "codex-tui/headless-multi-target-threads/v1",
         generated_at_unix_ms: now_unix_ms(),
         inventory_scope: INVENTORY_SCOPE,
         degraded: false,
         error: None,
         targets: vec![],
-    };
-    let query = options.query.as_deref().unwrap_or_default().to_lowercase();
-    match source::read_config() {
-        Ok(config) => match target_names(&config.app_server) {
-            Ok(names) => {
-                // Read one target at a time. Timed-out pages preserve earlier rows;
-                // the isolated transport is dropped. No persisted index.
-                for name in names {
-                    report
-                        .targets
-                        .push(search_target(&config.app_server, name, &query).await);
-                }
+    }
+}
+
+async fn collect_report(config: &AppServerConfig, query: &str) -> SearchReport {
+    let mut report = empty_report();
+    if let Err(error) = validate_options("threads", &["--all-targets", "--query", query]) {
+        report.error = Some(error);
+        report.degraded = true;
+        return report;
+    }
+    let query = query.trim().to_lowercase();
+    match target_names(config) {
+        Ok(names) => {
+            for name in names {
+                report
+                    .targets
+                    .push(search_target(config, name, &query).await);
             }
-            Err(error) => report.error = Some(error.to_string()),
-        },
-        Err(_) => report.error = Some("target configuration unreadable or invalid".into()),
+        }
+        Err(error) => report.error = Some(error.to_string()),
     }
     report.degraded = report.error.is_some()
         || report
             .targets
             .iter()
             .any(|target| target.source.degraded || target.truncated);
+    report
+}
+
+/// The TUI and CLI use the same bounded, isolated metadata search.
+pub async fn target_lookup_pages(
+    config: &AppServerConfig,
+    query: &str,
+    language: crate::i18n::UiLanguage,
+) -> Vec<String> {
+    report_pages(&collect_report(config, query).await, language)
+}
+
+fn report_pages(report: &SearchReport, language: crate::i18n::UiLanguage) -> Vec<String> {
+    use crate::i18n::pick;
+    let status = if report.degraded {
+        pick(language, "Partial / unavailable", "部分结果 / 不可用")
+    } else {
+        pick(language, "Complete for this scope", "本次范围完整")
+    };
+    let mut pages = vec![format!(
+        "{status}\nTargets: {}\n{}\n{}",
+        report.targets.len(),
+        pick(
+            language,
+            "Ordinary non-archived metadata only.",
+            "仅普通未归档会话元数据。"
+        ),
+        pick(
+            language,
+            "Read-only. Reverify identity on the corresponding target before resuming.",
+            "只读结果。恢复会话前请到对应目标重新核验身份。"
+        ),
+    )];
+    if let Some(error) = &report.error {
+        pages[0].push_str(&format!("\nError: {}", headless_field(error)));
+    }
+    for target in &report.targets {
+        let source = &target.source;
+        let name = headless_field(source.target_id.as_deref().unwrap_or("<unknown>"));
+        let home = headless_field(source.codex_home.as_deref().unwrap_or("<unknown>"));
+        let transport = headless_field(source.transport.as_deref().unwrap_or("<unknown>"));
+        let status = if source.degraded || target.truncated {
+            if source.connected || !target.threads.is_empty() {
+                "Partial"
+            } else {
+                "Unavailable"
+            }
+        } else {
+            "Complete"
+        };
+        let scope =
+            format!("Target: {name}\nCODEX_HOME: {home}\nTransport: {transport}\nStatus: {status}");
+        pages.push(format!(
+            "{scope}\nMatches observed: {}\nShown: {}\nTruncated: {}\nDiagnostic: {}",
+            target.matched_count,
+            target.threads.len(),
+            target.truncated,
+            crate::text::truncate_display(source.error.as_deref().unwrap_or(""), 1024),
+        ));
+        for row in &target.threads {
+            pages.push(format!(
+                "{scope}\nThreadId: {}\nCWD: {}\nTitle: {}\nWorkspace: {}\nRuntime: {}\nAttention: {}",
+                headless_field(&row.thread.id),
+                headless_field(&row.cwd),
+                crate::text::truncate_display(&row.thread.title, 240),
+                crate::text::truncate_display(&row.thread.workspace, 240),
+                headless_field(&row.thread.runtime),
+                headless_field(&row.thread.attention.join(",")),
+            ));
+        }
+    }
+    pages
+}
+
+pub(super) async fn run(options: &HeadlessOptions) -> Result<i32> {
+    let report = match source::read_config() {
+        Ok(config) => {
+            collect_report(
+                &config.app_server,
+                options.query.as_deref().unwrap_or_default(),
+            )
+            .await
+        }
+        Err(_) => {
+            let mut report = empty_report();
+            report.error = Some("target configuration unreadable or invalid".into());
+            report.degraded = true;
+            report
+        }
+    };
     match options.format {
         OutputFormat::Json => println!("{}", serde_json::to_string_pretty(&report)?),
         OutputFormat::Text => {
@@ -207,6 +301,28 @@ mod tests {
         assert!(target.truncated);
         assert_eq!(target.threads.len(), MAX_MATCHES);
         assert_eq!(target.threads[0].thread.id, "FindMe");
+    }
+
+    #[test]
+    fn locator_pages_keep_same_id_in_distinct_target_scopes() {
+        let mut report = empty_report();
+        for name in ["first", "second"] {
+            let mut threads = FakeBackend::seeded().snapshot().threads;
+            threads.truncate(1);
+            threads[0].id.0 = "shared-id".into();
+            let mut source = SourceStatus::unavailable(Some(name.into()));
+            source.codex_home = Some(format!("/{name}/.codex"));
+            report.targets.push(project(threads, source, "shared-id"));
+        }
+        report.degraded = true;
+        let pages = report_pages(&report, crate::i18n::UiLanguage::English);
+        assert_eq!(pages.len(), 5);
+        assert!(pages[0].contains("Partial"));
+        for (index, name) in [(2, "first"), (4, "second")] {
+            assert!(pages[index].contains(&format!("Target: {name}")));
+            assert!(pages[index].contains(&format!("CODEX_HOME: /{name}/.codex")));
+            assert!(pages[index].contains("ThreadId: shared-id"));
+        }
     }
 
     #[test]

@@ -34,6 +34,7 @@ fn eligible(app: &AppState, key: KeyEvent) -> bool {
         && !app.terminal_drawer_open
         && !app.terminal_focused
         && !app.command_palette_open
+        && app.target_lookup.is_none()
         && !app.show_help
         && !app.context_open
         && !app.launch_menu_open

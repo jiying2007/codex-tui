@@ -219,6 +219,7 @@ pub enum Action {
     BeginSnooze,
     BeginWorkrefLink,
     WorkrefLinkSubmissionRejected(String),
+    TargetLookup(super::TargetLookupAction),
     OpenCommandPalette,
     CloseCommandPalette,
     MoveCommandPalette(i32),
