@@ -18,6 +18,12 @@ pub(crate) fn handle_paste(app: &mut AppState, text: String) -> Vec<Effect> {
     if app.terminal_focused {
         return vec![Effect::TerminalPaste(text)];
     }
+    if app.target_lookup.is_some() {
+        return reduce(
+            app,
+            Action::TargetLookup(codex_tui::app::TargetLookupAction::Input(text)),
+        );
+    }
     if app.command_palette_open {
         return handle_command_palette_paste(app, text);
     }
@@ -80,6 +86,9 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
             .unwrap_or_default();
     }
 
+    if app.target_lookup.is_some() {
+        return crate::runtime_target_lookup::handle_key(app, key);
+    }
     if app.command_palette_open {
         return handle_command_palette_key(app, key);
     }

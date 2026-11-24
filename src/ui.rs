@@ -16,6 +16,7 @@ use board::render_board;
 use board::{BoardViewport, board_viewport, planning_card_field};
 mod registry;
 mod review;
+mod target_lookup;
 mod terminal;
 mod thread;
 #[cfg(test)]
@@ -339,6 +340,9 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
     }
     if app.pending_launch_plan.is_some() {
         render_launch_confirmation(frame, app);
+    }
+    if app.target_lookup.is_some() {
+        target_lookup::render(frame, app);
     }
 }
 

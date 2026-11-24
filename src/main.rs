@@ -34,6 +34,7 @@ mod runtime_shutdown;
 mod runtime_startup;
 mod runtime_store;
 mod runtime_store_worker;
+mod runtime_target_lookup;
 mod runtime_user_response;
 
 use runtime_doctor::doctor;
@@ -282,6 +283,12 @@ async fn run_app(fake_mode: bool, target_override: Option<&str>) -> Result<()> {
     reduce(&mut app, Action::PlanningStoreDegraded(store.error()));
     let mut planning_worker = codex_tui::app::planning_worker::PlanningWorker::start()?;
     let mut services = RuntimeServices::new(store, notification_mode);
+    let mut target_lookup =
+        runtime_target_lookup::LookupWorker::new(app_server_target.as_ref().map(|target| {
+            let mut lookup_config = config.app_server.clone();
+            lookup_config.active.clone_from(&target.name);
+            lookup_config
+        }));
     let language = app.language;
     if let Err(error) = services.mutations.recover() {
         reduce(
@@ -377,6 +384,7 @@ async fn run_app(fake_mode: bool, target_override: Option<&str>) -> Result<()> {
             if app.should_quit {
                 break;
             }
+            needs_render |= target_lookup.advance(&mut app).await;
             let mut planning_dirty = false;
             for _ in 0..32 {
                 let Some(event) = services.store.try_event() else {
