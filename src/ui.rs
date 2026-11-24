@@ -22,9 +22,8 @@ mod thread;
 #[cfg(test)]
 use crate::{pty::TerminalSize, terminal_drawer::TerminalProcessState};
 use overlays::{
-    render_command_palette, render_context_actions,
-    render_local_batch_confirmation, render_local_input_overlay, render_saved_view_editor,
-    render_transcript_search,
+    render_command_palette, render_context_actions, render_local_batch_confirmation,
+    render_local_input_overlay, render_saved_view_editor, render_transcript_search,
 };
 use ratatui::{
     Frame,

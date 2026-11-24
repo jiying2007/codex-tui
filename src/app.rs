@@ -960,10 +960,7 @@ fn select_next_attention(state: &mut AppState) {
 fn normalize_pasted_input(mode: InputMode, value: &str) -> String {
     if matches!(
         mode,
-        InputMode::Composer
-            | InputMode::UserInput
-            | InputMode::Note
-            | InputMode::GoalObjective
+        InputMode::Composer | InputMode::UserInput | InputMode::Note | InputMode::GoalObjective
     ) {
         let normalized = value.replace("\r\n", "\n").replace('\r', "\n");
         normalized
