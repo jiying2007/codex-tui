@@ -538,9 +538,9 @@ fn advance_legacy_board(
         return Ok(false);
     }
     if worker.is_none() {
-        *worker = Some(PlanningWorker::start().map_err(|error| {
-            format!("legacy Board unavailable: {error}")
-        })?);
+        *worker = Some(
+            PlanningWorker::start().map_err(|error| format!("legacy Board unavailable: {error}"))?,
+        );
     }
     worker
         .as_mut()

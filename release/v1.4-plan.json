@@ -148,7 +148,7 @@
     "user-perceived-performance-evidence"
   ],
   "moduleRatchet": {
-    "src/app/session_attention.rs": 148,
+    "src/app/session_attention.rs": 153,
     "src/session_attention.rs": 113,
     "src/ui/target_lookup.rs": 153,
     "src/runtime_target_lookup.rs": 194,
@@ -208,7 +208,7 @@
     "src/app/lifecycle.rs": 242,
     "src/app_server/lifecycle.rs": 221,
     "src/runtime_lifecycle.rs": 67,
-    "src/metadata_search.rs": 346,
+    "src/metadata_search.rs": 377,
     "src/saved_view_editor.rs": 347,
     "src/saved_view_editor/tests.rs": 60,
     "src/app/composer.rs": 109,
@@ -302,7 +302,7 @@
     "src/app/target_locality.rs": 87,
     "src/forge/remote_identity_tests.rs": 47,
     "src/app/reducer.rs": 1363,
-    "src/app/state.rs": 654,
+    "src/app/state.rs": 653,
     "src/app/shortcuts.rs": 65,
     "src/app/tests.rs": 2856,
     "src/ui/tests.rs": 1104,

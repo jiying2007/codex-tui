@@ -317,8 +317,7 @@ impl AppState {
                 locality,
                 goal: self.goals.get(&thread.id.0),
                 forge: self.forge_observation(&thread.id).filter(|observation| {
-                    observation.cwd == thread.metadata.cwd
-                        && observation.observed_at_unix_ms > 0
+                    observation.cwd == thread.metadata.cwd && observation.observed_at_unix_ms > 0
                 }),
                 git: self.git_context(&thread.id).filter(|context| {
                     context.cwd == thread.metadata.cwd

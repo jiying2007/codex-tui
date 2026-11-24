@@ -59,13 +59,18 @@ impl AppState {
         // as before retirement. Only the persisted snapshot rebuilds this index.
         for note in &self.planning_snapshot.notes {
             if note.owner.kind == SourceKind::CodexThread {
-                policy.notes.insert(note.owner.value.clone(), note.text.clone());
+                policy
+                    .notes
+                    .insert(note.owner.value.clone(), note.text.clone());
             }
         }
     }
 
     pub fn session_note(&self, thread_id: &super::ThreadId) -> Option<&str> {
-        self.session_attention_policy.notes.get(&thread_id.0).map(String::as_str)
+        self.session_attention_policy
+            .notes
+            .get(&thread_id.0)
+            .map(String::as_str)
     }
 
     /// Use the existing event loop's clock; no new timer or worker.

@@ -1,7 +1,7 @@
 use crate::domain::{CwdLocality, ThreadSummary};
 use crate::forge::ForgeObservation;
-use crate::goal::GoalObservation;
 use crate::git::GitContext;
+use crate::goal::GoalObservation;
 
 #[derive(Clone, Copy)]
 pub struct MetadataSearchContext<'a> {
@@ -68,7 +68,9 @@ fn token_matches(context: &MetadataSearchContext<'_>, token: &str) -> bool {
             .forge
             .is_some_and(|forge| forge_fields_match(forge, token))
         || context.git.is_some_and(|git| git_fields_match(git, token))
-        || context.note.is_some_and(|note| fuzzy_subsequence(token, note))
+        || context
+            .note
+            .is_some_and(|note| fuzzy_subsequence(token, note))
 }
 
 pub fn filter_requires_locality(query: &str) -> bool {
@@ -93,11 +95,36 @@ fn thread_fields_match(thread: &ThreadSummary, token: &str) -> bool {
         thread.metadata.workspace_key.as_str(),
         thread.metadata.model.as_deref().unwrap_or_default(),
         thread.metadata.project_id.as_deref().unwrap_or_default(),
-        thread.metadata.lineage.model_provider.as_deref().unwrap_or_default(),
-        thread.metadata.lineage.session_id.as_deref().unwrap_or_default(),
-        thread.metadata.lineage.parent_thread_id.as_deref().unwrap_or_default(),
-        thread.metadata.lineage.attached_to_thread_id.as_deref().unwrap_or_default(),
-        thread.metadata.lineage.forked_from_id.as_deref().unwrap_or_default(),
+        thread
+            .metadata
+            .lineage
+            .model_provider
+            .as_deref()
+            .unwrap_or_default(),
+        thread
+            .metadata
+            .lineage
+            .session_id
+            .as_deref()
+            .unwrap_or_default(),
+        thread
+            .metadata
+            .lineage
+            .parent_thread_id
+            .as_deref()
+            .unwrap_or_default(),
+        thread
+            .metadata
+            .lineage
+            .attached_to_thread_id
+            .as_deref()
+            .unwrap_or_default(),
+        thread
+            .metadata
+            .lineage
+            .forked_from_id
+            .as_deref()
+            .unwrap_or_default(),
     ]
     .into_iter()
     .any(|field| fuzzy_subsequence(token, field))
@@ -167,12 +194,14 @@ fn git_fields_match(git: &GitContext, token: &str) -> bool {
     git.branch
         .as_deref()
         .is_some_and(|branch| fuzzy_subsequence(token, branch))
-        || git.repo.as_ref().is_some_and(|repo| {
-            fuzzy_subsequence(token, &repo.primary_root)
-        })
-        || git.worktree.as_ref().is_some_and(|tree| {
-            fuzzy_subsequence(token, &tree.canonical_path)
-        })
+        || git
+            .repo
+            .as_ref()
+            .is_some_and(|repo| fuzzy_subsequence(token, &repo.primary_root))
+        || git
+            .worktree
+            .as_ref()
+            .is_some_and(|tree| fuzzy_subsequence(token, &tree.canonical_path))
 }
 
 fn fuzzy_subsequence(needle: &str, haystack: &str) -> bool {
@@ -199,20 +228,15 @@ fn fuzzy_subsequence(needle: &str, haystack: &str) -> bool {
 mod tests {
     use super::*;
     use crate::backend::{CodexBackend, FakeBackend};
+    use crate::domain::{LocalRepoIdentity, WorktreeIdentity};
     use crate::forge::{
         CapabilityState, ChangeRequestSummary, ForgeCapability, ForgeFreshness, ForgeIdentity,
         ForgeProviderKind,
     };
     use crate::goal::GoalStatus;
-    use crate::domain::{LocalRepoIdentity, WorktreeIdentity};
     use std::collections::BTreeMap;
 
-    fn fixture() -> (
-        ThreadSummary,
-        GoalObservation,
-        ForgeObservation,
-        GitContext,
-    ) {
+    fn fixture() -> (ThreadSummary, GoalObservation, ForgeObservation, GitContext) {
         let thread = FakeBackend::seeded().snapshot().threads[0].clone();
         let goal = GoalObservation {
             thread_id: thread.id.clone(),
@@ -339,7 +363,14 @@ mod tests {
             git: Some(&git),
             note: Some("customer metadata"),
         };
-        for retired in ["unknown:value", "card:thread", "work:research", "link:goal", "stage:ready", "tag:research"] {
+        for retired in [
+            "unknown:value",
+            "card:thread",
+            "work:research",
+            "link:goal",
+            "stage:ready",
+            "tag:research",
+        ] {
             assert!(!matches_metadata_query(context, retired));
         }
     }
