@@ -296,7 +296,6 @@ async fn run_app(fake_mode: bool, target_override: Option<&str>) -> Result<()> {
     let mut terminal = TerminalSession::enter()?;
     let mut last_fake_tick = Instant::now();
     let mut last_git_reconcile = Instant::now();
-    let mut last_forge_reconcile = Instant::now();
     let mut needs_render = true;
     let mut urgent_render = true;
     let mut last_render = Instant::now();
@@ -397,6 +396,8 @@ async fn run_app(fake_mode: bool, target_override: Option<&str>) -> Result<()> {
             let git_changes = drain_git(&mut app, &mut services.git);
             needs_render |= git_changes.any;
             if git_changes.planning_projection {
+                // Forge shares Git observation events and its own freshness TTL;
+                // do not periodically walk the accumulated historical checkout cache.
                 let effects = reduce(&mut app, Action::RefreshForgeProjections);
                 apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
                 planning_dirty = true;
@@ -419,17 +420,6 @@ async fn run_app(fake_mode: bool, target_override: Option<&str>) -> Result<()> {
                 let effects = reduce(&mut app, Action::RefreshActiveGitProjections);
                 apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
                 last_git_reconcile = Instant::now();
-            }
-
-            if last_forge_reconcile.elapsed() >= Duration::from_secs(15) {
-                let effects = reduce(&mut app, Action::RefreshForgeProjections);
-                let forge_projection_changed = !effects.is_empty();
-                apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
-                if forge_projection_changed {
-                    planning_dirty = true;
-                    needs_render = true;
-                }
-                last_forge_reconcile = Instant::now();
             }
 
             if let Some(fake) = fake_backend.as_mut()

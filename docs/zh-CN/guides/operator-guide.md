@@ -81,7 +81,7 @@ Review 外部浏览器链接必须是主机明确的 HTTP(S) URL，不允许嵌�
 
 在有 Git Remote 的目标仓库执行 `codex-tui doctor git` 和 `codex-tui doctor forge`。内部 GitLab 使用已认证 `glab`，GitHub 使用 `gh`。GitLab/GitHub 某一只读接口失败时，对应能力会降级，其他成功的数据可保留，但 Forge 会明确提示不完整；三个核心接口全部失败时不得报告“最新空结果”。Headless Forge 若缺少核心能力应以降级退出码返回。
 
-Review 详情绑定当前仓库、分支、变更请求 ID 和已观测的 head 版本。分支或 head 变更会使不匹配的缓存详情和迟到响应失效；打开 Review 时，按已有 Forge 刷新间隔重新获取已过期或失败的详情。
+Review 详情绑定当前仓库、分支、变更请求 ID 和已观测的 head 版本。分支或 head 变更会使不匹配的缓存详情和迟到响应失效；打开 Review 时，按既有新鲜度 TTL 重新获取已过期或失败的详情。Forge 概览复用 Git 上下文观测事件，仅刷新最近 Registry 窗口、选中及活跃会话，以及已缓存的固定或待处理会话；不再有独立的 15 秒全局 Forge 轮询。其他历史观测保留并按正常时间变旧，重新关注时再更新。
 
 HTTP(S) Git 远端会在平台地址中保留非默认端口，例如 `gitlab.example:8443`；请在 `glab` 中认证该地址。SSH 传输端口（如 `:2222`）不作为 API 端口；SSH 与 API 端点不同时，在平台 CLI 配置中维护映射。
 

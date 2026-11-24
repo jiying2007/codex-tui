@@ -81,7 +81,7 @@ Review external browser links require an unambiguous HTTP(S) host without embedd
 
 Switch to a repository with a configured Git remote and run `codex-tui doctor git` and `codex-tui doctor forge`. Internal GitLab uses authenticated `glab`; GitHub uses `gh`. A partial GitLab/GitHub read failure keeps healthy capabilities visible but marks Forge data incomplete; failure of all core read endpoints is unavailable, not a fresh empty result. Headless Forge returns a degraded exit code when any core capability is missing.
 
-Review details are tied to the current repository, branch, change-request ID and observed head revision. A branch or head change invalidates mismatched cached details and late responses. Opening Review refreshes expired or failed details using the existing Forge refresh interval.
+Review details are tied to the current repository, branch, change-request ID and observed head revision. A branch or head change invalidates mismatched cached details and late responses. Opening Review refreshes expired or failed details against the existing freshness TTL. Overview reads follow Git context observation events, limited to the recent Registry window, selected/active sessions and cached pinned/Attention sessions; there is no separate 15-second global Forge poll. Historical observations remain cached and age normally until revisited.
 
 HTTP(S) Git remotes retain a nondefault port in the provider authority, such as `gitlab.example:8443`; authenticate that authority in `glab`. An SSH transport port, such as `:2222`, is not an API port. If SSH and API endpoints differ, keep their mapping in the provider CLI configuration.
 

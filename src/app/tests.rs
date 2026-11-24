@@ -2101,6 +2101,65 @@ fn forge_refresh_coalesces_same_checkout_and_reprobes_after_ttl() {
             .observed_at_unix_ms = 1;
     }
     assert_eq!(reduce(&mut app, Action::RefreshForgeProjections).len(), 1);
+    assert!(
+        reduce(&mut app, Action::RefreshForgeProjections).is_empty(),
+        "a stale peer must not bypass the in-flight project probe"
+    );
+}
+
+#[test]
+fn forge_refresh_keeps_history_without_polling_unrelated_checkouts() {
+    let mut threads = FakeBackend::scaled(64).snapshot().threads;
+    for (index, thread) in threads.iter_mut().enumerate() {
+        thread.runtime = RuntimeStatus::Inactive;
+        thread.attention.clear();
+        thread.pinned = false;
+        thread.metadata.updated_at = 100 - index as i64;
+        thread.metadata.cwd = format!("/fixture/repo-{index:02}");
+    }
+    threads[40].pinned = true;
+    threads[42].attention.push(AttentionReason::ApprovalRequired);
+    threads[44].runtime = RuntimeStatus::Working;
+    let mut app = AppState::new(threads);
+    app.selected = 63;
+    for thread in &app.threads {
+        let id = thread.id.clone();
+        let cwd = thread.metadata.cwd.clone();
+        let mut git = GitContext::pending(id.clone(), cwd.clone());
+        git.is_repository = true;
+        git.observed_at_unix_ms = 1;
+        app.git_contexts.insert(id.0.clone(), git);
+        let mut forge = ForgeObservation::pending(id.clone(), cwd);
+        forge.observed_at_unix_ms = 1;
+        app.forge_observations.insert(id.0, forge);
+    }
+    let historical = app.threads[55].id.clone();
+    let cached = app.forge_observation(&historical).unwrap().clone();
+    let effects = reduce(&mut app, Action::RefreshForgeProjections);
+    let probed = effects
+        .iter()
+        .filter_map(|effect| match effect {
+            Effect::ProbeForge { thread_id, .. } => Some(thread_id.0.as_str()),
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
+    assert!(probed.len() <= REGISTRY_RECENT_LIMIT + 4);
+    for index in [0, 40, 42, 44, 63] {
+        assert!(probed.contains(app.threads[index].id.0.as_str()));
+    }
+    assert!(!probed.contains(historical.0.as_str()));
+    assert_eq!(app.forge_observation(&historical), Some(&cached));
+
+    app.selected = 55;
+    let effects = reduce(&mut app, Action::RefreshForgeProjections);
+    assert!(effects.iter().any(|effect| matches!(
+        effect,
+        Effect::ProbeForge { thread_id, .. } if *thread_id == historical
+    )));
+
+    app.backend_status.source =
+        "codex-app-server[target=remote-fixture transport=websocket]".into();
+    assert!(reduce(&mut app, Action::RefreshForgeProjections).is_empty());
 }
 
 #[test]
