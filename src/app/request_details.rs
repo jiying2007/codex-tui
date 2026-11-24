@@ -71,7 +71,6 @@ impl AppState {
             && !self.transcript_search_open
             && !self.terminal_focused
             && !self.show_help
-            && self.saved_view_editor.is_none()
             && self.hot_slot_bind_pending.is_none()
     }
 

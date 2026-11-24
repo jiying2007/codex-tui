@@ -66,7 +66,6 @@ pub(crate) fn action_for_command(app: &AppState, command: Command) -> Option<Act
         Command::CycleSavedView => Action::CycleSavedView(1),
         Command::Review => Action::OpenReview,
         Command::Workspace => Action::OpenWorkspace,
-        Command::New => Action::BeginScratch,
         Command::Snooze => Action::BeginSnooze,
         Command::LinkWorkItem => Action::BeginWorkrefLink,
         Command::BeginHotSlotBind => Action::BeginHotSlotBind,

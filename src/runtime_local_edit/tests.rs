@@ -1,6 +1,6 @@
 use super::*;
 use codex_tui::{
-    app::{Effect, InputMode},
+    app::{ContextChoice, Effect, InputMode},
     backend::{CodexBackend, FakeBackend},
     store::LocalStateV1,
 };
@@ -9,20 +9,30 @@ use std::{
     time::{Duration, Instant},
 };
 
+fn open_note(app: &mut AppState) {
+    reduce(app, Action::OpenContext);
+    app.context_selected = app
+        .context_choices()
+        .iter()
+        .position(|choice| *choice == ContextChoice::EditNote)
+        .unwrap();
+    reduce(app, Action::ExecuteContext);
+    assert_eq!(app.input_mode, InputMode::Note);
+}
 fn draft() -> (AppState, Vec<Effect>) {
     let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
-    reduce(&mut app, Action::BeginScratch);
+    open_note(&mut app);
     reduce(&mut app, Action::InputText("durable draft".into()));
     let effects = reduce(&mut app, Action::CommitInput);
     (app, effects)
 }
 fn save(app: &mut AppState, worker: &mut StoreWorker, effect: Effect) {
     let ticket = app.local_edit_ticket_for(&effect);
-    let Effect::CreateScratch { title, workspace } = effect else {
-        panic!("scratch effect")
+    let Effect::SaveSourceNote { owner, text } = effect else {
+        panic!("session note effect")
     };
     submit(app, worker, ticket, move |store| {
-        store.create_scratch(title, workspace)
+        store.save_source_note(owner, text)
     });
 }
 fn settle(app: &mut AppState, worker: &mut StoreWorker) {
@@ -52,14 +62,14 @@ fn real_worker_receipt_retires_only_the_committed_draft() {
     settle(&mut app, &mut worker);
     assert_eq!(app.input_mode, InputMode::Normal);
     assert!(app.input_buffer.is_empty());
-    assert_eq!(app.planning_snapshot.scratch.len(), 1);
+    assert_eq!(app.planning_snapshot.notes.len(), 1);
     assert_eq!(
         worker
             .sqlite_clone()
             .load_planning_snapshot()
             .unwrap()
-            .scratch[0]
-            .title,
+            .notes[0]
+            .text,
         "durable draft"
     );
     worker
@@ -111,7 +121,7 @@ fn queue_pressure_preserves_draft_and_does_not_poison_the_store() {
     let retry = reduce(&mut app, Action::CommitInput);
     save(&mut app, &mut worker, retry[0].clone());
     settle(&mut app, &mut worker);
-    assert_eq!(app.planning_snapshot.scratch.len(), 1);
+    assert_eq!(app.planning_snapshot.notes.len(), 1);
     worker
         .flush_operator_state_on_exit(&LocalStateV1::default())
         .unwrap();
@@ -126,7 +136,7 @@ fn real_storage_failure_keeps_draft_and_is_not_misreported_as_rollback() {
     save(&mut app, &mut worker, effects[0].clone());
     settle(&mut app, &mut worker);
     assert_eq!(app.input_buffer, "durable draft");
-    assert_eq!(app.input_mode, InputMode::ScratchTitle);
+    assert_eq!(app.input_mode, InputMode::Note);
     assert!(app.planning_store_error.is_some());
     assert!(
         app.mutation_notice
@@ -200,14 +210,14 @@ fn changed_then_undone_draft_is_not_cleared_by_old_success() {
     reduce(&mut app, Action::InputBackspace);
     app.finish_local_edit_write(ticket, Ok(()));
     assert_eq!(app.input_buffer, "durable draft");
-    assert_eq!(app.input_mode, InputMode::ScratchTitle);
+    assert_eq!(app.input_mode, InputMode::Note);
 }
 #[test]
 fn cancelled_and_identically_reopened_editor_survives_old_success() {
     let (mut app, effects) = draft();
     let ticket = app.local_edit_ticket_for(&effects[0]).unwrap();
     reduce(&mut app, Action::CancelInput);
-    reduce(&mut app, Action::BeginScratch);
+    open_note(&mut app);
     reduce(&mut app, Action::InputText("durable draft".into()));
     assert!(reduce(&mut app, Action::CommitInput).is_empty());
     app.finish_local_edit_write(ticket, Ok(()));
@@ -258,7 +268,7 @@ fn buffered_save_receipt_wins_over_elapsed_wait_deadline() {
     settle_until(&mut app, &mut worker, Instant::now());
     assert!(app.pending_local_edit_ticket().is_none());
     assert!(app.input_buffer.is_empty());
-    assert_eq!(app.planning_snapshot.scratch.len(), 1);
+    assert_eq!(app.planning_snapshot.notes.len(), 1);
     worker
         .flush_operator_state_on_exit(&LocalStateV1::default())
         .unwrap();

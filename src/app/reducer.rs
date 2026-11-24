@@ -243,46 +243,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.planning_view_index = wrap_selection(state.planning_view_index, delta, len);
             state.board_selected = 0;
         }
-        Action::CloseSavedViewEditor => {
-            state.saved_view_editor = None;
-            state.saved_view_editor_error = None;
-            if state.input_mode == InputMode::SavedViewField {
-                state.input_mode = InputMode::Normal;
-                state.input_buffer.clear();
-            }
-        }
-        Action::MoveSavedViewEditorField(delta) => {
-            if let Some(editor) = state.saved_view_editor.as_mut() {
-                editor.move_field(delta);
-                state.saved_view_editor_error = None;
-            }
-        }
-        Action::CycleSavedViewEditorValue(delta) => {
-            if let Some(editor) = state.saved_view_editor.as_mut() {
-                editor.cycle_value(delta);
-                state.saved_view_editor_error = None;
-            }
-        }
-        Action::BeginSavedViewFieldEdit => {
-            if let Some(editor) = state.saved_view_editor.as_ref()
-                && let Some(value) = editor.begin_text_value()
-            {
-                state.input_buffer = value;
-                state.input_mode = InputMode::SavedViewField;
-                state.saved_view_editor_error = None;
-            }
-        }
-        Action::SaveSavedViewEditor => {
-            let Some(editor) = state.saved_view_editor.as_ref() else {
-                return vec![];
-            };
-            if let Err(error) = editor.validate() {
-                state.saved_view_editor_error = Some(error);
-                return vec![];
-            }
-            let view = editor.draft.clone();
-            return state.begin_local_edit_write(Effect::SaveSavedView { view });
-        }
         Action::OpenPlanningSelected => {
             let Some(card) = state.selected_planning_card().cloned() else {
                 return vec![];
@@ -307,29 +267,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::BeginWorkrefLink => state.begin_workref_link(),
         Action::WorkrefLinkSubmissionRejected(error) => {
             state.workref_link_submission_rejected(error);
-        }
-        Action::BeginScratch => {
-            state.new_scratch_workspace = match &state.view {
-                View::Registry => state
-                    .selected_thread()
-                    .map(|thread| thread.workspace.clone()),
-                View::Board => state
-                    .selected_planning_card()
-                    .and_then(|card| card.workspace.clone()),
-                View::Thread(id) | View::Review(id) | View::Workspace(id) => state
-                    .threads
-                    .iter()
-                    .find(|thread| thread.id == *id)
-                    .map(|thread| thread.workspace.clone()),
-                View::Scratch(id) => state
-                    .planning_snapshot
-                    .scratch
-                    .iter()
-                    .find(|scratch| scratch.id == *id)
-                    .and_then(|scratch| scratch.workspace.clone()),
-            };
-            state.input_buffer.clear();
-            state.input_mode = InputMode::ScratchTitle;
         }
         Action::TargetLookup(action) => state.reduce_target_lookup(action),
         Action::OpenCommandPalette => state.open_command_palette(),
@@ -358,32 +295,10 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 return state.plan_fork_thread();
             }
 
-            if choice == ContextChoice::SaveCurrentView {
-                state.saved_view_editor =
-                    Some(SavedViewEditor::create_from(&state.active_saved_view()));
-                state.saved_view_editor_error = None;
-                state.show_help = false;
-                return vec![];
-            }
-            if choice == ContextChoice::EditCurrentView {
-                match SavedViewEditor::edit(&state.active_saved_view()) {
-                    Ok(editor) => {
-                        state.saved_view_editor = Some(editor);
-                        state.saved_view_editor_error = None;
-                    }
-                    Err(error) => state.saved_view_editor_error = Some(error),
-                }
-                return vec![];
-            }
-            if choice == ContextChoice::DeleteCurrentView {
-                let view_id = state.active_saved_view().id;
-                if view_id.starts_with("view:") {
-                    return vec![Effect::DeleteSavedView { view_id }];
-                }
-                return vec![];
-            }
-
-            let Some(target) = state.selected_local_target() else {
+            let Some(target) = state
+                .selected_local_target()
+                .filter(|target| target.kind == SourceKind::CodexThread)
+            else {
                 return vec![];
             };
             match choice {
@@ -393,21 +308,12 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                     state.input_mode = InputMode::Snooze;
                 }
                 ContextChoice::EditNote => {
-                    let existing = if target.kind == SourceKind::ScratchWork {
-                        state
-                            .planning_snapshot
-                            .scratch
-                            .iter()
-                            .find(|scratch| scratch.id == target.value)
-                            .and_then(|scratch| scratch.note.clone())
-                    } else {
-                        state
-                            .planning_snapshot
-                            .notes
-                            .iter()
-                            .find(|note| note.owner == target)
-                            .map(|note| note.text.clone())
-                    };
+                    let existing = state
+                        .planning_snapshot
+                        .notes
+                        .iter()
+                        .find(|note| note.owner == target)
+                        .map(|note| note.text.clone());
                     state.note_target = Some(target);
                     state.input_buffer = existing.unwrap_or_default();
                     state.input_mode = InputMode::Note;
@@ -426,43 +332,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                         label,
                     }];
                 }
-                ContextChoice::ScratchInbox
-                | ContextChoice::ScratchReady
-                | ContextChoice::ScratchDone => {
-                    let scratch_state = match choice {
-                        ContextChoice::ScratchInbox => crate::planning::ScratchState::Inbox,
-                        ContextChoice::ScratchReady => crate::planning::ScratchState::Ready,
-                        ContextChoice::ScratchDone => crate::planning::ScratchState::Done,
-                        _ => {
-                            state.mutation_notice = Some(
-                                local_text(
-                                    state.language,
-                                    "scratch action routing mismatch; no write executed",
-                                    "Scratch 操作路由不匹配；未执行写入",
-                                )
-                                .into(),
-                            );
-                            return vec![];
-                        }
-                    };
-                    return vec![Effect::UpdateScratchState {
-                        scratch_id: target.value,
-                        state: scratch_state,
-                    }];
-                }
-                ContextChoice::DeleteScratch => {
-                    if matches!(state.view, View::Scratch(_)) {
-                        state.view = View::Board;
-                    }
-                    return vec![Effect::DeleteScratch {
-                        scratch_id: target.value,
-                    }];
-                }
-                ContextChoice::NewCodexThread
-                | ContextChoice::ForkCodexThread
-                | ContextChoice::SaveCurrentView
-                | ContextChoice::EditCurrentView
-                | ContextChoice::DeleteCurrentView => {
+                ContextChoice::NewCodexThread | ContextChoice::ForkCodexThread => {
                     state.mutation_notice = Some(
                         local_text(
                             state.language,
@@ -517,7 +387,10 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
         }
         Action::BeginSnooze => {
-            if let Some(target) = state.selected_local_target() {
+            if let Some(target) = state
+                .selected_local_target()
+                .filter(|target| target.kind == SourceKind::CodexThread)
+            {
                 state.snooze_target = Some(target);
                 state.input_buffer = "1h".into();
                 state.input_mode = InputMode::Snooze;
@@ -1259,10 +1132,8 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::TranscriptSearch
             | InputMode::Alias
             | InputMode::UserInput
-            | InputMode::ScratchTitle
             | InputMode::Snooze
             | InputMode::Note
-            | InputMode::SavedViewField
             | InputMode::WorkrefLink => {
                 state.input_buffer.push(character);
                 if state.input_mode == InputMode::Search {
@@ -1293,10 +1164,8 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 | InputMode::TranscriptSearch
                 | InputMode::Alias
                 | InputMode::UserInput
-                | InputMode::ScratchTitle
                 | InputMode::Snooze
                 | InputMode::Note
-                | InputMode::SavedViewField
                 | InputMode::WorkrefLink => {
                     state.input_buffer.push_str(&text);
                     if state.input_mode == InputMode::Search {
@@ -1321,10 +1190,8 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::TranscriptSearch
             | InputMode::Alias
             | InputMode::UserInput
-            | InputMode::ScratchTitle
             | InputMode::Snooze
             | InputMode::Note
-            | InputMode::SavedViewField
             | InputMode::WorkrefLink => {
                 state.input_buffer.pop();
                 if state.input_mode == InputMode::Search {
@@ -1362,38 +1229,13 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 state.transcript_search_error = None;
                 return vec![Effect::SearchTranscript { query }];
             }
-            if mode == InputMode::ScratchTitle {
-                let title = state.input_buffer.trim().to_string();
-                if title.is_empty() {
-                    return vec![];
-                }
-                let workspace = state.new_scratch_workspace.clone();
-                return state.begin_local_edit_write(Effect::CreateScratch { title, workspace });
-            }
-            if mode == InputMode::SavedViewField {
-                let value = state.input_buffer.clone();
-                let Some(editor) = state.saved_view_editor.as_mut() else {
-                    return vec![];
-                };
-                if let Err(error) = editor.commit_text_value(value) {
-                    state.saved_view_editor_error = Some(error);
-                } else {
-                    state.saved_view_editor_error = None;
-                    state.input_mode = InputMode::Normal;
-                    state.input_buffer.clear();
-                }
-                return vec![];
-            }
             if mode == InputMode::Note {
                 let text = state.input_buffer.trim().to_string();
                 let Some(target) = state.note_target.clone() else {
                     return vec![];
                 };
-                if target.kind == SourceKind::ScratchWork {
-                    return state.begin_local_edit_write(Effect::UpdateScratchNote {
-                        scratch_id: target.value,
-                        note: (!text.is_empty()).then_some(text),
-                    });
+                if target.kind != SourceKind::CodexThread {
+                    return vec![];
                 }
                 return state.begin_local_edit_write(Effect::SaveSourceNote {
                     owner: target,
@@ -1404,7 +1246,11 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 let Some(duration_ms) = parse_snooze_duration(&state.input_buffer) else {
                     return vec![];
                 };
-                let Some(anchor) = state.snooze_target.take() else {
+                let Some(anchor) = state
+                    .snooze_target
+                    .take()
+                    .filter(|target| target.kind == SourceKind::CodexThread)
+                else {
                     state.input_mode = InputMode::Normal;
                     state.input_buffer.clear();
                     return vec![];
@@ -1484,19 +1330,11 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 state.input_buffer.clear();
                 return vec![];
             }
-            if state.input_mode == InputMode::ScratchTitle {
-                state.new_scratch_workspace = None;
-            }
             if state.input_mode == InputMode::Snooze {
                 state.snooze_target = None;
             }
             if state.input_mode == InputMode::Note {
                 state.note_target = None;
-            }
-            if state.input_mode == InputMode::SavedViewField {
-                state.input_mode = InputMode::Normal;
-                state.input_buffer.clear();
-                return vec![];
             }
             if state.input_mode == InputMode::Search {
                 let origin_thread_id = state.search_origin_thread_id();

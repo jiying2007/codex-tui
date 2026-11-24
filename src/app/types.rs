@@ -5,7 +5,7 @@ use crate::{
     forge::{ForgeObservation, ForgeReviewResult, ForgeReviewTarget},
     git::{GitContext, GitReview},
     goal::GoalObservation,
-    planning::{PlanningSnapshot, SavedView, SourceRef},
+    planning::{PlanningSnapshot, SourceRef},
     pty::TerminalSize,
     terminal_drawer::TerminalSnapshot,
     transcript_search::{TranscriptSearchHit, TranscriptSearchResults},
@@ -36,10 +36,8 @@ pub enum InputMode {
     Alias,
     Composer,
     UserInput,
-    ScratchTitle,
     Snooze,
     Note,
-    SavedViewField,
     WorkrefLink,
 }
 
@@ -51,13 +49,6 @@ pub enum ContextChoice {
     LinkWorkItem,
     NewCodexThread,
     ForkCodexThread,
-    ScratchInbox,
-    ScratchReady,
-    ScratchDone,
-    DeleteScratch,
-    SaveCurrentView,
-    EditCurrentView,
-    DeleteCurrentView,
 }
 
 impl ContextChoice {
@@ -69,13 +60,6 @@ impl ContextChoice {
             Self::LinkWorkItem => "Link current session to existing work item…",
             Self::NewCodexThread => "Codex · New thread here",
             Self::ForkCodexThread => "Codex · Fork selected thread",
-            Self::ScratchInbox => "Scratch → Inbox",
-            Self::ScratchReady => "Scratch → Ready",
-            Self::ScratchDone => "Scratch → Done",
-            Self::DeleteScratch => "Delete local ScratchWork",
-            Self::SaveCurrentView => "Save current view as…",
-            Self::EditCurrentView => "Edit current SavedView…",
-            Self::DeleteCurrentView => "Delete current SavedView",
         }
     }
 }
@@ -120,13 +104,7 @@ pub enum Action {
     MoveBoardColumn(i32),
     MovePlanningSelection(i32),
     CycleSavedView(i32),
-    CloseSavedViewEditor,
-    MoveSavedViewEditorField(i32),
-    CycleSavedViewEditorValue(i32),
-    BeginSavedViewFieldEdit,
-    SaveSavedViewEditor,
     OpenPlanningSelected,
-    BeginScratch,
     BeginSnooze,
     BeginWorkrefLink,
     WorkrefLinkSubmissionRejected(String),
@@ -239,10 +217,6 @@ pub enum Action {
 pub enum Effect {
     PersistOperatorState,
     PersistOperatorStateDeferred,
-    CreateScratch {
-        title: String,
-        workspace: Option<String>,
-    },
     SnoozeWorkCard {
         anchor: SourceRef,
         duration_ms: u64,
@@ -251,26 +225,9 @@ pub enum Effect {
         owner: SourceRef,
         text: String,
     },
-    UpdateScratchNote {
-        scratch_id: String,
-        note: Option<String>,
-    },
     CreateBookmark {
         source: SourceRef,
         label: Option<String>,
-    },
-    UpdateScratchState {
-        scratch_id: String,
-        state: crate::planning::ScratchState,
-    },
-    DeleteScratch {
-        scratch_id: String,
-    },
-    SaveSavedView {
-        view: SavedView,
-    },
-    DeleteSavedView {
-        view_id: String,
     },
     SetHotSlot {
         slot: u8,

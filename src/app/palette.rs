@@ -154,7 +154,6 @@ impl AppState {
         if thread_id.is_some() && !matches!(self.view, View::Workspace(_)) {
             choices.push(Command::Workspace);
         }
-        choices.push(Command::New);
 
         if matches!(self.view, View::Thread(_)) {
             choices.push(Command::RefreshGoal);
@@ -162,7 +161,7 @@ impl AppState {
         if matches!(self.view, View::Registry) && self.selected_thread().is_some() {
             choices.push(Command::TogglePin);
         }
-        if self.selected_local_target().is_some() {
+        if thread_id.is_some() {
             choices.push(Command::Snooze);
         }
         if !self.context_choices().is_empty() {

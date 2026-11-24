@@ -77,48 +77,35 @@ fn context_menu_cannot_commit_modified_or_held_enter() {
     assert_eq!(app.input_mode, InputMode::Snooze);
 }
 
-#[test]
-fn saved_view_edit_and_save_require_plain_press() {
-    let mut app = fixture();
-    reduce(&mut app, Action::OpenBoard);
-    reduce(&mut app, Action::OpenContext);
+fn open_note(app: &mut AppState) {
+    reduce(app, Action::OpenContext);
     app.context_selected = app
         .context_choices()
         .iter()
-        .position(|choice| *choice == ContextChoice::SaveCurrentView)
-        .expect("Board allows saving a view");
-    reduce(&mut app, Action::ExecuteContext);
-    assert!(app.saved_view_editor.is_some());
-    for code in [KeyCode::Enter, KeyCode::Char('s')] {
-        for key in forbidden(code) {
-            assert!(handle_key(&mut app, key).is_empty());
-            assert!(app.saved_view_editor.is_some());
-            assert!(app.saved_view_editor_error.is_none());
-            assert_eq!(app.input_mode, InputMode::Normal);
-        }
-    }
-    assert!(handle_key(&mut app, press(KeyCode::Enter)).is_empty());
-    assert_eq!(app.input_mode, InputMode::SavedViewField);
+        .position(|choice| *choice == ContextChoice::EditNote)
+        .expect("selected live session allows a local note");
+    reduce(app, Action::ExecuteContext);
+    assert_eq!(app.input_mode, InputMode::Note);
 }
 
 #[test]
 fn text_editor_commit_never_uses_modified_or_held_enter() {
     let mut app = fixture();
-    reduce(&mut app, Action::BeginScratch);
-    reduce(&mut app, Action::InputText("SCRATCH_DRAFT".into()));
-    assert_eq!(app.input_mode, InputMode::ScratchTitle);
+    open_note(&mut app);
+    reduce(&mut app, Action::InputText("NOTE_DRAFT".into()));
+    assert_eq!(app.input_mode, InputMode::Note);
     for key in forbidden(KeyCode::Enter) {
         assert!(handle_key(&mut app, key).is_empty());
-        assert_eq!(app.input_mode, InputMode::ScratchTitle);
-        assert_eq!(app.input_buffer, "SCRATCH_DRAFT");
+        assert_eq!(app.input_mode, InputMode::Note);
+        assert_eq!(app.input_buffer, "NOTE_DRAFT");
     }
     let result = handle_key(&mut app, press(KeyCode::Enter));
     assert!(
         !result.is_empty(),
-        "plain Enter must still commit the local scratch"
+        "plain Enter must still commit the selected session note"
     );
     // Local edits retain the draft until an authoritative write receipt arrives.
-    assert_eq!(app.input_mode, InputMode::ScratchTitle);
+    assert_eq!(app.input_mode, InputMode::Note);
 }
 
 #[test]
@@ -224,8 +211,8 @@ fn alt_t_does_not_bypass_modal_or_open_a_drawer_without_a_codex_thread() {
     assert!(!app.terminal_drawer_open);
 
     reduce(&mut app, Action::ToggleHelp);
-    reduce(&mut app, Action::BeginScratch);
-    assert_eq!(app.input_mode, InputMode::ScratchTitle);
+    open_note(&mut app);
+    assert_eq!(app.input_mode, InputMode::Note);
     assert!(handle_key(&mut app, switch).is_empty());
     assert!(!app.terminal_drawer_open);
 }

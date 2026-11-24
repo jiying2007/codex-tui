@@ -22,7 +22,7 @@ mod thread;
 use crate::{pty::TerminalSize, terminal_drawer::TerminalProcessState};
 use overlays::{
     render_command_palette, render_context_actions, render_local_input_overlay,
-    render_saved_view_editor, render_transcript_search,
+    render_transcript_search,
 };
 use ratatui::{
     Frame,
@@ -180,13 +180,6 @@ fn context_choice_label(choice: ContextChoice, language: UiLanguage) -> &'static
         ContextChoice::EditNote => "编辑本地备注…",
         ContextChoice::Bookmark => "添加书签",
         ContextChoice::LinkWorkItem => "关联当前会话到已有事项…",
-        ContextChoice::ScratchInbox => "Scratch → 收件箱",
-        ContextChoice::ScratchReady => "Scratch → 就绪",
-        ContextChoice::ScratchDone => "Scratch → 完成",
-        ContextChoice::DeleteScratch => "删除 ScratchWork",
-        ContextChoice::SaveCurrentView => "保存当前视图…",
-        ContextChoice::EditCurrentView => "编辑当前已保存视图…",
-        ContextChoice::DeleteCurrentView => "删除当前已保存视图",
         ContextChoice::NewCodexThread => "新建 Codex 会话",
         ContextChoice::ForkCodexThread => "分叉 Codex 会话",
     }
@@ -257,9 +250,6 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
     if app.transcript_search_open {
         render_transcript_search(frame, app);
     }
-    if app.saved_view_editor.is_some() {
-        render_saved_view_editor(frame, app);
-    }
     if app.command_palette_open {
         render_command_palette(frame, app);
     }
@@ -275,7 +265,6 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
             | InputMode::Note
             | InputMode::WorkrefLink
             | InputMode::Snooze
-            | InputMode::SavedViewField
     ) {
         render_local_input_overlay(frame, app);
     }
@@ -354,12 +343,6 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
             "user-input answer active in Thread view",
             "用户输入回答已在会话视图激活",
         )),
-        InputMode::ScratchTitle => Line::from(format!(
-            "{}> {}  · {}",
-            tr(app, "new scratch", "新建 Scratch"),
-            display_input,
-            tr(app, "Enter create · Esc cancel", "Enter 创建 · Esc 取消")
-        )),
         InputMode::Snooze => Line::from(format!(
             "{}> {}  · 15m / 1h / 1d · {}",
             tr(app, "snooze", "稍后提醒"),
@@ -369,12 +352,6 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
         InputMode::Note => Line::from(format!(
             "{}> {}  · {}",
             tr(app, "note", "备注"),
-            truncate_display(&app.input_buffer, 60),
-            tr(app, "Enter save · Esc cancel", "Enter 保存 · Esc 取消")
-        )),
-        InputMode::SavedViewField => Line::from(format!(
-            "{}> {}  · {}",
-            tr(app, "view name", "视图名称"),
             truncate_display(&app.input_buffer, 60),
             tr(app, "Enter save · Esc cancel", "Enter 保存 · Esc 取消")
         )),
@@ -881,8 +858,8 @@ fn render_scratch(frame: &mut Frame<'_>, app: &AppState, scratch_id: &str, area:
             Line::from(""),
             Line::from(tr(
                 app,
-                "Local ScratchWork only. It is not a Codex thread, Git work item, or forge issue.",
-                "仅为本地 ScratchWork；它不是 Codex 会话、Git 工作项或 Forge Issue。",
+                "Historical ScratchWork (read-only). It is not a Codex thread, Git work item, or forge issue.",
+                "历史 ScratchWork（只读）；它不是 Codex 会话、Git 工作项或 Forge Issue。",
             )),
         ]
     } else {
@@ -1078,7 +1055,7 @@ const HELP_LINES: &[&str] = &[
     "Review: j/k file · w word-diff · e editor · o external · . actions · PageUp/PageDown · Esc",
     "Workspace: . actions · r review · Esc",
     "Board: h/l stage · j/k item · Space attention · s snooze · = bind · 1–9 hot slot",
-    "Board: Tab Saved View · . context · Enter open · a Quick Prompt · n Scratch",
+    "Board: Tab saved view · . session actions · Enter open · a Quick Prompt",
     "Scratch: Esc Board",
     "Terminal drawer: Alt+T app/terminal focus · t open/focus · T close",
     "Terminal focus: keys go to PTY · Alt+T app/terminal toggle · Ctrl+] to app · Shift+PgUp/PgDn scrollback.",
@@ -1094,7 +1071,7 @@ const HELP_LINES_ZH: &[&str] = &[
     "评审: j/k 文件 · w 单词级 diff · e 编辑器 · o 外部打开 · . 操作 · PageUp/PageDown · Esc",
     "工作区: Git + Forge · . 操作 · r 评审 · Esc",
     "看板: h/l 阶段 · j/k 项目 · Space 待处理 · s 稍后提醒 · = 绑定 · 1–9 快捷槽",
-    "看板: Tab 已保存视图 · . 上下文 · Enter 打开 · a Quick Prompt · n Scratch",
+    "看板: Tab 已保存视图 · . 会话操作 · Enter 打开 · a Quick Prompt",
     "Scratch: 仅本地详情 · Esc 返回看板",
     "终端抽屉: Alt+T 在应用/终端间切换 · t 打开或聚焦 · T 关闭（Scratch 除外）",
     "终端聚焦: 按键发送给 PTY · Alt+T 双向切换 · Ctrl+] 返回应用 · Shift+PgUp/PgDn 回滚",

@@ -64,7 +64,7 @@ Use native Codex CLI to manage queued submissions. The Lite candidate no longer 
 
 Use native Codex CLI to create, edit, pause, resume or clear Goals. In Thread, `g` (or the palette's Refresh observed Goal) only reads the selected thread's current Goal; observed limits, blocking and completion still inform Attention. No Goal write is issued by codex-tui.
 
-Interactive bulk Board edits are retired in the Lite candidate. Historical local overlays and existing Scratch/Saved View records are retained; use the original work authority for bulk changes. No existing SQLite records are removed or rewritten by the retirement.
+Interactive bulk Board edits, Scratch creation/edit/state/delete and Saved View creation/edit/delete are retired in the Lite candidate. Existing Scratch detail and Saved View navigation are read-only; `Tab` still browses existing views. Create or update real work in its original authority, and link the native session to its work reference. Session note, snooze and bookmark routes remain; no existing SQLite records are removed or rewritten by the retirement.
 
 Mission Control and native session alerts derive attention directly from current Codex Goal, Git and Forge observations, rather than waiting for Board cards. The old snooze/completion preferences are indexed read-only during migration; they do not authorize writes or hide pending approvals in Mission Control.
 

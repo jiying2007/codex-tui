@@ -64,7 +64,7 @@ Headless 的 `threads`、`work`、`status`、`attention`、`board` 使用配置�
 
 使用原生 Codex CLI 创建、编辑、暂停、恢复或清除 Goal。Thread 中的 `g`（或命令面板中的“刷新 Goal 观测”）仅只读获取当前会话 Goal，已观测到的额度受限、阻塞和完成仍用于 Attention；codex-tui 不再发出 Goal 写操作。
 
-Lite 候选不再提供看板交互式批量编辑。历史本地 overlay、已有 Scratch 与 Saved View 记录保留；批量变更回原始工作权威处理。本次退役不会删除或改写现有 SQLite 记录。
+Lite 候选退役看板交互式批量编辑、Scratch 新建/修改/状态/删除，以及 Saved View 新建/编辑/删除。历史 Scratch 详情与 Saved View 导航保持只读，仍可按 Tab 浏览已有视图。真实研发事项回原平台维护，并关联原生会话；保留会话备注、稍后提醒和书签入口。本次退役不删除或改写现有 SQLite 记录。
 
 任务中心与原生会话提醒直接使用当前 Codex Goal、Git 和 Forge 观测，不再等待看板卡片投影。迁移期间只读索引原有稍后提醒及完成确认偏好；这些偏好不授予写入权限，也不会在任务中心隐藏待处理审批。
 

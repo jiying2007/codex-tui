@@ -26,10 +26,7 @@ fn fixture(language: UiLanguage) -> AppState {
     );
     reduce(&mut app, Action::OpenContext);
     assert!(app.context_open);
-    assert!(
-        app.context_choices().len() > 10,
-        "Board context needs enough actions to exceed a short viewport"
-    );
+    assert_eq!(app.context_choices().len(), 3);
     assert_eq!(app.context_selected, 0);
     app
 }
@@ -87,15 +84,15 @@ fn selected_first_and_last_action_remain_visible_in_short_bilingual_terminals() 
                 "Snooze attention…"
             };
             let last = if language.is_simplified_chinese() {
-                "保存当前视图…"
+                "添加书签"
             } else {
-                "Save current view as…"
+                "Add local bookmark"
             };
             assert_eq!(app.context_choice(), Some(ContextChoice::Snooze));
             assert_selected_visible(&draw(&mut terminal, &app), first);
 
             navigate(&mut app, -1);
-            assert_eq!(app.context_choice(), Some(ContextChoice::SaveCurrentView));
+            assert_eq!(app.context_choice(), Some(ContextChoice::Bookmark));
             assert_selected_visible(&draw(&mut terminal, &app), last);
 
             navigate(&mut app, 1);
@@ -113,9 +110,9 @@ fn resizing_one_terminal_retains_selection_without_mutating_menu_state() {
         let selected = app.context_choice();
         let choices = app.context_choices();
         let last = if language.is_simplified_chinese() {
-            "保存当前视图…"
+            "添加书签"
         } else {
-            "Save current view as…"
+            "Add local bookmark"
         };
         let mut terminal = Terminal::new(TestBackend::new(80, 24)).expect("terminal");
         for (width, height) in [(80, 24), (80, 12), (40, 12), (80, 24)] {

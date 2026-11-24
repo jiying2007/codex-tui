@@ -846,7 +846,6 @@ fn registry_footer_renders_pasted_input_safely_in_all_inline_modes() {
         InputMode::Search,
         InputMode::TranscriptSearch,
         InputMode::Alias,
-        InputMode::ScratchTitle,
         InputMode::Snooze,
     ] {
         app.input_mode = mode;
@@ -890,7 +889,7 @@ fn board_title_group_and_footer_escape_untrusted_values() {
         });
     app.planning_view_index = crate::planning::builtin_saved_views().len();
     app.view = View::Board;
-    app.input_mode = InputMode::ScratchTitle;
+    app.input_mode = InputMode::Note;
     app.input_buffer = "typed\u{202e}spoof".into();
 
     let snapshot = overlay_snapshot(&app, render);

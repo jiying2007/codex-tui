@@ -146,18 +146,26 @@ fn context_menu_refuses_a_removed_target_instead_of_snoozing_its_neighbour() {
     assert!(app.mutation_notice.is_some());
 }
 #[test]
-fn context_menu_cannot_edit_a_different_saved_view() {
+fn context_menu_cannot_retarget_after_the_saved_view_changes() {
     let mut app = fixture(false);
-    app.view = View::Board;
+    reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 10 });
+    reduce(&mut app, Action::OpenBoard);
+    for stage in 0..codex_tui::planning::WorkflowStage::ALL.len() {
+        app.board_stage_index = stage;
+        if !app.visible_planning_cards().is_empty() {
+            break;
+        }
+    }
     reduce(&mut app, Action::OpenContext);
     app.context_selected = app
         .context_choices()
         .iter()
-        .position(|c| *c == ContextChoice::SaveCurrentView)
+        .position(|c| *c == ContextChoice::Snooze)
         .unwrap();
     app.planning_view_index += 1;
     assert!(reduce(&mut app, Action::ExecuteContext).is_empty());
-    assert!(app.saved_view_editor.is_none());
+    assert_eq!(app.input_mode, InputMode::Normal);
+    assert!(app.snooze_target.is_none());
     assert!(app.mutation_notice.is_some());
 }
 #[test]

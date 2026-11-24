@@ -95,14 +95,14 @@ fn review_rejects_same_thread_with_changed_cwd() {
 }
 
 #[test]
-fn scratch_does_not_inherit_a_changed_workspace() {
+fn context_menu_does_not_inherit_a_changed_workspace() {
     let mut app = fixture();
-    choose(&mut app, Command::New);
+    choose(&mut app, Command::ContextActions);
     let mut threads = app.threads.clone();
     threads[0].workspace = "another-workspace".into();
     reduce(&mut app, Action::ReplaceThreads(threads));
     refused(&mut app);
-    assert!(app.new_scratch_workspace.is_none());
+    assert!(!app.context_open);
 }
 
 #[test]
