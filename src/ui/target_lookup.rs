@@ -37,9 +37,19 @@ pub(super) fn render(frame: &mut Frame<'_>, app: &AppState) {
         LookupPhase::Editing => {
             tr(app, "Enter query (1–256 bytes)", "输入关键词（1–256 字节）").into()
         }
-        LookupPhase::Requested | LookupPhase::Running => {
+        LookupPhase::Requested => {
             tr(app, "Searching configured targets…", "正在检索已配置目标…").into()
         }
+        LookupPhase::Running(pages) => format!(
+            "{} {}/{}",
+            tr(app, "Searching / Partial", "检索中 / 部分结果"),
+            if pages.is_empty() {
+                0
+            } else {
+                panel.selected + 1
+            },
+            pages.len(),
+        ),
         LookupPhase::Results(pages) => format!(
             "{} {}/{}",
             tr(app, "Read-only result", "只读结果"),
@@ -60,13 +70,16 @@ pub(super) fn render(frame: &mut Frame<'_>, app: &AppState) {
             }
             text
         }
-        LookupPhase::Requested | LookupPhase::Running => tr(
+        LookupPhase::Requested => tr(
             app,
             "Read-only metadata; active target unchanged. Esc cancels.",
             "仅查询元数据，不改变活动目标。Esc 取消。",
         )
         .into(),
-        LookupPhase::Results(pages) => pages.get(panel.selected).cloned().unwrap_or_default(),
+        LookupPhase::Running(pages) | LookupPhase::Results(pages) => pages
+            .get(panel.selected)
+            .cloned()
+            .unwrap_or_else(|| tr(app, "Waiting for first target…", "等待首个目标…").into()),
     };
     frame.render_widget(
         Paragraph::new(text)
@@ -76,11 +89,11 @@ pub(super) fn render(frame: &mut Frame<'_>, app: &AppState) {
     );
     let hint = match &panel.phase {
         LookupPhase::Editing => tr(app, "Enter search · Esc close", "Enter 检索 · Esc 关闭"),
-        LookupPhase::Requested | LookupPhase::Running => tr(app, "Esc cancel", "Esc 取消"),
-        LookupPhase::Results(_) => tr(
+        LookupPhase::Requested => tr(app, "Esc cancel", "Esc 取消"),
+        LookupPhase::Running(_) | LookupPhase::Results(_) => tr(
             app,
-            "↑/↓ result · PgUp/PgDn details · Esc close",
-            "↑/↓ 结果 · PgUp/PgDn 详情 · Esc 关闭",
+            "↑/↓ result · Home/End jump · PgUp/PgDn scroll · Esc close",
+            "↑/↓ 结果 · Home/End 跳转 · PgUp/PgDn 滚动 · Esc 关闭",
         ),
     };
     frame.render_widget(Paragraph::new(hint).wrap(Wrap { trim: false }), footer);
@@ -120,5 +133,21 @@ mod tests {
             assert!(screen.contains("CWD: /fixture/project"));
             assert!(screen.contains("Esc"));
         }
+        app.language = UiLanguage::English;
+        app.target_lookup.as_mut().unwrap().phase =
+            LookupPhase::Running(vec!["Target: first\nThreadId: observed".into()]);
+        let mut terminal = Terminal::new(TestBackend::new(60, 24)).unwrap();
+        terminal.draw(|frame| super::render(frame, &app)).unwrap();
+        let buffer = terminal.backend().buffer();
+        let screen = (0..buffer.area.height)
+            .map(|y| {
+                (0..buffer.area.width)
+                    .map(|x| buffer[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(screen.contains("Searching / Partial"));
+        assert!(screen.contains("ThreadId: observed"));
     }
 }
