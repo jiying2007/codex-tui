@@ -1,6 +1,5 @@
 use crate::{
     backend::BackendStatus,
-    batch_local::LocalBatchPlan,
     conversation::{ConversationPage, InteractiveRequest, InteractiveResolution, RpcRequestId},
     domain::{ThreadId, ThreadSummary},
     forge::{ForgeObservation, ForgeReviewResult, ForgeReviewTarget},
@@ -41,10 +40,6 @@ pub enum InputMode {
     Snooze,
     Note,
     SavedViewField,
-    BatchAddTag,
-    BatchRemoveTag,
-    BatchPriority,
-    BatchSnooze,
     WorkrefLink,
 }
 
@@ -63,16 +58,6 @@ pub enum ContextChoice {
     SaveCurrentView,
     EditCurrentView,
     DeleteCurrentView,
-    BatchAddTag,
-    BatchRemoveTag,
-    BatchSetPriority,
-    BatchClearPriority,
-    BatchMarkReady,
-    BatchClearReady,
-    BatchMarkDone,
-    BatchReopen,
-    BatchSnooze,
-    BatchClearSnooze,
 }
 
 impl ContextChoice {
@@ -91,16 +76,6 @@ impl ContextChoice {
             Self::SaveCurrentView => "Save current view as…",
             Self::EditCurrentView => "Edit current SavedView…",
             Self::DeleteCurrentView => "Delete current SavedView",
-            Self::BatchAddTag => "Batch visible · Add tag…",
-            Self::BatchRemoveTag => "Batch visible · Remove tag…",
-            Self::BatchSetPriority => "Batch visible · Set priority…",
-            Self::BatchClearPriority => "Batch visible · Clear priority",
-            Self::BatchMarkReady => "Batch visible · Mark ready",
-            Self::BatchClearReady => "Batch visible · Clear ready",
-            Self::BatchMarkDone => "Batch visible · Acknowledge done",
-            Self::BatchReopen => "Batch visible · Reopen",
-            Self::BatchSnooze => "Batch visible · Snooze…",
-            Self::BatchClearSnooze => "Batch visible · Clear snooze",
         }
     }
 }
@@ -139,8 +114,6 @@ pub enum Action {
     MutationNotice(String),
     RecentNotificationObserved(crate::notification::RecentNotification),
     ClearRecentNotification,
-    ConfirmPendingOperation,
-    CancelPendingOperation,
     OpenReview,
     OpenWorkspace,
     OpenBoard,
@@ -303,7 +276,6 @@ pub enum Effect {
         slot: u8,
         target: SourceRef,
     },
-    ApplyLocalBatch(Box<LocalBatchPlan>),
     OpenTerminalDrawer {
         cwd: String,
     },

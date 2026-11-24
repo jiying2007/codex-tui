@@ -249,23 +249,6 @@ impl RuntimeStore {
         })
     }
 
-    pub(crate) fn apply_local_batch(
-        &mut self,
-        plan: &codex_tui::batch_local::LocalBatchPlan,
-    ) -> Result<PlanningSnapshot, String> {
-        if !self.writable {
-            return Err(self
-                .error
-                .clone()
-                .unwrap_or_else(|| "SQLite planning store is read-only".into()));
-        }
-        let result = self
-            .sqlite
-            .apply_local_batch(plan)
-            .and_then(|_| self.sqlite.load_planning_snapshot());
-        self.finish_planning_write(result, "local batch")
-    }
-
     pub(crate) fn save_source_note(
         &mut self,
         owner: SourceRef,

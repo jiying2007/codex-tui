@@ -66,7 +66,6 @@ impl AppState {
             worktree_collision_counts: BTreeMap::new(),
             goals: BTreeMap::new(),
             goal_checked: BTreeSet::new(),
-            pending_local_batch: None,
             terminal_drawer_open: false,
             terminal_focused: false,
             terminal_snapshot: None,
@@ -217,7 +216,6 @@ impl AppState {
             && !self.context_open
             && !self.transcript_search_open
             && self.saved_view_editor.is_none()
-            && self.pending_local_batch.is_none()
             && self.hot_slot_bind_pending.is_none()
     }
 
@@ -417,30 +415,6 @@ impl AppState {
         cards
     }
 
-    pub(super) fn freeze_visible_batch(&mut self, action: LocalBatchAction) {
-        let plan = {
-            let cards = self.visible_planning_cards();
-            LocalBatchPlan::freeze(&cards, action, now_unix_ms())
-        };
-        match plan {
-            Ok(plan) => {
-                self.pending_local_batch = Some(plan);
-                self.mutation_notice = None;
-            }
-            Err(error) => {
-                self.pending_local_batch = None;
-                self.mutation_notice = Some(format!(
-                    "{}: {error:#}",
-                    local_text(
-                        self.language,
-                        "cannot create local batch plan",
-                        "无法创建本地批量计划",
-                    )
-                ));
-            }
-        }
-    }
-
     pub fn selected_planning_card(&self) -> Option<&WorkCardProjection> {
         self.visible_planning_cards()
             .get(self.board_selected)
@@ -590,20 +564,6 @@ impl AppState {
             choices.push(ContextChoice::ForkCodexThread);
         }
         if matches!(self.view, View::Board) {
-            if !self.visible_planning_cards().is_empty() {
-                choices.extend([
-                    ContextChoice::BatchAddTag,
-                    ContextChoice::BatchRemoveTag,
-                    ContextChoice::BatchSetPriority,
-                    ContextChoice::BatchClearPriority,
-                    ContextChoice::BatchMarkReady,
-                    ContextChoice::BatchClearReady,
-                    ContextChoice::BatchMarkDone,
-                    ContextChoice::BatchReopen,
-                    ContextChoice::BatchSnooze,
-                    ContextChoice::BatchClearSnooze,
-                ]);
-            }
             choices.push(ContextChoice::SaveCurrentView);
             if self.active_saved_view().id.starts_with("view:") {
                 choices.push(ContextChoice::EditCurrentView);

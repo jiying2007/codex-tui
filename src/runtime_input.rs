@@ -187,14 +187,6 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
         return reduce(app, action);
     }
 
-    if app.pending_local_batch.is_some() {
-        return match key.code {
-            KeyCode::Char('y') if plain => reduce(app, Action::ConfirmPendingOperation),
-            KeyCode::Char('c') | KeyCode::Esc => reduce(app, Action::CancelPendingOperation),
-            _ => vec![],
-        };
-    }
-
     if app.view_kind() == ViewKind::Thread
         && let Some(request) = app.current_pending_request()
     {

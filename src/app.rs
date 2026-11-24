@@ -1,5 +1,4 @@
 use crate::backend::BackendStatus;
-use crate::batch_local::{LocalBatchAction, LocalBatchPlan, parse_priority};
 use crate::command::Command;
 #[cfg(test)]
 use crate::conversation::{ConversationPage, RpcRequestId, UserInputQuestion};
@@ -153,7 +152,6 @@ pub struct AppState {
     worktree_collision_counts: BTreeMap<String, usize>,
     pub goals: BTreeMap<String, GoalObservation>,
     pub goal_checked: BTreeSet<String>,
-    pub pending_local_batch: Option<LocalBatchPlan>,
     pub terminal_drawer_open: bool,
     pub terminal_focused: bool,
     pub terminal_snapshot: Option<TerminalSnapshot>,

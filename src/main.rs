@@ -940,17 +940,6 @@ fn apply_effects(
                     store.planning(move |store| store.set_hot_slot(slot, target), None),
                 );
             }
-            Effect::ApplyLocalBatch(plan) => {
-                let notice = format!(
-                    "{} · {}",
-                    runtime_text(app.language, "local batch applied", "本地批量操作已应用"),
-                    plan.preview()
-                );
-                submit_planning(
-                    app,
-                    store.planning(move |store| store.apply_local_batch(&plan), Some(notice)),
-                );
-            }
             Effect::OpenTerminalDrawer { cwd } => {
                 let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
                 let size = ui::terminal_drawer_pty_size(cols, rows);

@@ -578,25 +578,8 @@ fn overlay_snapshot(app: &AppState, paint: fn(&mut ratatui::Frame<'_>, &AppState
 }
 
 #[test]
-fn local_batch_confirmation_and_input_overlays_escape_untrusted_text() {
+fn retained_input_and_palette_overlays_escape_untrusted_text() {
     let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
-    app.pending_local_batch = Some(crate::batch_local::LocalBatchPlan {
-        action: crate::batch_local::LocalBatchAction::AddTag("tag\u{202e}spoof".into()),
-        targets: vec![crate::batch_local::LocalBatchTarget {
-            local_id: "item\u{202e}spoof".into(),
-            anchor: crate::planning::SourceRef {
-                kind: crate::planning::SourceKind::ScratchWork,
-                value: "scratch:1".into(),
-            },
-            title: "title\u{202e}spoof".into(),
-        }],
-        planned_at_unix_ms: 1,
-    });
-    let batch = overlay_snapshot(&app, render_local_batch_confirmation);
-    assert!(batch.contains("item\u{fffd}spoof"));
-    assert!(batch.contains("title\u{fffd}spoof"));
-    assert!(!batch.contains('\u{202e}'));
-
     app.input_mode = InputMode::Note;
     app.input_buffer = "typed\u{202e}spoof".into();
     let input = overlay_snapshot(&app, render_local_input_overlay);

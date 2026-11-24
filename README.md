@@ -341,7 +341,7 @@ M7d3 adds a fail-closed release path: publication is manually dispatched, while 
 - M6 forge integration: complete.
 - M7a headless read-only CLI + scale baselines: implemented in the v0.7.x line.
 - M7b1 richer SavedView query language: implemented in the v0.7.x line.
-- M7b2 safe transactional batch-local actions: implemented with frozen targets, explicit confirmation, and one SQLite transaction.
+- M7b2 transactional batch-local actions: interactive runtime retired; existing data and lower-level migration/recovery coverage retained.
 - M7b3 repository launch presets: retired; use native development tools.
 - M7c1 bounded cross-platform PTY engine + terminal capability doctor: implemented under the v0.7.x line.
 - M7c2 Terminal Drawer UI/input/resize: implemented.

@@ -191,34 +191,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::ClearRecentNotification => {
             state.recent_notification = None;
         }
-        Action::ConfirmPendingOperation => {
-            if state.planning_store_error.is_some() {
-                state.mutation_notice = Some(
-                    local_text(
-                        state.language,
-                        "local store is degraded; mutation receipts cannot be persisted",
-                        "本地存储已降级；无法持久化变更回执",
-                    )
-                    .into(),
-                );
-                return vec![];
-            }
-            if let Some(plan) = state.pending_local_batch.take() {
-                return vec![Effect::ApplyLocalBatch(Box::new(plan))];
-            }
-            return vec![];
-        }
-        Action::CancelPendingOperation => {
-            state.pending_local_batch = None;
-            state.mutation_notice = Some(
-                local_text(
-                    state.language,
-                    "operation cancelled before execution",
-                    "操作已在执行前取消",
-                )
-                .into(),
-            );
-        }
         Action::GoalObserved(goal) => {
             state.goal_checked.insert(goal.thread_id.0.clone());
             state.goals.insert(goal.thread_id.0.clone(), goal);
@@ -411,69 +383,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 return vec![];
             }
 
-            if matches!(
-                choice,
-                ContextChoice::BatchAddTag
-                    | ContextChoice::BatchRemoveTag
-                    | ContextChoice::BatchSetPriority
-                    | ContextChoice::BatchClearPriority
-                    | ContextChoice::BatchMarkReady
-                    | ContextChoice::BatchClearReady
-                    | ContextChoice::BatchMarkDone
-                    | ContextChoice::BatchReopen
-                    | ContextChoice::BatchSnooze
-                    | ContextChoice::BatchClearSnooze
-            ) {
-                match choice {
-                    ContextChoice::BatchAddTag => {
-                        state.input_buffer.clear();
-                        state.input_mode = InputMode::BatchAddTag;
-                    }
-                    ContextChoice::BatchRemoveTag => {
-                        state.input_buffer.clear();
-                        state.input_mode = InputMode::BatchRemoveTag;
-                    }
-                    ContextChoice::BatchSetPriority => {
-                        state.input_buffer = "0".into();
-                        state.input_mode = InputMode::BatchPriority;
-                    }
-                    ContextChoice::BatchSnooze => {
-                        state.input_buffer = "1h".into();
-                        state.input_mode = InputMode::BatchSnooze;
-                    }
-                    ContextChoice::BatchClearPriority => {
-                        state.freeze_visible_batch(LocalBatchAction::ClearPriority);
-                    }
-                    ContextChoice::BatchMarkReady => {
-                        state.freeze_visible_batch(LocalBatchAction::SetReady(true));
-                    }
-                    ContextChoice::BatchClearReady => {
-                        state.freeze_visible_batch(LocalBatchAction::SetReady(false));
-                    }
-                    ContextChoice::BatchMarkDone => {
-                        state.freeze_visible_batch(LocalBatchAction::SetDone(true));
-                    }
-                    ContextChoice::BatchReopen => {
-                        state.freeze_visible_batch(LocalBatchAction::SetDone(false));
-                    }
-                    ContextChoice::BatchClearSnooze => {
-                        state.freeze_visible_batch(LocalBatchAction::SnoozeUntil(None));
-                    }
-                    _ => {
-                        state.mutation_notice = Some(
-                            local_text(
-                                state.language,
-                                "context action routing mismatch; no operation executed",
-                                "上下文操作路由不匹配；未执行任何操作",
-                            )
-                            .into(),
-                        );
-                        return vec![];
-                    }
-                }
-                return vec![];
-            }
-
             let Some(target) = state.selected_local_target() else {
                 return vec![];
             };
@@ -553,17 +462,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 | ContextChoice::ForkCodexThread
                 | ContextChoice::SaveCurrentView
                 | ContextChoice::EditCurrentView
-                | ContextChoice::DeleteCurrentView
-                | ContextChoice::BatchAddTag
-                | ContextChoice::BatchRemoveTag
-                | ContextChoice::BatchSetPriority
-                | ContextChoice::BatchClearPriority
-                | ContextChoice::BatchMarkReady
-                | ContextChoice::BatchClearReady
-                | ContextChoice::BatchMarkDone
-                | ContextChoice::BatchReopen
-                | ContextChoice::BatchSnooze
-                | ContextChoice::BatchClearSnooze => {
+                | ContextChoice::DeleteCurrentView => {
                     state.mutation_notice = Some(
                         local_text(
                             state.language,
@@ -1364,10 +1263,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::Snooze
             | InputMode::Note
             | InputMode::SavedViewField
-            | InputMode::BatchAddTag
-            | InputMode::BatchRemoveTag
-            | InputMode::BatchPriority
-            | InputMode::BatchSnooze
             | InputMode::WorkrefLink => {
                 state.input_buffer.push(character);
                 if state.input_mode == InputMode::Search {
@@ -1402,10 +1297,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 | InputMode::Snooze
                 | InputMode::Note
                 | InputMode::SavedViewField
-                | InputMode::BatchAddTag
-                | InputMode::BatchRemoveTag
-                | InputMode::BatchPriority
-                | InputMode::BatchSnooze
                 | InputMode::WorkrefLink => {
                     state.input_buffer.push_str(&text);
                     if state.input_mode == InputMode::Search {
@@ -1434,10 +1325,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::Snooze
             | InputMode::Note
             | InputMode::SavedViewField
-            | InputMode::BatchAddTag
-            | InputMode::BatchRemoveTag
-            | InputMode::BatchPriority
-            | InputMode::BatchSnooze
             | InputMode::WorkrefLink => {
                 state.input_buffer.pop();
                 if state.input_mode == InputMode::Search {
@@ -1474,67 +1361,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 state.transcript_search_loading = true;
                 state.transcript_search_error = None;
                 return vec![Effect::SearchTranscript { query }];
-            }
-            if matches!(
-                mode,
-                InputMode::BatchAddTag
-                    | InputMode::BatchRemoveTag
-                    | InputMode::BatchPriority
-                    | InputMode::BatchSnooze
-            ) {
-                let raw = state.input_buffer.trim().to_string();
-                if raw.is_empty() {
-                    return vec![];
-                }
-                let action = match mode {
-                    InputMode::BatchAddTag => LocalBatchAction::AddTag(raw),
-                    InputMode::BatchRemoveTag => LocalBatchAction::RemoveTag(raw),
-                    InputMode::BatchPriority => match parse_priority(&raw) {
-                        Ok(priority) => LocalBatchAction::SetPriority(priority),
-                        Err(error) => {
-                            state.mutation_notice = Some(format!(
-                                "{}: {error:#}",
-                                local_text(
-                                    state.language,
-                                    "invalid local batch priority",
-                                    "本地批量优先级无效",
-                                )
-                            ));
-                            return vec![];
-                        }
-                    },
-                    InputMode::BatchSnooze => {
-                        let Some(duration_ms) = parse_snooze_duration(&raw) else {
-                            state.mutation_notice = Some(
-                                local_text(
-                                    state.language,
-                                    "invalid batch snooze; use examples such as 15m, 1h, 1d",
-                                    "批量稍后提醒无效；请使用 15m、1h、1d 等格式",
-                                )
-                                .into(),
-                            );
-                            return vec![];
-                        };
-                        LocalBatchAction::SnoozeUntil(Some(
-                            now_unix_ms().saturating_add(duration_ms),
-                        ))
-                    }
-                    _ => {
-                        state.mutation_notice = Some(
-                            local_text(
-                                state.language,
-                                "batch input routing mismatch; no write executed",
-                                "批量输入路由不匹配；未执行写入",
-                            )
-                            .into(),
-                        );
-                        return vec![];
-                    }
-                };
-                state.input_mode = InputMode::Normal;
-                state.input_buffer.clear();
-                state.freeze_visible_batch(action);
-                return vec![];
             }
             if mode == InputMode::ScratchTitle {
                 let title = state.input_buffer.trim().to_string();
@@ -1654,17 +1480,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 return vec![];
             }
             if state.input_mode == InputMode::TranscriptSearch {
-                state.input_mode = InputMode::Normal;
-                state.input_buffer.clear();
-                return vec![];
-            }
-            if matches!(
-                state.input_mode,
-                InputMode::BatchAddTag
-                    | InputMode::BatchRemoveTag
-                    | InputMode::BatchPriority
-                    | InputMode::BatchSnooze
-            ) {
                 state.input_mode = InputMode::Normal;
                 state.input_buffer.clear();
                 return vec![];

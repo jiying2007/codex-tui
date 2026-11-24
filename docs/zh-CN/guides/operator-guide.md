@@ -64,6 +64,8 @@ Headless 的 `threads`、`work`、`status`、`attention`、`board` 使用配置�
 
 使用原生 Codex CLI 创建、编辑、暂停、恢复或清除 Goal。Thread 中的 `g`（或命令面板中的“刷新 Goal 观测”）仅只读获取当前会话 Goal，已观测到的额度受限、阻塞和完成仍用于 Attention；codex-tui 不再发出 Goal 写操作。
 
+Lite 候选不再提供看板交互式批量编辑。历史本地 overlay、已有 Scratch 与 Saved View 记录保留；批量变更回原始工作权威处理。本次退役不会删除或改写现有 SQLite 记录。
+
 任务中心与原生会话提醒直接使用当前 Codex Goal、Git 和 Forge 观测，不再等待看板卡片投影。迁移期间只读索引原有稍后提醒及完成确认偏好；这些偏好不授予写入权限，也不会在任务中心隐藏待处理审批。
 
 搜索与 Saved View 仅管理个人工作流；未知上游历史不会被虚构。全文搜索使用短生命周期独立 Codex App Server 连接，不占用主审批/会话 Actor；只允许一个搜索，新请求取消旧请求，总体 12 秒超时会明确提示。单 Thread 匹配项分页未耗尽时不得标记全部完成。若等待中的 RPC 收到服务端审批请求，主 Actor 会优先分派已排队的审批事件，再处理其他命令或周期探测；被中断的 RPC 结果仍为未知，不自动重放。本地索引的短查询会将 `%`、`_` 和反斜杠按字面字符搜索，而不是 SQLite 通配符。要区分 Windows 路径残影与 Ubuntu 本机会话，应检查仓库 cwd 和 Codex Home。上游清除项目归属或标题后，先用安全的 cwd/会话 ID 临时显示并触发合并后的权威重读；解归档也通过既有有界刷新恢复，不凭通知虚构会话。App Server 的 Git Origin 仅保留剔除凭证、查询和片段后的 host/repository 身份，无法安全解析时退回 cwd，不将原始 URL 带入搜索、Headless 或界面。每周仅查询公开 Codex 稳定版元数据并对新版提示复核，不能替代真实账号 L3 验收。
@@ -101,7 +103,7 @@ Terminal Drawer 的 PTY 输出改为协作式排空：每次主循环最多处�
 ## Windows SSH Ubuntu 与 Terminal Drawer
 <!-- docs-section: ssh -->
 
-通过 Windows SSH 客户端控制 Ubuntu 时，codex-tui **在 Ubuntu 运行**；终端设备、文件路径、Codex、配置、Shell 子进程都应以 Ubuntu 为准。`Alt+T` 在 Mission Control／当前应用页与 Terminal Drawer 之间**双向切换焦点**（无须使用功能键）（保持同一个 Shell，不重建 PTY）；`t` 打开或重新聚焦 Drawer，`T` 关闭 Drawer。终端聚焦时 `Ctrl+]` 仍可返回应用作为备用；弹窗、编辑框和确认界面继续优先处理自己的按键。若 Windows/SSH 抢占按键，先查 `?` 与 `doctor terminal`；Resize、Focus、Ctrl+C、退出与终端恢复必须在**真实控制 TTY** 验证。托管 PTY 回归不是该证明。界面会对不可信的会话消息、Git diff 正文、仓库路径及平台状态中的控制字符、Unicode 双向覆盖符，以及软连字符、零宽空格和词连接符等视觉不可见格式字符做安全替换；选中会话详情和离线状态栏也会对会话 ID、模型名、Git 分支/错误和 App Server 来源字符串执行同样的仅显示端净化；Board 的变更请求状态同样净化来自 Forge 的不可信显示字符串。本地批量操作的确认窗口，以及本地文本编辑和命令面板查询也过滤不可信显示文本；变更请求与外部交接目标的原始值保持不变。Mission Control/Board 页脚输入、自定义 Saved View 标题/分组及 Scratch ID 同样进行显示层防护；原始搜索、状态和本地元数据不改变。仅改变显示内容，不改动 Codex/Git 权威原始数据。Terminal Drawer 是独立的 PTY 终端模拟器，不属于安全过滤后的预览。
+通过 Windows SSH 客户端控制 Ubuntu 时，codex-tui **在 Ubuntu 运行**；终端设备、文件路径、Codex、配置、Shell 子进程都应以 Ubuntu 为准。`Alt+T` 在 Mission Control／当前应用页与 Terminal Drawer 之间**双向切换焦点**（无须使用功能键）（保持同一个 Shell，不重建 PTY）；`t` 打开或重新聚焦 Drawer，`T` 关闭 Drawer。终端聚焦时 `Ctrl+]` 仍可返回应用作为备用；弹窗、编辑框和确认界面继续优先处理自己的按键。若 Windows/SSH 抢占按键，先查 `?` 与 `doctor terminal`；Resize、Focus、Ctrl+C、退出与终端恢复必须在**真实控制 TTY** 验证。托管 PTY 回归不是该证明。界面会对不可信的会话消息、Git diff 正文、仓库路径及平台状态中的控制字符、Unicode 双向覆盖符，以及软连字符、零宽空格和词连接符等视觉不可见格式字符做安全替换；选中会话详情和离线状态栏也会对会话 ID、模型名、Git 分支/错误和 App Server 来源字符串执行同样的仅显示端净化；Board 的变更请求状态同样净化来自 Forge 的不可信显示字符串。本地文本编辑和命令面板查询也过滤不可信显示文本；变更请求与外部交接目标的原始值保持不变。Mission Control/Board 页脚输入、自定义 Saved View 标题/分组及 Scratch ID 同样进行显示层防护；原始搜索、状态和本地元数据不改变。仅改变显示内容，不改动 Codex/Git 权威原始数据。Terminal Drawer 是独立的 PTY 终端模拟器，不属于安全过滤后的预览。
 
 ## G2/G3 手工需求、缺陷和跨仓引用
 <!-- docs-section: workref -->

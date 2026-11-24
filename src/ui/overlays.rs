@@ -164,54 +164,6 @@ pub(super) fn render_local_input_overlay(frame: &mut Frame<'_>, app: &AppState) 
                 "Enter 应用字段 · Esc 取消",
             ),
         ),
-        InputMode::BatchAddTag => (
-            tr(
-                app,
-                " Batch visible · Add tag ",
-                " 批量当前可见项 · 添加标签 ",
-            ),
-            tr(
-                app,
-                "Enter creates frozen plan · Esc cancel",
-                "Enter 创建冻结计划 · Esc 取消",
-            ),
-        ),
-        InputMode::BatchRemoveTag => (
-            tr(
-                app,
-                " Batch visible · Remove tag ",
-                " 批量当前可见项 · 移除标签 ",
-            ),
-            tr(
-                app,
-                "Enter creates frozen plan · Esc cancel",
-                "Enter 创建冻结计划 · Esc 取消",
-            ),
-        ),
-        InputMode::BatchPriority => (
-            tr(
-                app,
-                " Batch visible · Set priority ",
-                " 批量当前可见项 · 设置优先级 ",
-            ),
-            tr(
-                app,
-                "integer · Enter creates frozen plan · Esc cancel",
-                "整数 · Enter 创建冻结计划 · Esc 取消",
-            ),
-        ),
-        InputMode::BatchSnooze => (
-            tr(
-                app,
-                " Batch visible · Snooze ",
-                " 批量当前可见项 · 稍后提醒 ",
-            ),
-            tr(
-                app,
-                "15m / 1h / 1d · Enter creates frozen plan · Esc cancel",
-                "15m / 1h / 1d · Enter 创建冻结计划 · Esc 取消",
-            ),
-        ),
         _ => return,
     };
     let mut lines = vec![
@@ -456,82 +408,6 @@ pub(super) fn render_saved_view_editor(frame: &mut Frame<'_>, app: &AppState) {
     frame.render_widget(
         Paragraph::new(lines)
             .block(Block::bordered().title(tr(app, " Saved View Editor ", " 已保存视图编辑器 ")))
-            .wrap(Wrap { trim: false }),
-        area,
-    );
-}
-
-pub(super) fn render_local_batch_confirmation(frame: &mut Frame<'_>, app: &AppState) {
-    let Some(plan) = &app.pending_local_batch else {
-        return;
-    };
-
-    let mut lines = vec![
-        Line::from(tr(
-            app,
-            "CONFIRM REQUIRED — no local write has executed yet.",
-            "需要确认 — 尚未执行任何本地写入。",
-        )),
-        Line::from(format!(
-            "{}: {}",
-            tr(app, "Operation", "操作"),
-            sanitize_inline(&plan.action.label())
-        )),
-        Line::from(format!(
-            "{}: {}",
-            tr(app, "Frozen targets", "冻结目标"),
-            plan.targets.len()
-        )),
-        Line::from(tr(
-            app,
-            "Target set will NOT be recomputed before execution.",
-            "执行前不会重新计算目标集合。",
-        )),
-        Line::from(""),
-    ];
-
-    for target in plan.targets.iter().take(8) {
-        lines.push(Line::from(format!(
-            "  {} · {}",
-            sanitize_inline(&target.local_id),
-            truncate_display(&target.title, 48)
-        )));
-    }
-    if plan.targets.len() > 8 {
-        lines.push(Line::from(if app.language.is_simplified_chinese() {
-            format!("  … 另有 {} 个冻结目标", plan.targets.len() - 8)
-        } else {
-            format!("  … and {} more frozen target(s)", plan.targets.len() - 8)
-        }));
-    }
-
-    lines.extend([
-        Line::from(""),
-        Line::from(tr(
-            app,
-            "SQLite: one transaction; any failure rolls the whole batch back.",
-            "SQLite: 单事务执行；任一失败都会回滚整批。",
-        )),
-        Line::from(tr(
-            app,
-            "Authority: local overlays / ScratchWork only; no Codex/Git/Forge write.",
-            "权限边界：仅本地 overlay / ScratchWork；不写 Codex/Git/Forge。",
-        )),
-        Line::from(tr(
-            app,
-            "y CONFIRM execute · c/Esc cancel",
-            "y 确认执行 · c/Esc 取消",
-        )),
-    ]);
-
-    let height = u16::try_from(lines.len().saturating_add(2))
-        .unwrap_or(18)
-        .clamp(12, 24);
-    let area = centered_fixed(86, height, frame.area());
-    frame.render_widget(Clear, area);
-    frame.render_widget(
-        Paragraph::new(lines)
-            .block(Block::bordered().title(tr(app, " Local Batch Plan ", " 本地批量计划 ")))
             .wrap(Wrap { trim: false }),
         area,
     );

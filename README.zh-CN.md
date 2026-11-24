@@ -33,6 +33,7 @@ Mission Control 优先回答：**正在做什么、哪条会话需要我、如�
 - Board 的 List/Review Queue Saved View 按工作区连续分组；区分 Needs You / Working / Ready / Inactive，并支持筛选、置顶和别名。
 - Board/WorkCard 来源于 Codex、Git 和 Forge 的**派生视图**；个人笔记、提醒和规划覆盖层才写入本地 SQLite。
 - Git Context 展示分支、脏文件和共享工作树冲突；GitLab/GitHub Forge 展示 Issue、MR/PR、流水线和 Review。Forge 仅只读投影，复用 Git 上下文观测事件刷新当前相关会话，不再独立全局轮询历史仓库；创建、评论、批准与合并由原生平台或 CLI 执行。历史变更回执保留供人工核对，Lite 不再启动 Forge 或受管 Worktree 变更执行及自动恢复。创建、接管、删除工作树及删除分支交给原生 Git/Codex 工具；既有实际工作树和历史回执不清除。
+- 看板批量编辑入口已退役，保留历史本地数据及底层迁移、恢复测试。
 - Thread View 和 Terminal Drawer 仅作缺陷与安全维护；重复 Thread Queue UI 已从 Lite 候选删除，队列由原生 Codex CLI 管理，不修改或清除已有上游队列项。
 
 `b` 打开 Board，`Tab` 切换 Needs You / Needs Review；`r` 进入所选会话的 Review，`w` 查看 Workspace。Headless 的 Codex 投影视图使用配置中的活动目标或 `--target NAME`，每次只读取一个目标，并明确标记跨目标共享的本地元数据范围。详见[操作指南](docs/zh-CN/guides/operator-guide.md)与 [CLI 参考](docs/zh-CN/guides/cli-reference.md)。
