@@ -228,7 +228,6 @@ fn cancelling_search_returns_only_to_a_still_owned_provisional_thread() {
             assert!(effects.is_empty());
             assert!(!state.search_return_view_is_valid(&View::Review(id.clone())));
             assert!(!state.search_return_view_is_valid(&View::Workspace(id.clone())));
-            assert!(!state.search_return_view_is_valid(&View::ManagedWorktrees(id.clone())));
         }
     }
 }

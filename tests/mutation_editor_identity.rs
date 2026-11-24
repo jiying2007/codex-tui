@@ -61,62 +61,9 @@ fn rejected(app: &mut AppState) {
         reduce(app, Action::CommitInput).is_empty(),
         "unexpected write effect"
     );
-    assert!(app.pending_operation.is_none(), "wrong Git plan created");
     assert_eq!(app.input_mode, mode);
     assert_eq!(app.input_buffer, draft);
     assert!(app.mutation_notice.is_some(), "conflict must be visible");
-}
-#[test]
-fn worktree_create_does_not_switch_repository_mid_wizard() {
-    let mut app = fixture(false);
-    reduce(&mut app, Action::BeginCreateWorktree);
-    app.input_buffer = "feature/new".into();
-    reduce(&mut app, Action::CommitInput);
-    let root = tempfile::tempdir().unwrap();
-    app.input_buffer = root.path().join("new-worktree").to_string_lossy().into();
-    reduce(&mut app, Action::CommitInput);
-    assert_eq!(app.input_mode, InputMode::WorktreeCreateStartPoint);
-    app.view = View::Workspace(app.threads[1].id.clone());
-    rejected(&mut app);
-    assert_eq!(app.create_worktree_branch.as_deref(), Some("feature/new"));
-    assert!(app.create_worktree_path.is_some());
-}
-#[test]
-fn delete_branch_does_not_switch_repository_during_input() {
-    let mut app = fixture(false);
-    reduce(&mut app, Action::BeginDeleteBranch);
-    app.input_buffer = "feature/delete".into();
-    let id = app.threads[0].id.0.clone();
-    app.git_contexts
-        .get_mut(&id)
-        .unwrap()
-        .repo
-        .as_mut()
-        .unwrap()
-        .git_common_dir = "/replacement/.git".into();
-    rejected(&mut app);
-}
-#[test]
-fn worktree_editor_refuses_removed_thread() {
-    let mut app = fixture(false);
-    reduce(&mut app, Action::BeginDeleteBranch);
-    reduce(&mut app, Action::ReplaceThreads(vec![]));
-    rejected(&mut app);
-}
-#[test]
-fn unchanged_branch_delete_requires_confirmation() {
-    let mut app = fixture(false);
-    reduce(&mut app, Action::BeginDeleteBranch);
-    app.input_buffer = "feature/delete".into();
-    assert!(reduce(&mut app, Action::CommitInput).is_empty());
-    assert_eq!(
-        app.pending_operation.as_ref().unwrap().repo.primary_root,
-        "/repo-0"
-    );
-    assert!(matches!(
-        reduce(&mut app, Action::ConfirmPendingOperation).as_slice(),
-        [Effect::ExecuteOperation(_)]
-    ));
 }
 fn open_goal(app: &mut AppState) -> ThreadId {
     let id = app.threads[0].id.clone();

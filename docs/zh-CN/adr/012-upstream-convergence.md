@@ -27,6 +27,8 @@ codex-tui 必须维持**本地优先的薄 Mission Control**，其差异化能�
 ## 维护型功能与单一限额
 <!-- docs-section: maintenance -->
 
+Lite 退役候选删除受管 Worktree 写入口，并停止旧 Worktree、Forge 变更协调器。真实退役范围和未决回执审计前，历史回执和执行源码仍受现有门禁约束，但应用运行时不再分派；不代表已取得真实替代或 Stable 资格。
+
 现有本地会话编辑器与 Terminal Drawer 仅作安全/缺陷/互操作维护；新功能优先在官方 Codex 中实现。`release/v1.5-convergence.json` 维护重叠模块的名称、分类和策略（**不**保存第二套数值 LOC 上限）；`release/v1.4-plan.json` 是唯一的全 Rust 模块 LOC Ratchet。CI、Development Qualification 与 Release Gate 都会运行 `scripts/architecture/check_upstream_convergence.py` 并拒绝绕开冻结。
 
 上游 Worktree 能力另设冻结边界：官方 Codex v0.162.0 已增加受功能开关

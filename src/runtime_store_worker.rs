@@ -4,7 +4,7 @@
 use crate::runtime_store::{RuntimeStore as StoreBackend, StoreBootstrap};
 use anyhow::{Context, Result};
 use codex_tui::{
-    planning::PlanningSnapshot, sqlite_store::SqliteStore, store::LocalStateV1,
+    planning::PlanningSnapshot, store::LocalStateV1,
     transcript_search::TranscriptSearchResults, workref::WorkRefLedger,
 };
 use std::{
@@ -39,7 +39,6 @@ enum Request {
 }
 
 pub(crate) struct StoreWorker {
-    sqlite: SqliteStore,
     requests: SyncSender<Request>,
     events: Receiver<StoreEvent>,
     pending_operator: Option<Box<LocalStateV1>>,
@@ -54,7 +53,6 @@ impl StoreWorker {
         Ok((Self::start(backend)?, bootstrap))
     }
     fn start(mut backend: StoreBackend) -> Result<Self> {
-        let sqlite = backend.sqlite_clone();
         let error = backend.error();
         let (requests, incoming) = mpsc::sync_channel::<Request>(CAPACITY);
         let (outgoing, events) = mpsc::sync_channel(CAPACITY);
@@ -82,7 +80,6 @@ impl StoreWorker {
             })
             .context("start local state worker")?;
         Ok(Self {
-            sqlite,
             requests,
             events,
             pending_operator: None,
@@ -93,9 +90,6 @@ impl StoreWorker {
     }
     pub(crate) fn error(&self) -> Option<String> {
         self.error.clone()
-    }
-    pub(crate) fn sqlite_clone(&self) -> SqliteStore {
-        self.sqlite.clone()
     }
     pub(crate) fn defer_operator_state(&mut self) {
         self.dirty_since.get_or_insert_with(Instant::now);
@@ -285,7 +279,12 @@ mod tests {
         last.pins.insert("latest".into());
         worker.flush_operator_state_on_exit(&last).unwrap();
         use codex_tui::store::LocalStore;
-        assert_eq!(worker.sqlite.load_state().unwrap(), last);
+        assert_eq!(
+            codex_tui::sqlite_store::SqliteStore::at(root.path())
+                .load_state()
+                .unwrap(),
+            last
+        );
     }
     #[test]
     fn saturation_rejects_explicit_work_but_coalesces_operator_state() {

@@ -1,18 +1,12 @@
-//! Ephemeral intent guards for editors which create remote or Git mutations.
+//! Ephemeral intent guard for editing a native Codex Goal.
 use super::{AppState, InputMode, local_text};
 use crate::{
-    domain::{LocalRepoIdentity, ThreadId},
+    domain::ThreadId,
     planning::{SourceKind, SourceRef},
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Target {
-    Worktree {
-        thread: ThreadId,
-        cwd: String,
-        repo: LocalRepoIdentity,
-        branch: Option<String>,
-    },
     Goal {
         thread: ThreadId,
         original: Option<(i64, String)>,
@@ -27,10 +21,7 @@ pub(super) struct MutationEditor {
 
 fn family(mode: InputMode) -> Option<InputMode> {
     match mode {
-        InputMode::WorktreeCreateBranch
-        | InputMode::WorktreeCreatePath
-        | InputMode::WorktreeCreateStartPoint => Some(InputMode::WorktreeCreateBranch),
-        InputMode::WorktreeDeleteBranch | InputMode::GoalObjective => Some(mode),
+        InputMode::GoalObjective => Some(mode),
         _ => None,
     }
 }
@@ -39,20 +30,8 @@ impl AppState {
     pub(super) fn editor_snapshot(&self, mode: InputMode) -> Option<MutationEditor> {
         let mode = family(mode)?;
         let thread = self.current_thread_id()?.clone();
-        let live = self.thread_by_id(&thread)?;
+        self.thread_by_id(&thread)?;
         let target = match mode {
-            InputMode::WorktreeCreateBranch | InputMode::WorktreeDeleteBranch => {
-                let context = self.git_context(&thread)?;
-                if context.cwd != live.metadata.cwd || context.error.is_some() {
-                    return None;
-                }
-                Target::Worktree {
-                    thread,
-                    cwd: context.cwd.clone(),
-                    repo: context.repo.clone()?,
-                    branch: context.branch.clone(),
-                }
-            }
             InputMode::GoalObjective => Target::Goal {
                 original: self
                     .goals

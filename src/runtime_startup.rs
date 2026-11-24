@@ -40,7 +40,6 @@ fn eligible(app: &AppState, key: KeyEvent) -> bool {
         && !app.transcript_search_open
         && !app.goal_actions_open
         && app.saved_view_editor.is_none()
-        && app.pending_operation.is_none()
         && app.pending_local_batch.is_none()
         && app.hot_slot_bind_pending.is_none()
 }

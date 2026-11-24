@@ -156,6 +156,7 @@ impl RuntimeStore {
         self.error.clone()
     }
 
+    #[cfg(test)]
     pub(crate) fn sqlite_clone(&self) -> SqliteStore {
         self.sqlite.clone()
     }

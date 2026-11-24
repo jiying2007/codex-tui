@@ -4,7 +4,6 @@ use crate::domain::{AttentionReason, CwdLocality, RuntimeStatus, display_cwd};
 use crate::forge::ForgeFreshness;
 use crate::goal::GoalStatus;
 use crate::i18n::{UiLanguage, pick};
-use crate::operation::OperationState;
 use crate::planning::{PlanningAttention, SavedView, SavedViewLayout, ScratchState, WorkflowStage};
 use crate::text::{fit_display, sanitize_inline, truncate_display};
 mod board;
@@ -172,21 +171,6 @@ fn forge_freshness_label(freshness: ForgeFreshness, language: UiLanguage) -> &'s
     }
 }
 
-fn operation_state_label(state: OperationState, language: UiLanguage) -> &'static str {
-    match (state, language) {
-        (OperationState::Planned, UiLanguage::SimplifiedChinese) => "已计划",
-        (OperationState::Executing, UiLanguage::SimplifiedChinese) => "执行中",
-        (OperationState::Succeeded, UiLanguage::SimplifiedChinese) => "已成功",
-        (OperationState::Failed, UiLanguage::SimplifiedChinese) => "失败",
-        (OperationState::OutcomeUnknown, UiLanguage::SimplifiedChinese) => "结果未知",
-        (OperationState::Planned, UiLanguage::English) => "planned",
-        (OperationState::Executing, UiLanguage::English) => "executing",
-        (OperationState::Succeeded, UiLanguage::English) => "succeeded",
-        (OperationState::Failed, UiLanguage::English) => "failed",
-        (OperationState::OutcomeUnknown, UiLanguage::English) => "outcome unknown",
-    }
-}
-
 fn context_choice_label(choice: ContextChoice, language: UiLanguage) -> &'static str {
     if language == UiLanguage::English {
         return choice.label();
@@ -262,9 +246,6 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
         View::Thread(id) => thread::render_thread(frame, app, id.0.as_str(), content_area),
         View::Review(id) => review::render_review(frame, app, id.0.as_str(), content_area),
         View::Workspace(id) => render_workspace(frame, app, id.0.as_str(), content_area),
-        View::ManagedWorktrees(id) => {
-            render_managed_worktrees(frame, app, id.0.as_str(), content_area);
-        }
         View::Board => render_board(frame, app, content_area),
         View::Scratch(id) => render_scratch(frame, app, id, content_area),
     }
@@ -426,14 +407,6 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
             app,
             "Goal objective editor active in Thread view",
             "Goal 目标编辑器已在会话视图激活",
-        )),
-        InputMode::WorktreeCreateBranch
-        | InputMode::WorktreeCreatePath
-        | InputMode::WorktreeCreateStartPoint
-        | InputMode::WorktreeDeleteBranch => Line::from(tr(
-            app,
-            "managed-worktree input active",
-            "受管 worktree 输入已激活",
         )),
         InputMode::Normal => {
             if let Some(notice) = &app.mutation_notice {
@@ -1119,226 +1092,11 @@ fn render_workspace(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area
     frame.render_widget(
         Paragraph::new(tr(
             app,
-            "r review · m managed worktrees · . actions · Esc back",
-            "r 评审 · m 受管 worktree · . 操作 · Esc 返回",
+            "r review · . actions · Esc back",
+            "r 评审 · . 操作 · Esc 返回",
         )),
         chunks[1],
     );
-}
-
-fn render_managed_worktrees(frame: &mut Frame<'_>, app: &AppState, thread_id: &str, area: Rect) {
-    let outer = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(5), Constraint::Length(2)])
-        .split(area);
-
-    let thread = app.threads.iter().find(|thread| thread.id.0 == thread_id);
-    let context = thread.and_then(|thread| app.git_context(&thread.id));
-    let repo = context.and_then(|context| context.repo.as_ref());
-    let worktrees = app.visible_managed_worktrees();
-
-    let mut lines = Vec::new();
-    lines.push(Line::from(format!(
-        "{}: {}",
-        tr(app, "Repository", "仓库"),
-        repo.map(|repo| sanitize_inline(&repo.primary_root))
-            .unwrap_or_else(|| tr(app, "<unavailable>", "<不可用>").into())
-    )));
-    lines.push(Line::from(format!(
-        "{}: {}",
-        tr(app, "Managed/adopted worktrees", "受管/已接管 worktree"),
-        worktrees.len()
-    )));
-    lines.push(Line::from(""));
-
-    if worktrees.is_empty() {
-        lines.push(Line::from(tr(
-            app,
-            "No managed/adopted worktrees for this repository.",
-            "此仓库没有受管或已接管的 worktree。",
-        )));
-    } else {
-        for (index, record) in worktrees.iter().enumerate() {
-            let selected = index == app.managed_selected;
-            let prefix = if selected { ">" } else { " " };
-            let ownership = if record.adopted {
-                tr(app, "adopted", "已接管")
-            } else {
-                tr(app, "managed", "受管")
-            };
-            let text = format!(
-                "{prefix} {} {} {}",
-                fit_display(ownership, 8),
-                fit_display(
-                    record.branch.as_deref().unwrap_or_else(|| tr(
-                        app,
-                        "<detached>",
-                        "<分离 HEAD>"
-                    )),
-                    18
-                ),
-                sanitize_inline(&record.canonical_path)
-            );
-            let style = if selected {
-                Style::default().add_modifier(Modifier::REVERSED)
-            } else {
-                Style::default()
-            };
-            lines.push(Line::from(Span::styled(text, style)));
-        }
-    }
-
-    if let Some(plan) = &app.pending_operation {
-        lines.push(Line::from(""));
-        lines.push(Line::from(tr(
-            app,
-            "CONFIRM REQUIRED — no mutation has executed yet.",
-            "需要确认 — 尚未执行任何变更。",
-        )));
-        lines.push(Line::from(format!(
-            "{}: {}",
-            tr(app, "Operation", "操作"),
-            plan.kind.label()
-        )));
-        lines.push(Line::from(format!("Cwd: {}", sanitize_inline(&plan.cwd))));
-        let command = if plan.argv.is_empty() {
-            tr(
-                app,
-                "metadata-only adoption (no Git mutation)",
-                "仅接管元数据（不执行 Git 变更）",
-            )
-            .to_string()
-        } else {
-            let argv = plan
-                .argv
-                .iter()
-                .map(|argument| format!("{argument:?}"))
-                .collect::<Vec<_>>()
-                .join(" ");
-            format!("git -C {:?} {argv}", plan.cwd)
-        };
-        lines.push(Line::from(format!(
-            "{}: {}",
-            tr(app, "Exact operation", "精确操作"),
-            sanitize_inline(&command)
-        )));
-        lines.push(Line::from(format!(
-            "{}: {}",
-            tr(app, "Expected", "预期结果"),
-            sanitize_inline(&plan.expected_side_effect)
-        )));
-        if let Some(path) = &plan.target_worktree {
-            lines.push(Line::from(format!(
-                "{}: {}",
-                tr(app, "Target worktree", "目标 worktree"),
-                sanitize_inline(path)
-            )));
-        }
-        if let Some(branch) = &plan.target_branch {
-            lines.push(Line::from(format!(
-                "{}: {}",
-                tr(app, "Target branch", "目标分支"),
-                sanitize_inline(branch)
-            )));
-        }
-        lines.push(Line::from(tr(app, "Preconditions:", "前置条件:")));
-        lines.extend(plan.preconditions.iter().map(|precondition| {
-            Line::from(format!(
-                "  {} = {}",
-                sanitize_inline(&precondition.key),
-                sanitize_inline(&precondition.expected)
-            ))
-        }));
-        lines.push(Line::from(tr(
-            app,
-            "Press y to execute; c or Esc cancels.",
-            "按 y 执行；c 或 Esc 取消。",
-        )));
-    }
-
-    if let Some(receipt) = app.recent_operations.first() {
-        lines.push(Line::from(""));
-        lines.push(Line::from(format!(
-            "{}: {} · {}",
-            tr(app, "Latest receipt", "最新回执"),
-            receipt.plan.kind.label(),
-            operation_state_label(receipt.state, app.language)
-        )));
-        if let Some(verification) = &receipt.verification {
-            lines.push(Line::from(format!(
-                "{}: {}",
-                tr(app, "Verified", "验证"),
-                truncate_display(verification, 90)
-            )));
-        }
-        if let Some(failure) = &receipt.failure {
-            lines.push(Line::from(format!(
-                "{}: {}",
-                tr(app, "Failure", "失败"),
-                truncate_display(failure, 90)
-            )));
-        }
-    }
-
-    if let Some(notice) = &app.mutation_notice {
-        lines.push(Line::from(""));
-        lines.push(Line::from(format!(
-            "{}: {}",
-            tr(app, "Notice", "提示"),
-            truncate_display(notice, 100)
-        )));
-    }
-
-    frame.render_widget(
-        Paragraph::new(lines)
-            .block(Block::bordered().title(tr(
-                app,
-                " Managed Worktrees · Plan → Confirm → Verify ",
-                " 受管 Worktree · 计划 → 确认 → 验证 ",
-            )))
-            .wrap(Wrap { trim: false }),
-        outer[0],
-    );
-
-    let footer = match app.input_mode {
-        InputMode::WorktreeCreateBranch => format!(
-            "{}> {} · {}",
-            tr(app, "new branch", "新分支"),
-            app.input_buffer,
-            tr(app, "Enter next · Esc cancel", "Enter 下一步 · Esc 取消")
-        ),
-        InputMode::WorktreeCreatePath => format!(
-            "{}> {} · {}",
-            tr(app, "absolute worktree path", "worktree 绝对路径"),
-            app.input_buffer,
-            tr(app, "Enter next · Esc cancel", "Enter 下一步 · Esc 取消")
-        ),
-        InputMode::WorktreeCreateStartPoint => format!(
-            "{}> {} · {}",
-            tr(app, "start point", "起点"),
-            app.input_buffer,
-            tr(app, "Enter plan · Esc cancel", "Enter 生成计划 · Esc 取消")
-        ),
-        InputMode::WorktreeDeleteBranch => format!(
-            "{}> {} · {}",
-            tr(app, "branch to delete", "要删除的分支"),
-            app.input_buffer,
-            tr(app, "Enter plan · Esc cancel", "Enter 生成计划 · Esc 取消")
-        ),
-        _ if app.pending_operation.is_some() => tr(
-            app,
-            "y CONFIRM execute · c cancel plan · Esc cancel plan",
-            "y 确认执行 · c 取消计划 · Esc 取消计划",
-        )
-        .into(),
-        _ => tr(
-            app,
-            "j/k select · n create · a adopt current · d remove selected · x delete branch · Esc back",
-            "j/k 选择 · n 创建 · a 接管当前 · d 移除已选 · x 删除分支 · Esc 返回",
-        )
-        .into(),
-    };
-    frame.render_widget(Paragraph::new(sanitize_inline(&footer)), outer[1]);
 }
 
 const HELP_LINES: &[&str] = &[
@@ -1348,8 +1106,7 @@ const HELP_LINES: &[&str] = &[
     "Thread: PageUp/PageDown scroll · Home loaded history start · End follow latest",
     "Request details: ↑/↓ or PageUp/PageDown scroll · Home/End · Esc back without responding",
     "Review: j/k file · w word-diff · e editor · o external · . actions · PageUp/PageDown · Esc",
-    "Workspace: . actions · r review · m worktrees · Esc",
-    "Managed Worktrees: n create · a adopt · d remove · x delete branch · y confirm",
+    "Workspace: . actions · r review · Esc",
     "Board: h/l stage · j/k item · Space attention · s snooze · = bind · 1–9 hot slot",
     "Board: Tab Saved View · . batch-local/context · Enter open · a Quick Prompt · n Scratch",
     "Scratch: Esc Board",
@@ -1365,8 +1122,7 @@ const HELP_LINES_ZH: &[&str] = &[
     "会话: PageUp/PageDown 滚动 · Home 已加载历史开头 · End 跟随最新",
     "请求详情: ↑/↓ 或 PageUp/PageDown 滚动 · Home/End · Esc 返回，不提交响应",
     "评审: j/k 文件 · w 单词级 diff · e 编辑器 · o 外部打开 · . 操作 · PageUp/PageDown · Esc",
-    "工作区: Git + Forge · . 操作 · r 评审 · m worktree · Esc",
-    "受管 Worktree: n 创建 · a 接管 · d 移除 · x 删除分支 · y 确认",
+    "工作区: Git + Forge · . 操作 · r 评审 · Esc",
     "看板: h/l 阶段 · j/k 项目 · Space 待处理 · s 稍后提醒 · = 绑定 · 1–9 快捷槽",
     "看板: Tab 已保存视图 · . 本地批量/上下文 · Enter 打开 · a Quick Prompt · n Scratch",
     "Scratch: 仅本地详情 · Esc 返回看板",

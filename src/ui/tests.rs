@@ -519,7 +519,7 @@ fn compact_registry_handles_cjk_emoji_graphemes_and_control_text() {
 }
 
 #[test]
-fn simplified_chinese_status_helpers_cover_terminal_forge_and_receipts() {
+fn simplified_chinese_status_helpers_cover_terminal_forge_and_scratch() {
     assert_eq!(
         terminal_process_state_label(
             &TerminalProcessState::Running,
@@ -532,71 +532,9 @@ fn simplified_chinese_status_helpers_cover_terminal_forge_and_receipts() {
         "过期"
     );
     assert_eq!(
-        operation_state_label(OperationState::Succeeded, UiLanguage::SimplifiedChinese),
-        "已成功"
-    );
-    assert_eq!(
         scratch_state_label(ScratchState::Ready, UiLanguage::SimplifiedChinese),
         "就绪"
     );
-}
-
-#[test]
-fn managed_worktree_confirmation_neutralizes_untrusted_labels_and_input() {
-    let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
-    let thread = app.threads[0].clone();
-    app.view = View::ManagedWorktrees(thread.id.clone());
-    let repo = crate::domain::LocalRepoIdentity {
-        git_common_dir: "/repo/.git".into(),
-        primary_root: "/repo\u{202e}spoof".into(),
-    };
-    let mut context = crate::git::GitContext::pending(thread.id.clone(), thread.metadata.cwd);
-    context.observed_at_unix_ms = 1;
-    context.is_repository = true;
-    context.repo = Some(repo.clone());
-    app.git_contexts.insert(thread.id.0, context);
-
-    let mut plan = crate::operation::OperationPlan::create_worktree(
-        repo,
-        "/work\u{202e}spoof".into(),
-        "/target\u{202e}spoof".into(),
-        "branch\u{202e}spoof".into(),
-        "base\u{202e}spoof".into(),
-        1,
-    );
-    plan.expected_side_effect = "expected\u{202e}spoof".into();
-    plan.preconditions[0].key = "precondition\u{202e}spoof".into();
-    plan.preconditions[0].expected = "condition\u{202e}spoof".into();
-    app.pending_operation = Some(plan);
-    app.input_mode = InputMode::WorktreeDeleteBranch;
-    app.input_buffer = "typed\u{202e}spoof".into();
-
-    let mut terminal = Terminal::new(TestBackend::new(180, 48)).expect("terminal");
-    terminal.draw(|frame| render(frame, &app)).expect("draw");
-    let buffer = terminal.backend().buffer();
-    let mut snapshot = String::new();
-    for y in 0..buffer.area.height {
-        for x in 0..buffer.area.width {
-            snapshot.push_str(buffer[(x, y)].symbol());
-        }
-        snapshot.push('\n');
-    }
-
-    for label in [
-        "Repository: /repo\u{fffd}spoof",
-        "Cwd: /work\u{fffd}spoof",
-        "Target worktree: /target\u{fffd}spoof",
-        "Target branch: branch\u{fffd}spoof",
-        "Expected: expected\u{fffd}spoof",
-        "precondition\u{fffd}spoof = condition\u{fffd}spoof",
-        "typed\u{fffd}spoof",
-    ] {
-        assert!(
-            snapshot.contains(label),
-            "missing safe confirmation label {label:?}"
-        );
-    }
-    assert!(!snapshot.contains('\u{202e}'));
 }
 
 #[test]

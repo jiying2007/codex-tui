@@ -1,5 +1,4 @@
 use super::*;
-use crate::forge::ForgeProviderKind;
 
 #[test]
 fn transcript_navigation_does_not_accumulate_history_watches() {
@@ -156,10 +155,10 @@ fn simplified_chinese_local_notice_follows_ui_language() {
     let thread_id = app.threads[0].id.clone();
     app.view = View::Thread(thread_id);
 
-    assert!(reduce(&mut app, Action::OpenManagedWorktrees).is_empty());
+    reduce(&mut app, Action::UseHotSlot(9));
     assert_eq!(
         app.mutation_notice.as_deref(),
-        Some("当前会话不在 Git 仓库中")
+        Some("快捷槽 9: 尚未绑定；选择任务后按 = 绑定")
     );
 }
 
@@ -705,125 +704,6 @@ fn refresh_never_steals_manual_selection() {
     reduce(&mut app, Action::ReplaceThreads(reordered));
 
     assert_eq!(app.selected_thread_id(), Some(selected));
-}
-
-#[test]
-fn managed_worktree_plan_requires_explicit_confirmation_before_execution() {
-    let mut app = app();
-    app.threads[0].metadata.cwd = "/repo".into();
-    let repo = crate::domain::LocalRepoIdentity {
-        git_common_dir: "/repo/.git".into(),
-        primary_root: "/repo".into(),
-    };
-    app.git_contexts.insert(
-        "thread-impl".into(),
-        GitContext {
-            thread_id: ThreadId::new("thread-impl"),
-            cwd: "/repo".into(),
-            is_repository: true,
-            repo: Some(repo.clone()),
-            worktree: Some(crate::domain::WorktreeIdentity {
-                repo,
-                canonical_path: "/repo".into(),
-                branch: Some("main".into()),
-                managed_by_codex_tui: false,
-            }),
-            head: Some("0123456789abcdef0123456789abcdef01234567".into()),
-            branch: Some("main".into()),
-            upstream: None,
-            ahead: 0,
-            behind: 0,
-            dirty: false,
-            changes: Vec::new().into(),
-            observed_at_unix_ms: 1,
-            error: None,
-        },
-    );
-    reduce(&mut app, Action::OpenSelected);
-    let effects = reduce(&mut app, Action::OpenManagedWorktrees);
-    assert_eq!(effects, vec![Effect::RefreshManagedWorktrees]);
-
-    reduce(&mut app, Action::BeginCreateWorktree);
-    for ch in "feature".chars() {
-        reduce(&mut app, Action::InputChar(ch));
-    }
-    assert!(reduce(&mut app, Action::CommitInput).is_empty());
-    let temp = tempfile::tempdir().expect("tempdir");
-    let target = temp
-        .path()
-        .join("feature-wt")
-        .to_string_lossy()
-        .into_owned();
-    for ch in target.chars() {
-        reduce(&mut app, Action::InputChar(ch));
-    }
-    assert!(reduce(&mut app, Action::CommitInput).is_empty());
-    reduce(&mut app, Action::InputBackspace);
-    reduce(&mut app, Action::InputBackspace);
-    reduce(&mut app, Action::InputBackspace);
-    reduce(&mut app, Action::InputBackspace);
-    for ch in "HEAD".chars() {
-        reduce(&mut app, Action::InputChar(ch));
-    }
-    for missing in [None, Some("deadbeef".into())] {
-        app.git_contexts.get_mut("thread-impl").unwrap().head = missing;
-        assert!(reduce(&mut app, Action::CommitInput).is_empty());
-        assert!(app.pending_operation.is_none());
-        assert_eq!(app.input_mode, InputMode::WorktreeCreateStartPoint);
-        assert_eq!(app.create_worktree_branch.as_deref(), Some("feature"));
-        assert_eq!(app.create_worktree_path.as_deref(), Some(target.as_str()));
-    }
-    app.git_contexts.get_mut("thread-impl").unwrap().head =
-        Some("0123456789abcdef0123456789abcdef01234567".into());
-    assert!(reduce(&mut app, Action::CommitInput).is_empty());
-    let plan = app.pending_operation.as_ref().unwrap();
-    assert_eq!(
-        plan.expected_start_commit(),
-        Some("0123456789abcdef0123456789abcdef01234567")
-    );
-    assert_eq!(
-        plan.argv.last().map(String::as_str),
-        plan.expected_start_commit()
-    );
-
-    let effects = reduce(&mut app, Action::ConfirmPendingOperation);
-    assert!(matches!(effects.as_slice(), [Effect::ExecuteOperation(_)]));
-    assert!(app.pending_operation.is_none());
-}
-
-#[test]
-fn worktree_remove_and_branch_delete_are_distinct_plans() {
-    let mut app = app();
-    app.threads[0].metadata.cwd = "/repo".into();
-    app.view = View::ManagedWorktrees(ThreadId::new("thread-impl"));
-    let repo = crate::domain::LocalRepoIdentity {
-        git_common_dir: "/repo/.git".into(),
-        primary_root: "/repo".into(),
-    };
-    app.managed_worktrees.push(ManagedWorktreeRecord {
-        repo: repo.clone(),
-        canonical_path: "/repo-feature".into(),
-        branch: Some("feature".into()),
-        created_by_operation_id: "op-create".into(),
-        adopted: false,
-        created_at_unix_ms: 1,
-        last_verified_at_unix_ms: 1,
-    });
-    reduce(&mut app, Action::BeginRemoveManagedWorktree);
-    let remove = app.pending_operation.clone().expect("remove");
-    assert_eq!(remove.kind, crate::operation::OperationKind::RemoveWorktree);
-    assert!(remove.target_branch.is_none());
-
-    app.git_contexts.insert(
-        "thread-impl".into(),
-        GitContext::pending(ThreadId::new("thread-impl"), "/repo"),
-    );
-    if let Some(context) = app.git_contexts.get_mut("thread-impl") {
-        context.repo = Some(repo);
-        context.branch = Some("feature".into());
-    }
-    reduce(&mut app, Action::BeginDeleteBranch);
-    assert_eq!(app.input_mode, InputMode::WorktreeDeleteBranch);
 }
 
 #[test]
@@ -2756,7 +2636,6 @@ fn hot_slot_jumps_return_to_the_originating_surface_without_reloading() {
         View::Thread(first.clone()),
         View::Review(first.clone()),
         View::Workspace(first.clone()),
-        View::ManagedWorktrees(first.clone()),
     ];
     for origin in origins {
         let mut state = app();

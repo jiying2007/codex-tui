@@ -18,10 +18,7 @@ use crate::metadata_search::{
     MetadataSearchContext, filter_requires_locality, matches_metadata_query,
 };
 use crate::notification::RecentNotification;
-use crate::operation::{
-    ManagedWorktreeRecord, MutationScope, OperationPlan, OperationReceipt, OperationState,
-    mutation_scope_for_thread, now_unix_ms,
-};
+use crate::operation::now_unix_ms;
 use crate::planning::{
     PlanningSnapshot, ReconcileInput, SavedView, SavedViewLayout, SourceKind, SourceRef,
     WorkCardProjection, WorkflowStage, apply_saved_view, builtin_saved_views,
@@ -73,7 +70,7 @@ use registry::{ensure_selection_visible, restore_selection};
 pub use target_lookup::{LookupPhase, TargetLookupAction, TargetLookupPanel};
 pub use types::{Action, ContextChoice, Effect, InputMode, View, ViewKind};
 // Executable help entries in src/ui.rs; keep the two arrays in lockstep.
-pub const HELP_ENTRY_COUNT: usize = 14;
+pub const HELP_ENTRY_COUNT: usize = 13;
 const REGISTRY_RECENT_LIMIT: usize = 20;
 const CONVERSATION_CACHE_LIMIT: usize = 16;
 const GIT_REVIEW_CACHE_LIMIT: usize = 4;
@@ -89,21 +86,6 @@ fn local_text(
     simplified_chinese: &'static str,
 ) -> &'static str {
     pick(language, english, simplified_chinese)
-}
-
-fn operation_state_text(state: OperationState, language: UiLanguage) -> &'static str {
-    match (state, language) {
-        (OperationState::Planned, UiLanguage::SimplifiedChinese) => "已计划",
-        (OperationState::Executing, UiLanguage::SimplifiedChinese) => "执行中",
-        (OperationState::Succeeded, UiLanguage::SimplifiedChinese) => "已成功",
-        (OperationState::Failed, UiLanguage::SimplifiedChinese) => "失败",
-        (OperationState::OutcomeUnknown, UiLanguage::SimplifiedChinese) => "结果未知",
-        (OperationState::Planned, UiLanguage::English) => "planned",
-        (OperationState::Executing, UiLanguage::English) => "executing",
-        (OperationState::Succeeded, UiLanguage::English) => "succeeded",
-        (OperationState::Failed, UiLanguage::English) => "failed",
-        (OperationState::OutcomeUnknown, UiLanguage::English) => "outcome unknown",
-    }
 }
 
 fn build_thread_indexes(
@@ -171,19 +153,12 @@ pub struct AppState {
     pub goals: BTreeMap<String, GoalObservation>,
     pub goal_checked: BTreeSet<String>,
     pub goal_actions_open: bool,
-    pub managed_worktrees: Vec<ManagedWorktreeRecord>,
-    pub managed_selected: usize,
-    pub managed_return_view: Option<View>,
-    pub pending_operation: Option<OperationPlan>,
-    pub recent_operations: Vec<OperationReceipt>,
     pub pending_local_batch: Option<LocalBatchPlan>,
     pub terminal_drawer_open: bool,
     pub terminal_focused: bool,
     pub terminal_snapshot: Option<TerminalSnapshot>,
     pub mutation_notice: Option<String>,
     pub recent_notification: Option<RecentNotification>,
-    pub create_worktree_branch: Option<String>,
-    pub create_worktree_path: Option<String>,
     pub planning_store_error: Option<String>,
     pub review_return_view: Option<View>,
     pub workspace_return_view: Option<View>,
@@ -386,7 +361,7 @@ fn git_projection_target_ids(state: &AppState) -> Vec<ThreadId> {
 
     let selected_thread_id = match &state.view {
         View::Registry => state.selected_thread_id(),
-        View::Thread(id) | View::Review(id) | View::Workspace(id) | View::ManagedWorktrees(id) => {
+        View::Thread(id) | View::Review(id) | View::Workspace(id) => {
             Some(id.clone())
         }
         View::Board => state.selected_planning_card().and_then(|card| {
@@ -496,7 +471,7 @@ fn refresh_git_projections(state: &mut AppState) -> Vec<Effect> {
 fn refresh_active_git_projections(state: &mut AppState) -> Vec<Effect> {
     let selected_thread_id = match &state.view {
         View::Registry => state.selected_thread_id(),
-        View::Thread(id) | View::Review(id) | View::Workspace(id) | View::ManagedWorktrees(id) => {
+        View::Thread(id) | View::Review(id) | View::Workspace(id) => {
             Some(id.clone())
         }
         View::Board => state.selected_planning_card().and_then(|card| {

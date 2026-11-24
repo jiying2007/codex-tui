@@ -67,7 +67,7 @@ codex-tui answers four questions quickly:
 
 The default product surface is Mission Control. The local chat/thread client is a compatibility surface, not the long-term product differentiator.
 
-The global `Ctrl+K` Command Palette now shows **Mission Control actions first** with an empty query. Type a command name (English or Simplified Chinese) to reveal less-frequent upstream-overlapping compatibility actions such as transcript search, quick prompt, managed worktrees or Terminal Drawer. Existing direct keys and commands remain available; this is a presentation-only convergence, not a removal of capabilities.
+The global `Ctrl+K` Command Palette now shows **Mission Control actions first** with an empty query. Type a command name (English or Simplified Chinese) to reveal less-frequent upstream-overlapping compatibility actions such as transcript search, quick prompt or Terminal Drawer. The Lite retirement candidate removes the duplicate managed-worktree UI, launch presets, Queue UI and Forge write entry points.
 
 ## v1 principles
 
@@ -334,7 +334,7 @@ M7d3 adds a fail-closed release path: publication is manually dispatched, while 
 - M2 daily conversation control: implemented in the v0.2.x line.
 - M3 Git context and review: implemented in the v0.3.x line.
 - M4 personal planning + SQLite: implemented in the v0.4.x line.
-- M5 safe managed worktrees: implemented in the v0.5.x line.
+- M5 managed worktree operations: historical; Lite removes interactive writes and background recovery, retaining observed Git identity and historical records.
 - M6a GitLab Self-Managed read-only forge projection: implemented in the v0.6.x line.
 - M6b/v1.3 Forge mutations: historical; interactive write routes retired in Lite.
 - M6c GitHub.com read-only provider: implemented in the v0.6.x line.

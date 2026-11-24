@@ -32,7 +32,7 @@ Mission Control 优先回答：**正在做什么、哪条会话需要我、如�
 - Mission Control 优先显示待处理会话，其次是置顶与最近活动；刷新保留选中会话，最近窗口仍有界，窗口外的置顶与待处理项仍可达。窄终端直接显示待处理原因。
 - Board 的 List/Review Queue Saved View 按工作区连续分组；区分 Needs You / Working / Ready / Inactive，并支持筛选、置顶和别名。
 - Board/WorkCard 来源于 Codex、Git 和 Forge 的**派生视图**；个人笔记、提醒和规划覆盖层才写入本地 SQLite。
-- Git Context 展示分支、脏文件和共享工作树冲突；GitLab/GitHub Forge 展示 Issue、MR/PR、流水线和 Review。Forge 仅只读投影，创建、评论、批准与合并由原生平台或 CLI 执行。历史变更回执保留供人工核对，Lite 不再启动 Forge 变更执行或自动恢复。
+- Git Context 展示分支、脏文件和共享工作树冲突；GitLab/GitHub Forge 展示 Issue、MR/PR、流水线和 Review。Forge 仅只读投影，创建、评论、批准与合并由原生平台或 CLI 执行。历史变更回执保留供人工核对，Lite 不再启动 Forge 或受管 Worktree 变更执行及自动恢复。创建、接管、删除工作树及删除分支交给原生 Git/Codex 工具；既有实际工作树和历史回执不清除。
 - Thread View 和 Terminal Drawer 仅作缺陷与安全维护；重复 Thread Queue UI 已从 Lite 候选删除，队列由原生 Codex CLI 管理，不修改或清除已有上游队列项。
 
 `b` 打开 Board，`Tab` 切换 Needs You / Needs Review；`r` 进入所选会话的 Review，`w` 查看 Workspace。Headless 的 Codex 投影视图使用配置中的活动目标或 `--target NAME`，每次只读取一个目标，并明确标记跨目标共享的本地元数据范围。详见[操作指南](docs/zh-CN/guides/operator-guide.md)与 [CLI 参考](docs/zh-CN/guides/cli-reference.md)。
@@ -112,7 +112,7 @@ active = "local"
 
 需要外部声音／桌面提醒时，才将模式改为 `"terminal"`／`"os"`。Windows SSH Ubuntu 下，两者通过当前 SSH 终端发送 BEL；`"os"` 不会自动在 Windows 弹出 Toast。Windows Terminal 的 SSH 配置可设 `"bellStyle": "all"`，在 Ubuntu 用 `printf '\a'` 验证。外部投递可按 75 毫秒窗口合并，保留最高优先级及其余事件数量，但不保证送达。首次观察不重放历史，Snooze 抑制待处理提醒路由；精确状态仍看 Mission Control。TUI 必须运行并连接才能观察新的远端事件，退出或断开后不继续监听。
 
-快捷槽可在 Registry／Board 选中任务按 `=` 再按 `1–9` 绑定；在 Registry、Board、Thread、Review、Workspace、Managed Worktrees 中按数字直达该会话，编辑和确认框不会被抢键。
+快捷槽可在 Registry／Board 选中任务按 `=` 再按 `1–9` 绑定；在 Registry、Board、Thread、Review、Workspace 中按数字直达该会话，编辑和确认框不会被抢键。
 
 远程 Codex 可在本地 TOML 配置命名的 stdio/WebSocket/Unix Socket 目标，令牌只通过 `auth_token_env` 指定环境变量名；不要提交真实密钥。详见英文 [Remote App Server 技术说明](docs/implementation/v1.3-remote-app-server-targets.md)。
 
