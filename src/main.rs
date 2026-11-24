@@ -447,7 +447,8 @@ async fn run_app(fake_mode: bool, target_override: Option<&str>) -> Result<()> {
             ) {
                 Ok(applied) => needs_render |= applied,
                 Err(error) => {
-                    reduce(&mut app, Action::Back);
+                    let effects = reduce(&mut app, Action::Back);
+                    apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
                     reduce(&mut app, Action::MutationNotice(error));
                     needs_render = true;
                 }

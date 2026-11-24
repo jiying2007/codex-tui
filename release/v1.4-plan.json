@@ -176,7 +176,7 @@
     "src/ui/help_wrapped_tests.rs": 43,
     "src/ui.rs": 1156,
     "src/app_server.rs": 2385,
-    "src/main.rs": 1664,
+    "src/main.rs": 1665,
     "src/sqlite_store.rs": 1850,
     "src/forge.rs": 1187,
     "src/worktree.rs": 770,
