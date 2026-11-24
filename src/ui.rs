@@ -261,10 +261,7 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
     }
     if matches!(
         app.input_mode,
-        InputMode::TranscriptSearch
-            | InputMode::Note
-            | InputMode::WorkrefLink
-            | InputMode::Snooze
+        InputMode::TranscriptSearch | InputMode::Note | InputMode::WorkrefLink | InputMode::Snooze
     ) {
         render_local_input_overlay(frame, app);
     }
