@@ -106,7 +106,7 @@ impl SourceStatus {
         }
     }
 
-    fn observe(&mut self, snapshot: &BackendSnapshot) {
+    pub(super) fn observe(&mut self, snapshot: &BackendSnapshot) {
         let status = &snapshot.status;
         self.source = status.source.clone();
         self.connected = status.connected;

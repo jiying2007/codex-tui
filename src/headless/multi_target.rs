@@ -109,15 +109,16 @@ async fn search_target(config: &AppServerConfig, name: String, query: &str) -> T
     };
     unavailable.source = target.status_source();
     unavailable.transport = Some(target.endpoint.transport_label().into());
-    let (threads, source) =
-        match tokio::time::timeout(TARGET_TIMEOUT, SnapshotSource::Target(target).load()).await {
-            Ok(result) => result,
-            Err(_) => {
-                unavailable.error = Some("target search exceeded 20-second deadline".into());
-                (vec![], unavailable)
-            }
-        };
-    project(threads, source, query)
+    match crate::app_server::probe_metadata_target(target, TARGET_TIMEOUT).await {
+        Ok(snapshot) => {
+            unavailable.observe(&snapshot);
+            project(snapshot.threads, unavailable, query)
+        }
+        Err(error) => {
+            unavailable.error = Some(format!("{error:#}"));
+            project(vec![], unavailable, query)
+        }
+    }
 }
 
 pub(super) async fn run(options: &HeadlessOptions) -> Result<i32> {
@@ -133,8 +134,8 @@ pub(super) async fn run(options: &HeadlessOptions) -> Result<i32> {
     match source::read_config() {
         Ok(config) => match target_names(&config.app_server) {
             Ok(names) => {
-                // Read one target at a time; dropping a timed-out probe closes its
-                // isolated transport. No concurrent registry or persisted index.
+                // Read one target at a time. Timed-out pages preserve earlier rows;
+                // the isolated transport is dropped. No persisted index.
                 for name in names {
                     report
                         .targets

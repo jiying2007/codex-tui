@@ -24,6 +24,12 @@ async fn peer(replies: Vec<(&'static str, Value)>) -> (RpcSession, JoinHandle<Ve
             }
             let request: Value = serde_json::from_str(frame.to_text().unwrap()).unwrap();
             assert_eq!(request["method"], method);
+            if result.is_null() {
+                // A fixture can deliberately withhold a reply until the client drops.
+                requests.push(request);
+                let _ = tokio::time::timeout(Duration::from_secs(5), socket.next()).await;
+                break;
+            }
             socket
                 .send(Message::Text(
                     json!({"id": request["id"], "result": result})
@@ -70,6 +76,31 @@ async fn repeating_registry_cursor_preserves_partial_rows_without_authority() {
     assert!(load.error.unwrap().contains("repeated cursor"));
     drop(rpc);
     assert_eq!(server.await.unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn locator_deadline_retains_completed_registry_pages() {
+    let (mut rpc, server) = peer(vec![
+        (
+            "thread/list",
+            json!({"data":[{"id":"retained"}],"nextCursor":"slow-page"}),
+        ),
+        ("thread/list", Value::Null),
+    ])
+    .await;
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(1);
+    let load = load_registry_with_deadline(&mut rpc, false, None, Some(deadline))
+        .await
+        .unwrap();
+    assert_eq!(load.threads.len(), 1);
+    assert_eq!(load.threads[0].id.0, "retained");
+    assert!(!load.registry_complete);
+    assert!(load.hydration.is_none());
+    assert!(load.error.unwrap().contains("target search deadline exceeded"));
+    drop(rpc);
+    let requests = server.await.unwrap();
+    assert_eq!(requests.len(), 2);
+    assert_eq!(requests[1]["params"]["cursor"], "slow-page");
 }
 
 #[tokio::test]
