@@ -304,7 +304,7 @@
     "src/app/reducer.rs": 1527,
     "src/app/state.rs": 662,
     "src/app/shortcuts.rs": 65,
-    "src/app/tests.rs": 2864,
+    "src/app/tests.rs": 2868,
     "src/ui/tests.rs": 1105,
     "src/sqlite_store/tests.rs": 1098,
     "src/app_server/tests.rs": 992,

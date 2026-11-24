@@ -1240,7 +1240,11 @@ fn board_context_does_not_expose_batch_writes() {
     reduce(&mut app, Action::OpenContext);
     let choices = app.context_choices();
     assert!(!choices.is_empty());
-    assert!(choices.iter().all(|choice| !choice.label().starts_with("Batch")));
+    assert!(
+        choices
+            .iter()
+            .all(|choice| !choice.label().starts_with("Batch"))
+    );
     assert_eq!(app.input_mode, InputMode::Normal);
 }
 

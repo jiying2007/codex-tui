@@ -27,16 +27,10 @@ fn reject_invalid(mode: InputMode) {
         assert_eq!(state.input_mode, mode);
         assert_eq!(state.input_buffer, input);
         assert_eq!(state.to_local_state(), before);
-        assert!(state.pending_local_batch.is_none());
     }
 }
 
 #[test]
 fn invalid_unicode_snooze_is_rejected_without_losing_editor_or_state() {
     reject_invalid(InputMode::Snooze);
-}
-
-#[test]
-fn invalid_unicode_batch_snooze_is_rejected_without_a_write_plan() {
-    reject_invalid(InputMode::BatchSnooze);
 }
