@@ -64,7 +64,7 @@ fn palette_commit_requires_one_plain_press_and_preserves_open_intent_otherwise()
 }
 
 #[test]
-fn context_menu_and_launch_picker_cannot_commit_modified_or_held_enter() {
+fn context_menu_cannot_commit_modified_or_held_enter() {
     let mut app = fixture();
     reduce(&mut app, Action::OpenContext);
     assert_eq!(app.context_choice(), Some(ContextChoice::Snooze));
@@ -75,15 +75,6 @@ fn context_menu_and_launch_picker_cannot_commit_modified_or_held_enter() {
     }
     assert!(handle_key(&mut app, press(KeyCode::Enter)).is_empty());
     assert_eq!(app.input_mode, InputMode::Snooze);
-
-    let mut app = fixture();
-    app.launch_menu_open = true;
-    for key in forbidden(KeyCode::Enter) {
-        assert!(handle_key(&mut app, key).is_empty());
-        assert!(app.launch_menu_open);
-    }
-    assert!(handle_key(&mut app, press(KeyCode::Enter)).is_empty());
-    assert!(!app.launch_menu_open);
 }
 
 #[test]

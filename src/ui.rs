@@ -23,9 +23,8 @@ mod thread;
 use crate::{pty::TerminalSize, terminal_drawer::TerminalProcessState};
 use overlays::{
     render_command_palette, render_context_actions, render_forge_mutation_confirmation,
-    render_launch_confirmation, render_launch_presets, render_local_batch_confirmation,
-    render_local_input_overlay, render_saved_view_editor, render_thread_queue,
-    render_transcript_search,
+    render_local_batch_confirmation, render_local_input_overlay, render_saved_view_editor,
+    render_thread_queue, render_transcript_search,
 };
 use ratatui::{
     Frame,
@@ -215,7 +214,6 @@ fn context_choice_label(choice: ContextChoice, language: UiLanguage) -> &'static
         ContextChoice::BatchReopen => "批量当前可见项 · 重新打开",
         ContextChoice::BatchSnooze => "批量当前可见项 · 稍后提醒…",
         ContextChoice::BatchClearSnooze => "批量当前可见项 · 清除稍后提醒",
-        ContextChoice::LaunchPreset => "启动仓库预设…",
         ContextChoice::NewCodexThread => "新建 Codex 会话",
         ContextChoice::ForkCodexThread => "分叉 Codex 会话",
         ContextChoice::ForgeCreateMergeRequest => "Forge · 创建合并请求…",
@@ -311,9 +309,6 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
     if app.context_open {
         render_context_actions(frame, app);
     }
-    if app.launch_menu_open {
-        render_launch_presets(frame, app);
-    }
     if matches!(
         app.input_mode,
         InputMode::TranscriptSearch
@@ -337,9 +332,6 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
     }
     if app.pending_local_batch.is_some() {
         render_local_batch_confirmation(frame, app);
-    }
-    if app.pending_launch_plan.is_some() {
-        render_launch_confirmation(frame, app);
     }
     if app.target_lookup.is_some() {
         target_lookup::render(frame, app);
@@ -1385,7 +1377,7 @@ const HELP_LINES: &[&str] = &[
     "Thread: PageUp/PageDown scroll · Home loaded history start · End follow latest",
     "Request details: ↑/↓ or PageUp/PageDown scroll · Home/End · Esc back without responding",
     "Review: j/k file · w word-diff · e editor · o external · . Forge actions · PageUp/PageDown · Esc",
-    "Workspace: . actions/launch presets · r review · m worktrees · Esc",
+    "Workspace: . actions · r review · m worktrees · Esc",
     "Managed Worktrees: n create · a adopt · d remove · x delete branch · y confirm",
     "Board: h/l stage · j/k item · Space attention · s snooze · = bind · 1–9 hot slot",
     "Board: Tab Saved View · . batch-local/context · Enter open · a Quick Prompt · n Scratch",
@@ -1402,7 +1394,7 @@ const HELP_LINES_ZH: &[&str] = &[
     "会话: PageUp/PageDown 滚动 · Home 已加载历史开头 · End 跟随最新",
     "请求详情: ↑/↓ 或 PageUp/PageDown 滚动 · Home/End · Esc 返回，不提交响应",
     "评审: j/k 文件 · w 单词级 diff · e 编辑器 · o 外部打开 · . Forge 操作 · PageUp/PageDown · Esc",
-    "工作区: Git + Forge · . 操作/启动预设 · r 评审 · m worktree · Esc",
+    "工作区: Git + Forge · . 操作 · r 评审 · m worktree · Esc",
     "受管 Worktree: n 创建 · a 接管 · d 移除 · x 删除分支 · y 确认",
     "看板: h/l 阶段 · j/k 项目 · Space 待处理 · s 稍后提醒 · = 绑定 · 1–9 快捷槽",
     "看板: Tab 已保存视图 · . 本地批量/上下文 · Enter 打开 · a Quick Prompt · n Scratch",

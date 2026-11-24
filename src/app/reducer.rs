@@ -422,9 +422,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             if let Some(plan) = state.pending_local_batch.take() {
                 return vec![Effect::ApplyLocalBatch(Box::new(plan))];
             }
-            if let Some(plan) = state.pending_launch_plan.take() {
-                return vec![Effect::ExecuteLaunchPreset(Box::new(plan))];
-            }
             if let Some(plan) = state.pending_forge_operation.take() {
                 let payload = state.pending_forge_payload.take();
                 return vec![Effect::ExecuteForgeOperation(Box::new(
@@ -441,7 +438,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.pending_forge_operation = None;
             state.pending_forge_payload = None;
             state.pending_local_batch = None;
-            state.pending_launch_plan = None;
             state.pending_queue_confirmation = None;
             state.mutation_notice = Some(
                 local_text(
@@ -877,38 +873,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 return vec![];
             }
 
-            if choice == ContextChoice::LaunchPreset {
-                let Some(thread_id) = state.current_thread_id().cloned() else {
-                    return vec![];
-                };
-                let Some(context) = state.git_context(&thread_id) else {
-                    state.mutation_notice = Some(
-                        local_text(
-                            state.language,
-                            "Git context unavailable for launch presets",
-                            "启动预设所需的 Git 上下文不可用",
-                        )
-                        .into(),
-                    );
-                    return vec![];
-                };
-                let Some(repo) = context.repo.as_ref() else {
-                    state.mutation_notice = Some(
-                        local_text(
-                            state.language,
-                            "repository root unavailable for launch presets",
-                            "启动预设所需的仓库根目录不可用",
-                        )
-                        .into(),
-                    );
-                    return vec![];
-                };
-                return vec![Effect::LoadLaunchPresets {
-                    repo_root: repo.primary_root.clone(),
-                    thread_cwd: context.cwd.clone(),
-                }];
-            }
-
             if matches!(
                 choice,
                 ContextChoice::ForgeCreateMergeRequest
@@ -1137,7 +1101,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 | ContextChoice::BatchReopen
                 | ContextChoice::BatchSnooze
                 | ContextChoice::BatchClearSnooze
-                | ContextChoice::LaunchPreset
                 | ContextChoice::ForgeCreateMergeRequest
                 | ContextChoice::ForgeComment
                 | ContextChoice::ForgeApprove
@@ -1155,61 +1118,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                     );
                 }
             }
-        }
-        Action::LaunchPresetsLoaded {
-            repo_root,
-            thread_cwd,
-            presets,
-        } => {
-            state.launch_repo_root = Some(repo_root);
-            state.launch_thread_cwd = Some(thread_cwd);
-            state.launch_presets = presets;
-            state.launch_selected = 0;
-            state.launch_menu_open = true;
-            state.mutation_notice = None;
-        }
-        Action::CloseLaunchPresets => {
-            state.launch_menu_open = false;
-            state.launch_selected = 0;
-        }
-        Action::MoveLaunchPreset(delta) => {
-            let len = state.launch_presets.len();
-            state.launch_selected = wrap_selection(state.launch_selected, delta, len);
-        }
-        Action::SelectLaunchPreset => {
-            let Some(preset) = state.launch_presets.get(state.launch_selected).cloned() else {
-                state.launch_menu_open = false;
-                return vec![];
-            };
-            let (Some(repo_root), Some(thread_cwd)) = (
-                state.launch_repo_root.clone(),
-                state.launch_thread_cwd.clone(),
-            ) else {
-                state.launch_menu_open = false;
-                state.mutation_notice = Some(
-                    local_text(
-                        state.language,
-                        "launch preset scope is unavailable",
-                        "启动预设作用域不可用",
-                    )
-                    .into(),
-                );
-                return vec![];
-            };
-            state.launch_menu_open = false;
-            return vec![Effect::PrepareLaunchPreset {
-                preset,
-                repo_root,
-                thread_cwd,
-            }];
-        }
-        Action::LaunchPlanPrepared(plan) => {
-            state.pending_operation = None;
-            state.pending_forge_operation = None;
-            state.pending_forge_payload = None;
-            state.pending_local_batch = None;
-            state.pending_launch_plan = Some(plan);
-            state.mutation_notice = None;
         }
         Action::ToggleTerminalDrawer => {
             if state.terminal_drawer_open {

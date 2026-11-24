@@ -110,16 +110,6 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
         };
     }
 
-    if app.launch_menu_open {
-        return match key.code {
-            KeyCode::Esc => reduce(app, Action::CloseLaunchPresets),
-            KeyCode::Char('j') | KeyCode::Down => reduce(app, Action::MoveLaunchPreset(1)),
-            KeyCode::Char('k') | KeyCode::Up => reduce(app, Action::MoveLaunchPreset(-1)),
-            KeyCode::Enter if plain => reduce(app, Action::SelectLaunchPreset),
-            _ => vec![],
-        };
-    }
-
     if app.context_open {
         return match key.code {
             KeyCode::Esc => reduce(app, Action::CloseContext),
@@ -219,14 +209,6 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
             _ => return vec![],
         };
         return reduce(app, action);
-    }
-
-    if app.pending_launch_plan.is_some() {
-        return match key.code {
-            KeyCode::Char('y') if plain => reduce(app, Action::ConfirmPendingOperation),
-            KeyCode::Char('c') | KeyCode::Esc => reduce(app, Action::CancelPendingOperation),
-            _ => vec![],
-        };
     }
 
     if app.pending_local_batch.is_some() {

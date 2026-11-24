@@ -82,12 +82,6 @@ impl AppState {
             pending_forge_operation: None,
             pending_forge_payload: None,
             pending_local_batch: None,
-            launch_menu_open: false,
-            launch_selected: 0,
-            launch_repo_root: None,
-            launch_thread_cwd: None,
-            launch_presets: vec![],
-            pending_launch_plan: None,
             terminal_drawer_open: false,
             terminal_focused: false,
             terminal_snapshot: None,
@@ -245,14 +239,12 @@ impl AppState {
             && !self.command_palette_open
             && self.target_lookup.is_none()
             && !self.context_open
-            && !self.launch_menu_open
             && !self.thread_queue_open
             && !self.transcript_search_open
             && !self.goal_actions_open
             && self.saved_view_editor.is_none()
             && self.pending_operation.is_none()
             && self.pending_queue_confirmation.is_none()
-            && self.pending_launch_plan.is_none()
             && self.pending_local_batch.is_none()
             && self.pending_forge_operation.is_none()
             && self.hot_slot_bind_pending.is_none()
@@ -725,14 +717,6 @@ impl AppState {
                 choices.push(ContextChoice::EditCurrentView);
                 choices.push(ContextChoice::DeleteCurrentView);
             }
-        }
-        if matches!(self.view, View::Workspace(_) | View::Review(_))
-            && self.current_thread_id().is_some_and(|thread_id| {
-                self.git_context(thread_id)
-                    .is_some_and(|context| context.repo.is_some())
-            })
-        {
-            choices.push(ContextChoice::LaunchPreset);
         }
         if let Some(target) = self.current_forge_mutation_target() {
             if target.change_request.is_some() {

@@ -37,7 +37,6 @@ fn eligible(app: &AppState, key: KeyEvent) -> bool {
         && app.target_lookup.is_none()
         && !app.show_help
         && !app.context_open
-        && !app.launch_menu_open
         && !app.thread_queue_open
         && !app.transcript_search_open
         && !app.goal_actions_open
@@ -45,7 +44,6 @@ fn eligible(app: &AppState, key: KeyEvent) -> bool {
         && app.pending_operation.is_none()
         && app.pending_forge_operation.is_none()
         && app.pending_local_batch.is_none()
-        && app.pending_launch_plan.is_none()
         && app.pending_queue_confirmation.is_none()
         && app.hot_slot_bind_pending.is_none()
 }
@@ -160,7 +158,6 @@ mod tests {
             |a| a.show_help = true,
             |a| a.context_open = true,
             |a| a.command_palette_open = true,
-            |a| a.launch_menu_open = true,
             |a| a.thread_queue_open = true,
             |a| a.transcript_search_open = true,
             |a| a.goal_actions_open = true,

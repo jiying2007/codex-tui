@@ -248,44 +248,6 @@ pub(crate) async fn doctor(scope: Option<&str>, target_override: Option<&str>) -
             "default-scrollback-bytes: {}",
             capabilities.default_scrollback_bytes
         );
-    } else if scope == Some("presets") {
-        let cwd = std::env::current_dir()?;
-        let context = git::probe_context(
-            codex_tui::domain::ThreadId::new("doctor"),
-            cwd.to_string_lossy().into_owned(),
-        )
-        .await?;
-        let Some(repo) = context.repo else {
-            doctor_println!("launch-config: unavailable");
-            doctor_println!("error: current directory is not inside a Git repository");
-            return Ok(codex_tui::headless::EXIT_DEGRADED);
-        };
-        let repo_root = std::path::Path::new(&repo.primary_root);
-        let config_path = repo_root.join(codex_tui::launch::REPO_CONFIG_FILE);
-        doctor_println!("launch-config: {}", config_path.display());
-        match codex_tui::launch::RepoLaunchConfig::load(repo_root) {
-            Ok(config) => {
-                doctor_println!("launch-config-version: {}", config.version);
-                doctor_println!("launch-presets: {}", config.launches.len());
-                for preset in config.launches {
-                    doctor_println!(
-                        "preset: {} · cwd={:?} · argv={}",
-                        preset.name,
-                        preset.cwd,
-                        preset
-                            .argv
-                            .iter()
-                            .map(|arg| format!("{arg:?}"))
-                            .collect::<Vec<_>>()
-                            .join(" ")
-                    );
-                }
-            }
-            Err(error) => {
-                degraded = true;
-                doctor_println!("launch-config: DEGRADED · {error:#}");
-            }
-        }
     } else if scope == Some("codex") {
         match app_server::probe_target(target).await {
             Ok(snapshot) => {
@@ -354,7 +316,7 @@ pub(crate) async fn doctor(scope: Option<&str>, target_override: Option<&str>) -
         }
     } else {
         doctor_println!(
-            "hint: run `codex-tui doctor codex`, `doctor git`, `doctor forge`, `doctor store`, `doctor presets`, or `doctor terminal`"
+            "hint: run `codex-tui doctor codex`, `doctor git`, `doctor forge`, `doctor store`, or `doctor terminal`"
         );
     }
     Ok(if degraded {

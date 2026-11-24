@@ -15,7 +15,6 @@ pub(super) struct ContextMenu {
     pub(super) choices: Vec<ContextChoice>,
     scope: Scope,
     forge: Option<MutationEditor>,
-    worktree: Option<MutationEditor>,
 }
 
 impl AppState {
@@ -34,7 +33,6 @@ impl AppState {
             choices,
             scope: self.context_scope(),
             forge: self.editor_snapshot(super::InputMode::ForgeComment),
-            worktree: self.editor_snapshot(super::InputMode::WorktreeCreateBranch),
         });
         self.context_open = self.context_menu.is_some();
         self.context_selected = 0;
@@ -70,12 +68,6 @@ impl AppState {
                                 menu.forge.is_some()
                                     && menu.forge
                                         == self.editor_snapshot(super::InputMode::ForgeComment)
-                            }
-                            ContextChoice::LaunchPreset => {
-                                menu.worktree.is_some()
-                                    && menu.worktree
-                                        == self
-                                            .editor_snapshot(super::InputMode::WorktreeCreateBranch)
                             }
                             _ => true,
                         }

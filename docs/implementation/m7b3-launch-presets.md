@@ -1,6 +1,6 @@
 # M7b3: repository-shared safe launch presets
 
-Status: implementation slice under #24 / #27
+Status: historical implementation under #24 / #27; retired in the Lite candidate. This document records the old design only; it is not an active operator guide.
 
 M7b3 adds repository-shared launch presets without turning codex-tui into a workflow engine or shell wrapper.
 

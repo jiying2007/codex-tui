@@ -53,6 +53,7 @@ fn invalid_usage_is_side_effect_free_and_exits_two() {
     for args in [
         vec!["--no-such-option"],
         vec!["doctor", "no-such-scope"],
+        vec!["doctor", "presets"],
         vec!["doctor", "store", "--bogus"],
         vec!["doctor", "store", "extra"],
         vec!["doctor", "codex", "--target", "--help"],

@@ -28,26 +28,10 @@ codex-tui doctor codex
 - Git/GitLab/GitHub：分支、审阅、CI、Issue/MR/PR 的唯一权威。
 - codex-tui：投影视图、提醒、个人笔记及安全确认；不拥有共享任务数据。
 
-## 3. 可选安全启动预设
+## 3. 使用原生开发命令
 <!-- docs-section: presets -->
 
-在仓库根目录使用受限制的 `.codex-tui.toml`：
-
-~~~toml
-version = 1
-
-[[launch]]
-name = "Tests"
-argv = ["cargo", "test", "--all-targets"]
-cwd = "repo"
-
-[[launch]]
-name = "Open workspace"
-argv = ["code", "."]
-cwd = "thread"
-~~~
-
-验证但不执行：`codex-tui doctor presets`。不接受任意 Shell 命令字符串、模板环境变量、链式执行、Hooks 或调度器。启动时需检查具体 cwd/argv 并确认。
+构建、测试等仓库命令交由原生 Codex CLI、编辑器或现有终端执行。仓库启动预设和 `doctor presets` 已退役；codex-tui 不执行也不删除已有仓库配置文件。
 
 ## 4. GitLab / GitHub
 <!-- docs-section: forge -->

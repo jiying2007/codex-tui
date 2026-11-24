@@ -17,7 +17,6 @@ use codex_tui::{
     worktree::{MutationEvent, MutationRequest, WorktreeMutationHandle},
 };
 use crossterm::event::{self, Event, KeyEventKind};
-use std::path::Path;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 mod runtime_cli;
@@ -1100,83 +1099,6 @@ fn apply_effects(
                     store.planning(move |store| store.apply_local_batch(&plan), Some(notice)),
                 );
             }
-            Effect::LoadLaunchPresets {
-                repo_root,
-                thread_cwd,
-            } => match codex_tui::launch::RepoLaunchConfig::load(Path::new(&repo_root)) {
-                Ok(config) => {
-                    reduce(
-                        app,
-                        Action::LaunchPresetsLoaded {
-                            repo_root,
-                            thread_cwd,
-                            presets: config.launches,
-                        },
-                    );
-                }
-                Err(error) => {
-                    reduce(
-                        app,
-                        Action::MutationNotice(format!(
-                            "{}: {error:#}",
-                            runtime_text(
-                                app.language,
-                                "launch preset config unavailable",
-                                "启动预设配置不可用",
-                            )
-                        )),
-                    );
-                }
-            },
-            Effect::PrepareLaunchPreset {
-                preset,
-                repo_root,
-                thread_cwd,
-            } => {
-                match codex_tui::launch::LaunchPlan::build(
-                    &preset,
-                    Path::new(&repo_root),
-                    Path::new(&thread_cwd),
-                ) {
-                    Ok(plan) => {
-                        reduce(app, Action::LaunchPlanPrepared(plan));
-                    }
-                    Err(error) => {
-                        reduce(
-                            app,
-                            Action::MutationNotice(format!(
-                                "{}: {error:#}",
-                                runtime_text(
-                                    app.language,
-                                    "cannot create launch preset plan",
-                                    "无法创建启动预设计划",
-                                )
-                            )),
-                        );
-                    }
-                }
-            }
-            Effect::ExecuteLaunchPreset(plan) => match plan.execute() {
-                Ok(pid) => {
-                    reduce(
-                        app,
-                        Action::MutationNotice(format!(
-                            "{} · {} · pid={pid}",
-                            runtime_text(app.language, "launch preset started", "启动预设已启动"),
-                            plan.name
-                        )),
-                    );
-                }
-                Err(error) => {
-                    reduce(
-                        app,
-                        Action::MutationNotice(format!(
-                            "{}: {error:#}",
-                            runtime_text(app.language, "launch preset failed", "启动预设失败")
-                        )),
-                    );
-                }
-            },
             Effect::OpenTerminalDrawer { cwd } => {
                 let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
                 let size = ui::terminal_drawer_pty_size(cols, rows);
@@ -1979,7 +1901,6 @@ mod accessibility_input_tests {
         let mut app = app();
         app.terminal_drawer_open = true;
         app.terminal_focused = true;
-        app.launch_menu_open = true;
         app.context_open = true;
 
         let effects = handle_key(
@@ -1987,7 +1908,6 @@ mod accessibility_input_tests {
             KeyEvent::new(KeyCode::Char('j'), KeyModifiers::NONE),
         );
         assert_eq!(effects, vec![Effect::TerminalInput(vec![b'j'])]);
-        assert_eq!(app.launch_selected, 0);
         assert_eq!(app.context_selected, 0);
     }
 
