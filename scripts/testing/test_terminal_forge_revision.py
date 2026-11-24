@@ -1,10 +1,13 @@
 """Fail-closed checks for the retired Forge routes, including Python -O."""
 import copy
 import unittest
-from forge_revision_regression import CASES, registry_visible, validate_read_only
+from forge_revision_regression import CASES, FORGE, registry_visible, validate_read_only
 
 
 class ForgeAssertions(unittest.TestCase):
+    def test_isolated_shim_compiles(self):
+        compile(FORGE, 'fixture-forge', 'exec')
+
     def test_exact_unique_case_coverage(self):
         self.assertEqual(set(CASES), {
             'github-approve-control', 'github-approve-missing',

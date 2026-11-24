@@ -31,7 +31,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 home = Path(os.environ['HOME'])
 args = sys.argv[1:]
-provider, operation, mode = os.environ['FORGE_CASE'].split('-', 2)
+provider, _, mode = os.environ['FORGE_CASE'].split('-', 2)
 # Record every invocation, including attempts that fail argument validation.
 with open(home/'forge-invocations.jsonl', 'a') as log:
  log.write(json.dumps(args)+'\n')
@@ -48,19 +48,15 @@ endpoint = endpoints[0]; path = urlsplit(endpoint).path
 fields = dict(a.split('=',1) for a in args if '=' in a and a not in endpoints)
 with open(home/'forge.lock', 'a') as lock:
  fcntl.flock(lock, fcntl.LOCK_EX)
- state_path = home/'forge-state.json'
- state = json.loads(state_path.read_text()) if state_path.exists() else {'writes':0}
- changed = ((mode == 'before' and (home/'confirmed').exists()) or
-            (mode in ('after','uncertain') and state['writes'] > 0))
- sha = None if mode == 'missing' else ('b' if changed else 'a') * 40
- merged = operation == 'merge' and state['writes'] > 0
+ sha = None if mode == 'missing' else 'a' * 40
+ merged = False
  repo = {'id':123,'full_name':'fixture/isolated','html_url':'https://github.com/fixture/isolated',
          'path_with_namespace':'fixture/isolated','web_url':'https://gitlab.com/fixture/isolated',
          'default_branch':'main'}
  if provider == 'github':
   repo.update({'allow_merge_commit':True,'allow_squash_merge':False,'allow_rebase_merge':False})
  review = {'id':80,'state':'APPROVED','user':{'id':7,'login':'fixture-user'},
-           'commit_id':('b' if mode == 'wrong-review' or (mode == 'stale-existing' and not state['writes']) else 'a')*40}
+           'commit_id':'a'*40}
  pull = {'number':7,'title':'FIXTURE_CHANGE','state':'closed' if merged else 'open',
          'html_url':'https://github.com/fixture/isolated/pull/7','merged':merged,'mergeable':True,
          'head':{'ref':'feature','sha':sha,'repo':repo},'base':{'ref':'main','sha':'c'*40,'repo':repo}}
@@ -69,14 +65,15 @@ with open(home/'forge.lock', 'a') as lock:
        'sha':sha,'web_url':'https://gitlab.com/fixture/isolated/-/merge_requests/7',
        'detailed_merge_status':'mergeable','blocking_discussions_resolved':True,
        'head_pipeline':{'status':'success'}}
- approved = state['writes'] > 0 or mode == 'stale-existing'
+ approved = False
  approval = {'approvals_left':0,'approvals_required':0,'approved_by':[{'user':{'id':7}}] if approved else []}
  out = None
  if method != 'GET':
   # Never emulate a successful write after the route has been retired.
   with open(home/'forge.jsonl','a') as log:
    log.write(json.dumps({'method':method,'endpoint':endpoint,'supported':False})+'\n')
-  sys.exit(92) elif path == '/user': out = {'id':7,'login':'fixture-user'}
+  sys.exit(92)
+ elif path == '/user': out = {'id':7,'login':'fixture-user'}
  elif path in ('/repos/fixture/isolated','/projects/fixture%2Fisolated','/projects/123'): out = repo
  elif path == '/repos/fixture/isolated/issues' or path.endswith('/issues'): out = []
  elif path == '/repos/fixture/isolated/pulls': out = [pull]
@@ -91,10 +88,8 @@ with open(home/'forge.lock', 'a') as lock:
  elif path == '/projects/123/pipelines': out = []
  with open(home/'forge.jsonl','a') as log:
   log.write(json.dumps({'method':method,'endpoint':endpoint,'fields':fields,'head':sha,
-                        'writes':state['writes'],'supported':out is not None})+'\n')
+                        'writes':0,'supported':out is not None})+'\n')
  if out is None: sys.exit(93)
- if method != 'GET' and mode == 'uncertain':
-  print('{invalid-json'); sys.exit(0)
  print(json.dumps(out))
 '''
 
@@ -175,7 +170,7 @@ def wait_registry(app):
 
 
 def case(binary, output, home, scenario):
-    provider, operation, mode = scenario.split('-', 2)
+    provider, _, _ = scenario.split('-', 2)
     env = environment(home, home/'server.log', 'forge-revision')
     env['FORGE_CASE'] = scenario
     for tool in ('gh','glab'):
@@ -227,7 +222,7 @@ def case(binary, output, home, scenario):
                       'Approve merge request', 'Merge merge request',
                       'Create worktree', 'Remove worktree'):
             require(label not in screen, 'retired mutation action: '+label)
-        app.send(b'\\x1b')
+        app.send(b'\x1b')
         app.wait(lambda: 'j/k move' not in app.screen(), 'context menu did not close')
         return screen
 
@@ -252,9 +247,9 @@ def case(binary, output, home, scenario):
         result = verify_read_only()
         result['externalUrl'] = expected_url
         result['resources'] = resources(app.proc.pid)
-        app.send(b'\\x1b')
+        app.send(b'\x1b')
         app.wait(lambda: 'Workspace · Git + Forge' in app.screen(), 'workspace return not observed')
-        app.send(b'\\x1b')
+        app.send(b'\x1b')
         wait_registry(app)
         result['registryReturnObserved'] = True
         result['terminal'] = app.finish()
@@ -264,7 +259,7 @@ def case(binary, output, home, scenario):
         wait_registry(app)
         app.send(b'w')
         app.wait(lambda: 'FIXTURE_CHANGE' in app.screen(), 'restart Forge projection not observed')
-        app.send(b'\\x1b')
+        app.send(b'\x1b')
         wait_registry(app)
         result['restart'] = verify_read_only()
         require(read_trace('browser.jsonl') == [[expected_url]], 'restart repeated external handoff')
@@ -274,8 +269,8 @@ def case(binary, output, home, scenario):
     finally:
         try:
             for name in ('forge.jsonl', 'forge-invocations.jsonl', 'browser.jsonl'):
-                (output/name).write_text(''.join(json.dumps(r)+'\\n' for r in read_trace(name)))
-            (output/'operation.json').write_text(json.dumps(receipt_rows(home), indent=2)+'\\n')
+                (output/name).write_text(''.join(json.dumps(r)+'\n' for r in read_trace(name)))
+            (output/'operation.json').write_text(json.dumps(receipt_rows(home), indent=2)+'\n')
         finally:
             if app is not None:
                 app.close()
