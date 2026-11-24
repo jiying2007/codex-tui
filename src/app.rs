@@ -360,7 +360,9 @@ fn refresh_forge_projections(state: &mut AppState) -> Vec<Effect> {
             .forge_observation(&thread_id)
             .filter(|observation| observation.cwd == cwd)
             .and_then(|observation| observation.identity.clone());
-        state.forge_observations.insert(thread_id.0.clone(), pending);
+        state
+            .forge_observations
+            .insert(thread_id.0.clone(), pending);
         effects.push(Effect::ProbeForge { thread_id, cwd });
     }
 

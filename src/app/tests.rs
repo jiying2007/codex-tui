@@ -2118,7 +2118,9 @@ fn forge_refresh_keeps_history_without_polling_unrelated_checkouts() {
         thread.metadata.cwd = format!("/fixture/repo-{index:02}");
     }
     threads[40].pinned = true;
-    threads[42].attention.push(AttentionReason::ApprovalRequired);
+    threads[42]
+        .attention
+        .push(AttentionReason::ApprovalRequired);
     threads[44].runtime = RuntimeStatus::Working;
     let mut app = AppState::new(threads);
     app.selected = 63;
