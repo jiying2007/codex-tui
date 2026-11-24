@@ -138,10 +138,11 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
         (_, KeyCode::Char('!')) if key.modifiers.is_empty() => {
             Some(Command::OpenRecentNotification)
         }
-        (
-            ViewKind::Thread | ViewKind::Review | ViewKind::Workspace,
-            KeyCode::Char('='),
-        ) if key.modifiers == KeyModifiers::NONE => Some(Command::BeginHotSlotBind),
+        (ViewKind::Thread | ViewKind::Review | ViewKind::Workspace, KeyCode::Char('='))
+            if key.modifiers == KeyModifiers::NONE =>
+        {
+            Some(Command::BeginHotSlotBind)
+        }
         (
             ViewKind::Thread | ViewKind::Review | ViewKind::Workspace,
             KeyCode::Char(c @ '1'..='9'),

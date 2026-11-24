@@ -4,8 +4,8 @@
 use crate::runtime_store::{RuntimeStore as StoreBackend, StoreBootstrap};
 use anyhow::{Context, Result};
 use codex_tui::{
-    planning::PlanningSnapshot, store::LocalStateV1,
-    transcript_search::TranscriptSearchResults, workref::WorkRefLedger,
+    planning::PlanningSnapshot, store::LocalStateV1, transcript_search::TranscriptSearchResults,
+    workref::WorkRefLedger,
 };
 use std::{
     sync::mpsc::{self, Receiver, SyncSender, TryRecvError, TrySendError},

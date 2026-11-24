@@ -10,9 +10,7 @@ pub(in crate::app) fn open(state: &mut AppState) -> Vec<Effect> {
                 .then(|| ThreadId::new(card.anchor.value.clone()))
                 .filter(|id| state.thread_by_id(id).is_some())
         }),
-        View::Thread(id) | View::Review(id) | View::Workspace(id) | View::ManagedWorktrees(id) => {
-            Some(id.clone())
-        }
+        View::Thread(id) | View::Review(id) | View::Workspace(id) => Some(id.clone()),
         View::Scratch(_) => None,
     };
     let Some(id) = id else { return vec![] };

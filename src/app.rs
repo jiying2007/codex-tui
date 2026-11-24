@@ -361,9 +361,7 @@ fn git_projection_target_ids(state: &AppState) -> Vec<ThreadId> {
 
     let selected_thread_id = match &state.view {
         View::Registry => state.selected_thread_id(),
-        View::Thread(id) | View::Review(id) | View::Workspace(id) => {
-            Some(id.clone())
-        }
+        View::Thread(id) | View::Review(id) | View::Workspace(id) => Some(id.clone()),
         View::Board => state.selected_planning_card().and_then(|card| {
             (card.anchor.kind == SourceKind::CodexThread)
                 .then(|| ThreadId::new(card.anchor.value.clone()))
@@ -471,9 +469,7 @@ fn refresh_git_projections(state: &mut AppState) -> Vec<Effect> {
 fn refresh_active_git_projections(state: &mut AppState) -> Vec<Effect> {
     let selected_thread_id = match &state.view {
         View::Registry => state.selected_thread_id(),
-        View::Thread(id) | View::Review(id) | View::Workspace(id) => {
-            Some(id.clone())
-        }
+        View::Thread(id) | View::Review(id) | View::Workspace(id) => Some(id.clone()),
         View::Board => state.selected_planning_card().and_then(|card| {
             (card.anchor.kind == SourceKind::CodexThread)
                 .then(|| ThreadId::new(card.anchor.value.clone()))

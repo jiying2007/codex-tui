@@ -245,15 +245,18 @@ impl AppState {
                 self.thread_by_id(thread_id).is_some()
                     || self.unregistered_watches.contains(&thread_id.0)
             }
-            View::Review(thread_id) | View::Workspace(thread_id) => self.thread_by_id(thread_id).is_some(),
+            View::Review(thread_id) | View::Workspace(thread_id) => {
+                self.thread_by_id(thread_id).is_some()
+            }
             View::Registry | View::Board | View::Scratch(_) => true,
         }
     }
 
     pub(super) fn thread_id_for_view(view: &View) -> Option<ThreadId> {
         match view {
-            View::Thread(thread_id)
-            | View::Review(thread_id) | View::Workspace(thread_id) => Some(thread_id.clone()),
+            View::Thread(thread_id) | View::Review(thread_id) | View::Workspace(thread_id) => {
+                Some(thread_id.clone())
+            }
             View::Registry | View::Board | View::Scratch(_) => None,
         }
     }
@@ -455,9 +458,9 @@ impl AppState {
             View::Board => self
                 .selected_planning_card()
                 .map(|card| card.anchor.clone()),
-            View::Thread(id)
-            | View::Review(id)
-            | View::Workspace(id) => Some(SourceRef::codex_thread(id)),
+            View::Thread(id) | View::Review(id) | View::Workspace(id) => {
+                Some(SourceRef::codex_thread(id))
+            }
             View::Scratch(id) => Some(SourceRef {
                 kind: SourceKind::ScratchWork,
                 value: id.clone(),
