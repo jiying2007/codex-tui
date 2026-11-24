@@ -281,6 +281,7 @@ fn forge_scope_key(state: &AppState, thread_id: &ThreadId, cwd: &str) -> String 
     if let Some(identity) = state
         .forge_observations
         .get(&thread_id.0)
+        .filter(|observation| observation.cwd == cwd)
         .and_then(|observation| observation.identity.as_ref())
     {
         format!(
@@ -357,6 +358,7 @@ fn refresh_forge_projections(state: &mut AppState) -> Vec<Effect> {
         // The pending timestamp and empty evidence do not claim a fresh read.
         pending.identity = state
             .forge_observation(&thread_id)
+            .filter(|observation| observation.cwd == cwd)
             .and_then(|observation| observation.identity.clone());
         state.forge_observations.insert(thread_id.0.clone(), pending);
         effects.push(Effect::ProbeForge { thread_id, cwd });
