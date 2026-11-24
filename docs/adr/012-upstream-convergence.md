@@ -102,3 +102,8 @@ This ADR intentionally favors a smaller product:
 
 ADR-009 remains valid; this ADR operationalizes it with a machine-enforced convergence
 contract.
+
+
+As of 2026-11-23, the pinned upstream snapshot is **Codex CLI 0.171.0 / `rust-v0.171.0`** (release commit `ccf9be8cc458bd6b8336fe84d68d8893f2691a5e`). The native TUI Workspace is now the default and includes document/image previews and subagent transcripts; `codex agents` and `codex queue` are Stable. These changes further reinforce the maintenance-only boundary for the local conversation client, Queue UI and embedded terminal.
+
+The 0.171.0 App Server protocol adds the distinct `attachedToThreadId` relation and explicit attached-thread list filters. It must not be conflated with `parentThreadId` (subagent parent) or `forkedFromId` (fork source). The pinned protocol fixtures exercise all three relations through the production parser and active-Target grouping. Ordinary Mission Control inventory does not opt into attached-thread scans. This remains public schema/source review plus synthetic replay; App Server is Experimental and no authenticated L3 or real-user acceptance is claimed.

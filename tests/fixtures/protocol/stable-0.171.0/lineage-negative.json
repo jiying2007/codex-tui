@@ -1,0 +1,44 @@
+{
+  "data": [
+    {
+      "id": "stable-0171-orphan",
+      "name": "Orphan subagent",
+      "preview": "Parent is absent",
+      "sessionId": "stable-0171-session",
+      "forkedFromId": null,
+      "attachedToThreadId": null,
+      "parentThreadId": "missing-parent",
+      "updatedAt": 5,
+      "status": {
+        "type": "idle"
+      },
+      "cwd": "/fixtures/repo",
+      "source": {
+        "subAgent": {
+          "thread_spawn": {
+            "parent_thread_id": "missing-parent",
+            "depth": 1
+          }
+        }
+      }
+    },
+    {
+      "id": "stable-0171-conflict",
+      "name": "Conflicting relation",
+      "preview": "Conflicting parent and attachment",
+      "sessionId": "stable-0171-session",
+      "forkedFromId": null,
+      "attachedToThreadId": "another-parent",
+      "parentThreadId": "stable-0171-parent",
+      "updatedAt": 6,
+      "status": {
+        "type": "idle"
+      },
+      "cwd": "/fixtures/repo",
+      "source": "cli"
+    }
+  ],
+  "readStates": null,
+  "nextCursor": null,
+  "backwardsCursor": null
+}

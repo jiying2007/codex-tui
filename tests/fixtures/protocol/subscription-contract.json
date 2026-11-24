@@ -3,7 +3,8 @@
   "reviewedTags": [
     "rust-v0.162.1",
     "rust-v0.163.0",
-    "rust-v0.164.0"
+    "rust-v0.164.0",
+    "rust-v0.171.0"
   ],
   "scope": "Public generated protocol and request-processor source review, with isolated per-connection WebSocket and stdio peers. No authenticated App Server or model inference qualification.",
   "realAccountQualified": false,
@@ -40,7 +41,10 @@
     ],
     "warmResumeReplayOrder": "Resume response is enqueued before replaying pending server requests to the rejoining connection.",
     "resumeErrorAfterAttach": "A running-thread resume can add its connection before reading backwards cursors fails. A definitive application error therefore still requires release cleanup.",
-    "authoritativeRemovalInvalidatesPendingRequests": "Archive/delete invalidate outstanding thread requests; they are not retained as owners that could reacquire the removed thread."
+    "authoritativeRemovalInvalidatesPendingRequests": "Archive/delete invalidate outstanding thread requests; they are not retained as owners that could reacquire the removed thread.",
+    "versionedLifecycleReview": {
+      "rust-v0.171.0": "Listener startup/unload and cold-resume coordination were refactored. thread/unsubscribe still returns notLoaded, notSubscribed or unsubscribed; the server now serializes terminal cleanup against a replacement cold-resume listener. Client policy remains explicit per-connection resume and unsubscribe, no automatic reconnect."
+    }
   },
   "sources": [
     {
@@ -48,12 +52,14 @@
       "urls": [
         "https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/app-server-protocol/schema/typescript/v2/ThreadResumeParams.ts",
         "https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs/app-server-protocol/schema/typescript/v2/ThreadResumeParams.ts",
-        "https://github.com/openai/codex/blob/6aaac694803004a63c6f393d153c96d22521a6b9/codex-rs/app-server-protocol/schema/typescript/v2/ThreadResumeParams.ts"
+        "https://github.com/openai/codex/blob/6aaac694803004a63c6f393d153c96d22521a6b9/codex-rs/app-server-protocol/schema/typescript/v2/ThreadResumeParams.ts",
+        "https://github.com/openai/codex/blob/ccf9be8cc458bd6b8336fe84d68d8893f2691a5e/codex-rs/app-server-protocol/schema/typescript/v2/ThreadResumeParams.ts"
       ],
       "gitBlobs": {
         "rust-v0.162.1": "4da03970e9f2f0d7b5e796c4dd0ea96fda69a95e",
         "rust-v0.163.0": "4da03970e9f2f0d7b5e796c4dd0ea96fda69a95e",
-        "rust-v0.164.0": "4da03970e9f2f0d7b5e796c4dd0ea96fda69a95e"
+        "rust-v0.164.0": "4da03970e9f2f0d7b5e796c4dd0ea96fda69a95e",
+        "rust-v0.171.0": "4da03970e9f2f0d7b5e796c4dd0ea96fda69a95e"
       }
     },
     {
@@ -61,12 +67,14 @@
       "urls": [
         "https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/app-server-protocol/schema/typescript/v2/ThreadUnsubscribeStatus.ts",
         "https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs/app-server-protocol/schema/typescript/v2/ThreadUnsubscribeStatus.ts",
-        "https://github.com/openai/codex/blob/6aaac694803004a63c6f393d153c96d22521a6b9/codex-rs/app-server-protocol/schema/typescript/v2/ThreadUnsubscribeStatus.ts"
+        "https://github.com/openai/codex/blob/6aaac694803004a63c6f393d153c96d22521a6b9/codex-rs/app-server-protocol/schema/typescript/v2/ThreadUnsubscribeStatus.ts",
+        "https://github.com/openai/codex/blob/ccf9be8cc458bd6b8336fe84d68d8893f2691a5e/codex-rs/app-server-protocol/schema/typescript/v2/ThreadUnsubscribeStatus.ts"
       ],
       "gitBlobs": {
         "rust-v0.162.1": "2970598dc1b48cfad5222febfd9336b86bf1d265",
         "rust-v0.163.0": "2970598dc1b48cfad5222febfd9336b86bf1d265",
-        "rust-v0.164.0": "2970598dc1b48cfad5222febfd9336b86bf1d265"
+        "rust-v0.164.0": "2970598dc1b48cfad5222febfd9336b86bf1d265",
+        "rust-v0.171.0": "2970598dc1b48cfad5222febfd9336b86bf1d265"
       }
     },
     {
@@ -74,7 +82,8 @@
       "gitBlobs": {
         "rust-v0.162.1": "34fff277d45ebdf61fa11014e6d9b5a30a52e653",
         "rust-v0.163.0": "a7754975b5a47ff2b46b818145a5e66d6eccf528",
-        "rust-v0.164.0": "ab13ac6b0d4831912c691a85ebbcde850e1ce984"
+        "rust-v0.164.0": "ab13ac6b0d4831912c691a85ebbcde850e1ce984",
+        "rust-v0.171.0": "f95d09f8cc474c8cbeb412c2c08604e27ac46505"
       },
       "symbols": [
         "ensure_listener_task_running",
@@ -85,7 +94,8 @@
       "urls": [
         "https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/app-server/src/request_processors/thread_lifecycle.rs",
         "https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs/app-server/src/request_processors/thread_lifecycle.rs",
-        "https://github.com/openai/codex/blob/6aaac694803004a63c6f393d153c96d22521a6b9/codex-rs/app-server/src/request_processors/thread_lifecycle.rs"
+        "https://github.com/openai/codex/blob/6aaac694803004a63c6f393d153c96d22521a6b9/codex-rs/app-server/src/request_processors/thread_lifecycle.rs",
+        "https://github.com/openai/codex/blob/ccf9be8cc458bd6b8336fe84d68d8893f2691a5e/codex-rs/app-server/src/request_processors/thread_lifecycle.rs"
       ]
     },
     {
@@ -93,7 +103,8 @@
       "gitBlobs": {
         "rust-v0.162.1": "8bdf6bbed3ee667905a9b1428fb4b0ffcac08f02",
         "rust-v0.163.0": "9563a250cc43bf5691537ed009199112265a5548",
-        "rust-v0.164.0": "4d104e2d5e3818577d3725c801cc06c5c44d053a"
+        "rust-v0.164.0": "4d104e2d5e3818577d3725c801cc06c5c44d053a",
+        "rust-v0.171.0": "333c1c70bcdadafd0be25db74493f752dab62319"
       },
       "symbols": [
         "thread_unsubscribe_response_inner",
@@ -103,12 +114,53 @@
       "urls": [
         "https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/app-server/src/request_processors/thread_processor.rs",
         "https://github.com/openai/codex/blob/rust-v0.163.0/codex-rs/app-server/src/request_processors/thread_processor.rs",
-        "https://github.com/openai/codex/blob/6aaac694803004a63c6f393d153c96d22521a6b9/codex-rs/app-server/src/request_processors/thread_processor.rs"
+        "https://github.com/openai/codex/blob/6aaac694803004a63c6f393d153c96d22521a6b9/codex-rs/app-server/src/request_processors/thread_processor.rs",
+        "https://github.com/openai/codex/blob/ccf9be8cc458bd6b8336fe84d68d8893f2691a5e/codex-rs/app-server/src/request_processors/thread_processor.rs"
       ]
     },
     {
       "url": "https://developers.openai.com/codex/app-server",
       "purpose": "Current official user-facing method and subscription lifecycle documentation; tagged source above fixes the reviewed contracts."
+    },
+    {
+      "path": "codex-rs/app-server-protocol/src/protocol/v2/thread.rs",
+      "gitBlobs": {
+        "rust-v0.171.0": "0f2bb10f5e73662c8b7286989f3bfa5265e79274"
+      },
+      "urls": [
+        "https://github.com/openai/codex/blob/ccf9be8cc458bd6b8336fe84d68d8893f2691a5e/codex-rs/app-server-protocol/src/protocol/v2/thread.rs"
+      ],
+      "symbols": [
+        "ThreadResumeParams",
+        "ThreadUnsubscribeStatus"
+      ]
+    },
+    {
+      "path": "codex-rs/app-server/tests/suite/v2/thread_resume.rs",
+      "gitBlobs": {
+        "rust-v0.171.0": "cd090af5fd538aaf5e1a0c931f85bd9d403709e8"
+      },
+      "urls": [
+        "https://github.com/openai/codex/blob/ccf9be8cc458bd6b8336fe84d68d8893f2691a5e/codex-rs/app-server/tests/suite/v2/thread_resume.rs"
+      ],
+      "symbols": [
+        "independent_cold_resumes_overlap",
+        "thread_resume_running_thread_uses_cached_instruction_sources"
+      ]
+    },
+    {
+      "path": "codex-rs/app-server/tests/suite/v2/thread_unsubscribe.rs",
+      "gitBlobs": {
+        "rust-v0.171.0": "f12de0067429c56e5a7d6d72bfd652b39b0eb02a"
+      },
+      "urls": [
+        "https://github.com/openai/codex/blob/ccf9be8cc458bd6b8336fe84d68d8893f2691a5e/codex-rs/app-server/tests/suite/v2/thread_unsubscribe.rs"
+      ],
+      "symbols": [
+        "thread_unsubscribe_keeps_thread_loaded_until_idle_timeout",
+        "thread_unsubscribe_during_turn_keeps_turn_running",
+        "thread_unsubscribe_reports_not_subscribed_before_idle_unload"
+      ]
     }
   ],
   "testEntryPoints": [

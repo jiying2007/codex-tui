@@ -49,7 +49,7 @@ class StableWatchTests(unittest.TestCase):
         path = Path(__file__).resolve().parents[2] / "tests/fixtures/protocol/manifest.json"
         baseline = json.loads(path.read_text(encoding="utf-8"))["upstreamBaseline"]
         self.assertEqual(baseline["repository"], "openai/codex")
-        self.assertEqual(baseline["releaseTag"], "rust-v0.164.0")
+        self.assertEqual(baseline["releaseTag"], "rust-v0.171.0")
 
     def test_baseline_is_bound_to_reviewed_sources_without_qualification(self):
         root = Path(__file__).resolve().parents[2]

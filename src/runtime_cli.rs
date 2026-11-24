@@ -9,6 +9,7 @@ const HELP: &str = "Usage: codex-tui [--fake | --target NAME]
        codex-tui doctor compat [--json]
        codex-tui doctor bundle [--offline] [--output PATH]
        codex-tui headless <threads|work|status|attention|board|forge|worktrees> [--json] [--fake|--fixture-10k|--target NAME]
+       codex-tui headless threads --all-targets --query TEXT [--json]
        codex-tui status | thread list | attention list | board list | forge status | worktree list
        codex-tui release <verify|benchmark|render-benchmark|interaction-benchmark|scale|failure-matrix> [OPTIONS]
        codex-tui soak [--rows N] [--cycles N] [--duration-seconds N] [--json]
@@ -25,6 +26,7 @@ const DOCTOR_HELP: &str = "Usage: codex-tui doctor [codex|git|forge|store|preset
 Failed requested diagnostics exit 3; unknown scopes/options exit 2.";
 const HEADLESS_HELP: &str = "Usage: codex-tui headless <threads|work|status|attention|board|forge|worktrees> [--json] [--fake|--fixture-10k|--target NAME]
 Codex views use configured active target or --target NAME; forge/worktrees reject --target.
+Explicit metadata lookup: threads --all-targets --query TEXT (no --target or fixtures).
 Read-only aliases: status, thread list, attention list, board list, forge status, worktree list.
 Exit codes: 0 success, 2 invalid usage, 3 degraded.";
 const RELEASE_HELP: &str = "Usage: codex-tui release verify --channel preview|stable --tag TAG --commit SHA [--evidence PATH] [--publish] [--json]

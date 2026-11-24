@@ -47,3 +47,7 @@ codex-tui 必须维持**本地优先的薄 Mission Control**，其差异化能�
 
 Mission Control、Attention、Forge 和诊断可以继续改善；与官方 CLI 重叠的本地能力应保持不增长，必要时在证据充足后退役。Board 始终为投影，不是另一套团队数据库。即使所有机器测试通过，也不能据此宣称真实 Codex/GitLab/SSH 终端已验收。
 
+
+截至 2026-11-23，当前固定的上游快照为 **Codex CLI 0.171.0 / `rust-v0.171.0`**（发布提交 `ccf9be8cc458bd6b8336fe84d68d8893f2691a5e`）。原生 TUI Workspace 已成为默认界面，包含文档/图片预览和子 Agent Transcript；`codex agents` 与 `codex queue` 已为 Stable。这进一步确认本地会话客户端、Queue UI 和内嵌终端应保持维护模式。
+
+0.171.0 App Server 协议新增独立的 `attachedToThreadId` 关系及附属会话查询参数。它不能与 `parentThreadId`（子 Agent 父会话）或 `forkedFromId`（Fork 来源）混淆。固定协议样例已通过生产解析器和当前 Target 分组逻辑覆盖这三种关系。Mission Control 默认会话清单不主动扫描附属会话。这仍然只是公开协议/源码审查和合成回放；App Server 仍为 Experimental，不代表已完成真实账号 L3 或真实用户验收。
