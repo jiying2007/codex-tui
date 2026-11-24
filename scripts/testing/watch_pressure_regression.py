@@ -13,17 +13,16 @@ from app_server_transport_regression import require
 from runtime_fault_regression import Session, environment
 from watch_ownership_regression import MOCK, identity, resources
 
-CASES = ('healthy-close', 'pressure-close-both', 'pressure-close-queue',
+CASES = ('healthy-close', 'pressure-close', 'pressure-retain-active',
          'pressure-keep', 'pressure-reopen', 'pressure-disconnect')
 
-# Reuse the maintained wire contract; only the held read and empty queue are new.
+# Reuse the maintained wire contract; only the held history read is new.
 PRESSURE_MOCK = MOCK.replace("    if m=='turn/start':", """    if m=='thread/read' and (home/'block').exists() and not (home/'release').exists():
         (home/'waiting').touch()
         deadline = time.monotonic()+4.5
         while not (home/'release').exists() and time.monotonic()<deadline: time.sleep(.005)
         if (home/'disconnect').exists(): sys.exit(0)
-    if m=='turn/start':""").replace("        elif m=='thread/read':", """        elif m=='thread/queue/list': out={'data':[], 'nextCursor':None}
-        elif m=='thread/read':""")
+    if m=='turn/start':""")
 
 
 def check_counts(records, seq, expected):
@@ -37,7 +36,8 @@ def check_counts(records, seq, expected):
 
 def case(binary, output, home, mode):
     log = home/'server.jsonl'
-    env = environment(home, log, 'idle-back')
+    active = mode in ('pressure-retain-active', 'pressure-keep')
+    env = environment(home, log, 'registry-complete' if active else 'idle-back')
     (home/'bin/codex').write_text(PRESSURE_MOCK, encoding='utf-8')
     app = Session(binary, output, home, env)
     observations = []
@@ -61,11 +61,15 @@ def case(binary, output, home, mode):
             app.drain(.05)
         raise RuntimeError('accepted fixture reads did not settle')
 
-    def boundary(seq, expected, events=True):
-        value = {'seq':seq, 'events':[
+    def boundary(seq, expected, events=True, idle=False):
+        notifications = [
             {'method':'item/completed', 'params':{'threadId':'watch-a'}},
             {'method':'thread/queue/changed', 'params':{'threadId':'watch-a'}}
-        ] if events else []}
+        ] if events else []
+        if idle:
+            notifications.insert(0, {'method':'thread/status/changed',
+                                     'params':{'threadId':'watch-a', 'status':{'type':'idle'}}})
+        value = {'seq':seq, 'events':notifications}
         tmp = home/'control.tmp'
         tmp.write_text(json.dumps(value)); tmp.replace(home/'control.json')
         app.wait(lambda: 'ACK_{}_'.format(seq) in app.screen(), 'ordered actor fence missing')
@@ -83,20 +87,18 @@ def case(binary, output, home, mode):
             (home/'block').touch()
             app.send(b'\r')
             app.wait(lambda: (home/'waiting').exists(), 'the real history RPC was not held')
-        app.send(b'q')
         if pressure:
-            # A real open Queue editor accepts refresh keys. No reduced-capacity
-            # build or product fault-injection switch is used to fill the queue.
-            app.send(b'r'*180)
+            # Repeated navigation admits actual history loads, not Queue RPCs.
+            # The fixture's history turn is completed, including in the active
+            # registry-runtime case, so Ctrl+C cannot send an interrupt.
+            app.send(b'\x03\r' * 100)
             app.wait(lambda: 'queue is full' in app.screen(), 'bounded admission refusal not observed')
+            require(not any(r['method'] == 'turn/interrupt' for r in records()),
+                    'pressure sent an unexpected interrupt')
             (output/'pressure-screen.txt').write_text(app.screen(), encoding='utf-8')
-        else:
-            app.wait(lambda: any(r['method'] == 'thread/queue/list' for r in records()),
-                     'healthy queue read missing')
         if mode != 'pressure-keep':
-            app.send(b'\x1b')  # Close only Thread Queue first.
-        if mode not in ('pressure-keep', 'pressure-close-queue'):
-            app.send(b'\x1b')  # Then leave Thread, releasing its idle watch.
+            app.send(b'\x03' if pressure else b'\x1b')
+            app.wait(lambda: 'Mission Control' in app.screen(), 'did not leave history')
         if mode == 'pressure-disconnect':
             (home/'disconnect').touch()
         (home/'release').touch()
@@ -110,21 +112,27 @@ def case(binary, output, home, mode):
         else:
             boundary(1, None, events=False)
             settled()
-            expected = (1, 1) if mode == 'pressure-keep' else (
-                (1, 0) if mode == 'pressure-close-queue' else (0, 0))
+            expected = (1, 0) if active else (0, 0)
             boundary(2, expected)
             boundary(3, expected)
-            if mode == 'pressure-reopen':
+            if mode == 'pressure-retain-active':
+                # Background runtime owns history after leaving the view.
+                # Settlement must release it without reading retired Queue.
+                boundary(4, (0, 0), events=False, idle=True)
+                boundary(5, (0, 0))
+            elif mode == 'pressure-keep':
+                boundary(4, (1, 0), idle=True)
+                app.send(b'\x1b')
+                boundary(5, (0, 0))
+            elif mode == 'pressure-reopen':
                 app.send(b'\r')
                 app.wait(lambda: 'BODY_3' in app.screen(), 'reopening did not reload history')
-                app.send(b'q'); settled()
-                boundary(4, (1, 1))
-                app.send(b'\x1b'); app.send(b'\x1b')
+                boundary(4, (1, 0))
+                app.send(b'\x1b')
                 boundary(5, (0, 0))
             result = {'admissionRefused':pressure, 'observations':observations}
-        # Bring a still-open queue/thread back to Registry before normal exit.
-        if mode == 'pressure-keep': app.send(b'\x1b')
-        if mode in ('pressure-keep', 'pressure-close-queue'): app.send(b'\x1b')
+        require(not any(r['method'].startswith('thread/queue/') for r in records()),
+                'retired queue RPC observed')
         result['terminal'] = app.finish()
         return result
     finally:

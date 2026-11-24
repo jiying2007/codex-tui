@@ -9,12 +9,16 @@ class WatchPressureAssertions(unittest.TestCase):
         self.assertEqual(len(set(CASES)), 6)
         compile(PRESSURE_MOCK, 'isolated pressure fixture', 'exec')
         self.assertIn("(home/'waiting').touch()", PRESSURE_MOCK)
+        self.assertNotIn("m=='thread/queue/list'", PRESSURE_MOCK)
 
     def test_only_the_exact_target_and_phase_count(self):
         rows = [{'seq':1, 'method':'thread/read', 'params':{'threadId':'watch-a'}},
                 {'seq':2, 'method':'thread/read', 'params':{'threadId':'other'}}]
         check_counts(rows, 1, (1, 0))
         check_counts(rows, 2, (0, 0))
+        with self.assertRaises(RuntimeError):
+            check_counts([{'seq':2, 'method':'thread/queue/list',
+                           'params':{'threadId':'watch-a'}}], 2, (0, 0))
 
     def test_leaked_reads_and_lost_live_updates_fail(self):
         row = {'seq':2, 'method':'thread/read', 'params':{'threadId':'watch-a'}}

@@ -449,8 +449,8 @@ fn subscription_release_survives_real_command_queue_pressure() {
     assert_eq!(receipt["sourceSha"], source);
     let expected = [
         "healthy-close",
-        "pressure-close-both",
-        "pressure-close-queue",
+        "pressure-close",
+        "pressure-retain-active",
         "pressure-keep",
         "pressure-reopen",
         "pressure-disconnect",
