@@ -12,7 +12,9 @@ use crate::domain::{
 };
 use crate::forge::{CapabilityState, ForgeCapability, ForgeObservation, ForgeReviewTarget};
 use crate::git::{GitContext, GitReview};
-use crate::goal::{GoalObservation, GoalStatus};
+use crate::goal::GoalObservation;
+#[cfg(test)]
+use crate::goal::GoalStatus;
 use crate::i18n::{UiLanguage, pick};
 use crate::metadata_search::{
     MetadataSearchContext, filter_requires_locality, matches_metadata_query,
@@ -152,7 +154,6 @@ pub struct AppState {
     worktree_collision_counts: BTreeMap<String, usize>,
     pub goals: BTreeMap<String, GoalObservation>,
     pub goal_checked: BTreeSet<String>,
-    pub goal_actions_open: bool,
     pub pending_local_batch: Option<LocalBatchPlan>,
     pub terminal_drawer_open: bool,
     pub terminal_focused: bool,
@@ -931,7 +932,7 @@ fn select_next_attention(state: &mut AppState) {
 fn normalize_pasted_input(mode: InputMode, value: &str) -> String {
     if matches!(
         mode,
-        InputMode::Composer | InputMode::UserInput | InputMode::Note | InputMode::GoalObjective
+        InputMode::Composer | InputMode::UserInput | InputMode::Note
     ) {
         let normalized = value.replace("\r\n", "\n").replace('\r', "\n");
         normalized

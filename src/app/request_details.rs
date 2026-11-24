@@ -66,7 +66,6 @@ impl AppState {
     fn request_details_available(&self) -> bool {
         matches!(self.view, View::Thread(_))
             && self.input_mode == InputMode::Normal
-            && !self.goal_actions_open
             && !self.command_palette_open
             && !self.context_open
             && !self.transcript_search_open

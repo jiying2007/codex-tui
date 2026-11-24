@@ -539,10 +539,10 @@ fn registry_search_can_filter_host_local_sessions() {
 }
 
 #[test]
-fn goal_actions_are_explicit_app_server_effects() {
+fn goal_refresh_is_read_only_and_native_observations_remain_authoritative() {
     let mut app = app();
     reduce(&mut app, Action::OpenSelected);
-    let refresh = reduce(&mut app, Action::OpenGoalActions);
+    let refresh = reduce(&mut app, Action::RefreshGoal);
     assert!(matches!(refresh.as_slice(), [Effect::RefreshGoal(_)]));
 
     let thread_id = app.current_thread_id().expect("thread").clone();
@@ -560,18 +560,13 @@ fn goal_actions_are_explicit_app_server_effects() {
             observed_at_unix_ms: 10,
         }),
     );
-    let pause = reduce(&mut app, Action::SetGoalStatus(GoalStatus::Paused));
-    assert_eq!(
-        pause,
-        vec![Effect::SetGoal {
-            thread_id: thread_id.clone(),
-            objective: None,
-            status: Some(GoalStatus::Paused),
-        }]
-    );
-
-    let clear = reduce(&mut app, Action::ClearGoal);
-    assert_eq!(clear, vec![Effect::ClearGoal(thread_id)]);
+    let before = app.goals.get(&thread_id.0).unwrap().clone();
+    let refresh = reduce(&mut app, Action::RefreshGoal);
+    assert_eq!(refresh, vec![Effect::RefreshGoal(thread_id.clone())]);
+    assert_eq!(app.goals.get(&thread_id.0), Some(&before));
+    reduce(&mut app, Action::GoalCleared(thread_id.clone()));
+    assert!(!app.goals.contains_key(&thread_id.0));
+    assert!(app.goal_checked.contains(&thread_id.0));
 }
 
 #[test]
@@ -2856,7 +2851,6 @@ fn alert_jump_is_fenced_during_transient_modals_without_consuming_the_event() {
         ("transcript search", |state| {
             state.transcript_search_open = true
         }),
-        ("goal actions", |state| state.goal_actions_open = true),
         ("PTY focus", |state| state.terminal_focused = true),
         ("composer", |state| state.input_mode = InputMode::Composer),
         ("closing", |state| state.should_quit = true),

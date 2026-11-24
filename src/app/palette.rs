@@ -157,7 +157,7 @@ impl AppState {
         choices.push(Command::New);
 
         if matches!(self.view, View::Thread(_)) {
-            choices.push(Command::Goal);
+            choices.push(Command::RefreshGoal);
         }
         if matches!(self.view, View::Registry) && self.selected_thread().is_some() {
             choices.push(Command::TogglePin);

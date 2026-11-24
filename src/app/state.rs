@@ -66,7 +66,6 @@ impl AppState {
             worktree_collision_counts: BTreeMap::new(),
             goals: BTreeMap::new(),
             goal_checked: BTreeSet::new(),
-            goal_actions_open: false,
             pending_local_batch: None,
             terminal_drawer_open: false,
             terminal_focused: false,
@@ -218,7 +217,6 @@ impl AppState {
             && self.target_lookup.is_none()
             && !self.context_open
             && !self.transcript_search_open
-            && !self.goal_actions_open
             && self.saved_view_editor.is_none()
             && self.pending_local_batch.is_none()
             && self.hot_slot_bind_pending.is_none()

@@ -1068,44 +1068,6 @@ fn apply_effects(
                     );
                 }
             }
-            Effect::SetGoal {
-                thread_id,
-                objective,
-                status,
-            } => {
-                if let Some(registry) = registry
-                    && let Err(error) = registry.set_goal(thread_id, objective, status)
-                {
-                    reduce(
-                        app,
-                        Action::BackendStatus(backend_error_status(format!(
-                            "{}: {error}",
-                            runtime_text(
-                                app.language,
-                                "Goal update command failed",
-                                "Goal 更新命令失败",
-                            )
-                        ))),
-                    );
-                }
-            }
-            Effect::ClearGoal(thread_id) => {
-                if let Some(registry) = registry
-                    && let Err(error) = registry.clear_goal(thread_id)
-                {
-                    reduce(
-                        app,
-                        Action::BackendStatus(backend_error_status(format!(
-                            "{}: {error}",
-                            runtime_text(
-                                app.language,
-                                "Goal clear command failed",
-                                "Goal 清除命令失败",
-                            )
-                        ))),
-                    );
-                }
-            }
             Effect::ProbeGit { thread_id, cwd } => {
                 if let Err(error) = git.probe(thread_id.clone(), cwd.clone()) {
                     let mut context = codex_tui::git::GitContext::pending(thread_id, cwd);

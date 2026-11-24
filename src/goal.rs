@@ -61,13 +61,6 @@ pub fn parse_goal_get(result: Value, observed_at_unix_ms: u64) -> Result<Option<
     parse_goal(goal, observed_at_unix_ms).map(Some)
 }
 
-pub fn parse_goal_set(result: Value, observed_at_unix_ms: u64) -> Result<GoalObservation> {
-    let goal = result
-        .get("goal")
-        .context("thread/goal/set response missing goal")?;
-    parse_goal(goal, observed_at_unix_ms)
-}
-
 pub fn parse_goal_updated(params: &Value, observed_at_unix_ms: u64) -> Result<GoalObservation> {
     let goal = params
         .get("goal")

@@ -226,7 +226,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::GoalCleared(thread_id) => {
             state.goal_checked.insert(thread_id.0.clone());
             state.goals.remove(&thread_id.0);
-            state.goal_actions_open = false;
         }
         Action::ThreadCreated {
             thread_id,
@@ -237,69 +236,13 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::ThreadLifecycleFailed { operation, error } => {
             state.apply_thread_lifecycle_failed(operation, error);
         }
-        Action::OpenGoalActions => {
-            if state.current_pending_request().is_some() {
+        Action::RefreshGoal => {
+            if !matches!(state.view, View::Thread(_)) || state.current_pending_request().is_some() {
                 return vec![];
             }
             if let Some(thread_id) = state.current_thread_id().cloned() {
-                state.goal_actions_open = true;
-                if !state.goal_checked.contains(&thread_id.0) {
-                    return vec![Effect::RefreshGoal(thread_id)];
-                }
-            }
-        }
-        Action::CloseGoalActions => {
-            state.goal_actions_open = false;
-        }
-        Action::BeginGoalObjective => {
-            let Some(thread_id) = state.current_thread_id().cloned() else {
-                return vec![];
-            };
-            if state
-                .backend_status
-                .optional_capabilities_missing
-                .iter()
-                .any(|capability| capability == "thread/goal/get")
-            {
-                return vec![];
-            }
-            if !state.goal_checked.contains(&thread_id.0) {
                 return vec![Effect::RefreshGoal(thread_id)];
             }
-            if !state.begin_mutation_editor(InputMode::GoalObjective) {
-                return vec![];
-            }
-            state.input_buffer = state
-                .goals
-                .get(&thread_id.0)
-                .map(|goal| goal.objective.clone())
-                .unwrap_or_default();
-            state.goal_actions_open = false;
-            state.input_mode = InputMode::GoalObjective;
-        }
-        Action::SetGoalStatus(status) => {
-            let Some(thread_id) = state.current_thread_id().cloned() else {
-                return vec![];
-            };
-            if !state.goals.contains_key(&thread_id.0) {
-                return vec![];
-            }
-            state.goal_actions_open = false;
-            return vec![Effect::SetGoal {
-                thread_id,
-                objective: None,
-                status: Some(status),
-            }];
-        }
-        Action::ClearGoal => {
-            let Some(thread_id) = state.current_thread_id().cloned() else {
-                return vec![];
-            };
-            if !state.goals.contains_key(&thread_id.0) {
-                return vec![];
-            }
-            state.goal_actions_open = false;
-            return vec![Effect::ClearGoal(thread_id)];
         }
         Action::ReconcilePlanning { now_unix_ms } => {
             rebuild_planning(state, now_unix_ms);
@@ -1076,7 +1019,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.notice_changed_user_input();
             state.rebuild_pending_request_threads();
             if is_current_thread {
-                state.goal_actions_open = false;
                 if state.input_mode == InputMode::Composer {
                     state.input_mode = InputMode::Normal;
                 }
@@ -1426,7 +1368,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::BatchRemoveTag
             | InputMode::BatchPriority
             | InputMode::BatchSnooze
-            | InputMode::GoalObjective
             | InputMode::WorkrefLink => {
                 state.input_buffer.push(character);
                 if state.input_mode == InputMode::Search {
@@ -1465,7 +1406,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 | InputMode::BatchRemoveTag
                 | InputMode::BatchPriority
                 | InputMode::BatchSnooze
-                | InputMode::GoalObjective
                 | InputMode::WorkrefLink => {
                     state.input_buffer.push_str(&text);
                     if state.input_mode == InputMode::Search {
@@ -1498,7 +1438,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::BatchRemoveTag
             | InputMode::BatchPriority
             | InputMode::BatchSnooze
-            | InputMode::GoalObjective
             | InputMode::WorkrefLink => {
                 state.input_buffer.pop();
                 if state.input_mode == InputMode::Search {
@@ -1599,27 +1538,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 state.input_buffer.clear();
                 state.freeze_visible_batch(action);
                 return vec![];
-            }
-            if mode == InputMode::GoalObjective {
-                let Some(thread_id) = state.current_thread_id().cloned() else {
-                    state.mutation_editor = None;
-                    state.input_mode = InputMode::Normal;
-                    state.input_buffer.clear();
-                    return vec![];
-                };
-                let objective = state.input_buffer.trim().to_string();
-                if objective.is_empty() {
-                    return vec![];
-                }
-                let is_new = !state.goals.contains_key(&thread_id.0);
-                state.mutation_editor = None;
-                state.input_mode = InputMode::Normal;
-                state.input_buffer.clear();
-                return vec![Effect::SetGoal {
-                    thread_id,
-                    objective: Some(objective),
-                    status: is_new.then_some(GoalStatus::Active),
-                }];
             }
             if mode == InputMode::ScratchTitle {
                 let title = state.input_buffer.trim().to_string();
@@ -1751,11 +1669,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                     | InputMode::BatchPriority
                     | InputMode::BatchSnooze
             ) {
-                state.input_mode = InputMode::Normal;
-                state.input_buffer.clear();
-                return vec![];
-            }
-            if state.input_mode == InputMode::GoalObjective {
                 state.input_mode = InputMode::Normal;
                 state.input_buffer.clear();
                 return vec![];

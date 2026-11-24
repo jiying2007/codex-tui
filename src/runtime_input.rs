@@ -6,7 +6,6 @@ use codex_tui::{
     app::{Action, AppState, Effect, InputMode, ViewKind, reduce},
     command::Command,
     conversation::{InteractiveRequestKind, InteractiveResolution},
-    goal::GoalStatus,
     keymap::command_for_key,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -194,19 +193,6 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
             KeyCode::Char('c') | KeyCode::Esc => reduce(app, Action::CancelPendingOperation),
             _ => vec![],
         };
-    }
-
-    if app.goal_actions_open {
-        let action = match key.code {
-            KeyCode::Esc => Some(Action::CloseGoalActions),
-            KeyCode::Enter if plain => Some(Action::BeginGoalObjective),
-            KeyCode::Char('e') if plain => Some(Action::BeginGoalObjective),
-            KeyCode::Char('p') if plain => Some(Action::SetGoalStatus(GoalStatus::Paused)),
-            KeyCode::Char('r') if plain => Some(Action::SetGoalStatus(GoalStatus::Active)),
-            KeyCode::Char('c') if plain => Some(Action::ClearGoal),
-            _ => None,
-        };
-        return action.map_or_else(Vec::new, |action| reduce(app, action));
     }
 
     if app.view_kind() == ViewKind::Thread
