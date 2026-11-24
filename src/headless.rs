@@ -10,6 +10,7 @@ use serde::Serialize;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 mod locator;
+mod multi_target;
 mod operator_local;
 mod options;
 pub(crate) mod projection;
@@ -142,6 +143,7 @@ pub async fn run(args: &[String]) -> Result<i32> {
     let format = options.format;
 
     match command {
+        "threads" if options.all_targets => multi_target::run(&options).await,
         "threads" => {
             let snapshot = build_thread_snapshot(&options).await;
             let exit = if snapshot.degraded {
@@ -390,7 +392,8 @@ fn print_work_snapshot(snapshot: &WorkSnapshot, format: OutputFormat) -> Result<
 fn print_usage() {
     eprintln!(
         "usage: codex-tui headless <threads|work|status|attention|board|forge|worktrees> \
-         [--json] [--fake|--fixture-10k|--target NAME]"
+         [--json] [--fake|--fixture-10k|--target NAME]\n\
+         or: codex-tui headless threads --all-targets --query TEXT [--json]"
     );
 }
 

@@ -44,6 +44,7 @@ codex-tui doctor bundle --offline --output ./codex-tui-support
 ~~~bash
 codex-tui headless threads --json
 codex-tui headless threads --target local-alt --json
+codex-tui headless threads --all-targets --query audio --json
 codex-tui headless work --json
 codex-tui headless status --json
 codex-tui headless attention --json
@@ -61,7 +62,9 @@ codex-tui worktree list
 
 `headless threads --fixture-10k` 只是合成规模数据，没有无头写操作接口，不可将它视为真实 Forge/账号验收。
 
-`threads`、`work`、`status`、`attention`、`board` 及其顶层别名，默认解析 `[app_server].active`，也可用 `--target NAME` 覆盖。每次调用只读取一个目标。未知目标、配置错误或连接失败会明确降级并返回 `3`，不会悄悄回退到本机或测试数据。配置不存在时仅使用内存默认值，不创建配置文件。缺失/重复的目标参数、`--target` 与 `--fake`/`--fixture-10k` 混用，以及对 `forge`/`worktrees` 使用 `--target`，均返回语法错误 `2`。
+`threads`、`work`、`status`、`attention`、`board` 及其顶层别名，默认解析 `[app_server].active`，也可用 `--target NAME` 覆盖。默认每次调用只读取一个目标；仅 `threads --all-targets --query TEXT` 主动跨目标检索。未知目标、配置错误或连接失败会明确降级并返回 `3`，不会悄悄回退到本机或测试数据。配置不存在时仅使用内存默认值，不创建配置文件。缺失/重复的目标参数、`--target` 与 `--fake`/`--fixture-10k` 混用，以及对 `forge`/`worktrees` 使用 `--target`，均返回语法错误 `2`。
+
+跨目标检索只读取已配置目标及活动目标，最多 8 个，逐一查询，每个目标限时 20 秒、最多展示 100 条匹配结果。匹配会话 ID、标题、工作区、CWD 和来源元数据，不读取对话正文、归档或附属会话专用列表，不加载本地事项库。结果按 Target 独立保留原始 ThreadId、CWD、来源状态和已观察匹配数；同 ID 不跨目标合并。任一目标不可用、清单不完整或结果被截断，整体返回 `3`，保留其他目标的结果。JSON 使用独立的 `codex-tui/headless-multi-target-threads/v1` schema。该入口不授予 Resume、审批或写入权限；在对应目标中重新定位和核验后再操作。不能与 `--target` 或 fixture 混用。
 
 | 输出字段 | 范围 |
 | --- | --- |
@@ -70,7 +73,7 @@ codex-tui worktree list
 | Forge 的 `scope` | `current-directory` 或 `fixture` |
 | Worktrees 的 `scope` | `shared-local-cache` 或 `fixture` |
 
-本地别名、置顶与规划元数据仍以不含目标的会话 ID 为键；两个目标使用相同 ID 时，可能共享这些元数据，切换目标不会隔离它们。`threads` 只报告源清单，不应用这些覆盖层。无效目标在读取本地存储前失败；成功读取仍可能触发已有 SQLite 初始化/WAL 行为。“只读”指没有上游变更接口，不承诺本地文件系统零写入。纯文本同样显示来源、范围与明确的失败原因。
+操作员别名、置顶和确认偏好使用配置目标与观测到的 Codex home 作用域，旧的无作用域偏好已隔离。旧规划元数据仍可能含有不带目标的会话 ID，不是跨目标权威。`threads` 只报告源清单，不应用这些覆盖层。无效目标在读取本地存储前失败；成功读取仍可能触发已有 SQLite 初始化/WAL 行为。“只读”指没有上游变更接口，不承诺本地文件系统零写入。纯文本同样显示来源、范围与明确的失败原因。
 
 ## 开发诊断、基准与长稳
 <!-- docs-section: diagnostics -->

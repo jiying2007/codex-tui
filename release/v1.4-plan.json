@@ -152,6 +152,7 @@
     "src/headless/operator_local.rs": 71,
     "src/store/scoped.rs": 97,
     "src/app/operator_scope.rs": 315,
+    "src/headless/multi_target.rs": 226,
     "src/headless/locator.rs": 88,
     "src/app_server/observed_scope.rs": 67,
     "src/notification/native.rs": 251,
@@ -225,7 +226,7 @@
     "src/runtime_palette.rs": 89,
     "src/runtime_doctor.rs": 417,
     "src/render_performance.rs": 323,
-    "src/runtime_cli.rs": 253,
+    "src/runtime_cli.rs": 255,
     "src/runtime_store_worker.rs": 385,
     "src/app/planning_worker.rs": 206,
     "src/sqlite_backup.rs": 81,
@@ -358,7 +359,7 @@
     "src/ui/thread/request_details_tests.rs": 120,
     "src/app/registry.rs": 117,
     "src/app/registry/tests.rs": 257,
-    "src/headless/options.rs": 74,
+    "src/headless/options.rs": 101,
     "src/headless/source.rs": 132,
     "src/headless/surfaces/presentation.rs": 139,
     "src/headless/tests.rs": 162,
@@ -1344,6 +1345,19 @@
         "src/app/registry/groups.rs"
       ],
       "policy": "Update only the exact reviewed registry projection source ceiling. No new RPCs, background scans, persistence, routing authority, or release qualification changes."
+    },
+    {
+      "date": "2026-11-24",
+      "kind": "g1-explicit-cross-target-locator",
+      "scope": "Bounded explicit read-only lookup of configured targets, preserving each target's observed inventory status and thread identity; per-target deadlines and match caps, no store overlays or implicit scans. Add CLI contract and actual isolated peer regression.",
+      "modules": [
+        "src/headless.rs",
+        "src/headless/options.rs",
+        "src/headless/source.rs",
+        "src/runtime_cli.rs",
+        "src/headless/multi_target.rs"
+      ],
+      "policy": "Review only changed source ceilings. No mutation authority, background polling, model inference, schema migration or qualification changes."
     }
   ]
 }

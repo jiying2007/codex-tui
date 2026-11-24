@@ -44,6 +44,7 @@ codex-tui doctor bundle --offline --output ./codex-tui-support
 ~~~bash
 codex-tui headless threads --json
 codex-tui headless threads --target local-alt --json
+codex-tui headless threads --all-targets --query audio --json
 codex-tui headless work --json
 codex-tui headless status --json
 codex-tui headless attention --json
@@ -61,7 +62,9 @@ codex-tui worktree list
 
 `headless threads --fixture-10k` gives synthetic scale metadata. There is no headless mutation API. Do not infer Forge authentication from headless fixture output.
 
-`threads`, `work`, `status`, `attention` and `board`, including their top-level aliases, resolve the configured `[app_server].active` target unless `--target NAME` overrides it. Each invocation reads one target. An unknown target, invalid configuration or failed connection reports a degraded result and exits `3`; it never silently falls back to local or fixture data. A missing configuration uses in-memory defaults without creating a config file. Missing or duplicate target arguments, `--target` with `--fake`/`--fixture-10k`, and `--target` on `forge`/`worktrees` are syntax errors (`2`).
+`threads`, `work`, `status`, `attention` and `board`, including their top-level aliases, resolve the configured `[app_server].active` target unless `--target NAME` overrides it. By default each invocation reads one target; only explicit `threads --all-targets --query TEXT` searches across targets. An unknown target, invalid configuration or failed connection reports a degraded result and exits `3`; it never silently falls back to local or fixture data. A missing configuration uses in-memory defaults without creating a config file. Missing or duplicate target arguments, `--target` with `--fake`/`--fixture-10k`, and `--target` on `forge`/`worktrees` are syntax errors (`2`).
+
+Cross-target lookup reads configured targets plus the active target, up to eight, sequentially with a 20-second deadline and at most 100 displayed matches per target. It matches thread IDs, titles, workspaces, CWDs and source metadata, not transcript content, archives or dedicated attached-thread lists. It does not load the local work store. Each target retains its original ThreadIds, CWDs, source status and observed match count; equal IDs are not merged. Unavailable targets, incomplete inventories or truncated matches produce exit `3` while preserving other results. JSON uses a separate `codex-tui/headless-multi-target-threads/v1` schema. Lookup does not authorize Resume, approvals or writes; relocate and verify on the corresponding target before acting. It cannot be combined with `--target` or fixtures.
 
 | Output | Scope |
 | --- | --- |
@@ -70,7 +73,7 @@ codex-tui worktree list
 | Forge `scope` | `current-directory` (or `fixture`) |
 | Worktrees `scope` | `shared-local-cache` (or `fixture`) |
 
-The local store still keys aliases, pins and planning metadata by bare thread IDs. Two targets reusing an ID can therefore share that metadata; target selection does not isolate it. `threads` reports the source inventory without those overlays. Invalid target resolution occurs before store loading. Successful local-store reads retain the existing SQLite initialization/WAL behavior; “read-only” describes the lack of upstream mutations, not a promise of zero local filesystem writes. Plain-text output also identifies the source and scope and presents failures explicitly.
+Operator aliases, pins and acknowledgment preferences use the configured target/observed Codex-home scope; legacy unscoped preferences are quarantined. Older planning metadata can still contain bare thread IDs and is not a cross-target authority. `threads` reports the source inventory without those overlays. Invalid target resolution occurs before store loading. Successful local-store reads retain the existing SQLite initialization/WAL behavior; “read-only” describes the lack of upstream mutations, not a promise of zero local filesystem writes. Plain-text output also identifies the source and scope and presents failures explicitly.
 
 ## Development-only release and soak measurements
 <!-- docs-section: diagnostics -->

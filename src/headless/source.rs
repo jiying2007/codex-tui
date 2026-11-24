@@ -13,6 +13,17 @@ pub(super) enum SnapshotSource {
     Target(ResolvedAppServerTarget),
 }
 
+pub(super) fn read_config() -> Result<AppConfig> {
+    let path = FileStore::discover()?.config_path();
+    // Reading Headless selection must not materialize a default config.
+    match std::fs::read_to_string(&path) {
+        Ok(text) => toml::from_str::<AppConfig>(&text)
+            .with_context(|| format!("parse config {}", path.display())),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(AppConfig::default()),
+        Err(error) => Err(error).with_context(|| format!("read config {}", path.display())),
+    }
+}
+
 impl SnapshotSource {
     pub(super) fn resolve(options: &HeadlessOptions) -> Result<Self, Box<SourceStatus>> {
         if options.fake {
@@ -22,16 +33,7 @@ impl SnapshotSource {
         }
         let mut status = SourceStatus::unavailable(options.target.clone());
         let resolved = (|| -> Result<Self> {
-            let path = FileStore::discover()?.config_path();
-            // Reading Headless selection must not materialize a default config.
-            let config = match std::fs::read_to_string(&path) {
-                Ok(text) => toml::from_str::<AppConfig>(&text)
-                    .with_context(|| format!("parse config {}", path.display()))?,
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => AppConfig::default(),
-                Err(error) => {
-                    return Err(error).with_context(|| format!("read config {}", path.display()));
-                }
-            };
+            let config = read_config()?;
             status.target_id = Some(
                 options
                     .target
