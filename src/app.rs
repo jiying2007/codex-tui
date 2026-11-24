@@ -69,6 +69,7 @@ mod review;
 mod shortcuts;
 mod state;
 mod target_locality;
+mod target_lookup;
 mod thread_navigation;
 mod types;
 mod user_input;
@@ -78,6 +79,7 @@ mod workref_link;
 pub use queue_confirmation::QueueConfirmation;
 pub use reducer::reduce;
 use registry::{ensure_selection_visible, restore_selection};
+pub use target_lookup::{LookupPhase, TargetLookupAction, TargetLookupPanel};
 pub use types::{Action, ContextChoice, Effect, InputMode, View, ViewKind};
 // Executable help entries in src/ui.rs; keep the two arrays in lockstep.
 pub const HELP_ENTRY_COUNT: usize = 14;
@@ -218,6 +220,8 @@ pub struct AppState {
     pub note_target: Option<SourceRef>,
     pub saved_view_editor: Option<SavedViewEditor>,
     pub saved_view_editor_error: Option<String>,
+    pub target_lookup: Option<TargetLookupPanel>,
+    target_lookup_generation: u64,
     pub command_palette_open: bool,
     pub command_palette_selected: usize,
     pub command_palette_query: String,

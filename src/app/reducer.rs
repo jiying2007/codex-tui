@@ -758,6 +758,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.input_buffer.clear();
             state.input_mode = InputMode::ScratchTitle;
         }
+        Action::TargetLookup(action) => state.reduce_target_lookup(action),
         Action::OpenCommandPalette => state.open_command_palette(),
         Action::CloseCommandPalette => state.close_command_palette(),
         Action::MoveCommandPalette(delta) => state.move_command_palette(delta),

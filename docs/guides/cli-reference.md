@@ -66,6 +66,8 @@ codex-tui worktree list
 
 Cross-target lookup reads configured targets plus the active target, up to eight, sequentially with a 20-second deadline and at most 100 displayed matches per target. It matches thread IDs, titles, workspaces, CWDs and source metadata, not transcript content, archives or dedicated attached-thread lists. It does not load the local work store or query the optional loaded-thread inventory. Pages completed before a target deadline are retained with Partial source status. Each target retains its original ThreadIds, CWDs, source status and observed match count; equal IDs are not merged. Unavailable targets, incomplete inventories or truncated matches produce exit `3` while preserving other results. JSON uses a separate `codex-tui/headless-multi-target-threads/v1` schema. Lookup does not authorize Resume, approvals or writes; relocate and verify on the corresponding target before acting. It cannot be combined with `--target` or fixtures.
 
+In Mission Control, use `Ctrl+K` → **Search all targets**, enter a metadata query and press Enter. Esc cancels; Up/Down moves through target summaries and matches, PgUp/PgDn scrolls details. The lookup is independent of the active registry and read-only; it never switches targets or resumes a session. Fixture mode does not connect to configured targets.
+
 | Output | Scope |
 | --- | --- |
 | Codex-backed `source.targetId`, `source.transport`, `source.scope` | Selected target and transport; `single-target` for real reads, `fixture` for synthetic input |

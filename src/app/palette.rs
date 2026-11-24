@@ -133,6 +133,9 @@ impl AppState {
         let mut choices = vec![Command::Search, Command::TranscriptSearch];
         let thread_id = self.command_palette_thread_id();
 
+        if matches!(self.view, View::Registry) && self.backend_status.source != "fake" {
+            choices.push(Command::TargetLookup);
+        }
         if matches!(self.view, View::Registry | View::Board) {
             choices.push(Command::NextAttention);
         }
@@ -205,6 +208,7 @@ impl AppState {
                         || matches!(
                             *command,
                             Command::Search
+                                | Command::TargetLookup
                                 | Command::NextAttention
                                 | Command::Board
                                 | Command::Review

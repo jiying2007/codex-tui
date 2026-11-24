@@ -18,6 +18,7 @@ mod source;
 mod surfaces;
 
 use locator::{print_source, thread_row};
+pub use multi_target::target_lookup_pages;
 use operator_local::apply_local_operator_state;
 use options::HeadlessOptions;
 pub use options::validate_options;

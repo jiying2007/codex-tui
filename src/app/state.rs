@@ -107,6 +107,8 @@ impl AppState {
             note_target: None,
             saved_view_editor: None,
             saved_view_editor_error: None,
+            target_lookup: None,
+            target_lookup_generation: 0,
             command_palette_open: false,
             command_palette_selected: 0,
             command_palette_query: String::new(),
@@ -240,6 +242,7 @@ impl AppState {
             && !self.request_details_open()
             && !self.show_help
             && !self.command_palette_open
+            && self.target_lookup.is_none()
             && !self.context_open
             && !self.launch_menu_open
             && !self.thread_queue_open
