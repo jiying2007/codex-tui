@@ -96,7 +96,11 @@ async fn locator_deadline_retains_completed_registry_pages() {
     assert_eq!(load.threads[0].id.0, "retained");
     assert!(!load.registry_complete);
     assert!(load.hydration.is_none());
-    assert!(load.error.unwrap().contains("target search deadline exceeded"));
+    assert!(
+        load.error
+            .unwrap()
+            .contains("target search deadline exceeded")
+    );
     drop(rpc);
     let requests = server.await.unwrap();
     assert_eq!(requests.len(), 2);

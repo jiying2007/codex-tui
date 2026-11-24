@@ -317,7 +317,7 @@
     "src/release/tests.rs": 403,
     "src/forge_github/tests.rs": 217,
     "src/git/tests.rs": 335,
-    "src/app_server/audit_wire_tests.rs": 238,
+    "src/app_server/audit_wire_tests.rs": 242,
     "src/app_server/history_hit.rs": 76,
     "src/app_server/pagination.rs": 298,
     "src/app_server/resource_budget.rs": 133,
