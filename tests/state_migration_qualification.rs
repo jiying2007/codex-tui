@@ -1,8 +1,12 @@
 use codex_tui::{
-    domain::{ThreadId, ThreadUiState},
+    domain::{LocalRepoIdentity, ThreadId, ThreadUiState},
+    forge::{ForgeIdentity, ForgeProviderKind},
+    forge_mutation::{ForgeMutationPlan, ForgeMutationReceipt},
+    operation::{ManagedWorktreeRecord, OperationPlan, OperationReceipt},
     planning::{LocalNote, SavedView, SavedViewLayout, SourceKind, SourceRef, WorkCardRecord},
     sqlite_store::SqliteStore,
     store::{LocalStateV1, LocalStore},
+    workref::{WorkItem, WorkRefLedger},
 };
 use rusqlite::Connection;
 use std::fs;
@@ -322,4 +326,121 @@ fn backup_never_overwrites_an_existing_destination() {
     fs::write(&path, b"preserve this file").unwrap();
     assert!(store.create_recovery_backup(&path).is_err());
     assert_eq!(fs::read(&path).unwrap(), b"preserve this file");
+}
+
+/// A retirement candidate must preserve both the manual work reference ledger
+/// and unresolved historical operations. No Git/Forge executable is invoked.
+#[test]
+fn retirement_backup_retains_all_historical_receipts_and_manual_references() {
+    let root = tempdir().unwrap();
+    let store = SqliteStore::at(root.path().join("source"));
+    let expected_operator = seed_operator(&store);
+    populate_planning(&store);
+    let expected_planning = store.load_planning_snapshot().unwrap();
+
+    let repo = LocalRepoIdentity {
+        git_common_dir: "/fixture/repo/.git".into(),
+        primary_root: "/fixture/repo".into(),
+    };
+    let identity = ForgeIdentity {
+        provider: ForgeProviderKind::GitLab,
+        host: "gitlab.example.com".into(),
+        project_id: "42".into(),
+        path_with_namespace: "fixture/repo".into(),
+        web_url: "https://gitlab.example.com/fixture/repo".into(),
+        default_branch: Some("main".into()),
+    };
+    let mut operations = Vec::new();
+    let mut forge = Vec::new();
+    for i in 0..3_u64 {
+        let mut operation = OperationReceipt::planned(OperationPlan::delete_branch(
+            repo.clone(),
+            repo.primary_root.clone(),
+            format!("historical-{i}"),
+            i + 1,
+        ));
+        let mut mutation = ForgeMutationReceipt::planned(
+            ForgeMutationPlan::comment_merge_request(
+                &identity,
+                repo.primary_root.clone(),
+                i + 1,
+                "feature".into(),
+                "main".into(),
+                10,
+                i + 1,
+            )
+            .unwrap(),
+        );
+        if i >= 1 {
+            operation.start(10);
+            mutation.start(10);
+        }
+        if i == 2 {
+            operation.outcome_unknown(11, "retain uncertain operation".into());
+            mutation.outcome_unknown(11, "retain uncertain forge mutation".into());
+        }
+        store.save_operation_receipt(&operation).unwrap();
+        store.save_forge_mutation_receipt(&mutation).unwrap();
+        operations.push(operation);
+        forge.push(mutation);
+    }
+
+    let worktree = ManagedWorktreeRecord {
+        repo,
+        canonical_path: "/fixture/retained-worktree".into(),
+        branch: Some("historical-1".into()),
+        created_by_operation_id: operations[1].operation_id.clone(),
+        adopted: false,
+        created_at_unix_ms: 1,
+        last_verified_at_unix_ms: 2,
+    };
+    store.upsert_managed_worktree(&worktree).unwrap();
+    let mut ledger = WorkRefLedger::default();
+    ledger
+        .add_item(
+            "bug-11".into(),
+            WorkItem::new(
+                "tapd".into(),
+                "project".into(),
+                "bug".into(),
+                "11".into(),
+                Some("https://www.tapd.cn/".into()),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    {
+        let _writer = store.acquire_local_writer().unwrap();
+        store.save_workref_ledger(&ledger).unwrap();
+    }
+
+    let backup = root.path().join("retirement.sqlite3");
+    store.create_recovery_backup(&backup).unwrap();
+    let original = fs::read(&backup).unwrap();
+    let recovered = SqliteStore::at(root.path().join("recovered"));
+    recovered.restore_recovery_backup(&backup).unwrap();
+
+    for candidate in [&store, &recovered] {
+        assert_eq!(candidate.load_state().unwrap(), expected_operator);
+        assert_eq!(
+            candidate.load_planning_snapshot().unwrap(),
+            expected_planning
+        );
+        assert_eq!(candidate.load_workref_ledger().unwrap(), ledger);
+        assert_eq!(
+            candidate.load_managed_worktrees().unwrap(),
+            vec![worktree.clone()]
+        );
+        let unresolved = candidate.load_recoverable_operation_receipts().unwrap();
+        assert_eq!(unresolved.len(), operations.len());
+        for receipt in &operations {
+            assert!(unresolved.contains(receipt));
+        }
+        let unresolved = candidate.load_recoverable_forge_mutation_receipts().unwrap();
+        assert_eq!(unresolved.len(), forge.len());
+        for receipt in &forge {
+            assert!(unresolved.contains(receipt));
+        }
+    }
+    assert_eq!(fs::read(&backup).unwrap(), original);
 }

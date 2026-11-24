@@ -5,6 +5,7 @@ use codex_tui::{
     backend::BackendStatus,
     domain::{CwdLocality, classify_cwd, display_cwd},
     forge, git,
+    operation::OperationState,
     sqlite_store::SqliteStore,
     store::LocalStore,
 };
@@ -17,6 +18,16 @@ macro_rules! doctor_println {
     ($($arg:tt)*) => {
         println!("{}", doctor_line(format_args!($($arg)*)))
     };
+}
+
+/// Count all unresolved receipts, including ones outside the recent display.
+fn unresolved_counts(states: impl Iterator<Item = OperationState>) -> (usize, usize, usize) {
+    states.fold((0, 0, 0), |(planned, executing, unknown), state| match state {
+        OperationState::Planned => (planned + 1, executing, unknown),
+        OperationState::Executing => (planned, executing + 1, unknown),
+        OperationState::OutcomeUnknown => (planned, executing, unknown + 1),
+        OperationState::Succeeded | OperationState::Failed => (planned, executing, unknown),
+    })
 }
 
 pub(crate) async fn doctor(scope: Option<&str>, target_override: Option<&str>) -> Result<i32> {
@@ -82,6 +93,9 @@ pub(crate) async fn doctor(scope: Option<&str>, target_override: Option<&str>) -
                         doctor_println!("work-cards: {}", snapshot.cards.len());
                         doctor_println!("scratch: {}", snapshot.scratch.len());
                         doctor_println!("saved-views: {}", snapshot.saved_views.len());
+                        doctor_println!("legacy-notes: {}", snapshot.notes.len());
+                        doctor_println!("legacy-bookmarks: {}", snapshot.bookmarks.len());
+                        doctor_println!("legacy-hot-slots: {}", snapshot.hot_slots.len());
                     }
                     Err(error) => {
                         degraded = true;
@@ -93,6 +107,35 @@ pub(crate) async fn doctor(scope: Option<&str>, target_override: Option<&str>) -
                     Err(error) => {
                         degraded = true;
                         doctor_println!("managed-worktrees: DEGRADED · {error:#}");
+                    }
+                }
+                doctor_println!("historical-receipts: inspection only; never replayed");
+                match store.load_recoverable_operation_receipts() {
+                    Ok(receipts) => {
+                        let (planned, executing, unknown) =
+                            unresolved_counts(receipts.into_iter().map(|receipt| receipt.state));
+                        doctor_println!(
+                            "unresolved-operation-receipts: planned={planned} executing={executing} outcome-unknown={unknown}"
+                        );
+                    }
+                    Err(error) => {
+                        degraded = true;
+                        doctor_println!("unresolved-operation-receipts: DEGRADED · {error:#}");
+                    }
+                }
+                match store.load_recoverable_forge_mutation_receipts() {
+                    Ok(receipts) => {
+                        let (planned, executing, unknown) =
+                            unresolved_counts(receipts.into_iter().map(|receipt| receipt.state));
+                        doctor_println!(
+                            "unresolved-forge-mutation-receipts: planned={planned} executing={executing} outcome-unknown={unknown}"
+                        );
+                    }
+                    Err(error) => {
+                        degraded = true;
+                        doctor_println!(
+                            "unresolved-forge-mutation-receipts: DEGRADED · {error:#}"
+                        );
                     }
                 }
                 match store.load_recent_operation_receipts(10) {
@@ -352,6 +395,19 @@ fn print_backend_status(status: &BackendStatus) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn unresolved_receipt_counts_are_not_limited_to_recent_display() {
+        let states = [
+            OperationState::OutcomeUnknown,
+            OperationState::Planned,
+            OperationState::Executing,
+            OperationState::OutcomeUnknown,
+        ]
+        .into_iter()
+        .chain(std::iter::repeat_n(OperationState::Succeeded, 20));
+        assert_eq!(unresolved_counts(states), (1, 1, 2));
+    }
 
     #[test]
     fn doctor_output_escapes_untrusted_terminal_controls_without_changing_source() {
