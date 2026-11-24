@@ -1,6 +1,7 @@
 use anyhow::{Context, Result};
 use codex_tui::{
     conversation::ConversationPage,
+    operation::now_unix_ms,
     planning::{LocalNote, PlanningSnapshot, SourceKind, SourceRef, WorkCardRecord},
     sqlite_store::{LocalWriterGuard, SqliteStore},
     store::{AppConfig, LocalStateV1, LocalStore},
@@ -8,8 +9,6 @@ use codex_tui::{
     workref::WorkRefLedger,
 };
 mod workref;
-
-use std::time::{SystemTime, UNIX_EPOCH};
 
 pub(crate) struct RuntimeStore {
     sqlite: SqliteStore,
