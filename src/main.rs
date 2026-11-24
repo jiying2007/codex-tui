@@ -323,6 +323,7 @@ async fn run_app(fake_mode: bool, target_override: Option<&str>) -> Result<()> {
         &mut services,
         initial_git_effects,
     )?;
+    app.advance_session_attention_clock(now_unix_ms());
     services.notifications.seed(&app);
 
     let mut exit_signal = runtime_shutdown::ExitSignal::install()?;
