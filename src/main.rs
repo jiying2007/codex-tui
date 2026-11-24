@@ -5,7 +5,6 @@ use codex_tui::{
     app_server_target::ResolvedAppServerTarget,
     backend::{BackendStatus, CodexBackend, FakeBackend},
     forge::{self, ForgeEvent, ForgeHandle},
-    forge_mutation::{ForgeMutationEvent, ForgeMutationHandle},
     git::{GitEvent, GitHandle},
     i18n::{UiLanguage, pick},
     notification::NotificationMode,
@@ -54,7 +53,6 @@ use runtime_commands::{action_for_command, handle_command};
 struct RuntimeServices {
     git: GitHandle,
     forge: ForgeHandle,
-    forge_mutations: ForgeMutationHandle,
     mutations: WorktreeMutationHandle,
     notifications: RuntimeNotifications,
     terminal_drawer: TerminalDrawerRuntime,
@@ -67,7 +65,6 @@ impl RuntimeServices {
         Self {
             git: GitHandle::start(),
             forge: ForgeHandle::start(),
-            forge_mutations: ForgeMutationHandle::start(sqlite.clone()),
             mutations: WorktreeMutationHandle::start(sqlite),
             notifications: RuntimeNotifications::start(notification_mode),
             terminal_drawer: TerminalDrawerRuntime::default(),
@@ -302,19 +299,6 @@ async fn run_app(fake_mode: bool, target_override: Option<&str>) -> Result<()> {
             )),
         );
     }
-    if let Err(error) = services.forge_mutations.recover() {
-        reduce(
-            &mut app,
-            Action::MutationNotice(format!(
-                "{}: {error}",
-                runtime_text(
-                    language,
-                    "forge mutation recovery unavailable",
-                    "Forge 变更恢复不可用",
-                )
-            )),
-        );
-    }
     let initial_git_effects = reduce(&mut app, Action::RefreshGitProjections);
     apply_effects(
         &mut app,
@@ -438,15 +422,6 @@ async fn run_app(fake_mode: bool, target_override: Option<&str>) -> Result<()> {
             let forge_changed = drain_forge(&mut app, &mut services.forge);
             needs_render |= forge_changed;
             planning_dirty |= forge_changed;
-
-            let forge_mutation_changes =
-                drain_forge_mutations(&mut app, &mut services.forge_mutations);
-            needs_render |= forge_mutation_changes.any;
-            if forge_mutation_changes.planning_projection {
-                let effects = reduce(&mut app, Action::RefreshForgeProjections);
-                apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
-                planning_dirty = true;
-            }
 
             let mutation_changes = drain_mutations(&mut app, &mut services.mutations);
             needs_render |= mutation_changes.any;
@@ -881,9 +856,6 @@ mod projection_drain_classification_tests {
         assert!(!git_event_changes_planning(&GitEvent::Review(
             codex_tui::git::GitReview::pending(codex_tui::domain::ThreadId::new("thread"), "/repo",)
         )));
-        assert!(!forge_mutation_event_changes_planning(
-            &ForgeMutationEvent::Notice("fixture".into())
-        ));
         assert!(!mutation_event_changes_planning(
             &MutationEvent::ManagedWorktrees(vec![])
         ));
@@ -910,36 +882,6 @@ fn drain_forge(app: &mut AppState, forge: &mut ForgeHandle) -> bool {
         changed = true;
     }
     changed
-}
-
-fn forge_mutation_event_changes_planning(event: &ForgeMutationEvent) -> bool {
-    match event {
-        ForgeMutationEvent::Receipt(_) => true,
-        ForgeMutationEvent::Notice(_) => false,
-    }
-}
-
-fn drain_forge_mutations(
-    app: &mut AppState,
-    mutations: &mut ForgeMutationHandle,
-) -> ProjectionDrainChanges {
-    let mut changes = ProjectionDrainChanges::default();
-    for _ in 0..32 {
-        let Some(event) = mutations.try_recv() else {
-            break;
-        };
-        changes.planning_projection |= forge_mutation_event_changes_planning(&event);
-        match event {
-            ForgeMutationEvent::Receipt(receipt) => {
-                reduce(app, Action::ForgeMutationReceipt(receipt));
-            }
-            ForgeMutationEvent::Notice(notice) => {
-                reduce(app, Action::MutationNotice(notice));
-            }
-        }
-        changes.any = true;
-    }
-    changes
 }
 
 fn mutation_event_changes_planning(event: &MutationEvent) -> bool {
@@ -992,7 +934,6 @@ fn apply_effects(
     let RuntimeServices {
         git,
         forge,
-        forge_mutations,
         mutations,
         notifications: _,
         terminal_drawer,
@@ -1260,21 +1201,6 @@ fn apply_effects(
                                 app.language,
                                 "managed-worktree execution dispatch failed",
                                 "受管 worktree 执行分派失败",
-                            )
-                        )),
-                    );
-                }
-            }
-            Effect::ExecuteForgeOperation(request) => {
-                if let Err(error) = forge_mutations.execute(*request) {
-                    reduce(
-                        app,
-                        Action::MutationNotice(format!(
-                            "{}: {error}",
-                            runtime_text(
-                                app.language,
-                                "forge mutation execution dispatch failed",
-                                "Forge 变更执行分派失败",
                             )
                         )),
                     );

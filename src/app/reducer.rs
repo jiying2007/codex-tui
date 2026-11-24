@@ -246,39 +246,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.recent_operations.insert(0, receipt);
             state.recent_operations.truncate(20);
         }
-        Action::ForgeMutationReceipt(receipt) => {
-            let receipt = *receipt;
-            if state
-                .pending_forge_operation
-                .as_ref()
-                .is_some_and(|plan| plan.operation_id == receipt.operation_id)
-            {
-                state.pending_forge_operation = None;
-                state.pending_forge_payload = None;
-            }
-            state.mutation_notice = Some(format!(
-                "{} · {}",
-                receipt.plan.kind.label(),
-                operation_state_text(receipt.state, state.language)
-            ));
-
-            for observation in state.forge_observations.values_mut() {
-                if observation.identity.as_ref().is_some_and(|identity| {
-                    identity.provider == receipt.plan.provider
-                        && identity.host.eq_ignore_ascii_case(&receipt.plan.host)
-                        && identity.project_id == receipt.plan.project_id
-                }) {
-                    observation.observed_at_unix_ms = 1;
-                    observation.review = None;
-                }
-            }
-
-            state
-                .recent_forge_operations
-                .retain(|item| item.operation_id != receipt.operation_id);
-            state.recent_forge_operations.insert(0, receipt);
-            state.recent_forge_operations.truncate(20);
-        }
         Action::MutationNotice(notice) => {
             state.mutation_notice = Some(notice);
         }
@@ -293,8 +260,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.managed_selected = wrap_selection(state.managed_selected, delta, len);
         }
         Action::BeginCreateWorktree => {
-            state.pending_forge_operation = None;
-            state.pending_forge_payload = None;
             let Some(thread_id) = state.current_thread_id().cloned() else {
                 return vec![];
             };
@@ -419,12 +384,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             if let Some(plan) = state.pending_local_batch.take() {
                 return vec![Effect::ApplyLocalBatch(Box::new(plan))];
             }
-            if let Some(plan) = state.pending_forge_operation.take() {
-                let payload = state.pending_forge_payload.take();
-                return vec![Effect::ExecuteForgeOperation(Box::new(
-                    ForgeMutationRequest { plan, payload },
-                ))];
-            }
             let Some(plan) = state.pending_operation.take() else {
                 return vec![];
             };
@@ -432,8 +391,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
         }
         Action::CancelPendingOperation => {
             state.pending_operation = None;
-            state.pending_forge_operation = None;
-            state.pending_forge_payload = None;
             state.pending_local_batch = None;
             state.mutation_notice = Some(
                 local_text(
@@ -757,144 +714,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 return vec![];
             }
 
-            if matches!(
-                choice,
-                ContextChoice::ForgeCreateMergeRequest
-                    | ContextChoice::ForgeComment
-                    | ContextChoice::ForgeApprove
-                    | ContextChoice::ForgeMerge
-                    | ContextChoice::ForgeMergeCommit
-                    | ContextChoice::ForgeSquashMerge
-                    | ContextChoice::ForgeRebaseMerge
-            ) {
-                let Some(target) = state.current_forge_mutation_target() else {
-                    state.mutation_notice = Some(
-                        local_text(
-                            state.language,
-                            "forge mutation target is unavailable",
-                            "Forge 变更目标不可用",
-                        )
-                        .into(),
-                    );
-                    return vec![];
-                };
-                state.pending_operation = None;
-                match choice {
-                    ContextChoice::ForgeCreateMergeRequest => {
-                        if !state.begin_mutation_editor(InputMode::ForgeMergeRequestTitle) {
-                            return vec![];
-                        }
-                        state.pending_forge_operation = None;
-                        state.pending_forge_payload = None;
-                        state.input_buffer.clear();
-                        state.input_mode = InputMode::ForgeMergeRequestTitle;
-                    }
-                    ContextChoice::ForgeComment => {
-                        if !state.begin_mutation_editor(InputMode::ForgeComment) {
-                            return vec![];
-                        }
-                        state.pending_forge_operation = None;
-                        state.pending_forge_payload = None;
-                        state.input_buffer.clear();
-                        state.input_mode = InputMode::ForgeComment;
-                    }
-                    ContextChoice::ForgeApprove
-                    | ContextChoice::ForgeMerge
-                    | ContextChoice::ForgeMergeCommit
-                    | ContextChoice::ForgeSquashMerge
-                    | ContextChoice::ForgeRebaseMerge => {
-                        let Some(change) = target.change_request else {
-                            state.mutation_notice = Some(
-                                local_text(
-                                    state.language,
-                                    "current branch has no open forge change request",
-                                    "当前分支没有打开的 Forge 变更请求",
-                                )
-                                .into(),
-                            );
-                            return vec![];
-                        };
-                        let confirmed_sha = change.head_sha.clone().unwrap_or_default();
-                        let planned_at = now_unix_ms();
-                        let plan = match choice {
-                            ContextChoice::ForgeApprove => {
-                                ForgeMutationPlan::approve_merge_request(
-                                    &target.identity,
-                                    target.cwd,
-                                    change.iid,
-                                    change.source_branch,
-                                    change.target_branch,
-                                    planned_at,
-                                )
-                            }
-                            ContextChoice::ForgeMerge
-                            | ContextChoice::ForgeMergeCommit
-                            | ContextChoice::ForgeSquashMerge
-                            | ContextChoice::ForgeRebaseMerge => {
-                                let plan = ForgeMutationPlan::merge_merge_request(
-                                    &target.identity,
-                                    target.cwd,
-                                    change.iid,
-                                    change.source_branch,
-                                    change.target_branch,
-                                    planned_at,
-                                );
-                                match choice {
-                                    ContextChoice::ForgeMergeCommit => {
-                                        plan.and_then(|plan| plan.bind_github_merge_method("merge"))
-                                    }
-                                    ContextChoice::ForgeSquashMerge => plan
-                                        .and_then(|plan| plan.bind_github_merge_method("squash")),
-                                    ContextChoice::ForgeRebaseMerge => plan
-                                        .and_then(|plan| plan.bind_github_merge_method("rebase")),
-                                    _ => plan,
-                                }
-                            }
-                            _ => {
-                                state.mutation_notice = Some(
-                                    local_text(
-                                        state.language,
-                                        "forge action routing mismatch; no mutation executed",
-                                        "Forge 操作路由不匹配；未执行变更",
-                                    )
-                                    .into(),
-                                );
-                                return vec![];
-                            }
-                        };
-                        match plan.and_then(|plan| plan.bind_confirmed_head(&confirmed_sha)) {
-                            Ok(plan) => {
-                                state.pending_forge_operation = Some(plan);
-                                state.pending_forge_payload = None;
-                                state.mutation_notice = None;
-                            }
-                            Err(error) => {
-                                state.mutation_notice = Some(format!(
-                                    "{}: {error:#}",
-                                    local_text(
-                                        state.language,
-                                        "cannot create forge mutation plan",
-                                        "无法创建 Forge 变更计划",
-                                    )
-                                ));
-                            }
-                        }
-                    }
-                    _ => {
-                        state.mutation_notice = Some(
-                            local_text(
-                                state.language,
-                                "forge action routing mismatch; no mutation executed",
-                                "Forge 操作路由不匹配；未执行变更",
-                            )
-                            .into(),
-                        );
-                        return vec![];
-                    }
-                }
-                return vec![];
-            }
-
             let Some(target) = state.selected_local_target() else {
                 return vec![];
             };
@@ -984,14 +803,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 | ContextChoice::BatchMarkDone
                 | ContextChoice::BatchReopen
                 | ContextChoice::BatchSnooze
-                | ContextChoice::BatchClearSnooze
-                | ContextChoice::ForgeCreateMergeRequest
-                | ContextChoice::ForgeComment
-                | ContextChoice::ForgeApprove
-                | ContextChoice::ForgeMerge
-                | ContextChoice::ForgeMergeCommit
-                | ContextChoice::ForgeSquashMerge
-                | ContextChoice::ForgeRebaseMerge => {
+                | ContextChoice::BatchClearSnooze => {
                     state.mutation_notice = Some(
                         local_text(
                             state.language,
@@ -1826,8 +1638,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::WorktreeCreatePath
             | InputMode::WorktreeCreateStartPoint
             | InputMode::WorktreeDeleteBranch
-            | InputMode::ForgeMergeRequestTitle
-            | InputMode::ForgeComment
             | InputMode::WorkrefLink => {
                 state.input_buffer.push(character);
                 if state.input_mode == InputMode::Search {
@@ -1871,8 +1681,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 | InputMode::WorktreeCreatePath
                 | InputMode::WorktreeCreateStartPoint
                 | InputMode::WorktreeDeleteBranch
-                | InputMode::ForgeMergeRequestTitle
-                | InputMode::ForgeComment
                 | InputMode::WorkrefLink => {
                     state.input_buffer.push_str(&text);
                     if state.input_mode == InputMode::Search {
@@ -1910,8 +1718,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::WorktreeCreatePath
             | InputMode::WorktreeCreateStartPoint
             | InputMode::WorktreeDeleteBranch
-            | InputMode::ForgeMergeRequestTitle
-            | InputMode::ForgeComment
             | InputMode::WorkrefLink => {
                 state.input_buffer.pop();
                 if state.input_mode == InputMode::Search {
@@ -1951,119 +1757,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 state.transcript_search_loading = true;
                 state.transcript_search_error = None;
                 return vec![Effect::SearchTranscript { query }];
-            }
-            if mode == InputMode::ForgeMergeRequestTitle {
-                let title = state.input_buffer.trim().to_string();
-                if title.is_empty() {
-                    return vec![];
-                }
-                let Some(target) = state.current_forge_mutation_target() else {
-                    state.mutation_notice = Some(
-                        local_text(
-                            state.language,
-                            "forge mutation target is unavailable",
-                            "Forge 变更目标不可用",
-                        )
-                        .into(),
-                    );
-                    return vec![];
-                };
-                let Some(target_branch) = target.identity.default_branch.clone() else {
-                    state.mutation_notice = Some(
-                        local_text(
-                            state.language,
-                            "forge default branch is unavailable; create change-request plan refused",
-                            "Forge 默认分支不可用；已拒绝创建变更请求计划",
-                        )
-                        .into(),
-                    );
-                    return vec![];
-                };
-                match ForgeMutationPlan::create_merge_request(
-                    &target.identity,
-                    target.cwd,
-                    target.branch,
-                    target_branch,
-                    title,
-                    now_unix_ms(),
-                ) {
-                    Ok(plan) => {
-                        state.pending_forge_operation = Some(plan);
-                        state.pending_forge_payload = None;
-                        state.mutation_editor = None;
-                        state.input_mode = InputMode::Normal;
-                        state.input_buffer.clear();
-                        state.mutation_notice = None;
-                    }
-                    Err(error) => {
-                        state.mutation_notice = Some(format!(
-                            "{}: {error:#}",
-                            local_text(
-                                state.language,
-                                "cannot create forge mutation plan",
-                                "无法创建 Forge 变更计划",
-                            )
-                        ));
-                    }
-                }
-                return vec![];
-            }
-            if mode == InputMode::ForgeComment {
-                let body = state.input_buffer.trim().to_string();
-                if body.is_empty() {
-                    return vec![];
-                }
-                let Some(target) = state.current_forge_mutation_target() else {
-                    state.mutation_notice = Some(
-                        local_text(
-                            state.language,
-                            "forge mutation target is unavailable",
-                            "Forge 变更目标不可用",
-                        )
-                        .into(),
-                    );
-                    return vec![];
-                };
-                let Some(change) = target.change_request else {
-                    state.mutation_notice = Some(
-                        local_text(
-                            state.language,
-                            "current branch has no open merge request",
-                            "当前分支没有打开的合并请求",
-                        )
-                        .into(),
-                    );
-                    return vec![];
-                };
-                match ForgeMutationPlan::comment_merge_request(
-                    &target.identity,
-                    target.cwd,
-                    change.iid,
-                    change.source_branch,
-                    change.target_branch,
-                    body.len(),
-                    now_unix_ms(),
-                ) {
-                    Ok(plan) => {
-                        state.pending_forge_operation = Some(plan);
-                        state.pending_forge_payload = Some(body);
-                        state.mutation_editor = None;
-                        state.input_mode = InputMode::Normal;
-                        state.input_buffer.clear();
-                        state.mutation_notice = None;
-                    }
-                    Err(error) => {
-                        state.mutation_notice = Some(format!(
-                            "{}: {error:#}",
-                            local_text(
-                                state.language,
-                                "cannot create forge mutation plan",
-                                "无法创建 Forge 变更计划",
-                            )
-                        ));
-                    }
-                }
-                return vec![];
             }
             if mode == InputMode::WorktreeCreateBranch {
                 let branch = state.input_buffer.trim().to_string();
@@ -2389,14 +2082,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                     | InputMode::BatchRemoveTag
                     | InputMode::BatchPriority
                     | InputMode::BatchSnooze
-            ) {
-                state.input_mode = InputMode::Normal;
-                state.input_buffer.clear();
-                return vec![];
-            }
-            if matches!(
-                state.input_mode,
-                InputMode::ForgeMergeRequestTitle | InputMode::ForgeComment
             ) {
                 state.input_mode = InputMode::Normal;
                 state.input_buffer.clear();

@@ -4,7 +4,6 @@ use crate::{
     conversation::{ConversationPage, InteractiveRequest, InteractiveResolution, RpcRequestId},
     domain::{ThreadId, ThreadSummary},
     forge::{ForgeObservation, ForgeReviewResult, ForgeReviewTarget},
-    forge_mutation::{ForgeMutationReceipt, ForgeMutationRequest},
     git::{GitContext, GitReview},
     goal::{GoalObservation, GoalStatus},
     operation::{ManagedWorktreeRecord, OperationPlan, OperationReceipt},
@@ -54,8 +53,6 @@ pub enum InputMode {
     WorktreeCreatePath,
     WorktreeCreateStartPoint,
     WorktreeDeleteBranch,
-    ForgeMergeRequestTitle,
-    ForgeComment,
     WorkrefLink,
 }
 
@@ -84,13 +81,6 @@ pub enum ContextChoice {
     BatchReopen,
     BatchSnooze,
     BatchClearSnooze,
-    ForgeCreateMergeRequest,
-    ForgeComment,
-    ForgeApprove,
-    ForgeMerge,
-    ForgeMergeCommit,
-    ForgeSquashMerge,
-    ForgeRebaseMerge,
 }
 
 impl ContextChoice {
@@ -119,13 +109,6 @@ impl ContextChoice {
             Self::BatchReopen => "Batch visible · Reopen",
             Self::BatchSnooze => "Batch visible · Snooze…",
             Self::BatchClearSnooze => "Batch visible · Clear snooze",
-            Self::ForgeCreateMergeRequest => "Forge · Create merge request…",
-            Self::ForgeComment => "Forge · Comment on merge request…",
-            Self::ForgeApprove => "Forge · Approve merge request",
-            Self::ForgeMerge => "Forge · Merge merge request",
-            Self::ForgeMergeCommit => "GitHub · Merge commit",
-            Self::ForgeSquashMerge => "GitHub · Squash and merge",
-            Self::ForgeRebaseMerge => "GitHub · Rebase and merge",
         }
     }
 }
@@ -165,7 +148,6 @@ pub enum Action {
     OpenManagedWorktrees,
     ManagedWorktreesLoaded(Vec<ManagedWorktreeRecord>),
     MutationReceipt(Box<OperationReceipt>),
-    ForgeMutationReceipt(Box<ForgeMutationReceipt>),
     MutationNotice(String),
     RecentNotificationObserved(crate::notification::RecentNotification),
     ClearRecentNotification,
@@ -359,7 +341,6 @@ pub enum Effect {
     ClearGoal(ThreadId),
     RefreshManagedWorktrees,
     ExecuteOperation(Box<OperationPlan>),
-    ExecuteForgeOperation(Box<ForgeMutationRequest>),
     ProbeGit {
         thread_id: ThreadId,
         cwd: String,

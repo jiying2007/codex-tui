@@ -32,7 +32,7 @@ Mission Control 优先回答：**正在做什么、哪条会话需要我、如�
 - Mission Control 优先显示待处理会话，其次是置顶与最近活动；刷新保留选中会话，最近窗口仍有界，窗口外的置顶与待处理项仍可达。窄终端直接显示待处理原因。
 - Board 的 List/Review Queue Saved View 按工作区连续分组；区分 Needs You / Working / Ready / Inactive，并支持筛选、置顶和别名。
 - Board/WorkCard 来源于 Codex、Git 和 Forge 的**派生视图**；个人笔记、提醒和规划覆盖层才写入本地 SQLite。
-- Git Context 展示分支、脏文件和共享工作树冲突；GitLab/GitHub Forge 展示 Issue、MR/PR、流水线和 Review。外部变更必须计划→确认→执行→回执。
+- Git Context 展示分支、脏文件和共享工作树冲突；GitLab/GitHub Forge 展示 Issue、MR/PR、流水线和 Review。Forge 仅只读投影，创建、评论、批准与合并由原生平台或 CLI 执行。历史变更回执保留供人工核对，Lite 不再启动 Forge 变更执行或自动恢复。
 - Thread View 和 Terminal Drawer 仅作缺陷与安全维护；重复 Thread Queue UI 已从 Lite 候选删除，队列由原生 Codex CLI 管理，不修改或清除已有上游队列项。
 
 `b` 打开 Board，`Tab` 切换 Needs You / Needs Review；`r` 进入所选会话的 Review，`w` 查看 Workspace。Headless 的 Codex 投影视图使用配置中的活动目标或 `--target NAME`，每次只读取一个目标，并明确标记跨目标共享的本地元数据范围。详见[操作指南](docs/zh-CN/guides/operator-guide.md)与 [CLI 参考](docs/zh-CN/guides/cli-reference.md)。
@@ -80,7 +80,7 @@ cargo build --release --locked
 
 Windows 原生环境可以使用对应 Windows 产物；通过 **Windows SSH 登录 Ubuntu** 时，应在 Ubuntu 内运行 Linux 二进制，应用看到的是服务器侧的终端、Codex 和本地仓库。不要把 Windows 本地的路径或会话文件当成 Ubuntu 本地权威。先用 `doctor codex`、`doctor terminal` 排查。
 
-**首次连接失败：**排除临时后端问题后，在空的 Mission Control 中按无修饰的单次 `F5`；编辑框、帮助、确认框或聚焦的 Terminal Drawer 会保留按键所有权。只重试原先解析的同一目标，同时最多一个连接尝试，没有自动重试定时器；草稿与本地操作状态保留。一旦连接成功安装，即使后来断开，F5 也不重连已建立过的会话，不重放消息、审批或 Forge 写入。该入口不重新加载目标配置；配置本身无效时需修正后显式重启。
+**首次连接失败：**排除临时后端问题后，在空的 Mission Control 中按无修饰的单次 `F5`；编辑框、帮助、确认框或聚焦的 Terminal Drawer 会保留按键所有权。只重试原先解析的同一目标，同时最多一个连接尝试，没有自动重试定时器；草稿与本地操作状态保留。一旦连接成功安装，即使后来断开，F5 也不重连已建立过的会话，不重放消息或审批。该入口不重新加载目标配置；配置本身无效时需修正后显式重启。
 
 **SSH 下的外部打开：**编辑器／浏览器命令运行在 TUI 所在主机，不会自动交给 Windows 客户端。检测到 `SSH_TTY` 或 `SSH_CONNECTION` 且未配置显式适配器时，会在创建进程前拒绝默认图形程序启动；可手动使用显示的目标，或将 `CODEX_TUI_EDITOR`／`CODEX_TUI_BROWSER` 配成单个可执行适配器。路径与 URL 校验仍生效。进程启动不证明窗口已打开或最终执行成功；当前没有 Windows 桥接、保证完整长目标的复制窗口或外部程序最终回执。
 

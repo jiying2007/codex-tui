@@ -173,6 +173,8 @@ python3 scripts/release/terminal_smoke.py prepare \
 ```
 
 ## Internal GitLab and declared Forge writes
+
+**Historical v1.4 qualification scope:** the Lite retirement candidate no longer exposes Forge write actions. Do not synthesize a PASS for these historical scenarios or relax the existing Stable gate. Field retirement and replacement-scope acceptance must be established separately; retain and reconcile unresolved receipts with their native provider before destructive data cleanup.
 <!-- docs-section: forge -->
 
 Enter an authorized representative test project, authenticate glab on its actual host, and check doctor forge there. codex-tui SOURCE_SHA is not the business repository HEAD. The existing capture and admission chain below retains source/authentication/capability/age/privacy gates, including seven-day age and five-minute future skew limits. An exit-3 diagnostic fixture is failed evidence, not qualification. Do not edit its timestamp or overwrite a previous result.

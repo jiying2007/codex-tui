@@ -22,7 +22,7 @@ mod thread;
 #[cfg(test)]
 use crate::{pty::TerminalSize, terminal_drawer::TerminalProcessState};
 use overlays::{
-    render_command_palette, render_context_actions, render_forge_mutation_confirmation,
+    render_command_palette, render_context_actions,
     render_local_batch_confirmation, render_local_input_overlay, render_saved_view_editor,
     render_transcript_search,
 };
@@ -216,13 +216,6 @@ fn context_choice_label(choice: ContextChoice, language: UiLanguage) -> &'static
         ContextChoice::BatchClearSnooze => "批量当前可见项 · 清除稍后提醒",
         ContextChoice::NewCodexThread => "新建 Codex 会话",
         ContextChoice::ForkCodexThread => "分叉 Codex 会话",
-        ContextChoice::ForgeCreateMergeRequest => "Forge · 创建合并请求…",
-        ContextChoice::ForgeComment => "Forge · 评论合并请求…",
-        ContextChoice::ForgeApprove => "Forge · 批准合并请求",
-        ContextChoice::ForgeMerge => "Forge · 合并合并请求",
-        ContextChoice::ForgeMergeCommit => "GitHub · 创建合并提交",
-        ContextChoice::ForgeSquashMerge => "GitHub · 压缩合并",
-        ContextChoice::ForgeRebaseMerge => "GitHub · 变基合并",
     }
 }
 
@@ -317,13 +310,8 @@ pub fn render(frame: &mut Frame<'_>, app: &AppState) {
             | InputMode::BatchRemoveTag
             | InputMode::BatchPriority
             | InputMode::BatchSnooze
-            | InputMode::ForgeMergeRequestTitle
-            | InputMode::ForgeComment
     ) {
         render_local_input_overlay(frame, app);
-    }
-    if app.pending_forge_operation.is_some() {
-        render_forge_mutation_confirmation(frame, app);
     }
     if app.pending_local_batch.is_some() {
         render_local_batch_confirmation(frame, app);
@@ -439,11 +427,6 @@ fn render_registry(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
             app,
             "Goal objective editor active in Thread view",
             "Goal 目标编辑器已在会话视图激活",
-        )),
-        InputMode::ForgeMergeRequestTitle | InputMode::ForgeComment => Line::from(tr(
-            app,
-            "forge mutation input active in Review/Workspace",
-            "Forge 变更输入已在评审/工作区激活",
         )),
         InputMode::WorktreeCreateBranch
         | InputMode::WorktreeCreatePath
@@ -1365,7 +1348,7 @@ const HELP_LINES: &[&str] = &[
     "Thread: a composer · d request details · y/n/c approval · i answer · Ctrl+C interrupt · r review",
     "Thread: PageUp/PageDown scroll · Home loaded history start · End follow latest",
     "Request details: ↑/↓ or PageUp/PageDown scroll · Home/End · Esc back without responding",
-    "Review: j/k file · w word-diff · e editor · o external · . Forge actions · PageUp/PageDown · Esc",
+    "Review: j/k file · w word-diff · e editor · o external · . actions · PageUp/PageDown · Esc",
     "Workspace: . actions · r review · m worktrees · Esc",
     "Managed Worktrees: n create · a adopt · d remove · x delete branch · y confirm",
     "Board: h/l stage · j/k item · Space attention · s snooze · = bind · 1–9 hot slot",
@@ -1382,7 +1365,7 @@ const HELP_LINES_ZH: &[&str] = &[
     "会话: a 编辑消息 · d 请求详情 · y/n/c 审批 · i 回答 · Ctrl+C 中断 · r 评审",
     "会话: PageUp/PageDown 滚动 · Home 已加载历史开头 · End 跟随最新",
     "请求详情: ↑/↓ 或 PageUp/PageDown 滚动 · Home/End · Esc 返回，不提交响应",
-    "评审: j/k 文件 · w 单词级 diff · e 编辑器 · o 外部打开 · . Forge 操作 · PageUp/PageDown · Esc",
+    "评审: j/k 文件 · w 单词级 diff · e 编辑器 · o 外部打开 · . 操作 · PageUp/PageDown · Esc",
     "工作区: Git + Forge · . 操作 · r 评审 · m worktree · Esc",
     "受管 Worktree: n 创建 · a 接管 · d 移除 · x 删除分支 · y 确认",
     "看板: h/l 阶段 · j/k 项目 · Space 待处理 · s 稍后提醒 · = 绑定 · 1–9 快捷槽",

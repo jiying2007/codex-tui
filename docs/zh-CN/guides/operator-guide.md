@@ -23,7 +23,7 @@ codex-tui
 
 默认连接本机的 `codex app-server --listen stdio://`。命名目标由本地 TOML 配置，单次可使用 `codex-tui --target NAME`。非回环地址的明文 `ws://` 即使未配置令牌也拒绝连接；远程使用 `wss://` 或 SSH 隧道映射到回环地址。`localhost`、IPv4/IPv6 回环仍可用于本地开发。真实后端失败不会悄悄切到假数据，`--fake` 只用于测试。命名 App Server 的细节见 [英文设计](../../implementation/v1.3-remote-app-server-targets.md)。
 
-**首次连接失败：**排除临时后端问题后，在空的 Mission Control 中按无修饰的单次 `F5`；编辑框、帮助、确认框或聚焦的 Terminal Drawer 会保留按键所有权。只重试原先解析的同一目标，同时最多一个连接尝试，没有自动重试定时器；草稿与本地操作状态保留。一旦连接成功安装，即使后来断开，F5 也不重连已建立过的会话，不重放消息、审批或 Forge 写入。该入口不重新加载目标配置；配置本身无效时需修正后显式重启。
+**首次连接失败：**排除临时后端问题后，在空的 Mission Control 中按无修饰的单次 `F5`；编辑框、帮助、确认框或聚焦的 Terminal Drawer 会保留按键所有权。只重试原先解析的同一目标，同时最多一个连接尝试，没有自动重试定时器；草稿与本地操作状态保留。一旦连接成功安装，即使后来断开，F5 也不重连已建立过的会话，不重放消息或审批。该入口不重新加载目标配置；配置本身无效时需修正后显式重启。
 
 `doctor` 命令会对外部路径、分支、主机名、诊断字段和错误信息进行终端输出端净化；ANSI 控制符与 Unicode 双向覆盖符显示为可见替换字符，原始 Codex/Git/Forge 数据不变。
 
@@ -83,7 +83,7 @@ Review 详情绑定当前仓库、分支、变更请求 ID 和已观测的 head 
 
 HTTP(S) Git 远端会在平台地址中保留非默认端口，例如 `gitlab.example:8443`；请在 `glab` 中认证该地址。SSH 传输端口（如 `:2222`）不作为 API 端口；SSH 与 API 端点不同时，在平台 CLI 配置中维护映射。
 
-Forge 概览仅获取各能力最近 20 条记录。GitHub Issues API 会混入 PR，系统在过滤 PR 前保留原始分页是否触顶的证据；因此即使展示 0 条 Issue，只要原始页已满，也不得断言不存在。当前分支的 CR/Pipeline 未命中**不代表不存在**；Board 数据来源与 Review 会提示该不确定性，精确结果仍应向平台核实。MR/PR 创建、评论、批准、合并遵循先预览→明确确认→再执行；Approval/Merge 会重新校验目标修订版本，结果不确定时禁止盲目重试。Review 状态权威在 GitLab/GitHub。Forge Merge 要求明确可合并状态和经验证的审批信息；GitHub 合并性未知、GitLab 审批数量缺失或详细状态未知时必须阻止执行。创建/审批的前置检查使用有界完整分页，不把第一页当作全部数据，服务端仍为最终权威。GitHub Fork PR 与 Actions 工作流均使用 `owner/repo:branch` 等完整源仓库标识展示，不得仅凭同名分支绑定到本地 Git 分支。工作流若缺少 `head_repository`，标记为 `unverified-source:branch`，不能将其失败误归属本地分支。与本地分支绑定的审批、评论和合并需要 PR 源仓库 ID 与路径均匹配；缺少来源信息时保守拒绝。GitLab 跨项目 MR 也会以 `project/<id>:branch` 标记来源，不能冒充本地分支；与本地分支绑定的写操作要求 `source_project_id` 和 `target_project_id` 与当前项目一致，缺失或 Fork 来源均保守拒绝。见 [真实资格采集](../qualification/provider.md)。
+Forge 概览仅获取各能力最近 20 条记录，保留过滤前的原始分页触顶证据；当前分支 CR/Pipeline 未命中不能证明不存在，精确结果向原平台核实。GitHub Fork PR 和工作流、GitLab 跨项目 MR 保留来源身份，缺失来源时不将失败误归属本地分支。Lite 运行时不再创建、评论、批准、合并 MR/PR，也不自动恢复旧 Forge 变更；使用原生平台或 CLI。保留历史回执，包括 Pending/OutcomeUnknown，不删除、不重放。见 [真实资格采集](../qualification/provider.md)。
 
 删除受管 Worktree 时，仓库或 cwd 未知的活跃 Codex 会话按潜在冲突保守拒绝；破坏性操作排队过久将使操作范围证据过期，需要重新审阅和确认。Git 命令非零退出会依据实际 Git 状态协调，不假设没有副作用。删除 Worktree 只有在 Git 注册信息与磁盘目录**均已消失**时才视作已验证成功；两者不一致时回执保持 `OutcomeUnknown`，禁止自动重试。这不能对独立 Codex 进程建立原子锁，必须继续进行真实并发操作验证。
 
@@ -103,7 +103,7 @@ Terminal Drawer 的 PTY 输出改为协作式排空：每次主循环最多处�
 ## Windows SSH Ubuntu 与 Terminal Drawer
 <!-- docs-section: ssh -->
 
-通过 Windows SSH 客户端控制 Ubuntu 时，codex-tui **在 Ubuntu 运行**；终端设备、文件路径、Codex、配置、Shell 子进程都应以 Ubuntu 为准。`Alt+T` 在 Mission Control／当前应用页与 Terminal Drawer 之间**双向切换焦点**（无须使用功能键）（保持同一个 Shell，不重建 PTY）；`t` 打开或重新聚焦 Drawer，`T` 关闭 Drawer。终端聚焦时 `Ctrl+]` 仍可返回应用作为备用；弹窗、编辑框和确认界面继续优先处理自己的按键。若 Windows/SSH 抢占按键，先查 `?` 与 `doctor terminal`；Resize、Focus、Ctrl+C、退出与终端恢复必须在**真实控制 TTY** 验证。托管 PTY 回归不是该证明。界面会对不可信的会话消息、Git diff 正文、仓库路径及平台状态中的控制字符、Unicode 双向覆盖符，以及软连字符、零宽空格和词连接符等视觉不可见格式字符做安全替换；选中会话详情和离线状态栏也会对会话 ID、模型名、Git 分支/错误和 App Server 来源字符串执行同样的仅显示端净化；受管 Worktree 的计划/确认界面及 Board 的变更请求状态，同样净化来自 Git/Forge 的不可信字符串；仅处理显示文本，不跳过显式操作确认。Forge 变更和本地批量操作的确认窗口，以及本地文本编辑和命令面板查询也过滤不可信显示文本；变更请求与外部交接目标的原始值保持不变。Mission Control/Board 页脚输入、自定义 Saved View 标题/分组及 Scratch ID 同样进行显示层防护；原始搜索、状态和本地元数据不改变。仅改变显示内容，不改动 Codex/Git 权威原始数据。Terminal Drawer 是独立的 PTY 终端模拟器，不属于安全过滤后的预览。
+通过 Windows SSH 客户端控制 Ubuntu 时，codex-tui **在 Ubuntu 运行**；终端设备、文件路径、Codex、配置、Shell 子进程都应以 Ubuntu 为准。`Alt+T` 在 Mission Control／当前应用页与 Terminal Drawer 之间**双向切换焦点**（无须使用功能键）（保持同一个 Shell，不重建 PTY）；`t` 打开或重新聚焦 Drawer，`T` 关闭 Drawer。终端聚焦时 `Ctrl+]` 仍可返回应用作为备用；弹窗、编辑框和确认界面继续优先处理自己的按键。若 Windows/SSH 抢占按键，先查 `?` 与 `doctor terminal`；Resize、Focus、Ctrl+C、退出与终端恢复必须在**真实控制 TTY** 验证。托管 PTY 回归不是该证明。界面会对不可信的会话消息、Git diff 正文、仓库路径及平台状态中的控制字符、Unicode 双向覆盖符，以及软连字符、零宽空格和词连接符等视觉不可见格式字符做安全替换；选中会话详情和离线状态栏也会对会话 ID、模型名、Git 分支/错误和 App Server 来源字符串执行同样的仅显示端净化；受管 Worktree 的计划/确认界面及 Board 的变更请求状态，同样净化来自 Git/Forge 的不可信字符串；仅处理显示文本，不跳过显式操作确认。本地批量操作的确认窗口，以及本地文本编辑和命令面板查询也过滤不可信显示文本；变更请求与外部交接目标的原始值保持不变。Mission Control/Board 页脚输入、自定义 Saved View 标题/分组及 Scratch ID 同样进行显示层防护；原始搜索、状态和本地元数据不改变。仅改变显示内容，不改动 Codex/Git 权威原始数据。Terminal Drawer 是独立的 PTY 终端模拟器，不属于安全过滤后的预览。
 
 ## G2/G3 手工需求、缺陷和跨仓引用
 <!-- docs-section: workref -->

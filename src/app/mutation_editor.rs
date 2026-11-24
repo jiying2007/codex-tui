@@ -2,19 +2,11 @@
 use super::{AppState, InputMode, local_text};
 use crate::{
     domain::{LocalRepoIdentity, ThreadId},
-    forge::ForgeIdentity,
     planning::{SourceKind, SourceRef},
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Target {
-    Forge {
-        thread: ThreadId,
-        cwd: String,
-        identity: ForgeIdentity,
-        branch: String,
-        change: Option<(u64, String, String, Option<String>)>,
-    },
     Worktree {
         thread: ThreadId,
         cwd: String,
@@ -38,10 +30,7 @@ fn family(mode: InputMode) -> Option<InputMode> {
         InputMode::WorktreeCreateBranch
         | InputMode::WorktreeCreatePath
         | InputMode::WorktreeCreateStartPoint => Some(InputMode::WorktreeCreateBranch),
-        InputMode::WorktreeDeleteBranch
-        | InputMode::ForgeComment
-        | InputMode::ForgeMergeRequestTitle
-        | InputMode::GoalObjective => Some(mode),
+        InputMode::WorktreeDeleteBranch | InputMode::GoalObjective => Some(mode),
         _ => None,
     }
 }
@@ -52,23 +41,6 @@ impl AppState {
         let thread = self.current_thread_id()?.clone();
         let live = self.thread_by_id(&thread)?;
         let target = match mode {
-            InputMode::ForgeComment | InputMode::ForgeMergeRequestTitle => {
-                let target = self.current_forge_mutation_target()?;
-                Target::Forge {
-                    thread,
-                    cwd: target.cwd,
-                    identity: target.identity,
-                    branch: target.branch,
-                    change: target.change_request.map(|change| {
-                        (
-                            change.iid,
-                            change.source_branch,
-                            change.target_branch,
-                            change.head_sha,
-                        )
-                    }),
-                }
-            }
             InputMode::WorktreeCreateBranch | InputMode::WorktreeDeleteBranch => {
                 let context = self.git_context(&thread)?;
                 if context.cwd != live.metadata.cwd || context.error.is_some() {

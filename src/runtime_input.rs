@@ -196,14 +196,6 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
         };
     }
 
-    if app.pending_forge_operation.is_some() {
-        return match key.code {
-            KeyCode::Char('y') if plain => reduce(app, Action::ConfirmPendingOperation),
-            KeyCode::Char('c') | KeyCode::Esc => reduce(app, Action::CancelPendingOperation),
-            _ => vec![],
-        };
-    }
-
     if app.goal_actions_open {
         let action = match key.code {
             KeyCode::Esc => Some(Action::CloseGoalActions),

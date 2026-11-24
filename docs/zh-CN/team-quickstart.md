@@ -44,7 +44,7 @@ codex-tui doctor forge
 
 版本号不能代替能力探测。正式内部部署必须从当前 SHA 的真实仓库采集 [能力证据与准入回执](qualification/provider.md)；单纯 `doctor compat` 报 Ready **不表示**内部 GitLab 已通过。
 
-GitHub PR 普通合并：进入当前分支的 Review／Workspace，通过 `.` 操作菜单明确选择「创建合并提交」「压缩合并」或「变基合并」。确认界面显示所选策略、仓库、分支和完整 HEAD；执行前会校验仓库策略，不允许的方式直接停止，不自动换其他合并方式，也不提供强制或绕过。GitLab MR 仍使用其独立的普通合并入口。
+创建、评论、批准与合并在 GitHub/GitLab 原平台或原生 CLI 完成。Lite 不再从 Review／Workspace 发起 Forge 写操作，历史回执保留供人工核对。
 
 ## 5. 每日工作流
 <!-- docs-section: daily -->

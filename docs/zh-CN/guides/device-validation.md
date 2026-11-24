@@ -173,6 +173,8 @@ python3 scripts/release/terminal_smoke.py prepare \
 ```
 
 ## 内部 GitLab 与声明的 Forge 写操作
+
+**历史 v1.4 资格范围：** Lite 退役候选已不再提供 Forge 写入口。不得为旧用例伪造 PASS 或临时放宽 Stable 门禁；另行完成真实退役及替代范围验收，破坏性清理前保留未决回执并向原平台核对。
 <!-- docs-section: forge -->
 
 进入已授权、有代表性的测试项目，对实际主机完成 glab 登录，再在该项目执行 doctor forge。codex-tui 的 SOURCE_SHA 不是业务仓库 HEAD。以下现有链保留源码／认证／能力／时效／隐私要求，包括七天时效和五分钟未来偏差。退出 3 的诊断是失败证据，不是资格通过；不修改时间戳，不覆盖旧结果。

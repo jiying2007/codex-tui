@@ -54,20 +54,6 @@ fn fixture(with_change: bool) -> AppState {
     app.view = View::Workspace(app.threads[0].id.clone());
     app
 }
-fn open_forge(app: &mut AppState, choice: ContextChoice) {
-    reduce(app, Action::OpenContext);
-    app.context_selected = app
-        .context_choices()
-        .iter()
-        .position(|c| *c == choice)
-        .unwrap();
-    assert!(reduce(app, Action::ExecuteContext).is_empty());
-    assert!(matches!(
-        app.input_mode,
-        InputMode::ForgeComment | InputMode::ForgeMergeRequestTitle
-    ));
-    app.input_buffer = "draft that must not change targets".into();
-}
 fn rejected(app: &mut AppState) {
     let mode = app.input_mode;
     let draft = app.input_buffer.clone();
@@ -75,89 +61,10 @@ fn rejected(app: &mut AppState) {
         reduce(app, Action::CommitInput).is_empty(),
         "unexpected write effect"
     );
-    assert!(
-        app.pending_forge_operation.is_none(),
-        "wrong Forge plan created"
-    );
     assert!(app.pending_operation.is_none(), "wrong Git plan created");
     assert_eq!(app.input_mode, mode);
     assert_eq!(app.input_buffer, draft);
     assert!(app.mutation_notice.is_some(), "conflict must be visible");
-}
-#[test]
-fn forge_comment_cannot_follow_another_thread() {
-    let mut app = fixture(true);
-    open_forge(&mut app, ContextChoice::ForgeComment);
-    app.view = View::Workspace(app.threads[1].id.clone());
-    rejected(&mut app);
-}
-#[test]
-fn forge_editor_cannot_use_removed_thread_with_cached_context() {
-    let mut app = fixture(true);
-    open_forge(&mut app, ContextChoice::ForgeComment);
-    reduce(&mut app, Action::ReplaceThreads(vec![]));
-    rejected(&mut app);
-}
-#[test]
-fn forge_comment_cannot_follow_replaced_change_request() {
-    let mut app = fixture(true);
-    open_forge(&mut app, ContextChoice::ForgeComment);
-    let id = app.threads[0].id.0.clone();
-    app.forge_observations.get_mut(&id).unwrap().change_requests[0].iid = 8;
-    rejected(&mut app);
-}
-#[test]
-fn forge_create_cannot_follow_repository_or_default_branch_changes() {
-    for drift in 0..5 {
-        let mut app = fixture(false);
-        open_forge(&mut app, ContextChoice::ForgeCreateMergeRequest);
-        let id = app.threads[0].id.0.clone();
-        let identity = app
-            .forge_observations
-            .get_mut(&id)
-            .unwrap()
-            .identity
-            .as_mut()
-            .unwrap();
-        match drift {
-            0 => identity.provider = ForgeProviderKind::GitHub,
-            1 => identity.host = "other.example.com".into(),
-            2 => identity.project_id = "999".into(),
-            3 => identity.path_with_namespace = "team/other".into(),
-            _ => identity.default_branch = Some("release".into()),
-        };
-        rejected(&mut app);
-    }
-}
-#[test]
-fn forge_editor_cannot_use_a_former_cwd() {
-    let mut app = fixture(true);
-    open_forge(&mut app, ContextChoice::ForgeComment);
-    let mut threads = app.threads.clone();
-    threads[0].metadata.cwd = "/changed".into();
-    reduce(&mut app, Action::ReplaceThreads(threads));
-    rejected(&mut app);
-}
-#[test]
-fn same_forge_target_metadata_refresh_still_requires_confirmation() {
-    let mut app = fixture(true);
-    open_forge(&mut app, ContextChoice::ForgeComment);
-    let id = app.threads[0].id.0.clone();
-    let obs = app.forge_observations.get_mut(&id).unwrap();
-    obs.observed_at_unix_ms += 100;
-    obs.change_requests[0].title = "renamed title".into();
-    assert!(reduce(&mut app, Action::CommitInput).is_empty());
-    assert_eq!(
-        app.pending_forge_operation
-            .as_ref()
-            .unwrap()
-            .change_request_iid,
-        Some(7)
-    );
-    assert!(matches!(
-        reduce(&mut app, Action::ConfirmPendingOperation).as_slice(),
-        [Effect::ExecuteForgeOperation(_)]
-    ));
 }
 #[test]
 fn worktree_create_does_not_switch_repository_mid_wizard() {
@@ -304,42 +211,6 @@ fn hot_slot_binding_refuses_removed_target_instead_of_neighbour() {
     assert!(app.mutation_notice.is_some());
 }
 #[test]
-fn cancelled_editor_does_not_reuse_old_scope() {
-    let mut app = fixture(true);
-    open_forge(&mut app, ContextChoice::ForgeComment);
-    reduce(&mut app, Action::CancelInput);
-    app.view = View::Workspace(app.threads[1].id.clone());
-    open_forge(&mut app, ContextChoice::ForgeComment);
-    assert!(reduce(&mut app, Action::CommitInput).is_empty());
-    assert_eq!(
-        app.pending_forge_operation.as_ref().unwrap().project_id,
-        "43"
-    );
-}
-
-#[test]
-fn context_menu_does_not_change_highlighted_action_when_forge_options_change() {
-    let mut app = fixture(false);
-    reduce(&mut app, Action::OpenContext);
-    app.context_selected = app
-        .context_choices()
-        .iter()
-        .position(|c| *c == ContextChoice::ForgeCreateMergeRequest)
-        .unwrap();
-    let populated = fixture(true);
-    let id = app.threads[0].id.0.clone();
-    app.forge_observations.get_mut(&id).unwrap().change_requests =
-        populated.forge_observations[&id].change_requests.clone();
-    assert_eq!(
-        app.context_choice(),
-        Some(ContextChoice::ForgeCreateMergeRequest)
-    );
-    assert!(reduce(&mut app, Action::ExecuteContext).is_empty());
-    assert_eq!(app.input_mode, InputMode::Normal);
-    assert!(app.pending_forge_operation.is_none());
-    assert!(app.mutation_notice.is_some());
-}
-#[test]
 fn context_menu_refuses_a_removed_target_instead_of_snoozing_its_neighbour() {
     let mut app = fixture(false);
     app.view = View::Registry;
@@ -357,27 +228,6 @@ fn context_menu_refuses_a_removed_target_instead_of_snoozing_its_neighbour() {
     assert!(app.mutation_notice.is_some());
 }
 #[test]
-fn context_menu_approve_cannot_follow_another_project_with_the_same_iid() {
-    let mut app = fixture(true);
-    reduce(&mut app, Action::OpenContext);
-    app.context_selected = app
-        .context_choices()
-        .iter()
-        .position(|c| *c == ContextChoice::ForgeApprove)
-        .unwrap();
-    let id = app.threads[0].id.0.clone();
-    app.forge_observations
-        .get_mut(&id)
-        .unwrap()
-        .identity
-        .as_mut()
-        .unwrap()
-        .project_id = "999".into();
-    assert!(reduce(&mut app, Action::ExecuteContext).is_empty());
-    assert!(app.pending_forge_operation.is_none());
-    assert!(app.mutation_notice.is_some());
-}
-#[test]
 fn context_menu_cannot_edit_a_different_saved_view() {
     let mut app = fixture(false);
     app.view = View::Board;
@@ -392,16 +242,6 @@ fn context_menu_cannot_edit_a_different_saved_view() {
     assert!(app.saved_view_editor.is_none());
     assert!(app.mutation_notice.is_some());
 }
-#[test]
-fn context_menu_same_target_refresh_and_cancel_remain_usable() {
-    let mut app = fixture(true);
-    reduce(&mut app, Action::OpenContext);
-    reduce(&mut app, Action::CloseContext);
-    open_forge(&mut app, ContextChoice::ForgeComment);
-    assert!(reduce(&mut app, Action::CommitInput).is_empty());
-    assert!(app.pending_forge_operation.is_some());
-}
-
 #[test]
 fn context_menu_rejects_a_removed_thread_even_when_the_view_keeps_its_id() {
     let mut app = fixture(false);

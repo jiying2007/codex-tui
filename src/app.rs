@@ -10,11 +10,7 @@ use crate::domain::{
     AttentionReason, CwdLocality, LocalRepoIdentity, RuntimeStatus, ThreadId, ThreadSummary,
     ThreadUiState,
 };
-use crate::forge::{
-    CapabilityState, ChangeRequestSummary, ForgeCapability, ForgeIdentity, ForgeObservation,
-    ForgeReviewTarget,
-};
-use crate::forge_mutation::{ForgeMutationPlan, ForgeMutationReceipt, ForgeMutationRequest};
+use crate::forge::{CapabilityState, ForgeCapability, ForgeObservation, ForgeReviewTarget};
 use crate::git::{GitContext, GitReview};
 use crate::goal::{GoalObservation, GoalStatus};
 use crate::i18n::{UiLanguage, pick};
@@ -180,13 +176,10 @@ pub struct AppState {
     pub managed_return_view: Option<View>,
     pub pending_operation: Option<OperationPlan>,
     pub recent_operations: Vec<OperationReceipt>,
-    pub pending_forge_operation: Option<ForgeMutationPlan>,
-    pub pending_forge_payload: Option<String>,
     pub pending_local_batch: Option<LocalBatchPlan>,
     pub terminal_drawer_open: bool,
     pub terminal_focused: bool,
     pub terminal_snapshot: Option<TerminalSnapshot>,
-    pub recent_forge_operations: Vec<ForgeMutationReceipt>,
     pub mutation_notice: Option<String>,
     pub recent_notification: Option<RecentNotification>,
     pub create_worktree_branch: Option<String>,
@@ -248,13 +241,6 @@ pub struct AppState {
     alias_target: Option<ThreadId>,
     mutation_editor: Option<mutation_editor::MutationEditor>,
     search_return_view: Option<View>,
-}
-#[derive(Clone, Debug)]
-struct ForgeMutationTarget {
-    cwd: String,
-    branch: String,
-    identity: ForgeIdentity,
-    change_request: Option<ChangeRequestSummary>,
 }
 fn parse_snooze_duration(value: &str) -> Option<u64> {
     let value = value.trim().to_ascii_lowercase();
@@ -978,7 +964,6 @@ fn normalize_pasted_input(mode: InputMode, value: &str) -> String {
             | InputMode::UserInput
             | InputMode::Note
             | InputMode::GoalObjective
-            | InputMode::ForgeComment
     ) {
         let normalized = value.replace("\r\n", "\n").replace('\r', "\n");
         normalized

@@ -18,7 +18,6 @@ REQUIRED_DIFFERENTIATION = {
     "attention-routing",
     "derived-board-projection",
     "gitlab-github-forge-projection",
-    "safe-forge-mutations",
     "saved-views",
     "doctor-headless-support-bundle",
 }

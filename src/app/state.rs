@@ -72,13 +72,10 @@ impl AppState {
             managed_return_view: None,
             pending_operation: None,
             recent_operations: vec![],
-            pending_forge_operation: None,
-            pending_forge_payload: None,
             pending_local_batch: None,
             terminal_drawer_open: false,
             terminal_focused: false,
             terminal_snapshot: None,
-            recent_forge_operations: vec![],
             mutation_notice: None,
             recent_notification: None,
             create_worktree_branch: None,
@@ -232,7 +229,6 @@ impl AppState {
             && self.saved_view_editor.is_none()
             && self.pending_operation.is_none()
             && self.pending_local_batch.is_none()
-            && self.pending_forge_operation.is_none()
             && self.hot_slot_bind_pending.is_none()
     }
 
@@ -483,8 +479,6 @@ impl AppState {
         match plan {
             Ok(plan) => {
                 self.pending_operation = None;
-                self.pending_forge_operation = None;
-                self.pending_forge_payload = None;
                 self.pending_local_batch = Some(plan);
                 self.mutation_notice = None;
             }
@@ -615,35 +609,6 @@ impl AppState {
         }
     }
 
-    pub(super) fn current_forge_mutation_target(&self) -> Option<ForgeMutationTarget> {
-        if self.app_server_target_is_remote() {
-            return None;
-        }
-        let thread_id = match &self.view {
-            View::Review(id) | View::Workspace(id) => id,
-            _ => return None,
-        };
-        let live = self.thread_by_id(thread_id)?;
-        let context = self.git_context(thread_id)?;
-        let branch = context.branch.clone()?;
-        let observation = self.forge_observation(thread_id)?;
-        if context.cwd != live.metadata.cwd
-            || observation.cwd != live.metadata.cwd
-            || context.error.is_some()
-            || observation.error.is_some()
-        {
-            return None;
-        }
-        let identity = observation.identity.clone()?;
-        let change_request = observation.change_request_for_branch(&branch).cloned();
-        Some(ForgeMutationTarget {
-            cwd: context.cwd.clone(),
-            branch,
-            identity,
-            change_request,
-        })
-    }
-
     pub fn context_choices(&self) -> Vec<ContextChoice> {
         if let Some(menu) = self.context_menu.as_ref() {
             return menu.choices.clone();
@@ -702,27 +667,6 @@ impl AppState {
             if self.active_saved_view().id.starts_with("view:") {
                 choices.push(ContextChoice::EditCurrentView);
                 choices.push(ContextChoice::DeleteCurrentView);
-            }
-        }
-        if let Some(target) = self.current_forge_mutation_target() {
-            if target.change_request.is_some() {
-                choices.extend([ContextChoice::ForgeComment, ContextChoice::ForgeApprove]);
-                if target.identity.provider == crate::forge::ForgeProviderKind::GitHub {
-                    choices.extend([
-                        ContextChoice::ForgeMergeCommit,
-                        ContextChoice::ForgeSquashMerge,
-                        ContextChoice::ForgeRebaseMerge,
-                    ]);
-                } else {
-                    choices.push(ContextChoice::ForgeMerge);
-                }
-            } else if target
-                .identity
-                .default_branch
-                .as_deref()
-                .is_some_and(|default_branch| default_branch != target.branch)
-            {
-                choices.push(ContextChoice::ForgeCreateMergeRequest);
             }
         }
         choices

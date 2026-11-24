@@ -74,7 +74,6 @@ impl AppState {
             && !self.show_help
             && self.saved_view_editor.is_none()
             && self.pending_operation.is_none()
-            && self.pending_forge_operation.is_none()
             && self.pending_local_batch.is_none()
             && self.hot_slot_bind_pending.is_none()
     }
