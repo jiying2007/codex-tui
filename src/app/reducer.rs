@@ -240,7 +240,9 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             if !matches!(state.view, View::Thread(_)) || state.current_pending_request().is_some() {
                 return vec![];
             }
-            if let Some(thread_id) = state.current_thread_id().cloned() {
+            if let Some(thread_id) = state.current_thread_id().cloned()
+                && state.thread_by_id(&thread_id).is_some()
+            {
                 return vec![Effect::RefreshGoal(thread_id)];
             }
         }
