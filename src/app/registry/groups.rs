@@ -110,36 +110,61 @@ impl AppState {
         } else {
             REGISTRY_RECENT_LIMIT.min(self.threads.len())
         });
-        let mut matched_count = 0_usize;
-        let mut displayed_positions = 0_usize;
         let groups = self.registry_group_projection();
+        let matched: Vec<_> = self
+            .threads
+            .iter()
+            .map(|thread| self.thread_visible_in_registry_with_query(thread, &query))
+            .collect();
+        let matched_count = matched.iter().filter(|&&value| value).count();
+        let mut recency: Vec<_> = self
+            .threads
+            .iter()
+            .map(|thread| thread.metadata.updated_at)
+            .collect();
 
-        for (index, thread) in self.threads.iter().enumerate() {
-            if !self.thread_visible_in_registry_with_query(thread, &query) {
-                continue;
+        if show_all_matches {
+            visible.extend((0..matched.len()).filter(|&index| matched[index]));
+        } else {
+            // An out-of-scope ancestor cannot represent a matching child.
+            // Resolve roots iteratively with path compression so deep chains
+            // remain linear, even when the newest member precedes its owner.
+            let roots = scoped_group_roots(&groups, &matched);
+            for (index, root) in roots.iter().enumerate() {
+                if let Some(root) = *root {
+                    recency[root] = recency[root].max(self.threads[index].metadata.updated_at);
+                }
             }
-            matched_count = matched_count.saturating_add(1);
-            let actionable = self.thread_needs_attention(index);
-            // A child is folded only when its owner is present in this one Target.
-            // Pinned, selected and Needs-You children remain independently actionable.
-            if !show_all_matches
-                && groups[index].0.is_some()
-                && !actionable
-                && !thread.pinned
-                && index != self.selected
-            {
-                continue;
-            }
-            let recent_position = displayed_positions;
-            displayed_positions = displayed_positions.saturating_add(1);
-            if show_all_matches
-                || recent_position < REGISTRY_RECENT_LIMIT
-                || thread.pinned
-                || actionable
-                || groups[index].2 > 0
-                || index == self.selected
-            {
-                visible.push(index);
+            let mut represented = vec![false; self.threads.len()];
+            let mut displayed_positions = 0_usize;
+            for (index, root) in roots.into_iter().enumerate() {
+                let Some(root) = root else {
+                    continue;
+                };
+                if !represented[root] {
+                    represented[root] = true;
+                    let owner = &self.threads[root];
+                    if displayed_positions < REGISTRY_RECENT_LIMIT
+                        || owner.pinned
+                        || self.thread_needs_attention(root)
+                        || groups[root].2 > 0
+                        || root == self.selected
+                    {
+                        visible.push(root);
+                    }
+                    displayed_positions += 1;
+                }
+                // Exceptional child rows retain their own identity and action
+                // path, even when the representative is outside the window.
+                let thread = &self.threads[index];
+                if index != root
+                    && (thread.pinned
+                        || self.thread_needs_attention(index)
+                        || index == self.selected)
+                {
+                    visible.push(index);
+                    displayed_positions += 1;
+                }
             }
         }
 
@@ -149,12 +174,41 @@ impl AppState {
             (
                 std::cmp::Reverse(self.thread_needs_attention(index) || groups[index].2 > 0),
                 std::cmp::Reverse(thread.pinned),
-                std::cmp::Reverse(thread.metadata.updated_at),
+                std::cmp::Reverse(recency[index]),
                 &thread.id.0,
             )
         });
         (visible, matched_count)
     }
+}
+
+// Input edges have already been checked for cycles by registry_group_projection.
+fn scoped_group_roots(
+    groups: &[(Option<usize>, usize, usize)],
+    matched: &[bool],
+) -> Vec<Option<usize>> {
+    let mut roots = vec![None; groups.len()];
+    let mut path = Vec::new();
+    for index in 0..groups.len() {
+        if !matched[index] || roots[index].is_some() {
+            continue;
+        }
+        let mut current = index;
+        let root = loop {
+            if let Some(root) = roots[current] {
+                break root;
+            }
+            path.push(current);
+            match groups[current].0 {
+                Some(parent) if matched[parent] => current = parent,
+                _ => break current,
+            }
+        };
+        for member in path.drain(..) {
+            roots[member] = Some(root);
+        }
+    }
+    roots
 }
 
 #[cfg(test)]
@@ -219,6 +273,53 @@ mod tests {
         app.threads[0].metadata.lineage.parent_thread_id = None;
         app.threads[1].metadata.lineage.attached_to_thread_id = Some("thread-2".into());
         assert_eq!(app.registry_group_projection()[1].0, None);
+    }
+
+    #[test]
+    fn filtered_owner_cannot_hide_matching_child_or_its_attention() {
+        let mut app = sample();
+        let cwd = std::env::current_dir().unwrap().display().to_string();
+        app.threads[0].metadata.cwd = "relative-parent".into();
+        app.threads[1].metadata.cwd = cwd.clone();
+        app.threads[2].metadata.cwd = cwd;
+        app.threads[2].metadata.lineage.parent_thread_id = Some("thread-1".into());
+        app.threads[3].metadata.cwd = "relative-orphan".into();
+        app.selected = 0;
+        for (local, repo) in [(true, false), (false, true)] {
+            app.host_local_only = local;
+            app.repo_backed_only = repo;
+            assert_eq!(app.visible_indices_with_match_count(), (vec![1], 2));
+            app.threads[2]
+                .attention
+                .push(AttentionReason::ApprovalRequired);
+            let visible = app.visible_indices();
+            assert!(visible.contains(&1));
+            assert!(visible.contains(&2));
+            assert!(!visible.contains(&0));
+            app.threads[2].attention.clear();
+        }
+    }
+
+    #[test]
+    fn recent_descendant_promotes_older_group_root_without_growing_window() {
+        let mut threads = FakeBackend::scaled(64).snapshot().threads;
+        for (index, thread) in threads.iter_mut().enumerate() {
+            thread.runtime = RuntimeStatus::Ready;
+            thread.attention.clear();
+            thread.pinned = false;
+            thread.metadata.updated_at = 100 - index as i64;
+        }
+        threads[0].metadata.lineage.parent_thread_id = Some("thread-scale-00030".into());
+        threads[30].metadata.lineage.parent_thread_id = Some("thread-scale-00040".into());
+        let mut app = AppState::new(threads);
+        app.selected = 1;
+        let (visible, matched) = app.visible_indices_with_match_count();
+        assert_eq!(matched, 64);
+        assert_eq!(visible.len(), REGISTRY_RECENT_LIMIT);
+        assert_eq!(visible[0], 40);
+        assert!(!visible.contains(&0));
+        assert!(!visible.contains(&30));
+        assert!(!visible.contains(&20));
     }
 
     #[test]

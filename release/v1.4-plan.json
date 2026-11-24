@@ -157,7 +157,7 @@
     "src/notification/native.rs": 251,
     "src/ui/provenance.rs": 150,
     "src/codex_protocol/status_tests.rs": 34,
-    "src/app/registry/groups.rs": 236,
+    "src/app/registry/groups.rs": 337,
     "src/ui/registry/groups.rs": 24,
     "src/domain/identity_tests.rs": 93,
     "src/codex_protocol/tests.rs": 157,
@@ -1335,6 +1335,15 @@
         "src/headless/locator.rs"
       ],
       "policy": "One bounded G1 protocol-completeness fix for the new 0.171.0 attached-thread relation. Update only the exact headless locator source ceiling; keep all other ceilings, complete source coverage, target scoping and release gates unchanged. No new service, scan, migration, polling or Stable/L3 claim."
+    },
+    {
+      "date": "2026-11-24",
+      "kind": "g1-scoped-group-visibility",
+      "scope": "Prevent filtered ancestors and stale root recency from hiding matching recent descendant sessions. Use iterative path compression within the active Target, preserve exact independent actionable/pinned/selected rows, and keep the recent group window bounded. Add focused locality and older-root regression tests.",
+      "modules": [
+        "src/app/registry/groups.rs"
+      ],
+      "policy": "Update only the exact reviewed registry projection source ceiling. No new RPCs, background scans, persistence, routing authority, or release qualification changes."
     }
   ]
 }
