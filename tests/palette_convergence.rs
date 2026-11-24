@@ -19,7 +19,6 @@ fn empty_palette_prioritizes_mission_control_without_removing_commands() {
 
     for primary in [
         Command::Search,
-        Command::Board,
         Command::Review,
         Command::Workspace,
     ] {

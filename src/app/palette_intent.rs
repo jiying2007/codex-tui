@@ -73,7 +73,6 @@ impl AppState {
                             | Command::Search
                             | Command::TargetLookup
                             | Command::TranscriptSearch
-                            | Command::Board
                             | Command::CloseTerminalDrawer
                     ) {
                         return true;

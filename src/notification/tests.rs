@@ -294,15 +294,15 @@ fn narrow_terminal_preserves_the_action_and_task_before_optional_context() {
     assert!(narrow.contains("important"));
     assert!(crate::text::display_width(&narrow) <= 40);
 
-    let board = RecentNotification::new(event, None, 0);
+    let unlocated = RecentNotification::new(event, None, 0);
     assert!(
-        board
+        unlocated
             .display(UiLanguage::English)
-            .starts_with("Board · Goal completed:")
+            .starts_with("Unlocated · Goal completed:")
     );
     assert!(
-        board
+        unlocated
             .display(UiLanguage::SimplifiedChinese)
-            .starts_with("看板 · Goal 已完成:")
+            .starts_with("未定位 · Goal 已完成:")
     );
 }

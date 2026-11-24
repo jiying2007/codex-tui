@@ -105,7 +105,7 @@ for line in sys.stdin:
 '''
 
 CASES = ['idle-back', 'search-cancel', 'search-commit', 'history-complete',
-         'registry-complete', 'deleted', 'board-cancel', 'board-commit',
+         'registry-complete', 'deleted', 'workspace-cancel', 'workspace-commit',
          'prompt-success', 'prompt-failure', 'prompt-history-failure'] + REMOVAL_CASES + list(RETURN_CASES)
 
 
@@ -173,16 +173,16 @@ def case(binary, output, home, mode):
             if mode=='prompt-success':
                 boundary(3, 1, turnStatus='completed')
                 boundary(4, 0)
-        elif mode.startswith('board-'):
+        elif mode.startswith('workspace-'):
             app.send(b'\x0b')
-            app.send(b'board\r')
-            app.wait(lambda:'Ready (2)' in app.screen(), 'Board did not open through palette')
+            app.send(b'workspace\r')
+            app.wait(lambda:'Workspace' in app.screen() and 'watch-a' in app.screen(), 'Workspace did not open through palette')
             app.send(b'/')
-            if mode=='board-cancel':
+            if mode=='workspace-cancel':
                 app.send(b'\x1b')
                 boundary(1, 1)
                 app.send(b'\x1b')
-                app.wait(lambda:'BODY_1' in app.screen(), 'Board return lost live history')
+                app.wait(lambda:'BODY_1' in app.screen(), 'Workspace return lost live history')
                 app.send(b'\x1b')
                 boundary(2, 0)
             else:

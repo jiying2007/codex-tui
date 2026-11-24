@@ -30,15 +30,15 @@ v1.4 已冻结新增核心功能，仅接受缺陷、安全、互操作、证据
 Mission Control 优先回答：**正在做什么、哪条会话需要我、如何回到准确的会话、当前代码有何变化？**
 
 - Mission Control 优先显示待处理会话，其次是置顶与最近活动；刷新保留选中会话，最近窗口仍有界，窗口外的置顶与待处理项仍可达。窄终端直接显示待处理原因。
-- Board 的 List/Review Queue Saved View 按工作区连续分组；区分 Needs You / Working / Ready / Inactive，并支持筛选、置顶和别名。
-- Board/WorkCard 来源于 Codex、Git 和 Forge 的**派生视图**；个人笔记、提醒和规划覆盖层才写入本地 SQLite。
+- 原生会话清单按仓库与来源组织，直接呈现待处理状态，支持筛选、置顶和别名。
+- 会话状态取自 Codex、Git 和 Forge；本地 SQLite 保留操作员数据及历史规划记录。
 - Git Context 展示分支、脏文件和共享工作树冲突；GitLab/GitHub Forge 展示 Issue、MR/PR、流水线和 Review。Forge 仅只读投影，复用 Git 上下文观测事件刷新当前相关会话，不再独立全局轮询历史仓库；创建、评论、批准与合并由原生平台或 CLI 执行。历史变更回执保留供人工核对，Lite 不再启动 Forge 或受管 Worktree 变更执行及自动恢复。创建、接管、删除工作树及删除分支交给原生 Git/Codex 工具；既有实际工作树和历史回执不清除。
-- 看板批量编辑、Scratch 及 Saved View 写入口已退役；历史记录可只读浏览，保留本地数据及底层迁移、恢复测试。任务中心搜索、会话详情、备注与提醒路由不再依赖 WorkCard 投影；旧 Worker 仅在显式查看历史 Board 时启动和推进。
+- 看板批量编辑、Scratch 及 Saved View 写入口已退役；历史记录保留在 SQLite，可通过只读 Headless/Doctor、备份及恢复测试核查。任务中心搜索、会话详情、备注与提醒路由不再依赖 WorkCard 投影；交互 Board 入口及 Worker 启动链已移除。
 - Thread View 和 Terminal Drawer 仅作缺陷与安全维护；重复 Thread Queue UI 已从 Lite 候选删除，队列由原生 Codex CLI 管理，不修改或清除已有上游队列项。
 
-`b` 打开 Board，`Tab` 切换 Needs You / Needs Review；`r` 进入所选会话的 Review，`w` 查看 Workspace。Headless 的 Codex 投影视图使用配置中的活动目标或 `--target NAME`，每次只读取一个目标，并明确标记跨目标共享的本地元数据范围。详见[操作指南](docs/zh-CN/guides/operator-guide.md)与 [CLI 参考](docs/zh-CN/guides/cli-reference.md)。
+`Space` 定位下一条待处理会话；`r` 进入所选会话的 Review，`w` 查看 Workspace。Headless 的 Codex 投影视图使用配置中的活动目标或 `--target NAME`，每次只读取一个目标，并明确标记跨目标共享的本地元数据范围。详见[操作指南](docs/zh-CN/guides/operator-guide.md)与 [CLI 参考](docs/zh-CN/guides/cli-reference.md)。
 
-快捷键以应用内 `?` 帮助为准：`Ctrl+K` 命令面板，`/` 搜索，`j/k` 选择、`Enter` 打开，`b` Board，`t` Drawer，`Alt+T` 或 `Ctrl+]` 返回聚焦（取决于实际终端支持）。详见 [操作指南](docs/zh-CN/guides/operator-guide.md)。
+快捷键以应用内 `?` 帮助为准：`Ctrl+K` 命令面板，`/` 搜索，`j/k` 选择、`Enter` 打开，`t` Drawer，`Alt+T` 或 `Ctrl+]` 返回聚焦（取决于实际终端支持）。详见 [操作指南](docs/zh-CN/guides/operator-guide.md)。
 
 **静音不关闭界面提醒：**默认 `off` 仍显示最近事件并支持 `!` 回跳，只关闭外部声音／桌面投递。要测试 Windows SSH Ubuntu 响铃，可设置 `[notifications].mode = "terminal"`，配置 Windows Terminal 的 `"bellStyle": "all"`，再从 Ubuntu 执行 `printf '\a'`；这不是 Windows Toast 或离线推送。
 
@@ -54,7 +54,7 @@ Codex App Server ── 会话 / Agent / Queue 权威
   只读 Registry / Attention ───── Git / Worktree 权威
         │
         ├── Mission Control
-        ├── 派生 Board / WorkCard ───── GitLab / GitHub Forge 权威
+        ├── 原生提醒 / WorkRef ───── GitLab / GitHub Forge 权威
         └── 本地 SQLite（仅个人 UI / 规划元数据）
         │
         ▼
@@ -107,13 +107,13 @@ active = "local"
 
 `auto` 依次读取 `LC_ALL`、`LC_MESSAGES`、`LANG`。`zh_CN/zh_SG/zh-Hans` 等简体语言环境选中文；繁体语言环境及未知环境默认英文，不假定简体等价。技术标识和上游错误原样保留以便定位。Quiet 和 Screen-reader 只调整后台刷新节奏；输入/键盘/窗口改变仍即时响应。
 
-界面内最近提醒默认保留；`[notifications].mode = "off"` 只关闭外部响铃／桌面投递。终端空间足够时显示约 20 秒的一条内存提示，开头先显示 `! 跳转`；按 `!` 进入关联的活跃 Codex 会话，按 `Esc` 返回原页面。过期提示不能跳转；无关联会话的 Forge/Scratch 更新需到 Board 查看。编辑框、弹层和聚焦 PTY 保留焦点；外部投递失败或拥塞不阻止视觉提示选择。没有通知历史或离线推送。
+界面内最近提醒默认保留；`[notifications].mode = "off"` 只关闭外部响铃／桌面投递。终端空间足够时显示约 20 秒的一条内存提示，开头先显示 `! 跳转`；按 `!` 进入关联的活跃 Codex 会话，按 `Esc` 返回原页面。过期提示不能跳转；无关联会话的更新显示未定位，应核对权威来源。编辑框、弹层和聚焦 PTY 保留焦点；外部投递失败或拥塞不阻止视觉提示选择。没有通知历史或离线推送。
 
 **空闲不等于成功：**“已空闲；请核对结果”只表示运行状态从工作／等待转为空闲，不证明轮次成功或任务验收完成。“Goal 已完成”要求观测到 Goal 完成状态转换，仍不等于交付验收。提醒还覆盖已观测到的系统错误、额度受限和预算受限；不会虚构上游未报告的结果。
 
 需要外部声音／桌面提醒时，才将模式改为 `"terminal"`／`"os"`。Windows SSH Ubuntu 下，两者通过当前 SSH 终端发送 BEL；`"os"` 不会自动在 Windows 弹出 Toast。Windows Terminal 的 SSH 配置可设 `"bellStyle": "all"`，在 Ubuntu 用 `printf '\a'` 验证。外部投递可按 75 毫秒窗口合并，保留最高优先级及其余事件数量，但不保证送达。首次观察不重放历史，Snooze 抑制待处理提醒路由；精确状态仍看 Mission Control。TUI 必须运行并连接才能观察新的远端事件，退出或断开后不继续监听。
 
-快捷槽可在 Registry／Board 选中任务按 `=` 再按 `1–9` 绑定；在 Registry、Board、Thread、Review、Workspace 中按数字直达该会话，编辑和确认框不会被抢键。
+快捷槽可在 Registry 选中会话按 `=` 再按 `1–9` 绑定；在 Registry、Thread、Review、Workspace 中按数字直达该会话，编辑和确认框不会被抢键。
 
 Goal 的创建、编辑、暂停、恢复和清除使用原生 Codex CLI；Thread 中按 `g` 只读刷新当前会话的 Goal 观测，旧会话也可显式刷新。原生 Goal 状态及阻塞、额度受限和完成提醒继续保留。
 

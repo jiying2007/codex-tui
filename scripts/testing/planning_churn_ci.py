@@ -178,9 +178,9 @@ def run(binary, sha, output, rows, hz, seconds):
             until(lambda:any(r.get('kind')=='page' and r.get('end')==rows for r in trace_events(trace)),
                   'registry-incomplete',seconds=25)
             until(lambda:'A_TARGET_ORIGINAL' in screen(),'target-not-visible',seconds=15)
-            send(b'b');pump(.4)
-            until(lambda:'A_TARGET_ORIGINAL' in screen() and 'Ready (%d)'%rows in screen(),
-                  'board-not-visible',seconds=12)
+            until(lambda:'A_TARGET_ORIGINAL' in screen() and 'Mission Control' in screen()
+                  and ('%d total'%rows) in screen(),
+                  'registry-not-visible',seconds=12)
             (home/'go').write_text('go')
             started=time.monotonic();first_seen=None
             for _ in range(3):

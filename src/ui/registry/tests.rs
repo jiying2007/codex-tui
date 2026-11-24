@@ -328,7 +328,6 @@ fn a_snoozed_thread_without_attention_still_displays_its_runtime() {
 fn footer_delivery_keys_match_executable_routes() {
     let app = app();
     for (key, command, label) in [
-        ('b', Command::Board, "b Board"),
         ('r', Command::Review, "r Review"),
         ('w', Command::Workspace, "w Workspace"),
     ] {

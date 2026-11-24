@@ -413,8 +413,8 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 state.mutation_notice = Some(
                     local_text(
                         state.language,
-                        "this update has no active Codex thread; inspect the Board",
-                        "该更新没有可打开的 Codex 会话；请查看看板",
+                        "this update has no active Codex thread; check the authoritative source",
+                        "该更新没有可打开的 Codex 会话；请核对权威来源",
                     )
                     .into(),
                 );
@@ -520,16 +520,16 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                         .into(),
                     );
                 }
-                SourceKind::ScratchWork
-                    if state
-                        .planning_snapshot
-                        .scratch
-                        .iter()
-                        .any(|scratch| scratch.id == target.value) =>
-                {
-                    state.view = View::Scratch(target.value);
+                _ => {
+                    state.mutation_notice = Some(
+                        local_text(
+                            state.language,
+                            "historical shortcut retained; only Codex threads can be opened",
+                            "历史快捷槽已保留；仅可打开 Codex 会话",
+                        )
+                        .into(),
+                    );
                 }
-                _ => {}
             }
         }
         Action::ReviewError { thread_id, error } => {

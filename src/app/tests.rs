@@ -1316,7 +1316,6 @@ fn command_palette_is_contextual_and_wraps_selection() {
     assert!(registry_choices.contains(&Command::Search));
     assert!(registry_choices.contains(&Command::NextAttention));
     assert!(registry_choices.contains(&Command::QuickPrompt));
-    assert!(registry_choices.contains(&Command::Board));
     assert!(registry_choices.contains(&Command::Review));
     assert!(registry_choices.contains(&Command::Workspace));
     assert!(registry_choices.contains(&Command::TogglePin));
@@ -1338,7 +1337,6 @@ fn command_palette_is_contextual_and_wraps_selection() {
 
     app.view = View::Scratch("scratch:missing".into());
     let scratch_choices = app.command_palette_choices();
-    assert!(scratch_choices.contains(&Command::Board));
     assert!(!scratch_choices.contains(&Command::TerminalDrawer));
     assert!(!scratch_choices.contains(&Command::CloseTerminalDrawer));
 }
@@ -2742,7 +2740,7 @@ fn stale_recent_alert_does_not_open_another_thread_or_replay_history() {
 }
 
 #[test]
-fn non_thread_alert_shows_a_board_fallback_without_guessing_a_thread_id() {
+fn non_thread_alert_refuses_to_guess_a_thread_id() {
     use crate::notification::{NotificationEvent, NotificationKind, RecentNotification};
     let mut state = app();
     reduce(
@@ -2765,7 +2763,7 @@ fn non_thread_alert_shows_a_board_fallback_without_guessing_a_thread_id() {
             .mutation_notice
             .as_deref()
             .unwrap()
-            .contains("inspect the Board")
+            .contains("check the authoritative source")
     );
     assert!(state.recent_notification.is_none());
 }
