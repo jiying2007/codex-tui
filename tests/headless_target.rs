@@ -356,3 +356,67 @@ fn same_id_target_scopes_apply_only_to_matching_endpoint() {
     assert_eq!(a["source"]["targetId"], "first");
     assert_eq!(b["source"]["targetId"], "second");
 }
+
+#[test]
+fn explicit_multi_target_query_preserves_equal_ids_and_partial_failures() {
+    let home = TempDir::new().unwrap();
+    let first = Target::new("shared-id", "First");
+    let second = Target::new("shared-id", "Second");
+    let original = config(&home, "second", &first, &second);
+    let args = [
+        "headless",
+        "threads",
+        "--all-targets",
+        "--query",
+        "SHARED-ID",
+        "--json",
+    ];
+    let value = report(&home, &args, 0);
+    assert_eq!(value["schema"], "codex-tui/headless-multi-target-threads/v1");
+    assert_eq!(value["degraded"], false);
+    let targets = value["targets"].as_array().unwrap();
+    assert_eq!(targets.len(), 2);
+    for (target, name, title) in [
+        (&targets[0], "first", "First"),
+        (&targets[1], "second", "Second"),
+    ] {
+        source(target, name);
+        assert_eq!(target["matchedCount"], 1);
+        assert_eq!(target["threads"][0]["id"], "shared-id");
+        assert_eq!(target["threads"][0]["title"], title);
+        assert_eq!(target["threads"][0]["cwd"], "/fixture/project");
+    }
+    assert_eq!(first.connections.load(Ordering::SeqCst), 1);
+    assert_eq!(second.connections.load(Ordering::SeqCst), 1);
+    let invalid = [
+        "headless",
+        "threads",
+        "--all-targets",
+        "--query",
+        "shared",
+        "--target",
+        "first",
+    ];
+    assert_eq!(invoke(&home, &invalid).status.code(), Some(2));
+    assert_eq!(first.connections.load(Ordering::SeqCst), 1);
+    assert_eq!(second.connections.load(Ordering::SeqCst), 1);
+
+    // Leave a configured target invalid instead of silently dropping it.
+    let broken = original.replace(
+        &format!("ws://{}", first.address),
+        "http://invalid.example",
+    );
+    let path = home.path().join("config/codex-tui/config.toml");
+    std::fs::write(&path, &broken).unwrap();
+    let value = report(&home, &args, 3);
+    assert_eq!(value["degraded"], true);
+    let targets = value["targets"].as_array().unwrap();
+    assert_eq!(targets[0]["source"]["targetId"], "first");
+    assert!(targets[0]["source"]["error"].as_str().is_some());
+    assert_eq!(targets[0]["threads"], json!([]));
+    assert_eq!(targets[1]["threads"][0]["title"], "Second");
+    assert_eq!(first.connections.load(Ordering::SeqCst), 1);
+    assert_eq!(second.connections.load(Ordering::SeqCst), 2);
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), broken);
+    assert!(!home.path().join("data").exists());
+}
