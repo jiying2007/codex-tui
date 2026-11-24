@@ -295,8 +295,8 @@ pub(super) fn registry_footer(app: &AppState, width: u16) -> Line<'static> {
     } else if width < 80 {
         tr(
             app,
-            "Space needs-you / search 1–9 jump Alt+T r w ?",
-            "Space 待办 / 搜索 1–9 快切 Alt+T r w ?",
+            "Space needs-you / search r w Alt+T 1–9 ?",
+            "Space 待办 / 搜索 r w Alt+T 1–9 快切 ?",
         )
     } else {
         tr(

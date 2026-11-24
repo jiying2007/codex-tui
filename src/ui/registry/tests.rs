@@ -213,12 +213,17 @@ fn compact_attention_and_delivery_hints_survive_drawer_in_both_languages() {
                 )),
                 "width={width} language={language:?}: {snapshot}"
             );
-            for key in ['b', 'r', 'w'] {
+            let footer = snapshot
+                .lines()
+                .find(|line| line.starts_with("Space "))
+                .expect("registry footer must remain visible above the drawer");
+            for key in ["r", "w", "Alt+T"] {
                 assert!(
-                    snapshot.contains(key),
+                    footer.split_whitespace().any(|token| token == key),
                     "missing {key}, width={width}: {snapshot}"
                 );
             }
+            assert!(!footer.split_whitespace().any(|token| token == "b"));
             assert!(snapshot.contains(if language.is_simplified_chinese() {
                 "待处理 1"
             } else {
