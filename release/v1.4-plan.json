@@ -148,14 +148,14 @@
     "user-perceived-performance-evidence"
   ],
   "moduleRatchet": {
-    "src/ui/target_lookup.rs": 124,
-    "src/runtime_target_lookup.rs": 134,
-    "src/app/target_lookup.rs": 149,
+    "src/ui/target_lookup.rs": 153,
+    "src/runtime_target_lookup.rs": 194,
+    "src/app/target_lookup.rs": 213,
     "src/app_server/resume_guard.rs": 197,
     "src/headless/operator_local.rs": 71,
     "src/store/scoped.rs": 97,
     "src/app/operator_scope.rs": 315,
-    "src/headless/multi_target.rs": 343,
+    "src/headless/multi_target.rs": 365,
     "src/headless/locator.rs": 88,
     "src/app_server/observed_scope.rs": 67,
     "src/notification/native.rs": 251,
@@ -1398,6 +1398,18 @@
         "src/ui/target_lookup.rs"
       ],
       "policy": "Exact touched ceilings only; no background polling, second store, write authority, automatic resume or qualification change."
+    },
+    {
+      "date": "2026-11-24",
+      "kind": "g1-progressive-target-locator",
+      "scope": "Show completed target matches before later targets finish; preserve reading position and suppress stale generations.",
+      "modules": [
+        "src/headless/multi_target.rs",
+        "src/app/target_lookup.rs",
+        "src/runtime_target_lookup.rs",
+        "src/ui/target_lookup.rs"
+      ],
+      "policy": "Only exact touched source ceilings; one bounded latest-value progress slot, no additional target probes, writes, persistence or qualification changes."
     }
   ]
 }

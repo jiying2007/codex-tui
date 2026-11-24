@@ -5,7 +5,7 @@ use super::{AppState, View};
 pub enum LookupPhase {
     Editing,
     Requested,
-    Running,
+    Running(Vec<String>),
     Results(Vec<String>),
 }
 
@@ -26,9 +26,20 @@ pub enum TargetLookupAction {
     Backspace,
     Submit,
     Move(i32),
+    Boundary(bool),
     Scroll(i32),
     Close,
+    Progress { generation: u64, pages: Vec<String> },
     Loaded { generation: u64, pages: Vec<String> },
+}
+
+impl TargetLookupPanel {
+    fn pages(&self) -> Option<&[String]> {
+        match &self.phase {
+            LookupPhase::Running(pages) | LookupPhase::Results(pages) => Some(pages),
+            _ => None,
+        }
+    }
 }
 
 impl AppState {
@@ -84,14 +95,19 @@ impl AppState {
                 }
             }
             TargetLookupAction::Move(delta) => {
-                if let LookupPhase::Results(pages) = &panel.phase {
-                    panel.selected =
-                        super::reducer::wrap_selection(panel.selected, delta, pages.len());
+                if let Some(len) = panel.pages().map(<[String]>::len) {
+                    panel.selected = super::reducer::wrap_selection(panel.selected, delta, len);
+                    panel.scroll = 0;
+                }
+            }
+            TargetLookupAction::Boundary(last) => {
+                if let Some(len) = panel.pages().map(<[String]>::len) {
+                    panel.selected = if last { len.saturating_sub(1) } else { 0 };
                     panel.scroll = 0;
                 }
             }
             TargetLookupAction::Scroll(delta) => {
-                if let LookupPhase::Results(pages) = &panel.phase {
+                if let Some(pages) = panel.pages() {
                     let max = pages.get(panel.selected).map_or(0, |page| {
                         page.chars().count().min(usize::from(u16::MAX)) as u16
                     });
@@ -100,12 +116,20 @@ impl AppState {
                         .clamp(0, i32::from(max)) as u16;
                 }
             }
-            TargetLookupAction::Loaded { generation, pages }
-                if generation == panel.generation && panel.phase == LookupPhase::Running =>
+            TargetLookupAction::Progress { generation, pages }
+                if generation == panel.generation
+                    && matches!(panel.phase, LookupPhase::Running(_)) =>
             {
+                panel.selected = panel.selected.min(pages.len().saturating_sub(1));
+                panel.phase = LookupPhase::Running(pages);
+            }
+            TargetLookupAction::Loaded { generation, pages }
+                if generation == panel.generation
+                    && matches!(panel.phase, LookupPhase::Running(_)) =>
+            {
+                // Completed target pages are append-only; keep the reading position.
+                panel.selected = panel.selected.min(pages.len().saturating_sub(1));
                 panel.phase = LookupPhase::Results(pages);
-                panel.selected = 0;
-                panel.scroll = 0;
             }
             _ => {}
         }
@@ -116,6 +140,46 @@ impl AppState {
 mod tests {
     use super::*;
     use crate::app::{Action, reduce};
+
+    #[test]
+    fn incremental_results_keep_selection_and_reject_old_generation() {
+        let mut app = AppState::new(vec![]);
+        let act = |app: &mut AppState, action| reduce(app, Action::TargetLookup(action));
+        act(&mut app, TargetLookupAction::Open);
+        let panel = app.target_lookup.as_mut().unwrap();
+        panel.phase = LookupPhase::Running(vec![]);
+        let generation = panel.generation;
+        act(
+            &mut app,
+            TargetLookupAction::Progress {
+                generation,
+                pages: vec!["partial".into(), "first".into()],
+            },
+        );
+        act(&mut app, TargetLookupAction::Boundary(true));
+        act(
+            &mut app,
+            TargetLookupAction::Progress {
+                generation: generation.wrapping_sub(1),
+                pages: vec!["stale".into()],
+            },
+        );
+        assert_eq!(app.target_lookup.as_ref().unwrap().selected, 1);
+        act(
+            &mut app,
+            TargetLookupAction::Loaded {
+                generation,
+                pages: vec!["complete".into(), "first".into(), "second".into()],
+            },
+        );
+        let panel = app.target_lookup.as_ref().unwrap();
+        assert_eq!(panel.selected, 1);
+        assert!(matches!(panel.phase, LookupPhase::Results(_)));
+        act(&mut app, TargetLookupAction::Boundary(true));
+        assert_eq!(app.target_lookup.as_ref().unwrap().selected, 2);
+        act(&mut app, TargetLookupAction::Boundary(false));
+        assert_eq!(app.target_lookup.as_ref().unwrap().selected, 0);
+    }
 
     #[test]
     fn explicit_query_is_bounded_and_stale_result_cannot_replace_panel() {
@@ -129,7 +193,7 @@ mod tests {
         act(&mut app, TargetLookupAction::Submit);
         let first = app.target_lookup.as_mut().unwrap();
         assert_eq!(first.phase, LookupPhase::Requested);
-        first.phase = LookupPhase::Running;
+        first.phase = LookupPhase::Running(vec![]);
         let generation = first.generation;
         act(&mut app, TargetLookupAction::Close);
         act(&mut app, TargetLookupAction::Open);

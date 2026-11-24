@@ -447,3 +447,36 @@ fn explicit_multi_target_query_preserves_equal_ids_and_partial_failures() {
     assert_eq!(std::fs::read_to_string(&path).unwrap(), offline);
     assert!(!home.path().join("data").exists());
 }
+
+#[tokio::test]
+async fn progressive_lookup_exposes_first_target_before_contacting_second() {
+    let home = TempDir::new().unwrap();
+    let first = Target::new("shared-id", "First");
+    let second = Target::new("shared-id", "Second");
+    let config: codex_tui::store::AppConfig =
+        toml::from_str(&config(&home, "second", &first, &second)).unwrap();
+    let mut early = false;
+    let pages = codex_tui::headless::target_lookup_pages(
+        &config.app_server,
+        "shared-id",
+        codex_tui::i18n::UiLanguage::English,
+        |pages| {
+            assert!(pages[0].contains("Partial / query in progress"));
+            if pages.len() == 3 {
+                assert_eq!(second.connections.load(Ordering::SeqCst), 0);
+                assert!(pages[2].contains("Target: first"));
+                assert!(pages[2].contains("ThreadId: shared-id"));
+                early = true;
+            }
+        },
+    )
+    .await;
+    assert!(early);
+    assert_eq!(pages.len(), 5);
+    assert!(pages[0].contains("Complete for this scope"));
+    assert!(pages[4].contains("Target: second"));
+    assert!(pages[4].contains("ThreadId: shared-id"));
+    assert_eq!(first.loaded_requests.load(Ordering::SeqCst), 0);
+    assert_eq!(second.loaded_requests.load(Ordering::SeqCst), 0);
+    assert!(!home.path().join("data").exists());
+}
