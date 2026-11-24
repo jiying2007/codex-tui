@@ -72,7 +72,9 @@ fn project(threads: Vec<ThreadSummary>, source: SourceStatus, query: &str) -> Ta
         .collect();
     let matched_count = matched.len();
     matched.sort_unstable_by(|left, right| {
-        right.id.0
+        right
+            .id
+            .0
             .eq_ignore_ascii_case(query)
             .cmp(&left.id.0.eq_ignore_ascii_case(query))
             .then_with(|| right.metadata.updated_at.cmp(&left.metadata.updated_at))

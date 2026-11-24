@@ -405,10 +405,7 @@ fn explicit_multi_target_query_preserves_equal_ids_and_partial_failures() {
     assert_eq!(second.connections.load(Ordering::SeqCst), 1);
 
     // Leave a configured target invalid instead of silently dropping it.
-    let broken = original.replace(
-        &format!("ws://{}", first.address),
-        "http://invalid.example",
-    );
+    let broken = original.replace(&format!("ws://{}", first.address), "http://invalid.example");
     let path = home.path().join("config/codex-tui/config.toml");
     std::fs::write(&path, &broken).unwrap();
     let value = report(&home, &args, 3);
@@ -425,7 +422,10 @@ fn explicit_multi_target_query_preserves_equal_ids_and_partial_failures() {
     let unused = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = unused.local_addr().unwrap();
     drop(unused);
-    let offline = original.replace(&format!("ws://{}", first.address), &format!("ws://{address}"));
+    let offline = original.replace(
+        &format!("ws://{}", first.address),
+        &format!("ws://{address}"),
+    );
     std::fs::write(&path, &offline).unwrap();
     let value = report(&home, &args, 3);
     let targets = value["targets"].as_array().unwrap();
