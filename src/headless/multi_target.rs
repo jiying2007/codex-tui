@@ -72,8 +72,9 @@ fn project(threads: Vec<ThreadSummary>, source: SourceStatus, query: &str) -> Ta
         .collect();
     let matched_count = matched.len();
     matched.sort_unstable_by(|left, right| {
-        (right.id.0.to_lowercase() == query)
-            .cmp(&(left.id.0.to_lowercase() == query))
+        right.id.0
+            .eq_ignore_ascii_case(query)
+            .cmp(&left.id.0.eq_ignore_ascii_case(query))
             .then_with(|| right.metadata.updated_at.cmp(&left.metadata.updated_at))
             .then_with(|| left.id.0.cmp(&right.id.0))
     });
@@ -208,7 +209,10 @@ mod tests {
     #[test]
     fn default_config_names_only_implicit_local_and_excess_targets_are_rejected() {
         let mut config = AppServerConfig::default();
-        assert_eq!(target_names(&config).unwrap(), BTreeSet::from(["local".into()]));
+        assert_eq!(
+            target_names(&config).unwrap(),
+            BTreeSet::from([String::from("local")])
+        );
         for i in 0..MAX_TARGETS {
             config.targets.insert(
                 format!("remote-{i}"),

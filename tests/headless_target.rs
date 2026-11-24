@@ -372,7 +372,10 @@ fn explicit_multi_target_query_preserves_equal_ids_and_partial_failures() {
         "--json",
     ];
     let value = report(&home, &args, 0);
-    assert_eq!(value["schema"], "codex-tui/headless-multi-target-threads/v1");
+    assert_eq!(
+        value["schema"],
+        "codex-tui/headless-multi-target-threads/v1"
+    );
     assert_eq!(value["degraded"], false);
     let targets = value["targets"].as_array().unwrap();
     assert_eq!(targets.len(), 2);
@@ -418,5 +421,18 @@ fn explicit_multi_target_query_preserves_equal_ids_and_partial_failures() {
     assert_eq!(first.connections.load(Ordering::SeqCst), 1);
     assert_eq!(second.connections.load(Ordering::SeqCst), 2);
     assert_eq!(std::fs::read_to_string(&path).unwrap(), broken);
+
+    let unused = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = unused.local_addr().unwrap();
+    drop(unused);
+    let offline = original.replace(&format!("ws://{}", first.address), &format!("ws://{address}"));
+    std::fs::write(&path, &offline).unwrap();
+    let value = report(&home, &args, 3);
+    let targets = value["targets"].as_array().unwrap();
+    assert_eq!(targets[0]["source"]["connected"], false);
+    assert_eq!(targets[0]["source"]["transport"], "ws");
+    assert!(targets[0]["source"]["error"].as_str().is_some());
+    assert_eq!(targets[1]["threads"][0]["title"], "Second");
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), offline);
     assert!(!home.path().join("data").exists());
 }

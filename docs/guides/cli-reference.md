@@ -73,7 +73,7 @@ Cross-target lookup reads configured targets plus the active target, up to eight
 | Forge `scope` | `current-directory` (or `fixture`) |
 | Worktrees `scope` | `shared-local-cache` (or `fixture`) |
 
-The local store still keys aliases, pins and planning metadata by bare thread IDs. Two targets reusing an ID can therefore share that metadata; target selection does not isolate it. `threads` reports the source inventory without those overlays. Invalid target resolution occurs before store loading. Successful local-store reads retain the existing SQLite initialization/WAL behavior; “read-only” describes the lack of upstream mutations, not a promise of zero local filesystem writes. Plain-text output also identifies the source and scope and presents failures explicitly.
+Operator aliases, pins and acknowledgment preferences use the configured target/observed Codex-home scope; legacy unscoped preferences are quarantined. Older planning metadata can still contain bare thread IDs and is not a cross-target authority. `threads` reports the source inventory without those overlays. Invalid target resolution occurs before store loading. Successful local-store reads retain the existing SQLite initialization/WAL behavior; “read-only” describes the lack of upstream mutations, not a promise of zero local filesystem writes. Plain-text output also identifies the source and scope and presents failures explicitly.
 
 ## Development-only release and soak measurements
 <!-- docs-section: diagnostics -->

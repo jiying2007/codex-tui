@@ -72,17 +72,16 @@ impl HeadlessOptions {
         if options.fake && options.target.is_some() {
             return Err("--target cannot be combined with fixture input".into());
         }
-        if options.all_targets || options.query.is_some() {
-            if command != "threads"
+        if (options.all_targets || options.query.is_some())
+            && (command != "threads"
                 || !options.all_targets
                 || options.query.is_none()
                 || options.fake
-                || options.target.is_some()
-            {
-                return Err(
-                    "use threads --all-targets --query TEXT without --target or fixtures".into(),
-                );
-            }
+                || options.target.is_some())
+        {
+            return Err(
+                "use threads --all-targets --query TEXT without --target or fixtures".into(),
+            );
         }
         Ok(options)
     }
