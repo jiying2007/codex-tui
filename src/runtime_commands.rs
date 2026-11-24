@@ -30,7 +30,6 @@ pub(crate) fn action_for_command(app: &AppState, command: Command) -> Option<Act
         Command::Search => Action::BeginSearch,
         Command::TargetLookup => Action::TargetLookup(codex_tui::app::TargetLookupAction::Open),
         Command::TranscriptSearch => Action::BeginTranscriptSearch,
-        Command::ThreadQueue => Action::OpenThreadQueue,
         Command::ToggleHostLocalFilter => Action::ToggleHostLocalFilter,
         Command::ToggleRepoBackedFilter => Action::ToggleRepoBackedFilter,
         Command::ToggleAllHistory => Action::ToggleAllHistory,

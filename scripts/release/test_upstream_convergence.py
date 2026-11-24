@@ -60,9 +60,12 @@ class UpstreamConvergenceGuardTests(unittest.TestCase):
 
     def test_untracked_duplicate_subsystem_file_fails(self):
         path = self.root / "src/app/queue_extra.rs"
+        path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("// bypass attempt\n", encoding="utf-8")
+        self.ratchet["moduleRatchet"]["src/app/queue_extra.rs"] = 1
         result = self.check()
         self.assertNotEqual(result.returncode, 0)
+        self.assertIn("thread-queue-ui", result.stderr)
         self.assertIn("untracked", result.stderr)
 
     def test_untracked_managed_worktree_adapter_fails(self):
@@ -99,8 +102,6 @@ class UpstreamConvergenceGuardTests(unittest.TestCase):
     def test_dropping_prefix_and_owned_modules_does_not_escape_guard(self):
         policy = self.manifest["maintenanceOnlyCapabilities"]["thread-queue-ui"]
         policy["modulePrefixes"].remove("src/app/queue")
-        policy["modules"].remove("src/app/queue_editor.rs")
-        policy["modules"].remove("src/app/queue_confirmation.rs")
         result = self.check()
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("source prefixes drifted", result.stderr)

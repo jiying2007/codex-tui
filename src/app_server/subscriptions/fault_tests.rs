@@ -132,7 +132,6 @@ async fn subscription_ack_deadline_fixture() {
     assert!(ack_deadline > Instant::now());
     let watches = WatchSet::default();
     watches.admit("one", || Ok(())).unwrap();
-    let queue = WatchSet::default();
     let mut status = BackendStatus::starting("subscription-timeout");
     status.connected = true;
     let (snapshots, mut snapshot_rx) = watch::channel(BackendSnapshot {
@@ -157,7 +156,7 @@ async fn subscription_ack_deadline_fixture() {
         snapshots,
         events,
         command_rx,
-        (None, target, watches.clone(), queue.clone()),
+        (None, target, watches.clone()),
     ));
     let mut failures = 0;
     wait_with_clock_paused("accepted prompt and registry reply", || {
@@ -184,7 +183,6 @@ async fn subscription_ack_deadline_fixture() {
     wait_with_clock_paused("subscription deadline quarantine", || actor.is_finished()).await;
     actor.await.unwrap();
     assert!(watches.snapshot().is_empty());
-    assert!(queue.snapshot().is_empty());
     assert!(
         watches
             .admit("new", || panic!("closed actor admission"))

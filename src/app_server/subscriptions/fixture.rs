@@ -81,7 +81,7 @@ impl Peer {
                             }
                             let scoped = value.get("id").is_some() || matches!(
                                 value.get("method").and_then(Value::as_str),
-                                Some("item/completed" | "turn/started" | "turn/completed" | "thread/queue/changed" | "serverRequest/resolved")
+                                Some("item/completed" | "turn/started" | "turn/completed" | "serverRequest/resolved")
                             );
                             let delivered = !scoped || value.pointer("/params/threadId").and_then(Value::as_str)
                                 .is_some_and(|id| subscriptions.lock().unwrap().contains(id));
@@ -118,7 +118,6 @@ impl Peer {
                             "thread/read" => json!({"thread":thread(id)}),
                             "thread/turns/list" => json!({"data":[{"id":"turn-1","status":"completed"}],"nextCursor":null}),
                             "thread/items/list" => json!({"data":[{"turnId":"turn-1","item":{"id":"item-1","type":"agentMessage","text":"subscribed history"}}],"nextCursor":null}),
-                            "thread/queue/list" => json!({"data":[],"nextCursor":null}),
                             "thread/goal/get" => json!({"goal":null}),
                             "turn/start" => {
                                 assert!(subscriptions.lock().unwrap().contains(id), "turn/start does not grant event delivery");

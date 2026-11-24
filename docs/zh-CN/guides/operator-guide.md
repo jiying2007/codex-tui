@@ -23,7 +23,7 @@ codex-tui
 
 默认连接本机的 `codex app-server --listen stdio://`。命名目标由本地 TOML 配置，单次可使用 `codex-tui --target NAME`。非回环地址的明文 `ws://` 即使未配置令牌也拒绝连接；远程使用 `wss://` 或 SSH 隧道映射到回环地址。`localhost`、IPv4/IPv6 回环仍可用于本地开发。真实后端失败不会悄悄切到假数据，`--fake` 只用于测试。命名 App Server 的细节见 [英文设计](../../implementation/v1.3-remote-app-server-targets.md)。
 
-**首次连接失败：**排除临时后端问题后，在空的 Mission Control 中按无修饰的单次 `F5`；编辑框、帮助、确认框或聚焦的 Terminal Drawer 会保留按键所有权。只重试原先解析的同一目标，同时最多一个连接尝试，没有自动重试定时器；草稿与本地操作状态保留。一旦连接成功安装，即使后来断开，F5 也不重连已建立过的会话，不重放消息、审批、队列修改或 Forge 写入。该入口不重新加载目标配置；配置本身无效时需修正后显式重启。
+**首次连接失败：**排除临时后端问题后，在空的 Mission Control 中按无修饰的单次 `F5`；编辑框、帮助、确认框或聚焦的 Terminal Drawer 会保留按键所有权。只重试原先解析的同一目标，同时最多一个连接尝试，没有自动重试定时器；草稿与本地操作状态保留。一旦连接成功安装，即使后来断开，F5 也不重连已建立过的会话，不重放消息、审批或 Forge 写入。该入口不重新加载目标配置；配置本身无效时需修正后显式重启。
 
 `doctor` 命令会对外部路径、分支、主机名、诊断字段和错误信息进行终端输出端净化；ANSI 控制符与 Unicode 双向覆盖符显示为可见替换字符，原始 Codex/Git/Forge 数据不变。
 
@@ -59,6 +59,8 @@ Registry 提醒也包含已经观测到的 Goal 阻塞、用量或预算限制�
 `j/k` 选中、Enter 打开、`/` 筛选、`Ctrl+K` 命令面板、`?` 查看实时键位。`b` 打开 Board，`Tab` 切换 Saved View，包括按工作区分组的 Needs You / Needs Review 列表。List/Review Queue 将同一工作区连续排列，组内按所选顺序排序；Board 列仍按工作流阶段排列。Board 内用 `h/l` 切换列、`j/k` 选择卡片；Mission Control 的 `r` 进入所选会话的 Review，`w` 进入 Workspace。这些入口直达既有交付上下文；Board/Attention 始终是派生视图。
 
 Headless 的 `threads`、`work`、`status`、`attention`、`board` 使用配置中的活动 Codex 目标或 `--target NAME`，默认只获取一个目标，除非显式执行 `threads --all-targets --query TEXT`。任务中心的 `Ctrl+K` → **搜索全部目标** 使用同一有界只读元数据查询，已获取结果会逐步以 Partial 状态显示。来源字段标明目标与传输，规划视图明确标记本地存储跨目标共享。操作员别名、置顶和确认偏好按配置目标及观测的 Codex Home 隔离，旧无作用域偏好已隔离；旧规划元数据仍可能含裸会话 ID，不是跨目标权威。Forge 读取当前目录，Worktrees 读取共享本地缓存。详见 [CLI 范围与失败语义](cli-reference.md#只读无头命令)。
+
+队列项交由原生 Codex CLI 管理。Lite 候选不再打开或编辑独立会话队列，也不查询其清单；原生会话历史订阅与待处理交互请求仍独立保留。
 
 任务中心与原生会话提醒直接使用当前 Codex Goal、Git 和 Forge 观测，不再等待看板卡片投影。迁移期间只读索引原有稍后提醒及完成确认偏好；这些偏好不授予写入权限，也不会在任务中心隐藏待处理审批。
 

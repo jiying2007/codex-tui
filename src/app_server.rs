@@ -13,10 +13,6 @@ use crate::goal::{
     GoalObservation, GoalStatus, parse_goal_cleared_thread, parse_goal_get, parse_goal_set,
     parse_goal_updated,
 };
-use crate::thread_queue::{
-    THREAD_QUEUE_MAX_PAGES, THREAD_QUEUE_PAGE_LIMIT, ThreadQueueMutation, ThreadQueueSnapshot,
-    parse_queue_list, text_input,
-};
 use crate::transcript_search::{
     TRANSCRIPT_SEARCH_OCCURRENCE_LIMIT, TRANSCRIPT_SEARCH_RESULT_LIMIT,
     TRANSCRIPT_SEARCH_THREAD_LIMIT, TranscriptSearchResults, TranscriptSearchSource,
@@ -38,15 +34,12 @@ mod lifecycle;
 mod observed_scope;
 mod pagination;
 use observed_scope::ObservedScope;
-mod queue_mutation;
 mod registry_sources;
 mod resume_guard;
 use registry_sources::{
     RegistrySourceScope, apply_registry_source_coverage, load_registry_page,
     load_registry_with_deadline, load_registry_with_page_limit,
 };
-mod queue_pagination;
-use queue_pagination::{QueueLoadState, load_thread_queue};
 mod resource_budget;
 mod subscriptions;
 use subscriptions::should_queue_rpc_message;
@@ -121,29 +114,6 @@ fn mark_optional_capability(status: &mut BackendStatus, capability: &str, suppor
                 .optional_capabilities_missing
                 .push(capability.to_string());
         }
-    }
-}
-
-fn is_thread_queue_unsupported(error: &anyhow::Error) -> bool {
-    let Some(source) = error.downcast_ref::<RpcResponseError>() else {
-        return false;
-    };
-    source.code == Some(-32601)
-        || (matches!(source.code, Some(-32600 | -32602)) && {
-            let message = source.message.to_ascii_lowercase();
-            message.contains("thread/queue")
-                || message.contains("experimental")
-                || message.contains("unknown method")
-        })
-}
-
-fn thread_queue_mutation_capability(mutation: &ThreadQueueMutation) -> &'static str {
-    match mutation {
-        ThreadQueueMutation::Add { .. } => "thread/queue/add",
-        ThreadQueueMutation::Update { .. } => "thread/queue/update",
-        ThreadQueueMutation::Delete { .. } => "thread/queue/delete",
-        ThreadQueueMutation::Reorder { .. } => "thread/queue/reorder",
-        ThreadQueueMutation::Start { .. } => "thread/queue/start",
     }
 }
 
@@ -266,8 +236,6 @@ pub enum BackendCommand {
     ClearGoal(ThreadId),
     SearchTranscript(String),
     JumpToTranscriptHit(crate::transcript_search::TranscriptSearchHit),
-    RefreshThreadQueue(ThreadId),
-    MutateThreadQueue(ThreadQueueMutation),
     StartThread {
         cwd: String,
     },
@@ -319,15 +287,6 @@ pub enum ConversationEvent {
         query: String,
         error: String,
     },
-    ThreadQueueLoaded(ThreadQueueSnapshot),
-    QueueMutationOutcome {
-        thread_id: ThreadId,
-        committed: bool,
-    },
-    ThreadQueueFailed {
-        thread_id: ThreadId,
-        error: String,
-    },
     ThreadCreated {
         thread_id: ThreadId,
         operation: String,
@@ -351,7 +310,6 @@ pub struct RegistryHandle {
     // eligible to open before their registry page is hydrated. Never persisted.
     search_threads: Mutex<BTreeSet<String>>,
     history_watches: WatchSet,
-    queue_watches: WatchSet,
     task: JoinHandle<()>,
 }
 
@@ -442,19 +400,6 @@ impl RegistryHandle {
         self.send_command(BackendCommand::JumpToTranscriptHit(hit))
     }
 
-    pub(crate) fn refresh_thread_queue(&self, thread_id: ThreadId) -> Result<()> {
-        self.send_command(BackendCommand::RefreshThreadQueue(thread_id))
-    }
-
-    pub fn stop_watching_thread_queue(&self, thread_id: ThreadId) -> Result<()> {
-        self.queue_watches.remove(&thread_id.0);
-        Ok(())
-    }
-
-    pub fn mutate_thread_queue(&self, mutation: ThreadQueueMutation) -> Result<()> {
-        self.send_command(BackendCommand::MutateThreadQueue(mutation))
-    }
-
     pub fn start_thread(&self, cwd: String) -> Result<()> {
         self.send_command(BackendCommand::StartThread { cwd })
     }
@@ -475,11 +420,6 @@ impl RegistryHandle {
             BackendCommand::JumpToTranscriptHit(hit) => {
                 Some((&self.history_watches, hit.thread_id.0.clone()))
             }
-            BackendCommand::RefreshThreadQueue(id) => Some((&self.queue_watches, id.0.clone())),
-            BackendCommand::MutateThreadQueue(mutation) => Some((
-                &self.queue_watches,
-                thread_queue_mutation_thread_id(mutation).0.clone(),
-            )),
             _ => None,
         };
         if let Some((watches, id)) = watch {
@@ -610,7 +550,6 @@ pub async fn start_target(target: ResolvedAppServerTarget) -> Result<StartedRegi
     let (conversation_tx, conversation_rx) = mpsc::channel(APP_SERVER_CONVERSATION_QUEUE_CAPACITY);
     let (command_tx, command_rx) = mpsc::channel(APP_SERVER_COMMAND_QUEUE_CAPACITY);
     let history_watches = WatchSet::default();
-    let queue_watches = WatchSet::default();
     let task = tokio::spawn(run_registry_actor(
         rpc,
         threads,
@@ -618,12 +557,7 @@ pub async fn start_target(target: ResolvedAppServerTarget) -> Result<StartedRegi
         tx,
         conversation_tx,
         command_rx,
-        (
-            hydration,
-            target,
-            history_watches.clone(),
-            queue_watches.clone(),
-        ),
+        (hydration, target, history_watches.clone()),
     ));
 
     let observed_scope = ObservedScope::capture(&initial.status);
@@ -636,7 +570,6 @@ pub async fn start_target(target: ResolvedAppServerTarget) -> Result<StartedRegi
             command_tx,
             search_threads: Mutex::new(BTreeSet::new()),
             history_watches,
-            queue_watches,
             task,
         },
     })
@@ -974,17 +907,11 @@ async fn run_registry_actor(
     tx: watch::Sender<BackendSnapshot>,
     conversation_tx: mpsc::Sender<ConversationEvent>,
     mut command_rx: mpsc::Receiver<BackendCommand>,
-    setup: (
-        Option<RegistryHydration>,
-        ResolvedAppServerTarget,
-        WatchSet,
-        WatchSet,
-    ),
+    setup: (Option<RegistryHydration>, ResolvedAppServerTarget, WatchSet),
 ) {
-    let (mut hydration, target, watched_threads, watched_queue_threads) = setup;
-    let _watch_guard = WatchSetGuard::new(watched_threads.clone(), watched_queue_threads.clone());
+    let (mut hydration, target, watched_threads) = setup;
+    let _watch_guard = WatchSetGuard::new(watched_threads.clone());
     let mut history_changes = watched_threads.changes();
-    let mut queue_changes = watched_queue_threads.changes();
     let mut generation = 0_u64;
     let mut threads = by_id(initial_threads);
     let mut pending_requests: BTreeMap<RpcRequestId, PendingServerRequest> = BTreeMap::new();
@@ -1017,87 +944,12 @@ async fn run_registry_actor(
     goal_probe.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     goal_probe.tick().await;
 
-    // Only one foreground Queue is read at a time; its complete snapshot is
-    // installed atomically. Pending input/interrupt commands preempt each page.
-    let mut queue_load: Option<QueueLoadState> = None;
-    let mut deferred_command: Option<BackendCommand> = None;
-
     loop {
-        if queue_load.is_some() && !rpc.has_queued_messages() && deferred_command.is_none() {
-            let state = queue_load.as_mut().expect("queue read exists");
-            let mut incoming = None;
-            let mut page = None;
-            tokio::select! {
-                biased;
-                command = command_rx.recv() => incoming = Some(command),
-                _ = history_changes.changed() => {}
-                _ = queue_changes.changed() => {}
-                result = async {
-                    tokio::time::sleep(Duration::from_millis(10)).await;
-                    state.next_page(&mut rpc).await
-                } => page = Some(result),
-            }
-            if let Some(command) = incoming {
-                let Some(command) = command else { return };
-                deferred_command = Some(command);
-            }
-            if let Some(result) = page {
-                let state = queue_load.as_ref().expect("queue read exists");
-                let thread_id = state.thread_id.clone();
-                let mutation_readback = state.mutation_readback;
-                match result {
-                    Ok(None) => {}
-                    Ok(Some(snapshot)) => {
-                        queue_load = None;
-                        mark_optional_capability(&mut status, "thread/queue/list", true);
-                        send_conversation_event(
-                            &conversation_tx,
-                            ConversationEvent::ThreadQueueLoaded(snapshot),
-                        )
-                        .await;
-                        if mutation_readback {
-                            send_conversation_event(
-                                &conversation_tx,
-                                ConversationEvent::QueueMutationOutcome {
-                                    thread_id,
-                                    committed: true,
-                                },
-                            )
-                            .await;
-                        }
-                    }
-                    Err(error) => {
-                        queue_load = None;
-                        if is_thread_queue_unsupported(&error) {
-                            mark_optional_capability(&mut status, "thread/queue/list", false);
-                        }
-                        send_conversation_event(
-                            &conversation_tx,
-                            ConversationEvent::ThreadQueueFailed {
-                                thread_id,
-                                error: error.to_string(),
-                            },
-                        )
-                        .await;
-                        // Even if the write was accepted, readback failed; draft stays
-                        // pending and will not be replayed without reconciliation.
-                    }
-                }
-            }
-            if queue_load
-                .as_ref()
-                .is_some_and(|state| !watched_queue_threads.contains(&state.thread_id.0))
-            {
-                queue_load = None;
-            }
-            continue;
-        }
         // An awaited RPC can yield on a pending interactive server request.
         // Drain that semantic backlog *before* serving newly queued commands,
         // otherwise the actor can immediately enter another 5-second RPC.
         let semantic_backlog = rpc.has_queued_messages();
-        let desired_subscriptions =
-            subscriptions::desired(&watched_threads, &watched_queue_threads, &pending_requests);
+        let desired_subscriptions = subscriptions::desired(&watched_threads, &pending_requests);
         let subscription_action = (!semantic_backlog)
             .then(|| rpc.subscriptions.next_action(&desired_subscriptions))
             .flatten()
@@ -1109,7 +961,6 @@ async fn run_registry_actor(
         tokio::select! {
             biased;
             _ = history_changes.changed() => {}
-            _ = queue_changes.changed() => {}
             _ = tokio::time::sleep_until(subscription_deadline.unwrap_or_else(|| tokio::time::Instant::now() + REFRESH_INTERVAL)), if subscription_deadline.is_some() && !semantic_backlog => {
                 self_quarantine(&mut rpc, &anyhow!("App Server subscription acknowledgement timed out; connection stopped without replaying the request"));
             }
@@ -1117,7 +968,7 @@ async fn run_registry_actor(
                 let (thread_id, subscribe) = subscription_action.expect("checked subscription work");
                 match rpc.change_subscription(&thread_id, subscribe).await {
                     Ok(()) if subscribe => {
-                        subscriptions::refresh_owned(&mut rpc, thread_id, &watched_threads, &watched_queue_threads, &conversation_tx).await;
+                        subscriptions::refresh_owned(&mut rpc, thread_id, &watched_threads, &conversation_tx).await;
                     }
                     Ok(()) => {}
                     Err(error) => {
@@ -1127,13 +978,7 @@ async fn run_registry_actor(
                     }
                 }
             }
-            command = async {
-                if let Some(command) = deferred_command.take() {
-                    Some(command)
-                } else {
-                    command_rx.recv().await
-                }
-            }, if !semantic_backlog => {
+            command = command_rx.recv(), if !semantic_backlog => {
                 let Some(command) = command else {
                     return;
                 };
@@ -1410,28 +1255,6 @@ async fn run_registry_actor(
                                 )
                                 .await;
                             }
-                        }
-                    }
-                    BackendCommand::RefreshThreadQueue(thread_id) => {
-                        if !watched_queue_threads.contains(&thread_id.0) { continue; }
-                        match rpc.ensure_subscribed(&thread_id).await {
-                            Ok(()) => {
-                                // Never replace an in-flight write readback with an
-                                // unrelated refresh that could clear the editor.
-                                if !queue_load.as_ref().is_some_and(|state| state.mutation_readback) {
-                                    queue_load = Some(QueueLoadState::new(thread_id, false));
-                                }
-                            }
-                            Err(error) => {
-                                send_conversation_event(&conversation_tx, ConversationEvent::ThreadQueueFailed {
-                                    thread_id, error: error.to_string()
-                                }).await;
-                            }
-                        }
-                    }
-                    BackendCommand::MutateThreadQueue(mutation) => {
-                        if let Some(id) = queue_mutation::dispatch(&mut rpc, &mut status, &conversation_tx, mutation).await {
-                            queue_load = Some(QueueLoadState::new(id, true));
                         }
                     }
                     BackendCommand::StartThread { cwd } => {
@@ -1731,30 +1554,12 @@ async fn run_registry_actor(
                             observe_registry_hydration_message(&mut reconcile.hydration, &message);
                             observe_registry_reconcile_message(reconcile, &message);
                         }
-                        // Queue change notifications schedule a cancellable read.
-                        // Never synchronously paginate here: a slow backend must
-                        // not block pending stop/approval commands.
-                        if message.get("id").is_none()
-                            && message.get("method").and_then(Value::as_str) == Some("thread/queue/changed")
-                        {
-                            if let Some(id) = message.pointer("/params/threadId").and_then(Value::as_str) {
-                                if watched_queue_threads.contains(id)
-                                    && !queue_load.as_ref().is_some_and(|state| state.mutation_readback)
-                                {
-                                    queue_load = Some(QueueLoadState::new(ThreadId::new(id), false));
-                                }
-                            } else {
-                                status.error = Some("thread/queue/changed missing threadId".into());
-                            }
-                            continue;
-                        }
                         let registry_changed = match handle_unsolicited(
                             &mut rpc,
                             message,
                             &mut threads,
                             &mut pending_requests,
                             &watched_threads,
-                            &watched_queue_threads,
                             &conversation_tx,
                         )
                         .await
@@ -2127,99 +1932,6 @@ async fn load_conversation(rpc: &mut RpcSession, thread_id: ThreadId) -> Result<
     ))
 }
 
-fn thread_queue_mutation_thread_id(mutation: &ThreadQueueMutation) -> &ThreadId {
-    match mutation {
-        ThreadQueueMutation::Add { thread_id, .. }
-        | ThreadQueueMutation::Update { thread_id, .. }
-        | ThreadQueueMutation::Delete { thread_id, .. }
-        | ThreadQueueMutation::Reorder { thread_id, .. }
-        | ThreadQueueMutation::Start { thread_id, .. } => thread_id,
-    }
-}
-
-async fn execute_thread_queue_mutation(
-    rpc: &mut RpcSession,
-    mutation: &ThreadQueueMutation,
-) -> Result<()> {
-    match mutation {
-        ThreadQueueMutation::Add {
-            thread_id,
-            text,
-            client_user_message_id,
-        } => {
-            rpc.request(
-                "thread/queue/add",
-                json!({
-                    "threadId": thread_id.0,
-                    "input": [text_input(text)],
-                    "clientUserMessageId": client_user_message_id
-                }),
-            )
-            .await
-            .context("add thread queue submission")?;
-        }
-        ThreadQueueMutation::Update {
-            thread_id,
-            queued_submission_id,
-            text,
-        } => {
-            rpc.request(
-                "thread/queue/update",
-                json!({
-                    "threadId": thread_id.0,
-                    "queuedSubmissionId": queued_submission_id,
-                    "input": [text_input(text)]
-                }),
-            )
-            .await
-            .context("update thread queue submission")?;
-        }
-        ThreadQueueMutation::Delete {
-            thread_id,
-            queued_submission_id,
-        } => {
-            rpc.request(
-                "thread/queue/delete",
-                json!({
-                    "threadId": thread_id.0,
-                    "queuedSubmissionId": queued_submission_id
-                }),
-            )
-            .await
-            .context("delete thread queue submission")?;
-        }
-        ThreadQueueMutation::Reorder {
-            thread_id,
-            queued_submission_ids,
-        } => {
-            rpc.request(
-                "thread/queue/reorder",
-                json!({
-                    "threadId": thread_id.0,
-                    "queuedSubmissionIds": queued_submission_ids
-                }),
-            )
-            .await
-            .context("reorder thread queue")?;
-        }
-        ThreadQueueMutation::Start {
-            thread_id,
-            queued_submission_id,
-        } => {
-            rpc.request(
-                "thread/queue/start",
-                json!({
-                    "threadId": thread_id.0,
-                    "queuedSubmissionId": queued_submission_id
-                }),
-            )
-            .await
-            .context("start queued submission")?;
-        }
-    }
-    Ok(())
-}
-
 fn transcript_results_complete(
     thread_cursor: Option<&str>,
     occurrence_partial: bool,
@@ -2376,7 +2088,6 @@ async fn handle_unsolicited(
     threads: &mut BTreeMap<String, ThreadSummary>,
     pending_requests: &mut BTreeMap<RpcRequestId, PendingServerRequest>,
     watched_threads: &WatchSet,
-    watched_queue_threads: &WatchSet,
     conversation_tx: &mpsc::Sender<ConversationEvent>,
 ) -> Result<bool> {
     if let Some(result) = rpc.subscription_response(&message) {
@@ -2385,7 +2096,6 @@ async fn handle_unsolicited(
                 rpc,
                 thread_id,
                 watched_threads,
-                watched_queue_threads,
                 conversation_tx,
             )
             .await;
@@ -2472,42 +2182,11 @@ async fn handle_unsolicited(
         return Ok(false);
     }
 
-    if method == "thread/queue/changed" {
-        let thread_id = params
-            .get("threadId")
-            .and_then(Value::as_str)
-            .context("thread/queue/changed missing threadId")?;
-        if watched_queue_threads.contains(thread_id) {
-            let id = ThreadId::new(thread_id);
-            match load_thread_queue(rpc, id.clone()).await {
-                Ok(snapshot) => {
-                    send_conversation_event(
-                        conversation_tx,
-                        ConversationEvent::ThreadQueueLoaded(snapshot),
-                    )
-                    .await;
-                }
-                Err(error) => {
-                    send_conversation_event(
-                        conversation_tx,
-                        ConversationEvent::ThreadQueueFailed {
-                            thread_id: id,
-                            error: error.to_string(),
-                        },
-                    )
-                    .await;
-                }
-            }
-        }
-        return Ok(false);
-    }
-
     subscriptions::retire_removed_owners(
         method,
         params,
         pending_requests,
         watched_threads,
-        watched_queue_threads,
         conversation_tx,
     )
     .await;
@@ -2698,11 +2377,6 @@ impl RpcSession {
 
 #[cfg(test)]
 mod tests;
-
-#[cfg(test)]
-mod queue_priority_tests;
-#[cfg(test)]
-mod queue_wire_tests;
 
 #[cfg(test)]
 mod audit_wire_tests;

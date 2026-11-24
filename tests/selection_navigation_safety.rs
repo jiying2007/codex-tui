@@ -116,15 +116,12 @@ fn frozen_context_actions_wrap_without_executing_any_choice() {
 #[test]
 fn empty_optional_lists_reset_invalid_cursors_without_effects() {
     let mut app = fixture();
-    app.thread_queue_selected = usize::MAX;
     app.managed_selected = usize::MAX;
     app.transcript_search_selected = usize::MAX;
 
-    navigate(&mut app, Action::MoveThreadQueue(i32::MIN));
     navigate(&mut app, Action::MoveManagedWorktree(i32::MAX));
     navigate(&mut app, Action::MoveTranscriptSearch(1));
 
-    assert_eq!(app.thread_queue_selected, 0);
     assert_eq!(app.managed_selected, 0);
     assert_eq!(app.transcript_search_selected, 0);
 }

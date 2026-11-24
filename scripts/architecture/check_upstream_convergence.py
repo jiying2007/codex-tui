@@ -57,13 +57,18 @@ REQUIRED_PREFIXES = {
         "src/app/reading_snapshot",
         "src/app/request_details",
     ],
-    "thread-queue-ui": ["src/thread_queue", "src/app/queue"],
+    "thread-queue-ui": [
+        "src/thread_queue",
+        "src/app/queue",
+        "src/app/thread_queue",
+        "src/app_server/queue",
+    ],
     "embedded-terminal": ["src/terminal", "src/ui/terminal", "src/pty"],
     "managed-worktree-operations": ["src/worktree", "src/operation", "src/runtime_commands"],
 }
 REQUIRED_CAPABILITY_POLICIES = {
     "conversation-client": "bugfix-compatibility-security-only",
-    "thread-queue-ui": "upstream-projection-only",
+    "thread-queue-ui": "retired-upstream-only",
     "embedded-terminal": "bugfix-compatibility-security-only",
     "managed-worktree-operations": "upstream-projection-and-git-safety-only",
 }
@@ -221,7 +226,8 @@ def main() -> int:
             failures.append(f"{capability}: maintenance-only policy drifted")
         if (
             not isinstance(modules, list)
-            or not modules
+            or (not modules and capability != "thread-queue-ui")
+            or (modules and capability == "thread-queue-ui")
             or any(not isinstance(name, str) or not name for name in modules)
             or len(modules) != len(set(modules))
         ):

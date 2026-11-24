@@ -49,7 +49,7 @@ Authority remains external:
 ## Maintenance-only local surfaces
 <!-- docs-section: maintenance -->
 
-Existing local conversation-client, Thread Queue UI and embedded Terminal Drawer code is
+Existing local conversation-client and embedded Terminal Drawer code is
 retained for compatibility and current users, but is maintenance-only.
 
 Those surfaces may receive defect, security and compatibility fixes. Feature expansion is
@@ -72,7 +72,7 @@ remains authoritative for repository/worktree identity.
 
 The machine guard is `scripts/architecture/check_upstream_convergence.py` and runs in
 canonical CI, development qualification, and the release gate. Explicit guarded prefixes
-include local conversation/editor modules, upstream Queue adapter/UI, the PTY engine and
+include local conversation/editor modules, the PTY engine and
 embedded terminal UI; a prefix cannot silently disappear alongside its tracked modules.
 The convergence guard reuses `check_module_ratchet.inspect_plan` instead of maintaining
  duplicate LOC ceilings. Negative-fixture tests reject untracked files, growth against
@@ -104,6 +104,6 @@ ADR-009 remains valid; this ADR operationalizes it with a machine-enforced conve
 contract.
 
 
-As of 2026-11-23, the pinned upstream snapshot is **Codex CLI 0.171.0 / `rust-v0.171.0`** (release commit `ccf9be8cc458bd6b8336fe84d68d8893f2691a5e`). The native TUI Workspace is now the default and includes document/image previews and subagent transcripts; `codex agents` and `codex queue` are Stable. These changes further reinforce the maintenance-only boundary for the local conversation client, Queue UI and embedded terminal.
+As of 2026-11-23, the pinned upstream snapshot is **Codex CLI 0.171.0 / `rust-v0.171.0`** (release commit `ccf9be8cc458bd6b8336fe84d68d8893f2691a5e`). The native TUI Workspace is now the default and includes document/image previews and subagent transcripts; `codex agents` and `codex queue` are Stable. These changes further reinforce the maintenance-only boundary for the local conversation client and embedded terminal. The duplicate Queue UI is retired in the Lite candidate; the existing convergence guard requires its source prefixes to be empty.
 
 The 0.171.0 App Server protocol adds the distinct `attachedToThreadId` relation and explicit attached-thread list filters. It must not be conflated with `parentThreadId` (subagent parent) or `forkedFromId` (fork source). The pinned protocol fixtures exercise all three relations through the production parser and active-Target grouping. Ordinary Mission Control inventory does not opt into attached-thread scans. This remains public schema/source review plus synthetic replay; App Server is Experimental and no authenticated L3 or real-user acceptance is claimed.

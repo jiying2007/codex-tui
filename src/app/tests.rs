@@ -3315,7 +3315,6 @@ fn alert_jump_is_fenced_during_transient_modals_without_consuming_the_event() {
         ("help", |state| state.show_help = true),
         ("command palette", |state| state.command_palette_open = true),
         ("context menu", |state| state.context_open = true),
-        ("queue", |state| state.thread_queue_open = true),
         ("transcript search", |state| {
             state.transcript_search_open = true
         }),

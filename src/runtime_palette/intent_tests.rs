@@ -124,17 +124,6 @@ fn terminal_open_cannot_become_a_focus_existing_drawer_action() {
 }
 
 #[test]
-fn removed_thread_cannot_receive_a_queue_refresh() {
-    let mut app = fixture();
-    app.view = View::Thread(app.threads[0].id.clone());
-    choose(&mut app, Command::ThreadQueue);
-    let threads = app.threads[1..].to_vec();
-    reduce(&mut app, Action::ReplaceThreads(threads));
-    refused(&mut app);
-    assert!(!app.thread_queue_open);
-}
-
-#[test]
 fn closed_palette_cannot_dispatch_a_second_enter() {
     let mut app = fixture();
     choose(&mut app, Command::TogglePin);

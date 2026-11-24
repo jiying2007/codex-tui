@@ -27,7 +27,7 @@ codex-tui 必须维持**本地优先的薄 Mission Control**，其差异化能�
 ## 维护型功能与单一限额
 <!-- docs-section: maintenance -->
 
-现有本地会话编辑器、Thread Queue UI 与 Terminal Drawer 仅作安全/缺陷/互操作维护；新功能优先在官方 Codex 中实现。`release/v1.5-convergence.json` 维护重叠模块的名称、分类和策略（**不**保存第二套数值 LOC 上限）；`release/v1.4-plan.json` 是唯一的全 Rust 模块 LOC Ratchet。CI、Development Qualification 与 Release Gate 都会运行 `scripts/architecture/check_upstream_convergence.py` 并拒绝绕开冻结。
+现有本地会话编辑器与 Terminal Drawer 仅作安全/缺陷/互操作维护；新功能优先在官方 Codex 中实现。`release/v1.5-convergence.json` 维护重叠模块的名称、分类和策略（**不**保存第二套数值 LOC 上限）；`release/v1.4-plan.json` 是唯一的全 Rust 模块 LOC Ratchet。CI、Development Qualification 与 Release Gate 都会运行 `scripts/architecture/check_upstream_convergence.py` 并拒绝绕开冻结。
 
 上游 Worktree 能力另设冻结边界：官方 Codex v0.162.0 已增加受功能开关
 控制的托管 Worktree 创建与列表。原有 `src/worktree*`、`src/operation.rs`
@@ -48,6 +48,6 @@ codex-tui 必须维持**本地优先的薄 Mission Control**，其差异化能�
 Mission Control、Attention、Forge 和诊断可以继续改善；与官方 CLI 重叠的本地能力应保持不增长，必要时在证据充足后退役。Board 始终为投影，不是另一套团队数据库。即使所有机器测试通过，也不能据此宣称真实 Codex/GitLab/SSH 终端已验收。
 
 
-截至 2026-11-23，当前固定的上游快照为 **Codex CLI 0.171.0 / `rust-v0.171.0`**（发布提交 `ccf9be8cc458bd6b8336fe84d68d8893f2691a5e`）。原生 TUI Workspace 已成为默认界面，包含文档/图片预览和子 Agent Transcript；`codex agents` 与 `codex queue` 已为 Stable。这进一步确认本地会话客户端、Queue UI 和内嵌终端应保持维护模式。
+截至 2026-11-23，当前固定的上游快照为 **Codex CLI 0.171.0 / `rust-v0.171.0`**（发布提交 `ccf9be8cc458bd6b8336fe84d68d8893f2691a5e`）。原生 TUI Workspace 已成为默认界面，包含文档/图片预览和子 Agent Transcript；`codex agents` 与 `codex queue` 已为 Stable。这进一步确认本地会话客户端和内嵌终端应保持维护模式。重复 Queue UI 在 Lite 候选中退役，现有收敛检查要求其源码路径为空。
 
 0.171.0 App Server 协议新增独立的 `attachedToThreadId` 关系及附属会话查询参数。它不能与 `parentThreadId`（子 Agent 父会话）或 `forkedFromId`（Fork 来源）混淆。固定协议样例已通过生产解析器和当前 Target 分组逻辑覆盖这三种关系。Mission Control 默认会话清单不主动扫描附属会话。这仍然只是公开协议/源码审查和合成回放；App Server 仍为 Experimental，不代表已完成真实账号 L3 或真实用户验收。

@@ -67,13 +67,6 @@ impl AppState {
             goals: BTreeMap::new(),
             goal_checked: BTreeSet::new(),
             goal_actions_open: false,
-            thread_queue_open: false,
-            thread_queue_snapshot: None,
-            thread_queue_selected: 0,
-            thread_queue_loading: false,
-            thread_queue_error: None,
-            pending_queue_confirmation: None,
-            thread_queue_editor: None,
             managed_worktrees: vec![],
             managed_selected: 0,
             managed_return_view: None,
@@ -160,11 +153,6 @@ impl AppState {
             .map(|results| results.source.label())
             .unwrap_or("pending")
     }
-    pub fn selected_thread_queue_submission(&self) -> Option<&QueuedSubmission> {
-        self.thread_queue_snapshot
-            .as_ref()
-            .and_then(|snapshot| snapshot.submissions.get(self.thread_queue_selected))
-    }
 
     pub(super) fn prepare_conversation(&mut self, thread_id: &ThreadId) {
         self.conversations
@@ -239,12 +227,10 @@ impl AppState {
             && !self.command_palette_open
             && self.target_lookup.is_none()
             && !self.context_open
-            && !self.thread_queue_open
             && !self.transcript_search_open
             && !self.goal_actions_open
             && self.saved_view_editor.is_none()
             && self.pending_operation.is_none()
-            && self.pending_queue_confirmation.is_none()
             && self.pending_local_batch.is_none()
             && self.pending_forge_operation.is_none()
             && self.hot_slot_bind_pending.is_none()

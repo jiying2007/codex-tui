@@ -66,7 +66,6 @@ async fn a_close_after_a_queued_resume_ack_cannot_be_undone_when_the_ack_is_drai
         let history = WatchSet::default();
         history.admit("existing", || Ok(())).unwrap();
         history.admit("one", || Ok(())).unwrap();
-        let queue = WatchSet::default();
         let mut requests = BTreeMap::new();
         let mut threads = BTreeMap::new();
         let (events, mut received) = mpsc::channel(4);
@@ -86,7 +85,6 @@ async fn a_close_after_a_queued_resume_ack_cannot_be_undone_when_the_ack_is_drai
             &mut threads,
             &mut requests,
             &history,
-            &queue,
             &events,
         )
         .await
@@ -94,7 +92,7 @@ async fn a_close_after_a_queued_resume_ack_cannot_be_undone_when_the_ack_is_drai
         assert!(!rpc.subscriptions.confirmed("one"));
         let next = rpc
             .subscriptions
-            .next_action(&desired(&history, &queue, &requests));
+            .next_action(&desired(&history, &requests));
         if matches!(method, "thread/archived" | "thread/deleted") {
             assert!(next.is_none(), "removed owners cannot reacquire");
             assert!(matches!(
@@ -165,7 +163,6 @@ async fn closed_and_buffered_history_events_cannot_retry_a_rejected_subscription
             &mut BTreeMap::new(),
             &mut BTreeMap::new(),
             &history,
-            &WatchSet::default(),
             &events,
         )
         .await

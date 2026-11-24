@@ -64,15 +64,6 @@ impl RegistryHandle {
         self.load_older_conversation(thread_id, turn_cursor, item_cursor)
     }
 
-    pub fn refresh_thread_queue_checked(
-        &self,
-        observed: &BackendStatus,
-        thread_id: ThreadId,
-    ) -> Result<()> {
-        self.verify_observed_thread(observed, &thread_id)?;
-        self.refresh_thread_queue(thread_id)
-    }
-
     pub fn jump_to_transcript_hit_checked(
         &self,
         observed: &BackendStatus,

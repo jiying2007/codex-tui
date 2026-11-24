@@ -29,11 +29,6 @@ async fn loaded_threads_need_this_connections_resume_and_release_only_after_last
     })
     .await;
     assert_eq!(peer.subscriptions(), BTreeSet::from(["one".into()]));
-    started.handle.refresh_thread_queue(id.clone()).unwrap();
-    event(&mut started.handle, |e| {
-        matches!(e, ConversationEvent::ThreadQueueLoaded(_))
-    })
-    .await;
     let observed = &started.initial.status;
     started
         .handle
@@ -66,16 +61,6 @@ async fn loaded_threads_need_this_connections_resume_and_release_only_after_last
     started
         .handle
         .stop_watching_conversation(id.clone())
-        .unwrap();
-    barrier(&mut started.handle).await;
-    assert_eq!(
-        peer.count("thread/unsubscribe"),
-        0,
-        "queue still owns events"
-    );
-    started
-        .handle
-        .stop_watching_thread_queue(id.clone())
         .unwrap();
     barrier(&mut started.handle).await;
     assert_eq!(
@@ -388,7 +373,6 @@ async fn older_queued_not_loaded_event_cannot_invalidate_a_newer_resume_ack() {
         &mut BTreeMap::new(),
         &mut BTreeMap::new(),
         &WatchSet::default(),
-        &WatchSet::default(),
         &tx,
     )
     .await
@@ -407,7 +391,6 @@ async fn authoritative_removal_retires_approval_ownership_without_resuming_delet
         rpc.ensure_subscribed(&ThreadId::new("one")).await.unwrap();
         let history = WatchSet::default();
         history.admit("one", || Ok(())).unwrap();
-        let queue = WatchSet::default();
         let mut requests = BTreeMap::new();
         let mut threads = BTreeMap::new();
         let (tx, mut events) = mpsc::channel(8);
@@ -419,7 +402,6 @@ async fn authoritative_removal_retires_approval_ownership_without_resuming_delet
             &mut threads,
             &mut requests,
             &history,
-            &queue,
             &tx,
         )
         .await
@@ -441,7 +423,6 @@ async fn authoritative_removal_retires_approval_ownership_without_resuming_delet
             &mut threads,
             &mut requests,
             &history,
-            &queue,
             &tx,
         )
         .await
@@ -450,7 +431,7 @@ async fn authoritative_removal_retires_approval_ownership_without_resuming_delet
             requests.is_empty(),
             "a retired approval is no longer an owner"
         );
-        assert!(desired(&history, &queue, &requests).is_empty());
+        assert!(desired(&history, &requests).is_empty());
         assert!(rpc.subscriptions.next_action(&BTreeSet::new()).is_none());
         let mut resolved = false;
         while let Ok(event) = events.try_recv() {
