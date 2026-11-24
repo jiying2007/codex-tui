@@ -127,7 +127,6 @@ impl AppState {
             composer_scroll_back: 0,
             input_original: String::new(),
             alias_target: None,
-            mutation_editor: None,
             search_return_view: None,
         }
     }
@@ -674,6 +673,20 @@ impl AppState {
             .iter()
             .map(|request| request.thread_id.0.clone())
             .collect();
+    }
+
+    pub(super) fn local_target_live(&self, target: &SourceRef) -> bool {
+        match target.kind {
+            SourceKind::CodexThread => self
+                .thread_by_id(&ThreadId::new(target.value.clone()))
+                .is_some(),
+            SourceKind::ScratchWork => self
+                .planning_snapshot
+                .scratch
+                .iter()
+                .any(|item| item.id == target.value),
+            _ => self.work_cards.iter().any(|card| card.anchor == *target),
+        }
     }
 
     pub fn current_pending_request(&self) -> Option<&InteractiveRequest> {

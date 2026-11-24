@@ -44,7 +44,6 @@ mod help_scroll;
 mod history_cache;
 mod lifecycle;
 mod local_edit;
-mod mutation_editor;
 mod operator_scope;
 pub(crate) mod palette;
 mod palette_intent;
@@ -215,7 +214,6 @@ pub struct AppState {
     pub composer_scroll_back: usize,
     input_original: String,
     alias_target: Option<ThreadId>,
-    mutation_editor: Option<mutation_editor::MutationEditor>,
     search_return_view: Option<View>,
 }
 fn parse_snooze_duration(value: &str) -> Option<u64> {

@@ -1457,9 +1457,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 return vec![];
             }
             let mode = state.input_mode;
-            if !state.guard_mutation_editor(mode) {
-                return vec![];
-            }
             if mode == InputMode::WorkrefLink {
                 return state.commit_workref_link().into_iter().collect();
             }
@@ -1646,7 +1643,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
         }
         Action::CancelInput => {
-            state.mutation_editor = None;
             state.alias_target = None;
             let mut search_watch_to_release = None;
             if state.input_mode == InputMode::WorkrefLink {
