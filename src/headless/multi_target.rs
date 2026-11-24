@@ -132,7 +132,11 @@ fn empty_report() -> SearchReport {
     }
 }
 
-async fn collect_report(config: &AppServerConfig, query: &str) -> SearchReport {
+async fn collect_report(
+    config: &AppServerConfig,
+    query: &str,
+    mut progress: impl FnMut(&SearchReport, usize),
+) -> SearchReport {
     let mut report = empty_report();
     if let Err(error) = validate_options("threads", &["--all-targets", "--query", query]) {
         report.error = Some(error);
@@ -142,19 +146,20 @@ async fn collect_report(config: &AppServerConfig, query: &str) -> SearchReport {
     let query = query.trim().to_lowercase();
     match target_names(config) {
         Ok(names) => {
+            let total = names.len();
+            progress(&report, total);
             for name in names {
-                report
-                    .targets
-                    .push(search_target(config, name, &query).await);
+                let target = search_target(config, name, &query).await;
+                report.degraded |= target.source.degraded || target.truncated;
+                report.targets.push(target);
+                if report.targets.len() < total {
+                    progress(&report, total);
+                }
             }
         }
         Err(error) => report.error = Some(error.to_string()),
     }
-    report.degraded = report.error.is_some()
-        || report
-            .targets
-            .iter()
-            .any(|target| target.source.degraded || target.truncated);
+    report.degraded |= report.error.is_some();
     report
 }
 
@@ -163,20 +168,32 @@ pub async fn target_lookup_pages(
     config: &AppServerConfig,
     query: &str,
     language: crate::i18n::UiLanguage,
+    mut progress: impl FnMut(Vec<String>),
 ) -> Vec<String> {
-    report_pages(&collect_report(config, query).await, language)
+    let report = collect_report(config, query, |report, total| {
+        progress(report_pages(report, language, total));
+    })
+    .await;
+    report_pages(&report, language, report.targets.len())
 }
 
-fn report_pages(report: &SearchReport, language: crate::i18n::UiLanguage) -> Vec<String> {
+fn report_pages(
+    report: &SearchReport,
+    language: crate::i18n::UiLanguage,
+    total: usize,
+) -> Vec<String> {
     use crate::i18n::pick;
-    let status = if report.degraded {
+    let status = if report.targets.len() < total {
+        pick(language, "Partial / query in progress", "部分结果 / 检索进行中")
+    } else if report.degraded {
         pick(language, "Partial / unavailable", "部分结果 / 不可用")
     } else {
         pick(language, "Complete for this scope", "本次范围完整")
     };
     let mut pages = vec![format!(
-        "{status}\nTargets: {}\n{}\n{}",
+        "{status}\nTargets: {}/{}\n{}\n{}",
         report.targets.len(),
+        total,
         pick(
             language,
             "Ordinary non-archived metadata only.",
@@ -235,6 +252,7 @@ pub(super) async fn run(options: &HeadlessOptions) -> Result<i32> {
             collect_report(
                 &config.app_server,
                 options.query.as_deref().unwrap_or_default(),
+                |_, _| {},
             )
             .await
         }
@@ -315,7 +333,7 @@ mod tests {
             report.targets.push(project(threads, source, "shared-id"));
         }
         report.degraded = true;
-        let pages = report_pages(&report, crate::i18n::UiLanguage::English);
+        let pages = report_pages(&report, crate::i18n::UiLanguage::English, 2);
         assert_eq!(pages.len(), 5);
         assert!(pages[0].contains("Partial"));
         for (index, name) in [(2, "first"), (4, "second")] {

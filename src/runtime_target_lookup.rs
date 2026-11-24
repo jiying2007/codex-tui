@@ -6,7 +6,7 @@ use codex_tui::{
     i18n::pick,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use tokio::task::JoinHandle;
+use tokio::{sync::watch, task::JoinHandle};
 
 pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
     let plain = key.kind == KeyEventKind::Press && key.modifiers.is_empty();
@@ -15,6 +15,8 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
         KeyCode::Enter if plain => TargetLookupAction::Submit,
         KeyCode::Up => TargetLookupAction::Move(-1),
         KeyCode::Down => TargetLookupAction::Move(1),
+        KeyCode::Home => TargetLookupAction::Boundary(false),
+        KeyCode::End => TargetLookupAction::Boundary(true),
         KeyCode::PageUp => TargetLookupAction::Scroll(-8),
         KeyCode::PageDown => TargetLookupAction::Scroll(8),
         KeyCode::Backspace => TargetLookupAction::Backspace,
@@ -30,9 +32,15 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
     reduce(app, Action::TargetLookup(action))
 }
 
+struct LookupTask {
+    generation: u64,
+    task: JoinHandle<Vec<String>>,
+    progress: watch::Receiver<Vec<String>>,
+}
+
 pub(crate) struct LookupWorker {
     config: Option<AppServerConfig>,
-    task: Option<(u64, JoinHandle<Vec<String>>)>,
+    task: Option<LookupTask>,
 }
 
 impl LookupWorker {
@@ -41,16 +49,30 @@ impl LookupWorker {
     }
 
     pub(crate) async fn advance(&mut self, app: &mut AppState) -> bool {
-        if let Some((generation, task)) = &self.task {
-            if app.target_lookup.as_ref().map(|panel| panel.generation) != Some(*generation) {
-                task.abort();
+        if let Some(active) = &mut self.task {
+            let current = app.target_lookup.as_ref().map(|panel| panel.generation)
+                == Some(active.generation);
+            if !current {
+                active.task.abort();
             }
-            if !task.is_finished() {
+            if !active.task.is_finished() {
+                if current && active.progress.has_changed().unwrap_or(false) {
+                    let pages = active.progress.borrow_and_update().clone();
+                    reduce(
+                        app,
+                        Action::TargetLookup(TargetLookupAction::Progress {
+                            generation: active.generation,
+                            pages,
+                        }),
+                    );
+                    return true;
+                }
                 return false;
             }
         }
-        if let Some((generation, task)) = self.task.take() {
-            let pages = task.await.unwrap_or_else(|_| {
+        if let Some(active) = self.task.take() {
+            let generation = active.generation;
+            let pages = active.task.await.unwrap_or_else(|_| {
                 vec![pick(app.language, "Lookup unavailable", "检索不可用").into()]
             });
             if app.target_lookup.as_ref().map(|panel| panel.generation) == Some(generation) {
@@ -78,22 +100,30 @@ impl LookupWorker {
             ]);
             return true;
         };
-        panel.phase = LookupPhase::Running;
+        panel.phase = LookupPhase::Running(vec![]);
         let generation = panel.generation;
         let query = panel.query.clone();
         let language = app.language;
-        self.task = Some((
+        let (sender, progress) = watch::channel(vec![]);
+        let task = tokio::spawn(async move {
+            target_lookup_pages(&config, &query, language, |pages| {
+                sender.send_replace(pages);
+            })
+            .await
+        });
+        self.task = Some(LookupTask {
             generation,
-            tokio::spawn(async move { target_lookup_pages(&config, &query, language).await }),
-        ));
+            task,
+            progress,
+        });
         true
     }
 }
 
 impl Drop for LookupWorker {
     fn drop(&mut self) {
-        if let Some((_, task)) = &self.task {
-            task.abort();
+        if let Some(active) = &self.task {
+            active.task.abort();
         }
     }
 }
@@ -103,6 +133,36 @@ mod tests {
     use super::*;
     use crate::runtime_input::{handle_key as runtime_key, handle_paste};
     use codex_tui::app::ViewKind;
+
+    #[tokio::test]
+    async fn pending_worker_publishes_progress_and_cancel_discards_it() {
+        let mut app = AppState::new(vec![]);
+        reduce(&mut app, Action::TargetLookup(TargetLookupAction::Open));
+        let panel = app.target_lookup.as_mut().unwrap();
+        panel.phase = LookupPhase::Running(vec![]);
+        let generation = panel.generation;
+        let (sender, progress) = watch::channel(vec![]);
+        let mut worker = LookupWorker::new(None);
+        worker.task = Some(LookupTask {
+            generation,
+            task: tokio::spawn(std::future::pending::<Vec<String>>()),
+            progress,
+        });
+        sender.send_replace(vec!["Partial".into(), "first".into()]);
+        assert!(worker.advance(&mut app).await);
+        assert_eq!(
+            app.target_lookup.as_ref().unwrap().phase,
+            LookupPhase::Running(vec!["Partial".into(), "first".into()])
+        );
+        reduce(&mut app, Action::TargetLookup(TargetLookupAction::Close));
+        reduce(&mut app, Action::TargetLookup(TargetLookupAction::Open));
+        sender.send_replace(vec!["stale".into()]);
+        assert!(!worker.advance(&mut app).await);
+        assert_eq!(
+            app.target_lookup.as_ref().unwrap().phase,
+            LookupPhase::Editing
+        );
+    }
 
     #[tokio::test]
     async fn palette_lookup_traps_keys_and_fixture_worker_never_connects() {

@@ -58,7 +58,7 @@ Registry 提醒也包含已经观测到的 Goal 阻塞、用量或预算限制�
 
 `j/k` 选中、Enter 打开、`/` 筛选、`Ctrl+K` 命令面板、`?` 查看实时键位。`b` 打开 Board，`Tab` 切换 Saved View，包括按工作区分组的 Needs You / Needs Review 列表。List/Review Queue 将同一工作区连续排列，组内按所选顺序排序；Board 列仍按工作流阶段排列。Board 内用 `h/l` 切换列、`j/k` 选择卡片；Mission Control 的 `r` 进入所选会话的 Review，`w` 进入 Workspace。这些入口直达既有交付上下文；Board/Attention 始终是派生视图。
 
-Headless 的 `threads`、`work`、`status`、`attention`、`board` 使用配置中的活动 Codex 目标或 `--target NAME`，一次只获取一个目标。来源字段标明目标与传输，规划视图明确标记本地存储跨目标共享。别名/置顶/卡片仍以不含目标的会话 ID 为键，跨目标的相同 ID 可能共享本地元数据。Forge 读取当前目录，Worktrees 读取共享本地缓存。详见 [CLI 范围与失败语义](cli-reference.md#只读无头命令)。
+Headless 的 `threads`、`work`、`status`、`attention`、`board` 使用配置中的活动 Codex 目标或 `--target NAME`，默认只获取一个目标，除非显式执行 `threads --all-targets --query TEXT`。任务中心的 `Ctrl+K` → **搜索全部目标** 使用同一有界只读元数据查询，已获取结果会逐步以 Partial 状态显示。来源字段标明目标与传输，规划视图明确标记本地存储跨目标共享。操作员别名、置顶和确认偏好按配置目标及观测的 Codex Home 隔离，旧无作用域偏好已隔离；旧规划元数据仍可能含裸会话 ID，不是跨目标权威。Forge 读取当前目录，Worktrees 读取共享本地缓存。详见 [CLI 范围与失败语义](cli-reference.md#只读无头命令)。
 
 搜索与 Saved View 仅管理个人工作流；未知上游历史不会被虚构。全文搜索使用短生命周期独立 Codex App Server 连接，不占用主审批/会话 Actor；只允许一个搜索，新请求取消旧请求，总体 12 秒超时会明确提示。单 Thread 匹配项分页未耗尽时不得标记全部完成。若等待中的 RPC 收到服务端审批请求，主 Actor 会优先分派已排队的审批事件，再处理其他命令或周期探测；被中断的 RPC 结果仍为未知，不自动重放。本地索引的短查询会将 `%`、`_` 和反斜杠按字面字符搜索，而不是 SQLite 通配符。要区分 Windows 路径残影与 Ubuntu 本机会话，应检查仓库 cwd 和 Codex Home。上游清除项目归属或标题后，先用安全的 cwd/会话 ID 临时显示并触发合并后的权威重读；解归档也通过既有有界刷新恢复，不凭通知虚构会话。App Server 的 Git Origin 仅保留剔除凭证、查询和片段后的 host/repository 身份，无法安全解析时退回 cwd，不将原始 URL 带入搜索、Headless 或界面。每周仅查询公开 Codex 稳定版元数据并对新版提示复核，不能替代真实账号 L3 验收。
 
