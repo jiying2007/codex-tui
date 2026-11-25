@@ -518,7 +518,12 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 .thread_index_by_id
                 .get(&id.0)
                 .copied()
-                .filter(|index| state.threads.get(*index).is_some_and(|thread| thread.id == id))
+                .filter(|index| {
+                    state
+                        .threads
+                        .get(*index)
+                        .is_some_and(|thread| thread.id == id)
+                })
             else {
                 state.mutation_notice = Some(
                     local_text(

@@ -2560,7 +2560,10 @@ fn hot_slots_jump_directly_across_views_and_keep_bounded_history() {
 fn stale_hot_slot_target_is_visible_and_never_opens_an_unrelated_thread() {
     let mut state = app();
     let selected = state.selected;
-    state.operator_local.hot_slots.insert(8, "unknown-thread".into());
+    state
+        .operator_local
+        .hot_slots
+        .insert(8, "unknown-thread".into());
     assert!(reduce(&mut state, Action::UseHotSlot(8)).is_empty());
     assert_eq!(state.selected, selected);
     assert_eq!(state.view, View::Registry);
@@ -2589,7 +2592,10 @@ fn hot_slot_jumps_return_to_the_originating_surface_without_reloading() {
             thread.runtime = RuntimeStatus::Inactive;
         }
         let destination = state.threads[1].id.clone();
-        state.operator_local.hot_slots.insert(7, destination.0.clone());
+        state
+            .operator_local
+            .hot_slots
+            .insert(7, destination.0.clone());
         state.view = origin.clone();
         let jump = reduce(&mut state, Action::UseHotSlot(7));
         assert_eq!(state.view, View::Thread(destination.clone()));
@@ -2630,7 +2636,10 @@ fn hot_slot_return_keeps_registry_filter_and_original_selection() {
     let selected = state.threads[0].id.clone();
     let destination = state.threads[1].id.clone();
     state.filter = state.threads[0].title.clone();
-    state.operator_local.hot_slots.insert(9, destination.0.clone());
+    state
+        .operator_local
+        .hot_slots
+        .insert(9, destination.0.clone());
     assert!(state.visible_indices().contains(&state.selected));
     let _ = reduce(&mut state, Action::UseHotSlot(9));
     assert_eq!(state.view, View::Thread(destination));

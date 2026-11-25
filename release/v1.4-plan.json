@@ -301,7 +301,7 @@
     "src/forge_mutation/legacy_status_tests.rs": 54,
     "src/app/target_locality.rs": 87,
     "src/forge/remote_identity_tests.rs": 47,
-    "src/app/reducer.rs": 1373,
+    "src/app/reducer.rs": 1378,
     "src/app/state.rs": 653,
     "src/app/shortcuts.rs": 66,
     "src/app/tests.rs": 2856,

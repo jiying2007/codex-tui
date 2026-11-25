@@ -6,7 +6,6 @@ use codex_tui::{
     forge::{ChangeRequestSummary, ForgeIdentity, ForgeObservation, ForgeProviderKind},
     git::GitContext,
     goal::{GoalObservation, GoalStatus},
-    planning::SourceRef,
 };
 fn fixture(with_change: bool) -> AppState {
     let mut threads = FakeBackend::scaled(2).snapshot().threads;
@@ -107,16 +106,16 @@ fn goal_refresh_refuses_a_stale_thread_identity() {
 fn hot_slot_binding_keeps_original_target_during_navigation() {
     let mut app = fixture(false);
     app.view = View::Registry;
-    let original = SourceRef::codex_thread(&app.threads[0].id);
+    let original = app.threads[0].id.clone();
     reduce(&mut app, Action::BeginHotSlotBind);
     app.selected = 1;
     assert_eq!(
         reduce(&mut app, Action::UseHotSlot(3)),
-        vec![Effect::SetHotSlot {
-            slot: 3,
-            target: original
-        }]
+        vec![Effect::PersistOperatorState]
     );
+    let effects = reduce(&mut app, Action::UseHotSlot(3));
+    assert_eq!(app.view, View::Thread(original.clone()));
+    assert!(effects.contains(&Effect::LoadConversation(original)));
 }
 #[test]
 fn hot_slot_binding_refuses_removed_target_instead_of_neighbour() {
