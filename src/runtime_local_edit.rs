@@ -56,8 +56,17 @@ pub(crate) fn apply_event(app: &mut AppState, event: StoreEvent) -> bool {
             }
             reduce(app, Action::PlanningStoreDegraded(Some(error)));
         }
-        StoreEvent::Search(Ok(results)) => {
-            reduce(app, Action::TranscriptSearchLoaded(results));
+        StoreEvent::Search { scope, result } => {
+            if app.transcript_scope() == Some(scope.as_str()) {
+                match result {
+                    Ok(results) => {
+                        reduce(app, Action::TranscriptSearchLoaded(results));
+                    }
+                    Err(error) => {
+                        reduce(app, Action::MutationNotice(error));
+                    }
+                }
+            }
         }
         StoreEvent::WorkrefLinked { key, result } => match result {
             Ok((ledger, alias)) => {
@@ -72,7 +81,7 @@ pub(crate) fn apply_event(app: &mut AppState, event: StoreEvent) -> bool {
                 }
             }
         },
-        StoreEvent::Search(Err(error)) | StoreEvent::Notice(Some(error)) => {
+        StoreEvent::Notice(Some(error)) => {
             reduce(app, Action::MutationNotice(error));
         }
         StoreEvent::Notice(None) => {}

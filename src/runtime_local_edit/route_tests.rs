@@ -204,3 +204,60 @@ async fn scoped_note_and_snooze_are_durable_without_activating_legacy_preference
     assert!(!app.session_attention_snoozed(&app.threads[0]));
     assert_eq!(sql.load_planning_snapshot().unwrap(), after);
 }
+
+#[test]
+fn stale_transcript_worker_receipts_cannot_reenter_a_different_home() {
+    use codex_tui::{
+        app_server_target::ResolvedAppServerTarget,
+        backend::BackendStatus,
+        transcript_search::{TranscriptSearchHit, TranscriptSearchResults, TranscriptSearchSource},
+    };
+    let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+    let target = ResolvedAppServerTarget::implicit_local(None);
+    app.configure_operator_target(&target);
+    app.apply_local_state(&LocalStateV1::default());
+    let mut status = BackendStatus::starting(target.status_source());
+    status.connected = true;
+    status.codex_home = Some("/home/a".into());
+    reduce(&mut app, Action::BackendStatus(status.clone()));
+    let scope_a = app.transcript_scope().unwrap().to_owned();
+    let results = TranscriptSearchResults {
+        query: "same query".into(),
+        source: TranscriptSearchSource::LocalFts,
+        hits: vec![TranscriptSearchHit {
+            thread_id: app.threads[0].id.clone(),
+            turn_id: None,
+            item_id: None,
+            snippet: "private A".into(),
+            turn_cursor: None,
+            match_start_utf16: None,
+            match_end_utf16: None,
+        }],
+        complete: false,
+    };
+    app.transcript_search_query = results.query.clone();
+    apply_event(
+        &mut app,
+        StoreEvent::Search {
+            scope: scope_a.clone(),
+            result: Ok(results.clone()),
+        },
+    );
+    assert_eq!(app.transcript_search_results.as_ref(), Some(&results));
+    status.codex_home = Some("/home/b".into());
+    reduce(&mut app, Action::BackendStatus(status.clone()));
+    assert!(app.transcript_search_results.is_none());
+    app.transcript_search_query = results.query.clone();
+    apply_event(
+        &mut app,
+        StoreEvent::Search {
+            scope: scope_a,
+            result: Ok(results),
+        },
+    );
+    assert!(app.transcript_search_results.is_none());
+    assert!(reduce(&mut app, Action::OpenTranscriptSearchSelected).is_empty());
+    status.connected = false;
+    reduce(&mut app, Action::BackendStatus(status));
+    assert!(app.transcript_scope().is_none());
+}

@@ -24,7 +24,10 @@ pub(crate) enum StoreEvent {
     Operator(Option<String>),
     Planning(PlanningResult, Option<String>, Option<u64>),
     Stopped,
-    Search(std::result::Result<TranscriptSearchResults, String>),
+    Search {
+        scope: String,
+        result: std::result::Result<TranscriptSearchResults, String>,
+    },
     Notice(Option<String>),
     WorkrefLinked {
         key: String,
@@ -164,11 +167,15 @@ impl StoreWorker {
     }
     pub(crate) fn index_conversation_page(
         &mut self,
+        scope: &str,
         page: &codex_tui::conversation::ConversationPage,
     ) -> Option<String> {
+        let scope = scope.to_owned();
         let page = page.clone();
-        self.submit(move |store| StoreEvent::Notice(store.index_conversation_page(&page)))
-            .err()
+        self.submit(move |store| {
+            StoreEvent::Notice(store.index_conversation_page(&scope, &page))
+        })
+        .err()
     }
     pub(crate) fn try_event(&mut self) -> Option<StoreEvent> {
         if let Some(error) = self.flush_pending() {

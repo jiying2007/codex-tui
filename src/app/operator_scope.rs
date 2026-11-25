@@ -98,6 +98,11 @@ impl AppState {
         .then_some(key)
     }
 
+    /// Persistent transcript caching requires a real, connected session scope.
+    pub fn transcript_scope(&self) -> Option<&str> {
+        self.shortcut_scope().filter(|scope| !scope.is_empty())
+    }
+
     pub(super) fn scoped_preference_target(&self, target: &SourceRef) -> Option<SourceRef> {
         let scope = self.shortcut_scope()?;
         if target.kind != SourceKind::CodexThread || !self.local_target_live(target) {

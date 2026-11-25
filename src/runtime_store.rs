@@ -157,20 +157,25 @@ impl RuntimeStore {
         self.sqlite.clone()
     }
 
-    pub(crate) fn index_conversation_page(&self, page: &ConversationPage) -> Option<String> {
+    pub(crate) fn index_conversation_page(
+        &self,
+        scope: &str,
+        page: &ConversationPage,
+    ) -> Option<String> {
         // An explicit integrity failure makes the entire local store read-only,
         // including derivative FTS writes, even when indexing is opted in.
         if !self.index_transcripts || !self.writable {
             return None;
         }
         self.sqlite
-            .index_conversation_page(page)
+            .index_conversation_page(scope, page)
             .err()
             .map(|error| format!("derived transcript index unavailable: {error:#}"))
     }
 
     pub(crate) fn search_transcript(
         &self,
+        scope: &str,
         query: &str,
         limit: usize,
     ) -> Result<TranscriptSearchResults, String> {
@@ -183,7 +188,7 @@ impl RuntimeStore {
             });
         }
         self.sqlite
-            .search_transcript(query, limit)
+            .search_transcript(scope, query, limit)
             .map_err(|error| format!("local transcript search unavailable: {error:#}"))
     }
 
@@ -507,11 +512,11 @@ mod tests {
             next_turn_cursor: None,
             next_item_cursor: None,
         };
-        assert!(store.index_conversation_page(&page).is_none());
+        assert!(store.index_conversation_page("fixture", &page).is_none());
         assert!(
             store
                 .sqlite
-                .search_transcript("private-degraded-sentinel", 10)
+                .search_transcript("fixture", "private-degraded-sentinel", 10)
                 .expect("query empty derived store")
                 .hits
                 .is_empty()

@@ -32,6 +32,14 @@ impl AppState {
 
     pub(super) fn sync_session_attention_scope(&mut self) {
         if self.session_attention_policy.scope.as_deref() != self.shortcut_scope() {
+            // An asynchronous cache receipt from the previous scope is never
+            // a search result or a navigation authority in the next scope.
+            self.transcript_search_results = None;
+            self.transcript_search_active_hit = None;
+            self.transcript_search_selected = 0;
+            self.transcript_search_loading = false;
+            self.transcript_search_query.clear();
+            self.transcript_search_error = None;
             self.refresh_session_attention_policy();
             super::ensure_selection_visible(self);
         }

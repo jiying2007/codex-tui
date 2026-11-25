@@ -43,8 +43,11 @@ fn transcript_index_is_derived_search_state_and_excludes_reasoning() {
         next_item_cursor: None,
     };
 
-    assert_eq!(store.index_conversation_page(&page).expect("index"), 2);
-    let audio = store.search_transcript("audio", 20).expect("search");
+    assert_eq!(
+        store.index_conversation_page("fixture", &page).expect("index"),
+        2
+    );
+    let audio = store.search_transcript("fixture", "audio", 20).expect("search");
     assert_eq!(audio.source, TranscriptSearchSource::LocalFts);
     assert_eq!(audio.hits.len(), 1);
     assert_eq!(audio.hits[0].thread_id.0, "thread-audio");
@@ -55,7 +58,7 @@ fn transcript_index_is_derived_search_state_and_excludes_reasoning() {
     );
 
     let private = store
-        .search_transcript("private-search-sentinel", 20)
+        .search_transcript("fixture", "private-search-sentinel", 20)
         .expect("reasoning search");
     assert!(
         private.hits.is_empty(),
@@ -63,7 +66,7 @@ fn transcript_index_is_derived_search_state_and_excludes_reasoning() {
     );
 
     let short = store
-        .search_transcript("远场", 20)
+        .search_transcript("fixture", "远场", 20)
         .expect("short LIKE fallback");
     assert_eq!(short.hits.len(), 1);
 }
@@ -97,10 +100,10 @@ fn local_short_search_treats_sql_like_metacharacters_as_literals() {
         next_turn_cursor: None,
         next_item_cursor: None,
     };
-    store.index_conversation_page(&page).expect("index");
+    store.index_conversation_page("fixture", &page).expect("index");
     for literal in ["%", "_", "\\"] {
         let result = store
-            .search_transcript(literal, 20)
+            .search_transcript("fixture", literal, 20)
             .expect("literal search");
         assert_eq!(result.hits.len(), 1, "query {literal:?} must not wildcard");
         assert_eq!(result.hits[0].item_id.as_deref(), Some("literal"));
@@ -114,20 +117,23 @@ fn transcript_search_fields_are_body_only_with_or_without_fts() {
     let root = tempdir().unwrap();
     let store = SqliteStore::at(root.path());
     store
-        .index_conversation_page(&ConversationPage {
-            thread_id: crate::domain::ThreadId::new("field-semantics"),
-            title: Some("TitleOnly元信息".into()),
-            turns: vec![],
-            items: vec![ConversationItem {
-                turn_id: "turn".into(),
-                item_id: "body-match".into(),
-                kind: ConversationItemKind::User,
-                text: "PCR02Network 实例正文 100% under_score C:\\data".into(),
-                status: None,
-            }],
-            next_turn_cursor: None,
-            next_item_cursor: None,
-        })
+        .index_conversation_page(
+            "fixture",
+            &ConversationPage {
+                thread_id: crate::domain::ThreadId::new("field-semantics"),
+                title: Some("TitleOnly元信息".into()),
+                turns: vec![],
+                items: vec![ConversationItem {
+                    turn_id: "turn".into(),
+                    item_id: "body-match".into(),
+                    kind: ConversationItemKind::User,
+                    text: "PCR02Network 实例正文 100% under_score C:\\data".into(),
+                    status: None,
+                }],
+                next_turn_cursor: None,
+                next_item_cursor: None,
+            },
+        )
         .unwrap();
     let conn = store.open_ready().unwrap();
     for has_fts in [true, false] {
@@ -139,7 +145,10 @@ fn transcript_search_fields_are_body_only_with_or_without_fts() {
         assert_eq!(transcript_fts_available(&conn).unwrap(), has_fts);
         for query in ["Ti", "Tit", "TitleOnly", "元信", "元信息"] {
             assert!(
-                search_transcript(&conn, query, 20).unwrap().hits.is_empty(),
+                search_transcript(&conn, "fixture", query, 20)
+                    .unwrap()
+                    .hits
+                    .is_empty(),
                 "title-only query {query:?}, FTS={has_fts}"
             );
         }
@@ -156,12 +165,77 @@ fn transcript_search_fields_are_body_only_with_or_without_fts() {
             "\\",
             "C:\\data",
         ] {
-            let result = search_transcript(&conn, query, 20).unwrap();
+            let result = search_transcript(&conn, "fixture", query, 20).unwrap();
             assert_eq!(result.hits.len(), 1, "body query {query:?}, FTS={has_fts}");
             assert_eq!(result.hits[0].item_id.as_deref(), Some("body-match"));
             assert!(!result.complete);
         }
     }
+}
+
+#[test]
+fn transcript_cache_isolates_same_ids_and_legacy_text_in_fts_and_like() {
+    use crate::conversation::ConversationItem;
+    use crate::domain::ThreadId;
+    let root = tempdir().unwrap();
+    let store = SqliteStore::at(root.path());
+    let mut page = ConversationPage {
+        thread_id: ThreadId::new("same-id"),
+        title: None,
+        turns: vec![],
+        items: vec![ConversationItem {
+            turn_id: "turn".into(),
+            item_id: "item".into(),
+            kind: ConversationItemKind::User,
+            text: "common A-only 正文".into(),
+            status: None,
+        }],
+        next_turn_cursor: None,
+        next_item_cursor: None,
+    };
+    store.index_conversation_page("A", &page).unwrap();
+    page.items[0].text = "common B-only 正文".into();
+    store.index_conversation_page("B", &page).unwrap();
+    let conn = store.open_ready().unwrap();
+    // Even an old TEXT key with the exact encoded spelling cannot collide.
+    conn.execute(
+        "INSERT INTO transcript_documents VALUES('1:A:same-id','turn','item','user',NULL,'common legacy-only',?1)",
+        [u64_to_i64(now_unix_ms()).unwrap()],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO transcript_fts VALUES('1:A:same-id','turn','item','user',NULL,'common legacy-only')",
+        [],
+    )
+    .unwrap();
+    for has_fts in [true, false] {
+        if !has_fts {
+            conn.execute("DROP TABLE transcript_fts", []).unwrap();
+        }
+        for (scope, own, other) in [("A", "A-only", "B-only"), ("B", "B-only", "A-only")] {
+            for query in ["common", "正文"] {
+                let hits = search_transcript(&conn, scope, query, 1).unwrap().hits;
+                assert_eq!(hits.len(), 1);
+                assert_eq!(hits[0].thread_id, page.thread_id);
+                assert_eq!(hits[0].item_id.as_deref(), Some("item"));
+                assert!(hits[0].snippet.contains(own));
+                assert!(!hits[0].snippet.contains(other));
+            }
+            for query in [other, "legacy-only"] {
+                assert!(
+                    search_transcript(&conn, scope, query, 10)
+                        .unwrap()
+                        .hits
+                        .is_empty()
+                );
+            }
+        }
+        assert!(search_transcript(&conn, "", "common", 10).is_err());
+    }
+    let count: i64 = conn
+        .query_row("SELECT count(*) FROM transcript_documents", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(count, 3);
 }
 
 #[test]
@@ -185,13 +259,15 @@ fn transcript_title_and_text_persistence_share_explicit_size_budget() {
         next_turn_cursor: None,
         next_item_cursor: None,
     };
-    store.index_conversation_page(&page).expect("bounded index");
+    store
+        .index_conversation_page("fixture", &page)
+        .expect("bounded index");
     let conn = store.open_ready().expect("open database");
     let (title_len, text_len): (i64, i64) = conn
         .query_row(
             "SELECT length(title), length(text) FROM transcript_documents
-             WHERE thread_id='bounded-title' AND item_id='item'",
-            [],
+             WHERE thread_id=?1 AND item_id='item'",
+            [b"7:fixture:bounded-title".as_slice()],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .expect("bounded stored values");
@@ -220,7 +296,9 @@ fn rehydrating_transcript_does_not_extend_retention() {
         next_turn_cursor: None,
         next_item_cursor: None,
     };
-    store.index_conversation_page(&page).expect("first index");
+    store
+        .index_conversation_page("fixture", &page)
+        .expect("first index");
     let first_seen = u64_to_i64(now_unix_ms().saturating_sub(TRANSCRIPT_RETENTION_MS / 2))
         .expect("valid first seen time");
     let conn = store.open_ready().expect("open database");
@@ -231,7 +309,7 @@ fn rehydrating_transcript_does_not_extend_retention() {
     .expect("fixture timestamp");
     drop(conn);
     store
-        .index_conversation_page(&page)
+        .index_conversation_page("fixture", &page)
         .expect("replay existing item");
     let conn = store.open_ready().expect("check database");
     let kept: i64 = conn
@@ -249,11 +327,11 @@ fn rehydrating_transcript_does_not_extend_retention() {
     .expect("expire cached item");
     drop(conn);
     store
-        .index_conversation_page(&page)
+        .index_conversation_page("fixture", &page)
         .expect("replay expired item");
     assert!(
         store
-            .search_transcript("sensitive-lifetime-sentinel", 10)
+            .search_transcript("fixture", "sensitive-lifetime-sentinel", 10)
             .expect("post-expiry search")
             .hits
             .is_empty(),
@@ -286,7 +364,9 @@ fn transcript_retention_removes_stale_fts_and_opt_out_clears_remaining_text() {
         next_turn_cursor: None,
         next_item_cursor: None,
     };
-    store.index_conversation_page(&page).expect("index fixture");
+    store
+        .index_conversation_page("fixture", &page)
+        .expect("index fixture");
     let conn = store.open_ready().expect("fixture connection");
     conn.execute(
         "UPDATE transcript_documents SET observed_at_unix_ms=1 WHERE item_id='old'",
@@ -297,14 +377,14 @@ fn transcript_retention_removes_stale_fts_and_opt_out_clears_remaining_text() {
     store.prune_transcript_index().expect("retention prune");
     assert!(
         store
-            .search_transcript("old-private-needle", 10)
+            .search_transcript("fixture", "old-private-needle", 10)
             .expect("search old")
             .hits
             .is_empty()
     );
     assert_eq!(
         store
-            .search_transcript("new-private-needle", 10)
+            .search_transcript("fixture", "new-private-needle", 10)
             .expect("search new")
             .hits
             .len(),
@@ -313,7 +393,7 @@ fn transcript_retention_removes_stale_fts_and_opt_out_clears_remaining_text() {
     store.clear_transcript_index().expect("opt-out purge");
     assert!(
         store
-            .search_transcript("new-private-needle", 10)
+            .search_transcript("fixture", "new-private-needle", 10)
             .expect("search after purge")
             .hits
             .is_empty()

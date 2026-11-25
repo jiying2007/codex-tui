@@ -613,7 +613,10 @@ fn drain_registry(
                 Action::ThreadLifecycleFailed { operation, error }
             }
             ConversationEvent::Loaded(page) => {
-                if let Some(error) = store.index_conversation_page(&page) {
+                if registry.matches_observed_scope(&app.backend_status)
+                    && let Some(scope) = app.transcript_scope()
+                    && let Some(error) = store.index_conversation_page(scope, &page)
+                {
                     effects.extend(reduce(app, Action::MutationNotice(error)));
                 }
                 Action::ConversationLoaded(page)
@@ -623,7 +626,10 @@ fn drain_registry(
                 turn_cursor,
                 item_cursor,
             } => {
-                if let Some(error) = store.index_conversation_page(&page) {
+                if registry.matches_observed_scope(&app.backend_status)
+                    && let Some(scope) = app.transcript_scope()
+                    && let Some(error) = store.index_conversation_page(scope, &page)
+                {
                     effects.extend(reduce(app, Action::MutationNotice(error)));
                 }
                 Action::OlderConversationLoaded {
@@ -644,10 +650,16 @@ fn drain_registry(
                 error,
             },
             ConversationEvent::TranscriptSearchLoaded(results) => {
+                if !registry.matches_observed_scope(&app.backend_status) {
+                    continue;
+                }
                 Action::TranscriptSearchLoaded(results)
             }
             ConversationEvent::TranscriptSearchJumpLoaded { page, item_id } => {
-                if let Some(error) = store.index_conversation_page(&page) {
+                if registry.matches_observed_scope(&app.backend_status)
+                    && let Some(scope) = app.transcript_scope()
+                    && let Some(error) = store.index_conversation_page(scope, &page)
+                {
                     effects.extend(reduce(app, Action::MutationNotice(error)));
                 }
                 Action::TranscriptSearchLoadedPage { page, item_id }
@@ -1062,16 +1074,22 @@ fn apply_effects(
                 }
             }
             Effect::SearchTranscript { query } => {
-                let local_query = query.clone();
-                if let Err(error) = store.submit(move |store| {
-                    StoreEvent::Search(store.search_transcript(
-                        &local_query,
-                        codex_tui::transcript_search::TRANSCRIPT_SEARCH_RESULT_LIMIT,
-                    ))
-                }) {
-                    reduce(app, Action::MutationNotice(error));
+                if let Some(scope) = app.transcript_scope().map(str::to_owned) {
+                    let local_query = query.clone();
+                    if let Err(error) = store.submit(move |store| {
+                        let result = store.search_transcript(
+                            &scope,
+                            &local_query,
+                            codex_tui::transcript_search::TRANSCRIPT_SEARCH_RESULT_LIMIT,
+                        );
+                        StoreEvent::Search { scope, result }
+                    }) {
+                        reduce(app, Action::MutationNotice(error));
+                    }
                 }
-                if let Some(registry) = registry {
+                if let Some(registry) =
+                    registry.filter(|handle| handle.matches_observed_scope(&app.backend_status))
+                {
                     if let Err(error) = registry.search_transcript(query.clone()) {
                         reduce(
                             app,
@@ -1088,8 +1106,8 @@ fn apply_effects(
                             query,
                             error: runtime_text(
                                 app.language,
-                                "App Server full-history search unavailable; showing local indexed history",
-                                "App Server 全历史搜索不可用；正在显示本地已索引历史",
+                                "App Server full-history search unavailable; local cache requires a verified scope",
+                                "App Server 全历史搜索不可用；本地索引需要已核实的作用域",
                             )
                             .into(),
                         },
