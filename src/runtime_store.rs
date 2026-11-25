@@ -302,32 +302,6 @@ impl RuntimeStore {
             }
         }
     }
-
-    pub(crate) fn set_hot_slot(
-        &mut self,
-        slot: u8,
-        target: SourceRef,
-    ) -> Result<PlanningSnapshot, String> {
-        if !self.writable {
-            return Err(self
-                .error
-                .clone()
-                .unwrap_or_else(|| "SQLite planning store is read-only".into()));
-        }
-        let result = self
-            .sqlite
-            .set_hot_slot(slot, target)
-            .and_then(|_| self.sqlite.load_planning_snapshot());
-        match result {
-            Ok(snapshot) => Ok(snapshot),
-            Err(error) => {
-                let message = format!("SQLite hot-slot write failed: {error:#}");
-                self.writable = false;
-                self.error = Some(message.clone());
-                Err(message)
-            }
-        }
-    }
 }
 
 #[cfg(test)]

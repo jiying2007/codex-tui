@@ -11,6 +11,7 @@ pub(crate) struct OperatorLocal {
     target_identity: Option<String>,
     active_scope: Option<String>,
     persisted: Option<LocalStateV1>,
+    pub(super) hot_slots: BTreeMap<u8, String>,
 }
 
 impl AppState {
@@ -76,6 +77,22 @@ impl AppState {
         self.workref_ledger = Arc::new(workrefs.unwrap_or_default());
     }
 
+    /// The live shortcut must still belong to the currently observed scope.
+    /// Unconfigured fake/diagnostic instances have in-memory shortcuts only.
+    pub(super) fn shortcut_scope(&self) -> Option<&str> {
+        let Some(target) = self.operator_local.target_identity.as_deref() else {
+            return Some("");
+        };
+        let home = self.backend_status.codex_home.as_deref()?;
+        let key = self.operator_local.active_scope.as_deref()?;
+        (self.backend_status.connected
+            && !home.trim().is_empty()
+            && self.operator_local.expected_source.as_deref()
+                == Some(self.backend_status.source.as_str())
+            && key == operator_scope_key(target, Some(home)))
+        .then_some(key)
+    }
+
     /// Exact connected Target/CODEX_HOME scope for local work references.
     /// This is a manually configured connection identity, not host attestation.
     pub(super) fn workref_scope_identity(&self) -> Option<(String, String)> {
@@ -126,6 +143,7 @@ impl AppState {
         self.local_aliases = local.aliases;
         self.local_marked_unread = local.marked_unread;
         self.acknowledged_attention = local.acknowledged_attention;
+        self.operator_local.hot_slots = local.hot_slots;
         for thread in &mut self.threads {
             thread.pinned = self.local_pins.contains(&thread.id.0);
             thread.alias = self.local_aliases.get(&thread.id.0).cloned();
@@ -147,6 +165,7 @@ impl AppState {
             aliases: self.local_aliases.clone(),
             marked_unread: self.local_marked_unread.clone(),
             acknowledged_attention: self.acknowledged_attention.clone(),
+            hot_slots: self.operator_local.hot_slots.clone(),
         };
         if self.operator_local.target_identity.is_none() {
             state.thread_ui = view.thread_ui;
@@ -224,6 +243,70 @@ mod tests {
         assert!(!second.threads[0].pinned);
         let preserved = second.to_local_state();
         assert_eq!(preserved.scopes.len(), 2);
+    }
+
+    #[test]
+    fn shortcut_scope_rejects_legacy_and_stale_binding_and_preserves_exact_scope() {
+        let a = target("A");
+        let b = target("B");
+        let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+        let id = app.threads[0].id.clone();
+        app.configure_operator_target(&a);
+        app.apply_local_state(&LocalStateV1::default());
+        app.backend_status = status(&a, Some("/home/one"));
+        app.bind_operator_status();
+        app.planning_snapshot
+            .hot_slots
+            .push(crate::planning::HotSlot {
+                slot: 1,
+                target: SourceRef::codex_thread(&id),
+                updated_at_unix_ms: 1,
+            });
+        assert!(reduce(&mut app, Action::UseHotSlot(1)).is_empty());
+        assert_eq!(app.view, View::Registry);
+        assert!(
+            app.mutation_notice
+                .as_deref()
+                .unwrap()
+                .contains("historical")
+        );
+        reduce(&mut app, Action::BeginHotSlotBind);
+        assert_eq!(
+            reduce(&mut app, Action::UseHotSlot(1)),
+            vec![Effect::PersistOperatorState]
+        );
+        assert_eq!(app.planning_snapshot.hot_slots.len(), 1);
+        let saved = serde_json::from_str::<LocalStateV1>(
+            &serde_json::to_string(&app.to_local_state()).unwrap(),
+        )
+        .unwrap();
+        reduce(&mut app, Action::BeginHotSlotBind);
+        app.backend_status = status(&a, Some("/home/two"));
+        app.bind_operator_status();
+        assert!(reduce(&mut app, Action::UseHotSlot(2)).is_empty());
+        assert!(app.operator_local.hot_slots.is_empty());
+        assert!(reduce(&mut app, Action::UseHotSlot(1)).is_empty());
+        app.backend_status = status(&a, Some("/home/one"));
+        app.bind_operator_status();
+        app.backend_status.connected = false;
+        assert!(reduce(&mut app, Action::UseHotSlot(1)).is_empty());
+        app.backend_status.connected = true;
+        assert!(
+            reduce(&mut app, Action::UseHotSlot(1)).contains(&Effect::LoadConversation(id.clone()))
+        );
+
+        let mut other = AppState::new(FakeBackend::seeded().snapshot().threads);
+        other.configure_operator_target(&b);
+        other.apply_local_state(&saved);
+        other.backend_status = status(&b, Some("/home/one"));
+        other.bind_operator_status();
+        assert!(reduce(&mut other, Action::UseHotSlot(1)).is_empty());
+        assert_eq!(other.view, View::Registry);
+        assert!(other.operator_local.hot_slots.is_empty());
+        other.configure_operator_target(&a);
+        other.backend_status = status(&a, Some("/home/one"));
+        other.bind_operator_status();
+        assert!(reduce(&mut other, Action::UseHotSlot(1)).contains(&Effect::LoadConversation(id)));
     }
 
     #[test]

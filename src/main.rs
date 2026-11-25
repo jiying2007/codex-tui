@@ -876,12 +876,6 @@ fn apply_effects(
                     store.planning(move |store| store.create_bookmark(source, label), None),
                 );
             }
-            Effect::SetHotSlot { slot, target } => {
-                submit_planning(
-                    app,
-                    store.planning(move |store| store.set_hot_slot(slot, target), None),
-                );
-            }
             Effect::OpenTerminalDrawer { cwd } => {
                 let (cols, rows) = crossterm::terminal::size().unwrap_or((80, 24));
                 let size = ui::terminal_drawer_pty_size(cols, rows);
@@ -1432,16 +1426,14 @@ mod accessibility_input_tests {
         use codex_tui::{
             app::View,
             notification::{NotificationEvent, NotificationKind, RecentNotification},
-            planning::{HotSlot, SourceRef},
         };
 
         let mut app = app();
         let destination = app.threads[1].id.clone();
-        app.planning_snapshot.hot_slots.push(HotSlot {
-            slot: 1,
-            target: SourceRef::codex_thread(&destination),
-            updated_at_unix_ms: 1,
-        });
+        app.selected = 1;
+        reduce(&mut app, Action::BeginHotSlotBind);
+        reduce(&mut app, Action::UseHotSlot(1));
+        app.selected = 0;
         app.recent_notification = Some(RecentNotification::new(
             NotificationEvent {
                 key: format!("completion:{}", destination.0),

@@ -175,7 +175,7 @@ pub struct AppState {
     pub context_open: bool,
     context_menu: Option<context_menu::ContextMenu>,
     pub context_selected: usize,
-    pub hot_slot_bind_pending: Option<SourceRef>,
+    pub hot_slot_bind_pending: Option<(SourceRef, String)>,
     pub review_selected: usize,
     pub review_scroll: u16,
     pub review_word_diff: bool,

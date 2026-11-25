@@ -454,83 +454,93 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             return vec![Effect::LoadConversation(id)];
         }
         Action::UseHotSlot(slot) => {
-            if let Some(target) = state.hot_slot_bind_pending.take() {
-                if state.local_target_live(&target) {
-                    return vec![Effect::SetHotSlot { slot, target }];
+            if !(1..=9).contains(&slot) {
+                return vec![];
+            }
+            if let Some((target, scope)) = state.hot_slot_bind_pending.take() {
+                if state.shortcut_scope() == Some(scope.as_str())
+                    && target.kind == SourceKind::CodexThread
+                    && state.local_target_live(&target)
+                    && state.planning_store_error.is_none()
+                {
+                    state.operator_local.hot_slots.insert(slot, target.value);
+                    return vec![Effect::PersistOperatorState];
                 }
                 state.mutation_notice = Some(
                     local_text(
                         state.language,
-                        "shortcut target disappeared; no binding saved",
-                        "快捷槽目标已消失；未保存绑定",
+                        "shortcut scope, target or store unavailable; no binding saved",
+                        "快捷槽作用域、目标或存储不可用；未保存绑定",
                     )
                     .into(),
                 );
                 return vec![];
             }
 
-            let target = state
-                .planning_snapshot
+            if state.shortcut_scope().is_none() {
+                state.mutation_notice = Some(
+                    local_text(
+                        state.language,
+                        "shortcut scope unavailable",
+                        "快捷槽作用域不可用",
+                    )
+                    .into(),
+                );
+                return vec![];
+            }
+            let Some(id) = state
+                .operator_local
                 .hot_slots
-                .iter()
-                .find(|hot_slot| hot_slot.slot == slot)
-                .map(|hot_slot| hot_slot.target.clone());
-            let Some(target) = target else {
-                super::shortcuts::empty_slot(state, slot);
+                .get(&slot)
+                .cloned()
+                .map(ThreadId::new)
+            else {
+                if state
+                    .planning_snapshot
+                    .hot_slots
+                    .iter()
+                    .any(|old| old.slot == slot)
+                {
+                    state.mutation_notice = Some(
+                        local_text(
+                            state.language,
+                            "historical shortcut retained; select a thread and press = to bind",
+                            "历史快捷槽已保留；选择会话后按 = 重新绑定",
+                        )
+                        .into(),
+                    );
+                } else {
+                    super::shortcuts::empty_slot(state, slot);
+                }
                 return vec![];
             };
-            match target.kind {
-                SourceKind::CodexThread => {
-                    let id = ThreadId::new(target.value);
-                    if let Some(index) =
-                        state
-                            .thread_index_by_id
-                            .get(&id.0)
-                            .copied()
-                            .filter(|index| {
-                                state
-                                    .threads
-                                    .get(*index)
-                                    .is_some_and(|thread| thread.id == id)
-                            })
-                    {
-                        if matches!(&state.view, View::Thread(current) if *current == id) {
-                            // Re-selecting the current slot must not reload the transcript
-                            // or overwrite its one-level return destination.
-                            return vec![];
-                        }
-                        // A hot-slot jump is reversible: Esc returns to the exact
-                        // work surface, not always the generic Registry.
-                        let return_view = state.view.clone();
-                        state.hot_slot_return_selected = state.selected_thread_id();
-                        state.previous_target = state.current_thread_id().cloned();
-                        state.quick_prompt_return_view = Some(return_view);
-                        state.selected = index;
-                        state.thread_ui.entry(id.0.clone()).or_default();
-                        state.prepare_conversation(&id);
-                        state.view = View::Thread(id.clone());
-                        return vec![Effect::LoadConversation(id)];
-                    }
-                    state.mutation_notice = Some(
-                        local_text(
-                            state.language,
-                            "shortcut thread is not available on this target",
-                            "快捷槽会话在当前目标中不可用",
-                        )
-                        .into(),
-                    );
-                }
-                _ => {
-                    state.mutation_notice = Some(
-                        local_text(
-                            state.language,
-                            "historical shortcut retained; only Codex threads can be opened",
-                            "历史快捷槽已保留；仅可打开 Codex 会话",
-                        )
-                        .into(),
-                    );
-                }
+            let Some(index) = state
+                .thread_index_by_id
+                .get(&id.0)
+                .copied()
+                .filter(|index| state.threads.get(*index).is_some_and(|thread| thread.id == id))
+            else {
+                state.mutation_notice = Some(
+                    local_text(
+                        state.language,
+                        "shortcut thread is not available on this target",
+                        "快捷槽会话在当前目标中不可用",
+                    )
+                    .into(),
+                );
+                return vec![];
+            };
+            if matches!(&state.view, View::Thread(current) if *current == id) {
+                return vec![];
             }
+            state.hot_slot_return_selected = state.selected_thread_id();
+            state.previous_target = state.current_thread_id().cloned();
+            state.quick_prompt_return_view = Some(state.view.clone());
+            state.selected = index;
+            state.thread_ui.entry(id.0.clone()).or_default();
+            state.prepare_conversation(&id);
+            state.view = View::Thread(id.clone());
+            return vec![Effect::LoadConversation(id)];
         }
         Action::ReviewError { thread_id, error } => {
             let review = state
