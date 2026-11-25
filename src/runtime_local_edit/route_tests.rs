@@ -4,7 +4,7 @@ use codex_tui::{
     app::{ContextChoice, Effect, InputMode},
     backend::{CodexBackend, FakeBackend},
     notification::NotificationMode,
-    planning::{SourceRef, builtin_saved_views},
+    planning::{LocalNote, SourceKind, SourceRef, WorkCardRecord, builtin_saved_views},
     store::LocalStateV1,
 };
 use std::time::{Duration, Instant};
@@ -121,4 +121,86 @@ fn same_mode_different_owner_is_not_cleared_by_old_success() {
     app.finish_local_edit_write(ticket, Ok(()));
     assert_eq!(app.input_mode, InputMode::Note);
     assert_eq!(app.input_buffer, "retained note");
+}
+
+#[tokio::test]
+async fn scoped_note_and_snooze_are_durable_without_activating_legacy_preferences() {
+    use codex_tui::{
+        app_server_target::ResolvedAppServerTarget,
+        backend::BackendStatus,
+        store::{operator_scope_key, target_instance_identity},
+    };
+    let root = tempfile::tempdir().unwrap();
+    let worker = StoreWorker::at_for_test(root.path());
+    let sql = worker.sqlite_clone();
+    let mut services = crate::RuntimeServices::new(worker, NotificationMode::Off);
+    let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+    let target = ResolvedAppServerTarget::implicit_local(None);
+    let id = app.threads[0].id.clone();
+    sql.upsert_note(&LocalNote {
+        owner: SourceRef::codex_thread(&id),
+        text: "historical private note".into(),
+        updated_at_unix_ms: 1,
+    })
+    .unwrap();
+    let mut card = WorkCardRecord::implicit_thread(&id);
+    card.overlay.snooze_until_unix_ms = Some(100);
+    card.overlay.done_at_unix_ms = Some(1);
+    sql.upsert_work_card(&card).unwrap();
+    let before = sql.load_planning_snapshot().unwrap();
+    app.configure_operator_target(&target);
+    app.apply_local_state(&LocalStateV1::default());
+    let mut status = BackendStatus::starting(target.status_source());
+    status.connected = true;
+    status.codex_home = Some("/home/a".into());
+    reduce(&mut app, Action::BackendStatus(status.clone()));
+    reduce(&mut app, Action::PlanningSnapshotLoaded(before.clone()));
+    assert!(app.session_note(&id).is_none());
+    assert!(!app.session_attention_snoozed(&app.threads[0]));
+    let effects = draft(&mut app);
+    let scope = operator_scope_key(&target_instance_identity(&target), Some("/home/a"));
+    let owner = SourceRef::scoped_session(&scope, &id.0);
+    assert_eq!(owner.kind, SourceKind::ScopedSession);
+    assert_eq!(
+        effects,
+        vec![Effect::SaveSourceNote {
+            owner: owner.clone(),
+            text: "retained note".into(),
+        }]
+    );
+    crate::apply_effects(&mut app, None, &mut services, effects).unwrap();
+    settle(&mut app, &mut services);
+    assert_eq!(app.session_note(&id), Some("retained note"));
+
+    reduce(&mut app, Action::BeginSnooze);
+    let effects = reduce(&mut app, Action::CommitInput);
+    assert_eq!(app.input_mode, InputMode::Snooze);
+    assert!(app.pending_local_edit_ticket().is_some());
+    crate::apply_effects(&mut app, None, &mut services, effects).unwrap();
+    settle(&mut app, &mut services);
+    assert_eq!(app.input_mode, InputMode::Normal);
+    assert!(app.session_attention_snoozed(&app.threads[0]));
+    let after = sql.load_planning_snapshot().unwrap();
+    assert!(after.notes.contains(&before.notes[0]));
+    assert!(after.cards.contains(&before.cards[0]));
+    assert!(after.notes.iter().any(|note| note.owner == owner));
+    assert!(after.cards.iter().any(|card| card.anchor == owner));
+
+    reduce(&mut app, Action::BeginSnooze);
+    status.codex_home = Some("/home/b".into());
+    reduce(&mut app, Action::BackendStatus(status.clone()));
+    assert!(app.session_note(&id).is_none());
+    assert!(!app.session_attention_snoozed(&app.threads[0]));
+    assert!(reduce(&mut app, Action::CommitInput).is_empty());
+    assert_eq!(app.input_mode, InputMode::Snooze);
+    assert!(app.pending_local_edit_ticket().is_none());
+    reduce(&mut app, Action::CancelInput);
+    status.codex_home = Some("/home/a".into());
+    reduce(&mut app, Action::BackendStatus(status.clone()));
+    assert_eq!(app.session_note(&id), Some("retained note"));
+    status.connected = false;
+    reduce(&mut app, Action::BackendStatus(status));
+    assert!(app.session_note(&id).is_none());
+    assert!(!app.session_attention_snoozed(&app.threads[0]));
+    assert_eq!(sql.load_planning_snapshot().unwrap(), after);
 }

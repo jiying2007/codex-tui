@@ -303,18 +303,24 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             };
             match choice {
                 ContextChoice::Snooze => {
+                    let Some(target) = state.scoped_preference_target(&target) else {
+                        return vec![];
+                    };
                     state.snooze_target = Some(target);
                     state.input_buffer = "1h".into();
                     state.input_mode = InputMode::Snooze;
                 }
                 ContextChoice::EditNote => {
+                    let Some(owner) = state.scoped_preference_target(&target) else {
+                        return vec![];
+                    };
                     let existing = state
                         .planning_snapshot
                         .notes
                         .iter()
-                        .find(|note| note.owner == target)
+                        .find(|note| note.owner == owner)
                         .map(|note| note.text.clone());
-                    state.note_target = Some(target);
+                    state.note_target = Some(owner);
                     state.input_buffer = existing.unwrap_or_default();
                     state.input_mode = InputMode::Note;
                 }
@@ -325,10 +331,10 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                     let label = state
                         .thread_by_id(&ThreadId::new(target.value.clone()))
                         .map(|thread| thread.display_title().to_owned());
-                    return vec![Effect::CreateBookmark {
-                        source: target,
-                        label,
-                    }];
+                    let Some(source) = state.scoped_preference_target(&target) else {
+                        return vec![];
+                    };
+                    return vec![Effect::CreateBookmark { source, label }];
                 }
                 ContextChoice::NewCodexThread | ContextChoice::ForkCodexThread => {
                     state.mutation_notice = Some(
@@ -387,7 +393,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::BeginSnooze => {
             if let Some(target) = state
                 .selected_local_target()
-                .filter(|target| target.kind == SourceKind::CodexThread)
+                .and_then(|target| state.scoped_preference_target(&target))
             {
                 state.snooze_target = Some(target);
                 state.input_buffer = "1h".into();
@@ -1247,8 +1253,8 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 let Some(target) = state.note_target.clone() else {
                     return vec![];
                 };
-                if target.kind != SourceKind::CodexThread {
-                    return vec![];
+                if !state.preference_target_live(&target) {
+                    return state.refuse_stale_preference();
                 }
                 return state.begin_local_edit_write(Effect::SaveSourceNote {
                     owner: target,
@@ -1259,21 +1265,16 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 let Some(duration_ms) = parse_snooze_duration(&state.input_buffer) else {
                     return vec![];
                 };
-                let Some(anchor) = state
-                    .snooze_target
-                    .take()
-                    .filter(|target| target.kind == SourceKind::CodexThread)
-                else {
-                    state.input_mode = InputMode::Normal;
-                    state.input_buffer.clear();
+                let Some(anchor) = state.snooze_target.clone() else {
                     return vec![];
                 };
-                state.input_mode = InputMode::Normal;
-                state.input_buffer.clear();
-                return vec![Effect::SnoozeWorkCard {
+                if !state.preference_target_live(&anchor) {
+                    return state.refuse_stale_preference();
+                }
+                return state.begin_local_edit_write(Effect::SnoozeWorkCard {
                     anchor,
                     duration_ms,
-                }];
+                });
             }
             if mode == InputMode::UserInput {
                 return state.commit_user_input();

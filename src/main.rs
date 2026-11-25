@@ -857,13 +857,9 @@ fn apply_effects(
                 anchor,
                 duration_ms,
             } => {
-                submit_planning(
-                    app,
-                    store.planning(
-                        move |store| store.snooze_work_card(anchor, duration_ms),
-                        None,
-                    ),
-                );
+                runtime_local_edit::submit(app, store, local_ticket, move |store| {
+                    store.snooze_work_card(anchor, duration_ms)
+                });
             }
             Effect::SaveSourceNote { owner, text } => {
                 runtime_local_edit::submit(app, store, local_ticket, move |store| {

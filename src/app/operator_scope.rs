@@ -39,6 +39,11 @@ impl AppState {
 
     /// A different Target or home cannot reuse an old ThreadId's preferences.
     pub(super) fn bind_operator_status(&mut self) {
+        self.bind_operator_scope();
+        self.sync_session_attention_scope();
+    }
+
+    fn bind_operator_scope(&mut self) {
         let Some(target) = self.operator_local.target_identity.as_deref() else {
             return;
         };
@@ -91,6 +96,23 @@ impl AppState {
                 == Some(self.backend_status.source.as_str())
             && key == operator_scope_key(target, Some(home)))
         .then_some(key)
+    }
+
+    pub(super) fn scoped_preference_target(&self, target: &SourceRef) -> Option<SourceRef> {
+        let scope = self.shortcut_scope()?;
+        if target.kind != SourceKind::CodexThread || !self.local_target_live(target) {
+            return None;
+        }
+        if scope.is_empty() {
+            return Some(target.clone());
+        }
+        Some(SourceRef::scoped_session(scope, &target.value))
+    }
+
+    pub(super) fn preference_target_live(&self, target: &SourceRef) -> bool {
+        self.shortcut_scope()
+            .and_then(|scope| target.thread_in_scope(scope))
+            .is_some_and(|thread| self.contains_thread_id(&ThreadId::new(thread)))
     }
 
     /// Exact connected Target/CODEX_HOME scope for local work references.

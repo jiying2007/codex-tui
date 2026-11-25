@@ -15,6 +15,7 @@ pub(super) struct PaletteIntent {
     saved_view: Option<String>,
     repository: Option<LocalRepoIdentity>,
     workref_scope: Option<(String, String)>,
+    local_scope: Option<String>,
 }
 
 impl AppState {
@@ -52,6 +53,7 @@ impl AppState {
                 })
                 .and_then(|context| context.repo.clone()),
             workref_scope: self.workref_scope_identity(),
+            local_scope: self.shortcut_scope().map(str::to_owned),
         }
     }
 
@@ -82,6 +84,7 @@ impl AppState {
                         && original.target == current.target
                         && original.cwd == current.cwd
                         && original.saved_view == current.saved_view
+                        && original.local_scope == current.local_scope
                         && (!matches!(choice, Command::LinkWorkItem)
                             || original.workref_scope == current.workref_scope)
                         && original

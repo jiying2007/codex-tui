@@ -225,7 +225,7 @@ async fn build_work_snapshot(options: &HeadlessOptions) -> WorkSnapshot {
             };
         }
     };
-    let (local, planning, local_store_error) = if options.fake {
+    let (local, mut planning, local_store_error) = if options.fake {
         (LocalStateV1::default(), PlanningSnapshot::default(), None)
     } else {
         match SqliteStore::discover() {
@@ -264,6 +264,7 @@ async fn build_work_snapshot(options: &HeadlessOptions) -> WorkSnapshot {
     let (mut threads, source) = source.load().await;
 
     apply_local_operator_state(&mut threads, &local, &source);
+    operator_local::scope_work_preferences(&mut planning, &source);
 
     let projections = projection::reconcile_work(
         &threads,
@@ -306,7 +307,15 @@ fn work_row(card: &WorkCardProjection) -> WorkRow {
             .iter()
             .map(|attention| attention.label().to_string())
             .collect(),
-        snoozed: card.snoozed,
+        snoozed: card.snoozed
+            && !card.attention.iter().any(|reason| {
+                matches!(
+                    reason,
+                    crate::session_attention::SessionAttentionReason::ApprovalRequired
+                        | crate::session_attention::SessionAttentionReason::UserInputRequired
+                        | crate::session_attention::SessionAttentionReason::SystemError
+                )
+            }),
         priority: card.overlay.priority,
         provenance: card
             .provenance
@@ -324,6 +333,7 @@ fn source_kind(kind: &SourceKind) -> &'static str {
     match kind {
         SourceKind::ScratchWork => "scratch-work",
         SourceKind::CodexThread => "codex-thread",
+        SourceKind::ScopedSession => "scoped-session",
         SourceKind::ForgeWorkItem => "forge-work-item",
         SourceKind::Goal => "goal",
         SourceKind::Worktree => "worktree",

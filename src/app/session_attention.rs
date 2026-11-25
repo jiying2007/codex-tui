@@ -1,13 +1,13 @@
 //! Mission Control reads native observations, not the asynchronously built Board.
-use super::{AppState, SourceKind, ThreadSummary};
+use super::{AppState, ThreadSummary};
 use crate::session_attention::{SessionAttentionReason as R, observed_reasons};
 use std::collections::{BTreeMap, BTreeSet};
 use std::ops::Bound::{Excluded, Included};
 
 #[derive(Clone, Debug, Default)]
-pub(super) struct LegacyAttentionPolicy {
-    // Transitional, read-only index of the two existing local preferences.
-    // No second task state or persisted schema is introduced.
+pub(super) struct SessionAttentionPolicy {
+    scope: Option<String>,
+    // Only current scope preferences participate in native Attention.
     overlays: BTreeMap<String, (Option<u64>, bool)>,
     deadlines: BTreeSet<u64>,
     notes: BTreeMap<String, String>,
@@ -30,38 +30,44 @@ impl AppState {
             .collect();
     }
 
+    pub(super) fn sync_session_attention_scope(&mut self) {
+        if self.session_attention_policy.scope.as_deref() != self.shortcut_scope() {
+            self.refresh_session_attention_policy();
+            super::ensure_selection_visible(self);
+        }
+    }
+
     pub(super) fn refresh_session_attention_policy(&mut self) {
+        let scope = self.shortcut_scope().map(str::to_owned);
         let policy = &mut self.session_attention_policy;
+        policy.scope = scope;
         policy.overlays.clear();
         policy.deadlines.clear();
         policy.notes.clear();
+        let Some(scope) = policy.scope.as_deref() else {
+            return;
+        };
         for card in &self.planning_snapshot.cards {
-            if card.anchor.kind != SourceKind::CodexThread {
+            let Some(thread) = card.anchor.thread_in_scope(scope) else {
                 continue;
-            }
-            if let Some(note) = &card.overlay.note {
-                policy.notes.insert(card.anchor.value.clone(), note.clone());
+            };
+            if scope.is_empty() && let Some(note) = &card.overlay.note {
+                policy.notes.insert(thread.to_owned(), note.clone());
             }
             let until = card.overlay.snooze_until_unix_ms;
-            let done = card.overlay.done_at_unix_ms.is_some();
+            let done = scope.is_empty() && card.overlay.done_at_unix_ms.is_some();
             if until.is_some() || done {
-                policy
-                    .overlays
-                    .insert(card.anchor.value.clone(), (until, done));
+                policy.overlays.insert(thread.to_owned(), (until, done));
                 if let Some(until) = until {
                     policy.deadlines.insert(until);
                 }
             } else {
-                policy.overlays.remove(&card.anchor.value);
+                policy.overlays.remove(thread);
             }
         }
-        // Explicit notes take precedence over historical card overlays, just
-        // as before retirement. Only the persisted snapshot rebuilds this index.
         for note in &self.planning_snapshot.notes {
-            if note.owner.kind == SourceKind::CodexThread {
-                policy
-                    .notes
-                    .insert(note.owner.value.clone(), note.text.clone());
+            if let Some(thread) = note.owner.thread_in_scope(scope) {
+                policy.notes.insert(thread.to_owned(), note.text.clone());
             }
         }
     }

@@ -15,6 +15,7 @@ pub use saved_views::apply_saved_view;
 pub enum SourceKind {
     ScratchWork,
     CodexThread,
+    ScopedSession,
     ForgeWorkItem,
     Goal,
     Worktree,
@@ -33,6 +34,30 @@ impl SourceRef {
             kind: SourceKind::CodexThread,
             value: thread_id.0.clone(),
         }
+    }
+
+    /// A separate kind prevents any historical bare ThreadId from claiming a scope.
+    pub fn scoped_session(scope: &str, thread: &str) -> Self {
+        Self {
+            kind: SourceKind::ScopedSession,
+            value: format!("{}:{scope}:{thread}", scope.len()),
+        }
+    }
+
+    pub fn thread_in_scope(&self, scope: &str) -> Option<&str> {
+        if scope.is_empty() && self.kind == SourceKind::CodexThread {
+            return Some(self.value.as_str()); // Isolated synthetic diagnostics only.
+        }
+        if self.kind != SourceKind::ScopedSession || scope.is_empty() {
+            return None;
+        }
+        let (length, rest) = self.value.split_once(':')?;
+        if length.parse::<usize>().ok() != Some(scope.len()) {
+            return None;
+        }
+        rest.strip_prefix(scope)?
+            .strip_prefix(':')
+            .filter(|thread| !thread.is_empty())
     }
 }
 

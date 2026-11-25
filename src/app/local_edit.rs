@@ -36,10 +36,23 @@ impl AppState {
                     | Action::CancelInput
                     | Action::Back
                     | Action::ExecuteContext
+                    | Action::BeginSnooze
             )
         {
             self.local_edit_revision = self.local_edit_revision.saturating_add(1);
         }
+    }
+
+    pub(super) fn refuse_stale_preference(&mut self) -> Vec<Effect> {
+        self.mutation_notice = Some(
+            local_text(
+                self.language,
+                "session scope or target changed; no write submitted; reopen editor",
+                "会话作用域或目标变化；未提交写入，请重新打开编辑器",
+            )
+            .into(),
+        );
+        vec![]
     }
 
     pub fn local_edit_ticket_for(&self, effect: &Effect) -> Option<u64> {
@@ -109,10 +122,15 @@ impl AppState {
             && self.local_edit_revision != u64::MAX
             && pending.mode == self.input_mode
             && pending.original_input == self.input_buffer
-            && matches!(
-                &pending.effect,
-                Effect::SaveSourceNote { owner, .. } if self.note_target.as_ref() == Some(owner)
-            );
+            && match &pending.effect {
+                Effect::SaveSourceNote { owner, .. } => {
+                    self.note_target.as_ref() == Some(owner) && self.preference_target_live(owner)
+                }
+                Effect::SnoozeWorkCard { anchor, .. } => {
+                    self.snooze_target.as_ref() == Some(anchor) && self.preference_target_live(anchor)
+                }
+                _ => false,
+            };
         if let Err(error) = result {
             self.mutation_notice = Some(format!(
                 "{}: {error}",
@@ -126,6 +144,7 @@ impl AppState {
         }
         if same_editor {
             self.note_target = None;
+            self.snooze_target = None;
             self.input_mode = InputMode::Normal;
             self.input_buffer.clear();
             self.mutation_notice =

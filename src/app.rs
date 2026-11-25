@@ -146,7 +146,7 @@ pub struct AppState {
     git_review_cache_order: VecDeque<String>,
     pub planning_snapshot: PlanningSnapshot,
     pub work_cards: Vec<WorkCardProjection>,
-    session_attention_policy: session_attention::LegacyAttentionPolicy,
+    session_attention_policy: session_attention::SessionAttentionPolicy,
     work_card_by_thread: BTreeMap<String, usize>,
     worktree_collision_counts: BTreeMap<String, usize>,
     pub goals: BTreeMap<String, GoalObservation>,

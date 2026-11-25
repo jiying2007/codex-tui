@@ -209,6 +209,12 @@ impl RuntimeStore {
                     SourceKind::CodexThread => WorkCardRecord::implicit_thread(
                         &codex_tui::domain::ThreadId::new(anchor.value.clone()),
                     ),
+                    SourceKind::ScopedSession => WorkCardRecord {
+                        local_id: format!("session:{}", anchor.value),
+                        anchor: anchor.clone(),
+                        links: vec![],
+                        overlay: Default::default(),
+                    },
                     SourceKind::ScratchWork => WorkCardRecord {
                         local_id: anchor.value.clone(),
                         anchor: anchor.clone(),

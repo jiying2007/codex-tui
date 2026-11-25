@@ -8,6 +8,7 @@ struct Scope {
     target: Option<SourceRef>,
     saved_view: Option<String>,
     workref_scope: Option<(String, String)>,
+    local_scope: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -23,6 +24,7 @@ impl AppState {
             target: self.selected_local_target(),
             saved_view: matches!(self.view, View::Board).then(|| self.active_saved_view().id),
             workref_scope: self.workref_scope_identity(),
+            local_scope: self.shortcut_scope().map(str::to_owned),
         }
     }
 
