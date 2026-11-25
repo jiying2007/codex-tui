@@ -27,7 +27,7 @@ ssh -tt $Target
 ## Create a private, source-bound session
 <!-- docs-section: workspace -->
 
-In Ubuntu window A, enter the actual codex-tui source clone and start a separate `bash`. Execute the following in that shell. Enter the full SHA explicitly approved for this run; do not automatically follow a changing HEAD. The guard refuses stale local/remote sources instead of pulling, resetting or force-checking out. Record the printed directory. In window B, source only this trusted private `session.env`, using its actual absolute path.
+In Ubuntu window A, enter the actual codex-tui source clone and start a separate `bash`. Enter the reviewed full SHA and branch. For pre-merge Lite retirement, choose the exact PR head branch: the block creates a separate pinned checkout and a private trial store/config, leaving the existing checkout and SQLite image untouched. Only `main` selects final-candidate scope and retains the strict local/remote main checks. Never automatically follow a changing HEAD. Use the actual pre-existing store/config paths from trusted local records; an empty path means the corresponding source is absent, not a successful historical recovery. Keep the original backup and copied configuration private. Verify the trial's observed Target and CODEX_HOME against real usage; if isolation changes them, stop and record the mismatch. In pre-merge development-integration the candidate does not open the existing live store. In window B, source only the printed trusted private `session.env` by absolute path.
 
 ```bash
 set -euo pipefail
@@ -38,21 +38,63 @@ export REPO=jiying2007/codex-tui
 read -r -p 'Reviewed candidate SHA (40 lowercase hex): ' SOURCE_SHA
 export SOURCE_SHA
 [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
-test "$(git branch --show-current)" = main
-test -z "$(git status --porcelain)"
-git fetch origin main
-test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
-test "$(git rev-parse origin/main)" = "$SOURCE_SHA"
-test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$SOURCE_SHA"
+read -r -p 'Reviewed branch (main for final qualification): ' SOURCE_BRANCH
+export SOURCE_BRANCH
+git check-ref-format "refs/heads/$SOURCE_BRANCH"
+export VALIDATION_SCOPE=development-integration
+if [ "$SOURCE_BRANCH" = main ]; then
+  export VALIDATION_SCOPE=final-candidate
+  test "$(git branch --show-current)" = main
+  test -z "$(git status --porcelain)"
+  git fetch origin main
+  test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+  test "$(git rev-parse origin/main)" = "$SOURCE_SHA"
+  test "$(git ls-remote --exit-code origin refs/heads/main | cut -f1)" = "$SOURCE_SHA"
+fi
 export EVIDENCE="$(mktemp -d "$HOME/codex-tui-device-${SOURCE_SHA:0:8}.XXXXXX")"
+if [ "$VALIDATION_SCOPE" = development-integration ]; then
+  git clone --no-checkout --single-branch --branch "$SOURCE_BRANCH" \
+    "https://github.com/$REPO.git" "$EVIDENCE/source"
+  export ROOT="$EVIDENCE/source"
+  git -C "$ROOT" checkout --detach "$SOURCE_SHA"
+  test "$(git -C "$ROOT" rev-parse "refs/remotes/origin/$SOURCE_BRANCH")" = "$SOURCE_SHA"
+  test "$(git -C "$ROOT" ls-remote --exit-code origin "refs/heads/$SOURCE_BRANCH" | cut -f1)" = "$SOURCE_SHA"
+fi
+cd "$ROOT"
+test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+test -z "$(git status --porcelain)"
 export BINARY="$EVIDENCE/bin/codex-tui"
 mkdir "$EVIDENCE/bin" "$EVIDENCE/preflight" "$EVIDENCE/real" \
       "$EVIDENCE/provider" "$EVIDENCE/store" "$EVIDENCE/soak" "$EVIDENCE/faults"
 printf '%s\n' "$SOURCE_SHA" > "$EVIDENCE/source-sha.txt"
 git rev-parse HEAD^{tree} > "$EVIDENCE/source-tree.txt"
-for v in ROOT REPO SOURCE_SHA EVIDENCE BINARY; do
-  printf 'export %s=%q\n' "$v" "${!v}"
-done > "$EVIDENCE/session.env"
+if [ "$VALIDATION_SCOPE" = development-integration ]; then
+  read -r -p 'Existing actual SQLite path (empty if absent): ' STORE_DB
+  read -r -p 'Existing config.toml path (empty if absent): ' STORE_CONFIG
+  export XDG_DATA_HOME="$EVIDENCE/trial-data"
+  export XDG_CONFIG_HOME="$EVIDENCE/trial-config"
+  mkdir -p "$XDG_DATA_HOME/codex-tui" "$XDG_CONFIG_HOME/codex-tui"
+  if [ -n "$STORE_DB" ]; then
+    python3 "$ROOT/scripts/release/backup_device_sqlite.py" \
+      --database "$STORE_DB" --output "$EVIDENCE/store/original.sqlite3" \
+      > "$EVIDENCE/store/original-receipt.json"
+    cp "$EVIDENCE/store/original.sqlite3" "$XDG_DATA_HOME/codex-tui/state-v2.sqlite3"
+  fi
+  if [ -n "$STORE_CONFIG" ]; then
+    test -f "$STORE_CONFIG"
+    install -m 600 "$STORE_CONFIG" "$XDG_CONFIG_HOME/codex-tui/config.toml"
+  fi
+fi
+{
+  for v in ROOT REPO SOURCE_SHA SOURCE_BRANCH VALIDATION_SCOPE EVIDENCE BINARY; do
+    printf 'export %s=%q\n' "$v" "${!v}"
+  done
+  if [ "$VALIDATION_SCOPE" = development-integration ]; then
+    for v in XDG_DATA_HOME XDG_CONFIG_HOME; do
+      printf 'export %s=%q\n' "$v" "${!v}"
+    done
+  fi
+} > "$EVIDENCE/session.env"
 printf 'Evidence: %s\n' "$EVIDENCE"
 ```
 
@@ -139,9 +181,11 @@ CODEX_TUI_GIT_SHA="$SOURCE_SHA" cargo test --locked --all-targets --all-features
 
 Before the TUI, complete a small read-only task with native Codex under this same user. Use the installed `codex --help` and `codex login --help` for the configured authentication flow; never publish a device code or auth file. Record versions, effective configuration hashes and the real provider without secrets. Default codex-tui starts its local stdio App Server; do not start an unrelated daemon or silently select another target to hide failure.
 
-Create two dedicated local repositories containing distinct README markers. Verify correct Cwd and repository-backed threads; send real work from the TUI and check the actual final success/interruption/failure, not only connection readiness. Exercise an actual approval both allowed and refused, an actual server user-input request, navigation while a task is active, cancellation, draft/Saved View persistence and reopening. Not observing a required interaction is NOT_RUN/BLOCKED, never PASS. Public model metadata or a chat question alone is not approval/user-input protocol coverage.
+Create two dedicated local repositories containing distinct README markers. Verify correct Cwd and repository-backed threads; send real work from the TUI and check the actual final success/interruption/failure, not only connection readiness. Exercise an actual approval both allowed and refused, an actual server user-input request, navigation while a task is active, cancellation, draft/note persistence and reopening. For Lite, test Registry/Workspace/search return instead of the retired Board, and preserve historical Saved Views in the backup rather than editing them. Not observing a required interaction is NOT_RUN/BLOCKED, never PASS. Public model metadata or a chat question alone is not approval/user-input protocol coverage.
 
 For Lite, inspect real Git diff/branch/path and verify the native Git/Codex replacement workflow on disposable worktrees; no TUI mutation or recovery route remains. Historical v1.4 write qualification (creation, dirty/active deletion refusal, confirmation and verified removal) must not be marked PASS on a retired surface; retain prior receipts and separately approve replacement scope. Test external-editor boundaries and independent Codex concurrency on disposable objects. Reconcile OutcomeUnknown against Git/Forge before any new action. See the [operator guide](operator-guide.md).
+
+For pre-merge Lite retirement, complete the existing design's G1–G4 observations in the [private device matrix](device-matrix.md): exact source/parent and request routing, a real requirement and defect, two different cross-repository scenarios with directed handoff and joint evidence, and the native replacement/retained-data/UX comparison. Use ordinary authorized work and the existing workref CLI; do not manufacture new paid model tasks. Capture `doctor store` before and after the isolated trial, including both complete unresolved counts, and compare the original backup with a separate recovery copy. A nonzero unresolved count needs native reconciliation or explicit retention, not replay or deletion. Synthetic evidence is not field acceptance; unavailable real work remains NOT_RUN/BLOCKED.
 
 ```bash
 "$BINARY" doctor codex
@@ -257,12 +301,16 @@ python3 scripts/release/capture_compat.py --binary "$BINARY" \
 "$BINARY" doctor bundle --output "$EVIDENCE/real/support-final"
 
 # FINAL CANDIDATE ONLY; not a deployment or publishing command.
-python3 scripts/release/linux_qualify.py --github-repo "$REPO" \
-  --terminal-receipt "$EVIDENCE/real/terminal-linux.json" \
-  --output-dir "$EVIDENCE/linux-qualification" \
-  > "$EVIDENCE/linux-qualification.log" 2>&1
-cmp "$BINARY" "$ROOT/target/release/codex-tui"
-sha256sum -c "$EVIDENCE/binary-before.sha256"
+if [ "$VALIDATION_SCOPE" = final-candidate ]; then
+  test "$(git branch --show-current)" = main
+  test "$(git ls-remote --exit-code origin refs/heads/main | cut -f1)" = "$SOURCE_SHA"
+  python3 scripts/release/linux_qualify.py --github-repo "$REPO" \
+    --terminal-receipt "$EVIDENCE/real/terminal-linux.json" \
+    --output-dir "$EVIDENCE/linux-qualification" \
+    > "$EVIDENCE/linux-qualification.log" 2>&1
+  cmp "$BINARY" "$ROOT/target/release/codex-tui"
+  sha256sum -c "$EVIDENCE/binary-before.sha256"
+fi
 ```
 
 ## Review, archive and stop

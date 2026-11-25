@@ -27,7 +27,7 @@ ssh -tt $Target
 ## 建立私有、绑定源码的会话
 <!-- docs-section: workspace -->
 
-在 Ubuntu 窗口 A 进入实际 codex-tui 克隆，先单独执行 `bash`，再执行下列代码。输入本轮已审阅的完整 SHA，不能自动跟随变化的 HEAD。检查拒绝本地或远端不一致，不会代替你 pull、reset 或强制切换。记下打印的目录；窗口 B 只能用真实绝对路径 source 这份可信私有 `session.env`。
+在 Ubuntu 窗口 A 进入实际 codex-tui 克隆，先单独执行 `bash`。输入已审阅的完整 SHA 与分支。Lite 合并前退役验收选择准确 PR head 分支，在私有目录创建固定源码副本及隔离试用库／配置，不动现有工作区和 SQLite 原库。只有 `main` 进入 final-candidate 范围，仍严格检查本地及远端 main。不得自动跟随变化的 HEAD。原库及配置路径须来自可信本地记录；留空表示该来源不存在，不代表历史恢复通过。原始备份与配置副本仅私有保存。核对隔离后实际观测 Target 与 CODEX_HOME 是否符合日常使用，不一致即停止并记录。合并前 development-integration 不让候选直接打开已有在线库。窗口 B 只能用打印的真实绝对路径 source 可信私有 `session.env`。
 
 ```bash
 set -euo pipefail
@@ -38,21 +38,63 @@ export REPO=jiying2007/codex-tui
 read -r -p 'Reviewed candidate SHA (40 lowercase hex): ' SOURCE_SHA
 export SOURCE_SHA
 [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]]
-test "$(git branch --show-current)" = main
-test -z "$(git status --porcelain)"
-git fetch origin main
-test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
-test "$(git rev-parse origin/main)" = "$SOURCE_SHA"
-test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$SOURCE_SHA"
+read -r -p 'Reviewed branch (main for final qualification): ' SOURCE_BRANCH
+export SOURCE_BRANCH
+git check-ref-format "refs/heads/$SOURCE_BRANCH"
+export VALIDATION_SCOPE=development-integration
+if [ "$SOURCE_BRANCH" = main ]; then
+  export VALIDATION_SCOPE=final-candidate
+  test "$(git branch --show-current)" = main
+  test -z "$(git status --porcelain)"
+  git fetch origin main
+  test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+  test "$(git rev-parse origin/main)" = "$SOURCE_SHA"
+  test "$(git ls-remote --exit-code origin refs/heads/main | cut -f1)" = "$SOURCE_SHA"
+fi
 export EVIDENCE="$(mktemp -d "$HOME/codex-tui-device-${SOURCE_SHA:0:8}.XXXXXX")"
+if [ "$VALIDATION_SCOPE" = development-integration ]; then
+  git clone --no-checkout --single-branch --branch "$SOURCE_BRANCH" \
+    "https://github.com/$REPO.git" "$EVIDENCE/source"
+  export ROOT="$EVIDENCE/source"
+  git -C "$ROOT" checkout --detach "$SOURCE_SHA"
+  test "$(git -C "$ROOT" rev-parse "refs/remotes/origin/$SOURCE_BRANCH")" = "$SOURCE_SHA"
+  test "$(git -C "$ROOT" ls-remote --exit-code origin "refs/heads/$SOURCE_BRANCH" | cut -f1)" = "$SOURCE_SHA"
+fi
+cd "$ROOT"
+test "$(git rev-parse HEAD)" = "$SOURCE_SHA"
+test -z "$(git status --porcelain)"
 export BINARY="$EVIDENCE/bin/codex-tui"
 mkdir "$EVIDENCE/bin" "$EVIDENCE/preflight" "$EVIDENCE/real" \
       "$EVIDENCE/provider" "$EVIDENCE/store" "$EVIDENCE/soak" "$EVIDENCE/faults"
 printf '%s\n' "$SOURCE_SHA" > "$EVIDENCE/source-sha.txt"
 git rev-parse HEAD^{tree} > "$EVIDENCE/source-tree.txt"
-for v in ROOT REPO SOURCE_SHA EVIDENCE BINARY; do
-  printf 'export %s=%q\n' "$v" "${!v}"
-done > "$EVIDENCE/session.env"
+if [ "$VALIDATION_SCOPE" = development-integration ]; then
+  read -r -p 'Existing actual SQLite path (empty if absent): ' STORE_DB
+  read -r -p 'Existing config.toml path (empty if absent): ' STORE_CONFIG
+  export XDG_DATA_HOME="$EVIDENCE/trial-data"
+  export XDG_CONFIG_HOME="$EVIDENCE/trial-config"
+  mkdir -p "$XDG_DATA_HOME/codex-tui" "$XDG_CONFIG_HOME/codex-tui"
+  if [ -n "$STORE_DB" ]; then
+    python3 "$ROOT/scripts/release/backup_device_sqlite.py" \
+      --database "$STORE_DB" --output "$EVIDENCE/store/original.sqlite3" \
+      > "$EVIDENCE/store/original-receipt.json"
+    cp "$EVIDENCE/store/original.sqlite3" "$XDG_DATA_HOME/codex-tui/state-v2.sqlite3"
+  fi
+  if [ -n "$STORE_CONFIG" ]; then
+    test -f "$STORE_CONFIG"
+    install -m 600 "$STORE_CONFIG" "$XDG_CONFIG_HOME/codex-tui/config.toml"
+  fi
+fi
+{
+  for v in ROOT REPO SOURCE_SHA SOURCE_BRANCH VALIDATION_SCOPE EVIDENCE BINARY; do
+    printf 'export %s=%q\n' "$v" "${!v}"
+  done
+  if [ "$VALIDATION_SCOPE" = development-integration ]; then
+    for v in XDG_DATA_HOME XDG_CONFIG_HOME; do
+      printf 'export %s=%q\n' "$v" "${!v}"
+    done
+  fi
+} > "$EVIDENCE/session.env"
 printf 'Evidence: %s\n' "$EVIDENCE"
 ```
 
@@ -139,9 +181,11 @@ CODEX_TUI_GIT_SHA="$SOURCE_SHA" cargo test --locked --all-targets --all-features
 
 先在同一用户下用原生 Codex 完成小型只读任务。认证流程以设备所装 `codex --help` 与 `codex login --help` 为准，不公开设备码或认证文件。记录版本、有效配置哈希及实际 Provider，不保存秘密。codex-tui 默认启动本地 stdio App Server，不另起无关守护进程或悄悄切换 target 来掩盖失败。
 
-创建两个含不同 README 标记的专用本地仓库。确认 Cwd 与 repository-backed 会话正确；从 TUI 发起实际任务并检查成功／中断／失败终态，不能只看连接就绪。真正走通审批允许和拒绝、服务端用户输入请求、活跃任务期间导航、取消、草稿／Saved View 持久化和恢复。必须的交互未触发记 NOT_RUN／BLOCKED，不默认通过；模型目录或普通聊天问句不是审批／用户输入协议覆盖。
+创建两个含不同 README 标记的专用本地仓库。确认 Cwd 与 repository-backed 会话正确；从 TUI 发起实际任务并检查成功／中断／失败终态，不能只看连接就绪。真正走通审批允许和拒绝、服务端用户输入请求、活跃任务期间导航、取消、草稿／备注持久化和恢复。Lite 验 Registry／Workspace／搜索返回，不再进入已退役 Board；旧 Saved View 随备份保留而非编辑。必须的交互未触发记 NOT_RUN／BLOCKED，不默认通过；模型目录或普通聊天问句不是审批／用户输入协议覆盖。
 
 Lite 在可丢弃测试对象上验证 Git diff／分支／路径及原生 Git/Codex 替代流程；TUI 不再提供变更或恢复入口。历史 v1.4 写操作资格（创建、脏树／活跃删除拒绝、确认及验证移除）不得在已退役界面上标 PASS；保留旧回执并独立批准替代验收范围。另验外部编辑器边界及独立 Codex 并发。OutcomeUnknown 先向 Git／Forge 核实，不盲目重放。另见[操作指南](operator-guide.md)。
+
+Lite 合并前在[私有设备矩阵](device-matrix.md)集中完成原方案 G1–G4：来源／父子／请求准确路由，真实需求及缺陷，两类不同跨仓场景的定向交接与联合证据，以及原生替代、保留数据和体验对照。复用日常授权研发和已有 workref CLI，不为验收制造额外付费模型任务。隔离试用前后保留 `doctor store`，核对两类完整未决计数，并在另一个恢复副本中核对原始备份。未决非零须在原平台核对或明确保留，不能重放或删除。合成证据不是现场准入；没有真实任务或权限则记 NOT_RUN／BLOCKED。
 
 ```bash
 "$BINARY" doctor codex
@@ -257,12 +301,16 @@ python3 scripts/release/capture_compat.py --binary "$BINARY" \
 "$BINARY" doctor bundle --output "$EVIDENCE/real/support-final"
 
 # FINAL CANDIDATE ONLY; not a deployment or publishing command.
-python3 scripts/release/linux_qualify.py --github-repo "$REPO" \
-  --terminal-receipt "$EVIDENCE/real/terminal-linux.json" \
-  --output-dir "$EVIDENCE/linux-qualification" \
-  > "$EVIDENCE/linux-qualification.log" 2>&1
-cmp "$BINARY" "$ROOT/target/release/codex-tui"
-sha256sum -c "$EVIDENCE/binary-before.sha256"
+if [ "$VALIDATION_SCOPE" = final-candidate ]; then
+  test "$(git branch --show-current)" = main
+  test "$(git ls-remote --exit-code origin refs/heads/main | cut -f1)" = "$SOURCE_SHA"
+  python3 scripts/release/linux_qualify.py --github-repo "$REPO" \
+    --terminal-receipt "$EVIDENCE/real/terminal-linux.json" \
+    --output-dir "$EVIDENCE/linux-qualification" \
+    > "$EVIDENCE/linux-qualification.log" 2>&1
+  cmp "$BINARY" "$ROOT/target/release/codex-tui"
+  sha256sum -c "$EVIDENCE/binary-before.sha256"
+fi
 ```
 
 ## 复核、归档与停止
