@@ -127,7 +127,8 @@ impl AppState {
                     self.note_target.as_ref() == Some(owner) && self.preference_target_live(owner)
                 }
                 Effect::SnoozeWorkCard { anchor, .. } => {
-                    self.snooze_target.as_ref() == Some(anchor) && self.preference_target_live(anchor)
+                    self.snooze_target.as_ref() == Some(anchor)
+                        && self.preference_target_live(anchor)
                 }
                 _ => false,
             };

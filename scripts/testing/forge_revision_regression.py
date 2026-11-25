@@ -185,9 +185,20 @@ def case(binary, output, home, scenario):
                  ['remote','add','origin','https://{}.com/fixture/isolated.git'.format(provider)]):
         subprocess.run(['/usr/bin/git']+args, cwd=repo, env=env, check=True,
                        stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, timeout=10)
-    # The normal transport fixture's one thread must point at this real checkout.
+    # This scenario requires a scoped local note action, unlike the shared
+    # transport fixture that intentionally omits optional initialize metadata.
+    # Provide the isolated server's own observed home; never infer it in the TUI.
     codex = home/'bin/codex'
-    codex.write_text(codex.read_text().replace("'cwd':os.environ['HOME']", "'cwd':os.environ['HOME']+'/repo'"))
+    source = codex.read_text(encoding='utf-8')
+    cwd = "'cwd':os.environ['HOME']"
+    initialize = "{'serverInfo': {'name':'isolated-regression', 'version':'0.0.0'}}"
+    require(source.count(cwd) == 1 and source.count(initialize) == 1,
+            'shared transport fixture changed; review the scoped fixture')
+    source = source.replace(cwd, "'cwd':os.environ['HOME']+'/repo'")
+    source = source.replace(initialize, "{'serverInfo': {'name':'isolated-regression', "
+                            "'version':'0.0.0'}, 'codexHome':os.environ['CODEX_HOME']}")
+    compile(source, str(codex), 'exec')
+    codex.write_text(source, encoding='utf-8')
     browser = home/'bin'/'fixture-browser'
     browser.write_text(
         "#!/usr/bin/python3\nimport json, os, sys\nfrom pathlib import Path\n"

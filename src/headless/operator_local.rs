@@ -116,10 +116,8 @@ mod tests {
         old.overlay.done_at_unix_ms = Some(1);
         old.overlay.snooze_until_unix_ms = Some(50);
         let mut scoped = old.clone();
-        scoped.anchor = SourceRef::scoped_session(
-            &operator_scope_key("target", Some("/home/a")),
-            &id.0,
-        );
+        scoped.anchor =
+            SourceRef::scoped_session(&operator_scope_key("target", Some("/home/a")), &id.0);
         let planning = PlanningSnapshot {
             cards: vec![old, scoped],
             ..Default::default()

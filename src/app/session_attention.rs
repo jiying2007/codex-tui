@@ -51,7 +51,9 @@ impl AppState {
             let Some(thread) = card.anchor.thread_in_scope(scope) else {
                 continue;
             };
-            if scope.is_empty() && let Some(note) = &card.overlay.note {
+            if scope.is_empty()
+                && let Some(note) = &card.overlay.note
+            {
                 policy.notes.insert(thread.to_owned(), note.clone());
             }
             let until = card.overlay.snooze_until_unix_ms;

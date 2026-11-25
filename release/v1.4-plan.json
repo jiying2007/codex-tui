@@ -244,7 +244,7 @@
     "src/latest_read.rs": 171,
     "src/forge/read_order_tests.rs": 84,
     "src/git/read_order_tests.rs": 85,
-    "src/app/local_edit.rs": 198,
+    "src/app/local_edit.rs": 199,
     "src/runtime_local_edit.rs": 93,
     "src/runtime_local_edit/tests.rs": 298,
     "src/runtime_local_edit/route_tests.rs": 206,
