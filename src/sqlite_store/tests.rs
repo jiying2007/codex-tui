@@ -44,10 +44,14 @@ fn transcript_index_is_derived_search_state_and_excludes_reasoning() {
     };
 
     assert_eq!(
-        store.index_conversation_page("fixture", &page).expect("index"),
+        store
+            .index_conversation_page("fixture", &page)
+            .expect("index"),
         2
     );
-    let audio = store.search_transcript("fixture", "audio", 20).expect("search");
+    let audio = store
+        .search_transcript("fixture", "audio", 20)
+        .expect("search");
     assert_eq!(audio.source, TranscriptSearchSource::LocalFts);
     assert_eq!(audio.hits.len(), 1);
     assert_eq!(audio.hits[0].thread_id.0, "thread-audio");
@@ -100,7 +104,9 @@ fn local_short_search_treats_sql_like_metacharacters_as_literals() {
         next_turn_cursor: None,
         next_item_cursor: None,
     };
-    store.index_conversation_page("fixture", &page).expect("index");
+    store
+        .index_conversation_page("fixture", &page)
+        .expect("index");
     for literal in ["%", "_", "\\"] {
         let result = store
             .search_transcript("fixture", literal, 20)
@@ -233,7 +239,9 @@ fn transcript_cache_isolates_same_ids_and_legacy_text_in_fts_and_like() {
         assert!(search_transcript(&conn, "", "common", 10).is_err());
     }
     let count: i64 = conn
-        .query_row("SELECT count(*) FROM transcript_documents", [], |row| row.get(0))
+        .query_row("SELECT count(*) FROM transcript_documents", [], |row| {
+            row.get(0)
+        })
         .unwrap();
     assert_eq!(count, 3);
 }

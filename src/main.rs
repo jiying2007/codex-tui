@@ -598,6 +598,15 @@ fn drain_registry(
             }
             break;
         };
+        if !registry.matches_observed_scope(&app.backend_status) {
+            match event {
+                ConversationEvent::UserResponse { ticket, outcome } => {
+                    app.finish_user_response(ticket, outcome);
+                }
+                _ => {}
+            }
+            continue;
+        }
         changes.planning |= conversation_event_changes_planning(&event);
         changes.notification |= conversation_event_changes_notification(&event);
         changes.any = true;

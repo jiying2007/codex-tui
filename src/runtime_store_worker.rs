@@ -172,10 +172,8 @@ impl StoreWorker {
     ) -> Option<String> {
         let scope = scope.to_owned();
         let page = page.clone();
-        self.submit(move |store| {
-            StoreEvent::Notice(store.index_conversation_page(&scope, &page))
-        })
-        .err()
+        self.submit(move |store| StoreEvent::Notice(store.index_conversation_page(&scope, &page)))
+            .err()
     }
     pub(crate) fn try_event(&mut self) -> Option<StoreEvent> {
         if let Some(error) = self.flush_pending() {
