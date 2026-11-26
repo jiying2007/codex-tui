@@ -1,6 +1,5 @@
 use super::super::*;
-use crate::conversation::{ConversationItem, ConversationItemKind, ConversationPage};
-use crate::domain::ThreadId;
+use crate::conversation::{ConversationItemKind, ConversationPage};
 use tempfile::tempdir;
 
 #[test]
