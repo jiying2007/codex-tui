@@ -599,11 +599,8 @@ fn drain_registry(
             break;
         };
         if !registry.matches_observed_scope(&app.backend_status) {
-            match event {
-                ConversationEvent::UserResponse { ticket, outcome } => {
-                    app.finish_user_response(ticket, outcome);
-                }
-                _ => {}
+            if let ConversationEvent::UserResponse { ticket, outcome } = event {
+                app.finish_user_response(ticket, outcome);
             }
             continue;
         }
