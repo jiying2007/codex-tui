@@ -382,7 +382,8 @@
     "src/app/workref_link.rs": 254,
     "src/runtime_store/workref.rs": 169,
     "src/app/workref_link/tests.rs": 213,
-    "src/runtime_local_edit/workref_tests.rs": 257
+    "src/runtime_local_edit/workref_tests.rs": 257,
+    "src/sqlite_store/tests/transcript_scope.rs": 70
   },
   "ratchetPolicy": {
     "baseline": "inherit v1.3 Search & Multi-Target ceilings; feature work may only add bounded module-specific ceilings",
@@ -432,7 +433,8 @@
         "src/runtime_local_edit.rs",
         "src/app/operator_scope.rs",
         "src/app/session_attention.rs",
-        "src/runtime_local_edit/route_tests.rs"
+        "src/runtime_local_edit/route_tests.rs",
+        "src/sqlite_store/tests/transcript_scope.rs"
       ],
       "policy": "Measured source ceilings for the safety fix only; no new table, worker, or release gate."
     },
