@@ -7,10 +7,7 @@ impl AppState {
     pub(super) fn lifecycle_thread_id(&self) -> Option<ThreadId> {
         match &self.view {
             View::Registry => self.selected_thread_id(),
-            View::Thread(id)
-            | View::Review(id)
-            | View::Workspace(id)
-            | View::ManagedWorktrees(id) => Some(id.clone()),
+            View::Thread(id) | View::Review(id) | View::Workspace(id) => Some(id.clone()),
             View::Board => self.selected_planning_card().and_then(|card| {
                 (card.anchor.kind == SourceKind::CodexThread)
                     .then(|| ThreadId::new(card.anchor.value.clone()))
@@ -20,11 +17,6 @@ impl AppState {
     }
 
     pub(super) fn lifecycle_cwd(&self) -> Option<String> {
-        if matches!(self.view, View::ManagedWorktrees(_))
-            && let Some(record) = self.selected_managed_worktree()
-        {
-            return Some(record.canonical_path.clone());
-        }
         let thread_id = self.lifecycle_thread_id()?;
         self.thread_by_id(&thread_id)
             .map(|thread| thread.metadata.cwd.clone())
@@ -186,33 +178,6 @@ mod tests {
         assert!(matches!(
             fork.as_slice(),
             [Effect::ForkThread { thread_id }] if thread_id == &app.threads[0].id
-        ));
-    }
-
-    #[test]
-    fn managed_worktree_selection_becomes_new_thread_cwd() {
-        let (mut app, dir) = app_with_local_cwd();
-        let selected_path = dir.path().join("feature");
-        std::fs::create_dir_all(&selected_path).expect("create worktree fixture");
-        app.managed_worktrees = vec![crate::operation::ManagedWorktreeRecord {
-            repo: crate::domain::LocalRepoIdentity {
-                git_common_dir: dir.path().join(".git").to_string_lossy().into_owned(),
-                primary_root: dir.path().to_string_lossy().into_owned(),
-            },
-            canonical_path: selected_path.to_string_lossy().into_owned(),
-            branch: Some("feature".into()),
-            created_by_operation_id: "op-test".into(),
-            adopted: false,
-            created_at_unix_ms: 1,
-            last_verified_at_unix_ms: 1,
-        }];
-        app.managed_selected = 0;
-        app.view = View::ManagedWorktrees(app.threads[0].id.clone());
-
-        let effects = app.plan_start_thread();
-        assert!(matches!(
-            effects.as_slice(),
-            [Effect::StartThread { cwd }] if cwd == &selected_path.to_string_lossy()
         ));
     }
 

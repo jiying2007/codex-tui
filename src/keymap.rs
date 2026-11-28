@@ -67,13 +67,7 @@ pub const HELP_BINDINGS: &[HelpBinding] = &[
     HelpBinding { surface: "Review", scope: HelpScope::View(ViewKind::Review), token: "Esc", code: KeyCode::Esc, modifiers: KeyModifiers::NONE, command: Command::Back },
     HelpBinding { surface: "Workspace", scope: HelpScope::View(ViewKind::Workspace), token: ".", code: KeyCode::Char('.'), modifiers: KeyModifiers::NONE, command: Command::ContextActions },
     HelpBinding { surface: "Workspace", scope: HelpScope::View(ViewKind::Workspace), token: "r", code: KeyCode::Char('r'), modifiers: KeyModifiers::NONE, command: Command::Review },
-    HelpBinding { surface: "Workspace", scope: HelpScope::View(ViewKind::Workspace), token: "m", code: KeyCode::Char('m'), modifiers: KeyModifiers::NONE, command: Command::ManagedWorktrees },
     HelpBinding { surface: "Workspace", scope: HelpScope::View(ViewKind::Workspace), token: "Esc", code: KeyCode::Esc, modifiers: KeyModifiers::NONE, command: Command::Back },
-    HelpBinding { surface: "Managed Worktrees", scope: HelpScope::View(ViewKind::ManagedWorktrees), token: "n", code: KeyCode::Char('n'), modifiers: KeyModifiers::NONE, command: Command::CreateWorktree },
-    HelpBinding { surface: "Managed Worktrees", scope: HelpScope::View(ViewKind::ManagedWorktrees), token: "a", code: KeyCode::Char('a'), modifiers: KeyModifiers::NONE, command: Command::AdoptWorktree },
-    HelpBinding { surface: "Managed Worktrees", scope: HelpScope::View(ViewKind::ManagedWorktrees), token: "d", code: KeyCode::Char('d'), modifiers: KeyModifiers::NONE, command: Command::RemoveWorktree },
-    HelpBinding { surface: "Managed Worktrees", scope: HelpScope::View(ViewKind::ManagedWorktrees), token: "x", code: KeyCode::Char('x'), modifiers: KeyModifiers::NONE, command: Command::DeleteBranch },
-    HelpBinding { surface: "Managed Worktrees", scope: HelpScope::View(ViewKind::ManagedWorktrees), token: "y", code: KeyCode::Char('y'), modifiers: KeyModifiers::NONE, command: Command::ConfirmOperation },
     HelpBinding { surface: "Board", scope: HelpScope::View(ViewKind::Board), token: "h/l", code: KeyCode::Char('h'), modifiers: KeyModifiers::NONE, command: Command::BoardLeft },
     HelpBinding { surface: "Board", scope: HelpScope::View(ViewKind::Board), token: "h/l", code: KeyCode::Char('l'), modifiers: KeyModifiers::NONE, command: Command::BoardRight },
     HelpBinding { surface: "Board", scope: HelpScope::View(ViewKind::Board), token: "j/k", code: KeyCode::Char('j'), modifiers: KeyModifiers::NONE, command: Command::Next },
@@ -126,7 +120,6 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
             | ViewKind::Thread
             | ViewKind::Review
             | ViewKind::Workspace
-            | ViewKind::ManagedWorktrees
             | ViewKind::Board,
             KeyCode::Char('t'),
         ) if is_plain_press(key) => Some(Command::TerminalDrawer),
@@ -135,7 +128,6 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
             | ViewKind::Thread
             | ViewKind::Review
             | ViewKind::Workspace
-            | ViewKind::ManagedWorktrees
             | ViewKind::Board,
             KeyCode::Char('T'),
         ) => Some(Command::CloseTerminalDrawer),
@@ -146,12 +138,13 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
         (_, KeyCode::Char('!')) if key.modifiers.is_empty() => {
             Some(Command::OpenRecentNotification)
         }
+        (ViewKind::Thread | ViewKind::Review | ViewKind::Workspace, KeyCode::Char('='))
+            if key.modifiers == KeyModifiers::NONE =>
+        {
+            Some(Command::BeginHotSlotBind)
+        }
         (
-            ViewKind::Thread | ViewKind::Review | ViewKind::Workspace | ViewKind::ManagedWorktrees,
-            KeyCode::Char('='),
-        ) if key.modifiers == KeyModifiers::NONE => Some(Command::BeginHotSlotBind),
-        (
-            ViewKind::Thread | ViewKind::Review | ViewKind::Workspace | ViewKind::ManagedWorktrees,
+            ViewKind::Thread | ViewKind::Review | ViewKind::Workspace,
             KeyCode::Char(c @ '1'..='9'),
         ) if key.modifiers == KeyModifiers::NONE => Some(Command::HotSlot(c.to_digit(10)? as u8)),
         (ViewKind::Registry, KeyCode::Char('q')) => Some(Command::QuitOrInterrupt),
@@ -199,7 +192,6 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
         }
         (ViewKind::Thread, KeyCode::Char('r')) => Some(Command::Review),
         (ViewKind::Thread, KeyCode::Char('w')) => Some(Command::Workspace),
-        (ViewKind::Thread, KeyCode::Char('m')) => Some(Command::ManagedWorktrees),
         (ViewKind::Thread, KeyCode::Char('g')) => Some(Command::Goal),
         (ViewKind::Thread, KeyCode::PageUp) => Some(Command::PageUp),
         (ViewKind::Thread, KeyCode::PageDown) => Some(Command::PageDown),
@@ -213,19 +205,6 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
         (ViewKind::Review, KeyCode::Char('e')) => Some(Command::ExternalEditor),
         (ViewKind::Review, KeyCode::Char('o')) => Some(Command::OpenExternal),
         (ViewKind::Workspace, KeyCode::Char('r')) => Some(Command::Review),
-        (ViewKind::Workspace, KeyCode::Char('m')) => Some(Command::ManagedWorktrees),
-        (ViewKind::ManagedWorktrees, KeyCode::Char('j') | KeyCode::Down) => Some(Command::Next),
-        (ViewKind::ManagedWorktrees, KeyCode::Char('k') | KeyCode::Up) => Some(Command::Previous),
-        (ViewKind::ManagedWorktrees, KeyCode::Char('n')) => Some(Command::CreateWorktree),
-        (ViewKind::ManagedWorktrees, KeyCode::Char('a')) => Some(Command::AdoptWorktree),
-        (ViewKind::ManagedWorktrees, KeyCode::Char('d')) => Some(Command::RemoveWorktree),
-        (ViewKind::ManagedWorktrees, KeyCode::Char('x')) => Some(Command::DeleteBranch),
-        (ViewKind::ManagedWorktrees, KeyCode::Char('y')) if is_plain_press(key) => {
-            Some(Command::ConfirmOperation)
-        }
-        (ViewKind::ManagedWorktrees, KeyCode::Char('c')) if is_plain_press(key) => {
-            Some(Command::CancelOperation)
-        }
         (ViewKind::Board, KeyCode::Char('h') | KeyCode::Left) => Some(Command::BoardLeft),
         (ViewKind::Board, KeyCode::Char('l') | KeyCode::Right) => Some(Command::BoardRight),
         (ViewKind::Board, KeyCode::Char('j') | KeyCode::Down) => Some(Command::Next),
@@ -263,7 +242,6 @@ mod tests {
                 ViewKind::Thread,
                 ViewKind::Review,
                 ViewKind::Workspace,
-                ViewKind::ManagedWorktrees,
                 ViewKind::Board,
                 ViewKind::Scratch,
             ],
@@ -272,7 +250,6 @@ mod tests {
                 ViewKind::Thread,
                 ViewKind::Review,
                 ViewKind::Workspace,
-                ViewKind::ManagedWorktrees,
                 ViewKind::Board,
             ],
             HelpScope::View(view) => vec![view],
@@ -357,16 +334,6 @@ mod tests {
             ),
             (ViewKind::Thread, KeyCode::Char('c'), Command::CancelPending),
             (ViewKind::Thread, KeyCode::Char('i'), Command::AnswerPending),
-            (
-                ViewKind::ManagedWorktrees,
-                KeyCode::Char('y'),
-                Command::ConfirmOperation,
-            ),
-            (
-                ViewKind::ManagedWorktrees,
-                KeyCode::Char('c'),
-                Command::CancelOperation,
-            ),
         ];
         for (view, code, command) in cases {
             assert_eq!(
@@ -401,7 +368,6 @@ mod tests {
             ViewKind::Thread,
             ViewKind::Review,
             ViewKind::Workspace,
-            ViewKind::ManagedWorktrees,
             ViewKind::Board,
             ViewKind::Scratch,
         ] {
@@ -477,26 +443,6 @@ mod tests {
                 ViewKind::Scratch
             ),
             None
-        );
-    }
-
-    #[test]
-    fn managed_worktree_bindings_are_confirmation_oriented() {
-        assert_eq!(
-            command_for_key(key(KeyCode::Char('m')), ViewKind::Workspace),
-            Some(Command::ManagedWorktrees)
-        );
-        assert_eq!(
-            command_for_key(key(KeyCode::Char('n')), ViewKind::ManagedWorktrees),
-            Some(Command::CreateWorktree)
-        );
-        assert_eq!(
-            command_for_key(key(KeyCode::Char('y')), ViewKind::ManagedWorktrees),
-            Some(Command::ConfirmOperation)
-        );
-        assert_eq!(
-            command_for_key(key(KeyCode::Char('d')), ViewKind::ManagedWorktrees),
-            Some(Command::RemoveWorktree)
         );
     }
 

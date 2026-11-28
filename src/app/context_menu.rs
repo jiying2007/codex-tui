@@ -1,5 +1,5 @@
 //! Keep an open menu's action and target stable while observations are refreshed.
-use super::{AppState, ContextChoice, View, local_text, mutation_editor::MutationEditor};
+use super::{AppState, ContextChoice, View, local_text};
 use crate::planning::SourceRef;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -14,7 +14,6 @@ struct Scope {
 pub(super) struct ContextMenu {
     pub(super) choices: Vec<ContextChoice>,
     scope: Scope,
-    forge: Option<MutationEditor>,
 }
 
 impl AppState {
@@ -32,7 +31,6 @@ impl AppState {
         self.context_menu = (!choices.is_empty()).then(|| ContextMenu {
             choices,
             scope: self.context_scope(),
-            forge: self.editor_snapshot(super::InputMode::ForgeComment),
         });
         self.context_open = self.context_menu.is_some();
         self.context_selected = 0;
@@ -55,23 +53,7 @@ impl AppState {
                     .target
                     .as_ref()
                     .is_none_or(|target| self.local_target_live(target))
-                && choice.is_some_and(|choice| {
-                    self.build_context_choices().contains(&choice)
-                        && match choice {
-                            ContextChoice::ForgeCreateMergeRequest
-                            | ContextChoice::ForgeComment
-                            | ContextChoice::ForgeApprove
-                            | ContextChoice::ForgeMerge
-                            | ContextChoice::ForgeMergeCommit
-                            | ContextChoice::ForgeSquashMerge
-                            | ContextChoice::ForgeRebaseMerge => {
-                                menu.forge.is_some()
-                                    && menu.forge
-                                        == self.editor_snapshot(super::InputMode::ForgeComment)
-                            }
-                            _ => true,
-                        }
-                })
+                && choice.is_some_and(|choice| self.build_context_choices().contains(&choice))
         });
         self.close_context_menu();
         if !valid {

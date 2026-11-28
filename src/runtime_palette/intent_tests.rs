@@ -212,7 +212,7 @@ fn chinese_refusal_is_visible_and_executes_nothing() {
 fn quick_prompt_palette_opens_visible_composer_and_restores_its_origin() {
     use codex_tui::{conversation::ConversationPage, domain::RuntimeStatus, ui};
     use ratatui::{Terminal, backend::TestBackend};
-    for origin in 0..6 {
+    for origin in 0..5 {
         let mut threads = FakeBackend::scaled(1).snapshot().threads;
         threads[0].runtime = RuntimeStatus::Inactive;
         threads[0].attention.clear();
@@ -224,7 +224,6 @@ fn quick_prompt_palette_opens_visible_composer_and_restores_its_origin() {
             1 => View::Board,
             2 => View::Review(id.clone()),
             3 => View::Workspace(id.clone()),
-            4 => View::ManagedWorktrees(id.clone()),
             _ => View::Thread(id.clone()),
         };
         let original = app.view.clone();
@@ -269,7 +268,7 @@ fn quick_prompt_palette_opens_visible_composer_and_restores_its_origin() {
         assert_eq!(app.view, View::Thread(id.clone()));
         assert_eq!(app.thread_ui[&id.0].draft, "VISIBLE_DRAFT");
         crate::runtime_input::handle_key(&mut app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
-        let expected = if origin == 5 {
+        let expected = if matches!(&original, View::Thread(_)) {
             View::Registry
         } else {
             original.clone()
@@ -296,7 +295,7 @@ fn quick_prompt_palette_opens_visible_composer_and_restores_its_origin() {
             Effect::SubmitPrompt { thread_id, text, .. } if *thread_id == id && text == "VISIBLE_DRAFT"
         )), "{original:?}");
         crate::runtime_input::handle_key(&mut app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
-        let expected = if origin == 5 {
+        let expected = if matches!(&original, View::Thread(_)) {
             View::Registry
         } else {
             original

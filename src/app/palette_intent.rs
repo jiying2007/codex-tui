@@ -95,7 +95,6 @@ impl AppState {
                             choice,
                             Command::Review
                                 | Command::Workspace
-                                | Command::ManagedWorktrees
                                 | Command::TerminalDrawer
                                 | Command::ContextActions
                         ) || original.repository == current.repository)

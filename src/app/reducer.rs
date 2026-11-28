@@ -182,103 +182,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::PlanningStoreDegraded(error) => {
             state.planning_store_error = error;
         }
-        Action::OpenManagedWorktrees => {
-            let Some(thread_id) = state.current_thread_id().cloned() else {
-                return vec![];
-            };
-            if state
-                .git_context(&thread_id)
-                .and_then(|context| context.repo.as_ref())
-                .is_none()
-            {
-                state.mutation_notice = Some(
-                    local_text(
-                        state.language,
-                        "current thread is not in a Git repository",
-                        "当前会话不在 Git 仓库中",
-                    )
-                    .into(),
-                );
-                return vec![];
-            }
-            if !matches!(state.view, View::ManagedWorktrees(_)) {
-                state.managed_return_view = Some(state.view.clone());
-            }
-            state.view = View::ManagedWorktrees(thread_id);
-            state.managed_selected = 0;
-            state.pending_operation = None;
-            state.mutation_notice = None;
-            return vec![Effect::RefreshManagedWorktrees];
-        }
-        Action::ManagedWorktreesLoaded(records) => {
-            state.managed_worktrees = records;
-            state.managed_selected = state
-                .managed_selected
-                .min(state.visible_managed_worktrees().len().saturating_sub(1));
-        }
-        Action::MutationReceipt(receipt) => {
-            let receipt = *receipt;
-            if state
-                .pending_operation
-                .as_ref()
-                .is_some_and(|plan| plan.operation_id == receipt.operation_id)
-            {
-                state.pending_operation = None;
-            }
-            state.mutation_notice = Some(format!(
-                "{} · {}",
-                receipt.plan.kind.label(),
-                operation_state_text(receipt.state, state.language)
-            ));
-            let repo = receipt.plan.repo.clone();
-            state
-                .git_contexts
-                .retain(|_, context| context.repo.as_ref() != Some(&repo));
-            state.forge_observations.retain(|thread_id, _| {
-                state
-                    .git_contexts
-                    .get(thread_id)
-                    .is_some_and(|context| context.repo.as_ref() != Some(&repo))
-            });
-            state
-                .recent_operations
-                .retain(|item| item.operation_id != receipt.operation_id);
-            state.recent_operations.insert(0, receipt);
-            state.recent_operations.truncate(20);
-        }
-        Action::ForgeMutationReceipt(receipt) => {
-            let receipt = *receipt;
-            if state
-                .pending_forge_operation
-                .as_ref()
-                .is_some_and(|plan| plan.operation_id == receipt.operation_id)
-            {
-                state.pending_forge_operation = None;
-                state.pending_forge_payload = None;
-            }
-            state.mutation_notice = Some(format!(
-                "{} · {}",
-                receipt.plan.kind.label(),
-                operation_state_text(receipt.state, state.language)
-            ));
-
-            for observation in state.forge_observations.values_mut() {
-                if observation.identity.as_ref().is_some_and(|identity| {
-                    identity.provider == receipt.plan.provider
-                        && identity.host.eq_ignore_ascii_case(&receipt.plan.host)
-                        && identity.project_id == receipt.plan.project_id
-                }) {
-                    observation.observed_at_unix_ms = 1;
-                    observation.review = None;
-                }
-            }
-
-            state
-                .recent_forge_operations
-                .retain(|item| item.operation_id != receipt.operation_id);
-            state.recent_forge_operations.insert(0, receipt);
-            state.recent_forge_operations.truncate(20);
-        }
         Action::MutationNotice(notice) => {
             state.mutation_notice = Some(notice);
         }
@@ -287,122 +190,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
         }
         Action::ClearRecentNotification => {
             state.recent_notification = None;
-        }
-        Action::MoveManagedWorktree(delta) => {
-            let len = state.visible_managed_worktrees().len();
-            state.managed_selected = wrap_selection(state.managed_selected, delta, len);
-        }
-        Action::BeginCreateWorktree => {
-            state.pending_forge_operation = None;
-            state.pending_forge_payload = None;
-            let Some(thread_id) = state.current_thread_id().cloned() else {
-                return vec![];
-            };
-            let Some(context) = state.git_context(&thread_id) else {
-                state.mutation_notice = Some(
-                    local_text(
-                        state.language,
-                        "Git context is unavailable",
-                        "Git 上下文不可用",
-                    )
-                    .into(),
-                );
-                return vec![];
-            };
-            if context.repo.is_none() {
-                state.mutation_notice = Some(
-                    local_text(
-                        state.language,
-                        "current cwd is not a Git repository",
-                        "当前 cwd 不是 Git 仓库",
-                    )
-                    .into(),
-                );
-                return vec![];
-            }
-            if !state.begin_mutation_editor(InputMode::WorktreeCreateBranch) {
-                return vec![];
-            }
-            state.pending_operation = None;
-            state.create_worktree_branch = None;
-            state.create_worktree_path = None;
-            state.input_buffer.clear();
-            state.input_mode = InputMode::WorktreeCreateBranch;
-        }
-        Action::BeginAdoptCurrentWorktree => {
-            let Some(thread_id) = state.current_thread_id().cloned() else {
-                return vec![];
-            };
-            let Some(context) = state.git_context(&thread_id) else {
-                return vec![];
-            };
-            let (Some(repo), Some(worktree)) = (&context.repo, &context.worktree) else {
-                state.mutation_notice = Some(
-                    local_text(
-                        state.language,
-                        "current cwd is not a Git worktree",
-                        "当前 cwd 不是 Git worktree",
-                    )
-                    .into(),
-                );
-                return vec![];
-            };
-            if state.managed_worktrees.iter().any(|record| {
-                record.repo == *repo && record.canonical_path == worktree.canonical_path
-            }) {
-                state.mutation_notice = Some(
-                    local_text(
-                        state.language,
-                        "current worktree is already managed/adopted",
-                        "当前 worktree 已受管或已接管",
-                    )
-                    .into(),
-                );
-                return vec![];
-            }
-            state.pending_operation = Some(OperationPlan::adopt_worktree(
-                repo.clone(),
-                repo.primary_root.clone(),
-                worktree.canonical_path.clone(),
-                now_unix_ms(),
-            ));
-            state.mutation_notice = None;
-        }
-        Action::BeginRemoveManagedWorktree => {
-            let Some(record) = state.selected_managed_worktree().cloned() else {
-                return vec![];
-            };
-            state.pending_operation = Some(OperationPlan::remove_worktree(
-                record.repo.clone(),
-                record.repo.primary_root.clone(),
-                record.canonical_path,
-                now_unix_ms(),
-            ));
-            state.mutation_notice = None;
-        }
-        Action::BeginDeleteBranch => {
-            let Some(thread_id) = state.current_thread_id().cloned() else {
-                return vec![];
-            };
-            let Some(context) = state.git_context(&thread_id) else {
-                return vec![];
-            };
-            if context.repo.is_none() {
-                return vec![];
-            }
-            if !state.begin_mutation_editor(InputMode::WorktreeDeleteBranch) {
-                return vec![];
-            }
-            state.input_buffer = state
-                .selected_managed_worktree()
-                .and_then(|record| record.branch.clone())
-                .or_else(|| {
-                    state
-                        .git_context(&thread_id)
-                        .and_then(|context| context.branch.clone())
-                })
-                .unwrap_or_default();
-            state.input_mode = InputMode::WorktreeDeleteBranch;
         }
         Action::ConfirmPendingOperation => {
             if state.planning_store_error.is_some() {
@@ -419,21 +206,9 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             if let Some(plan) = state.pending_local_batch.take() {
                 return vec![Effect::ApplyLocalBatch(Box::new(plan))];
             }
-            if let Some(plan) = state.pending_forge_operation.take() {
-                let payload = state.pending_forge_payload.take();
-                return vec![Effect::ExecuteForgeOperation(Box::new(
-                    ForgeMutationRequest { plan, payload },
-                ))];
-            }
-            let Some(plan) = state.pending_operation.take() else {
-                return vec![];
-            };
-            return vec![Effect::ExecuteOperation(Box::new(plan))];
+            return vec![];
         }
         Action::CancelPendingOperation => {
-            state.pending_operation = None;
-            state.pending_forge_operation = None;
-            state.pending_forge_payload = None;
             state.pending_local_batch = None;
             state.mutation_notice = Some(
                 local_text(
@@ -624,10 +399,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 View::Board => state
                     .selected_planning_card()
                     .and_then(|card| card.workspace.clone()),
-                View::Thread(id)
-                | View::Review(id)
-                | View::Workspace(id)
-                | View::ManagedWorktrees(id) => state
+                View::Thread(id) | View::Review(id) | View::Workspace(id) => state
                     .threads
                     .iter()
                     .find(|thread| thread.id == *id)
@@ -757,144 +529,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 return vec![];
             }
 
-            if matches!(
-                choice,
-                ContextChoice::ForgeCreateMergeRequest
-                    | ContextChoice::ForgeComment
-                    | ContextChoice::ForgeApprove
-                    | ContextChoice::ForgeMerge
-                    | ContextChoice::ForgeMergeCommit
-                    | ContextChoice::ForgeSquashMerge
-                    | ContextChoice::ForgeRebaseMerge
-            ) {
-                let Some(target) = state.current_forge_mutation_target() else {
-                    state.mutation_notice = Some(
-                        local_text(
-                            state.language,
-                            "forge mutation target is unavailable",
-                            "Forge 变更目标不可用",
-                        )
-                        .into(),
-                    );
-                    return vec![];
-                };
-                state.pending_operation = None;
-                match choice {
-                    ContextChoice::ForgeCreateMergeRequest => {
-                        if !state.begin_mutation_editor(InputMode::ForgeMergeRequestTitle) {
-                            return vec![];
-                        }
-                        state.pending_forge_operation = None;
-                        state.pending_forge_payload = None;
-                        state.input_buffer.clear();
-                        state.input_mode = InputMode::ForgeMergeRequestTitle;
-                    }
-                    ContextChoice::ForgeComment => {
-                        if !state.begin_mutation_editor(InputMode::ForgeComment) {
-                            return vec![];
-                        }
-                        state.pending_forge_operation = None;
-                        state.pending_forge_payload = None;
-                        state.input_buffer.clear();
-                        state.input_mode = InputMode::ForgeComment;
-                    }
-                    ContextChoice::ForgeApprove
-                    | ContextChoice::ForgeMerge
-                    | ContextChoice::ForgeMergeCommit
-                    | ContextChoice::ForgeSquashMerge
-                    | ContextChoice::ForgeRebaseMerge => {
-                        let Some(change) = target.change_request else {
-                            state.mutation_notice = Some(
-                                local_text(
-                                    state.language,
-                                    "current branch has no open forge change request",
-                                    "当前分支没有打开的 Forge 变更请求",
-                                )
-                                .into(),
-                            );
-                            return vec![];
-                        };
-                        let confirmed_sha = change.head_sha.clone().unwrap_or_default();
-                        let planned_at = now_unix_ms();
-                        let plan = match choice {
-                            ContextChoice::ForgeApprove => {
-                                ForgeMutationPlan::approve_merge_request(
-                                    &target.identity,
-                                    target.cwd,
-                                    change.iid,
-                                    change.source_branch,
-                                    change.target_branch,
-                                    planned_at,
-                                )
-                            }
-                            ContextChoice::ForgeMerge
-                            | ContextChoice::ForgeMergeCommit
-                            | ContextChoice::ForgeSquashMerge
-                            | ContextChoice::ForgeRebaseMerge => {
-                                let plan = ForgeMutationPlan::merge_merge_request(
-                                    &target.identity,
-                                    target.cwd,
-                                    change.iid,
-                                    change.source_branch,
-                                    change.target_branch,
-                                    planned_at,
-                                );
-                                match choice {
-                                    ContextChoice::ForgeMergeCommit => {
-                                        plan.and_then(|plan| plan.bind_github_merge_method("merge"))
-                                    }
-                                    ContextChoice::ForgeSquashMerge => plan
-                                        .and_then(|plan| plan.bind_github_merge_method("squash")),
-                                    ContextChoice::ForgeRebaseMerge => plan
-                                        .and_then(|plan| plan.bind_github_merge_method("rebase")),
-                                    _ => plan,
-                                }
-                            }
-                            _ => {
-                                state.mutation_notice = Some(
-                                    local_text(
-                                        state.language,
-                                        "forge action routing mismatch; no mutation executed",
-                                        "Forge 操作路由不匹配；未执行变更",
-                                    )
-                                    .into(),
-                                );
-                                return vec![];
-                            }
-                        };
-                        match plan.and_then(|plan| plan.bind_confirmed_head(&confirmed_sha)) {
-                            Ok(plan) => {
-                                state.pending_forge_operation = Some(plan);
-                                state.pending_forge_payload = None;
-                                state.mutation_notice = None;
-                            }
-                            Err(error) => {
-                                state.mutation_notice = Some(format!(
-                                    "{}: {error:#}",
-                                    local_text(
-                                        state.language,
-                                        "cannot create forge mutation plan",
-                                        "无法创建 Forge 变更计划",
-                                    )
-                                ));
-                            }
-                        }
-                    }
-                    _ => {
-                        state.mutation_notice = Some(
-                            local_text(
-                                state.language,
-                                "forge action routing mismatch; no mutation executed",
-                                "Forge 操作路由不匹配；未执行变更",
-                            )
-                            .into(),
-                        );
-                        return vec![];
-                    }
-                }
-                return vec![];
-            }
-
             let Some(target) = state.selected_local_target() else {
                 return vec![];
             };
@@ -984,14 +618,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 | ContextChoice::BatchMarkDone
                 | ContextChoice::BatchReopen
                 | ContextChoice::BatchSnooze
-                | ContextChoice::BatchClearSnooze
-                | ContextChoice::ForgeCreateMergeRequest
-                | ContextChoice::ForgeComment
-                | ContextChoice::ForgeApprove
-                | ContextChoice::ForgeMerge
-                | ContextChoice::ForgeMergeCommit
-                | ContextChoice::ForgeSquashMerge
-                | ContextChoice::ForgeRebaseMerge => {
+                | ContextChoice::BatchClearSnooze => {
                     state.mutation_notice = Some(
                         local_text(
                             state.language,
@@ -1201,10 +828,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::OpenReview => {
             let thread_id = match &state.view {
                 View::Registry => state.selected_thread_id(),
-                View::Thread(id)
-                | View::Review(id)
-                | View::Workspace(id)
-                | View::ManagedWorktrees(id) => Some(id.clone()),
+                View::Thread(id) | View::Review(id) | View::Workspace(id) => Some(id.clone()),
                 View::Board => state.selected_planning_card().and_then(|card| {
                     (card.anchor.kind == SourceKind::CodexThread)
                         .then(|| ThreadId::new(card.anchor.value.clone()))
@@ -1243,10 +867,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
         Action::OpenWorkspace => {
             let thread_id = match &state.view {
                 View::Registry => state.selected_thread_id(),
-                View::Thread(id)
-                | View::Review(id)
-                | View::Workspace(id)
-                | View::ManagedWorktrees(id) => Some(id.clone()),
+                View::Thread(id) | View::Review(id) | View::Workspace(id) => Some(id.clone()),
                 View::Board => state.selected_planning_card().and_then(|card| {
                     (card.anchor.kind == SourceKind::CodexThread)
                         .then(|| ThreadId::new(card.anchor.value.clone()))
@@ -1531,22 +1152,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
         }
         Action::Back => {
-            if state.pending_operation.is_some() {
-                state.pending_operation = None;
-                state.mutation_notice = Some(
-                    local_text(
-                        state.language,
-                        "operation cancelled before execution",
-                        "操作已在执行前取消",
-                    )
-                    .into(),
-                );
-                return vec![];
-            }
-            if matches!(state.view, View::ManagedWorktrees(_)) {
-                state.view = state.managed_return_view.take().unwrap_or(View::Registry);
-                return vec![];
-            }
             if state.context_open {
                 state.close_context_menu();
                 return vec![];
@@ -1822,12 +1427,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::BatchPriority
             | InputMode::BatchSnooze
             | InputMode::GoalObjective
-            | InputMode::WorktreeCreateBranch
-            | InputMode::WorktreeCreatePath
-            | InputMode::WorktreeCreateStartPoint
-            | InputMode::WorktreeDeleteBranch
-            | InputMode::ForgeMergeRequestTitle
-            | InputMode::ForgeComment
             | InputMode::WorkrefLink => {
                 state.input_buffer.push(character);
                 if state.input_mode == InputMode::Search {
@@ -1867,12 +1466,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 | InputMode::BatchPriority
                 | InputMode::BatchSnooze
                 | InputMode::GoalObjective
-                | InputMode::WorktreeCreateBranch
-                | InputMode::WorktreeCreatePath
-                | InputMode::WorktreeCreateStartPoint
-                | InputMode::WorktreeDeleteBranch
-                | InputMode::ForgeMergeRequestTitle
-                | InputMode::ForgeComment
                 | InputMode::WorkrefLink => {
                     state.input_buffer.push_str(&text);
                     if state.input_mode == InputMode::Search {
@@ -1906,12 +1499,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             | InputMode::BatchPriority
             | InputMode::BatchSnooze
             | InputMode::GoalObjective
-            | InputMode::WorktreeCreateBranch
-            | InputMode::WorktreeCreatePath
-            | InputMode::WorktreeCreateStartPoint
-            | InputMode::WorktreeDeleteBranch
-            | InputMode::ForgeMergeRequestTitle
-            | InputMode::ForgeComment
             | InputMode::WorkrefLink => {
                 state.input_buffer.pop();
                 if state.input_mode == InputMode::Search {
@@ -1951,232 +1538,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 state.transcript_search_loading = true;
                 state.transcript_search_error = None;
                 return vec![Effect::SearchTranscript { query }];
-            }
-            if mode == InputMode::ForgeMergeRequestTitle {
-                let title = state.input_buffer.trim().to_string();
-                if title.is_empty() {
-                    return vec![];
-                }
-                let Some(target) = state.current_forge_mutation_target() else {
-                    state.mutation_notice = Some(
-                        local_text(
-                            state.language,
-                            "forge mutation target is unavailable",
-                            "Forge 变更目标不可用",
-                        )
-                        .into(),
-                    );
-                    return vec![];
-                };
-                let Some(target_branch) = target.identity.default_branch.clone() else {
-                    state.mutation_notice = Some(
-                        local_text(
-                            state.language,
-                            "forge default branch is unavailable; create change-request plan refused",
-                            "Forge 默认分支不可用；已拒绝创建变更请求计划",
-                        )
-                        .into(),
-                    );
-                    return vec![];
-                };
-                match ForgeMutationPlan::create_merge_request(
-                    &target.identity,
-                    target.cwd,
-                    target.branch,
-                    target_branch,
-                    title,
-                    now_unix_ms(),
-                ) {
-                    Ok(plan) => {
-                        state.pending_forge_operation = Some(plan);
-                        state.pending_forge_payload = None;
-                        state.mutation_editor = None;
-                        state.input_mode = InputMode::Normal;
-                        state.input_buffer.clear();
-                        state.mutation_notice = None;
-                    }
-                    Err(error) => {
-                        state.mutation_notice = Some(format!(
-                            "{}: {error:#}",
-                            local_text(
-                                state.language,
-                                "cannot create forge mutation plan",
-                                "无法创建 Forge 变更计划",
-                            )
-                        ));
-                    }
-                }
-                return vec![];
-            }
-            if mode == InputMode::ForgeComment {
-                let body = state.input_buffer.trim().to_string();
-                if body.is_empty() {
-                    return vec![];
-                }
-                let Some(target) = state.current_forge_mutation_target() else {
-                    state.mutation_notice = Some(
-                        local_text(
-                            state.language,
-                            "forge mutation target is unavailable",
-                            "Forge 变更目标不可用",
-                        )
-                        .into(),
-                    );
-                    return vec![];
-                };
-                let Some(change) = target.change_request else {
-                    state.mutation_notice = Some(
-                        local_text(
-                            state.language,
-                            "current branch has no open merge request",
-                            "当前分支没有打开的合并请求",
-                        )
-                        .into(),
-                    );
-                    return vec![];
-                };
-                match ForgeMutationPlan::comment_merge_request(
-                    &target.identity,
-                    target.cwd,
-                    change.iid,
-                    change.source_branch,
-                    change.target_branch,
-                    body.len(),
-                    now_unix_ms(),
-                ) {
-                    Ok(plan) => {
-                        state.pending_forge_operation = Some(plan);
-                        state.pending_forge_payload = Some(body);
-                        state.mutation_editor = None;
-                        state.input_mode = InputMode::Normal;
-                        state.input_buffer.clear();
-                        state.mutation_notice = None;
-                    }
-                    Err(error) => {
-                        state.mutation_notice = Some(format!(
-                            "{}: {error:#}",
-                            local_text(
-                                state.language,
-                                "cannot create forge mutation plan",
-                                "无法创建 Forge 变更计划",
-                            )
-                        ));
-                    }
-                }
-                return vec![];
-            }
-            if mode == InputMode::WorktreeCreateBranch {
-                let branch = state.input_buffer.trim().to_string();
-                if branch.is_empty() {
-                    return vec![];
-                }
-                state.create_worktree_branch = Some(branch);
-                state.input_buffer.clear();
-                state.input_mode = InputMode::WorktreeCreatePath;
-                return vec![];
-            }
-            if mode == InputMode::WorktreeCreatePath {
-                let path = state.input_buffer.trim().to_string();
-                if path.is_empty() {
-                    return vec![];
-                }
-                if !std::path::Path::new(&path).is_absolute() {
-                    state.mutation_notice = Some(
-                        local_text(
-                            state.language,
-                            "worktree path must be absolute before a plan can be created",
-                            "创建计划前 worktree 路径必须是绝对路径",
-                        )
-                        .into(),
-                    );
-                    return vec![];
-                }
-                state.create_worktree_path = Some(path);
-                state.input_buffer = "HEAD".into();
-                state.input_mode = InputMode::WorktreeCreateStartPoint;
-                return vec![];
-            }
-            if mode == InputMode::WorktreeCreateStartPoint {
-                let start_point = state.input_buffer.trim().to_string();
-                if start_point.is_empty() {
-                    return vec![];
-                }
-                let Some(thread_id) = state.current_thread_id().cloned() else {
-                    return vec![];
-                };
-                let Some(context) = state.git_context(&thread_id) else {
-                    return vec![];
-                };
-                let Some(repo) = context.repo.clone() else {
-                    return vec![];
-                };
-                let observed_head = context.head.clone();
-                let Some(branch) = state.create_worktree_branch.clone() else {
-                    return vec![];
-                };
-                let Some(path) = state.create_worktree_path.clone() else {
-                    return vec![];
-                };
-                let bind_head = start_point == "HEAD";
-                let plan = OperationPlan::create_worktree(
-                    repo.clone(),
-                    repo.primary_root,
-                    path,
-                    branch,
-                    start_point,
-                    now_unix_ms(),
-                );
-                let plan = if bind_head {
-                    match plan.bind_observed_head(observed_head.as_deref().unwrap_or_default()) {
-                        Ok(plan) => plan,
-                        Err(error) => {
-                            state.mutation_notice = Some(format!(
-                                "{}: {error}",
-                                local_text(
-                                    state.language,
-                                    "cannot bind worktree HEAD",
-                                    "无法固定 worktree HEAD"
-                                )
-                            ));
-                            return vec![];
-                        }
-                    }
-                } else {
-                    plan
-                };
-                state.pending_operation = Some(plan);
-                state.create_worktree_branch = None;
-                state.create_worktree_path = None;
-                state.mutation_notice = None;
-                state.mutation_editor = None;
-                state.input_mode = InputMode::Normal;
-                state.input_buffer.clear();
-                return vec![];
-            }
-            if mode == InputMode::WorktreeDeleteBranch {
-                let branch = state.input_buffer.trim().to_string();
-                if branch.is_empty() {
-                    return vec![];
-                }
-                let Some(thread_id) = state.current_thread_id().cloned() else {
-                    return vec![];
-                };
-                let Some(repo) = state
-                    .git_context(&thread_id)
-                    .and_then(|context| context.repo.clone())
-                else {
-                    return vec![];
-                };
-                state.pending_operation = Some(OperationPlan::delete_branch(
-                    repo.clone(),
-                    repo.primary_root,
-                    branch,
-                    now_unix_ms(),
-                ));
-                state.mutation_editor = None;
-                state.input_mode = InputMode::Normal;
-                state.input_buffer.clear();
-                return vec![];
             }
             if matches!(
                 mode,
@@ -2390,27 +1751,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                     | InputMode::BatchPriority
                     | InputMode::BatchSnooze
             ) {
-                state.input_mode = InputMode::Normal;
-                state.input_buffer.clear();
-                return vec![];
-            }
-            if matches!(
-                state.input_mode,
-                InputMode::ForgeMergeRequestTitle | InputMode::ForgeComment
-            ) {
-                state.input_mode = InputMode::Normal;
-                state.input_buffer.clear();
-                return vec![];
-            }
-            if matches!(
-                state.input_mode,
-                InputMode::WorktreeCreateBranch
-                    | InputMode::WorktreeCreatePath
-                    | InputMode::WorktreeCreateStartPoint
-                    | InputMode::WorktreeDeleteBranch
-            ) {
-                state.create_worktree_branch = None;
-                state.create_worktree_path = None;
                 state.input_mode = InputMode::Normal;
                 state.input_buffer.clear();
                 return vec![];

@@ -67,22 +67,12 @@ impl AppState {
             goals: BTreeMap::new(),
             goal_checked: BTreeSet::new(),
             goal_actions_open: false,
-            managed_worktrees: vec![],
-            managed_selected: 0,
-            managed_return_view: None,
-            pending_operation: None,
-            recent_operations: vec![],
-            pending_forge_operation: None,
-            pending_forge_payload: None,
             pending_local_batch: None,
             terminal_drawer_open: false,
             terminal_focused: false,
             terminal_snapshot: None,
-            recent_forge_operations: vec![],
             mutation_notice: None,
             recent_notification: None,
-            create_worktree_branch: None,
-            create_worktree_path: None,
             planning_store_error: None,
             review_return_view: None,
             workspace_return_view: None,
@@ -230,9 +220,7 @@ impl AppState {
             && !self.transcript_search_open
             && !self.goal_actions_open
             && self.saved_view_editor.is_none()
-            && self.pending_operation.is_none()
             && self.pending_local_batch.is_none()
-            && self.pending_forge_operation.is_none()
             && self.hot_slot_bind_pending.is_none()
     }
 
@@ -257,19 +245,18 @@ impl AppState {
                 self.thread_by_id(thread_id).is_some()
                     || self.unregistered_watches.contains(&thread_id.0)
             }
-            View::Review(thread_id)
-            | View::Workspace(thread_id)
-            | View::ManagedWorktrees(thread_id) => self.thread_by_id(thread_id).is_some(),
+            View::Review(thread_id) | View::Workspace(thread_id) => {
+                self.thread_by_id(thread_id).is_some()
+            }
             View::Registry | View::Board | View::Scratch(_) => true,
         }
     }
 
     pub(super) fn thread_id_for_view(view: &View) -> Option<ThreadId> {
         match view {
-            View::Thread(thread_id)
-            | View::Review(thread_id)
-            | View::Workspace(thread_id)
-            | View::ManagedWorktrees(thread_id) => Some(thread_id.clone()),
+            View::Thread(thread_id) | View::Review(thread_id) | View::Workspace(thread_id) => {
+                Some(thread_id.clone())
+            }
             View::Registry | View::Board | View::Scratch(_) => None,
         }
     }
@@ -311,7 +298,6 @@ impl AppState {
             View::Thread(_) => ViewKind::Thread,
             View::Review(_) => ViewKind::Review,
             View::Workspace(_) => ViewKind::Workspace,
-            View::ManagedWorktrees(_) => ViewKind::ManagedWorktrees,
             View::Board => ViewKind::Board,
             View::Scratch(_) => ViewKind::Scratch,
         }
@@ -371,10 +357,7 @@ impl AppState {
     pub fn current_thread_id(&self) -> Option<&ThreadId> {
         match &self.view {
             View::Registry => None,
-            View::Thread(id)
-            | View::Review(id)
-            | View::Workspace(id)
-            | View::ManagedWorktrees(id) => Some(id),
+            View::Thread(id) | View::Review(id) | View::Workspace(id) => Some(id),
             View::Board | View::Scratch(_) => None,
         }
     }
@@ -400,44 +383,6 @@ impl AppState {
     pub fn current_goal(&self) -> Option<&GoalObservation> {
         let thread_id = self.current_thread_id()?;
         self.goals.get(&thread_id.0)
-    }
-
-    pub fn visible_managed_worktrees(&self) -> Vec<&ManagedWorktreeRecord> {
-        let repo = self
-            .current_thread_id()
-            .and_then(|thread_id| self.git_context(thread_id))
-            .and_then(|context| context.repo.as_ref());
-        self.managed_worktrees
-            .iter()
-            .filter(|record| repo.is_none_or(|repo| &record.repo == repo))
-            .collect()
-    }
-
-    pub fn selected_managed_worktree(&self) -> Option<&ManagedWorktreeRecord> {
-        self.visible_managed_worktrees()
-            .get(self.managed_selected)
-            .copied()
-    }
-
-    pub fn active_mutation_scopes(&self) -> Vec<MutationScope> {
-        self.threads
-            .iter()
-            .filter(|thread| {
-                matches!(
-                    thread.runtime,
-                    RuntimeStatus::Working | RuntimeStatus::WaitingHuman
-                ) || self.goals.get(&thread.id.0).is_some_and(|goal| {
-                    matches!(
-                        goal.status,
-                        GoalStatus::Active
-                            | GoalStatus::Blocked
-                            | GoalStatus::UsageLimited
-                            | GoalStatus::BudgetLimited
-                    )
-                })
-            })
-            .map(|thread| mutation_scope_for_thread(thread, self.git_context(&thread.id)))
-            .collect()
     }
 
     pub fn current_review(&self) -> Option<&GitReview> {
@@ -482,9 +427,6 @@ impl AppState {
         };
         match plan {
             Ok(plan) => {
-                self.pending_operation = None;
-                self.pending_forge_operation = None;
-                self.pending_forge_payload = None;
                 self.pending_local_batch = Some(plan);
                 self.mutation_notice = None;
             }
@@ -516,10 +458,9 @@ impl AppState {
             View::Board => self
                 .selected_planning_card()
                 .map(|card| card.anchor.clone()),
-            View::Thread(id)
-            | View::Review(id)
-            | View::Workspace(id)
-            | View::ManagedWorktrees(id) => Some(SourceRef::codex_thread(id)),
+            View::Thread(id) | View::Review(id) | View::Workspace(id) => {
+                Some(SourceRef::codex_thread(id))
+            }
             View::Scratch(id) => Some(SourceRef {
                 kind: SourceKind::ScratchWork,
                 value: id.clone(),
@@ -538,10 +479,7 @@ impl AppState {
         }
         let thread_id = match &self.view {
             View::Registry => self.selected_thread_id(),
-            View::Thread(id)
-            | View::Review(id)
-            | View::Workspace(id)
-            | View::ManagedWorktrees(id) => Some(id.clone()),
+            View::Thread(id) | View::Review(id) | View::Workspace(id) => Some(id.clone()),
             View::Board => self.selected_planning_card().and_then(|card| {
                 (card.anchor.kind == SourceKind::CodexThread)
                     .then(|| ThreadId::new(card.anchor.value.clone()))
@@ -615,35 +553,6 @@ impl AppState {
         }
     }
 
-    pub(super) fn current_forge_mutation_target(&self) -> Option<ForgeMutationTarget> {
-        if self.app_server_target_is_remote() {
-            return None;
-        }
-        let thread_id = match &self.view {
-            View::Review(id) | View::Workspace(id) => id,
-            _ => return None,
-        };
-        let live = self.thread_by_id(thread_id)?;
-        let context = self.git_context(thread_id)?;
-        let branch = context.branch.clone()?;
-        let observation = self.forge_observation(thread_id)?;
-        if context.cwd != live.metadata.cwd
-            || observation.cwd != live.metadata.cwd
-            || context.error.is_some()
-            || observation.error.is_some()
-        {
-            return None;
-        }
-        let identity = observation.identity.clone()?;
-        let change_request = observation.change_request_for_branch(&branch).cloned();
-        Some(ForgeMutationTarget {
-            cwd: context.cwd.clone(),
-            branch,
-            identity,
-            change_request,
-        })
-    }
-
     pub fn context_choices(&self) -> Vec<ContextChoice> {
         if let Some(menu) = self.context_menu.as_ref() {
             return menu.choices.clone();
@@ -702,27 +611,6 @@ impl AppState {
             if self.active_saved_view().id.starts_with("view:") {
                 choices.push(ContextChoice::EditCurrentView);
                 choices.push(ContextChoice::DeleteCurrentView);
-            }
-        }
-        if let Some(target) = self.current_forge_mutation_target() {
-            if target.change_request.is_some() {
-                choices.extend([ContextChoice::ForgeComment, ContextChoice::ForgeApprove]);
-                if target.identity.provider == crate::forge::ForgeProviderKind::GitHub {
-                    choices.extend([
-                        ContextChoice::ForgeMergeCommit,
-                        ContextChoice::ForgeSquashMerge,
-                        ContextChoice::ForgeRebaseMerge,
-                    ]);
-                } else {
-                    choices.push(ContextChoice::ForgeMerge);
-                }
-            } else if target
-                .identity
-                .default_branch
-                .as_deref()
-                .is_some_and(|default_branch| default_branch != target.branch)
-            {
-                choices.push(ContextChoice::ForgeCreateMergeRequest);
             }
         }
         choices

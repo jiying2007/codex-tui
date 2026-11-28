@@ -23,7 +23,7 @@ codex-tui
 
 默认连接本机的 `codex app-server --listen stdio://`。命名目标由本地 TOML 配置，单次可使用 `codex-tui --target NAME`。非回环地址的明文 `ws://` 即使未配置令牌也拒绝连接；远程使用 `wss://` 或 SSH 隧道映射到回环地址。`localhost`、IPv4/IPv6 回环仍可用于本地开发。真实后端失败不会悄悄切到假数据，`--fake` 只用于测试。命名 App Server 的细节见 [英文设计](../../implementation/v1.3-remote-app-server-targets.md)。
 
-**首次连接失败：**排除临时后端问题后，在空的 Mission Control 中按无修饰的单次 `F5`；编辑框、帮助、确认框或聚焦的 Terminal Drawer 会保留按键所有权。只重试原先解析的同一目标，同时最多一个连接尝试，没有自动重试定时器；草稿与本地操作状态保留。一旦连接成功安装，即使后来断开，F5 也不重连已建立过的会话，不重放消息、审批或 Forge 写入。该入口不重新加载目标配置；配置本身无效时需修正后显式重启。
+**首次连接失败：**排除临时后端问题后，在空的 Mission Control 中按无修饰的单次 `F5`；编辑框、帮助、确认框或聚焦的 Terminal Drawer 会保留按键所有权。只重试原先解析的同一目标，同时最多一个连接尝试，没有自动重试定时器；草稿与本地操作状态保留。一旦连接成功安装，即使后来断开，F5 也不重连已建立过的会话，不重放消息或审批。该入口不重新加载目标配置；配置本身无效时需修正后显式重启。
 
 `doctor` 命令会对外部路径、分支、主机名、诊断字段和错误信息进行终端输出端净化；ANSI 控制符与 Unicode 双向覆盖符显示为可见替换字符，原始 Codex/Git/Forge 数据不变。
 
@@ -46,7 +46,7 @@ Thread 页面用 `PageUp`/`PageDown` 按显示行滚动消息，长段落和代�
 
 Mission Control 按待处理、置顶、最近活动排序，同优先级以会话 ID 确定顺序。仍保留原有“最近会话窗口＋置顶/待处理例外”，不会自动展开全部历史。Snooze 暂停待处理提升，但保留置顶；已读确认不会掩盖真实审批、输入请求或错误。首次加载选中显示首项，之后刷新按会话 ID 保留可见的选中项。窄终端在运行状态列直接显示待处理原因，普通会话仍显示运行状态。
 
-快速消息会从 Mission Control、Board、Review、Workspace 或 Managed Worktrees 进入所选会话的可见输入框。`Esc` 退出输入并保留草稿，再按一次 `Esc` 回到原页面；切换其他会话后清除这次临时返回路径。
+快速消息会从 Mission Control、Board、Review、Workspace 进入所选会话的可见输入框。`Esc` 退出输入并保留草稿，再按一次 `Esc` 回到原页面；切换其他会话后清除这次临时返回路径。
 
 Registry 提醒也包含已经观测到的 Goal 阻塞、用量或预算限制、流水线失败、请求修改及工作树冲突。Board、List 和 Review Queue 每张卡片使用一行，按终端宽度截断长标题或工作区名称，使导航选中项保持可见。
 
@@ -54,7 +54,7 @@ Registry 提醒也包含已经观测到的 Goal 阻塞、用量或预算限制�
 
 **空闲不等于成功：**“已空闲；请核对结果”只表示运行状态从工作／等待转为空闲，不证明轮次成功或任务验收完成。“Goal 已完成”要求观测到 Goal 完成状态转换，仍不等于交付验收。提醒还覆盖已观测到的系统错误、额度受限和预算受限；不会虚构上游未报告的结果。
 
-选中任务或看板卡片按 `=`、再按 `1–9` 绑定快捷槽。Registry、Board、Thread、Review、Workspace、Managed Worktrees 中按 `1–9` 可直接打开绑定会话或本地 Scratch。跳转 Codex 会话后按一次 `Esc` 返回原工作页面（仅保留一级返回路径，不引入独立历史栈）；重复选中当前会话不会重载。快捷槽通过已有会话 ID 索引定位，不再全量扫描会话清单。目标不可用会明确提示，不会误开其他会话。文本编辑、审批确认和 Terminal Drawer 聚焦时，按键仍由这些操作处理；快捷槽不启动或调度任务。
+选中任务或看板卡片按 `=`、再按 `1–9` 绑定快捷槽。Registry、Board、Thread、Review、Workspace 中按 `1–9` 可直接打开绑定会话或本地 Scratch。跳转 Codex 会话后按一次 `Esc` 返回原工作页面（仅保留一级返回路径，不引入独立历史栈）；重复选中当前会话不会重载。快捷槽通过已有会话 ID 索引定位，不再全量扫描会话清单。目标不可用会明确提示，不会误开其他会话。文本编辑、审批确认和 Terminal Drawer 聚焦时，按键仍由这些操作处理；快捷槽不启动或调度任务。
 
 `j/k` 选中、Enter 打开、`/` 筛选、`Ctrl+K` 命令面板、`?` 查看实时键位。`b` 打开 Board，`Tab` 切换 Saved View，包括按工作区分组的 Needs You / Needs Review 列表。List/Review Queue 将同一工作区连续排列，组内按所选顺序排序；Board 列仍按工作流阶段排列。Board 内用 `h/l` 切换列、`j/k` 选择卡片；Mission Control 的 `r` 进入所选会话的 Review，`w` 进入 Workspace。这些入口直达既有交付上下文；Board/Attention 始终是派生视图。
 
@@ -83,27 +83,23 @@ Review 详情绑定当前仓库、分支、变更请求 ID 和已观测的 head 
 
 HTTP(S) Git 远端会在平台地址中保留非默认端口，例如 `gitlab.example:8443`；请在 `glab` 中认证该地址。SSH 传输端口（如 `:2222`）不作为 API 端口；SSH 与 API 端点不同时，在平台 CLI 配置中维护映射。
 
-Forge 概览仅获取各能力最近 20 条记录。GitHub Issues API 会混入 PR，系统在过滤 PR 前保留原始分页是否触顶的证据；因此即使展示 0 条 Issue，只要原始页已满，也不得断言不存在。当前分支的 CR/Pipeline 未命中**不代表不存在**；Board 数据来源与 Review 会提示该不确定性，精确结果仍应向平台核实。MR/PR 创建、评论、批准、合并遵循先预览→明确确认→再执行；Approval/Merge 会重新校验目标修订版本，结果不确定时禁止盲目重试。Review 状态权威在 GitLab/GitHub。Forge Merge 要求明确可合并状态和经验证的审批信息；GitHub 合并性未知、GitLab 审批数量缺失或详细状态未知时必须阻止执行。创建/审批的前置检查使用有界完整分页，不把第一页当作全部数据，服务端仍为最终权威。GitHub Fork PR 与 Actions 工作流均使用 `owner/repo:branch` 等完整源仓库标识展示，不得仅凭同名分支绑定到本地 Git 分支。工作流若缺少 `head_repository`，标记为 `unverified-source:branch`，不能将其失败误归属本地分支。与本地分支绑定的审批、评论和合并需要 PR 源仓库 ID 与路径均匹配；缺少来源信息时保守拒绝。GitLab 跨项目 MR 也会以 `project/<id>:branch` 标记来源，不能冒充本地分支；与本地分支绑定的写操作要求 `source_project_id` 和 `target_project_id` 与当前项目一致，缺失或 Fork 来源均保守拒绝。见 [真实资格采集](../qualification/provider.md)。
+Forge 概览仅获取各能力最近 20 条记录，保留过滤前的原始分页触顶证据；当前分支 CR/Pipeline 未命中不能证明不存在，精确结果向原平台核实。GitHub Fork PR 和工作流、GitLab 跨项目 MR 保留来源身份，缺失来源时不将失败误归属本地分支。Lite 运行时不再创建、评论、批准、合并 MR/PR，也不自动恢复旧 Forge 变更；使用原生平台或 CLI。保留历史回执，包括 Pending/OutcomeUnknown，不删除、不重放。见 [真实资格采集](../qualification/provider.md)。
 
-删除受管 Worktree 时，仓库或 cwd 未知的活跃 Codex 会话按潜在冲突保守拒绝；破坏性操作排队过久将使操作范围证据过期，需要重新审阅和确认。Git 命令非零退出会依据实际 Git 状态协调，不假设没有副作用。删除 Worktree 只有在 Git 注册信息与磁盘目录**均已消失**时才视作已验证成功；两者不一致时回执保持 `OutcomeUnknown`，禁止自动重试。这不能对独立 Codex 进程建立原子锁，必须继续进行真实并发操作验证。
-
-创建受管 Worktree 时，默认或显式输入的 `HEAD` 固定为当前会话所在工作树已观测到的完整提交 ID，适用于主工作树、关联工作树和 detached 工作树。确认页显示该已观测提交；需要更新观测时请先刷新 Git。预览后 `HEAD` 的移动不会改变此计划的起点，创建结果必须与固定提交一致。其他显式输入的 ref 仍按输入保留，由 Git 在执行时解析；其预览不声称已固定提交。
-
-删除要求不存在 tracked 改动、untracked 文件或 **ignored 文件**，包含被忽略的本地配置及构建目录。请先自行保存或移除这些资产，再创建新的删除计划。检查包含 ignored 文件；检查失败、输出超过 256 KiB 或探测超过 5 秒时均拒绝删除。不增加 force 或自动清理模式，继续保留受管/接管身份及活跃操作范围约束。检查后的独立文件变更仍需真实并发环境验证。
+Lite 运行时退役受管 Worktree 创建、接管、移除和分支删除。使用原生 Git/Codex 工具，破坏性操作前核实真实仓库、工作树与活跃会话范围。退役不删除实际目录、分支、本地受管记录或回执；既有未知结果先向 Git 核实再操作。只读 `worktree list` 是历史本地记录清单，不是实时 Git 权威清单。
 
 ## 本地语言与可访问性
 <!-- docs-section: language -->
 
 配置 `[ui].language = "en"` 或 `"zh-CN"`，或使用 `"auto"` 跟随进程简体语言环境。`presentation = "quiet"` 合并后台刷新；`"screen-reader"` 降低后台刷新频率但保持直接输入即时响应。`[notifications].mode` 默认 `"off"`，只关闭外部投递，保留界面内最近提醒与准确回跳。`screen-reader` 仅调整重绘节奏，不代表读屏器兼容性已通过验收。启用外部投递后，同一 75 毫秒窗口的多条状态／待处理提醒可合并为一次响铃或通知，保留最高优先级事件与其余提醒数量；精确状态仍需查看 Mission Control，不能据此承诺每条外部提醒必达。Windows SSH Ubuntu 时，即使选择 `"os"`，也经 SSH 回退为客户端终端响铃，不会误以为服务器的桌面通知是 Windows Toast；Windows Terminal SSH 配置可设 `"bellStyle": "all"` 实现声音和任务栏闪烁，在 Ubuntu 用 `printf '\a'` 验证。TUI 必须持续运行并连接，断线、终端模拟器或 tmux 可能影响送达；未增加 Windows 远端通知桥接器。桌面通知仅在输出时净化和限制标题的显示宽度；Linux 系统通知在 `notify-send --` 选项终止符之后传递动态文本，原始工作项名称与通知追踪状态保持不变。启用外部通知后使用有界分派队列和 128 条待投递重试队列，由正常 UI 循环非阻塞排空；超过容量会明确提示未入队数量并引导查看 Needs You，而不是声称不会丢提醒。这些都只是本地偏好，不会创建团队同步权威。
 
-受管 Worktree 变更与异常协调优先使用完整 NUL 分隔 Git 清单，以准确保留换行和尾随空格。Linux 资格镜像中的旧 Git 2.25 不支持 Worktree `-z`：此时使用严格完整的纯文本 porcelain 解析，保留尾随空格；遇到格式歧义时拒绝，不得据此推断工作树不存在。包含换行的工作树路径需要支持 NUL 的新版 Git。非法编码及标准输出超过 256 KiB 时保守拒绝；超大清单另做资格验证。
+保留的历史受管工作树清单和操作回执仅供审计，不是实时恢复或执行入口。
 
 Terminal Drawer 的 PTY 输出改为协作式排空：每次主循环最多处理 16 个事件，其余内容仍留在原有的 64 槽 FIFO 中，避免子进程持续刷屏时饿死键盘、渲染和状态协调。即使 PTY 启动 Ready 事件迟于窗口 Resize 到达，也不允许它把已请求的终端尺寸回退至启动初值或与 VT 解析器尺寸脱节。队列持续有界；该托管测试不能代替真实控制 TTY 验收。
 
 ## Windows SSH Ubuntu 与 Terminal Drawer
 <!-- docs-section: ssh -->
 
-通过 Windows SSH 客户端控制 Ubuntu 时，codex-tui **在 Ubuntu 运行**；终端设备、文件路径、Codex、配置、Shell 子进程都应以 Ubuntu 为准。`Alt+T` 在 Mission Control／当前应用页与 Terminal Drawer 之间**双向切换焦点**（无须使用功能键）（保持同一个 Shell，不重建 PTY）；`t` 打开或重新聚焦 Drawer，`T` 关闭 Drawer。终端聚焦时 `Ctrl+]` 仍可返回应用作为备用；弹窗、编辑框和确认界面继续优先处理自己的按键。若 Windows/SSH 抢占按键，先查 `?` 与 `doctor terminal`；Resize、Focus、Ctrl+C、退出与终端恢复必须在**真实控制 TTY** 验证。托管 PTY 回归不是该证明。界面会对不可信的会话消息、Git diff 正文、仓库路径及平台状态中的控制字符、Unicode 双向覆盖符，以及软连字符、零宽空格和词连接符等视觉不可见格式字符做安全替换；选中会话详情和离线状态栏也会对会话 ID、模型名、Git 分支/错误和 App Server 来源字符串执行同样的仅显示端净化；受管 Worktree 的计划/确认界面及 Board 的变更请求状态，同样净化来自 Git/Forge 的不可信字符串；仅处理显示文本，不跳过显式操作确认。Forge 变更和本地批量操作的确认窗口，以及本地文本编辑和命令面板查询也过滤不可信显示文本；变更请求与外部交接目标的原始值保持不变。Mission Control/Board 页脚输入、自定义 Saved View 标题/分组及 Scratch ID 同样进行显示层防护；原始搜索、状态和本地元数据不改变。仅改变显示内容，不改动 Codex/Git 权威原始数据。Terminal Drawer 是独立的 PTY 终端模拟器，不属于安全过滤后的预览。
+通过 Windows SSH 客户端控制 Ubuntu 时，codex-tui **在 Ubuntu 运行**；终端设备、文件路径、Codex、配置、Shell 子进程都应以 Ubuntu 为准。`Alt+T` 在 Mission Control／当前应用页与 Terminal Drawer 之间**双向切换焦点**（无须使用功能键）（保持同一个 Shell，不重建 PTY）；`t` 打开或重新聚焦 Drawer，`T` 关闭 Drawer。终端聚焦时 `Ctrl+]` 仍可返回应用作为备用；弹窗、编辑框和确认界面继续优先处理自己的按键。若 Windows/SSH 抢占按键，先查 `?` 与 `doctor terminal`；Resize、Focus、Ctrl+C、退出与终端恢复必须在**真实控制 TTY** 验证。托管 PTY 回归不是该证明。界面会对不可信的会话消息、Git diff 正文、仓库路径及平台状态中的控制字符、Unicode 双向覆盖符，以及软连字符、零宽空格和词连接符等视觉不可见格式字符做安全替换；选中会话详情和离线状态栏也会对会话 ID、模型名、Git 分支/错误和 App Server 来源字符串执行同样的仅显示端净化；Board 的变更请求状态同样净化来自 Forge 的不可信显示字符串。本地批量操作的确认窗口，以及本地文本编辑和命令面板查询也过滤不可信显示文本；变更请求与外部交接目标的原始值保持不变。Mission Control/Board 页脚输入、自定义 Saved View 标题/分组及 Scratch ID 同样进行显示层防护；原始搜索、状态和本地元数据不改变。仅改变显示内容，不改动 Codex/Git 权威原始数据。Terminal Drawer 是独立的 PTY 终端模拟器，不属于安全过滤后的预览。
 
 ## G2/G3 手工需求、缺陷和跨仓引用
 <!-- docs-section: workref -->

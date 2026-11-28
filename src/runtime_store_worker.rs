@@ -3,9 +3,11 @@
 //! queue pressure. Shutdown is a barrier and runs after terminal restoration.
 use crate::runtime_store::{RuntimeStore as StoreBackend, StoreBootstrap};
 use anyhow::{Context, Result};
+#[cfg(test)]
+use codex_tui::sqlite_store::SqliteStore;
 use codex_tui::{
-    planning::PlanningSnapshot, sqlite_store::SqliteStore, store::LocalStateV1,
-    transcript_search::TranscriptSearchResults, workref::WorkRefLedger,
+    planning::PlanningSnapshot, store::LocalStateV1, transcript_search::TranscriptSearchResults,
+    workref::WorkRefLedger,
 };
 use std::{
     sync::mpsc::{self, Receiver, SyncSender, TryRecvError, TrySendError},
@@ -39,6 +41,7 @@ enum Request {
 }
 
 pub(crate) struct StoreWorker {
+    #[cfg(test)]
     sqlite: SqliteStore,
     requests: SyncSender<Request>,
     events: Receiver<StoreEvent>,
@@ -54,6 +57,7 @@ impl StoreWorker {
         Ok((Self::start(backend)?, bootstrap))
     }
     fn start(mut backend: StoreBackend) -> Result<Self> {
+        #[cfg(test)]
         let sqlite = backend.sqlite_clone();
         let error = backend.error();
         let (requests, incoming) = mpsc::sync_channel::<Request>(CAPACITY);
@@ -82,6 +86,7 @@ impl StoreWorker {
             })
             .context("start local state worker")?;
         Ok(Self {
+            #[cfg(test)]
             sqlite,
             requests,
             events,
@@ -94,6 +99,7 @@ impl StoreWorker {
     pub(crate) fn error(&self) -> Option<String> {
         self.error.clone()
     }
+    #[cfg(test)]
     pub(crate) fn sqlite_clone(&self) -> SqliteStore {
         self.sqlite.clone()
     }
@@ -285,7 +291,12 @@ mod tests {
         last.pins.insert("latest".into());
         worker.flush_operator_state_on_exit(&last).unwrap();
         use codex_tui::store::LocalStore;
-        assert_eq!(worker.sqlite.load_state().unwrap(), last);
+        assert_eq!(
+            codex_tui::sqlite_store::SqliteStore::at(root.path())
+                .load_state()
+                .unwrap(),
+            last
+        );
     }
     #[test]
     fn saturation_rejects_explicit_work_but_coalesces_operator_state() {

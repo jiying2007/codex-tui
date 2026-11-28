@@ -519,7 +519,7 @@ fn compact_registry_handles_cjk_emoji_graphemes_and_control_text() {
 }
 
 #[test]
-fn simplified_chinese_status_helpers_cover_terminal_forge_and_receipts() {
+fn simplified_chinese_status_helpers_cover_terminal_forge_and_scratch() {
     assert_eq!(
         terminal_process_state_label(
             &TerminalProcessState::Running,
@@ -532,71 +532,9 @@ fn simplified_chinese_status_helpers_cover_terminal_forge_and_receipts() {
         "过期"
     );
     assert_eq!(
-        operation_state_label(OperationState::Succeeded, UiLanguage::SimplifiedChinese),
-        "已成功"
-    );
-    assert_eq!(
         scratch_state_label(ScratchState::Ready, UiLanguage::SimplifiedChinese),
         "就绪"
     );
-}
-
-#[test]
-fn managed_worktree_confirmation_neutralizes_untrusted_labels_and_input() {
-    let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
-    let thread = app.threads[0].clone();
-    app.view = View::ManagedWorktrees(thread.id.clone());
-    let repo = crate::domain::LocalRepoIdentity {
-        git_common_dir: "/repo/.git".into(),
-        primary_root: "/repo\u{202e}spoof".into(),
-    };
-    let mut context = crate::git::GitContext::pending(thread.id.clone(), thread.metadata.cwd);
-    context.observed_at_unix_ms = 1;
-    context.is_repository = true;
-    context.repo = Some(repo.clone());
-    app.git_contexts.insert(thread.id.0, context);
-
-    let mut plan = crate::operation::OperationPlan::create_worktree(
-        repo,
-        "/work\u{202e}spoof".into(),
-        "/target\u{202e}spoof".into(),
-        "branch\u{202e}spoof".into(),
-        "base\u{202e}spoof".into(),
-        1,
-    );
-    plan.expected_side_effect = "expected\u{202e}spoof".into();
-    plan.preconditions[0].key = "precondition\u{202e}spoof".into();
-    plan.preconditions[0].expected = "condition\u{202e}spoof".into();
-    app.pending_operation = Some(plan);
-    app.input_mode = InputMode::WorktreeDeleteBranch;
-    app.input_buffer = "typed\u{202e}spoof".into();
-
-    let mut terminal = Terminal::new(TestBackend::new(180, 48)).expect("terminal");
-    terminal.draw(|frame| render(frame, &app)).expect("draw");
-    let buffer = terminal.backend().buffer();
-    let mut snapshot = String::new();
-    for y in 0..buffer.area.height {
-        for x in 0..buffer.area.width {
-            snapshot.push_str(buffer[(x, y)].symbol());
-        }
-        snapshot.push('\n');
-    }
-
-    for label in [
-        "Repository: /repo\u{fffd}spoof",
-        "Cwd: /work\u{fffd}spoof",
-        "Target worktree: /target\u{fffd}spoof",
-        "Target branch: branch\u{fffd}spoof",
-        "Expected: expected\u{fffd}spoof",
-        "precondition\u{fffd}spoof = condition\u{fffd}spoof",
-        "typed\u{fffd}spoof",
-    ] {
-        assert!(
-            snapshot.contains(label),
-            "missing safe confirmation label {label:?}"
-        );
-    }
-    assert!(!snapshot.contains('\u{202e}'));
 }
 
 #[test]
@@ -637,49 +575,6 @@ fn overlay_snapshot(app: &AppState, paint: fn(&mut ratatui::Frame<'_>, &AppState
         snapshot.push('\n');
     }
     snapshot
-}
-
-#[test]
-fn forge_confirm_overlay_escapes_untrusted_identity_branches_and_guards() {
-    let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
-    app.pending_forge_operation = Some(crate::forge_mutation::ForgeMutationPlan {
-        operation_id: "id".into(),
-        kind: crate::forge_mutation::ForgeMutationKind::CreateMergeRequest,
-        provider: crate::forge::ForgeProviderKind::GitLab,
-        cwd: "/repo".into(),
-        host: "host\u{202e}spoof".into(),
-        project_id: "42".into(),
-        project_path: "team\u{202e}spoof".into(),
-        change_request_iid: None,
-        source_branch: Some("source\u{202e}spoof".into()),
-        target_branch: Some("target\u{202e}spoof".into()),
-        title: Some("title\u{202e}spoof".into()),
-        payload_bytes: None,
-        expected_side_effect: "effect\u{202e}spoof".into(),
-        preconditions: vec![crate::forge_mutation::ForgeMutationPrecondition {
-            key: "guard\u{202e}spoof".into(),
-            expected: "expected\u{202e}spoof".into(),
-        }],
-        planned_at_unix_ms: 1,
-    });
-    let snapshot = overlay_snapshot(&app, render_forge_mutation_confirmation);
-    for fragment in [
-        "host\u{fffd}spoof/team\u{fffd}spoof",
-        "source\u{fffd}spoof -> target\u{fffd}spoof",
-        "title\u{fffd}spoof",
-        "effect\u{fffd}spoof",
-        "guard\u{fffd}spoof = expected\u{fffd}spoof",
-    ] {
-        assert!(
-            snapshot.contains(fragment),
-            "Forge confirmation missing safe fragment {fragment:?}"
-        );
-    }
-    assert!(!snapshot.contains('\u{202e}'));
-    assert_eq!(
-        app.pending_forge_operation.as_ref().expect("plan").host,
-        "host\u{202e}spoof"
-    );
 }
 
 #[test]
@@ -1057,83 +952,6 @@ fn scratch_detail_id_is_escaped_without_rewriting_local_state() {
     assert!(snapshot.contains("Scratch: scratch\u{fffd}spoof"));
     assert!(!snapshot.contains('\u{202e}'));
     assert_eq!(app.planning_snapshot.scratch[0].id, "scratch\u{202e}spoof");
-}
-
-#[test]
-fn forge_merge_confirmation_keeps_full_revision_and_controls_above_guard_truncation() {
-    use crate::forge::{ForgeIdentity, ForgeProviderKind};
-    use crate::forge_mutation::ForgeMutationPlan;
-    let sha = "a".repeat(40);
-    for provider in [ForgeProviderKind::GitHub, ForgeProviderKind::GitLab] {
-        let identity = ForgeIdentity {
-            provider,
-            host: "fixture.example".into(),
-            project_id: "123".into(),
-            path_with_namespace: "fixture/repo".into(),
-            web_url: "https://fixture.example/fixture/repo".into(),
-            default_branch: Some("main".into()),
-        };
-        let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
-        app.pending_forge_operation = Some(
-            ForgeMutationPlan::merge_merge_request(
-                &identity,
-                "/repo".into(),
-                7,
-                "feature".into(),
-                "main".into(),
-                1,
-            )
-            .unwrap()
-            .bind_confirmed_head(&sha)
-            .unwrap(),
-        );
-        assert!(
-            app.pending_forge_operation
-                .as_ref()
-                .unwrap()
-                .preconditions
-                .len()
-                > 8
-        );
-        for width in [40, 80, 120, 180] {
-            let mut terminal = Terminal::new(TestBackend::new(width, 40)).unwrap();
-            terminal
-                .draw(|frame| render_forge_mutation_confirmation(frame, &app))
-                .unwrap();
-            let buffer = terminal.backend().buffer();
-            let text = (0..40)
-                .flat_map(|y| (0..width).map(move |x| buffer[(x, y)].symbol()))
-                .collect::<String>();
-            assert!(
-                text.contains("Confirmed HEAD"),
-                "missing revision label at {width}"
-            );
-            assert!(
-                text.contains("CONFIRM execute"),
-                "missing confirmation control at {width}"
-            );
-            assert!(
-                text.contains("c/Esc cancel"),
-                "missing cancellation control at {width}"
-            );
-            // At forty columns the SHA wraps, but every digit must still be painted.
-            let revision = text
-                .split_once("Confirmed HEAD:")
-                .unwrap()
-                .1
-                .split("Project:")
-                .next()
-                .unwrap();
-            assert_eq!(
-                revision.chars().filter(|c| *c == 'a').count(),
-                40,
-                "truncated revision at {width}"
-            );
-            if width >= 80 {
-                assert!(text.contains(&sha));
-            }
-        }
-    }
 }
 
 #[test]

@@ -141,7 +141,7 @@ CODEX_TUI_GIT_SHA="$SOURCE_SHA" cargo test --locked --all-targets --all-features
 
 创建两个含不同 README 标记的专用本地仓库。确认 Cwd 与 repository-backed 会话正确；从 TUI 发起实际任务并检查成功／中断／失败终态，不能只看连接就绪。真正走通审批允许和拒绝、服务端用户输入请求、活跃任务期间导航、取消、草稿／Saved View 持久化和恢复。必须的交互未触发记 NOT_RUN／BLOCKED，不默认通过；模型目录或普通聊天问句不是审批／用户输入协议覆盖。
 
-Git／Worktree 在可丢弃测试对象上验证 diff／分支／路径、受管工作树创建、脏树／活跃删除拒绝及取消，合法删除后 Git 注册与磁盘目录必须同时消失。另验外部编辑器边界和独立 Codex 并发。OutcomeUnknown 必须先核实 Git／Forge 真实状态，不能盲目重放。另见[操作指南](operator-guide.md)。
+Lite 在可丢弃测试对象上验证 Git diff／分支／路径及原生 Git/Codex 替代流程；TUI 不再提供变更或恢复入口。历史 v1.4 写操作资格（创建、脏树／活跃删除拒绝、确认及验证移除）不得在已退役界面上标 PASS；保留旧回执并独立批准替代验收范围。另验外部编辑器边界及独立 Codex 并发。OutcomeUnknown 先向 Git／Forge 核实，不盲目重放。另见[操作指南](operator-guide.md)。
 
 ```bash
 "$BINARY" doctor codex
@@ -173,6 +173,8 @@ python3 scripts/release/terminal_smoke.py prepare \
 ```
 
 ## 内部 GitLab 与声明的 Forge 写操作
+
+**历史 v1.4 资格范围：** Lite 退役候选已不再提供 Forge 写入口。不得为旧用例伪造 PASS 或临时放宽 Stable 门禁；另行完成真实退役及替代范围验收，破坏性清理前保留未决回执并向原平台核对。
 <!-- docs-section: forge -->
 
 进入已授权、有代表性的测试项目，对实际主机完成 glab 登录，再在该项目执行 doctor forge。codex-tui 的 SOURCE_SHA 不是业务仓库 HEAD。以下现有链保留源码／认证／能力／时效／隐私要求，包括七天时效和五分钟未来偏差。退出 3 的诊断是失败证据，不是资格通过；不修改时间戳，不覆盖旧结果。

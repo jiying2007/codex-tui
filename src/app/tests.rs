@@ -1,5 +1,4 @@
 use super::*;
-use crate::forge::ForgeProviderKind;
 
 #[test]
 fn transcript_navigation_does_not_accumulate_history_watches() {
@@ -156,10 +155,10 @@ fn simplified_chinese_local_notice_follows_ui_language() {
     let thread_id = app.threads[0].id.clone();
     app.view = View::Thread(thread_id);
 
-    assert!(reduce(&mut app, Action::OpenManagedWorktrees).is_empty());
+    reduce(&mut app, Action::UseHotSlot(9));
     assert_eq!(
         app.mutation_notice.as_deref(),
-        Some("当前会话不在 Git 仓库中")
+        Some("快捷槽 9: 尚未绑定；选择任务后按 = 绑定")
     );
 }
 
@@ -705,125 +704,6 @@ fn refresh_never_steals_manual_selection() {
     reduce(&mut app, Action::ReplaceThreads(reordered));
 
     assert_eq!(app.selected_thread_id(), Some(selected));
-}
-
-#[test]
-fn managed_worktree_plan_requires_explicit_confirmation_before_execution() {
-    let mut app = app();
-    app.threads[0].metadata.cwd = "/repo".into();
-    let repo = crate::domain::LocalRepoIdentity {
-        git_common_dir: "/repo/.git".into(),
-        primary_root: "/repo".into(),
-    };
-    app.git_contexts.insert(
-        "thread-impl".into(),
-        GitContext {
-            thread_id: ThreadId::new("thread-impl"),
-            cwd: "/repo".into(),
-            is_repository: true,
-            repo: Some(repo.clone()),
-            worktree: Some(crate::domain::WorktreeIdentity {
-                repo,
-                canonical_path: "/repo".into(),
-                branch: Some("main".into()),
-                managed_by_codex_tui: false,
-            }),
-            head: Some("0123456789abcdef0123456789abcdef01234567".into()),
-            branch: Some("main".into()),
-            upstream: None,
-            ahead: 0,
-            behind: 0,
-            dirty: false,
-            changes: Vec::new().into(),
-            observed_at_unix_ms: 1,
-            error: None,
-        },
-    );
-    reduce(&mut app, Action::OpenSelected);
-    let effects = reduce(&mut app, Action::OpenManagedWorktrees);
-    assert_eq!(effects, vec![Effect::RefreshManagedWorktrees]);
-
-    reduce(&mut app, Action::BeginCreateWorktree);
-    for ch in "feature".chars() {
-        reduce(&mut app, Action::InputChar(ch));
-    }
-    assert!(reduce(&mut app, Action::CommitInput).is_empty());
-    let temp = tempfile::tempdir().expect("tempdir");
-    let target = temp
-        .path()
-        .join("feature-wt")
-        .to_string_lossy()
-        .into_owned();
-    for ch in target.chars() {
-        reduce(&mut app, Action::InputChar(ch));
-    }
-    assert!(reduce(&mut app, Action::CommitInput).is_empty());
-    reduce(&mut app, Action::InputBackspace);
-    reduce(&mut app, Action::InputBackspace);
-    reduce(&mut app, Action::InputBackspace);
-    reduce(&mut app, Action::InputBackspace);
-    for ch in "HEAD".chars() {
-        reduce(&mut app, Action::InputChar(ch));
-    }
-    for missing in [None, Some("deadbeef".into())] {
-        app.git_contexts.get_mut("thread-impl").unwrap().head = missing;
-        assert!(reduce(&mut app, Action::CommitInput).is_empty());
-        assert!(app.pending_operation.is_none());
-        assert_eq!(app.input_mode, InputMode::WorktreeCreateStartPoint);
-        assert_eq!(app.create_worktree_branch.as_deref(), Some("feature"));
-        assert_eq!(app.create_worktree_path.as_deref(), Some(target.as_str()));
-    }
-    app.git_contexts.get_mut("thread-impl").unwrap().head =
-        Some("0123456789abcdef0123456789abcdef01234567".into());
-    assert!(reduce(&mut app, Action::CommitInput).is_empty());
-    let plan = app.pending_operation.as_ref().unwrap();
-    assert_eq!(
-        plan.expected_start_commit(),
-        Some("0123456789abcdef0123456789abcdef01234567")
-    );
-    assert_eq!(
-        plan.argv.last().map(String::as_str),
-        plan.expected_start_commit()
-    );
-
-    let effects = reduce(&mut app, Action::ConfirmPendingOperation);
-    assert!(matches!(effects.as_slice(), [Effect::ExecuteOperation(_)]));
-    assert!(app.pending_operation.is_none());
-}
-
-#[test]
-fn worktree_remove_and_branch_delete_are_distinct_plans() {
-    let mut app = app();
-    app.threads[0].metadata.cwd = "/repo".into();
-    app.view = View::ManagedWorktrees(ThreadId::new("thread-impl"));
-    let repo = crate::domain::LocalRepoIdentity {
-        git_common_dir: "/repo/.git".into(),
-        primary_root: "/repo".into(),
-    };
-    app.managed_worktrees.push(ManagedWorktreeRecord {
-        repo: repo.clone(),
-        canonical_path: "/repo-feature".into(),
-        branch: Some("feature".into()),
-        created_by_operation_id: "op-create".into(),
-        adopted: false,
-        created_at_unix_ms: 1,
-        last_verified_at_unix_ms: 1,
-    });
-    reduce(&mut app, Action::BeginRemoveManagedWorktree);
-    let remove = app.pending_operation.clone().expect("remove");
-    assert_eq!(remove.kind, crate::operation::OperationKind::RemoveWorktree);
-    assert!(remove.target_branch.is_none());
-
-    app.git_contexts.insert(
-        "thread-impl".into(),
-        GitContext::pending(ThreadId::new("thread-impl"), "/repo"),
-    );
-    if let Some(context) = app.git_contexts.get_mut("thread-impl") {
-        context.repo = Some(repo);
-        context.branch = Some("feature".into());
-    }
-    reduce(&mut app, Action::BeginDeleteBranch);
-    assert_eq!(app.input_mode, InputMode::WorktreeDeleteBranch);
 }
 
 #[test]
@@ -2455,172 +2335,6 @@ fn pin_alias_and_ack_round_trip_through_local_state() {
     assert!(!restored.repo_backed_only);
     assert_eq!(restored.visible_indices(), vec![0]);
 }
-#[test]
-fn forge_approval_and_merge_pin_the_projected_revision_at_confirmation() {
-    for github in [false, true] {
-        let action_choices: &[ContextChoice] = if github {
-            &[
-                ContextChoice::ForgeApprove,
-                ContextChoice::ForgeMergeCommit,
-                ContextChoice::ForgeSquashMerge,
-                ContextChoice::ForgeRebaseMerge,
-            ]
-        } else {
-            &[ContextChoice::ForgeApprove, ContextChoice::ForgeMerge]
-        };
-        for &choice in action_choices {
-            let mut app = app();
-            if github {
-                seed_github_mutation_target(&mut app, true);
-            } else {
-                seed_gitlab_mutation_target(&mut app, true);
-            }
-            let choices = app.context_choices();
-            app.context_selected = choices.iter().position(|item| *item == choice).unwrap();
-            assert!(reduce(&mut app, Action::ExecuteContext).is_empty());
-            let plan = app.pending_forge_operation.as_ref().expect("reviewed plan");
-            assert_eq!(
-                crate::forge_mutation::confirmed_head_sha(plan).unwrap(),
-                "0123456789abcdef0123456789abcdef01234567"
-            );
-            assert!(plan.expected_side_effect.contains("reviewed commit"));
-            if github && choice != ContextChoice::ForgeApprove {
-                let expected = match choice {
-                    ContextChoice::ForgeMergeCommit => "merge",
-                    ContextChoice::ForgeSquashMerge => "squash",
-                    ContextChoice::ForgeRebaseMerge => "rebase",
-                    _ => unreachable!("only GitHub merge actions enter this branch"),
-                };
-                assert!(plan.preconditions.iter().any(|item| {
-                    item.key == "github-merge-method" && item.expected == expected
-                }));
-            }
-            let effects = reduce(&mut app, Action::ConfirmPendingOperation);
-            assert!(matches!(
-                effects.as_slice(),
-                [Effect::ExecuteForgeOperation(_)]
-            ));
-        }
-    }
-}
-
-#[test]
-fn opened_github_merge_menu_starts_only_for_the_same_exact_target_and_head() {
-    for choice in [
-        ContextChoice::ForgeMergeCommit,
-        ContextChoice::ForgeSquashMerge,
-        ContextChoice::ForgeRebaseMerge,
-    ] {
-        let mut unchanged = app();
-        seed_github_mutation_target(&mut unchanged, true);
-        reduce(&mut unchanged, Action::OpenContext);
-        unchanged.context_selected = unchanged
-            .context_choices()
-            .iter()
-            .position(|item| *item == choice)
-            .unwrap();
-        assert!(reduce(&mut unchanged, Action::ExecuteContext).is_empty());
-        let plan = unchanged
-            .pending_forge_operation
-            .as_ref()
-            .expect("same target plan");
-        assert_eq!(plan.change_request_iid, Some(9));
-        assert_eq!(
-            crate::forge_mutation::confirmed_head_sha(plan).unwrap(),
-            "0123456789abcdef0123456789abcdef01234567"
-        );
-
-        for changed_field in ["pr", "head"] {
-            let mut drifted = app();
-            let id = seed_github_mutation_target(&mut drifted, true);
-            reduce(&mut drifted, Action::OpenContext);
-            drifted.context_selected = drifted
-                .context_choices()
-                .iter()
-                .position(|item| *item == choice)
-                .unwrap();
-            let change = &mut drifted
-                .forge_observations
-                .get_mut(&id.0)
-                .expect("observation")
-                .change_requests[0];
-            match changed_field {
-                "pr" => change.iid = 10,
-                "head" => change.head_sha = Some("fedcba9876543210fedcba9876543210fedcba98".into()),
-                _ => unreachable!(),
-            }
-            let effects = reduce(&mut drifted, Action::ExecuteContext);
-            assert!(effects.is_empty(), "{choice:?} {changed_field}");
-            assert!(drifted.pending_forge_operation.is_none());
-            assert!(drifted.pending_forge_payload.is_none());
-            assert!(!drifted.context_open);
-            assert!(
-                drifted
-                    .mutation_notice
-                    .as_deref()
-                    .unwrap_or_default()
-                    .contains("context target or action changed"),
-                "{choice:?} {changed_field}"
-            );
-        }
-    }
-}
-
-#[test]
-fn opened_gitlab_approval_and_merge_menu_refuses_same_mr_new_head() {
-    for choice in [ContextChoice::ForgeApprove, ContextChoice::ForgeMerge] {
-        let mut app = app();
-        let id = seed_gitlab_mutation_target(&mut app, true);
-        reduce(&mut app, Action::OpenContext);
-        app.context_selected = app
-            .context_choices()
-            .iter()
-            .position(|item| *item == choice)
-            .unwrap();
-        app.forge_observations
-            .get_mut(&id.0)
-            .expect("observation")
-            .change_requests[0]
-            .head_sha = Some("fedcba9876543210fedcba9876543210fedcba98".into());
-        assert!(reduce(&mut app, Action::ExecuteContext).is_empty());
-        assert!(app.pending_forge_operation.is_none());
-        assert!(
-            app.mutation_notice
-                .as_deref()
-                .unwrap_or_default()
-                .contains("context target or action changed")
-        );
-    }
-}
-
-#[test]
-fn missing_forge_revision_cannot_create_approval_or_merge_plan() {
-    for choice in [
-        ContextChoice::ForgeApprove,
-        ContextChoice::ForgeMergeCommit,
-        ContextChoice::ForgeSquashMerge,
-        ContextChoice::ForgeRebaseMerge,
-    ] {
-        let mut app = app();
-        let id = seed_github_mutation_target(&mut app, true);
-        app.forge_observations
-            .get_mut(&id.0)
-            .unwrap()
-            .change_requests[0]
-            .head_sha = None;
-        let choices = app.context_choices();
-        app.context_selected = choices.iter().position(|item| *item == choice).unwrap();
-        assert!(reduce(&mut app, Action::ExecuteContext).is_empty());
-        assert!(app.pending_forge_operation.is_none());
-        assert!(
-            app.mutation_notice
-                .as_deref()
-                .unwrap_or_default()
-                .contains("confirmed")
-        );
-    }
-}
-
 fn seed_gitlab_mutation_target(app: &mut AppState, with_merge_request: bool) -> ThreadId {
     use crate::forge::{
         ChangeRequestSummary, ForgeFreshness, ForgeIdentity, ForgeObservation, ForgeProviderKind,
@@ -2742,203 +2456,28 @@ fn seed_github_mutation_target(app: &mut AppState, with_pull_request: bool) -> T
 }
 
 #[test]
-fn github_pull_request_is_plan_only_until_explicit_confirmation() {
-    let mut app = app();
-    seed_github_mutation_target(&mut app, false);
-
-    let choices = app.context_choices();
-    assert!(choices.contains(&ContextChoice::ForgeCreateMergeRequest));
-    app.context_selected = choices
-        .iter()
-        .position(|choice| *choice == ContextChoice::ForgeCreateMergeRequest)
-        .expect("create GitHub PR choice");
-    assert!(reduce(&mut app, Action::ExecuteContext).is_empty());
-
-    for ch in "Ship GitHub mutations".chars() {
-        reduce(&mut app, Action::InputChar(ch));
+fn forge_observations_remain_read_only_regardless_of_provider_or_open_change() {
+    for github in [false, true] {
+        for with_change in [false, true] {
+            let mut app = app();
+            let id = if github {
+                seed_github_mutation_target(&mut app, with_change)
+            } else {
+                seed_gitlab_mutation_target(&mut app, with_change)
+            };
+            let observed = app.forge_observation(&id).unwrap().clone();
+            let choices = app.context_choices();
+            assert!(!choices.is_empty());
+            assert!(
+                choices
+                    .iter()
+                    .all(|choice| !choice.label().contains("Forge")
+                        && !choice.label().contains("GitHub"))
+            );
+            assert!(reduce(&mut app, Action::ConfirmPendingOperation).is_empty());
+            assert_eq!(app.forge_observation(&id), Some(&observed));
+        }
     }
-    assert!(reduce(&mut app, Action::CommitInput).is_empty());
-
-    let plan = app.pending_forge_operation.clone().expect("GitHub plan");
-    assert_eq!(plan.provider, ForgeProviderKind::GitHub);
-    assert_eq!(plan.source_branch.as_deref(), Some("feature/github"));
-    assert!(plan.expected_side_effect.contains("GitHub pull request"));
-
-    let effects = reduce(&mut app, Action::ConfirmPendingOperation);
-    assert!(matches!(
-        effects.as_slice(),
-        [Effect::ExecuteForgeOperation(request)]
-            if request.plan.provider == ForgeProviderKind::GitHub
-    ));
-}
-
-#[test]
-fn github_existing_pull_exposes_comment_approve_and_merge_actions() {
-    let mut app = app();
-    seed_github_mutation_target(&mut app, true);
-    let choices = app.context_choices();
-    assert!(choices.contains(&ContextChoice::ForgeComment));
-    assert!(choices.contains(&ContextChoice::ForgeApprove));
-    for method in [
-        ContextChoice::ForgeMergeCommit,
-        ContextChoice::ForgeSquashMerge,
-        ContextChoice::ForgeRebaseMerge,
-    ] {
-        assert!(choices.contains(&method));
-    }
-    assert!(!choices.contains(&ContextChoice::ForgeMerge));
-    assert!(!choices.contains(&ContextChoice::ForgeCreateMergeRequest));
-}
-
-#[test]
-fn create_merge_request_is_plan_only_until_explicit_confirmation() {
-    let mut app = app();
-    seed_gitlab_mutation_target(&mut app, false);
-
-    let choices = app.context_choices();
-    assert!(choices.contains(&ContextChoice::ForgeCreateMergeRequest));
-    app.context_selected = choices
-        .iter()
-        .position(|choice| *choice == ContextChoice::ForgeCreateMergeRequest)
-        .expect("create MR choice");
-    assert!(reduce(&mut app, Action::ExecuteContext).is_empty());
-    assert_eq!(app.input_mode, InputMode::ForgeMergeRequestTitle);
-
-    for ch in "Ship M6b".chars() {
-        assert!(reduce(&mut app, Action::InputChar(ch)).is_empty());
-    }
-    assert!(reduce(&mut app, Action::CommitInput).is_empty());
-
-    let plan = app
-        .pending_forge_operation
-        .clone()
-        .expect("pending forge plan");
-    assert_eq!(
-        plan.kind,
-        crate::forge_mutation::ForgeMutationKind::CreateMergeRequest
-    );
-    assert_eq!(plan.source_branch.as_deref(), Some("feature/m6b"));
-    assert_eq!(plan.target_branch.as_deref(), Some("main"));
-    assert!(app.pending_forge_payload.is_none());
-
-    let effects = reduce(&mut app, Action::ConfirmPendingOperation);
-    let [Effect::ExecuteForgeOperation(request)] = effects.as_slice() else {
-        panic!("expected explicit forge execution effect");
-    };
-    assert_eq!(request.plan, plan);
-    assert!(request.payload.is_none());
-    assert!(app.pending_forge_operation.is_none());
-}
-
-#[test]
-fn merge_request_comment_body_stays_memory_only_until_confirmation() {
-    let mut app = app();
-    seed_gitlab_mutation_target(&mut app, true);
-
-    let choices = app.context_choices();
-    assert!(choices.contains(&ContextChoice::ForgeComment));
-    assert!(choices.contains(&ContextChoice::ForgeApprove));
-    assert!(choices.contains(&ContextChoice::ForgeMerge));
-    assert!(!choices.contains(&ContextChoice::ForgeCreateMergeRequest));
-
-    app.context_selected = choices
-        .iter()
-        .position(|choice| *choice == ContextChoice::ForgeComment)
-        .expect("comment choice");
-    assert!(reduce(&mut app, Action::ExecuteContext).is_empty());
-    assert_eq!(app.input_mode, InputMode::ForgeComment);
-
-    let body = "please re-run the target DUT check";
-    for ch in body.chars() {
-        reduce(&mut app, Action::InputChar(ch));
-    }
-    assert!(reduce(&mut app, Action::CommitInput).is_empty());
-
-    let plan = app.pending_forge_operation.as_ref().expect("comment plan");
-    assert_eq!(
-        plan.kind,
-        crate::forge_mutation::ForgeMutationKind::CommentMergeRequest
-    );
-    assert_eq!(plan.payload_bytes, Some(body.len()));
-    assert!(
-        !serde_json::to_string(plan)
-            .expect("serialize plan")
-            .contains(body)
-    );
-    assert_eq!(app.pending_forge_payload.as_deref(), Some(body));
-
-    let effects = reduce(&mut app, Action::ConfirmPendingOperation);
-    let [Effect::ExecuteForgeOperation(request)] = effects.as_slice() else {
-        panic!("expected comment execution effect");
-    };
-    assert_eq!(request.payload.as_deref(), Some(body));
-    assert!(app.pending_forge_payload.is_none());
-}
-
-#[test]
-fn approve_and_merge_context_actions_only_create_pending_plans() {
-    let mut app = app();
-    seed_gitlab_mutation_target(&mut app, true);
-
-    for (choice, expected_kind) in [
-        (
-            ContextChoice::ForgeApprove,
-            crate::forge_mutation::ForgeMutationKind::ApproveMergeRequest,
-        ),
-        (
-            ContextChoice::ForgeMerge,
-            crate::forge_mutation::ForgeMutationKind::MergeMergeRequest,
-        ),
-    ] {
-        let choices = app.context_choices();
-        app.context_selected = choices
-            .iter()
-            .position(|candidate| *candidate == choice)
-            .expect("forge action choice");
-        assert!(reduce(&mut app, Action::ExecuteContext).is_empty());
-        assert_eq!(
-            app.pending_forge_operation
-                .as_ref()
-                .expect("pending plan")
-                .kind,
-            expected_kind
-        );
-        assert!(reduce(&mut app, Action::CancelPendingOperation).is_empty());
-        assert!(app.pending_forge_operation.is_none());
-    }
-}
-
-#[test]
-fn forge_mutation_receipt_invalidates_projection_and_enters_recent_audit() {
-    use crate::forge_mutation::{ForgeMutationPlan, ForgeMutationReceipt};
-
-    let mut app = app();
-    let thread_id = seed_gitlab_mutation_target(&mut app, true);
-    let target = app.current_forge_mutation_target().expect("target");
-    let change = target.change_request.expect("MR");
-    let plan = ForgeMutationPlan::approve_merge_request(
-        &target.identity,
-        target.cwd,
-        change.iid,
-        change.source_branch,
-        change.target_branch,
-        10,
-    )
-    .expect("plan")
-    .bind_confirmed_head(change.head_sha.as_deref().expect("projected revision"))
-    .expect("confirmed SHA");
-    let mut receipt = ForgeMutationReceipt::planned(plan);
-    receipt.start(11);
-    receipt.succeed(12, "mr:7".into(), "verified".into());
-
-    reduce(
-        &mut app,
-        Action::ForgeMutationReceipt(Box::new(receipt.clone())),
-    );
-    assert_eq!(app.recent_forge_operations, vec![receipt]);
-    let observation = app.forge_observation(&thread_id).expect("observation");
-    assert_eq!(observation.observed_at_unix_ms, 1);
-    assert!(observation.review.is_none());
 }
 
 #[test]
@@ -3097,7 +2636,6 @@ fn hot_slot_jumps_return_to_the_originating_surface_without_reloading() {
         View::Thread(first.clone()),
         View::Review(first.clone()),
         View::Workspace(first.clone()),
-        View::ManagedWorktrees(first.clone()),
     ];
     for origin in origins {
         let mut state = app();

@@ -19,11 +19,9 @@ pub(crate) fn action_for_command(app: &AppState, command: Command) -> Option<Act
         Command::QuitOrInterrupt => match app.view_kind() {
             ViewKind::Registry => Action::Quit,
             ViewKind::Thread => Action::InterruptCurrent,
-            ViewKind::Review
-            | ViewKind::Workspace
-            | ViewKind::ManagedWorktrees
-            | ViewKind::Board
-            | ViewKind::Scratch => Action::Back,
+            ViewKind::Review | ViewKind::Workspace | ViewKind::Board | ViewKind::Scratch => {
+                Action::Back
+            }
         },
         Command::Back => Action::Back,
         Command::Help => Action::ToggleHelp,
@@ -35,13 +33,11 @@ pub(crate) fn action_for_command(app: &AppState, command: Command) -> Option<Act
         Command::ToggleAllHistory => Action::ToggleAllHistory,
         Command::Next => match app.view_kind() {
             ViewKind::Review => Action::MoveReview(1),
-            ViewKind::ManagedWorktrees => Action::MoveManagedWorktree(1),
             ViewKind::Board => Action::MovePlanningSelection(1),
             _ => Action::MoveSelection(1),
         },
         Command::Previous => match app.view_kind() {
             ViewKind::Review => Action::MoveReview(-1),
-            ViewKind::ManagedWorktrees => Action::MoveManagedWorktree(-1),
             ViewKind::Board => Action::MovePlanningSelection(-1),
             _ => Action::MoveSelection(-1),
         },
@@ -70,13 +66,6 @@ pub(crate) fn action_for_command(app: &AppState, command: Command) -> Option<Act
         Command::CycleSavedView => Action::CycleSavedView(1),
         Command::Review => Action::OpenReview,
         Command::Workspace => Action::OpenWorkspace,
-        Command::ManagedWorktrees => Action::OpenManagedWorktrees,
-        Command::CreateWorktree => Action::BeginCreateWorktree,
-        Command::AdoptWorktree => Action::BeginAdoptCurrentWorktree,
-        Command::RemoveWorktree => Action::BeginRemoveManagedWorktree,
-        Command::DeleteBranch => Action::BeginDeleteBranch,
-        Command::ConfirmOperation => Action::ConfirmPendingOperation,
-        Command::CancelOperation => Action::CancelPendingOperation,
         Command::New => Action::BeginScratch,
         Command::Snooze => Action::BeginSnooze,
         Command::LinkWorkItem => Action::BeginWorkrefLink,

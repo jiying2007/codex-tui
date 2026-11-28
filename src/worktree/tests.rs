@@ -482,7 +482,6 @@ async fn create_and_remove_managed_worktree_preserve_branch_separation() {
 
 #[tokio::test]
 async fn default_head_plan_uses_selected_worktree_commit_even_after_head_moves() {
-    use crate::app::{Action, AppState, View, reduce};
     use crate::backend::{CodexBackend, FakeBackend};
     for kind in ["main", "linked", "detached"] {
         let temp = tempdir().unwrap();
@@ -516,18 +515,20 @@ async fn default_head_plan_uses_selected_worktree_commit_even_after_head_moves()
             .await
             .unwrap();
         let observed = context.head.clone().unwrap();
-        let mut app = AppState::new(threads);
-        app.view = View::ManagedWorktrees(thread_id.clone());
-        app.git_contexts.insert(thread_id.0.clone(), context);
-        reduce(&mut app, Action::BeginCreateWorktree);
-        app.input_buffer = "created".into();
-        assert!(reduce(&mut app, Action::CommitInput).is_empty());
+        // Retain the historical engine's exact-HEAD regression independently
+        // of the retired UI; this never dispatches through the Lite runtime.
+        let repo = context.repo.clone().unwrap();
         let target = temp.path().join("created");
-        app.input_buffer = target.to_string_lossy().into_owned();
-        assert!(reduce(&mut app, Action::CommitInput).is_empty());
-        assert_eq!(app.input_buffer, "HEAD");
-        assert!(reduce(&mut app, Action::CommitInput).is_empty());
-        let plan = app.pending_operation.take().expect("reviewable plan");
+        let plan = OperationPlan::create_worktree(
+            repo.clone(),
+            repo.primary_root,
+            target.to_string_lossy().into_owned(),
+            "created".into(),
+            "HEAD".into(),
+            1,
+        )
+        .bind_observed_head(&observed)
+        .expect("historical plan pins selected worktree HEAD");
         assert_eq!(
             plan.expected_start_commit(),
             Some(observed.as_str()),

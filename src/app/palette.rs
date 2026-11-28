@@ -154,14 +154,6 @@ impl AppState {
         if thread_id.is_some() && !matches!(self.view, View::Workspace(_)) {
             choices.push(Command::Workspace);
         }
-        if thread_id.as_ref().is_some_and(|thread_id| {
-            self.git_context(thread_id)
-                .is_some_and(|context| context.repo.is_some())
-        }) && !matches!(self.view, View::ManagedWorktrees(_))
-        {
-            choices.push(Command::ManagedWorktrees);
-        }
-
         choices.push(Command::New);
 
         if matches!(self.view, View::Thread(_)) {

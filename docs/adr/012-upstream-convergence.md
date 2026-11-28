@@ -59,7 +59,7 @@ not the default. `release/v1.4-plan.json` remains the **single numeric LOC autho
  Growth must pass the frozen module ratchet; a new guarded source identity additionally
  requires an explicit reviewed convergence-manifest update.
 
-Worktree convergence is now an explicit maintenance-only boundary. Official Codex
+The historical Worktree convergence policy records the former maintenance-only boundary. Official Codex
 v0.162.0 introduced feature-gated managed worktree creation/listing. The existing
 local worktree coordinator remains a Git-safety and recovery fallback, **not** a
 second authority or a mandate to build competing Worktree UX. Its
@@ -69,6 +69,8 @@ features stay frozen. Delegation to upstream is permitted only after target
 capability detection, identity/safety parity and failure recovery have been
 verified using a real Codex target; no fixture alone certifies parity. Git
 remains authoritative for repository/worktree identity.
+
+The Lite retirement candidate removes the interactive managed-worktree routes and stops both legacy Worktree and Forge mutation coordinators. Their historical receipt and execution source is retained under existing guards until the field retirement scope and unresolved records have been audited; none is dispatched by the application runtime. This is not a claim that actual replacement or Stable qualification passed.
 
 The machine guard is `scripts/architecture/check_upstream_convergence.py` and runs in
 canonical CI, development qualification, and the release gate. Explicit guarded prefixes

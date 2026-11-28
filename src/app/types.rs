@@ -4,10 +4,8 @@ use crate::{
     conversation::{ConversationPage, InteractiveRequest, InteractiveResolution, RpcRequestId},
     domain::{ThreadId, ThreadSummary},
     forge::{ForgeObservation, ForgeReviewResult, ForgeReviewTarget},
-    forge_mutation::{ForgeMutationReceipt, ForgeMutationRequest},
     git::{GitContext, GitReview},
     goal::{GoalObservation, GoalStatus},
-    operation::{ManagedWorktreeRecord, OperationPlan, OperationReceipt},
     planning::{PlanningSnapshot, SavedView, SourceRef},
     pty::TerminalSize,
     terminal_drawer::TerminalSnapshot,
@@ -19,7 +17,6 @@ pub enum View {
     Thread(ThreadId),
     Review(ThreadId),
     Workspace(ThreadId),
-    ManagedWorktrees(ThreadId),
     Board,
     Scratch(String),
 }
@@ -29,7 +26,6 @@ pub enum ViewKind {
     Thread,
     Review,
     Workspace,
-    ManagedWorktrees,
     Board,
     Scratch,
 }
@@ -50,12 +46,6 @@ pub enum InputMode {
     BatchPriority,
     BatchSnooze,
     GoalObjective,
-    WorktreeCreateBranch,
-    WorktreeCreatePath,
-    WorktreeCreateStartPoint,
-    WorktreeDeleteBranch,
-    ForgeMergeRequestTitle,
-    ForgeComment,
     WorkrefLink,
 }
 
@@ -84,13 +74,6 @@ pub enum ContextChoice {
     BatchReopen,
     BatchSnooze,
     BatchClearSnooze,
-    ForgeCreateMergeRequest,
-    ForgeComment,
-    ForgeApprove,
-    ForgeMerge,
-    ForgeMergeCommit,
-    ForgeSquashMerge,
-    ForgeRebaseMerge,
 }
 
 impl ContextChoice {
@@ -119,13 +102,6 @@ impl ContextChoice {
             Self::BatchReopen => "Batch visible · Reopen",
             Self::BatchSnooze => "Batch visible · Snooze…",
             Self::BatchClearSnooze => "Batch visible · Clear snooze",
-            Self::ForgeCreateMergeRequest => "Forge · Create merge request…",
-            Self::ForgeComment => "Forge · Comment on merge request…",
-            Self::ForgeApprove => "Forge · Approve merge request",
-            Self::ForgeMerge => "Forge · Merge merge request",
-            Self::ForgeMergeCommit => "GitHub · Merge commit",
-            Self::ForgeSquashMerge => "GitHub · Squash and merge",
-            Self::ForgeRebaseMerge => "GitHub · Rebase and merge",
         }
     }
 }
@@ -162,18 +138,9 @@ pub enum Action {
     },
     OpenGoalActions,
     CloseGoalActions,
-    OpenManagedWorktrees,
-    ManagedWorktreesLoaded(Vec<ManagedWorktreeRecord>),
-    MutationReceipt(Box<OperationReceipt>),
-    ForgeMutationReceipt(Box<ForgeMutationReceipt>),
     MutationNotice(String),
     RecentNotificationObserved(crate::notification::RecentNotification),
     ClearRecentNotification,
-    MoveManagedWorktree(i32),
-    BeginCreateWorktree,
-    BeginAdoptCurrentWorktree,
-    BeginRemoveManagedWorktree,
-    BeginDeleteBranch,
     ConfirmPendingOperation,
     CancelPendingOperation,
     BeginGoalObjective,
@@ -357,9 +324,6 @@ pub enum Effect {
         status: Option<GoalStatus>,
     },
     ClearGoal(ThreadId),
-    RefreshManagedWorktrees,
-    ExecuteOperation(Box<OperationPlan>),
-    ExecuteForgeOperation(Box<ForgeMutationRequest>),
     ProbeGit {
         thread_id: ThreadId,
         cwd: String,

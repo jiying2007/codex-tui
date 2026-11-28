@@ -67,7 +67,7 @@ codex-tui answers four questions quickly:
 
 The default product surface is Mission Control. The local chat/thread client is a compatibility surface, not the long-term product differentiator.
 
-The global `Ctrl+K` Command Palette now shows **Mission Control actions first** with an empty query. Type a command name (English or Simplified Chinese) to reveal less-frequent upstream-overlapping compatibility actions such as transcript search, quick prompt, managed worktrees or Terminal Drawer. Existing direct keys and commands remain available; this is a presentation-only convergence, not a removal of capabilities.
+The global `Ctrl+K` Command Palette now shows **Mission Control actions first** with an empty query. Type a command name (English or Simplified Chinese) to reveal less-frequent upstream-overlapping compatibility actions such as transcript search, quick prompt or Terminal Drawer. The Lite retirement candidate removes the duplicate managed-worktree UI, launch presets, Queue UI and Forge write entry points.
 
 ## v1 principles
 
@@ -195,7 +195,7 @@ Requirements:
 - Rust stable (MSRV 1.89; the CI job retains a historical name until the protected check is migrated)
 - a working `codex` executable on `PATH` for live registry mode
 - optional `glab` authenticated to the repository's GitLab host for GitLab integration
-- optional `gh` authenticated to the repository's GitHub host for GitHub projection and explicitly confirmed pull-request mutations
+- optional `gh` authenticated to the repository's GitHub host for GitHub read-only projection
 
 Commands:
 
@@ -271,7 +271,7 @@ External alerts remain opt-in: use `terminal` for BEL, or `os` for the native de
 
 Normal startup selects `[app_server].active` and defaults to the implicit `local` target, which launches `codex app-server --listen stdio://` after the first UI frame. `--target NAME` overrides the active target for one invocation. Mission Control consumes App Server thread lifecycle/status notifications incrementally; the complete paginated registry is retained as an initial load and low-frequency reconciliation path rather than being rebuilt for every notification. Reconciliation requests canonical `recency_at` ordering and use the App Server state DB fast path after the complete initial scan, with automatic fallback for older servers that reject those optional parameters. Goal capability probing is eager only for the most recent 100 threads; older threads refresh Goal state explicitly when opened, avoiding an unbounded startup probe backlog. Mission Control stays metadata-first; opening a thread loads only the recent conversation page. Git checkout projection is deduplicated by exact cwd and the selected/active checkouts are refreshed every 10 seconds so branch/dirty state does not remain frozen after the initial probe. Thread View supports paginated history, persistent local drafts, turn start/steer/interrupt, approvals, user-input requests, and stable Codex Goal projection when the connected App Server supports it.
 
-**First connection failed:** after correcting the transient backend problem, press an unmodified, single `F5` in empty Mission Control with no editor, help, confirmation or focused Terminal Drawer. This retries the same resolved target with at most one attempt in flight; there is no automatic retry timer. Drafts and local operator state are retained. Once a connection has been installed, F5 cannot reconnect an established session, even after a later disconnect. It never replays prompts, approvals, queue edits or Forge writes, and does not reload target configuration; correct invalid configuration and restart explicitly.
+**First connection failed:** after correcting the transient backend problem, press an unmodified, single `F5` in empty Mission Control with no editor, help, confirmation or focused Terminal Drawer. This retries the same resolved target with at most one attempt in flight; there is no automatic retry timer. Drafts and local operator state are retained. Once a connection has been installed, F5 cannot reconnect an established session, even after a later disconnect. It never replays prompts or approvals, and does not reload target configuration; correct invalid configuration and restart explicitly.
 
 **External open over SSH:** the editor/browser command runs on the host running the TUI, not automatically on the Windows client. When `SSH_TTY` or `SSH_CONNECTION` is present and no explicit adapter is configured, the default graphical launch is refused before process creation; use the displayed target manually or configure `CODEX_TUI_EDITOR` / `CODEX_TUI_BROWSER` as a single executable adapter. Path and URL validation still apply. Starting a process is not proof that its window opened or that it later exited successfully; no Windows bridge, guaranteed full-target copy window or final external-program receipt is provided.
 
@@ -317,9 +317,9 @@ Manage queued submissions through native Codex CLI. The Lite candidate removes t
 
 M6a adds an asynchronous read-only GitLab projection. A normal forge refresh stays within four `glab api` calls (project, recent Issues, open MRs, recent Pipelines); approval/discussion details are loaded only when Review is opened. Forge observations remain derived and carry freshness/provenance. GitLab Issues appear as deduplicated WorkCards, while matching MRs/Pipelines enrich the corresponding Codex thread card. Forge failure never blocks Codex/Git operation.
 
-M6b adds explicit GitLab merge-request mutations from Review / Workspace context actions (`.`): create MR, comment, approve, and merge. Every write is plan-first and requires explicit confirmation. Approve/merge revalidate the exact MR HEAD SHA immediately before execution; merge never requests force/policy bypass. Comment bodies remain memory-only and are not stored in SQLite. Uncertain external outcomes remain `OutcomeUnknown` and are never blindly retried.
+The historical M6b/v1.3 GitLab/GitHub write UI is retired in the Lite candidate. Create, comment, approve and merge on the native provider or its CLI. The TUI retains bounded read-only delivery observations and external handoff; it neither initiates new Forge mutations nor automatically reconciles historical mutation receipts on startup. Existing receipt records are retained for manual audit.
 
-M6c established the normalized GitHub read-only provider. v1.3 extends that same forge mutation contract to GitHub pull requests: create, comment, approve, and merge remain plan-first and require explicit confirmation. Approve/merge re-read and compare the exact pull-request HEAD immediately before the write; merge sends only the guarded `sha` and never requests force, bypass, or policy overrides. Comment bodies remain memory-only. Uncertain GitHub outcomes become `OutcomeUnknown` and are reconciled without blind retry. Read projection remains bounded (repository, Issues, open Pull Requests, Actions runs; reviews and bounded GraphQL review threads only in Review).
+M6c established the normalized GitHub read-only provider. Read projection remains bounded (repository, Issues, open Pull Requests, Actions runs; reviews and bounded GraphQL review threads only in Review).
 
 M7a establishes a read-only automation and scale baseline. v1.2 extends that stable surface with `status`, `thread list`, `attention list`, `board list`, `forge status` and `worktree list` top-level aliases plus equivalent `headless` commands. They emit text or secret-safe JSON snapshots with explicit degraded exit codes and introduce no mutating headless path. `doctor compat` reports local OS/architecture, SQLite, Codex, Git, `glab`, and `gh` compatibility without remote forge API probes. `--fixture-10k` provides deterministic scale data, while the Divan benchmark target measures resident 10k planning filters plus recent/search/host-local Registry projections without turning noisy hosted-runner timings into release gates.
 
@@ -334,9 +334,9 @@ M7d3 adds a fail-closed release path: publication is manually dispatched, while 
 - M2 daily conversation control: implemented in the v0.2.x line.
 - M3 Git context and review: implemented in the v0.3.x line.
 - M4 personal planning + SQLite: implemented in the v0.4.x line.
-- M5 safe managed worktrees: implemented in the v0.5.x line.
+- M5 managed worktree operations: historical; Lite removes interactive writes and background recovery, retaining observed Git identity and historical records.
 - M6a GitLab Self-Managed read-only forge projection: implemented in the v0.6.x line.
-- M6b safe explicit GitLab MR mutations: implemented in the v0.6.x line.
+- M6b/v1.3 Forge mutations: historical; interactive write routes retired in Lite.
 - M6c GitHub.com read-only provider: implemented in the v0.6.x line.
 - M6 forge integration: complete.
 - M7a headless read-only CLI + scale baselines: implemented in the v0.7.x line.

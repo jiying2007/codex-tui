@@ -141,7 +141,7 @@ Before the TUI, complete a small read-only task with native Codex under this sam
 
 Create two dedicated local repositories containing distinct README markers. Verify correct Cwd and repository-backed threads; send real work from the TUI and check the actual final success/interruption/failure, not only connection readiness. Exercise an actual approval both allowed and refused, an actual server user-input request, navigation while a task is active, cancellation, draft/Saved View persistence and reopening. Not observing a required interaction is NOT_RUN/BLOCKED, never PASS. Public model metadata or a chat question alone is not approval/user-input protocol coverage.
 
-For Git/Worktree, inspect real diff/branch/path, create a dedicated managed worktree, verify dirty/active deletion refusal and cancellation, and confirm both Git registration and directory disappearance after an allowed deletion. Test external-editor boundaries and independent Codex concurrency only on disposable test objects. An OutcomeUnknown write must be reconciled with Git/Forge before deciding whether any new action is safe. See the [operator guide](operator-guide.md).
+For Lite, inspect real Git diff/branch/path and verify the native Git/Codex replacement workflow on disposable worktrees; no TUI mutation or recovery route remains. Historical v1.4 write qualification (creation, dirty/active deletion refusal, confirmation and verified removal) must not be marked PASS on a retired surface; retain prior receipts and separately approve replacement scope. Test external-editor boundaries and independent Codex concurrency on disposable objects. Reconcile OutcomeUnknown against Git/Forge before any new action. See the [operator guide](operator-guide.md).
 
 ```bash
 "$BINARY" doctor codex
@@ -173,6 +173,8 @@ python3 scripts/release/terminal_smoke.py prepare \
 ```
 
 ## Internal GitLab and declared Forge writes
+
+**Historical v1.4 qualification scope:** the Lite retirement candidate no longer exposes Forge write actions. Do not synthesize a PASS for these historical scenarios or relax the existing Stable gate. Field retirement and replacement-scope acceptance must be established separately; retain and reconcile unresolved receipts with their native provider before destructive data cleanup.
 <!-- docs-section: forge -->
 
 Enter an authorized representative test project, authenticate glab on its actual host, and check doctor forge there. codex-tui SOURCE_SHA is not the business repository HEAD. The existing capture and admission chain below retains source/authentication/capability/age/privacy gates, including seven-day age and five-minute future skew limits. An exit-3 diagnostic fixture is failed evidence, not qualification. Do not edit its timestamp or overwrite a previous result.
