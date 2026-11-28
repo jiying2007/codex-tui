@@ -315,7 +315,7 @@ Manage queued submissions through native Codex CLI. The Lite candidate removes t
 
 `--fake` is a deterministic development/fixture mode; it is never an automatic fallback for a failed real backend.
 
-M6a adds an asynchronous read-only GitLab projection. A normal forge refresh stays within four `glab api` calls (project, recent Issues, open MRs, recent Pipelines); approval/discussion details are loaded only when Review is opened. Forge observations remain derived and carry freshness/provenance. GitLab Issues appear as deduplicated WorkCards, while matching MRs/Pipelines enrich the corresponding Codex thread card. Forge failure never blocks Codex/Git operation.
+M6a adds an asynchronous read-only GitLab projection. A normal forge refresh stays within four `glab api` calls (project, recent Issues, open MRs, recent Pipelines); approval/discussion details are loaded only when Review is opened. Forge observations remain derived and carry freshness/provenance. Overview refresh follows Git context observations and only revisits relevant Registry, selected/active, or cached pinned/Attention sessions; unrelated historical checkouts are not polled. GitLab Issues appear as deduplicated WorkCards, while matching MRs/Pipelines enrich the corresponding Codex thread card. Forge failure never blocks Codex/Git operation.
 
 The historical M6b/v1.3 GitLab/GitHub write UI is retired in the Lite candidate. Create, comment, approve and merge on the native provider or its CLI. The TUI retains bounded read-only delivery observations and external handoff; it neither initiates new Forge mutations nor automatically reconciles historical mutation receipts on startup. Existing receipt records are retained for manual audit.
 

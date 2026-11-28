@@ -281,6 +281,7 @@ fn forge_scope_key(state: &AppState, thread_id: &ThreadId, cwd: &str) -> String 
     if let Some(identity) = state
         .forge_observations
         .get(&thread_id.0)
+        .filter(|observation| observation.cwd == cwd)
         .and_then(|observation| observation.identity.as_ref())
     {
         format!(
@@ -295,6 +296,13 @@ fn forge_scope_key(state: &AppState, thread_id: &ThreadId, cwd: &str) -> String 
 }
 
 fn refresh_forge_projections(state: &mut AppState) -> Vec<Effect> {
+    if state.app_server_target_is_remote() {
+        return vec![];
+    }
+    let eligible = git_projection_target_ids(state)
+        .into_iter()
+        .map(|id| id.0)
+        .collect::<BTreeSet<_>>();
     let now = now_unix_ms();
     let mut groups = BTreeMap::<String, Vec<(ThreadId, String)>>::new();
 
@@ -316,30 +324,45 @@ fn refresh_forge_projections(state: &mut AppState) -> Vec<Effect> {
 
     let mut effects = Vec::new();
     for targets in groups.into_values() {
-        let newest = targets
+        // Keep cached historical evidence, but only refresh groups still relevant
+        // to the current Registry window, selected/active session, pin or Attention.
+        let Some((thread_id, cwd)) = targets
             .iter()
-            .filter_map(|(thread_id, cwd)| {
-                state
-                    .forge_observations
-                    .get(&thread_id.0)
-                    .filter(|observation| observation.cwd == *cwd)
+            .find(|(id, _)| {
+                eligible.contains(&id.0)
+                    || state.thread_index_by_id.get(&id.0).is_some_and(|&index| {
+                        state.threads[index].pinned || state.thread_needs_attention(index)
+                    })
             })
-            .max_by_key(|observation| observation.observed_at_unix_ms);
-
-        if newest.is_some_and(|observation| {
-            observation.observed_at_unix_ms == 0
-                || now.saturating_sub(observation.observed_at_unix_ms) <= FORGE_REFRESH_TTL_MS
+            .cloned()
+        else {
+            continue;
+        };
+        // An in-flight probe must block another even if a peer retains stale data.
+        if targets.iter().any(|(id, cwd)| {
+            state
+                .forge_observations
+                .get(&id.0)
+                .filter(|observation| observation.cwd == *cwd)
+                .is_some_and(|observation| {
+                    observation.observed_at_unix_ms == 0
+                        || now.saturating_sub(observation.observed_at_unix_ms)
+                            <= FORGE_REFRESH_TTL_MS
+                })
         }) {
             continue;
         }
 
-        let Some((thread_id, cwd)) = targets.first().cloned() else {
-            continue;
-        };
-        state.forge_observations.insert(
-            thread_id.0.clone(),
-            ForgeObservation::pending(thread_id.clone(), cwd.clone()),
-        );
+        let mut pending = ForgeObservation::pending(thread_id.clone(), cwd.clone());
+        // Retain only the already-observed grouping identity while refreshing.
+        // The pending timestamp and empty evidence do not claim a fresh read.
+        pending.identity = state
+            .forge_observation(&thread_id)
+            .filter(|observation| observation.cwd == cwd)
+            .and_then(|observation| observation.identity.clone());
+        state
+            .forge_observations
+            .insert(thread_id.0.clone(), pending);
         effects.push(Effect::ProbeForge { thread_id, cwd });
     }
 

@@ -36,9 +36,17 @@ impl AppState {
 
     pub(super) fn review_external_url(&self, thread_id: &ThreadId) -> Option<String> {
         let observation = self.forge_observation(thread_id)?;
+        // An in-flight refresh may retain a grouping identity, not a link
+        // authorized by a completed observation of this checkout.
+        if observation.observed_at_unix_ms == 0
+            || self.thread_by_id(thread_id)?.metadata.cwd != observation.cwd
+        {
+            return None;
+        }
         let identity = observation.identity.as_ref()?;
         let branch = self
             .git_context(thread_id)
+            .filter(|context| context.cwd == observation.cwd && context.error.is_none())
             .and_then(|context| context.branch.as_deref());
         if let Some(branch) = branch
             && let Some(change) = observation.change_request_for_branch(branch)
@@ -105,8 +113,14 @@ mod tests {
             detailed_merge_status: Some("mergeable".into()),
             blocking_discussions_resolved: Some(true),
         });
-        app.forge_observations.insert(thread_id.0.clone(), forge);
+        // A retained grouping identity is not completed review evidence.
+        app.forge_observations
+            .insert(thread_id.0.clone(), forge.clone());
         app.view = View::Review(thread_id.clone());
+        assert!(app.open_review_external().is_empty());
+
+        forge.observed_at_unix_ms = 1;
+        app.forge_observations.insert(thread_id.0.clone(), forge);
 
         assert_eq!(
             app.review_external_url(&thread_id).as_deref(),
@@ -118,5 +132,7 @@ mod tests {
                 url: "https://github.com/octo/repo/pull/7".into()
             }]
         );
+        app.threads[0].metadata.cwd = "/different-checkout".into();
+        assert!(app.open_review_external().is_empty());
     }
 }
