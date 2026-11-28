@@ -1,7 +1,7 @@
 use crate::domain::{CwdLocality, ThreadSummary};
 use crate::forge::ForgeObservation;
+use crate::git::GitContext;
 use crate::goal::GoalObservation;
-use crate::planning::{LinkRole, SourceKind, WorkCardProjection};
 
 #[derive(Clone, Copy)]
 pub struct MetadataSearchContext<'a> {
@@ -9,7 +9,8 @@ pub struct MetadataSearchContext<'a> {
     pub locality: Option<CwdLocality>,
     pub goal: Option<&'a GoalObservation>,
     pub forge: Option<&'a ForgeObservation>,
-    pub card: Option<&'a WorkCardProjection>,
+    pub git: Option<&'a GitContext>,
+    pub note: Option<&'a str>,
 }
 
 pub fn matches_metadata_query(context: MetadataSearchContext<'_>, query: &str) -> bool {
@@ -43,26 +44,18 @@ fn token_matches(context: &MetadataSearchContext<'_>, token: &str) -> bool {
             "forge" => context
                 .forge
                 .is_some_and(|forge| forge_fields_match(forge, value)),
-            "card" | "work" => context
-                .card
-                .is_some_and(|card| work_card_fields_match(card, value)),
-            "link" | "related" => context
-                .card
-                .is_some_and(|card| work_card_links_match(card, value)),
-            "worktree" => context.card.is_some_and(|card| {
-                card.links.iter().any(|link| {
-                    link.role == LinkRole::Worktree && fuzzy_subsequence(value, &link.source.value)
-                })
-            }),
-            "stage" => context
-                .card
-                .is_some_and(|card| fuzzy_subsequence(value, card.stage.label())),
-            "tag" => context.card.is_some_and(|card| {
-                card.overlay
-                    .tags
-                    .iter()
-                    .any(|tag| fuzzy_subsequence(value, tag))
-            }),
+            "branch" => context
+                .git
+                .and_then(|git| git.branch.as_deref())
+                .is_some_and(|branch| fuzzy_subsequence(value, branch)),
+            "worktree" => context
+                .git
+                .and_then(|git| git.worktree.as_ref())
+                .is_some_and(|tree| fuzzy_subsequence(value, &tree.canonical_path)),
+            "runtime" => fuzzy_subsequence(value, context.thread.runtime.label()),
+            "note" => context
+                .note
+                .is_some_and(|note| fuzzy_subsequence(value, note)),
             _ => false,
         };
     }
@@ -74,9 +67,10 @@ fn token_matches(context: &MetadataSearchContext<'_>, token: &str) -> bool {
         || context
             .forge
             .is_some_and(|forge| forge_fields_match(forge, token))
+        || context.git.is_some_and(|git| git_fields_match(git, token))
         || context
-            .card
-            .is_some_and(|card| work_card_fields_match(card, token))
+            .note
+            .is_some_and(|note| fuzzy_subsequence(token, note))
 }
 
 pub fn filter_requires_locality(query: &str) -> bool {
@@ -101,6 +95,36 @@ fn thread_fields_match(thread: &ThreadSummary, token: &str) -> bool {
         thread.metadata.workspace_key.as_str(),
         thread.metadata.model.as_deref().unwrap_or_default(),
         thread.metadata.project_id.as_deref().unwrap_or_default(),
+        thread
+            .metadata
+            .lineage
+            .model_provider
+            .as_deref()
+            .unwrap_or_default(),
+        thread
+            .metadata
+            .lineage
+            .session_id
+            .as_deref()
+            .unwrap_or_default(),
+        thread
+            .metadata
+            .lineage
+            .parent_thread_id
+            .as_deref()
+            .unwrap_or_default(),
+        thread
+            .metadata
+            .lineage
+            .attached_to_thread_id
+            .as_deref()
+            .unwrap_or_default(),
+        thread
+            .metadata
+            .lineage
+            .forked_from_id
+            .as_deref()
+            .unwrap_or_default(),
     ]
     .into_iter()
     .any(|field| fuzzy_subsequence(token, field))
@@ -121,10 +145,10 @@ fn project_fields_match(context: &MetadataSearchContext<'_>, token: &str) -> boo
                     || fuzzy_subsequence(token, &identity.host)
             })
         })
-        || context.card.is_some_and(|card| {
-            card.workspace
-                .as_deref()
-                .is_some_and(|value| fuzzy_subsequence(token, value))
+        || context.git.is_some_and(|git| {
+            git.repo
+                .as_ref()
+                .is_some_and(|repo| fuzzy_subsequence(token, &repo.primary_root))
         })
 }
 
@@ -166,57 +190,18 @@ fn forge_fields_match(forge: &ForgeObservation, token: &str) -> bool {
     })
 }
 
-fn work_card_fields_match(card: &WorkCardProjection, token: &str) -> bool {
-    if [
-        card.local_id.as_str(),
-        card.title.as_str(),
-        card.workspace.as_deref().unwrap_or_default(),
-        card.branch.as_deref().unwrap_or_default(),
-        card.stage.label(),
-        card.stage_reason.as_str(),
-        card.overlay.title_override.as_deref().unwrap_or_default(),
-        card.overlay.note.as_deref().unwrap_or_default(),
-        source_kind_label(&card.anchor.kind),
-        card.anchor.value.as_str(),
-        card.forge_provider
-            .map(|provider| provider.label())
-            .unwrap_or_default(),
-        card.change_request_state.as_deref().unwrap_or_default(),
-    ]
-    .into_iter()
-    .any(|field| fuzzy_subsequence(token, field))
-    {
-        return true;
-    }
-
-    card.overlay
-        .tags
-        .iter()
-        .any(|tag| fuzzy_subsequence(token, tag))
-        || card
-            .attention
-            .iter()
-            .any(|reason| fuzzy_subsequence(token, reason.label()))
-        || work_card_links_match(card, token)
-}
-
-fn work_card_links_match(card: &WorkCardProjection, token: &str) -> bool {
-    card.links.iter().any(|link| {
-        fuzzy_subsequence(token, link.role.label())
-            || fuzzy_subsequence(token, source_kind_label(&link.source.kind))
-            || fuzzy_subsequence(token, &link.source.value)
-    })
-}
-
-fn source_kind_label(kind: &SourceKind) -> &'static str {
-    match kind {
-        SourceKind::ScratchWork => "scratch-work",
-        SourceKind::CodexThread => "codex-thread",
-        SourceKind::ForgeWorkItem => "forge-work-item",
-        SourceKind::Goal => "goal",
-        SourceKind::Worktree => "worktree",
-        SourceKind::ChangeRequest => "change-request",
-    }
+fn git_fields_match(git: &GitContext, token: &str) -> bool {
+    git.branch
+        .as_deref()
+        .is_some_and(|branch| fuzzy_subsequence(token, branch))
+        || git
+            .repo
+            .as_ref()
+            .is_some_and(|repo| fuzzy_subsequence(token, &repo.primary_root))
+        || git
+            .worktree
+            .as_ref()
+            .is_some_and(|tree| fuzzy_subsequence(token, &tree.canonical_path))
 }
 
 fn fuzzy_subsequence(needle: &str, haystack: &str) -> bool {
@@ -243,23 +228,15 @@ fn fuzzy_subsequence(needle: &str, haystack: &str) -> bool {
 mod tests {
     use super::*;
     use crate::backend::{CodexBackend, FakeBackend};
+    use crate::domain::{LocalRepoIdentity, WorktreeIdentity};
     use crate::forge::{
         CapabilityState, ChangeRequestSummary, ForgeCapability, ForgeFreshness, ForgeIdentity,
         ForgeProviderKind,
     };
     use crate::goal::GoalStatus;
-    use crate::planning::{
-        Freshness, PlanningAttention, Provenance, SourceRef, WorkCardLink, WorkCardOverlay,
-        WorkflowStage,
-    };
-    use std::collections::{BTreeMap, BTreeSet};
+    use std::collections::BTreeMap;
 
-    fn fixture() -> (
-        ThreadSummary,
-        GoalObservation,
-        ForgeObservation,
-        WorkCardProjection,
-    ) {
+    fn fixture() -> (ThreadSummary, GoalObservation, ForgeObservation, GitContext) {
         let thread = FakeBackend::seeded().snapshot().threads[0].clone();
         let goal = GoalObservation {
             thread_id: thread.id.clone(),
@@ -310,61 +287,34 @@ mod tests {
             freshness: ForgeFreshness::Fresh,
             error: None,
         };
-        let card = WorkCardProjection {
-            local_id: format!("thread:{}", thread.id.0),
-            anchor: SourceRef::codex_thread(&thread.id),
-            title: "Search closure".into(),
-            workspace: Some("audio".into()),
-            branch: Some("feature/search".into()),
-            forge_provider: Some(ForgeProviderKind::GitHub),
-            change_request_state: Some("open".into()),
-            change_request_draft: false,
-            stage: WorkflowStage::Review,
-            stage_reason: "change request".into(),
-            attention: BTreeSet::from([PlanningAttention::ChangeRequested]),
-            snoozed: false,
-            overlay: WorkCardOverlay {
-                tags: BTreeSet::from(["research".into()]),
-                note: Some("customer metadata".into()),
-                ..WorkCardOverlay::default()
-            },
-            links: vec![
-                WorkCardLink {
-                    role: LinkRole::Goal,
-                    source: SourceRef {
-                        kind: SourceKind::Goal,
-                        value: thread.id.0.clone(),
-                    },
-                },
-                WorkCardLink {
-                    role: LinkRole::Worktree,
-                    source: SourceRef {
-                        kind: SourceKind::Worktree,
-                        value: "/repo/audio-search".into(),
-                    },
-                },
-            ],
-            goal: Some(goal.clone()),
-            provenance: vec![Provenance {
-                source: "fixture".into(),
-                observed_at_unix_ms: Some(1),
-                source_revision: None,
-                freshness: Freshness::Fresh,
-                degraded_reason: None,
-            }],
+        let mut git = GitContext::pending(thread.id.clone(), thread.metadata.cwd.clone());
+        git.is_repository = true;
+        git.observed_at_unix_ms = 1;
+        git.branch = Some("feature/search".into());
+        let repo = LocalRepoIdentity {
+            git_common_dir: "/repo/audio/.git".into(),
+            primary_root: "/repo/audio".into(),
         };
-        (thread, goal, forge, card)
+        git.repo = Some(repo.clone());
+        git.worktree = Some(WorktreeIdentity {
+            repo,
+            canonical_path: "/repo/audio-search".into(),
+            branch: git.branch.clone(),
+            managed_by_codex_tui: false,
+        });
+        (thread, goal, forge, git)
     }
 
     #[test]
-    fn unified_query_matches_goal_forge_workcard_and_relationship_metadata() {
-        let (thread, goal, forge, card) = fixture();
+    fn native_query_matches_session_goal_forge_git_and_local_note() {
+        let (thread, goal, forge, git) = fixture();
         let context = MetadataSearchContext {
             thread: &thread,
             locality: Some(CwdLocality::LocalDirectory),
             goal: Some(&goal),
             forge: Some(&forge),
-            card: Some(&card),
+            git: Some(&git),
+            note: Some("customer metadata"),
         };
 
         for query in [
@@ -372,10 +322,9 @@ mod tests {
             "project:audio-pipeline",
             "goal:acoustic",
             "forge:github",
-            "work:research",
-            "link:worktree",
+            "branch:feature/search",
             "worktree:audio-search",
-            "stage:review",
+            "note:customer",
             "local customer",
         ] {
             assert!(
@@ -387,14 +336,15 @@ mod tests {
 
     #[test]
     fn metadata_search_does_not_need_or_accept_transcript_content() {
-        let (mut thread, goal, forge, card) = fixture();
+        let (mut thread, goal, forge, git) = fixture();
         thread.title = "visible metadata only".into();
         let context = MetadataSearchContext {
             thread: &thread,
             locality: None,
             goal: Some(&goal),
             forge: Some(&forge),
-            card: Some(&card),
+            git: Some(&git),
+            note: Some("customer metadata"),
         };
         assert!(!matches_metadata_query(
             context,
@@ -404,16 +354,24 @@ mod tests {
 
     #[test]
     fn unknown_scoped_field_fails_closed() {
-        let (thread, goal, forge, card) = fixture();
-        assert!(!matches_metadata_query(
-            MetadataSearchContext {
-                thread: &thread,
-                locality: None,
-                goal: Some(&goal),
-                forge: Some(&forge),
-                card: Some(&card),
-            },
+        let (thread, goal, forge, git) = fixture();
+        let context = MetadataSearchContext {
+            thread: &thread,
+            locality: None,
+            goal: Some(&goal),
+            forge: Some(&forge),
+            git: Some(&git),
+            note: Some("customer metadata"),
+        };
+        for retired in [
             "unknown:value",
-        ));
+            "card:thread",
+            "work:research",
+            "link:goal",
+            "stage:ready",
+            "tag:research",
+        ] {
+            assert!(!matches_metadata_query(context, retired));
+        }
     }
 }

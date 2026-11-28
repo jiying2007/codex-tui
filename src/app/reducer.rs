@@ -323,10 +323,8 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 }
                 ContextChoice::Bookmark => {
                     let label = state
-                        .work_cards
-                        .iter()
-                        .find(|card| card.anchor == target)
-                        .map(|card| card.title.clone());
+                        .thread_by_id(&ThreadId::new(target.value.clone()))
+                        .map(|thread| thread.display_title().to_owned());
                     return vec![Effect::CreateBookmark {
                         source: target,
                         label,

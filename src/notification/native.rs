@@ -1,6 +1,6 @@
-//! Native session notification edges; non-session legacy cards remain separate.
+//! Native session notification edges; no Board projection dependency.
 use super::*;
-use crate::{app::AppState, conversation::InteractiveRequestKind, planning::SourceKind};
+use crate::{app::AppState, conversation::InteractiveRequestKind};
 
 impl NotificationObservation {
     pub fn from_app(app: &AppState) -> Self {
@@ -17,36 +17,21 @@ impl NotificationObservation {
         result
             .known_items
             .extend(known.keys().map(|id| (*id).to_owned()));
-        // Only non-session legacy cards use the old Board projection.
-        for card in &app.work_cards {
-            if card.anchor.kind == SourceKind::CodexThread {
-                continue;
-            }
-            result.known_items.insert(card.local_id.clone());
-            if card.snoozed {
-                continue;
-            }
-            for kind in card_notification_kinds(card) {
-                let key = format!("{}:{}", kind.label(), card.local_id);
-                result.active.insert(
-                    key.clone(),
-                    NotificationEvent {
-                        key,
-                        item_id: card.local_id.clone(),
-                        kind,
-                        subject: card.title.clone(),
-                    },
-                );
-            }
-        }
         for thread in &app.threads {
-            if app.session_attention_snoozed(thread) {
-                continue;
-            }
+            let snoozed = app.session_attention_snoozed(thread);
             for kind in app
                 .session_attention_reasons(thread)
                 .iter()
                 .filter_map(attention_notification_kind)
+                .filter(|kind| {
+                    !snoozed
+                        || matches!(
+                            kind,
+                            NotificationKind::ApprovalRequired
+                                | NotificationKind::UserInputRequired
+                                | NotificationKind::SystemError
+                        )
+                })
             {
                 let key = format!("native:{}:{}", kind.label(), thread.id.0);
                 result.active.insert(
@@ -64,9 +49,7 @@ impl NotificationObservation {
             let Some(thread) = known.get(request.thread_id.0.as_str()) else {
                 continue;
             };
-            if app.session_attention_snoozed(thread) {
-                continue;
-            }
+            // A real request cannot be suppressed by a historical snooze.
             let kind = match &request.kind {
                 InteractiveRequestKind::UserInput { .. } => NotificationKind::UserInputRequired,
                 _ => NotificationKind::ApprovalRequired,
@@ -229,6 +212,74 @@ mod tests {
                 .advance(NotificationObservation::from_app(&app))
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn snooze_never_suppresses_live_requests_or_errors() {
+        use crate::{
+            app::{Action, reduce},
+            planning::WorkCardRecord,
+        };
+        let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
+        let id = app.threads[0].id.clone();
+        app.threads[0].attention.clear();
+        let mut local = WorkCardRecord::implicit_thread(&id);
+        local.overlay.snooze_until_unix_ms = Some(100);
+        let mut snapshot = app.planning_snapshot.clone();
+        snapshot.cards.push(local);
+        reduce(&mut app, Action::PlanningSnapshotLoaded(snapshot));
+        app.advance_session_attention_clock(1);
+        assert!(app.session_attention_snoozed(&app.threads[0]));
+
+        let mut tracker = NotificationTracker::default();
+        tracker.advance(NotificationObservation::from_app(&app));
+        app.threads[0]
+            .attention
+            .push(AttentionReason::ReadyForReview);
+        assert!(
+            tracker
+                .advance(NotificationObservation::from_app(&app))
+                .is_empty()
+        );
+
+        app.threads[0].attention.extend([
+            AttentionReason::ApprovalRequired,
+            AttentionReason::SystemError,
+        ]);
+        let request = InteractiveRequest {
+            request_id: RpcRequestId::Integer(91),
+            thread_id: id.clone(),
+            turn_id: "turn".into(),
+            item_id: "input".into(),
+            kind: InteractiveRequestKind::UserInput { questions: vec![] },
+        };
+        app.pending_requests.push(request.clone());
+        let events = tracker.advance(NotificationObservation::from_app(&app));
+        assert_eq!(
+            events
+                .iter()
+                .map(|event| event.kind)
+                .collect::<BTreeSet<_>>(),
+            BTreeSet::from([
+                NotificationKind::ApprovalRequired,
+                NotificationKind::SystemError,
+                NotificationKind::UserInputRequired,
+            ])
+        );
+        assert!(events.iter().all(|event| event.item_id == id.0));
+        assert!(
+            tracker
+                .advance(NotificationObservation::from_app(&app))
+                .is_empty()
+        );
+        app.pending_requests.push(InteractiveRequest {
+            request_id: RpcRequestId::Integer(92),
+            ..request
+        });
+        let events = tracker.advance(NotificationObservation::from_app(&app));
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].kind, NotificationKind::UserInputRequired);
+        assert!(app.work_cards.is_empty());
     }
 
     #[test]

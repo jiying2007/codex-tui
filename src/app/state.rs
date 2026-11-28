@@ -316,8 +316,15 @@ impl AppState {
                 thread,
                 locality,
                 goal: self.goals.get(&thread.id.0),
-                forge: self.forge_observation(&thread.id),
-                card: self.work_card_for_thread(&thread.id),
+                forge: self.forge_observation(&thread.id).filter(|observation| {
+                    observation.cwd == thread.metadata.cwd && observation.observed_at_unix_ms > 0
+                }),
+                git: self.git_context(&thread.id).filter(|context| {
+                    context.cwd == thread.metadata.cwd
+                        && context.observed_at_unix_ms > 0
+                        && context.error.is_none()
+                }),
+                note: self.session_note(&thread.id),
             },
             normalized_query,
         ) && (!self.host_local_only

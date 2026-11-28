@@ -1,6 +1,6 @@
 use anyhow::Result;
 use codex_tui::{
-    app::{Action, AppState, Effect, reduce},
+    app::{Action, AppState, Effect, ViewKind, planning_worker::PlanningWorker, reduce},
     app_server::{self, ConversationEvent, RegistryHandle},
     app_server_target::ResolvedAppServerTarget,
     backend::{BackendStatus, CodexBackend, FakeBackend},
@@ -41,10 +41,7 @@ use runtime_notifications::RuntimeNotifications;
 use runtime_store_worker::{StoreEvent, StoreWorker as RuntimeStore};
 
 #[cfg(test)]
-use codex_tui::{
-    app::{InputMode, ViewKind},
-    command::Command,
-};
+use codex_tui::{app::InputMode, command::Command};
 #[cfg(test)]
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 #[cfg(test)]
@@ -273,7 +270,8 @@ async fn run_app(fake_mode: bool, target_override: Option<&str>) -> Result<()> {
     app.install_workrefs(bootstrap.workrefs);
     reduce(&mut app, Action::PlanningSnapshotLoaded(bootstrap.planning));
     reduce(&mut app, Action::PlanningStoreDegraded(store.error()));
-    let mut planning_worker = codex_tui::app::planning_worker::PlanningWorker::start()?;
+    let mut legacy_board_worker = None;
+    let mut legacy_board_dirty = true;
     let mut services = RuntimeServices::new(store, notification_mode);
     let mut target_lookup =
         runtime_target_lookup::LookupWorker::new(app_server_target.as_ref().map(|target| {
@@ -437,19 +435,22 @@ async fn run_app(fake_mode: bool, target_override: Option<&str>) -> Result<()> {
 
             let attention_now = now_unix_ms();
             let attention_clock_changed = app.advance_session_attention_clock(attention_now);
-            let planning_applied =
-                match planning_worker.advance(&mut app, planning_dirty, attention_now) {
-                    Ok(applied) => applied,
-                    Err(error) => {
-                        reduce(&mut app, Action::MutationNotice(error));
-                        false
-                    }
-                };
-            if planning_applied
-                || planning_dirty
-                || registry_changes.notification
-                || attention_clock_changed
-            {
+            legacy_board_dirty |= planning_dirty;
+            match advance_legacy_board(
+                &mut legacy_board_worker,
+                &mut app,
+                &mut legacy_board_dirty,
+                attention_now,
+            ) {
+                Ok(applied) => needs_render |= applied,
+                Err(error) => {
+                    let effects = reduce(&mut app, Action::Back);
+                    apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
+                    reduce(&mut app, Action::MutationNotice(error));
+                    needs_render = true;
+                }
+            }
+            if planning_dirty || registry_changes.notification || attention_clock_changed {
                 needs_render = true;
                 if let Err(error) = services.notifications.observe(&app) {
                     reduce(
@@ -520,13 +521,30 @@ async fn run_app(fake_mode: bool, target_override: Option<&str>) -> Result<()> {
     })
 }
 
-#[cfg(test)]
-fn reconcile_planning_if_dirty(app: &mut AppState, planning_dirty: bool, now_unix_ms: u64) -> bool {
-    if !planning_dirty {
-        return false;
+// Temporary historical viewer only: normal native session operation never
+// starts or advances the old projection worker. Keep a single instance if a
+// user explicitly enters the legacy Board, so rapid navigation cannot spawn
+// competing detached workers. Its bounded in-flight result is admitted only
+// on a later Board visit, using the existing source/intent/clock fences.
+fn advance_legacy_board(
+    worker: &mut Option<PlanningWorker>,
+    app: &mut AppState,
+    dirty: &mut bool,
+    now: u64,
+) -> Result<bool, String> {
+    if app.view_kind() != ViewKind::Board {
+        return Ok(false);
     }
-    reduce(app, Action::ReconcilePlanning { now_unix_ms });
-    true
+    if worker.is_none() {
+        *worker = Some(
+            PlanningWorker::start()
+                .map_err(|error| format!("legacy Board unavailable: {error}"))?,
+        );
+    }
+    worker
+        .as_mut()
+        .expect("legacy Board worker initialized")
+        .advance(app, std::mem::take(dirty), now)
 }
 
 fn runtime_text(
@@ -1417,19 +1435,32 @@ mod command_palette_input_tests {
 }
 
 #[cfg(test)]
-mod background_planning_coalescing_tests {
+mod legacy_board_scope_tests {
     use super::*;
 
     #[test]
-    fn background_planning_reconciles_only_when_marked_dirty() {
+    fn native_registry_never_starts_or_advances_legacy_board_worker() {
         let mut app = AppState::new(FakeBackend::scaled(8).snapshot().threads);
+        let mut worker = None;
+        let mut dirty = true;
+        for now in 1..100 {
+            assert!(!advance_legacy_board(&mut worker, &mut app, &mut dirty, now).unwrap());
+        }
+        assert!(worker.is_none());
         assert!(app.work_cards.is_empty());
+        assert!(dirty);
 
-        assert!(!reconcile_planning_if_dirty(&mut app, false, 1));
+        reduce(&mut app, Action::OpenBoard);
+        assert!(!advance_legacy_board(&mut worker, &mut app, &mut dirty, 100).unwrap());
+        assert!(worker.is_some());
+        assert!(!dirty);
+        reduce(&mut app, Action::Back);
+        dirty = true;
+        for now in 101..200 {
+            assert!(!advance_legacy_board(&mut worker, &mut app, &mut dirty, now).unwrap());
+        }
         assert!(app.work_cards.is_empty());
-
-        assert!(reconcile_planning_if_dirty(&mut app, true, 1));
-        assert_eq!(app.work_cards.len(), 8);
+        assert!(dirty);
     }
 }
 
