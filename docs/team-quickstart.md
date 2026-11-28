@@ -33,32 +33,10 @@ Use:
 
 codex-tui projects those authorities and stores only local operator/planning state.
 
-## 3. Optional safe launch presets
+## 3. Native development commands
 <!-- docs-section: presets -->
 
-If the team wants shared shortcuts, add only the narrow repository-root `.codex-tui.toml` format:
-
-```toml
-version = 1
-
-[[launch]]
-name = "Tests"
-argv = ["cargo", "test", "--all-targets"]
-cwd = "repo"
-
-[[launch]]
-name = "Open workspace"
-argv = ["code", "."]
-cwd = "thread"
-```
-
-Validate without executing:
-
-```text
-codex-tui doctor presets
-```
-
-Presets are argv-only. Shell strings, environment templating, chaining, hooks and schedulers are intentionally unsupported.
+Run builds, tests and other repository commands with Codex CLI, your editor, or an existing shell. Repository launch presets and `doctor presets` are retired. Existing repository files are neither executed nor removed by codex-tui.
 
 ## 4. Forge setup
 <!-- docs-section: forge -->

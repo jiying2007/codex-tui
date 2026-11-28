@@ -683,34 +683,6 @@ fn forge_confirm_overlay_escapes_untrusted_identity_branches_and_guards() {
 }
 
 #[test]
-fn launch_confirmation_overlay_escapes_paths_without_mutating_exact_argv() {
-    let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
-    app.pending_launch_plan = Some(crate::launch::LaunchPlan {
-        name: "preset\u{202e}spoof".into(),
-        argv: vec!["printf".into(), "arg\u{202e}spoof".into()],
-        cwd: "/cwd\u{202e}spoof".into(),
-        config_path: "/config\u{202e}spoof".into(),
-    });
-    let snapshot = overlay_snapshot(&app, render_launch_confirmation);
-    for fragment in [
-        "Preset: preset\u{fffd}spoof",
-        "Config: /config\u{fffd}spoof",
-        "Cwd: /cwd\u{fffd}spoof",
-        "Exact argv:",
-    ] {
-        assert!(
-            snapshot.contains(fragment),
-            "Launch confirmation missing safe fragment {fragment:?}"
-        );
-    }
-    assert!(!snapshot.contains('\u{202e}'));
-    assert_eq!(
-        app.pending_launch_plan.as_ref().expect("plan").argv[1],
-        "arg\u{202e}spoof"
-    );
-}
-
-#[test]
 fn local_batch_confirmation_and_input_overlays_escape_untrusted_text() {
     let mut app = AppState::new(FakeBackend::seeded().snapshot().threads);
     app.pending_local_batch = Some(crate::batch_local::LocalBatchPlan {

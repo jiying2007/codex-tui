@@ -18,7 +18,6 @@ use crate::forge_mutation::{ForgeMutationPlan, ForgeMutationReceipt, ForgeMutati
 use crate::git::{GitContext, GitReview};
 use crate::goal::{GoalObservation, GoalStatus};
 use crate::i18n::{UiLanguage, pick};
-use crate::launch::{LaunchPlan, LaunchPreset};
 use crate::metadata_search::{
     MetadataSearchContext, filter_requires_locality, matches_metadata_query,
 };
@@ -196,12 +195,6 @@ pub struct AppState {
     pub pending_forge_operation: Option<ForgeMutationPlan>,
     pub pending_forge_payload: Option<String>,
     pub pending_local_batch: Option<LocalBatchPlan>,
-    pub launch_menu_open: bool,
-    pub launch_selected: usize,
-    pub launch_repo_root: Option<String>,
-    pub launch_thread_cwd: Option<String>,
-    pub launch_presets: Vec<LaunchPreset>,
-    pub pending_launch_plan: Option<LaunchPlan>,
     pub terminal_drawer_open: bool,
     pub terminal_focused: bool,
     pub terminal_snapshot: Option<TerminalSnapshot>,

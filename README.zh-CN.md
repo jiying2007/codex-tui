@@ -41,6 +41,8 @@ Mission Control 优先回答：**正在做什么、哪条会话需要我、如�
 
 **静音不关闭界面提醒：**默认 `off` 仍显示最近事件并支持 `!` 回跳，只关闭外部声音／桌面投递。要测试 Windows SSH Ubuntu 响铃，可设置 `[notifications].mode = "terminal"`，配置 Windows Terminal 的 `"bellStyle": "all"`，再从 Ubuntu 执行 `printf '\a'`；这不是 Windows Toast 或离线推送。
 
+历史 M7b3 仓库启动预设已从 Lite 候选版本退役。构建和测试由原生 Codex CLI、编辑器或现有终端执行；应用不读取、不执行，也不删除旧仓库预设配置。
+
 ## 架构和权威边界
 <!-- docs-section: architecture -->
 

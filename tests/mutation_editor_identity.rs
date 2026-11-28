@@ -378,26 +378,6 @@ fn context_menu_approve_cannot_follow_another_project_with_the_same_iid() {
     assert!(app.mutation_notice.is_some());
 }
 #[test]
-fn context_menu_launch_does_not_follow_replaced_repository() {
-    let mut app = fixture(true);
-    reduce(&mut app, Action::OpenContext);
-    app.context_selected = app
-        .context_choices()
-        .iter()
-        .position(|c| *c == ContextChoice::LaunchPreset)
-        .unwrap();
-    let id = app.threads[0].id.0.clone();
-    app.git_contexts
-        .get_mut(&id)
-        .unwrap()
-        .repo
-        .as_mut()
-        .unwrap()
-        .primary_root = "/other-repo".into();
-    assert!(reduce(&mut app, Action::ExecuteContext).is_empty());
-    assert!(app.mutation_notice.is_some());
-}
-#[test]
 fn context_menu_cannot_edit_a_different_saved_view() {
     let mut app = fixture(false);
     app.view = View::Board;

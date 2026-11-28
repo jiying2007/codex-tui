@@ -29,7 +29,6 @@ codex-tui doctor codex --target local-alt
 codex-tui doctor git
 codex-tui doctor forge
 codex-tui doctor store
-codex-tui doctor presets
 codex-tui doctor terminal
 codex-tui doctor bundle --offline --output ./codex-tui-support
 ~~~
