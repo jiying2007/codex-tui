@@ -38,7 +38,6 @@ fn eligible(app: &AppState, key: KeyEvent) -> bool {
         && !app.show_help
         && !app.context_open
         && !app.transcript_search_open
-        && !app.goal_actions_open
         && app.saved_view_editor.is_none()
         && app.pending_local_batch.is_none()
         && app.hot_slot_bind_pending.is_none()
@@ -155,7 +154,6 @@ mod tests {
             |a| a.context_open = true,
             |a| a.command_palette_open = true,
             |a| a.transcript_search_open = true,
-            |a| a.goal_actions_open = true,
             |a| a.terminal_drawer_open = true,
             |a| a.terminal_focused = true,
             |a| a.should_quit = true,

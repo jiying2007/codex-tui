@@ -92,7 +92,7 @@ pub(crate) fn action_for_command(app: &AppState, command: Command) -> Option<Act
         Command::CloseTerminalDrawer => Action::CloseTerminalDrawer,
         Command::HotSlot(slot) => Action::UseHotSlot(slot),
         Command::ContextActions => Action::OpenContext,
-        Command::Goal => Action::OpenGoalActions,
+        Command::RefreshGoal => Action::RefreshGoal,
         Command::CommandPalette => Action::OpenCommandPalette,
         Command::OpenExternal => Action::OpenReviewExternal,
     };

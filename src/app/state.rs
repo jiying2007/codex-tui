@@ -66,7 +66,6 @@ impl AppState {
             worktree_collision_counts: BTreeMap::new(),
             goals: BTreeMap::new(),
             goal_checked: BTreeSet::new(),
-            goal_actions_open: false,
             pending_local_batch: None,
             terminal_drawer_open: false,
             terminal_focused: false,
@@ -128,7 +127,6 @@ impl AppState {
             composer_scroll_back: 0,
             input_original: String::new(),
             alias_target: None,
-            mutation_editor: None,
             search_return_view: None,
         }
     }
@@ -218,7 +216,6 @@ impl AppState {
             && self.target_lookup.is_none()
             && !self.context_open
             && !self.transcript_search_open
-            && !self.goal_actions_open
             && self.saved_view_editor.is_none()
             && self.pending_local_batch.is_none()
             && self.hot_slot_bind_pending.is_none()
@@ -676,6 +673,20 @@ impl AppState {
             .iter()
             .map(|request| request.thread_id.0.clone())
             .collect();
+    }
+
+    pub(super) fn local_target_live(&self, target: &SourceRef) -> bool {
+        match target.kind {
+            SourceKind::CodexThread => self
+                .thread_by_id(&ThreadId::new(target.value.clone()))
+                .is_some(),
+            SourceKind::ScratchWork => self
+                .planning_snapshot
+                .scratch
+                .iter()
+                .any(|item| item.id == target.value),
+            _ => self.work_cards.iter().any(|card| card.anchor == *target),
+        }
     }
 
     pub fn current_pending_request(&self) -> Option<&InteractiveRequest> {

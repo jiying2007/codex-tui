@@ -60,7 +60,7 @@ fn detail_keys_and_paste_never_submit_or_cancel_and_escape_only_returns() {
 }
 
 #[test]
-fn d_remains_input_in_an_editor_and_does_not_open_over_goal_actions() {
+fn d_remains_input_in_an_editor_and_opens_details_after_exit() {
     let mut app = app();
     handle_key(
         &mut app,
@@ -79,7 +79,6 @@ fn d_remains_input_in_an_editor_and_does_not_open_over_goal_actions() {
     assert!(!app.request_details_open());
     handle_key(&mut app, KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE));
     assert_eq!(app.input_mode, InputMode::Normal);
-    app.goal_actions_open = true;
     assert!(
         handle_key(
             &mut app,
@@ -87,7 +86,7 @@ fn d_remains_input_in_an_editor_and_does_not_open_over_goal_actions() {
         )
         .is_empty()
     );
-    assert!(!app.request_details_open());
+    assert!(app.request_details_open());
 }
 
 #[test]
@@ -115,11 +114,16 @@ fn modified_or_repeated_confirmation_keys_cannot_resolve_a_live_request() {
 }
 
 #[test]
-fn modified_goal_actions_are_not_executed_behind_the_goal_dialog() {
+fn goal_refresh_never_steals_a_pending_approval() {
     let mut app = app();
-    app.goal_actions_open = true;
-    for code in [KeyCode::Char('c'), KeyCode::Char('p'), KeyCode::Char('r')] {
-        assert!(handle_key(&mut app, KeyEvent::new(code, KeyModifiers::ALT)).is_empty());
-        assert!(app.goal_actions_open);
-    }
+    let pending = app.pending_requests.clone();
+    assert!(
+        handle_key(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('g'), KeyModifiers::NONE)
+        )
+        .is_empty()
+    );
+    assert_eq!(app.pending_requests, pending);
+    assert!(!app.request_details_open());
 }

@@ -2,7 +2,7 @@
 use codex_tui::{
     app::{Action, AppState, ContextChoice, Effect, InputMode, View, reduce},
     backend::{CodexBackend, FakeBackend},
-    domain::{LocalRepoIdentity, ThreadId},
+    domain::LocalRepoIdentity,
     forge::{ChangeRequestSummary, ForgeIdentity, ForgeObservation, ForgeProviderKind},
     git::GitContext,
     goal::{GoalObservation, GoalStatus},
@@ -54,25 +54,17 @@ fn fixture(with_change: bool) -> AppState {
     app.view = View::Workspace(app.threads[0].id.clone());
     app
 }
-fn rejected(app: &mut AppState) {
-    let mode = app.input_mode;
-    let draft = app.input_buffer.clone();
-    assert!(
-        reduce(app, Action::CommitInput).is_empty(),
-        "unexpected write effect"
-    );
-    assert_eq!(app.input_mode, mode);
-    assert_eq!(app.input_buffer, draft);
-    assert!(app.mutation_notice.is_some(), "conflict must be visible");
-}
-fn open_goal(app: &mut AppState) -> ThreadId {
-    let id = app.threads[0].id.clone();
-    app.view = View::Thread(id.clone());
+#[test]
+fn goal_refresh_reads_only_the_current_thread_and_never_recreates_a_cleared_goal() {
+    let mut app = fixture(false);
+    let first = app.threads[0].id.clone();
+    let second = app.threads[1].id.clone();
+    app.view = View::Thread(first.clone());
     reduce(
-        app,
+        &mut app,
         Action::GoalObserved(GoalObservation {
-            thread_id: id.clone(),
-            objective: "original".into(),
+            thread_id: first.clone(),
+            objective: "native objective".into(),
             status: GoalStatus::Paused,
             token_budget: None,
             tokens_used: 1,
@@ -82,55 +74,34 @@ fn open_goal(app: &mut AppState) -> ThreadId {
             observed_at_unix_ms: 1,
         }),
     );
-    reduce(app, Action::BeginGoalObjective);
-    assert_eq!(app.input_mode, InputMode::GoalObjective);
-    app.input_buffer = "edited objective".into();
-    id
-}
-#[test]
-fn goal_editor_cannot_follow_another_thread() {
-    let mut app = fixture(false);
-    open_goal(&mut app);
-    app.view = View::Thread(app.threads[1].id.clone());
-    rejected(&mut app);
-}
-#[test]
-fn goal_editor_refuses_changed_objective_or_replaced_goal() {
-    for replacement in [false, true] {
-        let mut app = fixture(false);
-        let id = open_goal(&mut app);
-        let goal = app.goals.get_mut(&id.0).unwrap();
-        if replacement {
-            goal.created_at = 2;
-        } else {
-            goal.objective = "external edit".into();
-        }
-        rejected(&mut app);
-    }
-}
-#[test]
-fn goal_editor_does_not_recreate_cleared_goal() {
-    let mut app = fixture(false);
-    let id = open_goal(&mut app);
-    reduce(&mut app, Action::GoalCleared(id));
-    rejected(&mut app);
-}
-#[test]
-fn goal_progress_does_not_invalidate_objective_edit() {
-    let mut app = fixture(false);
-    let id = open_goal(&mut app);
-    let goal = app.goals.get_mut(&id.0).unwrap();
-    goal.tokens_used += 10;
-    goal.time_used_seconds += 10;
-    goal.observed_at_unix_ms += 10;
     assert_eq!(
-        reduce(&mut app, Action::CommitInput),
-        vec![Effect::SetGoal {
-            thread_id: id,
-            objective: Some("edited objective".into()),
-            status: None
-        }]
+        reduce(&mut app, Action::RefreshGoal),
+        vec![Effect::RefreshGoal(first.clone())]
     );
+    let observed = app.goals.get(&first.0).unwrap().clone();
+    app.view = View::Thread(second.clone());
+    assert_eq!(
+        reduce(&mut app, Action::RefreshGoal),
+        vec![Effect::RefreshGoal(second)]
+    );
+    assert_eq!(app.goals.get(&first.0), Some(&observed));
+    reduce(&mut app, Action::GoalCleared(first.clone()));
+    app.view = View::Thread(first.clone());
+    assert_eq!(
+        reduce(&mut app, Action::RefreshGoal),
+        vec![Effect::RefreshGoal(first.clone())]
+    );
+    assert!(!app.goals.contains_key(&first.0));
+}
+
+#[test]
+fn goal_refresh_refuses_a_stale_thread_identity() {
+    let mut app = fixture(false);
+    let removed = app.threads[0].id.clone();
+    let remaining = app.threads[1..].to_vec();
+    reduce(&mut app, Action::ReplaceThreads(remaining));
+    app.view = View::Thread(removed);
+    assert!(reduce(&mut app, Action::RefreshGoal).is_empty());
 }
 #[test]
 fn hot_slot_binding_keeps_original_target_during_navigation() {

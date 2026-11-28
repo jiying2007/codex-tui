@@ -114,6 +114,8 @@ active = "local"
 
 快捷槽可在 Registry／Board 选中任务按 `=` 再按 `1–9` 绑定；在 Registry、Board、Thread、Review、Workspace 中按数字直达该会话，编辑和确认框不会被抢键。
 
+Goal 的创建、编辑、暂停、恢复和清除使用原生 Codex CLI；Thread 中按 `g` 只读刷新当前会话的 Goal 观测，旧会话也可显式刷新。原生 Goal 状态及阻塞、额度受限和完成提醒继续保留。
+
 远程 Codex 可在本地 TOML 配置命名的 stdio/WebSocket/Unix Socket 目标，令牌只通过 `auth_token_env` 指定环境变量名；不要提交真实密钥。详见英文 [Remote App Server 技术说明](docs/implementation/v1.3-remote-app-server-targets.md)。
 
 ## 明确不做的功能

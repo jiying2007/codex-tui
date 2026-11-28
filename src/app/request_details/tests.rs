@@ -128,10 +128,10 @@ fn details_cannot_open_over_an_editor_or_action_panel() {
     reduce(&mut app, Action::OpenRequestDetails);
     assert!(!app.request_details_open());
     app.input_mode = InputMode::Normal;
-    app.goal_actions_open = true;
+    app.command_palette_open = true;
     reduce(&mut app, Action::OpenRequestDetails);
     assert!(!app.request_details_open());
-    app.goal_actions_open = false;
+    app.command_palette_open = false;
     app.view = View::Registry;
     reduce(&mut app, Action::OpenRequestDetails);
     assert!(!app.request_details_open());

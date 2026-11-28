@@ -1,4 +1,4 @@
-use super::{goal_status_label, goal_summary, interactive_request_lines, provenance, tr};
+use super::{goal_summary, interactive_request_lines, provenance, tr};
 use crate::app::{AppState, InputMode};
 use crate::domain::ThreadSummary;
 use ratatui::{
@@ -235,60 +235,7 @@ pub(super) fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
     );
     render_item_scrollbar(frame, chunks[1], scrollbar.0, scrollbar.1, scrollbar.2);
 
-    let (composer_title, composer_text) = if app.input_mode == InputMode::GoalObjective {
-        (
-            tr(
-                app,
-                " Goal objective · Enter set · Esc cancel ",
-                " Goal 目标 · Enter 设置 · Esc 取消 ",
-            ),
-            format!("{}> {}", tr(app, "objective", "目标"), app.input_buffer),
-        )
-    } else if app.goal_actions_open {
-        let text = app.current_goal().map_or_else(
-            || {
-                tr(
-                    app,
-                    "No Goal observed. e/Enter creates one with ACTIVE status.",
-                    "尚未发现 Goal。按 e/Enter 创建并设为 ACTIVE。",
-                )
-                .into()
-            },
-            |goal| {
-                if app.language.is_simplified_chinese() {
-                    format!(
-                        "{}\n状态={} · token={}{} · 已用={}秒",
-                        goal.objective,
-                        goal_status_label(goal.status, app.language),
-                        goal.tokens_used,
-                        goal.token_budget
-                            .map(|budget| format!("/{budget}"))
-                            .unwrap_or_default(),
-                        goal.time_used_seconds
-                    )
-                } else {
-                    format!(
-                        "{}\nstatus={} · tokens={}{} · elapsed={}s",
-                        goal.objective,
-                        goal_status_label(goal.status, app.language),
-                        goal.tokens_used,
-                        goal.token_budget
-                            .map(|budget| format!("/{budget}"))
-                            .unwrap_or_default(),
-                        goal.time_used_seconds
-                    )
-                }
-            },
-        );
-        (
-            tr(
-                app,
-                " Goal actions · e objective · p pause · r resume · c clear · Esc close ",
-                " Goal 操作 · e 目标 · p 暂停 · r 恢复 · c 清除 · Esc 关闭 ",
-            ),
-            text,
-        )
-    } else if app.input_mode == InputMode::UserInput {
+    let (composer_title, composer_text) = if app.input_mode == InputMode::UserInput {
         let question = app.current_user_input_question();
         let displayed_answer = if question.is_none_or(|question| question.is_secret) {
             "*".repeat(app.input_buffer.chars().count())

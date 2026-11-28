@@ -52,6 +52,7 @@ pub const HELP_BINDINGS: &[HelpBinding] = &[
     HelpBinding { surface: "Thread", scope: HelpScope::View(ViewKind::Thread), token: "d", code: KeyCode::Char('d'), modifiers: KeyModifiers::NONE, command: Command::RequestDetails },
     HelpBinding { surface: "Thread", scope: HelpScope::View(ViewKind::Thread), token: "Ctrl+C", code: KeyCode::Char('c'), modifiers: KeyModifiers::CONTROL, command: Command::QuitOrInterrupt },
     HelpBinding { surface: "Thread", scope: HelpScope::View(ViewKind::Thread), token: "r", code: KeyCode::Char('r'), modifiers: KeyModifiers::NONE, command: Command::Review },
+    HelpBinding { surface: "Thread", scope: HelpScope::View(ViewKind::Thread), token: "g", code: KeyCode::Char('g'), modifiers: KeyModifiers::NONE, command: Command::RefreshGoal },
     HelpBinding { surface: "Thread", scope: HelpScope::View(ViewKind::Thread), token: "PageUp/PageDown", code: KeyCode::PageUp, modifiers: KeyModifiers::NONE, command: Command::PageUp },
     HelpBinding { surface: "Thread", scope: HelpScope::View(ViewKind::Thread), token: "PageUp/PageDown", code: KeyCode::PageDown, modifiers: KeyModifiers::NONE, command: Command::PageDown },
     HelpBinding { surface: "Thread", scope: HelpScope::View(ViewKind::Thread), token: "Home", code: KeyCode::Home, modifiers: KeyModifiers::NONE, command: Command::ConversationStart },
@@ -192,7 +193,7 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
         }
         (ViewKind::Thread, KeyCode::Char('r')) => Some(Command::Review),
         (ViewKind::Thread, KeyCode::Char('w')) => Some(Command::Workspace),
-        (ViewKind::Thread, KeyCode::Char('g')) => Some(Command::Goal),
+        (ViewKind::Thread, KeyCode::Char('g')) if is_plain_press(key) => Some(Command::RefreshGoal),
         (ViewKind::Thread, KeyCode::PageUp) => Some(Command::PageUp),
         (ViewKind::Thread, KeyCode::PageDown) => Some(Command::PageDown),
         (ViewKind::Thread, KeyCode::End) => Some(Command::FollowNewest),
@@ -490,7 +491,7 @@ mod tests {
         );
         assert_eq!(
             command_for_key(key(KeyCode::Char('g')), ViewKind::Thread),
-            Some(Command::Goal)
+            Some(Command::RefreshGoal)
         );
         assert_eq!(
             command_for_key(key(KeyCode::Char('h')), ViewKind::Registry),

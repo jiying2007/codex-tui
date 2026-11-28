@@ -9,10 +9,7 @@ use crate::conversation::{
     parse_turns_page,
 };
 use crate::domain::{ThreadId, ThreadSummary};
-use crate::goal::{
-    GoalObservation, GoalStatus, parse_goal_cleared_thread, parse_goal_get, parse_goal_set,
-    parse_goal_updated,
-};
+use crate::goal::{GoalObservation, parse_goal_cleared_thread, parse_goal_get, parse_goal_updated};
 use crate::transcript_search::{
     TRANSCRIPT_SEARCH_OCCURRENCE_LIMIT, TRANSCRIPT_SEARCH_RESULT_LIMIT,
     TRANSCRIPT_SEARCH_THREAD_LIMIT, TranscriptSearchResults, TranscriptSearchSource,
@@ -131,27 +128,25 @@ fn is_goal_unsupported(error: &anyhow::Error) -> bool {
 }
 
 fn mark_goal_supported(status: &mut BackendStatus) {
-    for capability in ["thread/goal/get", "thread/goal/set", "thread/goal/clear"] {
-        if !status.capabilities.iter().any(|value| value == capability) {
-            status.capabilities.push(capability.into());
-        }
-        status
-            .optional_capabilities_missing
-            .retain(|value| value != capability);
+    let capability = "thread/goal/get";
+    if !status.capabilities.iter().any(|value| value == capability) {
+        status.capabilities.push(capability.into());
     }
+    status
+        .optional_capabilities_missing
+        .retain(|value| value != capability);
 }
 
 fn mark_goal_unsupported(status: &mut BackendStatus) {
-    for capability in ["thread/goal/get", "thread/goal/set", "thread/goal/clear"] {
-        if !status
-            .optional_capabilities_missing
-            .iter()
-            .any(|value| value == capability)
-        {
-            status.optional_capabilities_missing.push(capability.into());
-        }
-        status.capabilities.retain(|value| value != capability);
+    let capability = "thread/goal/get";
+    if !status
+        .optional_capabilities_missing
+        .iter()
+        .any(|value| value == capability)
+    {
+        status.optional_capabilities_missing.push(capability.into());
     }
+    status.capabilities.retain(|value| value != capability);
 }
 
 fn is_history_pagination_unsupported(error: &anyhow::Error) -> bool {
@@ -228,12 +223,6 @@ pub enum BackendCommand {
         turn_id: String,
     },
     RefreshGoal(ThreadId),
-    SetGoal {
-        thread_id: ThreadId,
-        objective: Option<String>,
-        status: Option<GoalStatus>,
-    },
-    ClearGoal(ThreadId),
     SearchTranscript(String),
     JumpToTranscriptHit(crate::transcript_search::TranscriptSearchHit),
     StartThread {
@@ -374,23 +363,6 @@ impl RegistryHandle {
 
     pub fn refresh_goal(&self, thread_id: ThreadId) -> Result<()> {
         self.send_command(BackendCommand::RefreshGoal(thread_id))
-    }
-
-    pub fn set_goal(
-        &self,
-        thread_id: ThreadId,
-        objective: Option<String>,
-        status: Option<GoalStatus>,
-    ) -> Result<()> {
-        self.send_command(BackendCommand::SetGoal {
-            thread_id,
-            objective,
-            status,
-        })
-    }
-
-    pub fn clear_goal(&self, thread_id: ThreadId) -> Result<()> {
-        self.send_command(BackendCommand::ClearGoal(thread_id))
     }
 
     pub(crate) fn jump_to_transcript_hit(
@@ -1147,63 +1119,6 @@ async fn run_registry_actor(
                             }
                         }
                     }
-                    BackendCommand::SetGoal {
-                        thread_id,
-                        objective,
-                        status: goal_status,
-                    } => {
-                        match set_goal(
-                            &mut rpc,
-                            thread_id.clone(),
-                            objective,
-                            goal_status,
-                        )
-                        .await
-                        {
-                            Ok(goal) => {
-                                goal_supported = Some(true);
-                                goal_probed.insert(thread_id.0.clone());
-                                mark_goal_supported(&mut status);
-                                send_conversation_event(
-                                    &conversation_tx,
-                                    ConversationEvent::GoalObserved(goal),
-                                )
-                                .await;
-                            }
-                            Err(error) if is_goal_unsupported(&error) => {
-                                goal_supported = Some(false);
-                                goal_probe_queue.clear();
-                                goal_queued.clear();
-                                mark_goal_unsupported(&mut status);
-                            }
-                            Err(error) => {
-                                status.error = Some(format!("Goal update failed: {error}"));
-                            }
-                        }
-                    }
-                    BackendCommand::ClearGoal(thread_id) => {
-                        match clear_goal(&mut rpc, &thread_id).await {
-                            Ok(()) => {
-                                goal_supported = Some(true);
-                                goal_probed.insert(thread_id.0.clone());
-                                mark_goal_supported(&mut status);
-                                send_conversation_event(
-                                    &conversation_tx,
-                                    ConversationEvent::GoalCleared(thread_id),
-                                )
-                                .await;
-                            }
-                            Err(error) if is_goal_unsupported(&error) => {
-                                goal_supported = Some(false);
-                                goal_probe_queue.clear();
-                                goal_queued.clear();
-                                mark_goal_unsupported(&mut status);
-                            }
-                            Err(error) => {
-                                status.error = Some(format!("Goal clear failed: {error}"));
-                            }
-                        }
-                    }
                     BackendCommand::SearchTranscript(query) => {
                         // Read-only full-history search never monopolizes the live
                         // registry/approval/prompt connection. Only one isolated
@@ -1674,44 +1589,6 @@ async fn load_goal(rpc: &mut RpcSession, thread_id: ThreadId) -> Result<Option<G
         .await
         .context("get thread Goal")?;
     parse_goal_get(result, now_unix_ms())
-}
-
-async fn set_goal(
-    rpc: &mut RpcSession,
-    thread_id: ThreadId,
-    objective: Option<String>,
-    status: Option<GoalStatus>,
-) -> Result<GoalObservation> {
-    let mut params = serde_json::Map::new();
-    params.insert("threadId".into(), json!(thread_id.0));
-    if let Some(objective) = objective {
-        params.insert("objective".into(), json!(objective));
-    }
-    if let Some(status) = status {
-        params.insert("status".into(), json!(status.wire()));
-    }
-    let result = rpc
-        .request("thread/goal/set", Value::Object(params))
-        .await
-        .context("set thread Goal")?;
-    parse_goal_set(result, now_unix_ms())
-}
-
-async fn clear_goal(rpc: &mut RpcSession, thread_id: &ThreadId) -> Result<()> {
-    let result = rpc
-        .request(
-            "thread/goal/clear",
-            json!({
-                "threadId": thread_id.0
-            }),
-        )
-        .await
-        .context("clear thread Goal")?;
-    anyhow::ensure!(
-        result.get("cleared").and_then(Value::as_bool) == Some(true),
-        "thread/goal/clear did not confirm cleared=true"
-    );
-    Ok(())
 }
 
 async fn emit_conversation_load(
