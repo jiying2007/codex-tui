@@ -35,6 +35,8 @@ codex-tui doctor bundle --offline --output ./codex-tui-support
 
 `doctor compat` 不访问远程 Forge，可能在 `glab` 缺失时仍显示 Ready；`doctor forge` 应在目标仓库执行。诊断包只保留脱敏元数据，但分享前仍需复核。
 
+`doctor store` 输出历史记录数量以及全部 Git/Forge 未决回执的 Planned、Executing、OutcomeUnknown 分类计数，不受最近十条回执显示上限影响。历史记录仅供人工核查，Lite 运行时不重放；清点成功不代表外部操作结果已经核实。
+
 `doctor bundle --offline` 仅采集构建身份与本地 SQLite 元数据，不启动外部程序，不连接 App Server／Forge 目标。外部组件明确记为 unavailable／not-probed，readiness 保持 Blocked，且 `realCodexQualification=false`。这只是本地支持／脱敏证据，不是实服或设备资格。自动开发与发行包采集使用此模式并校验标记，原有资格门禁全部保留。不加 `--offline` 时仍执行在线探测，可能启动 Codex App Server。分享前仍需检查包内容。
 
 ## 只读无头命令

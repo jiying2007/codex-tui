@@ -224,7 +224,7 @@
     "src/app/palette_intent.rs": 117,
     "src/runtime_commands.rs": 106,
     "src/runtime_palette.rs": 89,
-    "src/runtime_doctor.rs": 379,
+    "src/runtime_doctor.rs": 436,
     "src/render_performance.rs": 323,
     "src/runtime_cli.rs": 253,
     "src/runtime_store_worker.rs": 395,
