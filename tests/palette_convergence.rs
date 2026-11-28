@@ -32,7 +32,6 @@ fn empty_palette_prioritizes_mission_control_without_removing_commands() {
         Command::TranscriptSearch,
         Command::QuickPrompt,
         Command::TerminalDrawer,
-        Command::New,
     ] {
         assert!(
             !visible.contains(&duplicate),

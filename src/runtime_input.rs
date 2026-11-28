@@ -92,23 +92,6 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
         return handle_command_palette_key(app, key);
     }
 
-    if app.saved_view_editor.is_some() && app.input_mode == InputMode::Normal {
-        return match key.code {
-            KeyCode::Esc => reduce(app, Action::CloseSavedViewEditor),
-            KeyCode::Char('j') | KeyCode::Down => reduce(app, Action::MoveSavedViewEditorField(1)),
-            KeyCode::Char('k') | KeyCode::Up => reduce(app, Action::MoveSavedViewEditorField(-1)),
-            KeyCode::Left | KeyCode::Char('h') => {
-                reduce(app, Action::CycleSavedViewEditorValue(-1))
-            }
-            KeyCode::Right | KeyCode::Char('l') => {
-                reduce(app, Action::CycleSavedViewEditorValue(1))
-            }
-            KeyCode::Enter if plain => reduce(app, Action::BeginSavedViewFieldEdit),
-            KeyCode::Char('s') if plain => reduce(app, Action::SaveSavedViewEditor),
-            _ => vec![],
-        };
-    }
-
     if app.context_open {
         return match key.code {
             KeyCode::Esc => reduce(app, Action::CloseContext),
@@ -185,14 +168,6 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
             _ => return vec![],
         };
         return reduce(app, action);
-    }
-
-    if app.pending_local_batch.is_some() {
-        return match key.code {
-            KeyCode::Char('y') if plain => reduce(app, Action::ConfirmPendingOperation),
-            KeyCode::Char('c') | KeyCode::Esc => reduce(app, Action::CancelPendingOperation),
-            _ => vec![],
-        };
     }
 
     if app.view_kind() == ViewKind::Thread

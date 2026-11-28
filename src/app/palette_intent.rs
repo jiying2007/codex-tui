@@ -89,7 +89,7 @@ impl AppState {
                             .target
                             .as_ref()
                             .is_none_or(|target| self.local_target_live(target))
-                        && (!matches!(choice, Command::New | Command::ContextActions)
+                        && (!matches!(choice, Command::ContextActions)
                             || original.workspace == current.workspace)
                         && (!matches!(
                             choice,

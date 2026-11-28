@@ -149,7 +149,7 @@ The mature product adds planning without creating a second task authority:
 
 - saved List and Board/Kanban views
 - Codex Goal projection
-- lightweight local scratch work
+- historical ScratchWork and Saved Views (read-only during Lite retirement)
 - worktree lifecycle and review
 - GitLab Work Item/Issue Board/MR/Pipeline projection first; GitHub through the same forge abstraction
 - notes/bookmarks, snooze/unread and lightweight notifications
@@ -341,7 +341,7 @@ M7d3 adds a fail-closed release path: publication is manually dispatched, while 
 - M6 forge integration: complete.
 - M7a headless read-only CLI + scale baselines: implemented in the v0.7.x line.
 - M7b1 richer SavedView query language: implemented in the v0.7.x line.
-- M7b2 safe transactional batch-local actions: implemented with frozen targets, explicit confirmation, and one SQLite transaction.
+- M7b2 transactional batch-local actions: interactive runtime retired, along with Scratch/Saved View edits; existing data and lower-level migration/recovery coverage retained.
 - M7b3 repository launch presets: retired; use native development tools.
 - M7c1 bounded cross-platform PTY engine + terminal capability doctor: implemented under the v0.7.x line.
 - M7c2 Terminal Drawer UI/input/resize: implemented.

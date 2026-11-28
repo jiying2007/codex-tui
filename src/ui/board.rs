@@ -204,14 +204,7 @@ pub(super) fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
         }
     }
 
-    let input = if app.input_mode == InputMode::ScratchTitle {
-        format!(
-            "{}> {} · {}",
-            tr(app, "new scratch", "新建 Scratch"),
-            app.input_buffer,
-            tr(app, "Enter create · Esc cancel", "Enter 创建 · Esc 取消")
-        )
-    } else if app.input_mode == InputMode::Snooze {
+    let input = if app.input_mode == InputMode::Snooze {
         format!(
             "{}> {} · 15m / 1h / 1d · {}",
             tr(app, "snooze", "稍后提醒"),
@@ -224,17 +217,6 @@ pub(super) fn render_board(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
             tr(app, "note", "备注"),
             truncate_display(&app.input_buffer, 80),
             tr(app, "Enter save · Esc cancel", "Enter 保存 · Esc 取消")
-        )
-    } else if app.input_mode == InputMode::SavedViewField {
-        format!(
-            "{}> {} · {}",
-            tr(app, "view field", "视图字段"),
-            truncate_display(&app.input_buffer, 80),
-            tr(
-                app,
-                "Enter apply field · Esc cancel",
-                "Enter 应用字段 · Esc 取消"
-            )
         )
     } else if app.hot_slot_bind_pending.is_some() {
         tr(

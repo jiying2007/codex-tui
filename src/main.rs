@@ -875,11 +875,6 @@ fn apply_effects(
             Effect::PersistOperatorStateDeferred => {
                 store.defer_operator_state();
             }
-            Effect::CreateScratch { title, workspace } => {
-                runtime_local_edit::submit(app, store, local_ticket, move |store| {
-                    store.create_scratch(title, workspace)
-                });
-            }
             Effect::SnoozeWorkCard {
                 anchor,
                 duration_ms,
@@ -897,58 +892,16 @@ fn apply_effects(
                     store.save_source_note(owner, text)
                 });
             }
-            Effect::UpdateScratchNote { scratch_id, note } => {
-                runtime_local_edit::submit(app, store, local_ticket, move |store| {
-                    store.update_scratch_note(scratch_id, note)
-                });
-            }
             Effect::CreateBookmark { source, label } => {
                 submit_planning(
                     app,
                     store.planning(move |store| store.create_bookmark(source, label), None),
                 );
             }
-            Effect::UpdateScratchState { scratch_id, state } => {
-                submit_planning(
-                    app,
-                    store.planning(
-                        move |store| store.update_scratch_state(scratch_id, state),
-                        None,
-                    ),
-                );
-            }
-            Effect::DeleteScratch { scratch_id } => {
-                submit_planning(
-                    app,
-                    store.planning(move |store| store.delete_scratch(scratch_id), None),
-                );
-            }
-            Effect::SaveSavedView { view } => {
-                runtime_local_edit::submit(app, store, local_ticket, move |store| {
-                    store.save_view(view)
-                });
-            }
-            Effect::DeleteSavedView { view_id } => {
-                submit_planning(
-                    app,
-                    store.planning(move |store| store.delete_view(view_id), None),
-                );
-            }
             Effect::SetHotSlot { slot, target } => {
                 submit_planning(
                     app,
                     store.planning(move |store| store.set_hot_slot(slot, target), None),
-                );
-            }
-            Effect::ApplyLocalBatch(plan) => {
-                let notice = format!(
-                    "{} · {}",
-                    runtime_text(app.language, "local batch applied", "本地批量操作已应用"),
-                    plan.preview()
-                );
-                submit_planning(
-                    app,
-                    store.planning(move |store| store.apply_local_batch(&plan), Some(notice)),
                 );
             }
             Effect::OpenTerminalDrawer { cwd } => {

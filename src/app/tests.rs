@@ -1214,165 +1214,39 @@ fn board_keeps_workflow_columns_separate_from_needs_you_filter() {
 }
 
 #[test]
-fn new_scratch_is_an_explicit_local_effect() {
+fn scratch_creation_is_not_advertised_in_the_palette() {
     let mut app = app();
-    reduce(&mut app, Action::BeginScratch);
-    for ch in "Investigate wake miss".chars() {
-        reduce(&mut app, Action::InputChar(ch));
+    for query in ["New Scratch", "新建 Scratch"] {
+        reduce(&mut app, Action::OpenCommandPalette);
+        reduce(&mut app, Action::CommandPaletteInputText(query.into()));
+        assert!(app.command_palette_choices().is_empty());
+        reduce(&mut app, Action::CloseCommandPalette);
     }
-    let effects = reduce(&mut app, Action::CommitInput);
-    assert!(matches!(
-        effects.as_slice(),
-        [Effect::CreateScratch { title, .. }] if title == "Investigate wake miss"
-    ));
-    assert_eq!(app.input_mode, InputMode::ScratchTitle);
-    let ticket = app.local_edit_ticket_for(&effects[0]).expect("save ticket");
-    app.finish_local_edit_write(ticket, Ok(()));
-    assert_eq!(app.input_mode, InputMode::Normal);
 }
 
 #[test]
-fn batch_plan_freezes_visible_targets_before_confirmation() {
+fn board_context_does_not_expose_batch_writes() {
     let mut app = app();
     reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 100 });
     reduce(&mut app, Action::OpenBoard);
-
-    let before = app
-        .visible_planning_cards()
-        .iter()
-        .map(|card| card.local_id.clone())
-        .collect::<Vec<_>>();
-    assert!(!before.is_empty());
-
+    assert!(!app.visible_planning_cards().is_empty());
     reduce(&mut app, Action::OpenContext);
-    let index = app
-        .context_choices()
-        .iter()
-        .position(|choice| *choice == ContextChoice::BatchMarkDone)
-        .expect("batch mark-done");
-    app.context_selected = index;
-    assert!(reduce(&mut app, Action::ExecuteContext).is_empty());
-
-    let frozen = app.pending_local_batch.clone().expect("frozen batch plan");
-    assert_eq!(
-        frozen
-            .targets
-            .iter()
-            .map(|target| target.local_id.clone())
-            .collect::<Vec<_>>(),
-        before
-    );
-
-    reduce(&mut app, Action::CycleSavedView(1));
-    assert_ne!(
-        app.visible_planning_cards()
-            .iter()
-            .map(|card| card.local_id.clone())
-            .collect::<Vec<_>>(),
-        before
-    );
-
-    let effects = reduce(&mut app, Action::ConfirmPendingOperation);
-    assert!(matches!(
-        effects.as_slice(),
-        [Effect::ApplyLocalBatch(plan)] if plan.targets == frozen.targets
-    ));
-    assert!(app.pending_local_batch.is_none());
-}
-
-#[test]
-fn batch_input_creates_plan_before_any_write_effect() {
-    let mut app = app();
-    reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 100 });
-    reduce(&mut app, Action::OpenBoard);
-    reduce(&mut app, Action::OpenContext);
-    let index = app
-        .context_choices()
-        .iter()
-        .position(|choice| *choice == ContextChoice::BatchAddTag)
-        .expect("batch tag");
-    app.context_selected = index;
-    assert!(reduce(&mut app, Action::ExecuteContext).is_empty());
-    assert_eq!(app.input_mode, InputMode::BatchAddTag);
-
-    for ch in "focus".chars() {
-        reduce(&mut app, Action::InputChar(ch));
-    }
-    assert!(reduce(&mut app, Action::CommitInput).is_empty());
-    let plan = app.pending_local_batch.as_ref().expect("batch preview");
-    assert_eq!(plan.action, LocalBatchAction::AddTag("focus".into()));
-    assert!(!plan.targets.is_empty());
-
-    let effects = reduce(&mut app, Action::ConfirmPendingOperation);
-    assert!(matches!(
-        effects.as_slice(),
-        [Effect::ApplyLocalBatch(plan)] if plan.action == LocalBatchAction::AddTag("focus".into())
-    ));
-}
-
-#[test]
-fn cancelling_batch_preview_emits_no_write_effect() {
-    let mut app = app();
-    reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 100 });
-    reduce(&mut app, Action::OpenBoard);
-    app.freeze_visible_batch(LocalBatchAction::ClearPriority);
-    assert!(app.pending_local_batch.is_some());
-
-    let effects = reduce(&mut app, Action::CancelPendingOperation);
-    assert!(effects.is_empty());
-    assert!(app.pending_local_batch.is_none());
-    assert_eq!(
-        app.mutation_notice.as_deref(),
-        Some("operation cancelled before execution")
-    );
-}
-
-#[test]
-fn board_context_creates_structured_copy_and_keeps_builtin_immutable() {
-    let mut app = app();
-    reduce(&mut app, Action::OpenBoard);
     let choices = app.context_choices();
-    assert!(choices.contains(&ContextChoice::SaveCurrentView));
-    assert!(!choices.contains(&ContextChoice::EditCurrentView));
-    assert!(!choices.contains(&ContextChoice::DeleteCurrentView));
-
-    reduce(&mut app, Action::OpenContext);
-    let save_index = app
-        .context_choices()
-        .iter()
-        .position(|choice| *choice == ContextChoice::SaveCurrentView)
-        .expect("save view action");
-    app.context_selected = save_index;
-    reduce(&mut app, Action::ExecuteContext);
-
-    let editor = app.saved_view_editor.as_ref().expect("structured editor");
-    assert!(editor.creating);
-    assert!(editor.draft.id.is_empty());
+    assert!(!choices.is_empty());
+    assert!(
+        choices
+            .iter()
+            .all(|choice| !choice.label().starts_with("Batch"))
+    );
     assert_eq!(app.input_mode, InputMode::Normal);
 }
 
 #[test]
-fn saved_view_editor_validates_before_write_and_custom_views_are_editable() {
+fn existing_saved_views_remain_browsable_without_edit_actions() {
     let mut app = app();
+    reduce(&mut app, Action::ReconcilePlanning { now_unix_ms: 100 });
     reduce(&mut app, Action::OpenBoard);
-    app.saved_view_editor = Some(SavedViewEditor::create_from(&app.active_saved_view()));
-    app.saved_view_editor.as_mut().expect("editor").draft.filter = "unknown:value".into();
-
-    assert!(reduce(&mut app, Action::SaveSavedViewEditor).is_empty());
-    assert!(app.saved_view_editor.is_some());
-    assert!(app.saved_view_editor_error.is_some());
-
-    let editor = app.saved_view_editor.as_mut().expect("editor");
-    editor.draft.filter = "stage:review".into();
-    editor.draft.name = "Review only".into();
-    let effects = reduce(&mut app, Action::SaveSavedViewEditor);
-    assert!(matches!(
-        effects.as_slice(),
-        [Effect::SaveSavedView { view }]
-            if view.name == "Review only" && view.filter == "stage:review"
-    ));
-
-    app.planning_snapshot.saved_views.push(SavedView {
+    let existing = SavedView {
         id: "view:7".into(),
         name: "Custom".into(),
         source_scope: "all".into(),
@@ -1381,19 +1255,22 @@ fn saved_view_editor_validates_before_write_and_custom_views_are_editable() {
         order_by: Some("priority".into()),
         layout: SavedViewLayout::List,
         visible_fields: vec!["stage".into()],
-    });
+    };
+    app.planning_snapshot.saved_views.push(existing.clone());
     app.planning_view_index = builtin_saved_views().len();
-    let choices = app.context_choices();
-    assert!(choices.contains(&ContextChoice::EditCurrentView));
-    assert!(choices.contains(&ContextChoice::DeleteCurrentView));
+    assert_eq!(app.active_saved_view(), existing);
+    assert!(app.context_choices().iter().all(|choice| {
+        !choice.label().contains("SavedView") && !choice.label().contains("Save current view")
+    }));
+    reduce(&mut app, Action::CycleSavedView(1));
+    assert_eq!(app.planning_snapshot.saved_views, vec![existing]);
 }
 
 #[test]
-fn context_menu_exposes_workflow_changes_only_for_scratch() {
+fn historical_scratch_remains_read_only() {
     let mut app = app();
     let thread_choices = app.context_choices();
     assert_eq!(thread_choices.len(), 3);
-    assert!(!thread_choices.contains(&ContextChoice::ScratchDone));
 
     app.planning_snapshot
         .scratch
@@ -1414,8 +1291,15 @@ fn context_menu_exposes_workflow_changes_only_for_scratch() {
     ));
     app.view = View::Scratch("scratch:1".into());
     let scratch_choices = app.context_choices();
-    assert!(scratch_choices.contains(&ContextChoice::ScratchReady));
-    assert!(scratch_choices.contains(&ContextChoice::DeleteScratch));
+    assert!(scratch_choices.is_empty());
+    let before = app.planning_snapshot.scratch.clone();
+    assert!(reduce(&mut app, Action::BeginSnooze).is_empty());
+    assert_eq!(app.input_mode, InputMode::Normal);
+    app.input_mode = InputMode::Note;
+    app.note_target = app.selected_local_target();
+    app.input_buffer = "not a live session note".into();
+    assert!(reduce(&mut app, Action::CommitInput).is_empty());
+    assert_eq!(app.planning_snapshot.scratch, before);
 }
 
 #[test]
@@ -2530,7 +2414,6 @@ fn forge_observations_remain_read_only_regardless_of_provider_or_open_change() {
                     .all(|choice| !choice.label().contains("Forge")
                         && !choice.label().contains("GitHub"))
             );
-            assert!(reduce(&mut app, Action::ConfirmPendingOperation).is_empty());
             assert_eq!(app.forge_observation(&id), Some(&observed));
         }
     }

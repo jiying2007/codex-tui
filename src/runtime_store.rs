@@ -1,18 +1,14 @@
 use anyhow::{Context, Result};
 use codex_tui::{
     conversation::ConversationPage,
-    planning::{
-        LocalNote, PlanningSnapshot, SavedView, ScratchState, SourceKind, SourceRef, WorkCardRecord,
-    },
-    saved_view_editor::validate_saved_view,
+    operation::now_unix_ms,
+    planning::{LocalNote, PlanningSnapshot, SourceKind, SourceRef, WorkCardRecord},
     sqlite_store::{LocalWriterGuard, SqliteStore},
     store::{AppConfig, LocalStateV1, LocalStore},
     transcript_search::TranscriptSearchResults,
     workref::WorkRefLedger,
 };
 mod workref;
-
-use std::time::{SystemTime, UNIX_EPOCH};
 
 pub(crate) struct RuntimeStore {
     sqlite: SqliteStore,
@@ -249,23 +245,6 @@ impl RuntimeStore {
         })
     }
 
-    pub(crate) fn apply_local_batch(
-        &mut self,
-        plan: &codex_tui::batch_local::LocalBatchPlan,
-    ) -> Result<PlanningSnapshot, String> {
-        if !self.writable {
-            return Err(self
-                .error
-                .clone()
-                .unwrap_or_else(|| "SQLite planning store is read-only".into()));
-        }
-        let result = self
-            .sqlite
-            .apply_local_batch(plan)
-            .and_then(|_| self.sqlite.load_planning_snapshot());
-        self.finish_planning_write(result, "local batch")
-    }
-
     pub(crate) fn save_source_note(
         &mut self,
         owner: SourceRef,
@@ -288,70 +267,6 @@ impl RuntimeStore {
         }
         .and_then(|_| self.sqlite.load_planning_snapshot());
         self.finish_planning_write(result, "note")
-    }
-
-    pub(crate) fn update_scratch_note(
-        &mut self,
-        scratch_id: String,
-        note: Option<String>,
-    ) -> Result<PlanningSnapshot, String> {
-        self.update_scratch(scratch_id, |scratch| {
-            scratch.note = note;
-        })
-    }
-
-    pub(crate) fn update_scratch_state(
-        &mut self,
-        scratch_id: String,
-        state: ScratchState,
-    ) -> Result<PlanningSnapshot, String> {
-        self.update_scratch(scratch_id, |scratch| {
-            scratch.state = state;
-        })
-    }
-
-    pub(crate) fn update_scratch<F>(
-        &mut self,
-        scratch_id: String,
-        operation: F,
-    ) -> Result<PlanningSnapshot, String>
-    where
-        F: FnOnce(&mut codex_tui::planning::ScratchWork),
-    {
-        if !self.writable {
-            return Err(self
-                .error
-                .clone()
-                .unwrap_or_else(|| "SQLite planning store is read-only".into()));
-        }
-        let result = (|| -> Result<PlanningSnapshot> {
-            let mut scratch = self
-                .sqlite
-                .scratch_work(&scratch_id)?
-                .ok_or_else(|| anyhow::anyhow!("ScratchWork does not exist: {scratch_id}"))?;
-            operation(&mut scratch);
-            scratch.updated_at_unix_ms = now_unix_ms();
-            self.sqlite.update_scratch(&scratch)?;
-            self.sqlite.load_planning_snapshot()
-        })();
-        self.finish_planning_write(result, "ScratchWork")
-    }
-
-    pub(crate) fn delete_scratch(
-        &mut self,
-        scratch_id: String,
-    ) -> Result<PlanningSnapshot, String> {
-        if !self.writable {
-            return Err(self
-                .error
-                .clone()
-                .unwrap_or_else(|| "SQLite planning store is read-only".into()));
-        }
-        let result = self
-            .sqlite
-            .delete_scratch(&scratch_id)
-            .and_then(|_| self.sqlite.load_planning_snapshot());
-        self.finish_planning_write(result, "ScratchWork delete")
     }
 
     pub(crate) fn create_bookmark(
@@ -388,35 +303,6 @@ impl RuntimeStore {
         }
     }
 
-    pub(crate) fn save_view(&mut self, view: SavedView) -> Result<PlanningSnapshot, String> {
-        validate_saved_view(&view)?;
-        if !self.writable {
-            return Err(self
-                .error
-                .clone()
-                .unwrap_or_else(|| "SQLite planning store is read-only".into()));
-        }
-        let result = self
-            .sqlite
-            .save_view(&view)
-            .and_then(|_| self.sqlite.load_planning_snapshot());
-        self.finish_planning_write(result, "SavedView")
-    }
-
-    pub(crate) fn delete_view(&mut self, view_id: String) -> Result<PlanningSnapshot, String> {
-        if !self.writable {
-            return Err(self
-                .error
-                .clone()
-                .unwrap_or_else(|| "SQLite planning store is read-only".into()));
-        }
-        let result = self
-            .sqlite
-            .delete_view(&view_id)
-            .and_then(|_| self.sqlite.load_planning_snapshot());
-        self.finish_planning_write(result, "SavedView delete")
-    }
-
     pub(crate) fn set_hot_slot(
         &mut self,
         slot: u8,
@@ -442,41 +328,6 @@ impl RuntimeStore {
             }
         }
     }
-
-    pub(crate) fn create_scratch(
-        &mut self,
-        title: String,
-        workspace: Option<String>,
-    ) -> Result<PlanningSnapshot, String> {
-        if !self.writable {
-            return Err(self
-                .error
-                .clone()
-                .unwrap_or_else(|| "SQLite planning store is read-only".into()));
-        }
-        let result = self
-            .sqlite
-            .create_scratch(&title, None, workspace.as_deref(), None)
-            .and_then(|_| self.sqlite.load_planning_snapshot());
-        match result {
-            Ok(snapshot) => Ok(snapshot),
-            Err(error) => {
-                let message = format!("SQLite ScratchWork write failed: {error:#}");
-                self.writable = false;
-                self.error = Some(message.clone());
-                Err(message)
-            }
-        }
-    }
-}
-
-fn now_unix_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis()
-        .try_into()
-        .unwrap_or(u64::MAX)
 }
 
 #[cfg(test)]
@@ -533,7 +384,17 @@ mod tests {
                         .flush_operator_state_on_exit(&LocalStateV1::default())
                         .is_err()
                 );
-                assert!(runtime.create_scratch("refused".into(), None).is_err());
+                assert!(
+                    runtime
+                        .save_source_note(
+                            SourceRef {
+                                kind: SourceKind::CodexThread,
+                                value: "retained".into(),
+                            },
+                            "refused".into(),
+                        )
+                        .is_err()
+                );
                 assert!(
                     runtime
                         .sqlite_clone()

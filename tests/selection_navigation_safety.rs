@@ -100,7 +100,7 @@ fn frozen_context_actions_wrap_without_executing_any_choice() {
     navigate(&mut app, Action::OpenContext);
     assert!(app.context_open);
     let choices = app.context_choices();
-    assert!(choices.len() > 10);
+    assert_eq!(choices.len(), 3);
     for (selected, delta) in EXTREMES {
         app.context_selected = selected;
         navigate(&mut app, Action::MoveContext(delta));

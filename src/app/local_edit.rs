@@ -35,12 +35,7 @@ impl AppState {
                     | Action::InputBackspace
                     | Action::CancelInput
                     | Action::Back
-                    | Action::BeginScratch
                     | Action::ExecuteContext
-                    | Action::CloseSavedViewEditor
-                    | Action::MoveSavedViewEditorField(_)
-                    | Action::CycleSavedViewEditorValue(_)
-                    | Action::BeginSavedViewFieldEdit
             )
         {
             self.local_edit_revision = self.local_edit_revision.saturating_add(1);
@@ -114,21 +109,10 @@ impl AppState {
             && self.local_edit_revision != u64::MAX
             && pending.mode == self.input_mode
             && pending.original_input == self.input_buffer
-            && match &pending.effect {
-                Effect::CreateScratch { workspace, .. } => self.new_scratch_workspace == *workspace,
-                Effect::SaveSourceNote { owner, .. } => self.note_target.as_ref() == Some(owner),
-                Effect::UpdateScratchNote { scratch_id, .. } => {
-                    self.note_target.as_ref().is_some_and(|target| {
-                        target.kind == crate::planning::SourceKind::ScratchWork
-                            && target.value == *scratch_id
-                    })
-                }
-                Effect::SaveSavedView { view } => self
-                    .saved_view_editor
-                    .as_ref()
-                    .is_some_and(|editor| editor.draft == *view),
-                _ => false,
-            };
+            && matches!(
+                &pending.effect,
+                Effect::SaveSourceNote { owner, .. } if self.note_target.as_ref() == Some(owner)
+            );
         if let Err(error) = result {
             self.mutation_notice = Some(format!(
                 "{}: {error}",
@@ -138,23 +122,10 @@ impl AppState {
                     "本地保存未确认；未主动关闭的草稿已保留，请核对状态后再操作"
                 )
             ));
-            if matches!(&pending.effect, Effect::SaveSavedView { .. }) && same_editor {
-                self.saved_view_editor_error = Some(error);
-            }
             return;
         }
         if same_editor {
-            match pending.effect {
-                Effect::CreateScratch { .. } => self.new_scratch_workspace = None,
-                Effect::SaveSourceNote { .. } | Effect::UpdateScratchNote { .. } => {
-                    self.note_target = None
-                }
-                Effect::SaveSavedView { .. } => {
-                    self.saved_view_editor = None;
-                    self.saved_view_editor_error = None;
-                }
-                _ => return,
-            }
+            self.note_target = None;
             self.input_mode = InputMode::Normal;
             self.input_buffer.clear();
             self.mutation_notice =

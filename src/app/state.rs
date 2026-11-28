@@ -66,7 +66,6 @@ impl AppState {
             worktree_collision_counts: BTreeMap::new(),
             goals: BTreeMap::new(),
             goal_checked: BTreeSet::new(),
-            pending_local_batch: None,
             terminal_drawer_open: false,
             terminal_focused: false,
             terminal_snapshot: None,
@@ -79,11 +78,8 @@ impl AppState {
             planning_view_index: 0,
             board_stage_index: 0,
             board_selected: 0,
-            new_scratch_workspace: None,
             snooze_target: None,
             note_target: None,
-            saved_view_editor: None,
-            saved_view_editor_error: None,
             target_lookup: None,
             target_lookup_generation: 0,
             command_palette_open: false,
@@ -216,8 +212,6 @@ impl AppState {
             && self.target_lookup.is_none()
             && !self.context_open
             && !self.transcript_search_open
-            && self.saved_view_editor.is_none()
-            && self.pending_local_batch.is_none()
             && self.hot_slot_bind_pending.is_none()
     }
 
@@ -417,30 +411,6 @@ impl AppState {
         cards
     }
 
-    pub(super) fn freeze_visible_batch(&mut self, action: LocalBatchAction) {
-        let plan = {
-            let cards = self.visible_planning_cards();
-            LocalBatchPlan::freeze(&cards, action, now_unix_ms())
-        };
-        match plan {
-            Ok(plan) => {
-                self.pending_local_batch = Some(plan);
-                self.mutation_notice = None;
-            }
-            Err(error) => {
-                self.pending_local_batch = None;
-                self.mutation_notice = Some(format!(
-                    "{}: {error:#}",
-                    local_text(
-                        self.language,
-                        "cannot create local batch plan",
-                        "无法创建本地批量计划",
-                    )
-                ));
-            }
-        }
-    }
-
     pub fn selected_planning_card(&self) -> Option<&WorkCardProjection> {
         self.visible_planning_cards()
             .get(self.board_selected)
@@ -559,22 +529,17 @@ impl AppState {
 
     pub(super) fn build_context_choices(&self) -> Vec<ContextChoice> {
         let mut choices = Vec::new();
-        if let Some(target) = self.selected_local_target() {
+        if self
+            .selected_local_target()
+            .is_some_and(|target| target.kind == SourceKind::CodexThread)
+        {
             choices.extend([
                 ContextChoice::Snooze,
                 ContextChoice::EditNote,
                 ContextChoice::Bookmark,
             ]);
-            if target.kind == SourceKind::CodexThread && self.workref_link_snapshot().is_some() {
+            if self.workref_link_snapshot().is_some() {
                 choices.push(ContextChoice::LinkWorkItem);
-            }
-            if target.kind == SourceKind::ScratchWork {
-                choices.extend([
-                    ContextChoice::ScratchInbox,
-                    ContextChoice::ScratchReady,
-                    ContextChoice::ScratchDone,
-                    ContextChoice::DeleteScratch,
-                ]);
             }
         }
         if self.lifecycle_capability_available("thread/start")
@@ -588,27 +553,6 @@ impl AppState {
             && self.lifecycle_thread_id().is_some()
         {
             choices.push(ContextChoice::ForkCodexThread);
-        }
-        if matches!(self.view, View::Board) {
-            if !self.visible_planning_cards().is_empty() {
-                choices.extend([
-                    ContextChoice::BatchAddTag,
-                    ContextChoice::BatchRemoveTag,
-                    ContextChoice::BatchSetPriority,
-                    ContextChoice::BatchClearPriority,
-                    ContextChoice::BatchMarkReady,
-                    ContextChoice::BatchClearReady,
-                    ContextChoice::BatchMarkDone,
-                    ContextChoice::BatchReopen,
-                    ContextChoice::BatchSnooze,
-                    ContextChoice::BatchClearSnooze,
-                ]);
-            }
-            choices.push(ContextChoice::SaveCurrentView);
-            if self.active_saved_view().id.starts_with("view:") {
-                choices.push(ContextChoice::EditCurrentView);
-                choices.push(ContextChoice::DeleteCurrentView);
-            }
         }
         choices
     }

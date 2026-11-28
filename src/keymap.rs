@@ -82,7 +82,6 @@ pub const HELP_BINDINGS: &[HelpBinding] = &[
     HelpBinding { surface: "Board", scope: HelpScope::View(ViewKind::Board), token: ".", code: KeyCode::Char('.'), modifiers: KeyModifiers::NONE, command: Command::ContextActions },
     HelpBinding { surface: "Board", scope: HelpScope::View(ViewKind::Board), token: "Enter", code: KeyCode::Enter, modifiers: KeyModifiers::NONE, command: Command::Open },
     HelpBinding { surface: "Board", scope: HelpScope::View(ViewKind::Board), token: "a", code: KeyCode::Char('a'), modifiers: KeyModifiers::NONE, command: Command::QuickPrompt },
-    HelpBinding { surface: "Board", scope: HelpScope::View(ViewKind::Board), token: "n", code: KeyCode::Char('n'), modifiers: KeyModifiers::NONE, command: Command::New },
     HelpBinding { surface: "Scratch", scope: HelpScope::View(ViewKind::Scratch), token: "Esc", code: KeyCode::Esc, modifiers: KeyModifiers::NONE, command: Command::Back },
 ];
 
@@ -165,7 +164,6 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
         (ViewKind::Registry, KeyCode::Char('p')) => Some(Command::TogglePin),
         (ViewKind::Registry, KeyCode::Char('e')) => Some(Command::EditAlias),
         (ViewKind::Registry, KeyCode::Char('x')) => Some(Command::AcknowledgeAttention),
-        (ViewKind::Registry, KeyCode::Char('n')) => Some(Command::New),
         (ViewKind::Registry, KeyCode::Char('=')) if key.modifiers == KeyModifiers::NONE => {
             Some(Command::BeginHotSlotBind)
         }
@@ -213,7 +211,6 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
         (ViewKind::Board, KeyCode::Enter) => Some(Command::Open),
         (ViewKind::Board, KeyCode::Char(' ')) => Some(Command::NextAttention),
         (ViewKind::Board, KeyCode::Char('a')) => Some(Command::QuickPrompt),
-        (ViewKind::Board, KeyCode::Char('n')) => Some(Command::New),
         (ViewKind::Board, KeyCode::Char('s')) => Some(Command::Snooze),
         (ViewKind::Board, KeyCode::Char('=')) if key.modifiers == KeyModifiers::NONE => {
             Some(Command::BeginHotSlotBind)

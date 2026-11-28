@@ -38,8 +38,6 @@ fn eligible(app: &AppState, key: KeyEvent) -> bool {
         && !app.show_help
         && !app.context_open
         && !app.transcript_search_open
-        && app.saved_view_editor.is_none()
-        && app.pending_local_batch.is_none()
         && app.hot_slot_bind_pending.is_none()
 }
 
