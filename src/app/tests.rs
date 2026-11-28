@@ -1316,7 +1316,6 @@ fn command_palette_is_contextual_and_wraps_selection() {
     assert!(registry_choices.contains(&Command::Search));
     assert!(registry_choices.contains(&Command::NextAttention));
     assert!(registry_choices.contains(&Command::QuickPrompt));
-    assert!(registry_choices.contains(&Command::Board));
     assert!(registry_choices.contains(&Command::Review));
     assert!(registry_choices.contains(&Command::Workspace));
     assert!(registry_choices.contains(&Command::TogglePin));
@@ -1338,7 +1337,6 @@ fn command_palette_is_contextual_and_wraps_selection() {
 
     app.view = View::Scratch("scratch:missing".into());
     let scratch_choices = app.command_palette_choices();
-    assert!(scratch_choices.contains(&Command::Board));
     assert!(!scratch_choices.contains(&Command::TerminalDrawer));
     assert!(!scratch_choices.contains(&Command::CloseTerminalDrawer));
 }
@@ -1428,12 +1426,10 @@ fn hot_slot_binding_stores_only_source_reference() {
     let mut app = app();
     reduce(&mut app, Action::BeginHotSlotBind);
     let effects = reduce(&mut app, Action::UseHotSlot(3));
+    assert_eq!(effects, vec![Effect::PersistOperatorState]);
     assert_eq!(
-        effects,
-        vec![Effect::SetHotSlot {
-            slot: 3,
-            target: SourceRef::codex_thread(&ThreadId::new("thread-impl")),
-        }]
+        app.operator_local.hot_slots.get(&3).map(String::as_str),
+        Some("thread-impl")
     );
     assert!(app.hot_slot_bind_pending.is_none());
 }
@@ -2537,14 +2533,7 @@ fn hot_slots_jump_directly_across_views_and_keep_bounded_history() {
     // Load the old history once, so switching has a real subscription to release.
     let _ = reduce(&mut state, Action::OpenSelected);
     state.view = View::Review(first.clone());
-    state
-        .planning_snapshot
-        .hot_slots
-        .push(crate::planning::HotSlot {
-            slot: 4,
-            target: SourceRef::codex_thread(&second),
-            updated_at_unix_ms: 1,
-        });
+    state.operator_local.hot_slots.insert(4, second.0.clone());
 
     let effects = reduce(&mut state, Action::UseHotSlot(4));
     assert_eq!(state.selected, 1);
@@ -2572,13 +2561,9 @@ fn stale_hot_slot_target_is_visible_and_never_opens_an_unrelated_thread() {
     let mut state = app();
     let selected = state.selected;
     state
-        .planning_snapshot
+        .operator_local
         .hot_slots
-        .push(crate::planning::HotSlot {
-            slot: 8,
-            target: SourceRef::codex_thread(&ThreadId::new("unknown-thread")),
-            updated_at_unix_ms: 1,
-        });
+        .insert(8, "unknown-thread".into());
     assert!(reduce(&mut state, Action::UseHotSlot(8)).is_empty());
     assert_eq!(state.selected, selected);
     assert_eq!(state.view, View::Registry);
@@ -2608,13 +2593,9 @@ fn hot_slot_jumps_return_to_the_originating_surface_without_reloading() {
         }
         let destination = state.threads[1].id.clone();
         state
-            .planning_snapshot
+            .operator_local
             .hot_slots
-            .push(crate::planning::HotSlot {
-                slot: 7,
-                target: SourceRef::codex_thread(&destination),
-                updated_at_unix_ms: 1,
-            });
+            .insert(7, destination.0.clone());
         state.view = origin.clone();
         let jump = reduce(&mut state, Action::UseHotSlot(7));
         assert_eq!(state.view, View::Thread(destination.clone()));
@@ -2635,14 +2616,7 @@ fn hot_slot_jumps_return_to_the_originating_surface_without_reloading() {
 fn hot_slot_index_rejects_an_outdated_identity_instead_of_opening_another_thread() {
     let mut state = app();
     let target = state.threads[0].id.clone();
-    state
-        .planning_snapshot
-        .hot_slots
-        .push(crate::planning::HotSlot {
-            slot: 5,
-            target: SourceRef::codex_thread(&target),
-            updated_at_unix_ms: 1,
-        });
+    state.operator_local.hot_slots.insert(5, target.0.clone());
     // A stale index must never redirect a persisted shortcut to the wrong thread.
     state.threads[0].id = ThreadId::new("different-thread");
     assert!(reduce(&mut state, Action::UseHotSlot(5)).is_empty());
@@ -2663,13 +2637,9 @@ fn hot_slot_return_keeps_registry_filter_and_original_selection() {
     let destination = state.threads[1].id.clone();
     state.filter = state.threads[0].title.clone();
     state
-        .planning_snapshot
+        .operator_local
         .hot_slots
-        .push(crate::planning::HotSlot {
-            slot: 9,
-            target: SourceRef::codex_thread(&destination),
-            updated_at_unix_ms: 1,
-        });
+        .insert(9, destination.0.clone());
     assert!(state.visible_indices().contains(&state.selected));
     let _ = reduce(&mut state, Action::UseHotSlot(9));
     assert_eq!(state.view, View::Thread(destination));
@@ -2742,7 +2712,7 @@ fn stale_recent_alert_does_not_open_another_thread_or_replay_history() {
 }
 
 #[test]
-fn non_thread_alert_shows_a_board_fallback_without_guessing_a_thread_id() {
+fn non_thread_alert_refuses_to_guess_a_thread_id() {
     use crate::notification::{NotificationEvent, NotificationKind, RecentNotification};
     let mut state = app();
     reduce(
@@ -2765,7 +2735,7 @@ fn non_thread_alert_shows_a_board_fallback_without_guessing_a_thread_id() {
             .mutation_notice
             .as_deref()
             .unwrap()
-            .contains("inspect the Board")
+            .contains("check the authoritative source")
     );
     assert!(state.recent_notification.is_none());
 }
@@ -2824,7 +2794,7 @@ fn alert_jump_is_fenced_during_transient_modals_without_consuming_the_event() {
         ("composer", |state| state.input_mode = InputMode::Composer),
         ("closing", |state| state.should_quit = true),
         ("hot slot bind", |state| {
-            state.hot_slot_bind_pending = Some(SourceRef::codex_thread(&state.threads[0].id));
+            reduce(state, Action::BeginHotSlotBind);
         }),
     ];
 

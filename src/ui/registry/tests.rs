@@ -213,12 +213,11 @@ fn compact_attention_and_delivery_hints_survive_drawer_in_both_languages() {
                 )),
                 "width={width} language={language:?}: {snapshot}"
             );
-            for key in ['b', 'r', 'w'] {
-                assert!(
-                    snapshot.contains(key),
-                    "missing {key}, width={width}: {snapshot}"
-                );
-            }
+            let footer = registry_footer(&app, width).to_string();
+            assert!(snapshot.lines().any(|line| line.trim_end() == footer));
+            let keys: Vec<_> = footer.split_whitespace().collect();
+            assert!(["r", "w", "Alt+T"].iter().all(|key| keys.contains(key)));
+            assert!(!keys.contains(&"b"));
             assert!(snapshot.contains(if language.is_simplified_chinese() {
                 "待处理 1"
             } else {
@@ -328,7 +327,6 @@ fn a_snoozed_thread_without_attention_still_displays_its_runtime() {
 fn footer_delivery_keys_match_executable_routes() {
     let app = app();
     for (key, command, label) in [
-        ('b', Command::Board, "b Board"),
         ('r', Command::Review, "r Review"),
         ('w', Command::Workspace, "w Workspace"),
     ] {

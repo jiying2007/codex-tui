@@ -33,21 +33,13 @@ pub(crate) fn action_for_command(app: &AppState, command: Command) -> Option<Act
         Command::ToggleAllHistory => Action::ToggleAllHistory,
         Command::Next => match app.view_kind() {
             ViewKind::Review => Action::MoveReview(1),
-            ViewKind::Board => Action::MovePlanningSelection(1),
             _ => Action::MoveSelection(1),
         },
         Command::Previous => match app.view_kind() {
             ViewKind::Review => Action::MoveReview(-1),
-            ViewKind::Board => Action::MovePlanningSelection(-1),
             _ => Action::MoveSelection(-1),
         },
-        Command::Open => {
-            if app.view_kind() == ViewKind::Board {
-                Action::OpenPlanningSelected
-            } else {
-                Action::OpenSelected
-            }
-        }
+        Command::Open => Action::OpenSelected,
         Command::NextAttention => Action::NextAttention,
         Command::OpenRecentNotification => Action::OpenRecentNotification,
         Command::QuickPrompt => Action::QuickPrompt,
@@ -60,10 +52,6 @@ pub(crate) fn action_for_command(app: &AppState, command: Command) -> Option<Act
         Command::CancelPending => Action::ResolvePending(InteractiveResolution::Cancel),
         Command::AnswerPending => Action::BeginUserInput,
         Command::RequestDetails => Action::OpenRequestDetails,
-        Command::Board => Action::OpenBoard,
-        Command::BoardLeft => Action::MoveBoardColumn(-1),
-        Command::BoardRight => Action::MoveBoardColumn(1),
-        Command::CycleSavedView => Action::CycleSavedView(1),
         Command::Review => Action::OpenReview,
         Command::Workspace => Action::OpenWorkspace,
         Command::Snooze => Action::BeginSnooze,

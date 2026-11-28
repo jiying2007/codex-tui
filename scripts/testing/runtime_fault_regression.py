@@ -161,7 +161,7 @@ def forge(binary, output, home):
         app.close()
 
 
-def board(binary, output, home, interval):
+def registry_churn(binary, output, home, interval):
     env = environment(home, home/'server.log', 'churn')
     env['NOISE_INTERVAL'] = str(interval)
     (home/'bin/codex').write_text(BOARD_MOCK, encoding='utf-8')
@@ -169,26 +169,24 @@ def board(binary, output, home, interval):
     try:
         app.wait(lambda: '5000 total' in app.screen(), '5k Registry did not finish', 30)
         app.drain(.5)
-        app.send(b'b')
-        app.wait(lambda: 'Ready (5000)' in app.screen() and 'AAA_BEFORE' in app.screen(),
-                 'Board baseline not observed', 15)
+        app.wait(lambda: 'Mission Control' in app.screen() and 'AAA_BEFORE' in app.screen(),
+                 'Registry baseline not observed', 15)
         (home/'start-churn').touch()
         started = time.monotonic()
-        app.wait(lambda: 'AAA_AFTER' in app.screen(), 'Board starved during unrelated churn', 8)
+        app.wait(lambda: 'AAA_AFTER' in app.screen(), 'Registry starved during unrelated churn', 8)
         latency = time.monotonic()-started
         app.drain(.5)
-        require('AAA_AFTER' in app.screen(), 'Board reverted to the old title')
+        require('AAA_AFTER' in app.screen(), 'Registry reverted to the old title')
         require(not (home/'stop-churn').exists(), 'churn stopped before success')
+        app.send(b'w')
+        app.wait(lambda: 'Workspace' in app.screen() and 'audit-target' in app.screen(),
+                 'Workspace did not retain selected session identity')
         app.send(b'\x1b')
         app.wait(lambda: 'Mission Control' in app.screen() and 'AAA_AFTER' in app.screen(),
-                 'Registry/Board current-source cross-check failed')
-        app.send(b'b')
-        app.wait(lambda: 'Ready (5000)' in app.screen() and 'AAA_AFTER' in app.screen(),
-                 'reentered Board is obsolete')
+                 'Registry/Workspace current-source cross-check failed')
         (home/'stop-churn').touch()
         app.drain(.3)
-        app.send(b'\x1b')
-        return {'mode':'board-{}ms'.format(round(interval*1000)), 'checks':app.finish(),
+        return {'mode':'registry-{}ms'.format(round(interval*1000)), 'checks':app.finish(),
                 'rows':5000, 'updateVisibleSeconds':round(latency, 4),
                 'sourceUpdateVisibleDuringChurn':True, 'crossViewCurrent':True}
     finally:
@@ -209,7 +207,7 @@ def main():
              'sourceSha':os.environ.get('CODEX_TUI_PTY_SOURCE_SHA'),
              'binarySha256':hashlib.sha256(binary.read_bytes()).hexdigest(),
              'manualQualification':False, 'realSshQualification':False, 'checks':[]}
-    cases=['drawer-SIGTERM','drawer-SIGHUP','drawer-SIGINT','forge-pipes','board-10ms','board-100ms']
+    cases=['drawer-SIGTERM','drawer-SIGHUP','drawer-SIGINT','forge-pipes','registry-10ms','registry-100ms']
     if args.scenario:
         require(args.scenario in cases, 'unknown scenario')
         cases=[args.scenario]
@@ -221,7 +219,7 @@ def main():
                     output=args.output/name
                     if name.startswith('drawer-'): result=drawer(binary,output,home,name)
                     elif name=='forge-pipes': result=forge(binary,output,home)
-                    else: result=board(binary,output,home,.01 if name=='board-10ms' else .1)
+                    else: result=registry_churn(binary,output,home,.01 if name=='registry-10ms' else .1)
                     result['passed']=True
                 except Exception as error:
                     result={'mode':name,'passed':False,'error':str(error)}

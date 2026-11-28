@@ -9,9 +9,9 @@ import tempfile
 from app_server_transport_regression import require
 from watch_cache_regression import Fleet, MOCK, WORKERS, identity, sample, validate_counts
 
-CASES = ('registered-search-cancel', 'provisional-board-cancel',
-         'registered-board-disconnect', 'provisional-search-disconnect',
-         'registered-board-refused', 'provisional-board-refused')
+CASES = ('registered-search-cancel', 'provisional-search-cancel',
+         'registered-workspace-disconnect', 'provisional-search-disconnect',
+         'registered-workspace-refused', 'provisional-search-refused')
 
 
 def held_mock(target):
@@ -35,19 +35,19 @@ def case(binary, output, home, scenario):
     try:
         fleet.prime()
         fleet.open_target(provisional=='provisional')
-        if route=='board':fleet.app.send(b'b')
+        if route=='workspace':fleet.app.send(b'w')
         fleet.app.send(b'/')
         fleet.app.send(b'\x7f'*len(fleet.filter))
         phase=fleet.refresh(WORKERS)
         validate_counts(fleet.records(),phase,[target],0)
         if ending=='refused':
-            # Cancel search to Board first: its status footer is visible and
-            # its Thread return is still owned without starting hydration.
-            fleet.app.send(b'\x1b')
+            # Return only to an intermediate Workspace before closing the actor.
+            # A direct provisional return must remain in search until shutdown.
+            if route=='workspace':
+                fleet.app.send(b'\x1b')
             (home/'shutdown').touch()
-            # Board intentionally has no backend-status footer. Observe the
-            # exact fixture process exiting instead, then require the actual
-            # closed-actor admission error (not a later RPC read error).
+            # Observe the exact fixture process exiting, then require the
+            # closed-actor admission error rather than a later RPC read error.
             primary = [int(f.name.split('.')[-1]) for f in home.glob('rpc.*')
                        if 'fleet-000' in f.read_text()]
             require(len(primary)==1, 'ambiguous primary fixture process')
@@ -56,7 +56,7 @@ def case(binary, output, home, scenario):
         else:
             (home/'hold').touch()
         fleet.app.send(b'\x1b')
-        if route=='board' and ending!='refused':fleet.app.send(b'\x1b')
+        if route=='workspace' and ending!='refused':fleet.app.send(b'\x1b')
         if ending=='refused':
             fleet.app.wait(lambda:'Conversation unavailable: App Server actor is not available' in fleet.app.screen(),
                            'closed-actor admission failure was not visible',3)

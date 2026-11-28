@@ -69,7 +69,7 @@ use registry::{ensure_selection_visible, restore_selection};
 pub use target_lookup::{LookupPhase, TargetLookupAction, TargetLookupPanel};
 pub use types::{Action, ContextChoice, Effect, InputMode, View, ViewKind};
 // Executable help entries in src/ui.rs; keep the two arrays in lockstep.
-pub const HELP_ENTRY_COUNT: usize = 13;
+pub const HELP_ENTRY_COUNT: usize = 10;
 const REGISTRY_RECENT_LIMIT: usize = 20;
 const CONVERSATION_CACHE_LIMIT: usize = 16;
 const GIT_REVIEW_CACHE_LIMIT: usize = 4;
@@ -146,7 +146,7 @@ pub struct AppState {
     git_review_cache_order: VecDeque<String>,
     pub planning_snapshot: PlanningSnapshot,
     pub work_cards: Vec<WorkCardProjection>,
-    session_attention_policy: session_attention::LegacyAttentionPolicy,
+    session_attention_policy: session_attention::SessionAttentionPolicy,
     work_card_by_thread: BTreeMap<String, usize>,
     worktree_collision_counts: BTreeMap<String, usize>,
     pub goals: BTreeMap<String, GoalObservation>,
@@ -175,7 +175,7 @@ pub struct AppState {
     pub context_open: bool,
     context_menu: Option<context_menu::ContextMenu>,
     pub context_selected: usize,
-    pub hot_slot_bind_pending: Option<SourceRef>,
+    pub hot_slot_bind_pending: Option<(SourceRef, String)>,
     pub review_selected: usize,
     pub review_scroll: u16,
     pub review_word_diff: bool,

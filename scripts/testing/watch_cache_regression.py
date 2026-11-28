@@ -21,7 +21,7 @@ from watch_ownership_regression import identity
 WORKERS = tuple('fleet-%03d' % i for i in range(32))
 CASES = ('registered-search-resident', 'provisional-search-resident',
          'registered-search-evicted', 'provisional-search-evicted',
-         'registered-board-evicted', 'provisional-board-evicted',
+         'registered-workspace-evicted', 'registered-workspace-read-error',
          'registered-search-retired', 'provisional-search-retired',
          'provisional-search-read-error')
 RSS_BUDGET_KIB = 256 * 1024
@@ -143,8 +143,8 @@ class Fleet:
         provisional, route, kind = name.split('-', 2)
         target = self.open_target(provisional == 'provisional')
         initial_seq = self.seq
-        if route == 'board':
-            self.app.send(b'b')
+        if route == 'workspace':
+            self.app.send(b'w')
         self.app.send(b'/')
         # Keep the return route, but expose surviving Registry rows even when
         # the originally filtered target is deleted during the test.
@@ -158,7 +158,7 @@ class Fleet:
         elif kind == 'read-error':
             (self.home/'read-error').touch()
         self.app.send(b'\x1b')
-        if route == 'board':
+        if route == 'workspace':
             self.app.send(b'\x1b')
         if kind not in ('resident', 'retired', 'read-error'):
             self.app.wait(lambda: self.body(target, phase), 'evicted return did not reload body', 3)

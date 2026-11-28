@@ -17,12 +17,7 @@ fn empty_palette_prioritizes_mission_control_without_removing_commands() {
     reduce(&mut app, Action::OpenCommandPalette);
     let visible = app.command_palette_choices();
 
-    for primary in [
-        Command::Search,
-        Command::Board,
-        Command::Review,
-        Command::Workspace,
-    ] {
+    for primary in [Command::Search, Command::Review, Command::Workspace] {
         assert!(
             visible.contains(&primary),
             "missing primary action: {primary:?}"

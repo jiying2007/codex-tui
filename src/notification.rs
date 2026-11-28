@@ -127,8 +127,8 @@ impl RecentNotification {
         let action = match (self.thread_id.is_some(), language.is_simplified_chinese()) {
             (true, true) => "! 跳转",
             (true, false) => "! open",
-            (false, true) => "看板",
-            (false, false) => "Board",
+            (false, true) => "未定位",
+            (false, false) => "Unlocated",
         };
         let other = if self.other_count == 0 {
             String::new()

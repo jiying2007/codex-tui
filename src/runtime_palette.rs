@@ -53,11 +53,11 @@ mod tests {
 
         handle_command_palette_key(
             &mut app,
-            KeyEvent::new(KeyCode::Char('b'), KeyModifiers::NONE),
+            KeyEvent::new(KeyCode::Char('w'), KeyModifiers::NONE),
         );
-        handle_command_palette_paste(&mut app, "oard".into());
-        assert_eq!(app.command_palette_query, "board");
-        assert_eq!(app.command_palette_choice(), Some(Command::Board));
+        handle_command_palette_paste(&mut app, "orkspace".into());
+        assert_eq!(app.command_palette_query, "workspace");
+        assert_eq!(app.command_palette_choice(), Some(Command::Workspace));
     }
 
     #[test]

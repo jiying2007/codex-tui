@@ -14,7 +14,7 @@ Copy privately, never commit credentials or raw tasks. Select development-integr
 
 | ID | Check | Status | Actual outcome / evidence | Reviewer |
 |---|---|---|---|---|
-| E01 | Source, remote main and clean worktree | NOT_RUN | | |
+| E01 | Exact source, reviewed remote branch and clean checkout (main for final-candidate) | NOT_RUN | | |
 | E02 | Architecture/ABI and Python/Rust/Git/CLI versions | NOT_RUN | | |
 | E03 | Real TTY, UTF-8 and terminal dimensions | NOT_RUN | | |
 | E04 | Actual executable source and digest | NOT_RUN | | |
@@ -24,9 +24,9 @@ Copy privately, never commit credentials or raw tasks. Select development-integr
 | C02 | Real TUI task completion and correct result | NOT_RUN | | |
 | C03 | Actual approval allowed and refused | NOT_RUN | | |
 | C04 | Actual server user-input request | NOT_RUN | | |
-| C05 | Active task across Board/search/return | NOT_RUN | | |
+| C05 | Active task across Registry/Workspace/search/return in Lite; Board only in historical scope | NOT_RUN | | |
 | C06 | Actual task cancellation without replay | NOT_RUN | | |
-| C07 | Drafts/Saved Views/notes across restart | NOT_RUN | | |
+| C07 | Drafts/notes across restart; historical Saved Views preserved, not edited in Lite | NOT_RUN | | |
 | C08 | Navigation, Chinese, scroll and narrow windows | NOT_RUN | | |
 | C09 | Named targets when declared (reviewed N/A otherwise) | NOT_RUN | | |
 | T01 | Drawer Cwd and echo | NOT_RUN | | |
@@ -60,6 +60,16 @@ Copy privately, never commit credentials or raw tasks. Select development-integr
 | Q01 | Final real compatibility/terminal/GitLab evidence | NOT_RUN | | |
 | Q02 | Final-candidate Linux chain and rebuilt digest check | NOT_RUN | | |
 | Q03 | Private archive verification and public-summary redaction | NOT_RUN | | |
+
+For Lite pre-merge development-integration, retain the historical mutation rows G02–G04 and F02–F06 as NOT_RUN/BLOCKED for the retired TUI surface unless an independent reviewer approves the replacement scope. Native actions do not retroactively pass old Stable checks. The following rows record the existing unified design's field acceptance, not a new publication gate:
+
+| ID | Check | Status | Actual outcome / evidence | Reviewer |
+|---|---|---|---|---|
+| R01 | G1: real source coverage/Partial, parent-child/Fork, two Target/CODEX_HOME scopes, exact request routing without wrong target or missed Attention | NOT_RUN | | |
+| R02 | G2: actual requirement and actual defect linked to original Feishu Project/TAPD item, exact session and evidence; original owner acceptance | NOT_RUN | | |
+| R03 | G3: two different actual cross-repository scenarios, exact versions, directed recipient acknowledgment and separate joint test result | NOT_RUN | | |
+| R04 | G4: native Git/Forge/Codex replacements, no retired interactive entry, private original backup and isolated recovery; all historical unresolved counts reconciled or explicitly retained | NOT_RUN | | |
+| R05 | G4: existing paired UX comparison and correct-target/safety acceptance; no unobserved PASS | NOT_RUN | | |
 
 ## Independent conclusions
 <!-- docs-section: conclusion -->

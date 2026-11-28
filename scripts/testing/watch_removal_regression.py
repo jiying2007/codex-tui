@@ -93,9 +93,10 @@ def case(binary, output, home, mode, original_mock, sample_resources):
             target = 'watch-a'
         app.wait(lambda: 'BODY_0_' + target in app.screen(),
                  'removal initial history missing')
-        # Search launched from Board retains a reachable return to the target
-        # and exposes the main actor's registered-row notification fence.
-        app.send(b'b')
+        # Keep the native return reachable while exposing the registry fence.
+        # An unregistered provisional history has no verified Workspace.
+        if not short.startswith('provisional'):
+            app.send(b'w')
         app.send(b'/')
         boundary(1, [{'method': 'item/completed', 'params': {'threadId': target}}], 1, target)
         if keep:
@@ -108,7 +109,7 @@ def case(binary, output, home, mode, original_mock, sample_resources):
         for seq in [3, 4]:
             boundary(seq, [{'method': 'item/completed', 'params': {'threadId': target}}],
                      int(keep), target)
-        for _ in range(3):
+        for _ in range(2 if short.startswith('provisional') else 3):
             app.send(b'\x1b')
         terminal = app.finish()
         validate_observations(observations, keep)

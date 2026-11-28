@@ -69,20 +69,6 @@ pub const HELP_BINDINGS: &[HelpBinding] = &[
     HelpBinding { surface: "Workspace", scope: HelpScope::View(ViewKind::Workspace), token: ".", code: KeyCode::Char('.'), modifiers: KeyModifiers::NONE, command: Command::ContextActions },
     HelpBinding { surface: "Workspace", scope: HelpScope::View(ViewKind::Workspace), token: "r", code: KeyCode::Char('r'), modifiers: KeyModifiers::NONE, command: Command::Review },
     HelpBinding { surface: "Workspace", scope: HelpScope::View(ViewKind::Workspace), token: "Esc", code: KeyCode::Esc, modifiers: KeyModifiers::NONE, command: Command::Back },
-    HelpBinding { surface: "Board", scope: HelpScope::View(ViewKind::Board), token: "h/l", code: KeyCode::Char('h'), modifiers: KeyModifiers::NONE, command: Command::BoardLeft },
-    HelpBinding { surface: "Board", scope: HelpScope::View(ViewKind::Board), token: "h/l", code: KeyCode::Char('l'), modifiers: KeyModifiers::NONE, command: Command::BoardRight },
-    HelpBinding { surface: "Board", scope: HelpScope::View(ViewKind::Board), token: "j/k", code: KeyCode::Char('j'), modifiers: KeyModifiers::NONE, command: Command::Next },
-    HelpBinding { surface: "Board", scope: HelpScope::View(ViewKind::Board), token: "j/k", code: KeyCode::Char('k'), modifiers: KeyModifiers::NONE, command: Command::Previous },
-    HelpBinding { surface: "Board", scope: HelpScope::View(ViewKind::Board), token: "Space", code: KeyCode::Char(' '), modifiers: KeyModifiers::NONE, command: Command::NextAttention },
-    HelpBinding { surface: "Board", scope: HelpScope::View(ViewKind::Board), token: "s", code: KeyCode::Char('s'), modifiers: KeyModifiers::NONE, command: Command::Snooze },
-    HelpBinding { surface: "Board", scope: HelpScope::View(ViewKind::Board), token: "=", code: KeyCode::Char('='), modifiers: KeyModifiers::NONE, command: Command::BeginHotSlotBind },
-    HelpBinding { surface: "Board", scope: HelpScope::View(ViewKind::Board), token: "1–9", code: KeyCode::Char('1'), modifiers: KeyModifiers::NONE, command: Command::HotSlot(1) },
-    HelpBinding { surface: "Board", scope: HelpScope::View(ViewKind::Board), token: "1–9", code: KeyCode::Char('9'), modifiers: KeyModifiers::NONE, command: Command::HotSlot(9) },
-    HelpBinding { surface: "Board", scope: HelpScope::View(ViewKind::Board), token: "Tab", code: KeyCode::Tab, modifiers: KeyModifiers::NONE, command: Command::CycleSavedView },
-    HelpBinding { surface: "Board", scope: HelpScope::View(ViewKind::Board), token: ".", code: KeyCode::Char('.'), modifiers: KeyModifiers::NONE, command: Command::ContextActions },
-    HelpBinding { surface: "Board", scope: HelpScope::View(ViewKind::Board), token: "Enter", code: KeyCode::Enter, modifiers: KeyModifiers::NONE, command: Command::Open },
-    HelpBinding { surface: "Board", scope: HelpScope::View(ViewKind::Board), token: "a", code: KeyCode::Char('a'), modifiers: KeyModifiers::NONE, command: Command::QuickPrompt },
-    HelpBinding { surface: "Scratch", scope: HelpScope::View(ViewKind::Scratch), token: "Esc", code: KeyCode::Esc, modifiers: KeyModifiers::NONE, command: Command::Back },
 ];
 
 fn is_plain_press(key: KeyEvent) -> bool {
@@ -156,7 +142,6 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
         (ViewKind::Registry, KeyCode::Enter) => Some(Command::Open),
         (ViewKind::Registry, KeyCode::Char(' ')) => Some(Command::NextAttention),
         (ViewKind::Registry, KeyCode::Char('a')) => Some(Command::QuickPrompt),
-        (ViewKind::Registry, KeyCode::Char('b')) => Some(Command::Board),
         (ViewKind::Registry, KeyCode::Char('r')) => Some(Command::Review),
         (ViewKind::Registry, KeyCode::Char('w')) => Some(Command::Workspace),
         (ViewKind::Registry, KeyCode::Char('s')) => Some(Command::Snooze),
@@ -173,7 +158,6 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
             Some(Command::HotSlot(c.to_digit(10)? as u8))
         }
         (ViewKind::Thread, KeyCode::Char('a')) => Some(Command::QuickPrompt),
-        (ViewKind::Thread, KeyCode::Char('b')) => Some(Command::Board),
         (ViewKind::Thread, KeyCode::Char('y')) if is_plain_press(key) => {
             Some(Command::ApprovePending)
         }
@@ -204,23 +188,6 @@ pub fn command_for_key(key: KeyEvent, view: ViewKind) -> Option<Command> {
         (ViewKind::Review, KeyCode::Char('e')) => Some(Command::ExternalEditor),
         (ViewKind::Review, KeyCode::Char('o')) => Some(Command::OpenExternal),
         (ViewKind::Workspace, KeyCode::Char('r')) => Some(Command::Review),
-        (ViewKind::Board, KeyCode::Char('h') | KeyCode::Left) => Some(Command::BoardLeft),
-        (ViewKind::Board, KeyCode::Char('l') | KeyCode::Right) => Some(Command::BoardRight),
-        (ViewKind::Board, KeyCode::Char('j') | KeyCode::Down) => Some(Command::Next),
-        (ViewKind::Board, KeyCode::Char('k') | KeyCode::Up) => Some(Command::Previous),
-        (ViewKind::Board, KeyCode::Enter) => Some(Command::Open),
-        (ViewKind::Board, KeyCode::Char(' ')) => Some(Command::NextAttention),
-        (ViewKind::Board, KeyCode::Char('a')) => Some(Command::QuickPrompt),
-        (ViewKind::Board, KeyCode::Char('s')) => Some(Command::Snooze),
-        (ViewKind::Board, KeyCode::Char('=')) if key.modifiers == KeyModifiers::NONE => {
-            Some(Command::BeginHotSlotBind)
-        }
-        (ViewKind::Board, KeyCode::Char(c @ '1'..='9')) if key.modifiers == KeyModifiers::NONE => {
-            Some(Command::HotSlot(c.to_digit(10)? as u8))
-        }
-        (ViewKind::Board, KeyCode::Char('r')) => Some(Command::Review),
-        (ViewKind::Board, KeyCode::Char('w')) => Some(Command::Workspace),
-        (ViewKind::Board, KeyCode::Tab) => Some(Command::CycleSavedView),
         _ => None,
     }
 }
@@ -248,7 +215,6 @@ mod tests {
                 ViewKind::Thread,
                 ViewKind::Review,
                 ViewKind::Workspace,
-                ViewKind::Board,
             ],
             HelpScope::View(view) => vec![view],
         }
@@ -445,23 +411,10 @@ mod tests {
     }
 
     #[test]
-    fn board_bindings_keep_horizontal_stage_and_vertical_item_navigation_distinct() {
-        assert_eq!(
-            command_for_key(key(KeyCode::Char('h')), ViewKind::Board),
-            Some(Command::BoardLeft)
-        );
-        assert_eq!(
-            command_for_key(key(KeyCode::Char('l')), ViewKind::Board),
-            Some(Command::BoardRight)
-        );
-        assert_eq!(
-            command_for_key(key(KeyCode::Char('j')), ViewKind::Board),
-            Some(Command::Next)
-        );
-        assert_eq!(
-            command_for_key(key(KeyCode::Tab), ViewKind::Board),
-            Some(Command::CycleSavedView)
-        );
+    fn retired_board_has_no_native_keyboard_entry() {
+        for view in [ViewKind::Registry, ViewKind::Thread] {
+            assert_eq!(command_for_key(key(KeyCode::Char('b')), view), None);
+        }
     }
 
     #[test]
@@ -479,10 +432,6 @@ mod tests {
             Some(Command::ToggleHostLocalFilter)
         );
         assert_eq!(
-            command_for_key(key(KeyCode::Char('l')), ViewKind::Board),
-            Some(Command::BoardRight)
-        );
-        assert_eq!(
             command_for_key(key(KeyCode::Char('g')), ViewKind::Registry),
             Some(Command::ToggleRepoBackedFilter)
         );
@@ -493,10 +442,6 @@ mod tests {
         assert_eq!(
             command_for_key(key(KeyCode::Char('h')), ViewKind::Registry),
             Some(Command::ToggleAllHistory)
-        );
-        assert_eq!(
-            command_for_key(key(KeyCode::Char('h')), ViewKind::Board),
-            Some(Command::BoardLeft)
         );
         assert_eq!(
             command_for_key(

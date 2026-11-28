@@ -306,6 +306,10 @@ impl RegistryHandle {
     pub fn response_actor_finished(&self) -> bool {
         self.task.is_finished()
     }
+
+    pub fn matches_observed_scope(&self, observed: &BackendStatus) -> bool {
+        self.scope.verify(observed).is_ok()
+    }
     pub fn submit_user_response(
         &self,
         observed: &BackendStatus,

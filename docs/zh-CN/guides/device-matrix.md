@@ -14,7 +14,7 @@
 
 | ID | 验收内容 | 状态 | 实际结果／证据 | 复核者 |
 |---|---|---|---|---|
-| E01 | 源码、远端main与工作区 | NOT_RUN | | |
+| E01 | 精确源码、已审阅远端分支和干净副本（正式候选为 main） | NOT_RUN | | |
 | E02 | 架构/ABI、Python/Rust/Git/CLI版本 | NOT_RUN | | |
 | E03 | 真实TTY、UTF-8、窗口尺寸 | NOT_RUN | | |
 | E04 | 实际程序sourceSha和二进制哈希 | NOT_RUN | | |
@@ -24,9 +24,9 @@
 | C02 | TUI真实推理任务完成且结果正确 | NOT_RUN | | |
 | C03 | 实际审批允许与拒绝 | NOT_RUN | | |
 | C04 | 真正request_user_input交互 | NOT_RUN | | |
-| C05 | 活跃任务跨Board/搜索/返回 | NOT_RUN | | |
+| C05 | Lite 活跃任务跨 Registry/Workspace/搜索/返回；Board 仅历史范围 | NOT_RUN | | |
 | C06 | 实际任务取消、不重放 | NOT_RUN | | |
-| C07 | 草稿/Saved View/备注跨重启 | NOT_RUN | | |
+| C07 | 草稿/备注重启保存；Lite 保留历史 Saved View，不编辑 | NOT_RUN | | |
 | C08 | 导航、中文、滚动、窄窗口 | NOT_RUN | | |
 | C09 | 日常命名targets（非必需可审阅N/A） | NOT_RUN | | |
 | T01 | Drawer正确Cwd与输入回显 | NOT_RUN | | |
@@ -60,6 +60,16 @@
 | Q01 | 最终真实compat/终端/GitLab证据 | NOT_RUN | | |
 | Q02 | 最终候选Linux资格链、构建后哈希复核 | NOT_RUN | | |
 | Q03 | 私有归档校验与公开摘要脱敏 | NOT_RUN | | |
+
+Lite 合并前 development-integration 中，历史变更操作 G02–G04、F02–F06 对已退役 TUI 入口仍记 NOT_RUN／BLOCKED，直到独立复核者批准替代范围。原生操作不能追溯性地通过旧 Stable 检查。以下记录统一方案既定现场验收，不新设发布门禁：
+
+| ID | 验收内容 | 状态 | 实际结果／证据 | 复核者 |
+|---|---|---|---|---|
+| R01 | G1：真实来源覆盖/Partial、父子/Fork、两个 Target/CODEX_HOME、准确请求路由，无错目标或 Attention 漏报 | NOT_RUN | | |
+| R02 | G2：真实需求及缺陷关联飞书项目/TAPD 原事项、准确会话和证据，由原责任人验收 | NOT_RUN | | |
+| R03 | G3：两类不同真实跨仓场景、准确版本、定向接收确认、独立联合验证结果 | NOT_RUN | | |
+| R04 | G4：原生 Git/Forge/Codex 替代、无退役交互入口、原始私有备份及隔离恢复，全部历史未决计数已核对或明确保留 | NOT_RUN | | |
+| R05 | G4：既有配对体验对照与正确目标/安全验收；未观测不记 PASS | NOT_RUN | | |
 
 ## 独立结论
 <!-- docs-section: conclusion -->

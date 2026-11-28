@@ -78,7 +78,7 @@ fn normal_and_failed_save_restore_the_actual_controlling_terminal() {
 }
 
 #[test]
-fn drawer_signals_forge_reader_ownership_and_board_churn() {
+fn drawer_signals_forge_reader_ownership_and_registry_churn() {
     let temporary = tempfile::tempdir().unwrap();
     let retained = std::env::var_os("CODEX_TUI_PTY_EVIDENCE_DIR");
     let root = retained
@@ -131,8 +131,8 @@ fn drawer_signals_forge_reader_ownership_and_board_churn() {
         "drawer-SIGHUP",
         "drawer-SIGINT",
         "forge-pipes",
-        "board-10ms",
-        "board-100ms",
+        "registry-10ms",
+        "registry-100ms",
     ];
     assert_eq!(cases.len(), expected.len());
     for (case, name) in cases.iter().zip(expected) {
@@ -278,8 +278,8 @@ fn cross_view_watch_effects_reach_the_actual_backend() {
         "history-complete",
         "registry-complete",
         "deleted",
-        "board-cancel",
-        "board-commit",
+        "workspace-cancel",
+        "workspace-commit",
         "prompt-success",
         "prompt-failure",
         "prompt-history-failure",
@@ -512,8 +512,8 @@ fn evicted_returns_and_multi_session_workloads_preserve_ownership() {
         "provisional-search-resident",
         "registered-search-evicted",
         "provisional-search-evicted",
-        "registered-board-evicted",
-        "provisional-board-evicted",
+        "registered-workspace-evicted",
+        "registered-workspace-read-error",
         "registered-search-retired",
         "provisional-search-retired",
         "provisional-search-read-error",
@@ -588,11 +588,11 @@ fn evicted_return_cancellation_and_closed_admission_preserve_release() {
     assert_eq!(receipt["sourceSha"], source);
     let expected = [
         "registered-search-cancel",
-        "provisional-board-cancel",
-        "registered-board-disconnect",
+        "provisional-search-cancel",
+        "registered-workspace-disconnect",
         "provisional-search-disconnect",
-        "registered-board-refused",
-        "provisional-board-refused",
+        "registered-workspace-refused",
+        "provisional-search-refused",
     ];
     let checks = receipt["checks"].as_array().unwrap();
     assert_eq!(checks.len(), expected.len());

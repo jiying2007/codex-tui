@@ -166,15 +166,13 @@ class ReceiptReadContention(unittest.TestCase):
 
     def test_failed_final_evidence_collection_still_closes_session(self):
         binary = self.home/'unused-binary'
-        bin_dir = self.home/'bin'
-        bin_dir.mkdir()
-        (bin_dir/'codex').write_text("'cwd':os.environ['HOME']")
         output = self.home/'evidence'
         output.mkdir()
         session = mock.Mock()
         session.wait.side_effect = RuntimeError('fixture phase failed')
-        with mock.patch.object(observer, 'environment', return_value={}), \
-             mock.patch.object(observer.subprocess, 'run'), \
+        # Use the actual isolated environment; a one-line stub cannot exercise
+        # the scoped initialize fixture before the evidence cleanup path.
+        with mock.patch.object(observer.subprocess, 'run'), \
              mock.patch.object(observer, 'Session', return_value=session), \
              mock.patch.object(observer, 'receipt_rows', side_effect=TimeoutError('busy')):
             with self.assertRaises(TimeoutError):

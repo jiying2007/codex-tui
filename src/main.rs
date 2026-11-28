@@ -1,6 +1,6 @@
 use anyhow::Result;
 use codex_tui::{
-    app::{Action, AppState, Effect, ViewKind, planning_worker::PlanningWorker, reduce},
+    app::{Action, AppState, Effect, reduce},
     app_server::{self, ConversationEvent, RegistryHandle},
     app_server_target::ResolvedAppServerTarget,
     backend::{BackendStatus, CodexBackend, FakeBackend},
@@ -41,7 +41,10 @@ use runtime_notifications::RuntimeNotifications;
 use runtime_store_worker::{StoreEvent, StoreWorker as RuntimeStore};
 
 #[cfg(test)]
-use codex_tui::{app::InputMode, command::Command};
+use codex_tui::{
+    app::{InputMode, ViewKind},
+    command::Command,
+};
 #[cfg(test)]
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 #[cfg(test)]
@@ -270,8 +273,6 @@ async fn run_app(fake_mode: bool, target_override: Option<&str>) -> Result<()> {
     app.install_workrefs(bootstrap.workrefs);
     reduce(&mut app, Action::PlanningSnapshotLoaded(bootstrap.planning));
     reduce(&mut app, Action::PlanningStoreDegraded(store.error()));
-    let mut legacy_board_worker = None;
-    let mut legacy_board_dirty = true;
     let mut services = RuntimeServices::new(store, notification_mode);
     let mut target_lookup =
         runtime_target_lookup::LookupWorker::new(app_server_target.as_ref().map(|target| {
@@ -435,21 +436,6 @@ async fn run_app(fake_mode: bool, target_override: Option<&str>) -> Result<()> {
 
             let attention_now = now_unix_ms();
             let attention_clock_changed = app.advance_session_attention_clock(attention_now);
-            legacy_board_dirty |= planning_dirty;
-            match advance_legacy_board(
-                &mut legacy_board_worker,
-                &mut app,
-                &mut legacy_board_dirty,
-                attention_now,
-            ) {
-                Ok(applied) => needs_render |= applied,
-                Err(error) => {
-                    let effects = reduce(&mut app, Action::Back);
-                    apply_effects(&mut app, registry.as_ref(), &mut services, effects)?;
-                    reduce(&mut app, Action::MutationNotice(error));
-                    needs_render = true;
-                }
-            }
             if planning_dirty || registry_changes.notification || attention_clock_changed {
                 needs_render = true;
                 if let Err(error) = services.notifications.observe(&app) {
@@ -519,32 +505,6 @@ async fn run_app(fake_mode: bool, target_override: Option<&str>) -> Result<()> {
             .store
             .flush_operator_state_on_exit(&app.to_local_state())
     })
-}
-
-// Temporary historical viewer only: normal native session operation never
-// starts or advances the old projection worker. Keep a single instance if a
-// user explicitly enters the legacy Board, so rapid navigation cannot spawn
-// competing detached workers. Its bounded in-flight result is admitted only
-// on a later Board visit, using the existing source/intent/clock fences.
-fn advance_legacy_board(
-    worker: &mut Option<PlanningWorker>,
-    app: &mut AppState,
-    dirty: &mut bool,
-    now: u64,
-) -> Result<bool, String> {
-    if app.view_kind() != ViewKind::Board {
-        return Ok(false);
-    }
-    if worker.is_none() {
-        *worker = Some(
-            PlanningWorker::start()
-                .map_err(|error| format!("legacy Board unavailable: {error}"))?,
-        );
-    }
-    worker
-        .as_mut()
-        .expect("legacy Board worker initialized")
-        .advance(app, std::mem::take(dirty), now)
 }
 
 fn runtime_text(
@@ -638,6 +598,12 @@ fn drain_registry(
             }
             break;
         };
+        if !registry.matches_observed_scope(&app.backend_status) {
+            if let ConversationEvent::UserResponse { ticket, outcome } = event {
+                app.finish_user_response(ticket, outcome);
+            }
+            continue;
+        }
         changes.planning |= conversation_event_changes_planning(&event);
         changes.notification |= conversation_event_changes_notification(&event);
         changes.any = true;
@@ -653,7 +619,10 @@ fn drain_registry(
                 Action::ThreadLifecycleFailed { operation, error }
             }
             ConversationEvent::Loaded(page) => {
-                if let Some(error) = store.index_conversation_page(&page) {
+                if registry.matches_observed_scope(&app.backend_status)
+                    && let Some(scope) = app.transcript_scope()
+                    && let Some(error) = store.index_conversation_page(scope, &page)
+                {
                     effects.extend(reduce(app, Action::MutationNotice(error)));
                 }
                 Action::ConversationLoaded(page)
@@ -663,7 +632,10 @@ fn drain_registry(
                 turn_cursor,
                 item_cursor,
             } => {
-                if let Some(error) = store.index_conversation_page(&page) {
+                if registry.matches_observed_scope(&app.backend_status)
+                    && let Some(scope) = app.transcript_scope()
+                    && let Some(error) = store.index_conversation_page(scope, &page)
+                {
                     effects.extend(reduce(app, Action::MutationNotice(error)));
                 }
                 Action::OlderConversationLoaded {
@@ -684,10 +656,16 @@ fn drain_registry(
                 error,
             },
             ConversationEvent::TranscriptSearchLoaded(results) => {
+                if !registry.matches_observed_scope(&app.backend_status) {
+                    continue;
+                }
                 Action::TranscriptSearchLoaded(results)
             }
             ConversationEvent::TranscriptSearchJumpLoaded { page, item_id } => {
-                if let Some(error) = store.index_conversation_page(&page) {
+                if registry.matches_observed_scope(&app.backend_status)
+                    && let Some(scope) = app.transcript_scope()
+                    && let Some(error) = store.index_conversation_page(scope, &page)
+                {
                     effects.extend(reduce(app, Action::MutationNotice(error)));
                 }
                 Action::TranscriptSearchLoadedPage { page, item_id }
@@ -897,13 +875,9 @@ fn apply_effects(
                 anchor,
                 duration_ms,
             } => {
-                submit_planning(
-                    app,
-                    store.planning(
-                        move |store| store.snooze_work_card(anchor, duration_ms),
-                        None,
-                    ),
-                );
+                runtime_local_edit::submit(app, store, local_ticket, move |store| {
+                    store.snooze_work_card(anchor, duration_ms)
+                });
             }
             Effect::SaveSourceNote { owner, text } => {
                 runtime_local_edit::submit(app, store, local_ticket, move |store| {
@@ -914,12 +888,6 @@ fn apply_effects(
                 submit_planning(
                     app,
                     store.planning(move |store| store.create_bookmark(source, label), None),
-                );
-            }
-            Effect::SetHotSlot { slot, target } => {
-                submit_planning(
-                    app,
-                    store.planning(move |store| store.set_hot_slot(slot, target), None),
                 );
             }
             Effect::OpenTerminalDrawer { cwd } => {
@@ -1112,16 +1080,22 @@ fn apply_effects(
                 }
             }
             Effect::SearchTranscript { query } => {
-                let local_query = query.clone();
-                if let Err(error) = store.submit(move |store| {
-                    StoreEvent::Search(store.search_transcript(
-                        &local_query,
-                        codex_tui::transcript_search::TRANSCRIPT_SEARCH_RESULT_LIMIT,
-                    ))
-                }) {
-                    reduce(app, Action::MutationNotice(error));
+                if let Some(scope) = app.transcript_scope().map(str::to_owned) {
+                    let local_query = query.clone();
+                    if let Err(error) = store.submit(move |store| {
+                        let result = store.search_transcript(
+                            &scope,
+                            &local_query,
+                            codex_tui::transcript_search::TRANSCRIPT_SEARCH_RESULT_LIMIT,
+                        );
+                        StoreEvent::Search { scope, result }
+                    }) {
+                        reduce(app, Action::MutationNotice(error));
+                    }
                 }
-                if let Some(registry) = registry {
+                if let Some(registry) =
+                    registry.filter(|handle| handle.matches_observed_scope(&app.backend_status))
+                {
                     if let Err(error) = registry.search_transcript(query.clone()) {
                         reduce(
                             app,
@@ -1138,8 +1112,8 @@ fn apply_effects(
                             query,
                             error: runtime_text(
                                 app.language,
-                                "App Server full-history search unavailable; showing local indexed history",
-                                "App Server 全历史搜索不可用；正在显示本地已索引历史",
+                                "App Server full-history search unavailable; local cache requires a verified scope",
+                                "App Server 全历史搜索不可用；本地索引需要已核实的作用域",
                             )
                             .into(),
                         },
@@ -1408,17 +1382,18 @@ mod command_palette_input_tests {
         assert_eq!(app.selected, registry_selected);
         assert_eq!(app.command_palette_selected, 1);
 
-        let board_index = app
+        let help_index = app
             .command_palette_choices()
             .iter()
-            .position(|choice| *choice == Command::Board)
-            .expect("Board palette entry");
-        app.command_palette_selected = board_index;
+            .position(|choice| *choice == Command::Help)
+            .expect("Help palette entry");
+        app.command_palette_selected = help_index;
 
         let effects = handle_key(&mut app, KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));
         assert!(effects.is_empty());
         assert!(!app.command_palette_open);
-        assert_eq!(app.view_kind(), ViewKind::Board);
+        assert!(app.show_help);
+        assert_eq!(app.view_kind(), ViewKind::Registry);
     }
 
     #[test]
@@ -1435,32 +1410,26 @@ mod command_palette_input_tests {
 }
 
 #[cfg(test)]
-mod legacy_board_scope_tests {
+mod native_surface_tests {
     use super::*;
 
     #[test]
-    fn native_registry_never_starts_or_advances_legacy_board_worker() {
+    fn retired_board_cannot_be_opened_from_native_input() {
         let mut app = AppState::new(FakeBackend::scaled(8).snapshot().threads);
-        let mut worker = None;
-        let mut dirty = true;
-        for now in 1..100 {
-            assert!(!advance_legacy_board(&mut worker, &mut app, &mut dirty, now).unwrap());
-        }
-        assert!(worker.is_none());
+        assert!(
+            handle_key(
+                &mut app,
+                KeyEvent::new(KeyCode::Char('b'), KeyModifiers::NONE)
+            )
+            .is_empty()
+        );
+        assert_eq!(app.view_kind(), ViewKind::Registry);
         assert!(app.work_cards.is_empty());
-        assert!(dirty);
-
-        reduce(&mut app, Action::OpenBoard);
-        assert!(!advance_legacy_board(&mut worker, &mut app, &mut dirty, 100).unwrap());
-        assert!(worker.is_some());
-        assert!(!dirty);
-        reduce(&mut app, Action::Back);
-        dirty = true;
-        for now in 101..200 {
-            assert!(!advance_legacy_board(&mut worker, &mut app, &mut dirty, now).unwrap());
-        }
-        assert!(app.work_cards.is_empty());
-        assert!(dirty);
+        assert!(app.command_palette_choices().iter().all(|choice| {
+            choice
+                .palette_label(false)
+                .is_none_or(|label| !label.contains("Board"))
+        }));
     }
 }
 
@@ -1477,16 +1446,14 @@ mod accessibility_input_tests {
         use codex_tui::{
             app::View,
             notification::{NotificationEvent, NotificationKind, RecentNotification},
-            planning::{HotSlot, SourceRef},
         };
 
         let mut app = app();
         let destination = app.threads[1].id.clone();
-        app.planning_snapshot.hot_slots.push(HotSlot {
-            slot: 1,
-            target: SourceRef::codex_thread(&destination),
-            updated_at_unix_ms: 1,
-        });
+        app.selected = 1;
+        reduce(&mut app, Action::BeginHotSlotBind);
+        reduce(&mut app, Action::UseHotSlot(1));
+        app.selected = 0;
         app.recent_notification = Some(RecentNotification::new(
             NotificationEvent {
                 key: format!("completion:{}", destination.0),

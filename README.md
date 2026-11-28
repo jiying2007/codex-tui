@@ -32,7 +32,7 @@ retained exact-source receipts.
 
 v1.4 has reached development-scope completion and is frozen against new core functionality under `release/v1.4-completion.json`. It preserves v1.3 Search & Multi-Target and closes the remaining workflow/UX gaps: large Board navigation, WorkCard relationships, thread start/fork handoff, unified metadata search, Saved View editing, Review evidence/external open, bounded long-thread rendering, fuzzy Command Palette, runtime decomposition and exact-SHA 10k Board/Thread render diagnostics. This is not stable readiness: v1.4 stable publication still requires exact-SHA real Linux compatibility, controlling-TTY restoration, performance diagnostics and release evidence defined by `release/v1.4-criteria.json`. GitLab Issue Board membership remains evidence-gated until the native-transport/refresh-budget trigger is satisfied. The v1.3/v1.2 completion checkpoints and parked v1.1 candidate remain historical and separate.
 
-A post-v1.4 **upstream convergence** policy is now active under `release/v1.5-convergence.json` without changing the package version or claiming v1.5 release readiness. codex-tui is intentionally a thin local control plane: Mission Control, cross-target registry, Attention, derived Board/WorkCard projection, GitLab/GitHub Forge integration, Saved Views and diagnostics are the differentiating surfaces. Conversation-client and embedded Terminal Drawer code is maintenance-only; the duplicate Thread Queue UI is retired in the Lite candidate; official Codex remains authoritative for conversation, agents/orchestration and queue semantics, Git for repository/worktree state, the Forge for delivery, and the user's shell stack for general terminal-session management. Canonical CI, development qualification and the release gate enforce this boundary
+A post-v1.4 **upstream convergence** policy is now active under `release/v1.5-convergence.json` without changing the package version or claiming v1.5 release readiness. codex-tui is intentionally a thin local control plane: Mission Control, cross-target registry, Attention, GitLab/GitHub Forge observations, native session navigation and diagnostics are the differentiating surfaces. Conversation-client and embedded Terminal Drawer code is maintenance-only; the duplicate Thread Queue UI is retired in the Lite candidate; official Codex remains authoritative for conversation, agents/orchestration and queue semantics, Git for repository/worktree state, the Forge for delivery, and the user's shell stack for general terminal-session management. Canonical CI, development qualification and the release gate enforce this boundary
  with `scripts/architecture/check_upstream_convergence.py`. The convergence manifest
  (schema v2) tracks maintenance-only module identity, while the existing
  `release/v1.4-plan.json` module ratchet remains the **only numeric LOC ceiling ledger**.
@@ -86,14 +86,14 @@ The global `Ctrl+K` Command Palette now shows **Mission Control actions first** 
 
 - Attention-first thread list: Needs You before pinned work, then recent activity, with stable thread selection across refreshes
 - The recent window stays bounded; pins and actionable attention remain reachable outside that window
-- Workspace-grouped List and Review Queue Saved Views on the Board, derived from project/repository identity or cwd
+- Native session grouping and Attention, with read-only historical planning inspection outside the TUI
 - Needs You / Working / Ready / Inactive status, including attention reasons in compact terminals
 - Fuzzy filter/search
 - Pin and local alias
 - Exact-thread navigation
 - Jump to next attention item
 
-Use `b` to open the Board and `Tab` to choose Needs You or Needs Review; these list views keep each workspace together. Use `r` for Review and `w` for Workspace context on the selected thread. Headless Codex projections use the configured active target or `--target NAME`, one target per invocation; their output distinguishes that target from local metadata shared across targets. See the [operator handbook](docs/guides/operator-guide.md) and [CLI reference](docs/guides/cli-reference.md).
+Use `Space` to locate the next session needing attention. Use `r` for Review and `w` for Workspace context on the selected thread. Headless Codex projections use the configured active target or `--target NAME`, one target per invocation; their output distinguishes that target from local metadata shared across targets. See the [operator handbook](docs/guides/operator-guide.md) and [CLI reference](docs/guides/cli-reference.md).
 
 ### Thread View (maintenance-only compatibility surface)
 
@@ -147,15 +147,15 @@ These are frozen duplicate capabilities unless a future evidence-backed architec
 
 The mature product adds planning without creating a second task authority:
 
-- saved List and Board/Kanban views
+- historical planning records retained for backup and read-only diagnostics
 - Codex Goal projection
-- historical ScratchWork and Saved Views (read-only during Lite retirement)
+- historical ScratchWork and Saved Views retained in SQLite
 - worktree lifecycle and review
 - GitLab Work Item/Issue Board/MR/Pipeline projection first; GitHub through the same forge abstraction
 - notes/bookmarks, snooze/unread and lightweight notifications
 - native Codex queue authority; no duplicate Thread Queue UI or queue mutation route
 
-Board cards should project existing Codex/Git/forge work whenever possible; Needs You is an attention overlay, not a workflow column.
+Needs You is derived from observed native session state, not a workflow column.
 
 ## Architecture
 <!-- docs-section: architecture -->
@@ -174,7 +174,7 @@ Codex App Server ───── conversation/runtime authority
         │
         ├──── Attention projection
         │
-        ├──── Planning / Board projection
+        ├──── Native Attention / WorkRef
         │
         └──── tiny local ViewState
         │
@@ -263,13 +263,13 @@ active = "local" # implicit local stdio target; no target table is required
 
 `presentation = "normal"` preserves the existing render cadence. `quiet` coalesces background-only redraws to at most 10 Hz, while `screen-reader` uses a 500 ms minimum interval for background redraws to reduce repeated terminal updates. Keyboard, paste and terminal-resize interactions remain immediate in every mode. This is a screen-reader-oriented terminal presentation policy, not a second renderer or assistive-technology protocol layer.
 
-In-app recent-event hints are enabled even with the default `[notifications].mode = "off"`; off disables only external bell/desktop delivery. One memory-only hint appears for 20 seconds when the terminal has room. `! open` appears before the title and opens the associated live Codex thread; expired hints cannot be opened. Events without a live thread direct the user to Board. The header respects editors, modal dialogs and focused PTYs; delivery failures or backlog pressure do not prevent its selection. There is no notification history or offline push.
+In-app recent-event hints are enabled even with the default `[notifications].mode = "off"`; off disables only external bell/desktop delivery. One memory-only hint appears for 20 seconds when the terminal has room. `! open` appears before the title and opens the associated live Codex thread; expired hints cannot be opened. Events without a live thread are marked Unlocated; check their authoritative source. The header respects editors, modal dialogs and focused PTYs; delivery failures or backlog pressure do not prevent its selection. There is no notification history or offline push.
 
 **Idle is not success:** `Now idle; check result` only reports a transition from working/waiting to idle. It does not prove a turn succeeded or a task passed acceptance. `Goal completed` requires an observed Goal completion transition, which is still not delivery acceptance. Alerts also cover observed system errors, usage limits and budget limits; unavailable upstream facts are not invented.
 
 External alerts remain opt-in: use `terminal` for BEL, or `os` for the native desktop command with a three-second timeout and terminal-bell fallback. Over SSH, `os` uses the client terminal bell, not Windows Toast. Windows Terminal users can configure `"bellStyle": "all"` and test `printf '\a'` on Ubuntu. External deliveries may group a 75 ms burst by priority and count; this is not a guarantee of delivery. Startup seeds current state without replaying historical alerts; snooze suppresses attention routing, and exact current state remains in Mission Control. The TUI must remain running and connected to observe new remote events. No external bridge, scheduler or second task authority is introduced.
 
-Normal startup selects `[app_server].active` and defaults to the implicit `local` target, which launches `codex app-server --listen stdio://` after the first UI frame. `--target NAME` overrides the active target for one invocation. Mission Control consumes App Server thread lifecycle/status notifications incrementally; the complete paginated registry is retained as an initial load and low-frequency reconciliation path rather than being rebuilt for every notification. Reconciliation requests canonical `recency_at` ordering and use the App Server state DB fast path after the complete initial scan, with automatic fallback for older servers that reject those optional parameters. Goal capability probing is eager only for the most recent 100 threads; older threads can refresh observed Goal state with `g` in Thread, avoiding an unbounded startup probe backlog. Mission Control stays metadata-first: session search, notes, details and notification routing do not require a WorkCard projection. The historical Board worker starts only when that view is explicitly opened and does not advance elsewhere; opening a thread loads only the recent conversation page. Git checkout projection is deduplicated by exact cwd and the selected/active checkouts are refreshed every 10 seconds so branch/dirty state does not remain frozen after the initial probe. Thread View supports paginated history, persistent local drafts, turn start/steer/interrupt, approvals, user-input requests, and stable Codex Goal projection when the connected App Server supports it.
+Normal startup selects `[app_server].active` and defaults to the implicit `local` target, which launches `codex app-server --listen stdio://` after the first UI frame. `--target NAME` overrides the active target for one invocation. Mission Control consumes App Server thread lifecycle/status notifications incrementally; the complete paginated registry is retained as an initial load and low-frequency reconciliation path rather than being rebuilt for every notification. Reconciliation requests canonical `recency_at` ordering and use the App Server state DB fast path after the complete initial scan, with automatic fallback for older servers that reject those optional parameters. Goal capability probing is eager only for the most recent 100 threads; older threads can refresh observed Goal state with `g` in Thread, avoiding an unbounded startup probe backlog. Mission Control stays metadata-first: session search, notes, details and notification routing do not require a WorkCard projection. The interactive Board entry and its worker startup have been removed; historical projections remain available only to read-only headless inspection and existing diagnostic fixtures. Opening a thread loads only the recent conversation page. Git checkout projection is deduplicated by exact cwd and the selected/active checkouts are refreshed every 10 seconds so branch/dirty state does not remain frozen after the initial probe. Thread View supports paginated history, persistent local drafts, turn start/steer/interrupt, approvals, user-input requests, and stable Codex Goal projection when the connected App Server supports it.
 
 **First connection failed:** after correcting the transient backend problem, press an unmodified, single `F5` in empty Mission Control with no editor, help, confirmation or focused Terminal Drawer. This retries the same resolved target with at most one attempt in flight; there is no automatic retry timer. Drafts and local operator state are retained. Once a connection has been installed, F5 cannot reconnect an established session, even after a later disconnect. It never replays prompts or approvals, and does not reload target configuration; correct invalid configuration and restart explicitly.
 

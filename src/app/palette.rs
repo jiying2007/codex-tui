@@ -145,9 +145,6 @@ impl AppState {
         if self.workref_link_snapshot().is_some() {
             choices.push(Command::LinkWorkItem);
         }
-        if !matches!(self.view, View::Board) {
-            choices.push(Command::Board);
-        }
         if thread_id.is_some() && !matches!(self.view, View::Review(_)) {
             choices.push(Command::Review);
         }
@@ -200,7 +197,6 @@ impl AppState {
                             Command::Search
                                 | Command::TargetLookup
                                 | Command::NextAttention
-                                | Command::Board
                                 | Command::Review
                                 | Command::Workspace
                                 | Command::TogglePin
@@ -343,11 +339,14 @@ mod tests {
         let mut app = app();
         app.open_command_palette();
 
-        app.command_palette_query = "board".into();
-        assert_eq!(app.command_palette_choice(), Some(Command::Board));
+        app.command_palette_query = "review".into();
+        assert_eq!(app.command_palette_choice(), Some(Command::Review));
+
+        app.command_palette_query = "评审".into();
+        assert_eq!(app.command_palette_choice(), Some(Command::Review));
 
         app.command_palette_query = "看板".into();
-        assert_eq!(app.command_palette_choice(), Some(Command::Board));
+        assert!(app.command_palette_choices().is_empty());
     }
 
     #[test]

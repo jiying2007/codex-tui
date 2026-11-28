@@ -312,7 +312,9 @@ impl SqliteStore {
         }
     }
 
-    pub fn index_conversation_page(&self, page: &ConversationPage) -> Result<usize> {
+    pub fn index_conversation_page(&self, scope: &str, page: &ConversationPage) -> Result<usize> {
+        let mut thread_key = transcript_scope_prefix(scope)?;
+        thread_key.extend_from_slice(page.thread_id.0.as_bytes());
         let mut conn = self.open_ready()?;
         let has_fts = transcript_fts_available(&conn)?;
         let observed_at = u64_to_i64(now_unix_ms())?;
@@ -345,7 +347,7 @@ impl SqliteStore {
                     title=excluded.title,
                     text=excluded.text",
                 params![
-                    page.thread_id.0.as_str(),
+                    thread_key.as_slice(),
                     item.turn_id.as_str(),
                     item.item_id.as_str(),
                     kind,
@@ -364,7 +366,7 @@ impl SqliteStore {
                     "DELETE FROM transcript_fts
                      WHERE thread_id=?1 AND turn_id=?2 AND item_id=?3",
                     params![
-                        page.thread_id.0.as_str(),
+                        thread_key.as_slice(),
                         item.turn_id.as_str(),
                         item.item_id.as_str()
                     ],
@@ -375,7 +377,7 @@ impl SqliteStore {
                         thread_id, turn_id, item_id, kind, title, text
                      ) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                     params![
-                        page.thread_id.0.as_str(),
+                        thread_key.as_slice(),
                         item.turn_id.as_str(),
                         item.item_id.as_str(),
                         kind,
@@ -422,7 +424,12 @@ impl SqliteStore {
         Ok(())
     }
 
-    pub fn search_transcript(&self, query: &str, limit: usize) -> Result<TranscriptSearchResults> {
+    pub fn search_transcript(
+        &self,
+        scope: &str,
+        query: &str,
+        limit: usize,
+    ) -> Result<TranscriptSearchResults> {
         let query = query.trim();
         if query.is_empty() || limit == 0 {
             return Ok(TranscriptSearchResults::empty(
@@ -431,7 +438,7 @@ impl SqliteStore {
             ));
         }
         let conn = self.open_ready()?;
-        search_transcript(&conn, query, limit)
+        search_transcript(&conn, scope, query, limit)
     }
 
     pub fn load_planning_snapshot(&self) -> Result<PlanningSnapshot> {
@@ -1218,14 +1225,46 @@ fn prune_transcript_documents(tx: &Transaction<'_>, has_fts: bool, observed_at: 
     Ok(())
 }
 
+// SQLite TEXT affinity preserves BLOBs. The binary composite key keeps new
+// scoped entries distinct from every historical TEXT ThreadId, without a
+// migration or a second cache. Prefix length is in UTF-8 bytes.
+fn transcript_scope_prefix(scope: &str) -> Result<Vec<u8>> {
+    anyhow::ensure!(!scope.is_empty(), "transcript scope is unavailable");
+    Ok(format!("{}:{scope}:", scope.len()).into_bytes())
+}
+
+fn scoped_transcript_hit(
+    row: &rusqlite::Row<'_>,
+    prefix: &[u8],
+) -> rusqlite::Result<TranscriptSearchHit> {
+    let key: Vec<u8> = row.get(0)?;
+    let id = key
+        .strip_prefix(prefix)
+        .ok_or(rusqlite::Error::InvalidQuery)?;
+    let id = std::str::from_utf8(id).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Blob, Box::new(error))
+    })?;
+    Ok(TranscriptSearchHit {
+        thread_id: crate::domain::ThreadId::new(id),
+        turn_id: Some(row.get(1)?),
+        item_id: Some(row.get(2)?),
+        snippet: row.get(3)?,
+        turn_cursor: None,
+        match_start_utf16: None,
+        match_end_utf16: None,
+    })
+}
+
 // Local transcript search matches cached user/assistant body text only. Title
 // lookup belongs to the metadata search; short queries and absent FTS must not
 // silently add title matches to every cached message in a thread.
 fn search_transcript(
     conn: &Connection,
+    scope: &str,
     query: &str,
     limit: usize,
 ) -> Result<TranscriptSearchResults> {
+    let prefix = transcript_scope_prefix(scope)?;
     let limit = limit.min(crate::transcript_search::TRANSCRIPT_SEARCH_RESULT_LIMIT);
     let limit_i64 = i64::try_from(limit).context("transcript search limit overflow")?;
     let mut hits = Vec::new();
@@ -1237,19 +1276,13 @@ fn search_transcript(
                         snippet(transcript_fts, 5, '[', ']', ' … ', 24)
                  FROM transcript_fts
                  WHERE transcript_fts MATCH ?1
+                   AND typeof(thread_id)='blob'
+                   AND substr(thread_id, 1, length(?3))=?3
                  ORDER BY rank
                  LIMIT ?2",
             )?;
-            let rows = stmt.query_map(params![match_query, limit_i64], |row| {
-                Ok(TranscriptSearchHit {
-                    thread_id: crate::domain::ThreadId::new(row.get::<_, String>(0)?),
-                    turn_id: Some(row.get(1)?),
-                    item_id: Some(row.get(2)?),
-                    snippet: row.get(3)?,
-                    turn_cursor: None,
-                    match_start_utf16: None,
-                    match_end_utf16: None,
-                })
+            let rows = stmt.query_map(params![match_query, limit_i64, &prefix], |row| {
+                scoped_transcript_hit(row, &prefix)
             })?;
             hits = rows.collect::<rusqlite::Result<Vec<_>>>()?;
         }
@@ -1269,19 +1302,13 @@ fn search_transcript(
                     END
              FROM transcript_documents
              WHERE lower(text) LIKE lower(?1) ESCAPE '\\'
+               AND typeof(thread_id)='blob'
+               AND substr(thread_id, 1, length(?3))=?3
              ORDER BY observed_at_unix_ms DESC
              LIMIT ?2",
         )?;
-        let rows = stmt.query_map(params![pattern, limit_i64], |row| {
-            Ok(TranscriptSearchHit {
-                thread_id: crate::domain::ThreadId::new(row.get::<_, String>(0)?),
-                turn_id: Some(row.get(1)?),
-                item_id: Some(row.get(2)?),
-                snippet: row.get(3)?,
-                turn_cursor: None,
-                match_start_utf16: None,
-                match_end_utf16: None,
-            })
+        let rows = stmt.query_map(params![pattern, limit_i64, &prefix], |row| {
+            scoped_transcript_hit(row, &prefix)
         })?;
         hits = rows.collect::<rusqlite::Result<Vec<_>>>()?;
     }

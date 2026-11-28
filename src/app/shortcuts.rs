@@ -1,22 +1,23 @@
 //! Visible feedback for shortcut binding and unmapped slots.
-use super::{AppState, local_text};
+use super::{AppState, SourceKind, local_text};
 
 pub(super) fn begin_bind(state: &mut AppState) {
-    state.hot_slot_bind_pending = state.selected_local_target();
-    let message = if state.hot_slot_bind_pending.is_some() {
-        local_text(
-            state.language,
+    state.hot_slot_bind_pending = state
+        .selected_local_target()
+        .filter(|target| target.kind == SourceKind::CodexThread)
+        .zip(state.shortcut_scope().map(str::to_owned));
+    let (english, chinese) = if state.hot_slot_bind_pending.is_some() {
+        (
             "shortcut binding: press 1-9 to save, Esc to cancel",
             "快捷槽绑定中：按 1–9 保存，Esc 取消",
         )
     } else {
-        local_text(
-            state.language,
-            "select a local thread or Board item before binding a shortcut",
-            "先选择本机会话或看板项目再绑定快捷槽",
+        (
+            "select a Codex thread in a known connected scope before binding a shortcut",
+            "先在已连接且身份明确的目标中选择 Codex 会话再绑定快捷槽",
         )
     };
-    state.mutation_notice = Some(message.into());
+    state.mutation_notice = Some(local_text(state.language, english, chinese).into());
 }
 
 pub(super) fn cancelled(state: &mut AppState) {

@@ -16,6 +16,8 @@ pub struct ScopedOperatorState {
     pub marked_unread: BTreeSet<String>,
     #[serde(default)]
     pub acknowledged_attention: BTreeSet<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub hot_slots: BTreeMap<u8, String>,
 }
 
 impl ScopedOperatorState {
@@ -26,6 +28,7 @@ impl ScopedOperatorState {
             aliases: local.aliases.clone(),
             marked_unread: local.marked_unread.clone(),
             acknowledged_attention: local.acknowledged_attention.clone(),
+            hot_slots: BTreeMap::new(),
         }
     }
 }

@@ -540,11 +540,13 @@ impl AppState {
             .selected_local_target()
             .is_some_and(|target| target.kind == SourceKind::CodexThread)
         {
-            choices.extend([
-                ContextChoice::Snooze,
-                ContextChoice::EditNote,
-                ContextChoice::Bookmark,
-            ]);
+            if self.shortcut_scope().is_some() {
+                choices.extend([
+                    ContextChoice::Snooze,
+                    ContextChoice::EditNote,
+                    ContextChoice::Bookmark,
+                ]);
+            }
             if self.workref_link_snapshot().is_some() {
                 choices.push(ContextChoice::LinkWorkItem);
             }

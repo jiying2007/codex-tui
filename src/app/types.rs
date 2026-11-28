@@ -229,10 +229,6 @@ pub enum Effect {
         source: SourceRef,
         label: Option<String>,
     },
-    SetHotSlot {
-        slot: u8,
-        target: SourceRef,
-    },
     OpenTerminalDrawer {
         cwd: String,
     },
