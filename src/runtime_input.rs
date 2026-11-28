@@ -148,29 +148,6 @@ pub(crate) fn handle_key(app: &mut AppState, key: KeyEvent) -> Vec<Effect> {
         };
     }
 
-    if app.thread_queue_open && app.input_mode == InputMode::Normal {
-        if app.pending_queue_confirmation.is_some() {
-            return match key.code {
-                KeyCode::Char('y') if plain => reduce(app, Action::ConfirmPendingOperation),
-                KeyCode::Char('c') | KeyCode::Esc => reduce(app, Action::CancelPendingOperation),
-                _ => vec![],
-            };
-        }
-        return match key.code {
-            KeyCode::Esc | KeyCode::Char('q') => reduce(app, Action::CloseThreadQueue),
-            KeyCode::Char('j') | KeyCode::Down => reduce(app, Action::MoveThreadQueue(1)),
-            KeyCode::Char('k') | KeyCode::Up => reduce(app, Action::MoveThreadQueue(-1)),
-            KeyCode::Char('n') if plain => reduce(app, Action::BeginThreadQueueAdd),
-            KeyCode::Char('e') if plain => reduce(app, Action::BeginThreadQueueEdit),
-            KeyCode::Char('x') if plain => reduce(app, Action::BeginThreadQueueDelete),
-            KeyCode::Char('s') if plain => reduce(app, Action::BeginThreadQueueStart),
-            KeyCode::Char('[') if plain => reduce(app, Action::ReorderThreadQueue(-1)),
-            KeyCode::Char(']') if plain => reduce(app, Action::ReorderThreadQueue(1)),
-            KeyCode::Char('r') if plain => reduce(app, Action::RefreshThreadQueue),
-            _ => vec![],
-        };
-    }
-
     if app.transcript_search_open {
         if key.modifiers == KeyModifiers::CONTROL && key.code == KeyCode::Char('f') {
             reduce(app, Action::CloseTranscriptSearch);

@@ -32,7 +32,7 @@ retained exact-source receipts.
 
 v1.4 has reached development-scope completion and is frozen against new core functionality under `release/v1.4-completion.json`. It preserves v1.3 Search & Multi-Target and closes the remaining workflow/UX gaps: large Board navigation, WorkCard relationships, thread start/fork handoff, unified metadata search, Saved View editing, Review evidence/external open, bounded long-thread rendering, fuzzy Command Palette, runtime decomposition and exact-SHA 10k Board/Thread render diagnostics. This is not stable readiness: v1.4 stable publication still requires exact-SHA real Linux compatibility, controlling-TTY restoration, performance diagnostics and release evidence defined by `release/v1.4-criteria.json`. GitLab Issue Board membership remains evidence-gated until the native-transport/refresh-budget trigger is satisfied. The v1.3/v1.2 completion checkpoints and parked v1.1 candidate remain historical and separate.
 
-A post-v1.4 **upstream convergence** policy is now active under `release/v1.5-convergence.json` without changing the package version or claiming v1.5 release readiness. codex-tui is intentionally a thin local control plane: Mission Control, cross-target registry, Attention, derived Board/WorkCard projection, GitLab/GitHub Forge integration, Saved Views and diagnostics are the differentiating surfaces. Conversation-client, Thread Queue UI and embedded Terminal Drawer code is maintenance-only; official Codex remains authoritative for conversation, agents/orchestration and queue semantics, Git for repository/worktree state, the Forge for delivery, and the user's shell stack for general terminal-session management. Canonical CI, development qualification and the release gate enforce this boundary
+A post-v1.4 **upstream convergence** policy is now active under `release/v1.5-convergence.json` without changing the package version or claiming v1.5 release readiness. codex-tui is intentionally a thin local control plane: Mission Control, cross-target registry, Attention, derived Board/WorkCard projection, GitLab/GitHub Forge integration, Saved Views and diagnostics are the differentiating surfaces. Conversation-client and embedded Terminal Drawer code is maintenance-only; the duplicate Thread Queue UI is retired in the Lite candidate; official Codex remains authoritative for conversation, agents/orchestration and queue semantics, Git for repository/worktree state, the Forge for delivery, and the user's shell stack for general terminal-session management. Canonical CI, development qualification and the release gate enforce this boundary
  with `scripts/architecture/check_upstream_convergence.py`. The convergence manifest
  (schema v2) tracks maintenance-only module identity, while the existing
  `release/v1.4-plan.json` module ratchet remains the **only numeric LOC ceiling ledger**.
@@ -67,7 +67,7 @@ codex-tui answers four questions quickly:
 
 The default product surface is Mission Control. The local chat/thread client is a compatibility surface, not the long-term product differentiator.
 
-The global `Ctrl+K` Command Palette now shows **Mission Control actions first** with an empty query. Type a command name (English or Simplified Chinese) to reveal less-frequent upstream-overlapping compatibility actions such as transcript search, quick prompt, Thread Queue, managed worktrees or Terminal Drawer. Existing direct keys and commands remain available; this is a presentation-only convergence, not a removal of capabilities.
+The global `Ctrl+K` Command Palette now shows **Mission Control actions first** with an empty query. Type a command name (English or Simplified Chinese) to reveal less-frequent upstream-overlapping compatibility actions such as transcript search, quick prompt, managed worktrees or Terminal Drawer. Existing direct keys and commands remain available; this is a presentation-only convergence, not a removal of capabilities.
 
 ## v1 principles
 
@@ -153,7 +153,7 @@ The mature product adds planning without creating a second task authority:
 - worktree lifecycle and review
 - GitLab Work Item/Issue Board/MR/Pipeline projection first; GitHub through the same forge abstraction
 - notes/bookmarks, snooze/unread and lightweight notifications
-- upstream Thread Queue projection only where it improves Mission Control; no independent queue authority
+- native Codex queue authority; no duplicate Thread Queue UI or queue mutation route
 
 Board cards should project existing Codex/Git/forge work whenever possible; Needs You is an attention overlay, not a workflow column.
 
@@ -311,7 +311,7 @@ The backend status source includes the selected target name and transport. Docto
 output prints a sanitized endpoint with WebSocket credentials/query/fragment
 removed.
 
-Thread Queue is projected directly from the experimental Codex App Server queue API. Press `q` in Thread View to inspect/add/edit/reorder/start/delete queued submissions. The queue is never persisted locally; older App Servers degrade this surface without blocking normal conversation use. Mixed/multimodal queued inputs can be started/deleted/reordered but are intentionally not text-edited by codex-tui.
+Manage queued submissions through native Codex CLI. The Lite candidate removes the duplicate Thread Queue UI and its App Server list/write routes; it does not change or delete upstream queued submissions.
 
 `--fake` is a deterministic development/fixture mode; it is never an automatic fallback for a failed real backend.
 

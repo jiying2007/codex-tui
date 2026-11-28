@@ -28,11 +28,9 @@ pub(super) struct Subscriptions {
 
 pub(super) fn desired(
     history: &WatchSet,
-    queue: &WatchSet,
     pending: &BTreeMap<RpcRequestId, PendingServerRequest>,
 ) -> BTreeSet<String> {
     let mut ids = history.snapshot();
-    ids.extend(queue.snapshot());
     ids.extend(pending.values().filter_map(|request| {
         request
             .params
@@ -47,14 +45,11 @@ pub(super) async fn refresh_owned(
     rpc: &mut RpcSession,
     id: ThreadId,
     history: &WatchSet,
-    queue: &WatchSet,
     tx: &mpsc::Sender<ConversationEvent>,
 ) {
     if history.contains(&id.0) {
-        emit_conversation_load(rpc, id.clone(), tx).await;
+        emit_conversation_load(rpc, id, tx).await;
     }
-    // Queue pagination is scheduled cooperatively by the registry actor.
-    let _ = queue;
 }
 
 pub(super) async fn retire_removed_owners(
@@ -62,7 +57,6 @@ pub(super) async fn retire_removed_owners(
     params: &Value,
     pending: &mut BTreeMap<RpcRequestId, PendingServerRequest>,
     history: &WatchSet,
-    queue: &WatchSet,
     tx: &mpsc::Sender<ConversationEvent>,
 ) {
     let mut retired = Vec::new();
@@ -80,7 +74,7 @@ pub(super) async fn retire_removed_owners(
             keep
         });
     }
-    watch_lifecycle::retire_removed_watches(method, params, history, queue, tx).await;
+    watch_lifecycle::retire_removed_watches(method, params, history, tx).await;
     for request_id in retired {
         send_conversation_event(tx, ConversationEvent::InteractiveResolved { request_id }).await;
     }
@@ -206,7 +200,6 @@ pub(super) fn should_queue_rpc_message(message: &Value) -> bool {
             "serverRequest/resolved"
                 | "thread/goal/updated"
                 | "thread/goal/cleared"
-                | "thread/queue/changed"
                 | "thread/started"
                 | "thread/closed"
                 | "thread/status/changed"

@@ -102,31 +102,6 @@ fn saved_view_edit_and_save_require_plain_press() {
 }
 
 #[test]
-fn queue_mutation_keys_ignore_modifiers_and_repeat_but_plain_add_still_works() {
-    let mut app = fixture();
-    app.view = View::Thread(app.threads[0].id.clone());
-    app.thread_queue_open = true;
-    for code in [
-        KeyCode::Char('n'),
-        KeyCode::Char('e'),
-        KeyCode::Char('x'),
-        KeyCode::Char('s'),
-        KeyCode::Char('['),
-        KeyCode::Char(']'),
-        KeyCode::Char('r'),
-    ] {
-        for key in forbidden(code) {
-            assert!(handle_key(&mut app, key).is_empty());
-            assert_eq!(app.input_mode, InputMode::Normal);
-            assert!(!app.thread_queue_loading);
-            assert!(app.pending_queue_confirmation.is_none());
-        }
-    }
-    assert!(handle_key(&mut app, press(KeyCode::Char('n'))).is_empty());
-    assert_eq!(app.input_mode, InputMode::ThreadQueueAdd);
-}
-
-#[test]
 fn text_editor_commit_never_uses_modified_or_held_enter() {
     let mut app = fixture();
     reduce(&mut app, Action::BeginScratch);

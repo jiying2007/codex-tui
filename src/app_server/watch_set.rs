@@ -68,18 +68,17 @@ impl WatchSet {
     }
 }
 
-pub(super) struct WatchSetGuard(WatchSet, WatchSet);
+pub(super) struct WatchSetGuard(WatchSet);
 
 impl WatchSetGuard {
-    pub(super) fn new(history: WatchSet, queue: WatchSet) -> Self {
-        Self(history, queue)
+    pub(super) fn new(history: WatchSet) -> Self {
+        Self(history)
     }
 }
 
 impl Drop for WatchSetGuard {
     fn drop(&mut self) {
         self.0.close();
-        self.1.close();
     }
 }
 
@@ -122,20 +121,16 @@ mod tests {
     }
 
     #[test]
-    fn refused_refresh_preserves_an_existing_owner_and_actor_drop_clears_both_sets() {
+    fn refused_refresh_preserves_an_existing_owner_and_actor_drop_clears_history() {
         let history = WatchSet::default();
-        let queue = WatchSet::default();
         history.admit("same", || Ok(())).unwrap();
-        queue.admit("same", || Ok(())).unwrap();
         assert!(history.admit("same", || Err(anyhow!("full"))).is_err());
         assert!(history.contains("same"));
         history.remove("same");
-        assert!(queue.contains("same"));
-        let guard = WatchSetGuard::new(history.clone(), queue.clone());
+        let guard = WatchSetGuard::new(history.clone());
         history.admit("again", || Ok(())).unwrap();
         drop(guard);
         assert!(history.current.borrow().ids.is_empty());
-        assert!(queue.current.borrow().ids.is_empty());
         assert!(
             history
                 .admit("late", || panic!("closed actor must not enqueue"))

@@ -36,7 +36,6 @@ use crate::saved_view_editor::SavedViewEditor;
 use crate::store::LocalStateV1;
 use crate::terminal_drawer::TerminalSnapshot;
 use crate::text::sanitize_inline;
-use crate::thread_queue::{QueuedSubmission, ThreadQueueMutation, ThreadQueueSnapshot};
 use crate::transcript_search::{
     TranscriptSearchHit, TranscriptSearchResults, TranscriptSearchSource,
 };
@@ -57,9 +56,6 @@ mod palette_intent;
 mod planning_selection;
 pub mod planning_worker;
 mod prompt;
-mod queue_ack;
-mod queue_confirmation;
-mod queue_editor;
 mod reading_snapshot;
 mod reducer;
 mod registry;
@@ -76,7 +72,6 @@ mod user_input;
 mod user_response;
 mod watch;
 mod workref_link;
-pub use queue_confirmation::QueueConfirmation;
 pub use reducer::reduce;
 use registry::{ensure_selection_visible, restore_selection};
 pub use target_lookup::{LookupPhase, TargetLookupAction, TargetLookupPanel};
@@ -180,13 +175,6 @@ pub struct AppState {
     pub goals: BTreeMap<String, GoalObservation>,
     pub goal_checked: BTreeSet<String>,
     pub goal_actions_open: bool,
-    pub thread_queue_open: bool,
-    pub thread_queue_snapshot: Option<ThreadQueueSnapshot>,
-    pub thread_queue_selected: usize,
-    pub thread_queue_loading: bool,
-    pub thread_queue_error: Option<String>,
-    pub pending_queue_confirmation: Option<QueueConfirmation>,
-    thread_queue_editor: Option<queue_editor::QueueEditor>,
     pub managed_worktrees: Vec<ManagedWorktreeRecord>,
     pub managed_selected: usize,
     pub managed_return_view: Option<View>,
@@ -1028,6 +1016,3 @@ fn sort_planning_cards(cards: &mut [WorkCardProjection]) {
 
 #[cfg(test)]
 mod tests;
-
-#[cfg(test)]
-mod thread_queue_reducer_tests;

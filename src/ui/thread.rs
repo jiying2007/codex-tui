@@ -364,12 +364,12 @@ pub(super) fn render_thread(frame: &mut Frame<'_>, app: &AppState, thread_id: &s
             if pending_request.is_some() {
                 "d full details · PgUp/PgDn scroll · Home start · End follow · y/n/c approval · i answer"
             } else {
-                "PgUp/PgDn scroll · Home start · End follow · a composer · q queue · ? help"
+                "PgUp/PgDn scroll · Home start · End follow · a composer · ? help"
             },
             if pending_request.is_some() {
                 "d 完整详情 · PgUp/PgDn 滚动 · Home 开头 · End 跟随 · y/n/c 审批 · i 回答"
             } else {
-                "PgUp/PgDn 滚动 · Home 开头 · End 跟随 · a 编辑 · q 队列 · ? 帮助"
+                "PgUp/PgDn 滚动 · Home 开头 · End 跟随 · a 编辑 · ? 帮助"
             },
         )),
         chunks[3],

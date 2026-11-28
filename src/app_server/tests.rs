@@ -140,7 +140,7 @@ async fn queued_approval_preempts_a_ready_command_after_rpc_yield() {
         snapshot_tx,
         event_tx,
         command_rx,
-        (None, target, history_watches, WatchSet::default()),
+        (None, target, history_watches),
     ));
     let event = tokio::time::timeout(Duration::from_secs(2), event_rx.recv())
         .await

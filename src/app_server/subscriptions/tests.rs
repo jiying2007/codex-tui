@@ -19,11 +19,9 @@ fn loaded_and_started_notifications_never_confirm_this_connection() {
 }
 
 #[test]
-fn only_current_history_queue_and_pending_request_owners_retain_subscriptions() {
+fn only_current_history_and_pending_request_owners_retain_subscriptions() {
     let history = WatchSet::default();
-    let queue = WatchSet::default();
     history.admit("one", || Ok(())).unwrap();
-    queue.admit("one", || Ok(())).unwrap();
     let mut pending = BTreeMap::from([(
         RpcRequestId::Integer(7),
         PendingServerRequest {
@@ -36,18 +34,12 @@ fn only_current_history_queue_and_pending_request_owners_retain_subscriptions() 
     history.remove("one");
     assert!(
         subscriptions
-            .next_action(&desired(&history, &queue, &pending))
-            .is_none()
-    );
-    queue.remove("one");
-    assert!(
-        subscriptions
-            .next_action(&desired(&history, &queue, &pending))
+            .next_action(&desired(&history, &pending))
             .is_none()
     );
     pending.clear();
     assert_eq!(
-        subscriptions.next_action(&desired(&history, &queue, &pending)),
+        subscriptions.next_action(&desired(&history, &pending)),
         Some((ThreadId::new("one"), false))
     );
 }

@@ -67,7 +67,6 @@ impl AppState {
         matches!(self.view, View::Thread(_))
             && self.input_mode == InputMode::Normal
             && !self.goal_actions_open
-            && !self.thread_queue_open
             && !self.command_palette_open
             && !self.context_open
             && !self.transcript_search_open
@@ -77,7 +76,6 @@ impl AppState {
             && self.pending_operation.is_none()
             && self.pending_forge_operation.is_none()
             && self.pending_local_batch.is_none()
-            && self.pending_queue_confirmation.is_none()
             && self.hot_slot_bind_pending.is_none()
     }
 

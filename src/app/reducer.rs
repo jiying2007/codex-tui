@@ -405,9 +405,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.input_mode = InputMode::WorktreeDeleteBranch;
         }
         Action::ConfirmPendingOperation => {
-            if state.pending_queue_confirmation.is_some() {
-                return state.confirm_queue_operation();
-            }
             if state.planning_store_error.is_some() {
                 state.mutation_notice = Some(
                     local_text(
@@ -438,7 +435,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             state.pending_forge_operation = None;
             state.pending_forge_payload = None;
             state.pending_local_batch = None;
-            state.pending_queue_confirmation = None;
             state.mutation_notice = Some(
                 local_text(
                     state.language,
@@ -479,118 +475,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
         }
         Action::CloseGoalActions => {
             state.goal_actions_open = false;
-        }
-        Action::OpenThreadQueue => {
-            state.pending_queue_confirmation = None;
-            state.thread_queue_editor = None;
-            let Some(thread_id) = state.current_thread_id().cloned() else {
-                return vec![];
-            };
-            state.goal_actions_open = false;
-            state.thread_queue_open = true;
-            state.thread_queue_loading = true;
-            state.thread_queue_error = None;
-            state.thread_queue_selected = 0;
-            if state
-                .thread_queue_snapshot
-                .as_ref()
-                .is_some_and(|snapshot| snapshot.thread_id != thread_id)
-            {
-                state.thread_queue_snapshot = None;
-            }
-            return vec![Effect::RefreshThreadQueue(thread_id)];
-        }
-        Action::CloseThreadQueue => {
-            if state.queue_mutation_pending() {
-                state.thread_queue_error = Some("Queue submission pending; draft retained".into());
-                return vec![];
-            }
-            state.thread_queue_editor = None;
-            let thread_id = state
-                .thread_queue_snapshot
-                .as_ref()
-                .map(|snapshot| snapshot.thread_id.clone())
-                .or_else(|| state.current_thread_id().cloned());
-            state.thread_queue_open = false;
-            state.thread_queue_loading = false;
-            state.thread_queue_error = None;
-            state.pending_queue_confirmation = None;
-            state.input_mode = InputMode::Normal;
-            state.input_buffer.clear();
-            if let Some(thread_id) = thread_id {
-                return vec![Effect::StopWatchingThreadQueue(thread_id)];
-            }
-        }
-        Action::ThreadQueueLoaded(snapshot) => state.install_thread_queue(snapshot),
-        Action::QueueMutationOutcome {
-            thread_id,
-            committed,
-        } => {
-            if committed {
-                state.queue_ack_loaded(&thread_id);
-            } else {
-                state.queue_ack_failed(&thread_id);
-            }
-        }
-        Action::ThreadQueueFailed { thread_id, error } => {
-            if state.thread_queue_open
-                && state
-                    .current_thread_id()
-                    .is_some_and(|current| *current == thread_id)
-            {
-                state.thread_queue_loading = false;
-                state.thread_queue_error = Some(error);
-            }
-        }
-        Action::MoveThreadQueue(delta) => {
-            let len = state
-                .thread_queue_snapshot
-                .as_ref()
-                .map(|snapshot| snapshot.submissions.len())
-                .unwrap_or(0);
-            state.thread_queue_selected = wrap_selection(state.thread_queue_selected, delta, len);
-        }
-        Action::BeginThreadQueueAdd => state.begin_queue_input(false),
-        Action::BeginThreadQueueEdit => state.begin_queue_input(true),
-        Action::BeginThreadQueueDelete => state.begin_queue_confirmation(false),
-        Action::BeginThreadQueueStart => state.begin_queue_confirmation(true),
-        Action::ReorderThreadQueue(delta) => {
-            let Some(snapshot) = state.ready_queue_snapshot() else {
-                state.refuse_queue_mutation();
-                return vec![];
-            };
-            let len = snapshot.submissions.len();
-            if len < 2 {
-                return vec![];
-            }
-            let from = state.thread_queue_selected.min(len - 1);
-            let to = (from as i128 + i128::from(delta)).clamp(0, (len - 1) as i128) as usize;
-            if from == to {
-                return vec![];
-            }
-            let mut ids = snapshot
-                .submissions
-                .iter()
-                .map(|submission| submission.id.clone())
-                .collect::<Vec<_>>();
-            ids.swap(from, to);
-            let thread_id = snapshot.thread_id.clone();
-            match ThreadQueueMutation::reorder(thread_id, ids) {
-                Ok(mutation) => {
-                    // Keep the cursor on the observed item until upstream confirms order.
-                    state.thread_queue_loading = true;
-                    return vec![Effect::MutateThreadQueue(mutation)];
-                }
-                Err(error) => state.thread_queue_error = Some(error.to_string()),
-            }
-        }
-        Action::RefreshThreadQueue => {
-            let Some(thread_id) = state.current_thread_id().cloned() else {
-                return vec![];
-            };
-            state.thread_queue_loading = true;
-            state.thread_queue_error = None;
-            return vec![Effect::RefreshThreadQueue(thread_id)];
         }
         Action::BeginGoalObjective => {
             let Some(thread_id) = state.current_thread_id().cloned() else {
@@ -1919,7 +1803,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
         }
         Action::InputChar(character) => match state.input_mode {
             InputMode::Normal => {}
-            _ if state.queue_mutation_pending() || state.workref_link_pending => {}
+            _ if state.workref_link_pending => {}
             InputMode::Composer => {
                 if super::composer::insert(state, &character.to_string()) {
                     return vec![Effect::PersistOperatorStateDeferred];
@@ -1927,8 +1811,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
             InputMode::Search
             | InputMode::TranscriptSearch
-            | InputMode::ThreadQueueAdd
-            | InputMode::ThreadQueueEdit
             | InputMode::Alias
             | InputMode::UserInput
             | InputMode::ScratchTitle
@@ -1958,7 +1840,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
         },
         Action::InputText(text) => {
-            if text.is_empty() || state.queue_mutation_pending() || state.workref_link_pending {
+            if text.is_empty() || state.workref_link_pending {
                 return vec![];
             }
             let text = normalize_pasted_input(state.input_mode, &text);
@@ -1974,8 +1856,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
                 }
                 InputMode::Search
                 | InputMode::TranscriptSearch
-                | InputMode::ThreadQueueAdd
-                | InputMode::ThreadQueueEdit
                 | InputMode::Alias
                 | InputMode::UserInput
                 | InputMode::ScratchTitle
@@ -2007,7 +1887,7 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
         }
         Action::InputBackspace => match state.input_mode {
             InputMode::Normal => {}
-            _ if state.queue_mutation_pending() || state.workref_link_pending => {}
+            _ if state.workref_link_pending => {}
             InputMode::Composer => {
                 if super::composer::backspace(state) {
                     return vec![Effect::PersistOperatorStateDeferred];
@@ -2015,8 +1895,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
             InputMode::Search
             | InputMode::TranscriptSearch
-            | InputMode::ThreadQueueAdd
-            | InputMode::ThreadQueueEdit
             | InputMode::Alias
             | InputMode::UserInput
             | InputMode::ScratchTitle
@@ -2055,9 +1933,6 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             let mode = state.input_mode;
             if !state.guard_mutation_editor(mode) {
                 return vec![];
-            }
-            if matches!(mode, InputMode::ThreadQueueAdd | InputMode::ThreadQueueEdit) {
-                return state.commit_queue_input();
             }
             if mode == InputMode::WorkrefLink {
                 return state.commit_workref_link().into_iter().collect();
@@ -2492,21 +2367,9 @@ fn reduce_inner(state: &mut AppState, action: Action) -> Vec<Effect> {
             }
         }
         Action::CancelInput => {
-            if state.queue_mutation_pending() {
-                return vec![];
-            }
             state.mutation_editor = None;
-            state.thread_queue_editor = None;
             state.alias_target = None;
             let mut search_watch_to_release = None;
-            if matches!(
-                state.input_mode,
-                InputMode::ThreadQueueAdd | InputMode::ThreadQueueEdit
-            ) {
-                state.input_mode = InputMode::Normal;
-                state.input_buffer.clear();
-                return vec![];
-            }
             if state.input_mode == InputMode::WorkrefLink {
                 if state.workref_link_pending {
                     state.workref_link_cancel_refused();

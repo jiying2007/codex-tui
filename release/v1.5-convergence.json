@@ -87,17 +87,14 @@
       ]
     },
     "thread-queue-ui": {
-      "policy": "upstream-projection-only",
+      "policy": "retired-upstream-only",
       "modulePrefixes": [
         "src/thread_queue",
-        "src/app/queue"
+        "src/app/queue",
+        "src/app/thread_queue",
+        "src/app_server/queue"
       ],
-      "modules": [
-        "src/thread_queue.rs",
-        "src/app/queue_confirmation.rs",
-        "src/app/queue_editor.rs",
-        "src/app/queue_ack.rs"
-      ]
+      "modules": []
     },
     "embedded-terminal": {
       "policy": "bugfix-compatibility-security-only",
